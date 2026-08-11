@@ -20,7 +20,7 @@ import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
-import { ensurePeople } from "./people";
+import { ensurePeople, tickPeople } from "./people";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -428,6 +428,9 @@ function tickMonth(
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
   tickStaff(s, parcels);
+  // Careers accrue from the book; rival principals die on their drawn date.
+  // peopleRng only for estate asks — s.rng untouched.
+  tickPeople(s, parcels);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -916,6 +919,17 @@ function tickMonth(
   for (const bbl of Object.keys(s.workouts ?? {})) {
     if (!s.holdings[bbl]?.loan) delete s.workouts![bbl];
   }
+
+  // PHYSICAL AND ECONOMIC AGREE AT THE MONTH BOUNDARY.
+  //
+  // Reconcile already runs at the top of the tick so deliveries do not land
+  // from ghost jobs. Paths mid-month can still drop a cityJob (or take over a
+  // frame into developments) without cancelling the matching deliveryQueue
+  // row; invariants checked at month-end then see an orphan that the next
+  // month's opening reconcile would have cleared. Estate-driven rival exits
+  // made that race load-bearing. Close it here so the month that ends is the
+  // month the gate reads.
+  reconcileSupplyQueue(s, parcels);
 }
 
 export function advanceMonth(

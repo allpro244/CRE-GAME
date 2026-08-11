@@ -11,9 +11,11 @@
  * must not either. Draw the death month ONCE at creation — never a monthly
  * hazard — so the draw count is auditable and foreshadowing stays honest.
  */
+import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { START_YEAR } from "./types";
 import { mulberry32Step } from "./market";
+import { assetValue, initialCondition, resolveRec } from "./value";
 
 export type PersonSeat = "you" | "employee" | "partner" | "rival" | "none";
 
@@ -21,6 +23,19 @@ export type PersonSeat = "you" | "employee" | "partner" | "rival" | "none";
  * One human being. Staff are Persons with seat "employee" plus payroll fields
  * (see staff.ts). The player is seat "you". Rival firms carry seat "rival".
  */
+/** Asset classes a career can specialise in. Land accrues slowly (assemblage). */
+export type CareerClass = "office" | "retail" | "multifamily" | "industrial" | "land";
+
+/**
+ * What someone has actually done — month-equivalents of operating exposure.
+ * Competence is a readout of this, not a purchased skill chip.
+ */
+export interface CareerLog {
+  classM: Partial<Record<CareerClass, number>>;
+  /** District (submarket) exposure. */
+  districtM: Record<string, number>;
+}
+
 export interface Person {
   id: number;
   name: string;
@@ -33,10 +48,11 @@ export interface Person {
   /**
    * Death month on the campaign clock, drawn once at creation from a period
    * life table (drawDeathM). Absent on legacy staff synthesised without a
-   * draw; filled on the next ensurePeople pass. Nothing reads this until the
-   * mortality phases — storing it now keeps Phase 4/5 from re-drawing.
+   * draw; filled on the next ensurePeople pass.
    */
   diesM?: number;
+  /** Month the death was processed (estate fired). Absent while alive. */
+  diedM?: number;
   /** TRUE ability, 1-100. Shown only for seat "you". Never for anyone else. */
   attrs: Record<string, number>;
   /** Noisy first read — interview / dealing history. */
@@ -46,6 +62,8 @@ export interface Person {
   seat: PersonSeat;
   /** Rival.firm id when seat === "rival". */
   firmId?: string;
+  /** Earned by doing. Absent on legacy rows until ensurePeople / tickCareers. */
+  career?: CareerLog;
 }
 
 /** peopleRng seed mix — distinct from staff's 0x5741ff. */
@@ -181,6 +199,7 @@ export function makePlayerPrincipal(s: GameState, ageYrs: number = DEFAULT_PRINC
     seat: "you",
   };
   p.diesM = drawDeathM(s, bornM, s.month);
+  p.career = seedCareer(s, ageYrs);
   return p;
 }
 
@@ -190,7 +209,7 @@ function principalNameFromFirm(firmName: string, s: GameState): string {
   return pickName(s);
 }
 
-/** Rival operating principal — inert until mortality phases. */
+/** Rival operating principal. */
 export function makeRivalPrincipal(s: GameState, firmId: string, firmName: string, ageYrs?: number): Person {
   // Age band 38–72: working principals, not the opening associate class.
   const age = ageYrs ?? Math.round(prrange(s, 38, 72));
@@ -214,6 +233,7 @@ export function makeRivalPrincipal(s: GameState, firmId: string, firmName: strin
     firmId,
   };
   p.diesM = drawDeathM(s, bornM, s.month);
+  p.career = seedCareer(s, age);
   return p;
 }
 
@@ -223,7 +243,7 @@ export function makeRivalPrincipal(s: GameState, firmId: string, firmName: strin
  */
 export function stampEmployeeLife(
   s: GameState,
-  st: { bornM?: number; diesM?: number; hiredM?: number },
+  st: { bornM?: number; diesM?: number; hiredM?: number; career?: CareerLog },
 ): void {
   if (st.bornM === undefined) {
     const age = Math.round(prrange(s, 28, 55));
@@ -234,6 +254,9 @@ export function stampEmployeeLife(
   }
   if (st.diesM === undefined) {
     st.diesM = drawDeathM(s, st.bornM, s.month);
+  }
+  if (!st.career) {
+    st.career = seedCareer(s, ageYears({ bornM: st.bornM }, s.month));
   }
 }
 
@@ -260,11 +283,18 @@ export function ensurePeople(s: GameState): void {
       p.diesM = drawDeathM(s, p.bornM, s.month);
     }
   }
+  if (s.principal && !s.principal.career) {
+    s.principal.career = seedCareer(s, ageYears(s.principal, s.month));
+  }
+  for (const id of Object.keys(s.rivalPrincipals)) {
+    const p = s.rivalPrincipals[id];
+    if (p && !p.career) p.career = seedCareer(s, ageYears(p, s.month));
+  }
   for (const st of s.staff ?? []) {
-    stampEmployeeLife(s, st as { bornM?: number; diesM?: number });
+    stampEmployeeLife(s, st as { bornM?: number; diesM?: number; career?: CareerLog });
   }
   for (const c of s.hirePool?.list ?? []) {
-    stampEmployeeLife(s, c as { bornM?: number; diesM?: number });
+    stampEmployeeLife(s, c as { bornM?: number; diesM?: number; career?: CareerLog });
   }
 }
 
@@ -291,3 +321,213 @@ export const ATTR_LABEL_PERSON: Record<string, string> = {
   diligence: "Detail orientation",
   relationships: "Relationships",
 };
+
+const CAREER_CLASSES: CareerClass[] = ["office", "retail", "multifamily", "industrial"];
+
+export function emptyCareer(): CareerLog {
+  return { classM: {}, districtM: {} };
+}
+
+/**
+ * Prior career from years in the business. Drawn from peopleRng — one primary
+ * class, a secondary, a handful of districts. Shape parameter: working life
+ * starts ~22; months of exposure ≈ (age − 22) × 12 × 0.55 (not every month
+ * is operating a book).
+ */
+export function seedCareer(s: GameState, ageYrs: number): CareerLog {
+  const years = Math.max(0, ageYrs - 22);
+  const months = Math.round(years * 12 * 0.55);
+  const log = emptyCareer();
+  if (months <= 0) return log;
+  const primary = CAREER_CLASSES[Math.floor(prng(s) * CAREER_CLASSES.length) % CAREER_CLASSES.length];
+  const secondary = CAREER_CLASSES[Math.floor(prng(s) * CAREER_CLASSES.length) % CAREER_CLASSES.length];
+  log.classM[primary] = Math.round(months * (primary === secondary ? 1 : 0.7));
+  if (primary !== secondary) log.classM[secondary] = Math.round(months * 0.3);
+  // 2–4 districts share the primary book.
+  const nDist = 2 + Math.floor(prng(s) * 3);
+  for (let i = 0; i < nDist; i++) {
+    const d = `d${Math.floor(prng(s) * 40)}`;
+    log.districtM[d] = (log.districtM[d] ?? 0) + Math.round(months / nDist);
+  }
+  return log;
+}
+
+/**
+ * 0 = stranger, 1 = deep specialist. Exponential saturation — ~36 months in
+ * class and ~24 in district approaches competent; never a purchased max.
+ */
+export function familiarity(
+  career: CareerLog | undefined,
+  cls: string,
+  district: string,
+): number {
+  if (!career) return 0.5; // unset → neutral (staff harness / legacy)
+  const hasExposure = Object.values(career.classM).some((m) => (m ?? 0) > 0)
+    || Object.values(career.districtM).some((m) => (m ?? 0) > 0);
+  if (!hasExposure) return 0.5;
+  const cM = career.classM[cls as CareerClass] ?? 0;
+  const dM = career.districtM[district] ?? 0;
+  const classFit = 1 - Math.exp(-cM / 36);
+  const distFit = 1 - Math.exp(-dM / 24);
+  return Math.min(1, 0.55 * classFit + 0.45 * distFit);
+}
+
+/**
+ * CAPACITY axis — unfamiliar work costs more desk per foot. Range centred so
+ * a seeded mid-career generalist ≈ 1.0: novice 1.15, specialist 0.85.
+ * Never multiplies rent, opex, or price — only how much load a building is.
+ */
+export function careerLoadMult(
+  career: CareerLog | undefined,
+  cls: string,
+  district: string,
+): number {
+  const f = familiarity(career, cls, district);
+  return 1.15 - 0.30 * f;
+}
+
+export function topCareerLines(career: CareerLog | undefined, n = 2): string[] {
+  if (!career) return [];
+  const classes = Object.entries(career.classM)
+    .filter(([, m]) => (m ?? 0) > 6)
+    .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+    .slice(0, n)
+    .map(([c, m]) => `${c} (${Math.round((m ?? 0) / 12)}y)`);
+  return classes;
+}
+
+export function accrueCareer(
+  career: CareerLog,
+  cls: string,
+  district: string,
+  months = 1,
+): void {
+  const c = (CAREER_CLASSES as string[]).includes(cls) || cls === "land" ? cls as CareerClass : null;
+  if (c) career.classM[c] = (career.classM[c] ?? 0) + months;
+  if (district) career.districtM[district] = (career.districtM[district] ?? 0) + months;
+}
+
+function ensureCareer(s: GameState, p: Person): CareerLog {
+  if (!p.career) p.career = seedCareer(s, ageYears(p, s.month));
+  return p.career;
+}
+
+/**
+ * Earn competence by operating — one month of exposure per building on the
+ * person's book (assigned staff) or on the float (principal). peopleRng is
+ * NOT stepped here; accrual is deterministic from the book.
+ */
+export function tickCareers(s: GameState, parcels: ParcelTable): void {
+  if (s.principal) ensureCareer(s, s.principal);
+  for (const st of s.staff ?? []) {
+    const person = st as Person & { role?: string; assignedBbls?: string[] };
+    if (!person.career) {
+      stampEmployeeLife(s, st as { bornM?: number; diesM?: number; career?: CareerLog; hiredM?: number });
+    }
+    const career = (st as { career?: CareerLog }).career ?? emptyCareer();
+    (st as { career?: CareerLog }).career = career;
+    for (const bbl of st.assignedBbls ?? []) {
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec) continue;
+      accrueCareer(career, rec.class, rec.district ?? "—", 1);
+    }
+  }
+  // Principal earns on every operated holding nobody else is pinned to for PM
+  // (the float). Construction/leasing specialisation lands with the hire.
+  if (s.principal) {
+    const pinned = new Set<string>();
+    for (const st of s.staff ?? []) {
+      for (const bbl of st.assignedBbls ?? []) pinned.add(bbl);
+    }
+    const career = ensureCareer(s, s.principal);
+    for (const bbl of Object.keys(s.holdings)) {
+      if (pinned.has(bbl)) continue;
+      const h = s.holdings[bbl];
+      if (!h || h.groundLeased) continue;
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec) continue;
+      accrueCareer(career, rec.class, rec.district ?? "—", 1);
+    }
+  }
+}
+
+/**
+ * Rival principals whose diesM has arrived — estate sales via reason:"estate",
+ * heir takes the seat, player–firm StreetTie clears (relationships attach to
+ * the person). Uses peopleRng for ask noise ONLY — never s.rng.
+ *
+ * Iteration order: sorted firm ids so draw count does not depend on object
+ * key insertion order when several die the same month.
+ */
+export function tickRivalMortality(s: GameState, parcels: ParcelTable): void {
+  const ids = Object.keys(s.rivalPrincipals ?? {}).sort();
+  for (const firmId of ids) {
+    const p = s.rivalPrincipals![firmId];
+    if (!p || p.seat !== "rival") continue;
+    if (p.diedM !== undefined) continue;
+    if (p.diesM === undefined || s.month < p.diesM) continue;
+    p.diedM = s.month;
+    beginRivalEstate(s, parcels, firmId, p);
+  }
+}
+
+function beginRivalEstate(
+  s: GameState,
+  parcels: ParcelTable,
+  firmId: string,
+  dead: Person,
+): void {
+  const r = (s.rivals ?? []).find((x) => x.id === firmId);
+  if (!r || r.failedM !== undefined) return;
+
+  // Relationships attached to the person — the firm's street file was theirs.
+  if (s.street?.[firmId]) delete s.street[firmId];
+
+  const book = r.bbls.filter(
+    (bbl) => !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl),
+  );
+  // Estates do not dump the whole book on a Tuesday — same six-at-a-time
+  // discipline as owners.tickHolders.
+  const take = Math.min(6, book.length);
+  let listed = 0;
+  for (let i = 0; i < take; i++) {
+    const bbl = book[i];
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const v = assetValue(rec, s.econ, initialCondition(rec));
+    if (v <= 0) continue;
+    // peopleRng — estate pricing must not re-roll the century.
+    const haircut = 0.78 + prng(s) * 0.15;
+    const ask = Math.round((v * haircut) / 1000) * 1000;
+    s.listings.push({
+      bbl,
+      ask,
+      listedM: s.month,
+      expiresM: s.month + 9, // estate filing clock — nine months (calibrated)
+      distress: true,
+      sellerId: r.id,
+      reason: "estate",
+    });
+    listed++;
+  }
+
+  // Heir continues the firm — younger, thin on relationships, keeps the book.
+  const heirAge = Math.round(prrange(s, 28, 48));
+  const heir = makeRivalPrincipal(s, firmId, r.name, heirAge);
+  s.rivalPrincipals![firmId] = heir;
+
+  const age = ageYears(dead, s.month);
+  s.news.unshift({
+    q: s.month,
+    kind: "event",
+    text: listed > 0
+      ? `${dead.name} of ${r.name} has died at ${age}. The estate is listing ${listed} building${listed === 1 ? "" : "s"}; ${heir.name} takes the firm.`
+      : `${dead.name} of ${r.name} has died at ${age}. ${heir.name} inherits a book with nothing left to put on the tape.`,
+  });
+}
+
+/** Monthly people tick — careers then rival mortality. Player death is Phase 5. */
+export function tickPeople(s: GameState, parcels: ParcelTable): void {
+  tickCareers(s, parcels);
+  tickRivalMortality(s, parcels);
+}

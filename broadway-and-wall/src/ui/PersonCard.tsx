@@ -9,7 +9,7 @@
  */
 import type { GameState } from "@/engine/types";
 import {
-  ageYears, birthYear, ATTR_LABEL_PERSON, GENERAL_PERSON_ATTRS,
+  ageYears, birthYear, ATTR_LABEL_PERSON, GENERAL_PERSON_ATTRS, topCareerLines,
   type Person,
 } from "@/engine/people";
 
@@ -47,6 +47,12 @@ export function PersonCard({
         )}
         {person.seat === "rival" && (
           <Row k="Seat" v="Operating principal" />
+        )}
+        {topCareerLines(person.career).length > 0 && (
+          <Row
+            k="Knows"
+            v={topCareerLines(person.career).join(" · ")}
+          />
         )}
       </div>
       {showAttrs && person.seat === "you" ? (

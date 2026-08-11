@@ -49,6 +49,7 @@
     "report:strict": "ACCEPT_STRICT=1 node test/econ-accept.mjs && ACCEPT_STRICT=1 node test/sim-accept.mjs && ACCEPT_STRICT=1 CITY_SEEDS=1 node test/city-accept.mjs",
     "brokercall": "node test/brokercall.mjs",
     "staff": "node test/staff.mjs",
+    "principal": "node test/principal-phase12.mjs && node test/principal-mortality.mjs",
     "rates": "node test/rate-stress.mjs",
     "audit": "node tools/econaudit.mjs",
     "quality": "node tools/qualitytest.mjs",

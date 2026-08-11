@@ -52,7 +52,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
-import { stampEmployeeLife, type Person } from "./people";
+import { careerLoadMult, stampEmployeeLife, type Person } from "./people";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -450,7 +450,14 @@ function stateOf(capacity: number, covered: number, skill: number): RoleState {
 export function personRoleState(s: GameState, parcels: ParcelTable, st: Staff): RoleState {
   const capacity = personCapacitySf(s, st);
   let covered = 0;
-  for (const bbl of st.assignedBbls ?? []) covered += workSfAt(s, parcels, bbl, st.role);
+  for (const bbl of st.assignedBbls ?? []) {
+    const w = workSfAt(s, parcels, bbl, st.role);
+    const rec = resolveRec(parcels, s, bbl);
+    const mult = rec
+      ? careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+      : 1;
+    covered += w * mult;
+  }
   const keys = skillKeys(st.role);
   const skill = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
   return stateOf(capacity, covered, skill);
@@ -475,10 +482,24 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
   let covered = 0;
   let uncoveredSf = 0;
   let uncoveredN = 0;
+  // Float load: each floater's career weights their share; owner uses principal.
+  const ownerCareer = s.principal?.career;
   for (const bbl of deskAssetBbls(s, parcels, role)) {
     if (pinned.has(bbl)) continue;
     const w = workSfAt(s, parcels, bbl, role);
-    covered += w;
+    const rec = resolveRec(parcels, s, bbl);
+    let mult = 1;
+    if (rec) {
+      if (floaters.length) {
+        // Average floater familiarity — the float desk is a shared beat.
+        mult = floaters.reduce((a, st) => (
+          a + careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+        ), 0) / floaters.length;
+      } else {
+        mult = careerLoadMult(ownerCareer, rec.class, rec.district ?? "—");
+      }
+    }
+    covered += w * mult;
     // Uncovered = on the float with ZERO hired float capacity (owner only still counts as cover).
     if (!floaters.length && hired.length > 0 && hired.every((st) => !isFloatStaff(st))) {
       uncoveredSf += w;

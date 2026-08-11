@@ -113,6 +113,9 @@ function qxAt(age: number): number {
  * Draw the death month ONCE. One uniform from peopleRng; invert residual
  * lifetime from current age against the period table. Contract: exactly one
  * peopleRng step per call.
+ *
+ * Used for rivals, staff, and heirs-as-rivals. The player uses
+ * `drawPlayerDeathM` — a late-career band, not the open table.
  */
 export function drawDeathM(s: GameState, bornM: number, atMonth: number = s.month): number {
   const age0 = Math.max(18, (atMonth - bornM) / 12);
@@ -131,6 +134,28 @@ export function drawDeathM(s: GameState, bornM: number, atMonth: number = s.mont
     surv *= (1 - qx);
   }
   return Math.round(bornM + 110 * 12);
+}
+
+/**
+ * Player death age band. Succession is a late-career event — not mid-run.
+ * Inclusive bounds on calendar age at death. One peopleRng step.
+ */
+export const PLAYER_DEATH_AGE_LO = 70;
+export const PLAYER_DEATH_AGE_HI = 90;
+
+/**
+ * Draw the player principal's death month ONCE into [70, 90].
+ * Contract: exactly one peopleRng step per call — same discipline as drawDeathM.
+ * If the principal is already past the floor (should not happen on a fresh
+ * start), the band begins at next birthday so diesM stays in the future.
+ */
+export function drawPlayerDeathM(s: GameState, bornM: number, atMonth: number = s.month): number {
+  const ageNow = Math.max(0, (atMonth - bornM) / 12);
+  const lo = Math.max(PLAYER_DEATH_AGE_LO, ageNow + 1 / 12);
+  const hi = Math.max(lo, PLAYER_DEATH_AGE_HI);
+  const u = prng(s);
+  const age = lo + u * (hi - lo);
+  return Math.round(bornM + age * 12);
 }
 
 /** Calendar age in whole years at the current (or given) month. */
@@ -198,7 +223,7 @@ export function makePlayerPrincipal(s: GameState, ageYrs: number = DEFAULT_PRINC
     band0: 0,
     seat: "you",
   };
-  p.diesM = drawDeathM(s, bornM, s.month);
+  p.diesM = drawPlayerDeathM(s, bornM, s.month);
   p.career = seedCareer(s, ageYrs);
   return p;
 }
@@ -331,7 +356,14 @@ export function ensurePeople(s: GameState): void {
   if (!s.principal || s.principal.seat !== "you") {
     s.principal = makePlayerPrincipal(s, DEFAULT_PRINCIPAL_AGE);
   } else if (s.principal.diesM === undefined) {
-    s.principal.diesM = drawDeathM(s, s.principal.bornM, s.month);
+    s.principal.diesM = drawPlayerDeathM(s, s.principal.bornM, s.month);
+  } else {
+    // Clamp legacy / SSA-drawn player deaths into the product band so a save
+    // from before the floor does not kill at 55.
+    const deathAge = (s.principal.diesM - s.principal.bornM) / 12;
+    if (deathAge < PLAYER_DEATH_AGE_LO || deathAge > PLAYER_DEATH_AGE_HI) {
+      s.principal.diesM = drawPlayerDeathM(s, s.principal.bornM, s.month);
+    }
   }
   s.rivalPrincipals ??= {};
   for (const r of s.rivals ?? []) {

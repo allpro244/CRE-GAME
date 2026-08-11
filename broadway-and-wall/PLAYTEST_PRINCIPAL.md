@@ -41,8 +41,8 @@ Horizon for a human session ≈ **30–40 in-game years**.
 | First **rival principal** death | **~month 22 (~1.8y)** | **Yes** — early |
 | Estate disposition from that death | same month (listings + news) | **Yes** |
 | Private-holder “ESTATE” on Marketplace | only true estates | **Fixed in pre-flight** — was tagging all holder exits as `estate`; now `voluntary` unless holder kind is estate |
-| Player death @ $20M / age 52 | **~30y** (seeds 550991 / 11 / 22 ≈ **27y**) | **Barely** — use those seeds + Year click |
-| Player death @ $2.5M / age 35 | **~46y** | **No** in a short session |
+| Player death @ $20M / age 52 | death age **70–90** → **~18–38y** left | Late in a long sitting; Year-click |
+| Player death @ $2.5M / age 35 | death age **70–90** → **~35–55y** left | **No** in a short session |
 | Fund raise eligible | needs **2 clean exits** + institutional standing + non-crunch phase | **Only if you sell** — bot never got there in 50y |
 | Promote crystallises | after raise + distribute with pref current | After you raise |
 | Staff departure → founder bid | needs hire, tenure ≥24m, ability ≥72, poach roll | **Unlikely** in first session unless you staff up early and wait |
@@ -53,7 +53,7 @@ Horizon for a human session ≈ **30–40 in-game years**.
 ## Concrete setups (do these)
 
 1. **Succession inside a long sitting**  
-   Start **$20M / age 52**, seed **550991** (dies ~y27) or **11** (~y27) or **22** (~y28). Spam **Year** until the death news. Confirm: heir seated, phone book wiped, bench stays, Advance still works, estate bill on Staff → you.
+   Start **$20M / age 52**. Death age is drawn in **70–90**, so you have roughly **18–38 years**. Spam **Year** until the death news. Confirm: heir seated, phone book wiped, bench stays, Advance still works, estate bill on Staff → you.
 
 2. **Rival estate on the tape early**  
    Same or any seed. By **year 2** you should see a *named* death in News and distressed listings. On Marketplace, prefer rows that follow a death headline — not every “ESTATE” badge (that badge was polluted; fix lands with this pre-flight).

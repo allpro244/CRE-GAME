@@ -14,8 +14,8 @@ import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import {
-  groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, mergeCost, siteDeeds, siteLotArea,
-  contiguousOwnedRoots, hasOwnedSiteNeighbor,
+  groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
+  mergeCost, siteDeeds, siteLotArea, contiguousOwnedRoots, hasOwnedSiteNeighbor,
 } from "@/engine/actions";
 import type { GroundReview } from "@/engine/types";
 import { varianceQuote } from "@/engine/zoning";
@@ -487,7 +487,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const focus = useStore((s) => s.focus);
   const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
-  const [years, setYears] = useState(60);
+  const [years, setYears] = useState(GROUND_TOWER_TERM_MIN);
   const [review, setReview] = useState<GroundReview>("fixed");
   const [farMultiple, setFarMultiple] = useState(1.5);
   // Hooks before any return — assemble candidates are gated to a cheap
@@ -797,8 +797,8 @@ export function LandDesk({ bbl }: { bbl: string }) {
               <span className="slider-label">Term</span>
               <span className="slider-value">{years} years</span>
             </div>
-            <input type="range" min={30} max={99} step={1} value={years}
-              style={{ ["--fill" as string]: `${((years - 30) / 69) * 100}%` }}
+            <input type="range" min={GROUND_TERM_MIN} max={99} step={1} value={years}
+              style={{ ["--fill" as string]: `${((years - GROUND_TERM_MIN) / (99 - GROUND_TERM_MIN)) * 100}%` }}
               onChange={(e) => setYears(Number(e.target.value))} />
           </div>
           <div className="grid">
@@ -809,12 +809,14 @@ export function LandDesk({ bbl }: { bbl: string }) {
             <Row k="Brokerage + legal at signing" v="$0 to you · lessee pays" />
             <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
             <Row k="Reviews" v={q.reviewNote} />
-            <Row k="Land + bones back" v={monthLabel(game.month + years * 12)} />
+            <Row k="At term" v={q.padOnly
+              ? "Dirt back — bones only if you fund a leasehold buyout"
+              : `Aged vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
           </div>
           <div className="hint">
-            This desk offers an absolutely-net form: no owner signing cheque and no property-level expenses after
-            closing. You do not build on this corner for {years} years. FMV opens cheaper and places slower; fixed
-            opens dearer and places faster. The dirt costs carry only while the offer is waiting.
+            Absolutely-net form: no owner signing cheque and no property-level expenses after closing.
+            {" "}{q.termNote} FMV opens cheaper and places slower; fixed opens dearer and places faster.
+            The dirt costs carry only while the offer is waiting.
           </div>
           <button className="btn" onClick={() => groundLease(bbl, years, review)}>
             Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease

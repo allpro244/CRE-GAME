@@ -14,7 +14,7 @@ import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing"
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
 import { originate, quote, productById, prepayPenalty, stabViewFor } from "./debt";
-import { takeoverDevelopment, buildClimate, farMaxFor } from "./dev";
+import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
@@ -638,6 +638,22 @@ export const GROUND_REVIEW_LABEL: Record<GroundReview, string> = {
 };
 
 /**
+ * HOW LONG A GROUND LEASE HAS TO BE.
+ *
+ * Pads (shops, storage, dealerships) clear from 49 years — still a generation,
+ * not a construction loan horizon. Full office / multifamily towers need 75+,
+ * which is what leasehold lenders actually underwrite. Shorter paper used to
+ * plant a max-FAR tower on $2M of dirt and hand the bones back for free.
+ */
+export const GROUND_TERM_MIN = 49;
+/** Minimum term before a tower-scale lessee program is allowed. */
+export const GROUND_TOWER_TERM_MIN = 75;
+
+function isTowerGroundUse(use: BuiltClass): boolean {
+  return use === "office" || use === "multifamily";
+}
+
+/**
  * THE FEE OWNER'S CASH FLOW ON AN ABSOLUTELY-NET GROUND LEASE.
  *
  * This game's form puts every property-level and transaction-level obligation
@@ -665,6 +681,7 @@ export function groundLeaseQuote(
   const raw = parcels[bbl];
   if (!raw || raw.class !== "land" || (raw.bldgArea ?? 0) > 0) return null;
   if ((s.built?.[bbl]?.bldgArea ?? 0) > 0) return null;
+  if (years < GROUND_TERM_MIN) return null;
   const bare = bareLandRec(parcels, s, bbl);
   if (!bare || !bare.lotArea) return null;
   const land = landValue(bare, s.econ);
@@ -672,22 +689,45 @@ export function groundLeaseQuote(
   // less starting rent (more optionality for the lessee). Review structure
   // moves the opening coupon the way the market does: FMV is cheapest to the
   // lessee up front (and hardest to place), fixed is dearest.
-  const termMult = years >= 75 ? 0.9 : years >= 50 ? 0.96 : 1.04;
+  //
+  // RESIDUAL IN THE COUPON. Paper short of tower term leaves a valuable
+  // reversion cliff the old quote never priced — a few land-yield points for
+  // thirty years, then a free building. Compress that cliff into a higher
+  // opening coupon and a harder place rate so short pad leases still clear
+  // and mispriced short tower paper mostly does not.
+  const termMult = years >= GROUND_TOWER_TERM_MIN ? 0.9
+    : years >= 60 ? 1.02
+    : 1.12;
+  const residualPremium = years >= GROUND_TOWER_TERM_MIN ? 1
+    : 1 + 0.55 * ((GROUND_TOWER_TERM_MIN - years) / (GROUND_TOWER_TERM_MIN - GROUND_TERM_MIN));
   const reviewMult = review === "fmv" ? 0.88 : review === "cpi" ? 0.95 : 1.0;
-  const takeMult = review === "fmv" ? 0.55 : review === "cpi" ? 0.85 : 1.0;
-  const capPct = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * termMult * reviewMult;
+  let takeMult = review === "fmv" ? 0.55 : review === "cpi" ? 0.85 : 1.0;
+  if (years < GROUND_TOWER_TERM_MIN) {
+    takeMult *= 0.45 + 0.55 * ((years - GROUND_TERM_MIN) / (GROUND_TOWER_TERM_MIN - GROUND_TERM_MIN));
+  }
+  const capPct = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * termMult * reviewMult * residualPremium;
   const rentYr = Math.round(land * (capPct / 100));
-  const stepPct = review === "fixed" ? (years >= 75 ? 12 : 10) : 0;
+  // Short fixed paper steps harder — two polite +10%s over a pad life never
+  // tracked the residual the fee owner was giving up.
+  const stepPct = review === "fixed"
+    ? (years >= GROUND_TOWER_TERM_MIN ? 12 : years >= 60 ? 14 : 16)
+    : 0;
   const stepEveryM = review === "fixed" ? 120 : review === "cpi" ? 12 : 240;
+  const padOnly = years < GROUND_TOWER_TERM_MIN;
   return {
     land, rentYr, capPct: +capPct.toFixed(2), years, review,
     stepPct, stepEveryM, takeMult, fmvCapPct: 3.5,
+    /** Shorter than tower term: only pad uses will take. */
+    padOnly,
     cashFlow: groundLeaseExpenseBreakdown(rentYr),
     reviewNote: review === "fixed"
       ? `+${stepPct}% every ten years — the leasehold lender's favourite`
       : review === "cpi"
         ? "Annual CPI (2% floor, 4% cap) — you keep up with inflation, not with the corner"
         : "FMV reset every 20 years, capped at 3.5%/yr compounded from day one — you share the land's appreciation",
+    termNote: padOnly
+      ? `Under ${GROUND_TOWER_TERM_MIN} years: pads only (shops, storage, dealerships). Towers need a longer lease — and at term the bones do not come free.`
+      : `${GROUND_TOWER_TERM_MIN}+ years: a tower can rise, and the aged improvement reverts with the dirt.`,
   };
 }
 
@@ -714,13 +754,24 @@ export function offerGroundLease(
   if (s.facility?.bbls?.includes(bbl)) {
     return { s, err: "Release it from the facility first — the line is secured by vacant dirt, not a leased fee." };
   }
-  const q = groundLeaseQuote(s, parcels, bbl, years, review);
+  const term = Math.round(years);
+  if (term < GROUND_TERM_MIN) {
+    return {
+      s,
+      err: `A ground lease has to run at least ${GROUND_TERM_MIN} years — shorter paper is a construction loan, not a ground lease.`,
+    };
+  }
+  const q = groundLeaseQuote(s, parcels, bbl, term, review);
   if (!q || q.rentYr <= 0) return { s, err: "Nobody will ground-lease that." };
   const next = clone(s);
-  next.holdings[bbl].groundOffer = { years, sinceM: next.month, review };
+  next.holdings[bbl].groundOffer = { years: term, sinceM: next.month, review };
   return {
     s: next,
-    msg: `Offered a ${years}-year ground lease (${GROUND_REVIEW_LABEL[review]}). Now you wait for somebody who wants this corner that badly.`,
+    msg: `Offered a ${term}-year ground lease (${GROUND_REVIEW_LABEL[review]})`
+      + (q.padOnly
+        ? ` — pads only until year ${GROUND_TOWER_TERM_MIN}; the bones will not revert for free.`
+        : ` — long enough for a tower, and the aged improvement comes back with the dirt.`)
+      + ` Now you wait for somebody who wants this corner that badly.`,
   };
 }
 
@@ -766,14 +817,18 @@ const GROUND_TENANTS: { name: string; use: BuiltClass; lead: "fast" | "mid" | "s
   { name: "a university", use: "office", lead: "slow" },
 ];
 
-/** Weight lessees by whether their product fits the envelope, not a flat draw. */
-function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string) {
+/** Weight lessees by whether their product fits the envelope and the term. */
+function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string, years: number) {
   const bare = bareLandRec(parcels, s, bbl);
   const far = bare ? farMaxFor(bare) : 3;
   const demand = parcels[bbl]?.demandScore ?? 50;
+  const padOnly = years < GROUND_TOWER_TERM_MIN;
   let total = 0;
   const weights = GROUND_TENANTS.map((t) => {
     let w = 1;
+    // Short paper: shops and sheds only. Hotels / hospitals / universities
+    // need a leasehold a lender will amortise — that is the tower floor.
+    if (padOnly && isTowerGroundUse(t.use)) w = 0;
     if (t.use === "industrial") w *= far > 6 ? 0.25 : far > 3.5 ? 0.55 : 1.15;
     if (t.use === "retail") w *= far > 8 ? 0.35 : demand < 35 ? 0.55 : 1.1;
     if (t.use === "office") w *= far < 2 ? 0.35 : far >= 4 ? 1.15 : 0.9;
@@ -784,6 +839,10 @@ function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string) {
     total += w;
     return w;
   });
+  if (total <= 0) {
+    // Degenerate lot under a short term — force a pad use that can still build.
+    return GROUND_TENANTS.find((t) => t.use === "retail" || t.use === "industrial") ?? GROUND_TENANTS[1]!;
+  }
   let r = rng(s, "sales") * Math.max(1e-9, total);
   for (let i = 0; i < GROUND_TENANTS.length; i++) {
     r -= weights[i]!;
@@ -792,18 +851,51 @@ function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string) {
   return GROUND_TENANTS[GROUND_TENANTS.length - 1]!;
 }
 
-function lesseeProgram(s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow") {
+function lesseeProgram(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow", years: number,
+) {
   const bare = bareLandRec(parcels, s, bbl);
   if (!bare || !bare.lotArea) return null;
+  // Tower programs refuse short paper — caller should have filtered, but belt.
+  if (years < GROUND_TOWER_TERM_MIN && isTowerGroundUse(use)) return null;
   const far = farMaxFor(bare);
   const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
   const floors = Math.max(1, Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
     Math.ceil(far / Math.max(0.08, cov))));
-  const sf = Math.max(4000, Math.round((bare.lotArea * cov * floors) / 100) * 100);
+  // SAME ENVELOPE CAP AS PLAYER DEVELOPMENT. Coverage × floors used to overrun
+  // legal FAR whenever the top storey was a partial plate — the lessee planted
+  // a bigger building than zoning allowed. Cap gross area at lot × FAR.
+  const envelope = bare.lotArea * far;
+  const sf = Math.max(4000, Math.round(Math.min(bare.lotArea * cov * floors, envelope) / 100) * 100);
   const [bLo, bHi] = BUILD_MONTHS[use];
   const stretch = lead === "slow" ? 1.2 : lead === "mid" ? 1.05 : 1;
   const months = Math.round((bLo + rng(s, "dev") * (bHi - bLo)) * stretch);
   return { sf, floors, months, use };
+}
+
+/**
+ * What it costs the fee owner to TAKE the leasehold improvement on short paper.
+ * Depreciated replacement, haircut for leasehold buyout — not a free skyline.
+ */
+export function groundLeaseImprovementBuyout(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  standing: { class: BuiltClass; bldgArea: number; floors: number; yearBuilt: number; mix?: ParcelRecord["mix"] },
+): number {
+  const raw = parcels[bbl];
+  if (!raw || standing.bldgArea <= 0) return 0;
+  const asRec = { ...raw, ...standing, yearBuilt: standing.yearBuilt };
+  const repl = replacementCost(asRec, s.econ);
+  const ageYrs = Math.max(0, START_YEAR + Math.floor(s.month / 12) - standing.yearBuilt);
+  const life = standing.class === "industrial" ? 40 : standing.class === "retail" ? 35 : 50;
+  const remaining = Math.max(0.18, 1 - ageYrs / life);
+  // Leasehold buyout, not a freehold construction invoice.
+  return Math.max(0, Math.round(repl * remaining * 0.55));
+}
+
+/** Long paper earns free reversion; shorter paper does not. */
+export function groundLeaseFreeReversion(gl: GroundLease): boolean {
+  const years = (gl.endM - gl.startM) / 12;
+  return years + 1e-6 >= GROUND_TOWER_TERM_MIN;
 }
 
 function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, floors: number, months: number) {
@@ -844,13 +936,12 @@ function revertLesseeImprovement(
 }
 
 /**
- * TERMINATE A DEFAULTED GROUND LEASE AND HAND THE WHOLE PROPERTY BACK.
+ * TERMINATE A DEFAULTED GROUND LEASE.
  *
- * A ground lease is secured by the leasehold improvement. On an uncured
- * default the fee owner does not become a partial landlord: the lease ends,
- * the ground rent stops, and the dirt plus every standing improvement reverts.
- * The building arrives vacant because the operator — not the fee owner — had
- * the occupancy contracts.
+ * Long paper (≥75y): the leasehold is the fee owner's security — dirt and
+ * standing bones revert vacant, free. Short paper: default is not a free
+ * tower. Mid-build always clears to dirt. Opened short leases clear the
+ * improvement unless the fee owner can fund a leasehold buyout this month.
  */
 export function defaultGroundLease(
   s: GameState, parcels: ParcelTable, bbl: string,
@@ -862,6 +953,7 @@ export function defaultGroundLease(
   const address = parcels[bbl]?.address ?? bbl;
   const duringBuild = gl.builtM === undefined
     && (s.cityJobs ?? []).some((j) => j.bbl === bbl && j.groundLease);
+  const freeBones = groundLeaseFreeReversion(gl);
 
   delete s.groundLeases![bbl];
   if (s.groundLeases && !Object.keys(s.groundLeases).length) delete s.groundLeases;
@@ -872,21 +964,62 @@ export function defaultGroundLease(
   cancelSupplyProject(s, bbl);
 
   if (standing && standing.bldgArea > 0) {
-    revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
-    recordPropertyEvent(s, bbl, {
-      kind: "default",
-      party: gl.tenant,
-      outcome: `Ground lease terminated; ${Math.round(standing.bldgArea).toLocaleString()} sf improvement reverted vacant`,
-    });
-    raiseAlert(s, {
-      kind: "ground",
-      tone: "bad",
-      title: `${gl.tenant} defaulted at ${address}`,
-      body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
-        + `${standing.floors}-floor ${standing.class} building standing on it — no consent, buyout or waiting period.`,
-      detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant`
-        + ` (${standing.yearBuilt} building). It is now yours to operate, lease, finance, sell or redevelop.`,
-    });
+    if (freeBones) {
+      revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
+      recordPropertyEvent(s, bbl, {
+        kind: "default",
+        party: gl.tenant,
+        outcome: `Ground lease terminated; ${Math.round(standing.bldgArea).toLocaleString()} sf improvement reverted vacant`,
+      });
+      raiseAlert(s, {
+        kind: "ground",
+        tone: "bad",
+        title: `${gl.tenant} defaulted at ${address}`,
+        body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
+          + `${standing.floors}-floor ${standing.class} building standing on it — that is what long paper secured.`,
+        detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant`
+          + ` (${standing.yearBuilt} building). It is now yours to operate, lease, finance, sell or redevelop.`,
+      });
+    } else {
+      const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
+      if (buyout > 0 && s.cash >= buyout) {
+        s.cash -= buyout;
+        logBooks(s, "bought", buyout);
+        revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
+        recordPropertyEvent(s, bbl, {
+          kind: "default",
+          party: gl.tenant,
+          outcome: `Short ground lease terminated; paid ${Math.round(buyout).toLocaleString()} leasehold buyout for vacant shell`,
+        });
+        raiseAlert(s, {
+          kind: "ground",
+          tone: "bad",
+          title: `${gl.tenant} defaulted at ${address}`,
+          body: `Short ground paper does not gift the tower. You funded a $${(buyout / 1e6).toFixed(2)}M leasehold buyout `
+            + `and took the ${standing.floors}-floor ${standing.class} vacant.`,
+          detail: `${Math.round(standing.bldgArea).toLocaleString()} sf at depreciated replacement — the residual was never free on this term.`,
+        });
+      } else {
+        delete s.built[bbl];
+        recordPropertyEvent(s, bbl, {
+          kind: "default",
+          party: gl.tenant,
+          outcome: buyout > 0
+            ? `Short ground lease terminated; improvement cleared (buyout $${Math.round(buyout).toLocaleString()} unaffordable)`
+            : "Short ground lease terminated; improvement cleared",
+        });
+        raiseAlert(s, {
+          kind: "ground",
+          tone: "bad",
+          title: `${gl.tenant} defaulted at ${address}`,
+          body: buyout > 0
+            ? `The ground rent has stopped. Short paper does not hand you the building — a $${(buyout / 1e6).toFixed(2)}M `
+              + `leasehold buyout was due and you could not fund it, so the improvement is gone and the vacant site is yours.`
+            : "The ground rent has stopped. Short paper does not hand you the building — the vacant site is yours.",
+          detail: "Carry resumes on dirt. Offer a longer ground lease next time if you want the reversion.",
+        });
+      }
+    }
   } else {
     if (s.built?.[bbl]) delete s.built[bbl];
     recordPropertyEvent(s, bbl, {
@@ -992,8 +1125,8 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     const climate = buildClimate(s);
     const p = Math.min(0.14, (0.006 + 0.075 * (demandNow(s, rec) / 100) * climate) * q.takeMult);
     if (rng(s, "sales") >= p) continue;
-    const who = pickGroundTenant(s, parcels, h.bbl);
-    const prog = lesseeProgram(s, parcels, h.bbl, who.use, who.lead);
+    const who = pickGroundTenant(s, parcels, h.bbl, offer.years);
+    const prog = lesseeProgram(s, parcels, h.bbl, who.use, who.lead, offer.years);
     if (!prog) continue;
     delete h.groundOffer;
     h.groundLeased = true;
@@ -1051,15 +1184,45 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
       cancelSupplyProject(s, bbl);
       const standing = s.built?.[bbl];
       if (standing && standing.bldgArea > 0) {
-        revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
         const ageYrs = Math.max(0, START_YEAR + Math.floor(s.month / 12) - standing.yearBuilt);
-        s.news.unshift({
-          q: s.month, kind: "event",
-          text: `The ground lease at ${rec?.address ?? bbl} has run out. `
-            + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf`
-            + (ageYrs >= 1 ? `, ${ageYrs}-year-old` : "")
-            + `) revert with the land — vacant, and yours to let.`,
-        });
+        if (groundLeaseFreeReversion(gl)) {
+          // Long paper: aged vacant reversion — the ground-lease fantasy.
+          revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
+          s.news.unshift({
+            q: s.month, kind: "event",
+            text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+              + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf`
+              + (ageYrs >= 1 ? `, ${ageYrs}-year-old` : "")
+              + `) revert with the land — vacant, and yours to let.`,
+          });
+        } else {
+          // Short paper: residual is not a gift. Fund the leasehold buyout or
+          // the improvement clears and you get the dirt back alone.
+          const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
+          if (buyout > 0 && s.cash >= buyout) {
+            s.cash -= buyout;
+            logBooks(s, "bought", buyout);
+            revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
+            s.news.unshift({
+              q: s.month, kind: "event",
+              text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+                + `Short paper — you paid $${(buyout / 1e6).toFixed(2)}M for the leasehold and took `
+                + `${standing.floors} floors of ${standing.class} vacant`
+                + (ageYrs >= 1 ? ` (${ageYrs}-year-old)` : "")
+                + `.`,
+            });
+          } else {
+            delete s.built[bbl];
+            s.news.unshift({
+              q: s.month, kind: "event",
+              text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+                + (buyout > 0
+                  ? `Short paper does not gift the building — a $${(buyout / 1e6).toFixed(2)}M leasehold buyout `
+                    + `went unfunded, so the improvement is gone and the vacant land is yours again.`
+                  : `Short paper does not gift the building — the vacant land is yours again.`),
+            });
+          }
+        }
       } else {
         if (s.built?.[bbl]) delete s.built[bbl];
         s.news.unshift({

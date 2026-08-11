@@ -28,6 +28,18 @@ Phase 3.1+ is one rail per PR, measured before/after.
 
 Harness: `pnpm cycle-dev` · Gate: `pnpm gate` green on branch.
 
+## Phase 3.2 — Dev boost + lease-up clamps retired ✅
+
+**Change:** `dev.ts` — construction advance boost uses `tanh` saturation; lease-up duration uses logistic curve (no `clamp()` at those sites).
+
+| Site | Before | After |
+|------|--------|-------|
+| `dev:197` boost | 73% at ceiling | **Not load-bearing** (removed clamp) |
+| `dev:895` leaseUpMarket | 50% at floor | **Not load-bearing** (removed clamp) |
+| Order-book pick | `[0.33,2.5]` clamp (historical) | `startOwed` weights only |
+
+Harness: `pnpm orderbook` · `pnpm mixmatch` for full report.
+
 ## Top load-bearing clamps (remaining)
 
 These bind often enough that the number in code may not be the number doing the work.

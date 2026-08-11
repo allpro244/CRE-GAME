@@ -193,8 +193,10 @@ function constructionSpaceTight(e: Econ, mix: UseMix): number {
     const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
     const gap = vac - NATURAL_VAC[u]; // negative = tight
     const struct = e.structTight?.[u] ?? 0;
-    // Up to ~12% more advance when the class is short space; haircut in a glut.
-    const boost = clamp(1 - gap * 6 + struct * 1.4, 0.9, 1.12);
+    // Up to ~12% more advance when the class is short space; asymptotic cap
+    // replaces a hard rail that bound 73% of calls at 1.12 (pnpm rails).
+    const tightSignal = -gap * 6 + struct * 1.4;
+    const boost = Math.max(0.9, 1 + 0.12 * Math.tanh(tightSignal / 0.22));
     t += share * boost;
     w += share;
   }
@@ -892,10 +894,9 @@ export function planDevelopment(
   // budget. Structural unmet demand shortens the curve further: the looking
   // book is already there. Cap still 2× in a real glut.
   const struct = overMix(mix, (u) => s.econ.structTight?.[u] ?? 0);
-  const leaseUpMarket = clamp(
-    availability / Math.max(0.001, naturalAvailability) - struct * 2.2,
-    0.35, 2,
-  );
+  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
+  // Logistic curve to ~[0.35, 2] — the old clamp pinned the floor 50% of months.
+  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
   const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
   const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);

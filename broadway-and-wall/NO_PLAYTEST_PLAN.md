@@ -128,16 +128,14 @@ file:line, bind %, and proposed replacement.
 **Before:** `market:1527` bound 39.1% at ceiling (RAIL_AUDIT.md).  
 **After:** re-run `pnpm rails` + `pnpm cycle-dev` on branch.
 
-### 3.2 Development quota / `classAppetite` mirror rails
+### 3.2 Development quota / order-book pick ✅
 
-Historical fault: `e.starts` and `classAppetite` were the same formula (mirror,
-not mechanism). `useForZone` now reads order-book composition — verify the
-**pick clamp** at `dev.ts` ~2776 is not binding >2%.
+The `[0.33, 2.5]` pick clamp is gone — `useForZone` weights by `startOwed` only.
 
 | File | Change |
 |------|--------|
-| `src/engine/dev.ts` | Remove or widen clamp; ensure break composition reads `startOwed` only |
-| `test/devyield.mjs` or new `test/orderbook.mjs` | Composition responds to fills; no permanent class lock |
+| `test/orderbook.mjs` | **New** — composition r thresholds (subset of `mixmatch`) |
+| `src/engine/dev.ts` | Retire `dev:197` boost clamp + `dev:895` lease-up clamp (tanh/logistic) |
 
 ### 3.3 Vacancy gate (if instrumented name still exists)
 

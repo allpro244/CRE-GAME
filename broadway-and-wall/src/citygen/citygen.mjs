@@ -191,19 +191,6 @@ function erode(ring, dOf) {
   return r ? cleanRing(r) : null;
 }
 
-/**
- * The opposite of `erode`, and it needs its own function rather than a negative
- * distance: `erode` CLIPS, so it can only ever make a ring smaller — pass it a
- * negative and every half-plane lands outside the ring, nothing is cut, and it
- * hands back exactly what you gave it. That silently produced a park with no
- * apron ring around it and dropped map coverage two points, which is the one
- * fault this file exists to prevent.
- *
- * So: start from a box that certainly contains the result and clip it with the
- * ring's own half-planes pushed OUT by d. On a convex ring that is the mitered
- * offset — the same thing `rect(w + 2d, h + 2d)` gives for a rectangle, which
- * is what this replaced.
- */
 function dilateConvex(ring, d) {
   const ccw = ringArea(ring) > 0;
   const [x0, y0, x1, y1] = bboxOfRing(ring);
@@ -428,15 +415,6 @@ export function generateCity(cfg) {
   // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
   // kerb rather than turf painted to the reservation line.
   const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
-  // A PARK MAY CARRY ITS OWN SHAPE. `ring` is the drawn reservation, convex and
-  // in metres; `cx/cy/w/h/deg` remain its bounding box, because the amenity
-  // term and the station namer size a green off its area rather than its
-  // outline. Without a ring it is the rectangle it always was — which is still
-  // right for a formal square, and is what the harness fixtures carry.
-  //
-  // CONVEXITY IS LOAD-BEARING, not a stylistic choice: these rings go straight
-  // into insideFaces + subtractConvex, and that decomposition is what makes
-  // "the city has no holes" true. A concave park would silently drop blocks.
   const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
@@ -1117,148 +1095,16 @@ export function generateCity(cfg) {
     // on the industrial fringe, which is where the gaps actually are.
     return Math.min(0.88, Math.max(0.05, base * (DZ.vac ?? 1)));
   }
-  /**
-   * WHERE THE TOWN STARTED, so that it can be seen to have spread from there.
-   *
-   * 0 at the landing, 1 at the furthest dry ground from it. A port town's first
-   * core is where the first wharf was, and every one since has been built
-   * outward from it.
-   */
-  const FOUNDED = cfg.cores?.[0]?.xy ?? [0, 0];
-  const FOUND_MAX = (() => {
-    let m = 1;
-    for (const q of innerRing) m = Math.max(m, dist(FOUNDED, q));
-    return m;
-  })();
-  const growthRing = (p) => Math.min(1, dist(p, FOUNDED) / FOUND_MAX);
-
-  /**
-   * A CITY HAS RINGS IN IT, and this one had none.
-   *
-   * Year built was a draw from the district's flavour and nothing else — so a
-   * lot's age was a lookup on what the ground is FOR, with no memory of when
-   * the town got there. Measured, `corr(distance from centre, year built)` came
-   * out NEGATIVE, between -0.08 and -0.37: the further out you went, the older
-   * the fabric. Cities grow outward. That correlation should be positive and
-   * strong, and it is the single most legible piece of history a map carries —
-   * it is how you know at a glance which part of a town is the old part.
-   *
-   * `ring` biases WHICH END of the flavour's own range a lot lands in, rather
-   * than replacing it. That matters for a port: `industrial` spans 1915-1978
-   * whatever happens, so the working shore stays the working shore and simply
-   * records that the docks were extended outward over sixty years, which is
-   * what docks do. A district's character is still its flavour's; only its
-   * position within its own era now means something.
-   *
-   * 0.60 is the ring's share of the draw against the lot's own luck, and it was
-   * picked off a measured response rather than by eye. Within-district
-   * `corr(distance from the founding core, year built)` — the clean test,
-   * since it holds the flavour constant — against the ring's weight:
-   *
-   *     0.00   ~0.00   nothing. This is what it was.
-   *     0.45   ~0.15   reads as a gradient
-   *     0.60   ~0.20   reads, and the widest district hits 0.52
-   *     0.75   ~0.25   and the widest hits 0.75, which is too sorted:
-   *                    at that point a block is its own annual band and the
-   *                    fabric stops looking accumulated
-   *
-   * The criterion is the last line rather than the first. A city's age map is
-   * noisy — infill, fires, a speculator who bought six lots in 1928 — and a
-   * clean monotone ramp from the middle outward would be as wrong as no ramp
-   * at all, in the other direction.
-   */
-  const RING_W = 0.60;
-  /**
-   * AND IT IS CENTRED, which is not a detail — it is the same fault as the
-   * land multipliers in build.mjs, caught the same way.
-   *
-   * `growthRing` averages whatever it averages over a given island: the
-   * founding core sits where the first wharf was, which on most coasts is not
-   * the centre of the dry ground. Fed in raw, its mean is not 0.5, so it does
-   * not only tilt the age gradient — it moves the whole city's mean year
-   * built. Measured on the fixture, 2.6 years older across 810 buildings, and
-   * building age feeds condition, depreciation and rent, so a gradient
-   * silently became a citywide economy change.
-   *
-   * Centring on the town's own mean ring keeps E[u] at 0.5 exactly where it
-   * was, so the fabric is the same age it always was and only the ARRANGEMENT
-   * of ages has changed. Which is the whole and only thing this was for.
-   */
-  /**
-   * CENTRED ON THE LOTS, NOT ON A PROXY FOR THEM — and the draws stay put.
-   *
-   * `yearFor` runs once per LOT, so the mean that centres it has to be the
-   * mean over lots. Every cheap stand-in was measured and every one was worse
-   * than the block mean it replaced: one vote per block leaves -0.67 years
-   * across twelve towns, weighting by block AREA gives -0.78 (and -1.95 on the
-   * fixture, against -0.09), and weighting by lots-estimated-from-area gives
-   * -2.05. Area fails for exactly the reason the bias exists — the industrial
-   * edge has enormous blocks AND enormous lots — and the estimate inherits it.
-   *
-   * So it is not estimated. The two draws are consumed in the loop, in the
-   * same order and the same number as before, and only the ARITHMETIC that
-   * turns them into a year is deferred until every lot is known. That
-   * distinction is the whole design: moving the draws would move the RNG
-   * stream, which would move the lot lines, which would break every save.
-   * Nothing about the stream changes here.
-   *
-   * `yearbuilt` is written in exactly two places, both of them properties on
-   * features this function holds a reference to, so it can be filled in
-   * afterwards. If it ever gains a third reader inside the loop this has to go
-   * back to an estimate — the assertion below is what will catch that.
-   */
-  const pendingYears = [];
-  function yearFor(name, at) {
+  function yearFor(name) {
     const [a0, a1, p, b0, b1] = flavorOf(name).yr;
-    const u0 = rand();
-    const mode = rand() < p;
-    const rec = { name, ring: growthRing(at), u0, a0, a1, b0, b1, mode, year: 0 };
-    pendingYears.push(rec);
-    return rec;
-  }
-  /** Fill in every deferred year once the lot population is known. */
-  function settleYears() {
-    if (!pendingYears.length) return;
-    const mean = pendingYears.reduce((a, r) => a + r.ring, 0) / pendingYears.length;
-    for (const r of pendingYears) {
-      const ring = 0.5 + (r.ring - mean);
-      const u = Math.min(1, Math.max(0, r.u0 * (1 - RING_W) + ring * RING_W));
-      r.year = Math.round(r.mode ? r.a0 + (r.a1 - r.a0) * u : r.b0 + (r.b1 - r.b0) * u);
-      if (r.pf) r.pf.properties.yearbuilt = r.year;
-      if (r.bf) r.bf.properties.cnstrct_yr = r.year;
-    }
+    return Math.round(rand() < p ? rr(a0, a1) : rr(b0, b1));
   }
 
-  /** Metres to the nearest arterial — a seam or a boulevard; 0 if on one. */
   const corridorDist = (p) => {
     let best = Infinity;
     for (const r of DIAG_M) best = Math.min(best, inRing(p, r) ? 0 : distToRing(p, r));
     return Number.isFinite(best) ? best : 9999;
   };
-  /**
-   * Does this lot hold a corner of its own block?
-   *
-   * Lots exactly tile the block's inset ring, so every vertex of that ring is
-   * a corner of exactly one lot — AND THAT IS WHY THE OBVIOUS TEST IS WRONG.
-   * This asked `inRing(v, lotRing)`, a strict point-in-polygon, about a point
-   * that is a VERTEX of the very ring being tested. Point-in-polygon is
-   * undefined on the boundary: the answer comes back as ray-crossing parity
-   * against world +x, which is an artefact of which way the lot is turned.
-   *
-   * Measured on the fixture: 547 of 1,420 lots genuinely hold a block-ring
-   * vertex and the old test flagged 197 — a random 36% of the true corners.
-   * It also flagged 31 of the 35 full-block lots, where `lotRing IS blockRing`
-   * and the question being asked is "is this ring's own vertex inside itself".
-   *
-   * A vertex test is what was meant, so a vertex test is what it does.
-   * `splitConvex` carries coordinates through unchanged, so the match is exact
-   * to within float noise and the tolerance only says so out loud.
-   *
-   * A FULL-BLOCK LOT IS EXCLUDED. It holds every corner of its block and has
-   * frontage on all four sides, so "two frontages" describes it no better than
-   * it describes a roundabout — there is no mid-block neighbour for it to be
-   * worth more than.
-   */
   const cornerLot = (lotRing, blockRing) => lotRing !== blockRing
     && blockRing.some((v) => lotRing.some((q) => Math.abs(q[0] - v[0]) < 0.05 && Math.abs(q[1] - v[1]) < 0.05));
 
@@ -1314,28 +1160,6 @@ export function generateCity(cfg) {
     else splitLots(street, lotOptOf(d, heat), lots);
 
     let lotNo = 1;
-    // ---- THREE FACTS ABOUT A LOT THAT DECIDE WHAT IT IS WORTH ---------------
-    //
-    // The demand surface is built from gravity — stations, jobs, parks — and
-    // every one of those terms is an isotropic kernel around a point. Three of
-    // the most reliable facts in real estate are not shaped like that at all,
-    // and none of them was in the model:
-    //
-    //   THE WATER. This is a port town and the harbour was worth nothing. A
-    //   shoreline premium falls off perpendicular to the coast rather than
-    //   radially, which no sum of point kernels can produce.
-    //
-    //   THE CORRIDOR. An avenue and a mid-block side street differed only in
-    //   WIDTH. Retail follows the high street; a corner on the main road is a
-    //   different asset from the same building four hundred feet behind it.
-    //
-    //   THE CORNER. Two frontages, twice the display, and a real premium of
-    //   fifteen to forty per cent. "Which is the good corner" had no answer
-    //   beyond "closer to the middle of the blob".
-    //
-    // All three are geometry and all three are known here, at the moment the
-    // lot is cut, which is the honest place to measure them — build.mjs would
-    // have to reconstruct the block ring and the arterials to ask.
     const blockCorners = street;
     for (const lotRing of lots) {
       const areaM2 = polygonArea([lotRing]);
@@ -1348,8 +1172,7 @@ export function generateCity(cfg) {
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand);
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 
-      const yearRec = vacant ? null : yearFor(d, c);
-      const yearbuilt = 0;   // filled by settleYears once every lot is known
+      const yearbuilt = vacant ? 0 : yearFor(d);
       let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
       if (!vacant) {
         const fl = flavorOf(d);
@@ -1511,27 +1334,13 @@ export function generateCity(cfg) {
           lotarea: lotArea, bldgarea: bldgArea, numfloors: floors,
           yearbuilt, assessland, assesstot, unitsres,
           cd: cfg.district, district: d,
-          // metres to the water. Kept as the TRUE distance whatever the ground
-          // is used for, because topography and flooding will want it too;
-          // whether anybody pays for the view is `shoreamen`.
           shorem: Math.round(distToRing(c, innerRing)),
-          // A WORKING DOCK IS NOT A WATERFRONT. Nobody pays a premium to
-          // overlook a container yard — the industrial shore is where the
-          // town put the things it did not want to look at. Same water, and
-          // the opposite sign on the value.
           shoreamen: blkFl === FLAVOR.industrial ? 0 : 1,
-          // metres to the nearest arterial: the seams the plan reconciles
-          // itself along, and the boulevards driven across the grain.
           corridorm: Math.round(corridorDist(c)),
-          // A lot holding a corner of its own block holds two frontages.
           corner: cornerLot(lotRing, blockCorners) ? 1 : 0,
         },
       });
 
-      // The parcel and (if built) the building both carry the year; the record
-      // keeps a reference to each so `settleYears` can stamp them once the
-      // whole lot population is known. See the note on yearFor.
-      if (yearRec) yearRec.pf = parcels.features[parcels.features.length - 1];
       if (!vacant && footprint) {
         builtLots.push({ h, areaM2, floors, cls, lotArea,
                          pf: parcels.features[parcels.features.length - 1],
@@ -1548,7 +1357,6 @@ export function generateCity(cfg) {
             groundelev: Math.round(rr(3, 20)),
           },
         });
-        if (yearRec) yearRec.bf = buildings.features[buildings.features.length - 1];
       }
       houseNo += Math.round(rr(2, 8));
       lotNo++;
@@ -1600,9 +1408,6 @@ export function generateCity(cfg) {
   // coastline is its own feature and is untouched, so the harbour is still a
   // harbour — it just has nothing industrial standing in it.
   //
-  // EVERY LOT IS CUT; NOW THE YEARS CAN BE CENTRED ON THEM. See yearFor.
-  settleYears();
-
   // The lighthouse stays. It is a landmark on a headland rather than a dock.
   const PIERS_M = [];
   let decoN = 1;

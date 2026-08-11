@@ -10,13 +10,13 @@ import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
 import {
   ownedHoldingNoiYr, ownedHoldingNoiYrFromRec, ownedHoldingValue,
-  ownedHoldingValueFromRec, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor,
+  ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
   isVacantLandLoanCollateral,
 } from "./value";
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
-import { fundCashNeed, fundableNow, sweepLocIdleCash } from "./credit";
+import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash } from "./credit";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -565,11 +565,16 @@ const STAB_LTV = 0.65;
 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.
-export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1, condition?: string, klass?: string): Loan | null {
+// Pass the same `stab` the quote screen used — without it, bridge paper sizes
+// on in-place income at close after showing a stabilised takeout on the card.
+export function originate(
+  s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
+  condition?: string, klass?: string, stab?: StabView,
+): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (product.minCondition === "good" && condition !== undefined && condition !== "good") return null;
-  const full = quote(s, product, price, noiYr, klass);
+  const full = quote(s, product, price, noiYr, klass, false, stab);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0
@@ -859,15 +864,8 @@ export function tickLoan(
   // the process now; the refinancing ladder does not get to run again every
   // month underneath it.
   if (q >= loan.maturityM && !s.workouts?.[h.bbl]) {
-    const value = ownedHoldingValue(s, parcels, h);
-    const noi = ownedHoldingNoiYr(s, parcels, h);
-    const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
-    const quoteClass = vacantDirt ? "land" as const : (rec.class === "land" ? "office" as const : rec.class);
-    // A takeout is underwritten on the roll you actually have on the day the
-    // balloon lands — which for a building that delivered empty and never
-    // stabilised is exactly the moment the concentration and rollover
-    // haircuts hurt most.
-    const hair = collateralHaircut(h, q, s.econ);
+    const coll = debtCollateral(s, parcels, h, rec);
+    const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
     // Walk DOWN the desk, not off a cliff. A maturing loan is refinanced by
     // whoever will write it: the agency first, then the bank, and if neither
     // will, hard money at hard-money prices. That last one is not a rescue —
@@ -875,21 +873,22 @@ export function tickLoan(
     // actually happens, and it turns "you got unlucky at the balloon" into
     // "you are now paying for how you financed this".
     // A leased fee with a coupon walks the income desks; vacant dirt keeps
-    // the land loan as its only takeout.
+    // the land loan as its only takeout. Bridge gets the stabilised view the
+    // same way the Refi card does — one underwriting, not two.
     const ladder = (vacantDirt ? ["land"] : ["savings", "harbor", "cordage"]).map(productById)
       .filter((p) => productOpen(s, p) && windowOpen(s, p));
     let product = ladder[ladder.length - 1] ?? PRODUCTS[0];
-    let qd = { ...quote(s, product, value, noi, quoteClass), principal: 0 };
+    let qd = { ...quote(s, product, value, noi, quoteClass, false, stab), principal: 0 };
     const fee = Math.round(loan.balance * REFI_FEE);
     for (const cand of ladder) {
-      const raw = quote(s, cand, value, noi, quoteClass);
+      const raw = quote(s, cand, value, noi, quoteClass, false, stab);
       const sized = { ...raw, principal: Math.round(raw.principal * hair.mult) };
       product = cand; qd = sized;
       if (sized.principal >= loan.balance + fee) break;
     }
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
-      h.loan = originate(s, product, value, noi, hair.mult, undefined, quoteClass);
+      h.loan = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab);
       if (h.loan) {
         h.loan.balance = h.loan.principal = rolled;
         h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
@@ -926,7 +925,20 @@ export function tickLoan(
         // unexplained movements in the sample were this line, matching the
         // news item to the penny, and it cost one seed $1.17M of silence.
         logBooks(s, "debtSvc", paid);
-        h.loan = qd.principal > 100_000 ? originate(s, product, value, noi, 1, undefined, rec.class) : null;
+        // Size at the haircut quote the shortfall maths used — originating at
+        // lev=1 with no hair (and the wrong class on land) used to write a
+        // bigger loan than "today's market only refinances $X" claimed.
+        h.loan = qd.principal > 100_000
+          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab)
+          : null;
+        if (h.loan && h.loan.balance !== qd.principal) {
+          h.loan.balance = h.loan.principal = qd.principal;
+          h.loan.monthlyPmt = Math.round(
+            product.ioM > 0
+              ? (qd.principal * h.loan.ratePct) / 100 / 12
+              : monthlyPayment(qd.principal, h.loan.ratePct, h.loan.amortYears),
+          );
+        }
         s.news.unshift({
           q, kind: "warn",
           text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a $${(shortfall / 1e6).toFixed(2)}M check to close the gap.`,
@@ -986,17 +998,14 @@ export interface RefiQuote {
   dscrAtMax: number;
   debtYieldAtMax: number;
   /**
-   * The two numbers a borrower compares desks on that the screen could not
-   * show, because they were only ever computed at the lender's maximum.
-   *
-   * `maxLTV` is the desk's advance rate — a standing term of the product, like
-   * the rate and the amortisation, and it belongs beside them. `noiUw` is the
-   * income this quote was actually sized against, which is NOT always the
-   * building's current NOI: inside the lease-up window the desk underwrites to
-   * stabilised income less a holdback (see above), and a borrower reading a
-   * coverage ratio has a right to know which number is under it.
+   * `maxLTV` is the covenant ceiling (breach test). `advanceLtv` is the sizing
+   * advance rate — they are not the same number, and the panel used to label
+   * the covenant as the advance. `noiUw` is the in-place income this quote was
+   * sized against; bridge paper may still advance on a stabilised plan via
+   * `binding: "stabilised plan"` without rewriting this NOI.
    */
   maxLTV: number;
+  advanceLtv: number;
   noiUw: number;
   /** The coverage covenant this paper carries — what the ratio has to stay above. */
   minDSCR: number;
@@ -1010,8 +1019,8 @@ export interface RefiQuote {
   prepayM: number;
   kicker?: number;
   floating: boolean;
-  available: boolean;      // mezzanine needs a senior in place first
-  why?: string;            // ...and says so when it isn't
+  available: boolean;
+  why?: string;
 }
 
 /**
@@ -1058,50 +1067,47 @@ export function collateralHaircut(h: Holding, month: number, econ?: Econ): { mul
   return { mult, why };
 }
 
+/**
+ * ONE UNDERWRITING for the quote card, the close, and the balloon ladder.
+ *
+ * The Refi panel used to invent a lease-up "trust" schedule that inflated NOI
+ * and value for every desk, while `refinance` sized on in-place income alone —
+ * so a takeout that looked fat on the card failed at the button. Bridge paper
+ * already has the real stabilised leg (`stabViewFor` → `sizeRest`); permanent
+ * desks underwrite the roll you have. Both paths share this collateral view.
+ */
+export function debtCollateral(
+  s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord,
+): {
+  value: number; noi: number; vacantDirt: boolean; quoteClass: string;
+  hair: { mult: number; why?: string }; stab: StabView | undefined;
+} {
+  const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
+  const value = ownedHoldingValue(s, parcels, h);
+  const noi = ownedHoldingNoiYr(s, parcels, h);
+  const quoteClass = vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class);
+  const hair = collateralHaircut(h, s.month, s.econ);
+  const stab = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)
+    ? stabViewFor(rec, s.econ, h.condition, value)
+    : undefined;
+  return { value, noi, vacantDirt, quoteClass, hair, stab };
+}
+
 export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
-  // UNDERWRITING A BUILDING THAT IS STILL FILLING UP.
-  //
-  // A newly delivered building is empty, so its actual NOI is nothing and its
-  // value marked off that NOI is a fraction of what it cost. Underwritten on
-  // today's income, no lender quotes a penny — which is exactly what was
-  // happening: a job would finish carrying a $15M construction balance against
-  // a building marked at $9M, every income lender would quote zero, the
-  // mini-perm would balloon, and the developer would lose a building that was
-  // worth nearly twice its cost the moment it was full.
-  //
-  // That is not how a construction takeout is underwritten. The lender knows
-  // it is buying a lease-up: they underwrite to STABILISED income and hold
-  // back a chunk against the risk that it does not get there. So during the
-  // lease-up window that is what they do here, at a 25% holdback.
-  const leaseUpM = h.deliveredM !== undefined ? s.month - h.deliveredM : Infinity;
-  const inLeaseUp = leaseUpM <= 48;
-  // Leased-fee NOI is the ground coupon — never the lessee's building stab.
-  const actualNoi = ownedHoldingNoiYr(s, parcels, h);
-  const actualValue = ownedHoldingValue(s, parcels, h);
-  let value = actualValue, noi = actualNoi;
-  if (inLeaseUp && !h.groundLeased && rec.class !== "land" && rec.bldgArea > 0) {
-    const stabValue = assetValue(rec, s.econ, "good");
-    const stabNoi = noiAfterTaxYr(rec, s.econ, "good", stabValue);
-    // the holdback tightens as the window runs out — a building still empty
-    // after four years is not a lease-up, it is a problem
-    const trust = 0.75 * Math.max(0.3, 1 - leaseUpM / 60);
-    value = Math.max(actualValue, stabValue * trust);
-    noi = Math.max(actualNoi, stabNoi * trust);
-  }
-  // Land money is for vacant dirt. A leased fee with a coupon is income paper,
-  // even when resolveRec still says "land" before the lessee tops out.
-  const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
-  const hair = collateralHaircut(h, s.month, s.econ);
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+  const onFacility = !!s.facility?.bbls.includes(bbl);
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class));
+    const raw = quote(s, p, value, noi, quoteClass, false, stab);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const annualDs = p.ioM > 0
       ? (q.principal * q.ratePct) / 100
       : monthlyPayment(Math.max(1, q.principal), q.ratePct, p.amortYears) * 12;
-    const senior = h.loan && !h.loan.kicker && h.loan.product !== "mezz";
+    // Mezz is labeled as sitting behind a senior, but refinance replaces
+    // `h.loan` — there is no junior lien. Do not offer a product the close
+    // cannot actually stack.
     return {
       id: p.id,
       label: p.label,
@@ -1111,7 +1117,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
+      // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,
+      advanceLtv: p.ltv,
       noiUw: noi,
       minDSCR: p.minDSCR,
       // HOLD SIZE OUTRANKS THE THREE UNDERWRITING TESTS, because it is not one
@@ -1120,6 +1128,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       // borrower "advance rate" when the truth is "we don't write cheques that
       // big" sends them off to fix a building that is not broken.
       binding: q.holdCapped ? "their hold size"
+        : q.stabConstrained ? "stabilised plan"
         : q.dyConstrained ? "debt yield"
         : q.dscrConstrained ? "coverage"
         : "advance rate",
@@ -1132,17 +1141,22 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       prepayM: p.prepayM,
       kicker: p.kicker,
       floating: p.floating,
-      available: !productOpen(s, p) || !windowOpen(s, p) ? false
+      available: onFacility ? false
+        : !productOpen(s, p) || !windowOpen(s, p) ? false
         : p.minCondition === "good" && h.condition !== "good" ? false
-        : p.mezz ? !!senior
+        : p.mezz ? false
         : p.uwDscr <= 0 ? vacantDirt
         : !vacantDirt && q.principal > 0,
-      why: !productOpen(s, p)
-        ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge and mezzanine money will still talk in the meantime.`
+      why: onFacility
+        ? "This deed is pledged to your facility. Release it before you put a mortgage back on."
+        : !productOpen(s, p)
+        ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
         : p.minCondition === "good" && h.condition !== "good"
         ? "Life-company money wants a well-kept building. Renovate first."
+        : p.mezz
+        ? "Mezzanine sits behind a senior — this desk does not stack liens on refinance yet. Reprice the first mortgage, or leave it."
         : p.minLoan && q.principal === 0 && !vacantDirt
         ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
         /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
@@ -1157,7 +1171,6 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `${raw.concWhy}.`
         : hair.why && hair.mult < 0.95 && !p.mezz
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
-        : p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
         : p.uwDscr <= 0 && !vacantDirt
         ? (h.groundLeased
           ? "Land money is for vacant dirt. This fee has a ground rent to underwrite — use an income desk."
@@ -1176,13 +1189,17 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  const product = productById(productId);
-  if (!productOpen(next, product)) {
-    return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge and mezzanine money will still talk.` };
+  if (next.facility?.bbls.includes(bbl)) {
+    return { s, err: "This deed is pledged to your facility. Release it before you put a mortgage back on." };
   }
-  const value = ownedHoldingValue(next, parcels, h);
-  const noi = ownedHoldingNoiYr(next, parcels, h);
-  const vacantDirt = isVacantLandLoanCollateral(next, h, rec);
+  const product = productById(productId);
+  if (product.mezz) {
+    return { s, err: "Mezzanine sits behind a senior — this desk does not stack liens on refinance yet. Reprice the first mortgage, or leave it." };
+  }
+  if (!productOpen(next, product)) {
+    return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge money will still talk.` };
+  }
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(next, parcels, h, rec);
   if (product.uwDscr <= 0 && !vacantDirt) {
     return { s, err: h.groundLeased
       ? "Land money is for vacant dirt. This fee has a ground rent — take it to an income desk."
@@ -1191,19 +1208,19 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (product.uwDscr > 0 && vacantDirt) {
     return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
   }
-  // The quote screen already told you the desk was cutting proceeds for a
-  // concentrated or fast-rolling rent roll. The close has to agree with it.
-  const hair = collateralHaircut(h, next.month, next.econ);
-  const quoteClass = vacantDirt ? "land" as const : (rec.class === "land" ? "office" as const : rec.class);
-  const full = quote(next, product, value, noi, quoteClass);
+  // Same quote the card showed — haircut, stabilised bridge leg, and all.
+  const full = quote(next, product, value, noi, quoteClass, false, stab);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
-  if (product.mezz && !h.loan) return { s, err: "Mezzanine sits behind a senior loan — put one on first." };
   const oldBal = h.loan?.balance ?? 0;
   const penalty = h.loan ? prepayPenalty(h.loan, next.month) : 0;
   const points = Math.round(qd.principal * product.points);
-  const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty;
+  const capPremium = product.floating ? Math.round(qd.principal * 0.0125) : 0;
+  const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty + capPremium;
   if (qd.principal < 100_000) return { s, err: "No lender will size a loan against this income." };
-  if (qd.principal + next.cash < oldBal + fee) {
+  // Cash-in (and fees) can draw the line the same way a balloon gap does — a
+  // firm with an undrawn revolver is not underwater on a takeout it can fund.
+  const need = Math.max(0, oldBal + fee - qd.principal);
+  if (need > 0 && fundableNow(next, parcels) < need) {
     return {
       s,
       err: penalty > 0
@@ -1211,7 +1228,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
         : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, undefined, quoteClass);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket
@@ -1219,14 +1236,21 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // with cash (negative net draw) is principal repayment and goes to debtSvc.
   const netDraw = qd.principal - oldBal;
   next.cash += netDraw - fee;
+  coverCashShortfall(next, parcels);
   logBooks(next, "debtSvc", fee);
   if (netDraw > 0) logBooks(next, "borrowed", netDraw);
   else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
   h.loan = newLoan;
+  // A takeout is a cure. Leaving the workout file open made the desk keep
+  // asking for a refinancing after you had just closed one — and refreshed
+  // the cure against the NEW balance.
+  if (next.workouts?.[bbl]) delete next.workouts[bbl];
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Refinanced ${rec.address}: $${(qd.principal / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% (${product.label})`
-      + (penalty > 0 ? `, after $${(penalty / 1e6).toFixed(2)}M to break the old paper.` : "."),
+      + (penalty > 0 ? `, after $${(penalty / 1e6).toFixed(2)}M to break the old paper` : "")
+      + (capPremium > 0 ? `, plus $${(capPremium / 1e6).toFixed(2)}M for the rate cap` : "")
+      + ".",
   });
   // Cash-out proceeds pay the revolver before they sit idle.
   sweepLocIdleCash(next, { announce: true });

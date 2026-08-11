@@ -176,6 +176,43 @@ tower kit, which already did this and which nothing below it could reach.
 - **How much of what a player builds lands in this band** is not measured.
   Measure it before sizing any of the above.
 
+### ✗ 4.4b · "Make height follow value" — measured, rejected
+
+Worth writing down because the premise looked solid and was wrong, and the
+mistake is easy to repeat.
+
+The observation was real: the generator shapes the fabric off `coreHeat`, a sum
+of isotropic Gaussians on the core points, while `build.mjs` prices the same
+ground off transit + jobs + parks + the water + the high street. Two answers to
+one question. And `corr(log floors, log land$)` measured 0.42-0.55 against the
+0.6-0.8 a real city runs.
+
+**The correlation was measured wrong.** Pooling every asset class together
+measures the class HEIGHT CAPS, not the value surface — retail is capped at 2
+floors and industrial at 4, so neither can correlate with anything. Within
+class:
+
+```
+office        0.59 · 0.72          multifamily   0.60 · 0.68
+retail        0.00 · 0.06          industrial    0.14 · 0.20
+```
+
+Office and multifamily are already in the real range. There was nothing to fix.
+
+A rank-matched site-value surface was built anyway — mirroring build.mjs's
+weights on what the generator knows, rank-matched back onto `coreHeat` so the
+multiset of heat values was byte-identical and only the assignment moved. A/B
+on within-class correlation: office 0.64 -> 0.59 on one seed, multifamily
+0.60 -> 0.68 on another. Noise. Reverted.
+
+Two things survive it. **A pooled correlation over classes with hard caps is
+not a measurement of anything** — split by class first. And the structural
+observation still stands even though the metric did not support it: the fabric
+and the price genuinely do read different surfaces, and if a future change
+needs them unified, the rank-match is the safe shape for it, because a
+differently-shaped surface would otherwise raise or lower height, bulk and
+vacancy across the whole city at once.
+
 ### 4.5 · Candidates after that, unranked and unmeasured
 
 - **Ground floor at distance.** The shopfront band survives the dissolve as

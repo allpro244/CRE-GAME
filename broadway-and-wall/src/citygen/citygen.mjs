@@ -1117,9 +1117,61 @@ export function generateCity(cfg) {
     // on the industrial fringe, which is where the gaps actually are.
     return Math.min(0.88, Math.max(0.05, base * (DZ.vac ?? 1)));
   }
-  function yearFor(name) {
+  /**
+   * WHERE THE TOWN STARTED, so that it can be seen to have spread from there.
+   *
+   * 0 at the landing, 1 at the furthest dry ground from it. A port town's first
+   * core is where the first wharf was, and every one since has been built
+   * outward from it.
+   */
+  const FOUNDED = cfg.cores?.[0]?.xy ?? [0, 0];
+  const FOUND_MAX = (() => {
+    let m = 1;
+    for (const q of innerRing) m = Math.max(m, dist(FOUNDED, q));
+    return m;
+  })();
+  const growthRing = (p) => Math.min(1, dist(p, FOUNDED) / FOUND_MAX);
+
+  /**
+   * A CITY HAS RINGS IN IT, and this one had none.
+   *
+   * Year built was a draw from the district's flavour and nothing else — so a
+   * lot's age was a lookup on what the ground is FOR, with no memory of when
+   * the town got there. Measured, `corr(distance from centre, year built)` came
+   * out NEGATIVE, between -0.08 and -0.37: the further out you went, the older
+   * the fabric. Cities grow outward. That correlation should be positive and
+   * strong, and it is the single most legible piece of history a map carries —
+   * it is how you know at a glance which part of a town is the old part.
+   *
+   * `ring` biases WHICH END of the flavour's own range a lot lands in, rather
+   * than replacing it. That matters for a port: `industrial` spans 1915-1978
+   * whatever happens, so the working shore stays the working shore and simply
+   * records that the docks were extended outward over sixty years, which is
+   * what docks do. A district's character is still its flavour's; only its
+   * position within its own era now means something.
+   *
+   * 0.60 is the ring's share of the draw against the lot's own luck, and it was
+   * picked off a measured response rather than by eye. Within-district
+   * `corr(distance from the founding core, year built)` — the clean test,
+   * since it holds the flavour constant — against the ring's weight:
+   *
+   *     0.00   ~0.00   nothing. This is what it was.
+   *     0.45   ~0.15   reads as a gradient
+   *     0.60   ~0.20   reads, and the widest district hits 0.52
+   *     0.75   ~0.25   and the widest hits 0.75, which is too sorted:
+   *                    at that point a block is its own annual band and the
+   *                    fabric stops looking accumulated
+   *
+   * The criterion is the last line rather than the first. A city's age map is
+   * noisy — infill, fires, a speculator who bought six lots in 1928 — and a
+   * clean monotone ramp from the middle outward would be as wrong as no ramp
+   * at all, in the other direction.
+   */
+  const RING_W = 0.60;
+  function yearFor(name, at) {
     const [a0, a1, p, b0, b1] = flavorOf(name).yr;
-    return Math.round(rand() < p ? rr(a0, a1) : rr(b0, b1));
+    const u = Math.min(1, Math.max(0, rand() * (1 - RING_W) + growthRing(at) * RING_W));
+    return Math.round(rand() < p ? a0 + (a1 - a0) * u : b0 + (b1 - b0) * u);
   }
 
   /** Metres to the nearest arterial — a seam or a boulevard; 0 if on one. */
@@ -1225,7 +1277,7 @@ export function generateCity(cfg) {
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand);
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 
-      const yearbuilt = vacant ? 0 : yearFor(d);
+      const yearbuilt = vacant ? 0 : yearFor(d, c);
       let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
       if (!vacant) {
         const fl = flavorOf(d);

@@ -6,7 +6,7 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { isLeasedFee, netWorth, resolveRec } from "@/engine/value";
 import { useSf } from "@/engine/mix";
-import { portfolioMonthlyCF } from "@/engine/sim";
+import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { real } from "@/ui/panels/shared";
@@ -372,8 +372,21 @@ export default function TopBar() {
             value={game.econ.phase}
             drop={3}
             w={84}
-            title="Cycle phase — also on the Economy page. The label can lag the pain; watch Vac Δ / yr."
+            title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
           />
+          {(() => {
+            const book = firmBookStress(game);
+            return (
+              <Stat
+                label="Book"
+                value={book.label}
+                bad={book.bad}
+                keep
+                w={88}
+                title={book.title}
+              />
+            );
+          })()}
           <Stat
             drop={3}
             w={92}

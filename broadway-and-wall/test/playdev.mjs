@@ -232,9 +232,13 @@ function play(seed, verbose) {
             if (plan.equity > budget) continue;   // cannot fund it — try smaller
             const gap = NAT[use] - (e.cityVac?.[use] ?? NAT[use]);
             const spread = plan.yieldOnCost - plan.exitCap;
-            const scoreP = spread + gap * 12;
-            if (spread >= 0.9 && (!pick || scoreP > pick.scoreP)) pick = { plan, use, fl, scoreP };
-            break;   // the biggest affordable version of this use
+            // Score by hurdle that clears, not by tallest plate — biggest
+            // affordable mid-rises were starving the cheque while a shorter
+            // job would have broken ground.
+            const scoreP = plan.hurdleRatio + gap * 2 + spread * 0.05;
+            if (plan.hurdleRatio >= 1 && spread >= 0.7 && (!pick || scoreP > pick.scoreP)) {
+              pick = { plan, use, fl, scoreP };
+            }
           }
         }
         if (!pick) { st.noPencil++; continue; }

@@ -284,7 +284,7 @@ function play(cfg) {
       }
     }
 
-    if (m % 3 === 0 && cash > reserve * 2.2) {
+    if (m % 3 === 0 && cash > reserve * 1.6) {
       for (const h of Object.values(g.holdings)) {
         const rec = E.resolveRec(parcels, g, h.bbl) ?? parcels[h.bbl];
         if (!rec || rec.class !== "land" || g.developments?.[h.bbl]) continue;
@@ -293,14 +293,31 @@ function play(cfg) {
           : tight("retail") ? "retail"
           : tight("industrial") ? "industrial" : null;
         if (!use) continue;
-        const fl = Math.min(E.maxFloorsFor(rec, 0.6), use === "multifamily" ? 12 : 10);
-        const plan = E.planDevelopment(g, parcels, h.bbl, use, fl, 0.6, "gmp");
-        if (!plan || plan.hurdleRatio < 1.02) continue;
-        if (plan.equityAtClose > cash - reserve) continue;
-        const r = E.startDevelopment(g, parcels, h.bbl, use, fl, 0.6, "gmp");
+        // Fundable max-hurdle, not max floors — mid-rises were eating the
+        // cheque while a 4–8 storey job would have cleared.
+        const flMax = Math.min(E.maxFloorsFor(rec, 0.6), use === "multifamily" ? 12 : 10);
+        let bestPlan = null, bestFl = 0;
+        for (let fl = Math.min(flMax, 8); fl >= 2; fl--) {
+          const plan = E.planDevelopment(g, parcels, h.bbl, use, fl, 0.6, "gmp");
+          if (!plan || plan.hurdleRatio < 1.0) continue;
+          if (plan.equityAtClose + plan.pointsCost > cash - reserve) continue;
+          if (!bestPlan || plan.hurdleRatio > bestPlan.hurdleRatio) {
+            bestPlan = plan; bestFl = fl;
+          }
+        }
+        for (let fl = 9; fl <= flMax; fl++) {
+          const plan = E.planDevelopment(g, parcels, h.bbl, use, fl, 0.6, "gmp");
+          if (!plan || plan.hurdleRatio < 1.0) continue;
+          if (plan.equityAtClose + plan.pointsCost > cash - reserve) continue;
+          if (!bestPlan || plan.hurdleRatio > bestPlan.hurdleRatio) {
+            bestPlan = plan; bestFl = fl;
+          }
+        }
+        if (!bestPlan) continue;
+        const r = E.startDevelopment(g, parcels, h.bbl, use, bestFl, 0.6, "gmp");
         if (!r.err) {
           g = r.s; st.built++;
-          push(g.month, `Broke ground on ${use} at ${rec.address} — ${plan.sf.toLocaleString()} sf, YoC ${plan.yieldOnCost.toFixed(2)}%.`);
+          push(g.month, `Broke ground on ${use} at ${rec.address} — ${bestPlan.sf.toLocaleString()} sf, YoC ${bestPlan.yieldOnCost.toFixed(2)}%.`);
           break;
         }
       }

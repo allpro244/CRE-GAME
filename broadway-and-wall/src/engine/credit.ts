@@ -176,10 +176,16 @@ export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
   s.loc.drawnTotal += draw;
   s.cash += draw;
   _locAvailCache = null;
-  s.news.unshift({
-    q: s.month, kind: "warn",
-    text: `Short $${(need / 1e6).toFixed(2)}M — the line covered $${(draw / 1e6).toFixed(2)}M at ${locRate(s).toFixed(2)}%.`,
-  });
+  // Micro-shorts still draw — a $8k interest hole is real — but they used to
+  // spam "Short $0.01M" every month and drown the news while the firm died of
+  // a thousand LOC cuts. Announce only when the cheque is big enough to read.
+  if (need >= 25_000) {
+    const fmt = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1e3)}k`);
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `Short ${fmt(need)} — the line covered ${fmt(draw)} at ${locRate(s).toFixed(2)}%.`,
+    });
+  }
   return draw;
 }
 
@@ -257,20 +263,20 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
       s.locOverMs = (s.locOverMs ?? 0) + 1;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: s.locOverMs >= 6
+        text: s.locOverMs >= 3
           ? `The line has been over-advanced for ${s.locOverMs} months. The bank wants $${(stillOver / 1e6).toFixed(2)}M back and has stopped asking politely.`
           : `The line is over-advanced — the bank wants $${(stillOver / 1e6).toFixed(2)}M back.`,
       });
-      // after half a year the shortfall is treated as cash owed, which is what
-      // pushes the run into the seizure path in sim.ts.
+      // After a quarter the shortfall is treated as cash owed — earlier than
+      // the old six-month grace, because playthroughs showed firms dying on
+      // micro-LOC while the street still said "expansion." Teeth belong here.
       //
       // AND IT IS A PAYMENT, SO IT GOES ON THE BOOKS. This took the cash and
-      // told nobody: six consecutive months of an over-advanced line on seed 11
-      // moved $89,000 a month out of the firm with no entry behind it, and
-      // `pnpm conserve` calls that money vanishing, correctly. It is default
-      // interest on a revolver the borrower cannot clear, which is debt
-      // service — the most expensive kind there is.
-      if (s.locOverMs >= 6) {
+      // told nobody: consecutive months of an over-advanced line moved money
+      // out of the firm with no entry behind it, and `pnpm conserve` calls
+      // that vanishing. It is default interest on a revolver the borrower
+      // cannot clear — debt service, the expensive kind.
+      if (s.locOverMs >= 3) {
         const penalty = Math.round(stillOver * 0.25);
         s.cash -= penalty;
         logBooks(s, "debtSvc", penalty);

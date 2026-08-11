@@ -976,6 +976,68 @@ function checkMilestones(s: GameState, nw: number) {
   }
 }
 
+/**
+ * YOUR BOOK, NOT THE CITY'S CYCLE.
+ *
+ * Market phase is a city fact. A firm can drown in an expansion — measured in
+ * playthroughs as hundreds of months labelled boom while the LOC ate the
+ * firm. The HUD must not rename the cycle; it must say the book is in trouble
+ * next to it.
+ */
+export function firmBookStress(s: GameState): { label: string; bad: boolean; title: string } {
+  const workouts = Object.keys(s.workouts ?? {}).length;
+  if ((s.insolventMs ?? 0) > 0) {
+    return {
+      label: "insolvent",
+      bad: true,
+      title: `Insolvency month ${s.insolventMs} of 12 — the city cycle is still ${s.econ.phase}; your book is not.`,
+    };
+  }
+  if (workouts > 0) {
+    return {
+      label: workouts === 1 ? "workout" : `${workouts} workouts`,
+      bad: true,
+      title: `${workouts} deed${workouts === 1 ? "" : "s"} in workout. City phase: ${s.econ.phase}.`,
+    };
+  }
+  if ((s.locOverMs ?? 0) >= 3) {
+    return {
+      label: "over line",
+      bad: true,
+      title: `Credit line over-advanced ${s.locOverMs} months — the bank has stopped asking politely. City phase: ${s.econ.phase}.`,
+    };
+  }
+  if ((s.locOverMs ?? 0) > 0) {
+    return {
+      label: "watch",
+      bad: true,
+      title: `Credit line over-advanced. Pay it down before it becomes a default. City phase: ${s.econ.phase}.`,
+    };
+  }
+  if (s.cash < 0) {
+    return {
+      label: "short",
+      bad: true,
+      title: `Cash is negative — the insolvency clock starts if the line cannot cover it. City phase: ${s.econ.phase}.`,
+    };
+  }
+  const monthlyDebt = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0)
+    + (s.facility?.monthlyPmt ?? 0)
+    + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
+  if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
+    return {
+      label: "thin",
+      bad: true,
+      title: `Cash covers less than three months of debt service. City phase: ${s.econ.phase}.`,
+    };
+  }
+  return {
+    label: "steady",
+    bad: false,
+    title: `Your book is current. City cycle: ${s.econ.phase} — that label is about the street, not your firm.`,
+  };
+}
+
 // ---- attention: what needs the player right now ----------------------------
 // Auto-advance stops when a NEW item appears on this list.
 export function attentionItems(s: GameState): { key: string; label: string }[] {

@@ -541,6 +541,11 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // hurdle, and 0 of 32 sites in the top demand decile pencilled at all.
     // This form guarantees a positive spread wherever the residual is
     // positive, because the margin is taken out before the land is priced.
+    //
+    // (Interest reserve + lease-up deficit stay on the parcel desk only —
+    // folding a full carry into the residual collapsed builder-clearing lots
+    // under the texture floor. Tight-street LTC and shorter lease-up in
+    // planDevelopment are the levers that open the second path without that.)
     const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - (costPsf + fitPsf * eff);
     const psf = surplus * usable * BUILD_DISCOUNT;
     all.push({ use, psf });

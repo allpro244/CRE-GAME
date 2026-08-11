@@ -430,16 +430,13 @@ export function buildCityData(src) {
     const cornerK = (num(p.corner) ?? 0) === 1 ? 1.18 : 1;
     const shoreK = 1 + 0.15 * Math.min(1, dem.shore / s95);
     const corridorK = 1 + 0.25 * Math.min(1, dem.corridor / c95);
-    // AND THEY REDISTRIBUTE RATHER THAN INFLATE. Three multipliers averaging
-    // well above 1 would lift every land value in the city, and a level shift
-    // in land is an economy change wearing a geometry label — it moves rents,
-    // cost basis and the tax bill on every parcel. `premMean` is the mean of
-    // the same product over every lot in this town, so the town's average
-    // premium is exactly 1 and only its DISTRIBUTION has changed.
-    const rawDemand = Math.min(1, blend * cachet * (cornerK * shoreK * corridorK) / premMean);
+    // Record the hedonic premium for desk/renderer. Not applied to demandScore
+    // or landPsf — both feed the sim and a spatial premium decouples development
+    // from the order book (see test/orderbook.mjs).
+    const locPremium = (cornerK * shoreK * corridorK) / premMean;
+    const rawDemand = Math.min(1, blend * cachet);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
-    // assessed values run well below market; scale up, then blend with demand
     const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
 
     const farMaxComm = num(p.commfar) ?? 0;
@@ -473,12 +470,12 @@ export function buildCityData(src) {
       assessedTotal: assessTot,
       demandScore,
       // The three geometric facts citygen measures at the moment the lot is
-      // cut — see the note there. Carried through because the demand blend
-      // above reads them, and because the desk and the renderer will want
-      // them: "is this a corner" is a thing a broker says out loud.
+      // cut. `locPremium` is the hedonic multiplier (mean 1); not yet applied
+      // to landPsf — see the note above.
       shoreM: num(p.shorem) ?? 9999,
       corridorM: num(p.corridorm) ?? 9999,
       corner: (num(p.corner) ?? 0) === 1,
+      locPremium: +locPremium.toFixed(4),
       landPsf,
       landPsfHistory: [landPsf],
       imputed,

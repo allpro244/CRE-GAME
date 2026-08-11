@@ -569,6 +569,20 @@ export function EconomyPage() {
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf standing`} />
         <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        {(() => {
+          // Same YoY tell as the top bar — for the focused class on this page.
+          if (hist.length <= 12) return null;
+          const then = hist[hist.length - 13]?.vac?.[focus] ?? vacNow;
+          const dpp = (vacNow - then) * 100;
+          return (
+            <Row
+              k="Vacancy Δ / yr"
+              v={`${dpp >= 0 ? "+" : ""}${dpp.toFixed(1)} pp vs twelve months ago`}
+              bad={dpp >= 2}
+              strong={Math.abs(dpp) >= 1}
+            />
+          );
+        })()}
         {/* THE DEMAND LEDGER — proof that letters come from a finite looking
             book, not from empty floors. Occupied + looking pool + this month's
             requirement are the same quantities leasingOdds reads on the desk. */}

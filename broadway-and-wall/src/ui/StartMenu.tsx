@@ -157,10 +157,15 @@ export default function StartMenu() {
                     rather than a graphics setting. Land area goes as the square
                     of the scale, so this moves the lot count from a few hundred
                     to a few thousand — and with it the standing stock, the size
-                    of the banks that lend against it, and how much of the town
-                    one firm can ever be. */}
+                    of the banks that lend against it, rival dry powder, and how
+                    much of the town one firm can ever be. Your opening cheque
+                    does NOT scale: Hamlet is a concentration game, Great City
+                    is a bigger pond. */}
                 <div className="start-col">
                   <div className="start-col-head">how big</div>
+                  <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
+                    Same starting cash on every size. Bigger maps mean more lots, bigger banks and richer rivals — not higher rents by themselves.
+                  </div>
                   {sizes.map((s) => (
                     <button
                       key={s.id}

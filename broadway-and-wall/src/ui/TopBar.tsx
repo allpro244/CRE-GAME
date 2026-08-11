@@ -9,6 +9,7 @@ import { useSf } from "@/engine/mix";
 import { portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
+import { real } from "@/ui/panels/shared";
 import { liveBrokerCalls } from "./RightPanel";
 
 type JobId = "acquire" | "assets" | "capital" | "world";
@@ -80,15 +81,26 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occSf: 0, occLeased: 0, line: 0, dealsCount: 0, unread: 0,
+        nw: 0, nwReal: 0, cf: 0, occSf: 0, occLeased: 0, vacDpp: null as number | null,
+        line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
       };
     }
     const parcels = useStore.getState().parcels;
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
+    const nwReal = real(nw, deferredGame.econ.cpi);
     const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    // Office vacancy vs twelve months ago — the tell that predicts real rent
+    // falls (~93% in century windows). Economy history already stamps vac.
+    const hist = deferredGame.econ.history ?? [];
+    let vacDpp: number | null = null;
+    if (hist.length > 12) {
+      const now = deferredGame.econ.cityVac?.office ?? 0;
+      const then = hist[hist.length - 13]?.vac?.office ?? now;
+      vacDpp = (now - then) * 100;
+    }
     // Same book Leasing totals: operated deeds only (not coupon-only ground
     // fees), commercial tenants plus multifamily physical occupancy.
     let occSf = 0, occLeased = 0;
@@ -147,13 +159,13 @@ export default function TopBar() {
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
-      nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+      nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
   }, [deferredGame]);
-  const { nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  const { nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -316,10 +328,36 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
+            {/* Vacancy change, not level — the single highest-EV cycle tell. */}
+            <Stat
+              label="Vac Δ / yr"
+              value={vacDpp === null ? "—" : `${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp`}
+              bad={vacDpp !== null && vacDpp >= 2}
+              keep
+              w={84}
+              title={vacDpp === null
+                ? "Office vacancy vs twelve months ago — appears after the first year of tape."
+                : vacDpp >= 2
+                  ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago. In simulated centuries, real rents were lower three years later ~93% of the time — confirmation you are past the top, not a prophecy.`
+                  : `Office vacancy change vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} percentage points. Rising ≥2 pp is the soft-market tell.`}
+            />
           </div>
           <div className="topbar-stats">
-          <Stat label="Net worth" value={usd(nw)} drop={2} w={96} />
-          {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
+          <Stat
+            label="Net worth"
+            value={usd(nw)}
+            drop={2}
+            w={96}
+            title={`Nominal net worth ${usd(nw)}. In today's dollars (÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}): ${usd(nwReal)}. Century scores that ignore inflation flatter every survivor.`}
+          />
+          <Stat
+            label="Real NW"
+            value={usd(nwReal)}
+            drop={2}
+            w={88}
+            title={`Net worth in opening-year dollars — nominal ${usd(nw)} ÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}. Read this on long runs.`}
+          />
+          {/* Base rate rides drop 2. Market phase and vacant-lot counts are
               drop 3 — only on very wide screens — so they cannot clip into
               "MA" under the Portfolio button on a normal desktop. */}
           <Stat
@@ -334,7 +372,7 @@ export default function TopBar() {
             value={game.econ.phase}
             drop={3}
             w={84}
-            title="Cycle phase — also on the Economy page."
+            title="Cycle phase — also on the Economy page. The label can lag the pain; watch Vac Δ / yr."
           />
           <Stat
             drop={3}

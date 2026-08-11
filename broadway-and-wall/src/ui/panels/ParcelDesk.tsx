@@ -2841,6 +2841,24 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               bad={plan.contract === "costplus"}
             />
             <Row k="Schedule" v={plan.months + " months, built on spec"} />
+            {(() => {
+              const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
+              const fundable = game.cash + locAvailable(game, parcels);
+              const shortAll = Math.max(0, commitCap - fundable);
+              const dayOne = plan.equityAtClose + plan.pointsCost;
+              const shortClose = Math.max(0, dayOne - game.cash);
+              if (shortAll <= 0 && shortClose <= 0) return null;
+              return (
+                <Row
+                  k="Equity short"
+                  v={shortClose > 0
+                    ? `${usd(shortClose)} at close — cut floors/coverage or raise cash first`
+                    : `${usd(shortAll)} to finish (incl. line + change-order margin)`}
+                  bad
+                  title="No lender closes without evidence you can fund the whole sponsor share. A $2.5M opening cheque rarely finishes a mid-rise — buy income first, or shrink the massing."
+                />
+              );
+            })()}
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="hint">
@@ -2848,15 +2866,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             <b>{usd(plan.equity - plan.equityAtClose)}</b> more is drawn out of it as the building rises — equity funds
             first and in full, and the construction loan does not advance a dollar until it is spent. Budget for the
             whole {usd(equityRequired)}, not the first cheque.
+            {!canFund && " This massing is past what you can finish — that is a refuse, not a soft maybe."}
           </div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
               disabled={plan.equityAtClose + plan.pointsCost > game.cash || !canFund}
               onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender)}
-              title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
+              title={!canFund
+                ? `Equity short — needs ${usd(equityRequired)} all-in; you can fund ${usd(game.cash + locAvailable(game, parcels))} including the line.`
+                : `${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
-              Break ground · {usd(equityRequired)} of equity required
+              {canFund
+                ? `Break ground · ${usd(equityRequired)} of equity required`
+                : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - (game.cash + locAvailable(game, parcels))))}`}
             </button>
           </div>
         </>

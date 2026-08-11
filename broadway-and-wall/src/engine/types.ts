@@ -1709,6 +1709,11 @@ export interface Econ {
   baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
+  /**
+   * Month the "vacancy up 2pp YoY" broker tell last fired. Debounces the news
+   * line so a long soft market does not spam the paper every month.
+   */
+  vacTellM?: number;
   absorb12: Record<BuiltClass, number>;   // trailing 12-month net absorption, sf
   // EACH CLASS HAS ITS OWN CYCLE. sectorMom was an AR walk with a +/-0.02 cap
   // and noise so small it sat at a tenth of that forever — the classes moved

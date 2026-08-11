@@ -207,11 +207,21 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
     : emptyPct >= 60 ? `Nearly ${emptyPct}% of the lots here are still empty`
     : emptyPct >= 30 ? `${emptyPct}% of this town is still empty lots`
     : `Only ${emptyPct}% of it is still empty lots`;
+  const sizeLabel = s.citySize === "hamlet" ? "a Hamlet"
+    : s.citySize === "town" ? "a Town"
+    : s.citySize === "metro" ? "a Metropolis"
+    : s.citySize === "giant" ? "a Great City"
+    : "the City";
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years. `
-      + `${howEmpty} — the city will fill in around you, with or without your name on it.`,
+    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years in ${sizeLabel}. `
+      + `${howEmpty} — the city will fill in around you, with or without your name on it. `
+      + (s.citySize === "hamlet" || s.citySize === "town"
+        ? "This pond is small enough that one firm can matter."
+        : s.citySize === "metro" || s.citySize === "giant"
+          ? "Same cheque, deeper pond — rivals and bank holds are sized to the map."
+          : "The standard island: banks and rivals sized to what stands here."),
   });
   return s;
 }

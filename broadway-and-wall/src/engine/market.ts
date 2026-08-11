@@ -3584,6 +3584,29 @@ export function tickEcon(s: GameState) {
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
+
+  // THE VACANCY TELL — said out loud by a broker.
+  //
+  // Measured across century windows: when office vacancy is ≥2pp higher than a
+  // year ago, real rents were lower three years later ~93% of the time. It is
+  // confirmation (median ~17 months past the real-rent peak), not prophecy —
+  // and it was invisible. Put it on the paper once per soft episode.
+  {
+    const hist = e.history ?? [];
+    if (hist.length > 12) {
+      const now = e.cityVac?.office ?? 0;
+      const then = hist[hist.length - 13]?.vac?.office ?? now;
+      const dpp = (now - then) * 100;
+      const cool = s.month - (e.vacTellM ?? -999) >= 24;
+      if (dpp >= 2 && cool) {
+        e.vacTellM = s.month;
+        pushNews(s, "rumor",
+          `A broker on the street: office vacancy is ${dpp.toFixed(1)} points higher than a year ago. `
+          + `When that happens, real rents are usually lower three years out — not a prophecy, a confirmation. `
+          + `You are already past the top; about a third of the fall is typically still ahead.`);
+      }
+    }
+  }
 }
 
 /** Add real square feet to the citywide stock — a delivered building is supply. */

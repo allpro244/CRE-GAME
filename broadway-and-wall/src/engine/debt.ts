@@ -17,6 +17,7 @@ import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash } from "./credit";
+import { sizeAreaScale } from "./cityscale";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -526,7 +527,14 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A HOLD SIZE IS A LIMIT ON ONE ASSET. The street's books are spread across
   // desks and are not one asset, so the size tests are skipped for them.
-  if (!street && product.maxLoan && byLtv > product.maxLoan) {
+  // Hold dollars scale with island area (k²) — the $6M/$25M constants were
+  // written for the standard City; a Great City desk that will not hold past
+  // $6M while its book is four times larger is a constant wearing a mechanism's
+  // clothes.
+  const holdMax = product.maxLoan
+    ? Math.round(product.maxLoan * sizeAreaScale(s))
+    : undefined;
+  if (!street && holdMax && byLtv > holdMax) {
     // they participate up to the hold size rather than walking — a smaller
     // check from a lender who wants the file is still a real quote.
     //
@@ -539,7 +547,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     return {
-      ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight, product.bridge ? stab : undefined),
+      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined),
       concWhy: conc.why,
       holdCapped: true,
     };
@@ -1238,7 +1246,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
            the way out, because there is one: a bigger balance sheet, or a
            syndicate, or several desks at once. */
         : q.holdCapped
-        ? `${p.lender} won't hold more than $${((p.maxLoan ?? 0) / 1e6).toFixed(0)}M on one asset — that is their limit, not this building's. `
+        ? `${p.lender} won't hold more than $${(((p.maxLoan ?? 0) * sizeAreaScale(s)) / 1e6).toFixed(0)}M on one asset — that is their limit, not this building's. `
           + `A building this size needs a balance-sheet lender, a conduit, or the debt split across desks.`
         : raw.concWhy && !p.mezz
         ? `${raw.concWhy}.`

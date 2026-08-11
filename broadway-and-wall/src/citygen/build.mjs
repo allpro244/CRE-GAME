@@ -284,6 +284,18 @@ export function buildCityData(src) {
   // instead, which is the only thing they were ever meant to do.
   const s95 = p95(raws.map((r) => r.shore)) || 1;
   const c95 = p95(raws.map((r) => r.corridor)) || 1;
+  // The town's mean premium, so the three multipliers below redistribute
+  // instead of inflating — see the note where they are applied.
+  const premMean = (() => {
+    let t = 0;
+    for (let i = 0; i < lots.length; i++) {
+      const r = raws[i];
+      t += ((num(lots[i].p?.corner) ?? 0) === 1 ? 1.18 : 1)
+        * (1 + 0.15 * Math.min(1, r.shore / s95))
+        * (1 + 0.25 * Math.min(1, r.corridor / c95));
+    }
+    return lots.length ? t / lots.length : 1;
+  })();
 
   // --- adjacency: bbox grid index + shared boundary length --------------------
   const CELL = 60; // meters
@@ -371,16 +383,10 @@ export function buildCityData(src) {
     // 38 / 44 / 18 — the two original terms keep their ratio to each other, so
     // the ground that was best is still best, and the amenity term is given the
     // weight that changes the SHAPE without rewriting the order.
-    // The original three keep their exact ratio to each other — 30:34:14 is
-    // 38:44:18 scaled — so the ground that was best is still best and the two
-    // new terms change the SHAPE rather than the order. Same principle the
-    // amenity term was added under.
     const blend = Math.min(1,
-      (30 * Math.min(1, dem.transit / t95)
-        + 34 * Math.min(1, dem.emp / e95)
-        + 14 * Math.min(1, dem.amen / a95)
-        + 12 * Math.min(1, dem.shore / s95)
-        + 10 * Math.min(1, dem.corridor / c95)) / 100);
+      (38 * Math.min(1, dem.transit / t95)
+        + 44 * Math.min(1, dem.emp / e95)
+        + 18 * Math.min(1, dem.amen / a95)) / 100);
     // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
     //
     // Gravity fields cannot produce this and it is most of what a city actually
@@ -399,14 +405,38 @@ export function buildCityData(src) {
     // on its numbers; residential and old quarters vary most, because a home is
     // not.
     const cachet = districtCachet(p.district ?? p.cd ?? "—", manifest.seed ?? 1);
-    // A CORNER IS A DIFFERENT ASSET, not a better location. Two frontages,
-    // twice the display, light on two sides, and the door goes where the
-    // footfall is. It MULTIPLIES rather than blends for that reason: it is a
-    // property of the lot and not of the ground around it, so it must not move
-    // the neighbours. Real corner premia run 15-40%; 18% is the conservative
-    // end and is stated as the calibration it is.
+    // THE WATER, THE HIGH STREET AND THE CORNER MULTIPLY. THEY DO NOT BLEND.
+    //
+    // The first cut of this put all three into the blend above at 22 of its
+    // 100 points, scaling the accessibility terms down to make room. Measured
+    // on the fixture, that FLATTENED THE CITY: the land distribution's p90/p10
+    // spread fell from 110x to 75x, because the peak is made by the
+    // accessibility terms and 22 points had been taken out of them — while the
+    // ground that gained was every lot within ninety metres of an arterial and
+    // three hundred of the water, which on an island is most of it. Undoing a
+    // heavy tail is the opposite of what the gamma below exists to do.
+    //
+    // The structure was wrong, not the weights. A waterfront corner on the
+    // high street is a premium ON TOP OF its location, not a substitute for
+    // it: the same lot in the middle of nowhere is still in the middle of
+    // nowhere. So they multiply, which preserves the gradient they sit on and
+    // is what a hedonic model does with them anyway.
+    //
+    // Ceilings are the measured end of the real ranges: waterfront 15%,
+    // high-street frontage 25%, corner 18% — the conservative end of the
+    // 15-40% corner premium. Each ramps on its own p95 so it is a premium for
+    // being NEAR the thing rather than a flat bonus for being on its side of
+    // town.
     const cornerK = (num(p.corner) ?? 0) === 1 ? 1.18 : 1;
-    const rawDemand = Math.min(1, blend * cachet * cornerK);
+    const shoreK = 1 + 0.15 * Math.min(1, dem.shore / s95);
+    const corridorK = 1 + 0.25 * Math.min(1, dem.corridor / c95);
+    // AND THEY REDISTRIBUTE RATHER THAN INFLATE. Three multipliers averaging
+    // well above 1 would lift every land value in the city, and a level shift
+    // in land is an economy change wearing a geometry label — it moves rents,
+    // cost basis and the tax bill on every parcel. `premMean` is the mean of
+    // the same product over every lot in this town, so the town's average
+    // premium is exactly 1 and only its DISTRIBUTION has changed.
+    const rawDemand = Math.min(1, blend * cachet * (cornerK * shoreK * corridorK) / premMean);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
     // assessed values run well below market; scale up, then blend with demand

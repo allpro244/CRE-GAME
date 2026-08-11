@@ -19,7 +19,7 @@ import {
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_MODULAR, S_PVCLAD, S_LABBLDG, S_MEDIAFACE, S_PRECAST, S_BALCONY, S_FRIT,
   T_MODERN, T_STONE, T_OLDROOF, T_CAPPED_PLAIN, T_TRADE,
-  STYLE_SETS_GLSL, has, modernCap, styleFor, keyOf, hash01,
+  STYLE_SETS_GLSL, has, modernCap, styleFor, styleForBuilt, keyOf, hash01,
 } from "./styles";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
@@ -7871,7 +7871,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * prove it is distinguishable from the family beside it, which is a different
    * question and one no counter can answer.
    */
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number }[]) {
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
     for (const item of items) {
@@ -7905,16 +7905,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const k = keyOf(item.bbl);
       const rnd = hash01(k, this.citySeed);
       const varr = hash01(k ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
-      const sroll = hash01(k ^ 0x2c9e17, this.citySeed ^ 0xbeef);
-      // Not every modern office is curtain wall. About half are; the rest are
-      // dark glass, white precast with ribbon glazing, or stone-clad piers —
-      // the actual spread of what has gone up since 2000.
+      // AND THE FACADE COMES OUT OF THE REGISTRY, NOT OUT OF A LADDER HERE.
+      //
+      // This used to be six hard-coded ids — glass, brick, mill sash, dark
+      // glass, deco piers, ribbon — chosen by class off two hash rolls. It had
+      // the shape problem above in a second dimension: 82 facade families
+      // exist and the half of the city the player is responsible for could
+      // reach six of them, three of which were wrong for a building finished
+      // this month rather than in 1955. New retail was drawn as mid-century
+      // ribbon glazing, new industrial as a nineteenth-century mill, and one
+      // new office in seven as a 1920s stone tower.
+      //
+      // `styleForBuilt` is `styleFor` — the chooser the generated stock uses —
+      // less the four families nobody develops as an investment. Same class,
+      // same year, same floors, same deed hash, so a tower the player finishes
+      // in 2014 gets drawn by the rules that would have drawn it if the town
+      // had started with it, and the two populations stop being tellable apart.
+      const yearBuilt = item.year && item.year > 1800 ? item.year : 2000;
       const style = item.styleOverride !== undefined ? item.styleOverride
-        : item.construction ? 5
-        : item.cls === "industrial" ? 3
-        : item.cls === "multifamily" ? (item.floors >= 12 && sroll < 0.3 ? 0 : 2)
-        : item.cls === "retail" ? 7
-        : sroll < 0.45 ? 0 : sroll < 0.70 ? 4 : sroll < 0.85 ? 7 : 6;
+        : item.construction ? S_PLAIN
+        : styleForBuilt({
+          b: item.bbl, c: item.cls, y: yearBuilt, t: 0,
+          f: Math.max(1, item.floors), z0: 0, z1: h, d: 0, r: [],
+        });
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
       const meta = [style, rnd, varr, h, fh2];
       // THE SHAPE. One flat prism is one of five silhouettes now, picked by
@@ -8029,10 +8042,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
         seg: [] as number[], ccv: [] as number[], era: [] as number[],
       });
-      // A building the player just finished is brand new, by definition, and
-      // the campaign runs from 2000 — so it sits at the young end of the
-      // 1870-2030 scale rather than anywhere in the middle of it.
-      const nowEra = 0.76 + 0.16 * hash01(k ^ 0xe7a, this.citySeed);
+      // ERA IS THE YEAR IT WAS FINISHED, on the same 0 = 1870, 1 = 2030 scale
+      // the generated stock carries. This was `0.76 + 0.16 * hash` — a band
+      // running 1992 to 2017 that every player building sat somewhere in
+      // regardless of when it was actually delivered, so a tower topped out in
+      // year 40 of a century campaign was drawn with the soiling of a building
+      // twenty-five years older than the one beside it that the city had put
+      // up on schedule. Era drives patina and the palette key, so a made-up
+      // one is a made-up amount of weathering.
+      const nowEra = Math.max(0, Math.min(1, (yearBuilt - 1870) / 160));
       const T = mkBuf();
       const R2 = mkBuf();
       for (const tier of tiers) {

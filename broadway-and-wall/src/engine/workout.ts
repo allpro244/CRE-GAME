@@ -43,13 +43,14 @@ import { transferGroundLeaseOffBook } from "./actions";
 const clone = (s: GameState): GameState => cloneState(s);
 
 /**
- * Equity cures are sponsor cheques (cash only). Arrears catch-ups and balloon
- * payoffs are debt-stack money — cash first, then the revolver — the same way
- * every other debt cheque clears. Using cash-only for those was how a firm
- * with an open line lost buildings it could have paid for.
+ * Every cure may draw the revolver. Cash-only equity cures were how a firm
+ * with an open line still lost a building it could reinstate — the owner's
+ * rule is that if the line can fund the cure OR the monthly coupon, the
+ * property is not taken. Covenant cures are still "equity" in the paperwork
+ * sense; they are not a reason to ignore undrawn credit.
  */
-function cureAllowsLoc(cause: Workout["cause"]): boolean {
-  return cause !== "covenant";
+function cureAllowsLoc(_cause: Workout["cause"]): boolean {
+  return true;
 }
 
 /**
@@ -299,8 +300,21 @@ function refreshCureAmount(s: GameState, parcels: ParcelTable, w: Workout): void
  * being paid. monthCF already books the coupon — this only asks whether the
  * cheque can clear.
  */
-function couponFundable(s: GameState, parcels: ParcelTable, h: { loan: { monthlyPmt: number } | null }): boolean {
+export function couponFundable(
+  s: GameState, parcels: ParcelTable, h: { loan: { monthlyPmt: number } | null },
+): boolean {
   return !!h.loan && fundableNow(s, parcels) >= h.loan.monthlyPmt;
+}
+
+/** Cure cheque OR monthly coupon — either keeps the deed off the steps. */
+export function canDefendWorkout(
+  s: GameState, parcels: ParcelTable, w: Workout,
+): boolean {
+  const h = s.holdings[w.bbl];
+  if (!h?.loan) return false;
+  if (couponFundable(s, parcels, h)) return true;
+  refreshCureAmount(s, parcels, w);
+  return fundableNow(s, parcels, { allowLoc: true }) >= w.cure;
 }
 
 export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
@@ -346,15 +360,34 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
 }
 
 /**
- * Pull every foreclosure the firm can reinstate off the docket — called
- * BEFORE the August hammer, because the county used to settle the sale in
- * the same tick the cure cheque would have cleared after NOI hit.
+ * Pull every foreclosure the firm can reinstate — or keep current — off the
+ * docket BEFORE the August hammer. The county used to settle the sale in the
+ * same tick the cure cheque would have cleared after NOI hit; later a
+ * coupon-current file still crossed the block because only a full reinstate
+ * pulled it. If the line can fund the cure OR the monthly coupon, the deed
+ * stays yours.
  */
 export function reinstateFundedForeclosures(s: GameState, parcels: ParcelTable): void {
   if (!s.workouts) return;
   for (const w of Object.values(s.workouts)) {
     if (w.stage !== "foreclosure") continue;
-    autoCureIfFunded(s, parcels, w);
+    if (autoCureIfFunded(s, parcels, w)) continue;
+    const h = s.holdings[w.bbl];
+    const rec = resolveRec(parcels, s, w.bbl);
+    if (!h?.loan || !rec) continue;
+    if (!couponFundable(s, parcels, h)) continue;
+    // Coupon clears — pull off the steps back to notice. They can demand a
+    // cure again; they do not auction a note that is being paid.
+    w.stage = "notice";
+    delete w.saleM;
+    w.decideM = s.month + NOTICE_M;
+    h.loan.arrearsMs = 0;
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${w.lender} pulled ${rec.address} off the foreclosure docket — the coupon is fundable `
+        + `(cash and the line). The file stays open until you reinstate in full, but the hammer does not fall `
+        + `on a note that is being paid.`,
+    });
   }
 }
 
@@ -561,9 +594,20 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       });
       continue;
     }
-    // stage === "foreclosure": the hammer belongs to the July docket now —
-    // engine/auction.ts settles it, credit bid, surplus, deficiency and all.
-    // Auto-cure above still runs each month until the sale.
+    // stage === "foreclosure": the hammer belongs to the July docket — unless
+    // the firm can still fund the coupon or the cure. Auto-cure ran above;
+    // a coupon-current file is pulled back to notice so the steps never see it.
+    if (w.stage === "foreclosure" && couponFundable(s, parcels, h)) {
+      w.stage = "notice";
+      delete w.saleM;
+      w.decideM = s.month + NOTICE_M;
+      h.loan.arrearsMs = 0;
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `${w.lender} pulled ${rec.address} back from foreclosure — the monthly debt service is fundable. `
+          + `Cure the file when you can; they will not take a building that is current.`,
+      });
+    }
   }
 }
 

@@ -15,7 +15,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
 import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
@@ -26,7 +26,7 @@ import { initRivals, tickRivals, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
-import { tickWorkouts } from "./workout";
+import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
@@ -712,6 +712,12 @@ function tickMonth(
       s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
     }
     if (s.insolventMs >= 12) {
+      // Last draw before the bailiff — if the line still covers the hole,
+      // there is nothing to seize.
+      coverCashShortfall(s, parcels);
+      if (s.cash >= 0) {
+        s.insolventMs = 0;
+      } else {
       // A FILE ON THE DESK OUTRANKS THE BAILIFF.
       //
       // This seizure path predates the workout desk and ran alongside it: a
@@ -719,9 +725,12 @@ function tickMonth(
       // negotiating and get taken by the general creditors instead, deleting
       // the file mid-conversation. Anything already in workout is spoken for —
       // that lender has a lien and a process, and the unsecured creditors
-      // queue behind both.
+      // queue behind both. A note whose monthly coupon the firm can still
+      // fund (cash or line) is also off-limits — that is a performing debt,
+      // not salvage for the general creditors.
       const owned = Object.values(s.holdings)
-        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]);
+        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]
+          && !(h.loan && couponFundable(s, parcels, h)));
       if (owned.length) {
         // creditors take the most valuable thing you own
         let pick = owned[0], pickV = -Infinity;
@@ -795,9 +804,9 @@ function tickMonth(
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = s.cash < 0 ? 8 : 0;
-      } else if (locAvailable(s, parcels) > 0) {
-        // Book empty of seizable deeds (or everything is in workout /
-        // development) but the revolver still advances — keep the run alive.
+      } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
+        // Book empty of seizable deeds (everything in workout / development /
+        // coupon-current) but liquidity remains — keep the run alive.
         coverCashShortfall(s, parcels);
         if (s.cash >= 0) s.insolventMs = 0;
       } else {
@@ -806,6 +815,7 @@ function tickMonth(
         };
         s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors own it now." });
       }
+      } // cash still negative after the last draw
     }
   } else {
     s.insolventMs = 0;

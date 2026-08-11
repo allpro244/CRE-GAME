@@ -122,9 +122,10 @@ export function locAvailable(s: GameState, parcels: ParcelTable): number {
  * trivially fund).
  *
  * Order is the real one: operating cash first, then the line (when allowed),
- * then whatever is still unpaid is unpaid. Equity cures pass `allowLoc: false`
- * — a sponsor cheque / paid-in capital clause, not a revolver draw; the line
- * is for operations and keeping other loans current. LOC draws are NOT booked
+ * then whatever is still unpaid is unpaid. Workout cures (including covenant
+ * equity cures) may draw the line — a sponsor who can reinstate from the
+ * revolver does not lose the building. Pass `allowLoc: false` only for true
+ * cash-only calls that are not about keeping a deed. LOC draws are NOT booked
  * to `borrowed` — that bucket is mortgage/facility principal; conserve already
  * sees the revolver through `Δloc.balance`. Returns the dollars successfully
  * funded (and already deducted from cash).

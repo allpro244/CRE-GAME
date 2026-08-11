@@ -4,8 +4,9 @@
 // is made of. It cannot see `setPlayerBuildings` — everything the player and
 // the rivals put up, which after twenty years is most of downtown — because
 // that path takes finished buildings rather than a seed, and there is no city
-// to sweep. It was choosing from six facade families out of eighty-two for an
-// unknown number of commits and no check in the repo was shaped to notice.
+// to sweep. It was choosing six facade families out of a hundred and forty-four
+// for an unknown number of commits, and no check in the repo was shaped to
+// notice.
 //
 // This paints a controlled slate through that path — a spread of classes,
 // floors and years over a block of real parcels — and counts what actually
@@ -22,6 +23,11 @@
   const S = () => window.__store.getState();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (!S().parcels) {
+    // ?bwtown=kestrel cuts a town on that island instead of the default one.
+    // A fresh profile then gives a random seed, which is the point: one town
+    // is a screenshot, and this path's distribution is not a screenshot.
+    const town = new URLSearchParams(location.search).get("bwtown");
+    if (town) { try { localStorage.setItem("bw:city", town); } catch { /* private mode */ } }
     const b = [...document.querySelectorAll("button")];
     (b.find((x) => /Continue|Resume|Pick it back up/i.test(x.textContent || "")) ||
      b.find((x) => /Break ground/.test(x.textContent || ""))).click();
@@ -79,8 +85,16 @@
       t.set(key, (t.get(key) || 0) + 1);
     }
   });
+  // Roof furniture: the meshes carry `prop:<kind>` names, same as the static
+  // stock, so what reached a roof can be counted rather than inferred.
+  const props = new Map();
+  L.dynGroup.traverse((o) => {
+    const m = /^prop:(\d+)$/.exec(o.name || "");
+    if (m) props.set(Number(m[1]), (props.get(Number(m[1])) || 0) + 1);
+  });
   const show = (t) => [...t.entries()].sort((x, y) => y[1] - x[1]).map(([s, n]) => s + ":" + n).join(" ");
   console.error(`SLATE ${items.length} buildings, seed=${S().game.citySeed}`);
+  console.error(`PROPS   ${props.size} kinds :: ${show(props)}`);
   console.error(`FACADES ${wall.size} families :: ${show(wall)}`);
   console.error(`DECKS   ${deck.size} surfaces :: ${show(deck)}`);
 } catch (e) { console.error("SLATE ERR " + e.message + " :: " + (e.stack || "").slice(0, 300)); } })()

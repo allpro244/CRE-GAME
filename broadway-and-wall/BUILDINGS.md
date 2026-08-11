@@ -61,7 +61,14 @@ The two things that made the sharing possible are worth knowing about:
 
 ## 2 · WHAT EXISTS NOW
 
-**82 facade families** (was 10, of which 2 carried 71% of the city).
+**144 facade families** (was 10, of which 2 carried 71% of the city), out of
+152 `S_*` ids — the other eight are not facades: `S_PLAIN`, `S_CORNICE`,
+`S_GREEN`, `S_LOT`, `S_GABLE`, `S_LAWN`, `S_PATH`, `S_POND`.
+
+> **Re-count before you quote this.** This section said 82 for long enough that
+> it reached commit messages and source comments, and it was 144 by then.
+> `pnpm styles` prints the number in its first line; `grep -c '^export const S_'
+> src/map/styles.ts` prints the id count. Neither takes a second.
 
 - *Pre-war fabric* — cast iron, Richardsonian, terracotta Gothic, Beaux-Arts,
   Second Empire, Italianate, Federal, tenement, Chicago school, glazed terra
@@ -86,23 +93,29 @@ taper, twist.
 **10 tower families** (`ThreeBuildings.ts`, >20 storeys) — vanderbilt, spiral,
 exo, stack, carve, blade, shelf, curveslab, deepframe, twist.
 
-**29 roof prop kinds** — the machine deck (bulkhead, lift overrun, cooling
+**42 roof prop kinds** — the machine deck (bulkhead, lift overrun, cooling
 tower, plant, tanks, PV, skylights, guardrail) plus the landmarks (steeple,
 dome, cupola, clock stage, spire, smokestack, tank tower, sign letters, urns,
 dormers, helipad, pergola, planters, greenhouse, flagpole, mast, dish farm,
 davit, ventilators, chimney pots).
 
-**Current audit** (`pnpm styles`, 2 towns × 3 seeds, ~5,800 buildings):
+**Current audit** (`pnpm styles`, 12 cities — 2 towns x 6 seeds — 9,563
+buildings, 144 facade families):
 
 ```
 DEAD (unreachable by any input): none
 untenanted (reachable, absent from these towns):
-    diagrid (needs office 20fl 2000), steelshelf (needs office 6fl 2015),
-    megapanel (needs office 6fl 2000)
+    diagrid (needs office 20fl 2000), skygarden (needs office 6fl 2015),
+    megabrace (needs office 12fl 2000), pvclad (needs office 6fl 2015)
 DOMINANT : none
-top-5 share: 30.5%      (the two-family era was 71%)
-retail 40 families · multifamily 32 · office 40 · industrial 25
+top-5 share: 20.2%      (the two-family era was 71%)
+office 72 families · retail 65 · multifamily 48 · industrial 33
 ```
+
+That audit covers the stock a town STARTS with. For the other path — everything
+the player and the rivals put up — see `tools/probe/slatesweep.mjs` in §7; it is
+the same question asked of `setPlayerBuildings`, and it has to sweep seeds for
+the same reason this one does.
 
 ---
 

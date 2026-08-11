@@ -325,6 +325,190 @@ export function roofDeck(style: number, year: number, floors: number, z1: number
   return pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
 }
 
+/**
+ * WHAT STANDS ON A FLAT ROOF, AND IN WHAT ORDER.
+ *
+ * Each of these is up there because the real one would be — a lift overrun
+ * only where there is a lift, a cooling tower only where there is a chiller,
+ * PV only after somebody was selling it — so the parts on a deck tell you what
+ * KIND of building you are looking at and roughly when it was last touched.
+ *
+ * The ORDER is the other half of it, and it is what stops a small roof looking
+ * like a plant room that exploded. The list is written most-necessary first:
+ * the way out, then the lift, then the plant that makes the building work,
+ * then the things somebody chose to add. `fitRoofKit` walks it in order and
+ * stops when the deck is full, so a sixteen-metre plate gets a bulkhead and a
+ * vent and the tower next door still gets everything.
+ *
+ * Shared, because it was two lists. `setPlayerBuildings` asked for four kinds
+ * — bulkhead, overrun, cooling tower, PV — off four coin flips, and could not
+ * reach the other sixteen: no mast on a supertall, no tank, no condensers, no
+ * skylight, no terrace, no dish, no window-washing rig. Twenty years into a
+ * campaign that is most of the roofs in frame, and roofs are 9.5% of it.
+ */
+export interface RoofKitIn {
+  style: number;
+  year: number;                        // the year it was finished
+  hgt: number;                         // the BUILDING's height, not the roof's altitude
+  fh: number;                          // floor to floor
+  area: number;                        // signed plan area
+  hasMechDeck: boolean;                // the crown already built a penthouse
+  seed: number;                        // integer off the deed, for the jitter
+  rnd: (k: number) => number;          // the deck's own hash stream
+  jit: (k: number, amp: number) => number;
+}
+
+/**
+ * THE PROP KIT — one geometry and one colour per prop kind, built once.
+ *
+ * This was a local inside `buildCity`, which meant only the generator could
+ * put anything on a roof: `setPlayerBuildings` carried a four-entry map of its
+ * own — bulkhead, overrun, cooling tower, PV — and the other thirty-eight
+ * kinds were unreachable from the half of the city the player builds.
+ *
+ * Lazily built and memoised. `BufferGeometry` is CPU-side, so this costs
+ * nothing until something asks, and the geometries are safe to share between
+ * the generator's instanced meshes and the dynamic group's plain ones.
+ */
+let PROP_DEFS: { geom: THREE.BufferGeometry; color: number }[] | null = null;
+export function propKit(): { geom: THREE.BufferGeometry; color: number }[] {
+  return (PROP_DEFS ??= [
+  { geom: waterTowerGeom(), color: 0x8a7a63 },
+  { geom: new THREE.BoxGeometry(2.2, 1.6, 1.3).translate(0, 0, 0.65), color: 0x9aa0a4 },
+  { geom: new THREE.BoxGeometry(4.6, 3.4, 2.9).translate(0, 0, 1.45), color: 0xb9b5a8 },
+  { geom: new THREE.CylinderGeometry(4.2, 4.2, 0.25, 20).rotateX(Math.PI / 2).translate(0, 0, 0.12), color: 0x7d8489 },
+  { geom: antennaGeom(), color: 0x6d7276 },
+  { geom: new THREE.BoxGeometry(0.9, 0.9, 2.4).translate(0, 0, 1.2), color: 0x8a5c48 },
+  { geom: new THREE.BoxGeometry(6.5, 1.8, 1.3).translate(0, 0, 0.65), color: 0xaab4b8 },
+  { geom: billboardGeom(), color: 0xffffff },
+  { geom: new THREE.BufferGeometry(), color: 0x000000 },  // 8: unused slot
+  { geom: fireEscapeGeom(2), color: 0x4a4238 },
+  { geom: fireEscapeGeom(3), color: 0x4a4238 },
+  { geom: fireEscapeGeom(4), color: 0x4a4238 },
+  { geom: fireEscapeGeom(5), color: 0x4a4238 },
+  { geom: bulkheadGeom(), color: 0x9d9382 },        // 13
+  { geom: overrunGeom(), color: 0x93897a },         // 14
+  { geom: coolingTowerGeom(), color: 0xa8ada9 },    // 15
+  { geom: pressureTankGeom(), color: 0x7f868a },    // 16
+  { geom: generatorGeom(), color: 0x8b8f86 },       // 17
+  { geom: skylightGeom(), color: 0xbfd0d6 },        // 18
+  { geom: pvRowGeom(), color: 0x2b3550 },           // 19
+  { geom: guardrailGeom(), color: 0x6f7377 },       // 20
+  // The roofscape proper — see the block by the geometry above.
+  { geom: chimneyPotsGeom(), color: 0x8c5f4c },     // 21 sooted brick
+  { geom: smokestackGeom(), color: 0x7d5748 },      // 22 works chimney
+  { geom: cupolaGeom(), color: 0xc9c3b4 },          // 23 painted timber
+  { geom: spireGeom(), color: 0x6f7a72 },           // 24 lead-grey
+  { geom: domeGeom(), color: 0x63a08a },            // 25 copper gone green
+  { geom: clockTowerGeom(), color: 0xbdb5a3 },      // 26 stone with pale faces
+  { geom: steepleGeom(), color: 0xd6d2c6 },         // 27 whitewashed timber
+  { geom: pergolaGeom(), color: 0x8b7355 },         // 28 weathered cedar
+  { geom: planterRowGeom(), color: 0x5f7a48 },      // 29 planting
+  { geom: helipadGeom(), color: 0x6a6f72 },         // 30 painted deck
+  { geom: greenhouseGeom(), color: 0xbcd2d6 },      // 31 glass
+  { geom: ventTurbineGeom(), color: 0x9aa0a0 },     // 32 galvanised
+  { geom: flagpoleGeom(), color: 0xcfcfc8 },        // 33 white pole
+  { geom: antennaArrayGeom(), color: 0x86898c },    // 34 galvanised lattice
+  { geom: dishFarmGeom(), color: 0xb3b6b3 },        // 35 grey dishes
+  { geom: davitGeom(), color: 0x767b7e },           // 36 machine grey
+  { geom: roofSignGeom(), color: 0xffffff },        // 37 painted — see SIGN_COLORS
+  { geom: tankTowerGeom(), color: 0x8a8f8c },       // 38 steel tank
+  { geom: urnGeom(), color: 0xa9a293 },             // 39 cast stone
+  { geom: dormerGeom(), color: 0xcfc7b4 },          // 40 painted trim
+  { geom: dormerRoundGeom(), color: 0xc9c1af },     // 41 painted trim
+  ]);
+}
+
+export function roofKitWants(o: RoofKitIn): RoofWant[] {
+  const hgt = o.hgt;
+  const bear = o.rnd(41) * Math.PI * 2;
+  const floors = Math.max(1, Math.round(hgt / Math.max(2.6, o.fh)));
+  const wants: RoofWant[] = [];
+  // A mast IS the silhouette of a tall tower, so it is exempt from the
+  // budget — but it still has to stand inside the parapet like
+  // everything else.
+  if (hgt >= 95) wants.push({ kind: 4, s: 1 + (hgt - 95) / 60, rot: 0, keep: true });
+  if (hgt >= 105 && o.year >= 1975) wants.push({ kind: 3, s: 1, rot: 0, keep: true });
+
+  // Somebody has to be able to get out here. Every flat roof has a way
+  // up, and it is the most characteristic silhouette on the deck —
+  // unless the building already grew a penthouse, because that IS the
+  // stair and the lift, and a bulkhead standing beside it on its own
+  // roof is the same object drawn twice.
+  if (hgt >= 9 && !o.hasMechDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * o.rnd(3), rot: bear });
+  // A lift overrun exists where there is a lift, which is six floors
+  // and up before the war and four floors and up after it.
+  if (floors >= (o.year >= 1955 ? 4 : 6) && hgt >= 16 && !o.hasMechDeck) wants.push({ kind: 14, s: 0.9 + 0.25 * o.rnd(5), rot: bear + 0.4 });
+  // A shed is lit through its roof rather than its walls, so a monitor
+  // is the one thing on it that matters. It used to be dropped on top
+  // of whatever the machine deck had already put there, at a six-metre
+  // jitter off the centroid that hung nearly a fifth of them over the
+  // gutter; taking it through the kit costs it a place in the budget
+  // and makes it stand inside the parapet like everything else.
+  if (o.style === S_MILL && hgt < 15) wants.push({ kind: 6, s: 0.85 + 0.3 * o.rnd(25), rot: bear });
+  if (hgt >= 20) wants.push({ kind: 2, s: 1 + (hgt > 60 ? 0.6 : 0), rot: o.jit(3, 3) });
+  // The timber tank on a pre-war roof, and the steel one that replaced
+  // it after the war — the two never share a roof.
+  if (o.year < 1968 && hgt >= 22) wants.push({ kind: 0, s: 1, rot: 0 });
+  // Chilled water needs somewhere to reject the heat. Post-war, and
+  // only on a building big enough to have a central plant.
+  if (o.year >= 1948 && hgt >= 34 && o.rnd(7) < 0.72) wants.push({ kind: 15, s: 0.85 + 0.55 * o.rnd(9), rot: bear + 1.1 });
+  if (o.year >= 1962 && hgt >= 26 && o.rnd(11) < 0.45) wants.push({ kind: 16, s: 0.85 + 0.3 * o.rnd(13), rot: 0 });
+  // Standby power: hospitals, exchanges, anything with a computer
+  // room in it, so tall and late.
+  if (o.year >= 1972 && hgt >= 48 && o.rnd(15) < 0.5) wants.push({ kind: 17, s: 1, rot: bear + 2.3 });
+  // Daylight into the top floor: a loft conversion or a studio.
+  if (hgt >= 12 && hgt <= 34 && o.rnd(17) < 0.30) wants.push({ kind: 18, s: 0.8 + 0.5 * o.rnd(19), rot: bear + 1.57 });
+  // Nobody put panels on a roof before somebody was selling them.
+  if (o.year >= 1996 && hgt >= 10 && o.rnd(21) < 0.34) wants.push({ kind: 19, s: 0.9 + 0.4 * o.rnd(23), rot: bear });
+  // ---- THE REST OF THE ROOFSCAPE -------------------------------------
+  const plateM = Math.sqrt(Math.max(1, Math.abs(o.area) / 2));
+  //
+  // Not landmarks, so these queue for deck space with the plant. Each
+  // still follows from what the building is: a chimney pot means
+  // fireplaces, a whirlybird means a shed with no other ventilation, a
+  // window-washing rig means a facade nobody can reach from a ladder.
+  // Chimney pots — a house with fireplaces in it, so old and low.
+  if (o.year < 1945 && hgt <= 24 && has(T_OLDROOF, o.style)) {
+    wants.push({ kind: 21, s: 0.85 + 0.4 * o.rnd(67), rot: bear });
+    if (plateM > 15 && o.rnd(68) < 0.5) wants.push({ kind: 21, s: 0.8 + 0.3 * o.rnd(69), rot: bear + 1.2 });
+  }
+  // A shed ventilates through its roof because it has no other way to.
+  if ((o.style === S_METALPAN || o.style === S_MILL) && hgt < 18 && o.rnd(70) < 0.45) {
+    wants.push({ kind: 32, s: 0.9 + 0.3 * o.rnd(71), rot: bear });
+  }
+  // A mast on a roof somebody rents to a carrier — post-war and up.
+  if (o.year >= 1958 && hgt >= 28 && o.rnd(72) < 0.30) wants.push({ kind: 34, s: 0.8 + 0.5 * o.rnd(73), rot: bear });
+  // Satellite dishes arrived with cable and never left.
+  if (o.year >= 1980 && hgt >= 19 && o.rnd(74) < 0.26) wants.push({ kind: 35, s: 0.85 + 0.35 * o.rnd(75), rot: bear + 0.9 });
+  // A facade too tall to reach off a ladder needs a rig on the roof.
+  if (o.year >= 1968 && hgt >= 38 && o.rnd(76) < 0.55) wants.push({ kind: 36, s: 1, rot: bear + 1.57 });
+  // A helipad wants a big deck and a client who wanted one.
+  if (o.year >= 1965 && hgt >= 55 && plateM > 24 && o.rnd(77) < 0.28) wants.push({ kind: 30, s: 1, rot: bear });
+  // The roof terrace: a deck, something to sit under, and planting.
+  if (o.year >= 1988 && hgt >= 12 && o.rnd(78) < 0.30) {
+    wants.push({ kind: 28, s: 0.9 + 0.3 * o.rnd(79), rot: bear + 0.6 });
+    wants.push({ kind: 29, s: 0.9 + 0.3 * o.rnd(80), rot: bear + 0.6 });
+  } else if (o.year >= 1996 && hgt >= 9 && o.rnd(81) < 0.22) {
+    wants.push({ kind: 29, s: 0.85 + 0.3 * o.rnd(82), rot: bear });
+  }
+  // Growing food up here is a recent idea and it looks like one.
+  if (o.year >= 2006 && hgt >= 9 && hgt <= 46 && o.rnd(83) < 0.14) {
+    wants.push({ kind: 31, s: 0.85 + 0.35 * o.rnd(84), rot: bear + 1.57 });
+  }
+  // A flagpole: civic buildings always, and anybody else who felt like it.
+  if ((o.style === S_CIVIC || o.style === S_BEAUX) && hgt >= 10 && o.rnd(85) < 0.55) {
+    wants.push({ kind: 33, s: 0.9 + 0.35 * o.rnd(86), rot: 0 });
+  } else if (hgt >= 16 && o.rnd(87) < 0.08) {
+    wants.push({ kind: 33, s: 0.85 + 0.3 * o.rnd(88), rot: 0 });
+  }
+  // Condensers are the filler — they go on last, and only where a big
+  // deck has room left over after the plant that matters.
+  const nAc = hgt > 40 ? 3 : 1;
+  for (let k = 0; k < nAc; k++) wants.push({ kind: 1, s: 0.8 + 0.4 * ((o.seed >> k) % 2), rot: o.jit(12 + k, 3) });
+  return wants;
+}
+
 export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut {
   const { ring, z1, style, rnd, varr, fh, area } = o;
   let mechDeck: CrownOut["mechDeck"] = null;
@@ -4435,7 +4619,8 @@ void main() {
   // thick thing with holes cut in it. All of it lived above this line, in the
   // parallax and the jamb shading, so at the camera this game actually sits
   // at every family arrived as a flat mix of its own wall and its own glass
-  // and the whole range collapsed into the palette. Eighty-two families, one
+  // and the whole range collapsed into the palette. A hundred and forty-four
+  // families, one
   // cue, and the cue that did the most work was the one that got dissolved.
   //
   // Depth has a consequence that is pure value and survives any distance: a
@@ -6706,92 +6891,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // add. fitRoofKit walks it in order and stops when the deck is full,
           // so a sixteen-metre plate gets a bulkhead and a vent, and the tower
           // next door still gets everything.
-          const R = (k: number) => hash01(keyOf(v.b ?? "x") ^ Math.imul(k + 1, 0x9e3779b1), this.citySeed);
-          const bear = R(41) * Math.PI * 2;
-          const floors = Math.max(1, Math.round(hgt / Math.max(2.6, fh)));
-          const wants: RoofWant[] = [];
-          // A mast IS the silhouette of a tall tower, so it is exempt from the
-          // budget — but it still has to stand inside the parapet like
-          // everything else.
-          if (hgt >= 95) wants.push({ kind: 4, s: 1 + (hgt - 95) / 60, rot: 0, keep: true });
-          if (hgt >= 105 && v.y >= 1975) wants.push({ kind: 3, s: 1, rot: 0, keep: true });
-
-          // Somebody has to be able to get out here. Every flat roof has a way
-          // up, and it is the most characteristic silhouette on the deck —
-          // unless the building already grew a penthouse, because that IS the
-          // stair and the lift, and a bulkhead standing beside it on its own
-          // roof is the same object drawn twice.
-          if (hgt >= 9 && !mechDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * R(3), rot: bear });
-          // A lift overrun exists where there is a lift, which is six floors
-          // and up before the war and four floors and up after it.
-          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16 && !mechDeck) wants.push({ kind: 14, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
-          // A shed is lit through its roof rather than its walls, so a monitor
-          // is the one thing on it that matters. It used to be dropped on top
-          // of whatever the machine deck had already put there, at a six-metre
-          // jitter off the centroid that hung nearly a fifth of them over the
-          // gutter; taking it through the kit costs it a place in the budget
-          // and makes it stand inside the parapet like everything else.
-          if (style === S_MILL && hgt < 15) wants.push({ kind: 6, s: 0.85 + 0.3 * R(25), rot: bear });
-          if (hgt >= 20) wants.push({ kind: 2, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
-          // The timber tank on a pre-war roof, and the steel one that replaced
-          // it after the war — the two never share a roof.
-          if (v.y < 1968 && hgt >= 22) wants.push({ kind: 0, s: 1, rot: 0 });
-          // Chilled water needs somewhere to reject the heat. Post-war, and
-          // only on a building big enough to have a central plant.
-          if (v.y >= 1948 && hgt >= 34 && R(7) < 0.72) wants.push({ kind: 15, s: 0.85 + 0.55 * R(9), rot: bear + 1.1 });
-          if (v.y >= 1962 && hgt >= 26 && R(11) < 0.45) wants.push({ kind: 16, s: 0.85 + 0.3 * R(13), rot: 0 });
-          // Standby power: hospitals, exchanges, anything with a computer
-          // room in it, so tall and late.
-          if (v.y >= 1972 && hgt >= 48 && R(15) < 0.5) wants.push({ kind: 17, s: 1, rot: bear + 2.3 });
-          // Daylight into the top floor: a loft conversion or a studio.
-          if (hgt >= 12 && hgt <= 34 && R(17) < 0.30) wants.push({ kind: 18, s: 0.8 + 0.5 * R(19), rot: bear + 1.57 });
-          // Nobody put panels on a roof before somebody was selling them.
-          if (v.y >= 1996 && hgt >= 10 && R(21) < 0.34) wants.push({ kind: 19, s: 0.9 + 0.4 * R(23), rot: bear });
-          // ---- THE REST OF THE ROOFSCAPE -------------------------------------
-          const plateM = Math.sqrt(Math.max(1, Math.abs(area) / 2));
-          //
-          // Not landmarks, so these queue for deck space with the plant. Each
-          // still follows from what the building is: a chimney pot means
-          // fireplaces, a whirlybird means a shed with no other ventilation, a
-          // window-washing rig means a facade nobody can reach from a ladder.
-          // Chimney pots — a house with fireplaces in it, so old and low.
-          if (v.y < 1945 && hgt <= 24 && has(T_OLDROOF, style)) {
-            wants.push({ kind: 21, s: 0.85 + 0.4 * R(67), rot: bear });
-            if (plateM > 15 && R(68) < 0.5) wants.push({ kind: 21, s: 0.8 + 0.3 * R(69), rot: bear + 1.2 });
-          }
-          // A shed ventilates through its roof because it has no other way to.
-          if ((style === S_METALPAN || style === S_MILL) && hgt < 18 && R(70) < 0.45) {
-            wants.push({ kind: 32, s: 0.9 + 0.3 * R(71), rot: bear });
-          }
-          // A mast on a roof somebody rents to a carrier — post-war and up.
-          if (v.y >= 1958 && hgt >= 28 && R(72) < 0.30) wants.push({ kind: 34, s: 0.8 + 0.5 * R(73), rot: bear });
-          // Satellite dishes arrived with cable and never left.
-          if (v.y >= 1980 && hgt >= 19 && R(74) < 0.26) wants.push({ kind: 35, s: 0.85 + 0.35 * R(75), rot: bear + 0.9 });
-          // A facade too tall to reach off a ladder needs a rig on the roof.
-          if (v.y >= 1968 && hgt >= 38 && R(76) < 0.55) wants.push({ kind: 36, s: 1, rot: bear + 1.57 });
-          // A helipad wants a big deck and a client who wanted one.
-          if (v.y >= 1965 && hgt >= 55 && plateM > 24 && R(77) < 0.28) wants.push({ kind: 30, s: 1, rot: bear });
-          // The roof terrace: a deck, something to sit under, and planting.
-          if (v.y >= 1988 && hgt >= 12 && R(78) < 0.30) {
-            wants.push({ kind: 28, s: 0.9 + 0.3 * R(79), rot: bear + 0.6 });
-            wants.push({ kind: 29, s: 0.9 + 0.3 * R(80), rot: bear + 0.6 });
-          } else if (v.y >= 1996 && hgt >= 9 && R(81) < 0.22) {
-            wants.push({ kind: 29, s: 0.85 + 0.3 * R(82), rot: bear });
-          }
-          // Growing food up here is a recent idea and it looks like one.
-          if (v.y >= 2006 && hgt >= 9 && hgt <= 46 && R(83) < 0.14) {
-            wants.push({ kind: 31, s: 0.85 + 0.35 * R(84), rot: bear + 1.57 });
-          }
-          // A flagpole: civic buildings always, and anybody else who felt like it.
-          if ((style === S_CIVIC || style === S_BEAUX) && hgt >= 10 && R(85) < 0.55) {
-            wants.push({ kind: 33, s: 0.9 + 0.35 * R(86), rot: 0 });
-          } else if (hgt >= 16 && R(87) < 0.08) {
-            wants.push({ kind: 33, s: 0.85 + 0.3 * R(88), rot: 0 });
-          }
-          // Condensers are the filler — they go on last, and only where a big
-          // deck has room left over after the plant that matters.
-          const nAc = hgt > 40 ? 3 : 1;
-          for (let k = 0; k < nAc; k++) wants.push({ kind: 1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
+          // What goes on the deck, and in what order — see roofKitWants. Was
+          // ninety lines inline here, which is why the other path that makes
+          // buildings could ask for four of the twenty kinds.
+          const wants = roofKitWants({
+            style, year: v.y, hgt, fh, area, hasMechDeck: !!mechDeck, seed, jit,
+            rnd: (k) => hash01(keyOf(v.b ?? "x") ^ Math.imul(k + 1, 0x9e3779b1), this.citySeed),
+          });
           for (const p of fitRoofKit(mechDeck ? mechDeck.ring : (ring as [number, number][]),
             mechDeck ? mechDeck.z : v.z1, wants,
             (i) => hash01(keyOf(v.b ?? "x") ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed), hgt)) {
@@ -6977,51 +7083,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.rangesByBBL.get(bbl)!.push({ attr: 1, r });
     }
 
-    const propDefs: { geom: THREE.BufferGeometry; color: number }[] = [
-      { geom: waterTowerGeom(), color: 0x8a7a63 },
-      { geom: new THREE.BoxGeometry(2.2, 1.6, 1.3).translate(0, 0, 0.65), color: 0x9aa0a4 },
-      { geom: new THREE.BoxGeometry(4.6, 3.4, 2.9).translate(0, 0, 1.45), color: 0xb9b5a8 },
-      { geom: new THREE.CylinderGeometry(4.2, 4.2, 0.25, 20).rotateX(Math.PI / 2).translate(0, 0, 0.12), color: 0x7d8489 },
-      { geom: antennaGeom(), color: 0x6d7276 },
-      { geom: new THREE.BoxGeometry(0.9, 0.9, 2.4).translate(0, 0, 1.2), color: 0x8a5c48 },
-      { geom: new THREE.BoxGeometry(6.5, 1.8, 1.3).translate(0, 0, 0.65), color: 0xaab4b8 },
-      { geom: billboardGeom(), color: 0xffffff },
-      { geom: new THREE.BufferGeometry(), color: 0x000000 },  // 8: unused slot
-      { geom: fireEscapeGeom(2), color: 0x4a4238 },
-      { geom: fireEscapeGeom(3), color: 0x4a4238 },
-      { geom: fireEscapeGeom(4), color: 0x4a4238 },
-      { geom: fireEscapeGeom(5), color: 0x4a4238 },
-      { geom: bulkheadGeom(), color: 0x9d9382 },        // 13
-      { geom: overrunGeom(), color: 0x93897a },         // 14
-      { geom: coolingTowerGeom(), color: 0xa8ada9 },    // 15
-      { geom: pressureTankGeom(), color: 0x7f868a },    // 16
-      { geom: generatorGeom(), color: 0x8b8f86 },       // 17
-      { geom: skylightGeom(), color: 0xbfd0d6 },        // 18
-      { geom: pvRowGeom(), color: 0x2b3550 },           // 19
-      { geom: guardrailGeom(), color: 0x6f7377 },       // 20
-      // The roofscape proper — see the block by the geometry above.
-      { geom: chimneyPotsGeom(), color: 0x8c5f4c },     // 21 sooted brick
-      { geom: smokestackGeom(), color: 0x7d5748 },      // 22 works chimney
-      { geom: cupolaGeom(), color: 0xc9c3b4 },          // 23 painted timber
-      { geom: spireGeom(), color: 0x6f7a72 },           // 24 lead-grey
-      { geom: domeGeom(), color: 0x63a08a },            // 25 copper gone green
-      { geom: clockTowerGeom(), color: 0xbdb5a3 },      // 26 stone with pale faces
-      { geom: steepleGeom(), color: 0xd6d2c6 },         // 27 whitewashed timber
-      { geom: pergolaGeom(), color: 0x8b7355 },         // 28 weathered cedar
-      { geom: planterRowGeom(), color: 0x5f7a48 },      // 29 planting
-      { geom: helipadGeom(), color: 0x6a6f72 },         // 30 painted deck
-      { geom: greenhouseGeom(), color: 0xbcd2d6 },      // 31 glass
-      { geom: ventTurbineGeom(), color: 0x9aa0a0 },     // 32 galvanised
-      { geom: flagpoleGeom(), color: 0xcfcfc8 },        // 33 white pole
-      { geom: antennaArrayGeom(), color: 0x86898c },    // 34 galvanised lattice
-      { geom: dishFarmGeom(), color: 0xb3b6b3 },        // 35 grey dishes
-      { geom: davitGeom(), color: 0x767b7e },           // 36 machine grey
-      { geom: roofSignGeom(), color: 0xffffff },        // 37 painted — see SIGN_COLORS
-      { geom: tankTowerGeom(), color: 0x8a8f8c },       // 38 steel tank
-      { geom: urnGeom(), color: 0xa9a293 },             // 39 cast stone
-      { geom: dormerGeom(), color: 0xcfc7b4 },          // 40 painted trim
-      { geom: dormerRoundGeom(), color: 0xc9c1af },     // 41 painted trim
-    ];
+    const propDefs = propKit();
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
       [0.72, 0.24, 0.20], [0.20, 0.32, 0.50], [0.92, 0.88, 0.80],
@@ -8091,7 +8153,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       //
       // This used to be six hard-coded ids — glass, brick, mill sash, dark
       // glass, deco piers, ribbon — chosen by class off two hash rolls. It had
-      // the shape problem above in a second dimension: 82 facade families
+      // the shape problem above in a second dimension: 144 facade families
       // exist and the half of the city the player is responsible for could
       // reach six of them, three of which were wrong for a building finished
       // this month rather than in 1955. New retail was drawn as mid-century
@@ -8369,34 +8431,71 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       if (!item.construction && h >= 9) {
         const topTier = tiers[tiers.length - 1];
-        const bear2 = hash01(k ^ 0x41, this.citySeed) * Math.PI * 2;
-        const GEOM: Record<number, () => THREE.BufferGeometry> = {
-          13: bulkheadGeom, 14: overrunGeom, 15: coolingTowerGeom, 19: pvRowGeom,
-        };
-        const COL: Record<number, number> = { 13: 0x9d9382, 14: 0x93897a, 15: 0xa8ada9, 19: 0x2b3550 };
-        // Same fit as the static stock, and for the same reason: your new
-        // tower's top tier can be a small plate even when the building is
-        // tall, and a cooling tower hung off the edge of a setback is the
-        // ugliest thing in the city.
+        // THE WHOLE KIT, NOT FOUR OF IT.
         //
-        // ...and the kit now stands on whatever the crown left. A tall
-        // building grows a bulkhead up there; dropping a cooling tower on the
-        // roof BELOW it buries the plant inside the penthouse. Same rule as
-        // the static stock, including not asking for a second bulkhead when
-        // the crown has already built one.
-        const wants: RoofWant[] = [];
-        if (!crownDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed), rot: bear2 });
-        if (item.floors >= 4 && h >= 16 && !crownDeck) wants.push({ kind: 14, s: 1, rot: bear2 + 0.4 });
-        if (h >= 34 && hash01(k ^ 0x45, this.citySeed) < 0.72) {
-          wants.push({ kind: 15, s: 0.85 + 0.5 * hash01(k ^ 0x47, this.citySeed), rot: bear2 + 1.1 });
+        // This asked for bulkhead, overrun, cooling tower and PV off four coin
+        // flips, and could reach none of the other sixteen: no mast on a
+        // supertall, no water tank, no condensers, no skylight, no roof
+        // terrace, no dish, no window-washing rig, and no guardrail — which is
+        // nearly all EDGE and therefore the one roof part that reads at a
+        // distance no box does. Twenty years into a campaign, the buildings
+        // this path draws are most of the roofs in frame, and roofs are 9.5%
+        // of the frame.
+        //
+        // `roofKitWants` is the ladder the static stock uses, on the same
+        // inputs. It stands on whatever the crown left: a tall building grows
+        // a bulkhead up there, and dropping a cooling tower on the roof BELOW
+        // it buries the plant inside the penthouse.
+        const kseed = Number(item.bbl) % 1000;
+        const deckRing = crownDeck ? crownDeck.ring : (topTier.fp as [number, number][]);
+        const deckZ = crownDeck ? crownDeck.z : topTier.z1;
+        let karea = 0;
+        for (let i = 0; i < deckRing.length; i++) {
+          const a2 = deckRing[i], b2 = deckRing[(i + 1) % deckRing.length];
+          karea += a2[0] * b2[1] - b2[0] * a2[1];
         }
-        if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) wants.push({ kind: 19, s: 1, rot: bear2 });
-        for (const p of fitRoofKit(crownDeck ? crownDeck.ring : (topTier.fp as [number, number][]),
-          crownDeck ? crownDeck.z : topTier.z1, wants,
+        const wants = roofKitWants({
+          style, year: yearBuilt, hgt: h, fh: fh2, area: karea / 2,
+          hasMechDeck: !!crownDeck, seed: kseed,
+          rnd: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed),
+          jit: (n, amp) => (((kseed * (n + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp,
+        });
+        const KIT = propKit();
+        for (const p of fitRoofKit(deckRing, deckZ, wants,
           (i) => hash01(k ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed), h)) {
-          const m = new THREE.Mesh(GEOM[p.kind](), this.propMaterial(COL[p.kind], false));
-          m.rotation.z = p.rot; m.scale.setScalar(p.s); m.position.set(p.x, p.y, p.z);
+          const g = KIT[p.kind];
+          if (!g) continue;
+          const m = new THREE.Mesh(g.geom, this.propMaterial(g.color, false));
+          m.name = "prop:" + p.kind;
+          m.rotation.z = p.rot; m.scale.setScalar(p.s ?? 1); m.position.set(p.x, p.y, p.z);
           this.dynGroup.add(m);
+        }
+        // The rail round the edge. Not part of the deck budget — it stands on
+        // the parapet rather than in the middle, so it competes with nothing.
+        if (h >= 14) {
+          const rl = Math.min(1.8, Math.max(0.55, Math.sqrt(Math.abs(karea)) / 26));
+          const rails: THREE.BufferGeometry[] = [];
+          for (let e = 0; e < deckRing.length; e++) {
+            const p0 = deckRing[e], p1 = deckRing[(e + 1) % deckRing.length];
+            const ex = p1[0] - p0[0], ey = p1[1] - p0[1];
+            const L2 = Math.hypot(ex, ey);
+            if (L2 < 9) continue;
+            const nx = -ey / L2, ny = ex / L2;
+            const sgn = karea > 0 ? 1 : -1;
+            const n2 = Math.min(4, Math.floor(L2 / 7.2));
+            const rs = Math.min(rl, L2 / (n2 * 7.0));
+            for (let i = 0; i < n2; i++) {
+              const t = (i + 0.5) / n2;
+              rails.push(KIT[20].geom.clone().scale(rs, rs, rs)
+                .rotateZ(Math.atan2(ey, ex))
+                .translate(p0[0] + ex * t + nx * sgn * 1.5, p0[1] + ey * t + ny * sgn * 1.5, deckZ));
+            }
+          }
+          if (rails.length) {
+            const rail = new THREE.Mesh(mergeGeoms(rails), this.propMaterial(KIT[20].color, false));
+            rail.name = "prop:20";
+            this.dynGroup.add(rail);
+          }
         }
       }
       if (item.construction) {

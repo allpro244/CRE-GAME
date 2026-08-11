@@ -38,6 +38,13 @@ const keepProfile = flag("profile", null);
 const verbose = argv.includes("--verbose");
 const port = 9300 + Math.floor((Date.now() / 7) % 400);
 const profile = keepProfile || mkdtempSync(join(tmpdir(), "shoot-"));
+// A killed run leaves its SingletonLock behind, and Chromium then REFUSES the
+// profile rather than reusing it — "Aborting now to avoid profile corruption",
+// which reads like a bug in your probe and is not one. Nothing else is holding
+// it; this tool runs one browser at a time.
+if (keepProfile) for (const f of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) {
+  try { rmSync(join(profile, f), { force: true }); } catch { /* not there */ }
+}
 const chrome = spawn(CHROME, [
   "--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
   "--hide-scrollbars", "--disable-lcd-text",

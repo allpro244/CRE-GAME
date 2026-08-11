@@ -785,8 +785,8 @@ const NOT_BUILT_TO_ORDER = new Set([S_GARAGE, S_SUBSTATION, S_BUSCANOPY, S_CONTR
  * own ladder of six hard-coded ids, and three of the six were era-wrong for a
  * building finished this month: new retail came out as mid-century ribbon
  * windows, new industrial as nineteenth-century mill sash, and one office in
- * seven as 1920s deco piers. Eighty-two families existed and the half of the
- * city the player is responsible for could reach six of them.
+ * seven as 1920s deco piers. A hundred and forty-four families existed and the
+ * half of the city the player is responsible for could reach six of them.
  *
  * So it asks the same chooser the stock does, on the same inputs, minus the
  * families above. Same class, same year, same floors, same deed hash — which

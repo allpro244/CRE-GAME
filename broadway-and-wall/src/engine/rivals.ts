@@ -41,7 +41,7 @@ import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
-import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
+import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, seatFounderAsRival } from "./people";
@@ -468,6 +468,12 @@ function anonShouldOrphan(s: GameState, j: NonNullable<GameState["cityJobs"]>[nu
   return progress < 0.12 && (s.econ.creditIdx ?? 1) < 0.70;
 }
 
+/** Orphan the frame and stall economic delivery in the same month — stock must not land while the map job dies. */
+function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
+  j.orphaned = true;
+  if (j.bbl) stallSupplyProject(s, j.bbl);
+}
+
 /** Anonymous city jobs draw equity + capital calls from the city pool. */
 function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
   // Legacy unstamped jobs keep the old free path so old saves do not mass-orphan.
@@ -483,7 +489,7 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
   const pool = s.econ.cityBuildCash ?? 0;
   if (pool < cashNeed) {
     if (anonShouldOrphan(s, j)) {
-      j.orphaned = true;
+      orphanCityJob(s, j);
       s.news.unshift({
         q: s.month, kind: "event",
         text: `Merchant builders have stopped work — the city's construction pool could not fund `
@@ -514,7 +520,7 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
       const pay = Math.min(cashInterest, s.econ.cityBuildCash ?? 0);
       s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - pay;
       if (anonShouldOrphan(s, j)) {
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
@@ -544,7 +550,7 @@ export function fundJobs(s: GameState) {
       continue;
     }
     const r = s.rivals.find((x) => x.id === j.firmId);
-    if (!r || r.failedM !== undefined) { j.orphaned = true; continue; }
+    if (!r || r.failedM !== undefined) { orphanCityJob(s, j); continue; }
     const spend = monthJobSpend(j, s.month);
 
     // THEIR BANK FAILED TOO. No draws, so the month's work in place comes out
@@ -557,7 +563,7 @@ export function fundJobs(s: GameState) {
     if (j.repudiatedM !== undefined) {
       const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
       if (r.cash < spend + carry) {
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has stopped work. Their construction lender was seized, nobody would refinance the job, `
@@ -615,7 +621,7 @@ export function fundJobs(s: GameState) {
           if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
           continue;
         }
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has stopped work with the construction facility fully drawn. `

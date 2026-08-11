@@ -22,7 +22,7 @@ import { logBooks, monthLabel, START_YEAR, cloneState} from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
-import { holderOf } from "./owners";
+import { holderOf, offend, isCold } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
@@ -378,6 +378,14 @@ export function negotiate(
   const seller = existing
     ? { kind: existing.sellerKind, name: existing.sellerName }
     : sellerOf(next, parcels, bbl);
+  const held = holderOf(next, parcels, bbl);
+  if (held && isCold(next, held.id)) {
+    return {
+      s,
+      err: `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it. `
+        + `It is still for sale — just not to you.`,
+    };
+  }
   const { reservation, ask } = reservationOf(next, parcels, bbl, seller.kind);
   const round = (existing?.round ?? 0) + 1;
   const maxRounds = existing?.maxRounds ?? OPEN_ROUNDS[seller.kind];
@@ -471,6 +479,7 @@ export function negotiate(
     // firm remembers harder; until now the memory lived on the parcel and died
     // with the listing. A principal remembers the person, not the building.
     if (rival) tie(next, rival.id).insults++;
+    if (held) offend(next, held.id, 14);
     next.lowballMs = [...(next.lowballMs ?? []).filter((m) => next.month - m < 36), next.month];
     if (recentLowballs(next) === 3) {
       next.news.unshift({

@@ -1707,11 +1707,12 @@ export function takeoverDevelopment(
     ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
     startM: s.month, deliverM: s.month + months, baseMonths: months,
     // the dead sponsor's start already queued this building's square feet in
-    // econ.cohorts; the market has been expecting it since their groundbreak
+    // deliveryQueue; reschedule to the takeover finish date.
     piped: true,
     signed: [],
     events: 0,
   } satisfies Development;
+  rescheduleSupplyProject(s, bbl, s.month + months);
   s.cityJobs = (s.cityJobs ?? []).filter((j) => j.bbl !== bbl);
   s.news.unshift({
     q: s.month, kind: "deal",

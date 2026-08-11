@@ -3,8 +3,8 @@
 //   node tools/billion-2050.mjs
 //   RUNS=20 START_CASH=5000000 node tools/billion-2050.mjs
 //
-// Each run: random island (authored + procedural), random size, fresh city
-// seed + market seed. Sets game.citySize so rival powder / hold caps scale.
+// Each run: random generated island, random size, fresh city seed + market seed.
+// Sets game.citySize so rival powder / hold caps scale.
 // Bot = buy/lease compounder from play100-story (aggressive income buyer).
 // Horizon default 600 months → Dec 2049 / early 2050.
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -21,7 +21,7 @@ const MONTHS = Number(process.env.HORIZON ?? 600); // → 2050
 const START_CASH = Number(process.env.START_CASH ?? 5_000_000);
 const TARGET = 1_000_000_000;
 const SIZES = ["hamlet", "town", "city", "metro", "giant"];
-const ISLANDS = ["newalden", "kestrel", PROCEDURAL];
+const ISLANDS = [PROCEDURAL];
 const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };
 
 const M = (n) => {
@@ -428,7 +428,7 @@ L(`# Billion by 2050 — sim report`);
 L(``);
 L(`Batch seed **${masterSeed}**. Runs **${ok.length}** (of ${RUNS}). Horizon **${MONTHS}** months (→ ${YR(MONTHS - 1)}). Start **${M(START_CASH)}**.`);
 L(`Code: \`cursor/wishlist-top5-9786\` (#57) — size-scaled rival powder/holds, vac tell, honest equity refuse.`);
-L(`Cities: random island ∈ {newalden, kestrel, procedural}, size cycled hamlet→giant, fresh seeds every run.`);
+L(`Cities: generated islands only, size cycled hamlet→giant, fresh seeds every run.`);
 L(``);
 L(`## Scoreboard`);
 L(``);

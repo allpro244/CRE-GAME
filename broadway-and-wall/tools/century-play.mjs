@@ -434,7 +434,7 @@ for (const row of ranked) {
 }
 
 const report = {
-  months: MONTHS, seeds: SEEDS, city: process.env.BW_CITY ?? "newalden",
+  months: MONTHS, seeds: SEEDS, city: process.env.BW_CITY ?? "somewhere",
   ranked, runs: all.map(({ years, ...rest }) => ({ ...rest, yearMarks: years.length })),
   sampleTrajectories: Object.fromEntries(
     names.map((n) => [n, all.find((r) => r.name === n)?.years ?? []]),

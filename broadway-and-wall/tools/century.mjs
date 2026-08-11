@@ -22,7 +22,7 @@ const { makeCity } = await import(join(HERE, "..", "src", "citygen", "index.mjs"
 
 const MONTHS = Number(process.env.MONTHS ?? 1200);
 const OUT = process.env.OUT ?? join(HERE, "..", "..", "century-data");
-const CITY = process.env.BW_CITY ?? "newalden";
+const CITY = process.env.BW_CITY ?? "somewhere";
 const CITY_SEED = Number(process.env.CITY_SEED ?? 20261);
 const USES = ["office", "retail", "multifamily", "industrial"];
 mkdirSync(OUT, { recursive: true });

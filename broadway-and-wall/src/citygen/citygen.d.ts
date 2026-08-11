@@ -43,8 +43,8 @@ declare module "@/citygen/index.mjs" {
    * the same way the coastline does.
    */
   export function cityName(cityId: string, seed: number): string;
-  /** The id of the island that is generated rather than drawn. */
+  /** The id of the generated island. */
   export const PROCEDURAL: string;
-  export const CITIES: Record<string, { name: string; district: string; seed: number }>;
-  export const TAGLINES: Record<string, string>;
+  /** Fixed reference seed for harnesses and BASELINE.json. */
+  export const REFERENCE_SEED: number;
 }

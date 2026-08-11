@@ -1040,7 +1040,7 @@ function test10() {
 
 // ============================================================== the report
 console.log(`\nC. LEASING MICROSTRUCTURE — tests 6-10`);
-console.log(`seeds ${SEEDS.join(",")}   ·   horizon ${HZ} months   ·   city ${process.env.BW_CITY ?? "newalden"}${DEEP ? "   ·   DEEP" : ""}`);
+console.log(`seeds ${SEEDS.join(",")}   ·   horizon ${HZ} months   ·   city ${process.env.BW_CITY ?? "somewhere"}${DEEP ? "   ·   DEEP" : ""}`);
 console.log("=".repeat(102) + "\n");
 
 if (ONLY.includes(6)) { test6(); rule(); }

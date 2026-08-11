@@ -28,7 +28,7 @@ const cityCache = new Map();
 export function city(citySeed) {
   const key = String(citySeed);
   if (!cityCache.has(key)) {
-    const built = makeCity(process.env.BW_CITY ?? "newalden", citySeed);
+    const built = makeCity(process.env.BW_CITY ?? "somewhere", citySeed);
     E.normalizeParcels(built.parcels);
     cityCache.set(key, { parcels: built.parcels, adjacency: built.adjacency, bbls: Object.keys(built.parcels) });
   }

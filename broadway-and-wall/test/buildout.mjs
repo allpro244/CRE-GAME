@@ -26,7 +26,7 @@ const E = await import(join(HERE, ".engine.mjs"));
 const { makeCity, DEVELOPMENT } = await import(join(HERE, "../src/citygen/index.mjs"));
 
 const SEED = Number(process.env.BW_SEED ?? 20261) >>> 0;
-const CITY = process.env.BW_CITY ?? "newalden";
+const CITY = process.env.BW_CITY ?? "somewhere";
 const SIZE = process.env.BW_SIZE ?? "city";
 const MONTHS = Number(process.env.MONTHS ?? 120);
 

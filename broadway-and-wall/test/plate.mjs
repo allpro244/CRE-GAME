@@ -32,7 +32,7 @@ const M_LAT = 111320;
 function areaOf(r){let a=0;for(let i=0;i<r.length;i++){const [x1,y1]=r[i],[x2,y2]=r[(i+1)%r.length];a+=x1*y2-x2*y1;}return Math.abs(a)/2;}
 
 let built=[], vacant=[];
-for (const cityId of ["newalden"]) for (const seed of [1, 7, 20261]) {
+for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
   const c = makeCity(cityId, seed);
   const ctr = [ -70.9, 41.1 ];
   const kx = M_LAT * Math.cos(ctr[1]*Math.PI/180);
@@ -136,7 +136,7 @@ function inside(poly, ring) {                   // every vertex of poly inside r
 }
 
 let towerRows = [];
-for (const cityId of ["newalden"]) for (const seed of [1, 7, 20261]) {
+for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
   const c = makeCity(cityId, seed);
   const ctr = [-70.9, 41.1];
   const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);

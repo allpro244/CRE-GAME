@@ -20,7 +20,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
-const CITY = process.env.BW_CITY ?? "newalden";
+const CITY = process.env.BW_CITY ?? "somewhere";
 
 const SEEDS = Number(process.env.SEEDS ?? 1);
 const MONTHS = Number(process.env.HORIZON ?? 600);

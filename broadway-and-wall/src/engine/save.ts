@@ -71,10 +71,6 @@ export const SAVE_VERSION = 34 as const;
  * than a missing deed: the campaign opens, the portfolio page fills in, and
  * every building the player owns is quietly somewhere they did not buy.
  *
- * The drawn islands are unaffected — `makeCity("newalden", 1)` is byte-identical
- * across the change, verified on the bbl set, the centroids and the lot areas —
- * so a legacy campaign on one of those is let through rather than thrown away.
- *
  * THIS IS 34 AND NOT 33 BECAUSE TWO BRANCHES BOTH CLAIMED 33. The Principal
  * break (one Person type, peopleRng, no free style dials) shipped as v33 on
  * one branch while the island generator was being rewritten on another, and
@@ -86,6 +82,7 @@ export const SAVE_VERSION = 34 as const;
  */
 const ISLAND_GROUND_MOVED_AT = 34;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
+const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
@@ -131,6 +128,12 @@ export function migrateSaveState(state: GameState): GameState {
 export function prepareSaveForResume(state: GameState):
   { ok: true; state: GameState } | { ok: false; reason: string } {
   const migrated = migrateSaveState(structuredClone(state));
+  if (migrated.cityIsland && LEGACY_DRAWN_ISLANDS.has(migrated.cityIsland)) {
+    return {
+      ok: false,
+      reason: "this campaign was on a hand-drawn island that is no longer in the game — start a new run on a generated town",
+    };
+  }
   if (migrated.v !== SAVE_VERSION) {
     // Say WHICH kind of stale it is. "Older build" sends somebody looking for
     // a bug in the save format; the truth is that the island itself is cut

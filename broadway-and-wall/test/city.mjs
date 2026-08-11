@@ -8,24 +8,22 @@
 // So the harnesses generate, from the same function the browser calls. Set
 // BW_SEED to pin a town, or leave it and sweep:
 //
-//   BW_CITY=kestrel pnpm play50        the other island
 //   BW_SEED=12345   pnpm test          one specific town
 //   SEEDS=6 CITY_SEEDS=1 pnpm play50   a different town per run
 //
 // `CITY_SEEDS=1` is the important one: it makes each run of a multi-seed
 // harness use a DIFFERENT city as well as a different market, which is the
-// only honest way to ask whether a rule holds in general or just in New Alden.
-import { makeCity } from "../src/citygen/index.mjs";
+// only honest way to ask whether a rule holds in general or just on one island.
+import { makeCity, PROCEDURAL, REFERENCE_SEED } from "../src/citygen/index.mjs";
 
-const DEFAULT_CITY = process.env.BW_CITY ?? "newalden";
+const DEFAULT_CITY = process.env.BW_CITY ?? PROCEDURAL;
 const cache = new Map();
 
 /** Deterministic town for a run index — stable across harnesses, so a bad seed is reproducible. */
 export function seedFor(runIndex = 0) {
   if (process.env.BW_SEED) return Number(process.env.BW_SEED) >>> 0;
   if (process.env.CITY_SEEDS === "1") return (2166136261 ^ ((runIndex + 1) * 2654435761)) >>> 0;
-  // The shipped town, so a single-run harness is comparable with yesterday's.
-  return DEFAULT_CITY === "kestrel" ? 30411 : 20261;
+  return REFERENCE_SEED;
 }
 
 /** Build (or reuse) a city. Returns the substrate every harness needs. */
@@ -33,11 +31,6 @@ export function loadCity(runIndex = 0, normalizeParcels) {
   const seed = seedFor(runIndex);
   const key = [DEFAULT_CITY, seed, process.env.BW_SIZE ?? "", process.env.BW_DENSITY ?? ""].join(":");
   if (!cache.has(key)) {
-    // BW_SIZE / BW_DENSITY so a harness can ask about a town other than the
-    // default one. Without them every test in this repo only ever saw one
-    // island at one size at one stage of its life, which is a narrow question
-    // to be asking of a generator with three islands, five sizes and nine
-    // build-out settings.
     const built = makeCity(DEFAULT_CITY, seed, {
       size: process.env.BW_SIZE || undefined,
       density: process.env.BW_DENSITY || undefined,

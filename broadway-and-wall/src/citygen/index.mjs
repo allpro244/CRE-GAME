@@ -1,42 +1,28 @@
 // A CITY, FROM A NUMBER.
 //
-// `makeCity("newalden", 481923)` is the whole content pipeline in one call:
+// `makeCity("somewhere", 481923)` is the whole content pipeline in one call:
 // generate the geometry, turn it into the game's substrate, hand back the
 // parcel table, the adjacency graph, the map layers and the skyline. About
 // 350ms, no network, no files.
 //
-// WHAT THE SEED MOVES AND WHAT IT DOES NOT — WHICH NOW DEPENDS ON WHERE.
+// Every island is generated. island.mjs draws the coast, the cores, the
+// district plan, the parks, the piers, the railway and every name on the map
+// from the run's seed, and hands back a config of exactly the shape the
+// generator expects. Nothing below this line knows or cares that the config
+// was computed rather than written down — the same scaleCity scales it, the
+// same generateCity cuts it, the same buildCityData tabulates it.
 //
-// On the two AUTHORED islands, the island does not move. The coastline, the
-// district partition, the parks, the stations, the avenues and the street
-// names are the city's identity — they are what makes New Alden New Alden and
-// Kestrel Point a peninsula where frontage is scarce, and rerolling them would
-// not give you a new city, it would give you a different game every time with
-// no place to learn. That is still true and those two are untouched.
-//
-// Everything else does move. The block grid is re-cut, every block is
-// subdivided into different lots, so parcel sizes and shapes are new; what is
-// built and what is left vacant is new; heights, ages, classes, the mix in each
-// stacked building, the setbacks and podiums are new. A reroll of New Alden
-// goes from 1,662 lots on 170 blocks to 1,689 on 163 — the same harbour with a
-// completely different town on it. Every corner you learned is somebody else's
-// corner now.
-//
-// THE THIRD DOOR is the one where the island moves too. `somewhere` is not a
-// place, it is a generator: island.mjs draws the coast, the cores, the district
-// plan, the parks, the piers, the railway and every name on the map from the
-// run's own seed, and hands back a config of exactly the shape cities.mjs
-// exports. Nothing below this line knows the difference — the same scaleCity
-// scales it, the same generateCity cuts it, the same buildCityData tabulates
-// it. The argument the header used to make against this was an argument for
-// keeping New Alden fixed, and it still is. It was never an argument against
-// there being somewhere else to go.
+// The seed is the address. A city is `(island, seed, size, build-out)` and
+// every one of those has to survive a reload, or a deed in a save points at a
+// parcel that no longer exists. Roll the seed and you get a different coast
+// AND a different town on it; keep it and you get the same island back on
+// every reload, forever, down to the byte.
 import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
-import { CITIES, TAGLINES, SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
+import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
 
-export { CITIES, TAGLINES, SIZES, DEFAULT_SIZE };
+export { SIZES, DEFAULT_SIZE };
 
 /** The sizes an island can be built at, for the picker. */
 export function sizeList() {
@@ -64,7 +50,7 @@ export const DEVELOPMENT = [
   { id: "provincial", name: "Provincial",  note: "A working town that has grown up. Thirty per cent vacant, and a few thirty-floor buildings downtown." },
   { id: "harbour",    name: "Established", note: "A real skyline and less dirt — 27% vacant, four-storey fabric, towers to forty floors." },
   { id: "spiky",      name: "Boomtown",    note: "Low fabric, dramatic towers. A town that boomed once and stopped — a third of it still gaps, beside forty-seven floors." },
-  { id: "capital",    name: "Capital",     note: "Built up and tall. A fifth vacant, five-storey fabric; you will be redeveloping more than you build." },
+  { id: "capital",    name: "Capital",     note: "Built up and tall. A fifth vacant, five-storey fabric; you will be redeveloping more than you are building." },
   { id: "metropolis", name: "Metropolis",  note: "14% vacant and towers past sixty floors. Very little dirt left — this is a game about buying what exists." },
 ];
 export const DEFAULT_DEVELOPMENT = "village";
@@ -74,37 +60,20 @@ export function developmentList() {
 }
 
 /**
- * THE ISLAND THAT IS NOT DRAWN YET.
+ * THE GENERATED ISLAND.
  *
  * This is an id like any other as far as everything downstream is concerned —
  * the autosave slot is `auto@somewhere`, the seed lives at `bw:seed:somewhere`,
- * and `makeCity("somewhere", seed, …)` is a pure function of its arguments the
- * same as the other two. What is different is only that the config it builds
- * from is computed instead of written down.
+ * and `makeCity("somewhere", seed, …)` is a pure function of its arguments.
+ * The config it builds from is computed from the seed instead of written down.
  */
 export const PROCEDURAL = "somewhere";
 
+/** Fixed reference seed for harnesses and BASELINE.json — a stable town, not a special island. */
+export const REFERENCE_SEED = 1;
+
 /**
- * The cities you can play. There is one, and it is different every time.
- *
- * New Alden and Kestrel Point are no longer among them. They were two islands
- * hand-drawn in `cities.mjs`, and being drawn is exactly what was wrong with
- * them: measured over five seeds each, every part of the plan rerolled — lot
- * lines, building heights, lot counts — EXCEPT the parks, which are literals
- * in the config and therefore identical in every campaign anybody ever played
- * on them. One 7.6-hectare park and two pocket parks, in the same three
- * places, forever, carrying 79% and 70% of all the green on the island.
- *
- * They were also the narrowest possible slice of what the generator can do.
- * Six district plans exist — lattice, organic, curvi, radial, chamfer,
- * superblock — and those two configs used two of them, so four have never
- * appeared in a game anybody played. A generated island uses all six, three
- * distinct kinds in the median town.
- *
- * The configs survive in `cities.mjs` because fourteen economy harnesses and
- * `BASELINE.json` measure their standing numbers on `makeCity("newalden", 1)`
- * and a fixed reference town is the whole point of a baseline. They are test
- * fixtures now, and `cities.mjs` says so. They are not places you can play.
+ * The cities you can play. There is one kind of island and it is generated.
  */
 export function cityList() {
   return [
@@ -126,7 +95,7 @@ export function cityList() {
  */
 export function cityName(cityId, seed) {
   if (cityId === PROCEDURAL) return islandName(seed);
-  return CITIES[cityId]?.name ?? cityId;
+  return cityId;
 }
 
 /**
@@ -138,22 +107,18 @@ export function randomSeed() {
   return ((Math.random() * 0xffffffff) >>> 0) || 1;
 }
 
+const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
+
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
  * output, which is what lets a save store six digits instead of two megabytes.
  */
 export function makeCity(cityId, seed, opts) {
-  // A GENERATED ISLAND IS DRAWN FROM THE SAME SEED THE TOWN IS, which is what
-  // keeps a save honest: the save stores (island, seed, size, build-out), and
-  // every one of those four is an argument to this function. Roll the seed and
-  // you get a different coast AND a different town on it; keep it and you get
-  // the same island back on every reload, forever, down to the byte.
-  const base = cityId === PROCEDURAL ? islandConfig(seed) : CITIES[cityId];
-  if (!base) throw new Error(`unknown city: ${cityId}`);
-  // The island's size is part of what the town IS, so it is settled before the
-  // generator runs and never afterwards — same island, same seed, same size
-  // gives the same city, which is what lets a save store three fields instead
-  // of two megabytes.
+  if (LEGACY_DRAWN.has(cityId)) {
+    throw new Error(`removed city: ${cityId} — all islands are generated from a seed now`);
+  }
+  if (cityId !== PROCEDURAL) throw new Error(`unknown city: ${cityId}`);
+  const base = islandConfig(seed);
   const sizeId = opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE;
   const cfg = scaleCity(base, SIZES[sizeId].k);
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
@@ -175,10 +140,6 @@ export function makeCity(cityId, seed, opts) {
     adjacency: data.adjacency,
     stations: data.stations,
     manifest: data.manifest,
-    // The two collections the map draws. They used to be cut into PMTiles by
-    // the pipeline; at 1,600 parcels and 1,200 footprints a plain GeoJSON
-    // source is well inside what MapLibre handles without noticing, and it is
-    // the difference between a city that ships and a city that is made.
     parcelFeatures: data.tileParcels,
     buildingFeatures: data.tileBuildings,
     context: city.context,

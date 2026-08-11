@@ -293,37 +293,35 @@ export default function TopBar() {
                 />
               );
             })()}
+            {/* CF + Occupancy live in the vital strip (not droppable stats).
+                They used to sit in .topbar-stats with drop 2 and vanished below
+                1680px — and the whole stats box hides under 760px — so the
+                occupancy readout the player asked for never appeared on a
+                normal screen. Vitals stay up. */}
+            <Stat
+              label="CF / yr"
+              value={usd(cf * 12)}
+              bad={cf < 0}
+              keep
+              w={88}
+              title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
+            />
+            <Stat
+              label="Occupancy"
+              value={occSf ? ((100 * occLeased) / occSf).toFixed(1) + "%" : "—"}
+              bad={occSf > 0 && occLeased / occSf < 0.8}
+              keep
+              w={80}
+              title={occSf
+                ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
+                : "Portfolio occupancy — appears once you own an operated building."}
+            />
           </div>
           <div className="topbar-stats">
           <Stat label="Net worth" value={usd(nw)} drop={2} w={96} />
-          {/* ANNUAL, BECAUSE EVERY OTHER NUMBER IN THIS BUSINESS IS. Cap rates,
-              NOI, debt service coverage and every quote on every page are
-              annual; a monthly cash flow in the header was the one figure the
-              player had to mentally multiply before it could be compared with
-              anything else on screen. Includes ground rent on leased fees, and
-              subtracts construction interest, facility and the revolver — so it
-              can read worse than Portfolio's deed-only "Cash flow / mo". */}
-          <Stat
-            label="CF / yr"
-            value={usd(cf * 12)}
-            bad={cf < 0}
-            drop={2}
-            w={88}
-            title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
-          />
-          <Stat
-            label="Occupancy"
-            value={occSf ? ((100 * occLeased) / occSf).toFixed(1) + "%" : "—"}
-            bad={occSf > 0 && occLeased / occSf < 0.8}
-            drop={2}
-            w={80}
-            title={occSf
-              ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
-              : "Portfolio occupancy — appears once you own an operated building."}
-          />
-          {/* Base rate rides with NW/CF/occ (drop 2). Market phase and vacant-lot
-              counts are drop 3 — only on very wide screens — so they cannot
-              clip into "MA" under the Portfolio button on a normal desktop. */}
+          {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
+              drop 3 — only on very wide screens — so they cannot clip into
+              "MA" under the Portfolio button on a normal desktop. */}
           <Stat
             label="Base rate"
             value={pct(game.econ.indexRate)}

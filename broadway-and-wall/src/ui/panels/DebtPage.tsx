@@ -5,7 +5,8 @@ import { CLASS_LABEL } from "@/data/types";
 import { monthLabel, OPS_SERVICE, OPS_PLAN, START_YEAR } from "@/engine/types";
 import { assetValue, initialCondition, ownedHoldingValue, ownedHoldingNoiYr, resolveRec, netWorth } from "@/engine/value";
 import { isCommercial } from "@/engine/leasing";
-import { PRODUCTS, productById } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue } from "@/engine/debt";
+import { fundableNow } from "@/engine/credit";
 import { facilityQuotes, facilityMetrics, facilityStatus, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
 import { holderOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital } from "@/engine/lenders";
@@ -1345,6 +1346,9 @@ export function DebtPage() {
               const d = ds > 0 ? noi / ds : null;
               const lv = v > 0 ? l.balance / v : null;
               const near = l.maturityM - game.month <= 24;
+              const due = payOffDue(l, game.month);
+              const canPay = !pledged(game, h.bbl) && fundableNow(game, parcels) >= due.due;
+              const crumb = due.balance > 0 && due.balance < 25_000;
               return (
                 <Fragment key={h.bbl}>
                 <tr>
@@ -1364,15 +1368,31 @@ export function DebtPage() {
                       l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
                   </td>
                   <td>
-                    <button
-                      className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
-                      title={near
-                        ? "This one matures inside two years. Refinance it while somebody is still lending."
-                        : "What the desks would write against this building today."}
-                      onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
-                    >
-                      Refi
-                    </button>
+                    <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end" }}>
+                      <button
+                        className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
+                        disabled={!canPay}
+                        title={pledged(game, h.bbl)
+                          ? "Pledged to the facility — release it there first."
+                          : !canPay
+                            ? `Need ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} break fee` : ""} — short ${usd(due.due - fundableNow(game, parcels))}.`
+                            : due.penalty > 0
+                              ? `Retire the note: ${usd(due.balance)} + ${usd(due.penalty)} to break the paper. Deed free and clear.`
+                              : `Retire the note for ${usd(due.due)}. Deed free and clear — required before a ground lease.`}
+                        onClick={() => useStore.getState().payOffLoan(h.bbl)}
+                      >
+                        Pay off{crumb ? ` · ${usd(due.due)}` : ""}
+                      </button>
+                      <button
+                        className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
+                        title={near
+                          ? "This one matures inside two years. Refinance it while somebody is still lending."
+                          : "What the desks would write against this building today."}
+                        onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
+                      >
+                        Refi
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {refiRow === h.bbl && (

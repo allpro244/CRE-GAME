@@ -21,10 +21,10 @@
 // it cuts — every quarter, forever, until somebody does. That is the mechanism
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
-import type { GameState } from "./types";
+import type { GameState, PortfolioListing } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
-import { assetValue, inPlace, resolveRec } from "./value";
+import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
@@ -69,6 +69,155 @@ export function playerDebtOn(s: GameState, bbls: string[]): number {
     if (h?.loan) d += h.loan.balance ?? 0;
   }
   return d;
+}
+
+/**
+ * WHAT A BUYER UNDERWRITES WHEN THEY OPEN A STREET / REO BOOK.
+ *
+ * The Marketplace card used to show ask, gross and a discount — three price
+ * numbers and nothing about the income. A package is a going-in yield decision
+ * against a cash cheque; without occupancy and NOI the discount is scenery.
+ *
+ * REO books use the same worn + borrower-occ basis the foreclosure auction
+ * sheet already shows (`collateralAsIs` / `capRateFor(worn)`). Fund wind-downs
+ * and player packages use `inPlace` — disclosed roll when one exists, market
+ * model otherwise — so the card cannot invent a happier rent roll than the
+ * engine will hand you at close.
+ */
+export type StreetBookAsset = {
+  bbl: string;
+  address: string;
+  cls: string;
+  sf: number;
+  floors: number;
+  yearBuilt: number;
+  val: number;
+  askShare: number;
+  noi: number;
+  occ: number;
+  land: boolean;
+  disclosed: boolean;
+};
+
+export type StreetBookStats = {
+  totSf: number;
+  leasedSf: number;
+  /** SF-weighted occupancy across operated buildings; null if the book is all land. */
+  occ: number | null;
+  noi: number;
+  yieldOnAsk: number | null;
+  yieldOnGross: number | null;
+  askPsf: number | null;
+  byClass: { cls: string; n: number; sf: number; noi: number }[];
+  assets: StreetBookAsset[];
+  /** Where the income reading came from — drives the hint on the card. */
+  basis: "receiver" | "disclosed" | "market" | "mixed";
+};
+
+export function streetBookStats(
+  s: GameState, parcels: ParcelTable, p: PortfolioListing,
+): StreetBookStats {
+  const borrower = p.reoBorrower
+    ? (s.rivals ?? []).find((r) => r.name === p.reoBorrower)
+    : p.sellerId
+      ? (s.rivals ?? []).find((r) => r.id === p.sellerId)
+      : null;
+  // Receiver books: underwrite worn at the borrower's book occupancy — the
+  // same reading the July docket uses. A failed sponsor's `occ` is why the
+  // package is cheap; pricing it at citywide market would lie.
+  const receiverOcc = p.reo
+    ? Math.max(0.15, Math.min(0.95, borrower?.occ ?? 0.4))
+    : null;
+
+  const vals = p.bbls.map((bbl) => {
+    const rec = resolveRec(parcels, s, bbl);
+    const val = rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1;
+    return { bbl, rec, val };
+  });
+  const totV = vals.reduce((a, x) => a + x.val, 0) || 1;
+
+  const assets: StreetBookAsset[] = [];
+  let totSf = 0, leasedSf = 0, noi = 0;
+  let anyDisc = false, anyMkt = false, anyRecv = false;
+  const classMap = new Map<string, { n: number; sf: number; noi: number }>();
+
+  for (const { bbl, rec, val } of vals) {
+    const askShare = Math.max(1000, Math.round(p.ask * (val / totV)));
+    if (!rec) {
+      assets.push({
+        bbl, address: bbl, cls: "?", sf: 0, floors: 0, yearBuilt: 0,
+        val: 0, askShare, noi: 0, occ: 0, land: true, disclosed: false,
+      });
+      continue;
+    }
+    const land = rec.class === "land" || !rec.bldgArea;
+    let assetNoi = 0, occ = 0, disclosed = false;
+    if (land) {
+      assetNoi = 0;
+      occ = 0;
+      disclosed = true;
+    } else if (receiverOcc !== null) {
+      const asIs = collateralAsIs(rec, s.econ, receiverOcc);
+      const cap = capRateFor(rec, s.econ, "worn");
+      assetNoi = cap > 0 ? Math.round(asIs * cap / 100) : 0;
+      occ = receiverOcc;
+      disclosed = true;
+      anyRecv = true;
+    } else {
+      const ip = inPlace(rec, s, bbl, askShare);
+      assetNoi = Math.round(ip.noi);
+      occ = ip.occ;
+      disclosed = ip.disclosed;
+      if (disclosed) anyDisc = true;
+      else anyMkt = true;
+    }
+    const sf = land ? 0 : rec.bldgArea;
+    totSf += sf;
+    leasedSf += Math.round(sf * occ);
+    noi += assetNoi;
+    const cls = land ? "land" : rec.class;
+    const bucket = classMap.get(cls) ?? { n: 0, sf: 0, noi: 0 };
+    bucket.n++; bucket.sf += sf; bucket.noi += assetNoi;
+    classMap.set(cls, bucket);
+    assets.push({
+      bbl,
+      address: rec.address ?? bbl,
+      cls,
+      sf,
+      floors: rec.floors ?? 0,
+      yearBuilt: rec.yearBuilt ?? 0,
+      val,
+      askShare,
+      noi: assetNoi,
+      occ,
+      land,
+      disclosed,
+    });
+  }
+
+  assets.sort((a, b) => b.val - a.val);
+  const byClass = [...classMap.entries()]
+    .map(([cls, v]) => ({ cls, ...v }))
+    .sort((a, b) => b.sf - a.sf || b.n - a.n);
+
+  let basis: StreetBookStats["basis"] = "market";
+  if (anyRecv && !anyDisc && !anyMkt) basis = "receiver";
+  else if (anyDisc && !anyMkt && !anyRecv) basis = "disclosed";
+  else if (anyMkt && !anyDisc && !anyRecv) basis = "market";
+  else if (anyRecv || anyDisc || anyMkt) basis = "mixed";
+
+  return {
+    totSf,
+    leasedSf,
+    occ: totSf > 0 ? leasedSf / totSf : null,
+    noi,
+    yieldOnAsk: p.ask > 0 ? noi / p.ask : null,
+    yieldOnGross: p.gross > 0 ? noi / p.gross : null,
+    askPsf: totSf > 0 ? p.ask / totSf : null,
+    byClass,
+    assets,
+    basis,
+  };
 }
 
 // ---------------------------------------------------------------------------

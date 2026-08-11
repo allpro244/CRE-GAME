@@ -10,10 +10,10 @@ import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, construct
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
-import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
+import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty, payOffDue } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
-import { locAvailable } from "@/engine/credit";
+import { locAvailable, fundableNow } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerOf, gradeOf } from "@/engine/rivals";
 import { taxAppealQuote } from "@/engine/tax";
@@ -456,6 +456,27 @@ function ParcelPanelInner({
             {holding.loan.cap && <Row k="Rate cap" v={`base rate ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
           </div>
           <div className="btn-row">
+            {(() => {
+              const due = payOffDue(holding.loan, game.month);
+              const facPledged = !!game.facility?.bbls?.includes(selectedBBL);
+              const canPay = !facPledged && fundableNow(game, parcels) >= due.due;
+              return (
+                <button
+                  className="btn btn-buy"
+                  disabled={!canPay}
+                  title={facPledged
+                    ? "Pledged to the facility — release it there first."
+                    : !canPay
+                      ? `Need ${usd(due.due)} to retire this loan.`
+                      : due.penalty > 0
+                        ? `Pay ${usd(due.balance)} + ${usd(due.penalty)} break fee. Required before a ground lease.`
+                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`}
+                  onClick={() => useStore.getState().payOffLoan(selectedBBL)}
+                >
+                  Pay off · {usd(due.due)}
+                </button>
+              );
+            })()}
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"

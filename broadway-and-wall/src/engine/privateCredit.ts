@@ -30,6 +30,10 @@ const cl = (lo: number, hi: number, x: number) => Math.max(lo, Math.min(hi, x));
 export const PRIVATE_CASH_RESERVE = 500_000;
 /** Outstanding private-originated face ≤ this share of net worth. */
 export const PRIVATE_BOOK_NW = 0.35;
+/** Purchased + originated credit claims ≤ this share of NW (Phase C rail). */
+export const CREDIT_BOOK_NW = 0.50;
+/** Originated face to one rival ≤ this share of NW. */
+export const PRIVATE_OBLIGOR_NW = 0.15;
 /** At most this many live asks — a shortlist, not a marketplace. */
 const MAX_ASKS = 2;
 /** Ask lives two months; silence is a pass. */
@@ -56,7 +60,29 @@ export function privateSleeveCapacity(s: GameState, parcels: ParcelTable): numbe
   const nw = Math.max(0, netWorth(s, parcels));
   const byNw = Math.max(0, nw * PRIVATE_BOOK_NW - privateBookFace(s));
   const byCash = Math.max(0, s.cash - PRIVATE_CASH_RESERVE);
-  return Math.floor(Math.min(byNw, byCash));
+  const byBook = creditBookRoom(s, parcels);
+  return Math.floor(Math.min(byNw, byCash, byBook));
+}
+
+/** Purchased notes at basis + originated face — the whole credit sleeve. */
+export function creditBookFace(s: GameState): number {
+  const purchased = (s.notes ?? [])
+    .filter((n) => !n.privateOriginated)
+    .reduce((a, n) => a + n.basis, 0);
+  return privateBookFace(s) + purchased;
+}
+
+/** How much more credit face/basis you can still put on. */
+export function creditBookRoom(s: GameState, parcels: ParcelTable): number {
+  const nw = Math.max(0, netWorth(s, parcels));
+  return Math.max(0, Math.floor(nw * CREDIT_BOOK_NW - creditBookFace(s)));
+}
+
+/** Originated face already out to one rival. */
+export function privateObligorFace(s: GameState, rivalId: string): number {
+  return (s.notes ?? [])
+    .filter((n) => n.privateOriginated && n.obligorId === rivalId)
+    .reduce((a, n) => a + n.face, 0);
 }
 
 /**
@@ -216,6 +242,14 @@ export function fundPrivateAsk(
   if (s.cash < ask.face + PRIVATE_CASH_RESERVE) {
     return { s, err: `Funding ${money(ask.face)} would leave you under the ${money(PRIVATE_CASH_RESERVE)} cash reserve.` };
   }
+  const nw = Math.max(0, netWorth(s, parcels));
+  const obligorCap = Math.max(0, nw * PRIVATE_OBLIGOR_NW - privateObligorFace(s, ask.rivalId));
+  if (ask.face > obligorCap) {
+    return {
+      s,
+      err: `You already have enough paper on ${ask.rivalName} — single-obligor cap leaves ${money(obligorCap)}.`,
+    };
+  }
 
   const next = clone(s);
   const rival = next.rivals!.find((x) => x.id === ask.rivalId)!;
@@ -318,6 +352,15 @@ function playerNeedsPrivateBorrow(
     // Already on private paper from a named holder — no stack.
     return null;
   }
+  // Mezz must be cleared in a takeout — do not quote a bridge that would
+  // orphan the junior (accept pays it; spawn waits until the stack is clean).
+  if (h.mezz && h.mezz.balance > 0) return null;
+  // Fresh paper — bank or private — is not re-bridged for a year. Stops the
+  // bot (and a panicked player) from churning 6-month bridges every quarter.
+  if (h.loan && s.month - h.loan.originM < 12) return null;
+  // A private bridge on this deed cools for two years even if you take it out
+  // with a bank — otherwise the desk becomes a revolving door.
+  if (h.lastPrivateBridgeM !== undefined && s.month - h.lastPrivateBridgeM < 36) return null;
 
   const { quotes, value, payoff } = refiQuotes(s, parcels, bbl);
   if (value < 400_000) return null;
@@ -476,8 +519,11 @@ export function acceptPrivateBorrowQuote(
   }
 
   const pointsFee = Math.round(quote.principal * quote.points);
-  const oldBal = h.loan?.balance ?? 0;
-  const penalty = h.loan ? prepayPenalty(h.loan, s.month) : 0;
+  const seniorBal = h.loan?.balance ?? 0;
+  const mezzBal = h.mezz?.balance ?? 0;
+  const oldBal = seniorBal + mezzBal;
+  const penalty = (h.loan ? prepayPenalty(h.loan, s.month) : 0)
+    + (h.mezz ? prepayPenalty(h.mezz, s.month) : 0);
   // Bridge closes without a bank rate-cap tax — the coupon is already the hedge.
   const fee = pointsFee + penalty;
   const need = Math.max(0, oldBal + fee - quote.principal);
@@ -486,7 +532,9 @@ export function acceptPrivateBorrowQuote(
       s,
       err: penalty > 0
         ? `Proceeds don't cover the payoff after ${money(penalty)} to break the old paper.`
-        : "Proceeds don't cover the payoff — you're underwater on this bridge.",
+        : mezzBal > 0
+          ? "Proceeds don't cover the senior and the mezz — you're underwater on this bridge."
+          : "Proceeds don't cover the payoff — you're underwater on this bridge.",
     };
   }
 
@@ -505,6 +553,9 @@ export function acceptPrivateBorrowQuote(
   else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
 
   holding.loan = buildPrivateLoan(next, quote);
+  holding.lastPrivateBridgeM = next.month;
+  // Private takeout retires the whole stack — mezz does not float free.
+  if (holding.mezz) holding.mezz = null;
   if (next.workouts?.[quote.bbl]) delete next.workouts[quote.bbl];
   next.privateBorrowQuotes = (next.privateBorrowQuotes ?? []).filter((q) => q.id !== id);
   // Player mortgages live on Holding.loan — cityLoans is the rival street

@@ -377,6 +377,14 @@ export interface Holding {
   lastTaxAppealM?: number;
   loan: Loan | null;
   /**
+   * JUNIOR PAPER BEHIND YOUR SENIOR. Cordage mezz only — never a second first
+   * lien. Absent unless you closed a Phase C stack. See debt.placeMezz and
+   * PRIVATE_CREDIT.md.
+   */
+  mezz?: Loan | null;
+  /** Month you last closed a private bridge on this deed — cooldown for re-quotes. */
+  lastPrivateBridgeM?: number;
+  /**
    * The label. It is a READING of condIdx below, recomputed every month — see
    * condGrade in value.ts. Kept as a string because every consumer in the
    * engine (rent multiplier, cap spread, lender minimums, leasing odds, bundle

@@ -55,7 +55,7 @@ import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, bumpLenderRel } from "./debt";
-import { clearPrivateOrigination, releasePrivateStreetRecord } from "./privateCredit";
+import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -408,12 +408,32 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     // price in idle CASH from firms that distribute everything above a working
     // reserve — measured over eight fifty-year runs, 139 of 139 expired offers
     // were taken by NOBODY, which made passing on paper free. It is not free now.
+    //
+    // Phase C: performing paper can leave too — as a BOND. Core / PE / opportunistic
+    // names take it; there is no deed chase, because the borrower is current.
+    if (o.perf === "performing") {
+      const bondBuyers = (s.rivals ?? []).filter((r) =>
+        r.failedM === undefined && r.id !== o.obligorId
+        && (r.style === "opportunistic" || r.style === "core" || r.style === "pe")
+        && r.cash > px * 1.1);
+      const bb = bondBuyers.length && rng(s) < 0.5
+        ? bondBuyers[Math.floor(rng(s) * bondBuyers.length)] : undefined;
+      if (!bb) continue;
+      bb.cash -= px;
+      if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `${bb.name} bought the performing loan on ${o.address} off ${o.lender} at `
+          + `${(100 * o.askPct).toFixed(0)} cents. A bond changed hands — ${o.obligor} still owns the deed.`,
+      });
+      continue;
+    }
     const able = (s.rivals ?? []).filter((r) =>
       r.failedM === undefined && r.id !== o.obligorId
       && (r.style === "opportunistic")
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
     const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
-    if (!buyer || o.perf === "performing") continue;
+    if (!buyer) continue;
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
     if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];       // the record follows the paper
@@ -520,10 +540,14 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // A regulator makes you sell what is not paying. Above ~2.8% delinquency
     // the examiners start asking, and above 8% it is every other month.
     const nplOdds = Math.max(0, l.delinquent - 0.028) * 3.2;
-    // Performing paper only goes when the desk needs the capital, not the asset.
-    const perfOdds = p > 0.30 ? 0.055 * p : 0;
+    // Performing paper goes when the desk needs capital. Phase C widens the
+    // window slightly (pressure from 0.22, and a separate capital-sale path
+    // when delinquency is quiet but the book is tight) — still episodic, still
+    // one offer a month city-wide. Measured, not invented volume.
+    const perfOdds = p > 0.22 ? 0.085 * p : 0;
     const npl = rng(s) < nplOdds;
-    const perf = !npl && rng(s) < perfOdds;
+    const capitalSale = !npl && p > 0.42 && (l.delinquent ?? 0) < 0.04 && rng(s) < 0.14 * p;
+    const perf = (!npl && rng(s) < perfOdds) || capitalSale;
     if (!npl && !perf) continue;
 
     const live = (s.rivals ?? []).filter((r) =>
@@ -546,7 +570,13 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // this borrower where one exists — so the loan you watched go to
     // "watch" on a statement last spring is the loan that turns up here.
     const mine = r.bbls.filter((b) => s.cityLoans?.[b]?.lender === l.name);
+    // Performing sales prefer a CURRENT row on this desk — real bank assets,
+    // not a synthetic face invented for the offer.
+    const currentMine = mine.filter((b) => s.cityLoans?.[b]?.status === "current");
+    const kind: "performing" | "nonperforming" = npl ? "nonperforming" : "performing";
     const bbl = beat && rng(s) < 0.45 && r.bbls.includes(beat.bbl) ? beat.bbl
+      : kind === "performing" && currentMine.length
+        ? currentMine[Math.floor(rng(s) * currentMine.length)]
       : mine.length ? mine[Math.floor(rng(s) * mine.length)]
       : r.bbls[Math.floor(rng(s) * r.bbls.length)];
     if (s.holdings[bbl] || s.notes!.some((n) => n.bbl === bbl)) return;
@@ -558,10 +588,12 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     const row = s.cityLoans?.[bbl];
     const clean = assetValue(rec, s.econ, assetGrade(r, rec));
     if (clean < 500_000) return;
+    // Performing paper without a ledger row is not a bank asset — skip rather
+    // than invent face (NPL can still use synthetic when the record is thin).
+    if (kind === "performing" && !(row && row.lender === l.name)) continue;
     const face = row && row.lender === l.name ? row.balance
       : Math.round(clean * Math.min(1.4, r.debt / Math.max(1, r.aum!)));
     if (face < 750_000) return;
-    const kind: "performing" | "nonperforming" = npl ? "nonperforming" : "performing";
     const id = "NO" + (s.nextNoteId = (s.nextNoteId ?? 1) + 1);
     s.noteOffers!.push({
       id, bbl, address: rec.address, lender: l.name,
@@ -588,11 +620,16 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
 
 // --------------------------------------------------------------- the actions
 
-export function buyNote(s: GameState, _parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
+export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const o = s.noteOffers?.find((x) => x.id === id);
   if (!o) return { s, err: "That paper is gone." };
   const px = Math.round(o.face * o.askPct);
   if (s.cash < px) return { s, err: `That is ${money(px)} in cash — you are short ${money(px - s.cash)}. Nobody finances a note purchase.` };
+  // Phase C — purchased paper counts against the combined credit book.
+  const room = creditBookRoom(s, parcels);
+  if (px > room) {
+    return { s, err: `Your credit book will only carry another ${money(room)} — originated sleeve plus purchased notes share one rail.` };
+  }
   const next = clone(s);
   next.cash -= px;
   logBooks(next, "bought", px);

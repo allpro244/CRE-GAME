@@ -61,11 +61,15 @@ months; they made the balloon — or I own a half-empty walk-up.”*
   existing `tickLoan` / workout path if you miss.
 - UI: Refinance card + Debt page rail; attention key `private-borrow:`.
 
-### Phase C — Deeper stack (later)
+### Phase C — Deeper stack (this PR)
 
-- Buy more performing bank paper (widen note desk).
-- Limited mezz behind **your** senior only after mezz stacking is honest.
-- Concentration / sleeve vs AUM rails tuned from harnesses, not vibes.
+- **Performing bank paper:** wider capital-driven spawn; prefer `cityLoans`
+  current rows; expired performing can be bought as bonds (no deed chase).
+- **Mezz behind your senior:** `Holding.mezz` — Cordage only, behind clean bank
+  seniors (`savings`/`harbor`/`pelican`/`conduit`). Refinance/payoff retire the
+  stack; servicing is IO then balloon.
+- **Credit-book rails:** originated ≤ 35% NW; combined purchased+originated ≤
+  50% NW; single-obligor originated ≤ 15% NW.
 
 ### Explicitly out of scope
 
@@ -149,9 +153,15 @@ GameState: `privateAsks?: PrivateCreditAsk[]`, `nextPrivateAskId?: number`.
 | `tickPrivateCredit` | `privateCredit.ts` | Spawn/expire asks |
 | `fundPrivateAsk` | `privateCredit.ts` | Close → Note + cityLoans + rival cash |
 | `declinePrivateAsk` | `privateCredit.ts` | Pass (rival may go to Cordage / fail balloon) |
+| `tickPrivateBorrow` | `privateCredit.ts` | Spawn/expire borrow quotes to you |
+| `acceptPrivateBorrowQuote` | `privateCredit.ts` | Close → `Holding.loan` + rival cash out |
+| `declinePrivateBorrowQuote` | `privateCredit.ts` | Pass |
+| `creditBookFace` / `creditBookRoom` | `privateCredit.ts` | Combined purchased + originated rail |
+| `mezzQuote` / `placeMezz` | `debt.ts` | Cordage mezz behind bank senior (`Holding.mezz`) |
 | `serviceNotes` tweak | `notes.ts` | On payoff of `privateOriginated`, cut `r.debt`, drop `cityLoans` |
-| Store actions | `store.ts` | `fundPrivateAsk` / `declinePrivateAsk` |
-| UI | `NotesPage.tsx` | Asks list + book summary |
+| `bringPaperToMarket` | `notes.ts` | Wider performing; bond buyers on expiry |
+| Store actions | `store.ts` | fund/decline ask + accept/decline borrow + placeMezz |
+| UI | `NotesPage` / `RefiSection` / `DebtPage` | Lend asks + borrow quotes + Place mezz |
 
 Month order: after lenders/rivals stress is known, before or beside `tickNotes`.
 
@@ -175,8 +185,10 @@ Phase B volume justifies it.
 | Test | Asserts |
 |---|---|
 | `test/private-credit.mjs` | Fund ask → cash/debt/note/cityLoans; coupon lands; sleeve rejects over-cap; second lien refused; maturity clears rival debt |
+| `test/private-borrow.mjs` | Accept borrow → holder/loan/workout clear; lender cash; points; coupon; decline |
+| `test/private-mezz.mjs` | Mezz quote/place/refuse; private takeout clears mezz; credit book helpers |
+| `tools/private-credit-play.mjs` | 20y bot stories exercising lend/borrow/notes/mezz |
 | `pnpm conserve` | Advances and coupons balance |
-| Later | Century sleeve share; loss rate vs Cordage |
 
 ---
 
@@ -199,6 +211,7 @@ Phase B volume justifies it.
 3. `tickPrivateCredit` wired from `sim.ts`.
 4. Store + Notes UI asks rail.
 5. `test/private-credit.mjs` green.
-6. Phase B only after A is playable for a decade in harness.
+6. Phase B borrow quotes + accept into `Holding.loan` + UI + harness.
+7. Phase C only after A+B have been lived with in play.
 
 When in doubt: **expensive, finite, enforceable — Cordage with your name on it.**

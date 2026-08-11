@@ -2323,7 +2323,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   for (const h of Object.values(s.holdings)) {
     const v = ownedHoldingValue(s, parcels, h);
     gav += v;
-    nw += v - (h.loan?.balance ?? 0);
+    nw += v - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
   }
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //

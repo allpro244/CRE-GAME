@@ -24,7 +24,7 @@ import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
-import { refinance, buyRateCap, payOffLoan } from "@/engine/debt";
+import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
@@ -184,6 +184,8 @@ interface AppState {
    */
   hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
+  /** Cordage mezz behind a bank senior — Phase C private-credit stack. */
+  placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
@@ -638,6 +640,15 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Repriced. New paper, new clock.");
+    void persist(r.s);
+  },
+  placeMezz: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = placeMezz(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Mezz closed.");
     void persist(r.s);
   },
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
-import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
+import { currentSize, currentDev, currentCash0 } from "@/state/city";
+import { cityList, cityName, sizeList, developmentList, PROCEDURAL } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
@@ -50,13 +50,14 @@ export default function StartMenu() {
   const startRun = useStore((s) => s.startRun);
   const continueRun = useStore((s) => s.continueRun);
 
-  const islands = cityList();
   const sizes = sizeList();
   const devs = developmentList();
-  // What this browser last played is the sensible default, not a hard-coded
-  // one: a player who has built three Great Cities on Kestrel Point should not
-  // have to say so a fourth time.
-  const [island, setIsland] = useState(currentCity());
+  // THERE IS NO ISLAND TO CHOOSE. Every new run is cut on a generated island —
+  // its coast, its districts, its parks and its street names all come out of
+  // the seed rolled when Break ground is pressed — so a column offering one
+  // button was a control that could not be used. What this browser last played
+  // is not a default any more either: the point is that it is somewhere new.
+  const island = PROCEDURAL;
   const [size, setSize] = useState(currentSize());
   const [dev, setDev] = useState(currentDev());
   const [cash0, setCash0] = useState<number>(currentCash0());
@@ -69,7 +70,7 @@ export default function StartMenu() {
     return n >= 1000 ? `${(n / 1000).toFixed(n < 3000 ? 1 : 0)}k` : `${Math.round(n / 50) * 50}`;
   };
 
-  const islandName = (id: string) => islands.find((c) => c.id === id)?.name ?? id;
+  const islandName = (id: string) => cityList().find((c) => c.id === id)?.name ?? id;
   // A SAVED TOWN IS NAMED, even the generated one. The picker entry for a
   // procedural island can only say "Somewhere else", because the seed is not
   // rolled until Break ground is pressed and there is nothing yet to name. A
@@ -136,23 +137,6 @@ export default function StartMenu() {
               <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
 
               <div className="start-cols">
-                {/* WHICH ISLAND. Fixed for the life of a campaign — the coast,
-                    the districts and the stations are what make a place a place
-                    — so this is the only screen it can be asked on. */}
-                <div className="start-col">
-                  <div className="start-col-head">which island</div>
-                  {islands.map((c) => (
-                    <button
-                      key={c.id}
-                      className={"start-opt" + (c.id === island ? " start-opt-on" : "")}
-                      onClick={() => setIsland(c.id)}
-                    >
-                      <span className="start-opt-name">{c.name}</span>
-                      <span className="start-opt-note">{c.tagline}</span>
-                    </button>
-                  ))}
-                </div>
-
                 {/* HOW BIG, which is a decision about what game you are playing
                     rather than a graphics setting. Land area goes as the square
                     of the scale, so this moves the lot count from a few hundred
@@ -224,7 +208,7 @@ export default function StartMenu() {
           column in a 720px window and there was no way to reach it. */}
       <div className="start-foot">
         <div className="start-foot-sum">
-          <span className="start-foot-town">{islandName(island)} · {sizeName} · {devName} · {usd(cash0)}</span>
+          <span className="start-foot-town">A new island · {sizeName} · {devName} · {usd(cash0)}</span>
           <span className="start-foot-note">
             {usd(cash0)} and no holdings. The town is generated when you press this.
             {resume ? " Named saves stay on the Saves page." : ""}

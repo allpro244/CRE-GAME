@@ -200,7 +200,7 @@ town**, which makes every before/after pair a comparison of two cities.
 |---|---|
 | `fingerprint.js` | did this extraction change any geometry — 164,330 vertices, summed positions, per-style vertex counts |
 | `playerslate.js` | what does `setPlayerBuildings` actually reach, in one town |
-| `slatesweep.mjs` | ...and across random towns on both islands |
+| `slatesweep.mjs` | ...and across N randomly generated islands |
 
 ```bash
 P=/tmp/bw-prof
@@ -208,14 +208,14 @@ node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/fp.png --wait 12000 \
   --profile $P --verbose --settle 6000  --eval "$(cat tools/probe/fingerprint.js)"
 node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/slate.png --wait 12000 \
   --profile $P --verbose --settle 20000 --eval "$(cat tools/probe/playerslate.js)"
-node tools/probe/slatesweep.mjs 3            # 6 fresh towns; ~45s each
+node tools/probe/slatesweep.mjs 3            # 3 fresh islands; ~45s each
 ```
 
 ### One town is a screenshot
 
 This is the same argument that put `styles.ts` in its own file. Every city here
 is generated from a seed, so *"which families does this draw"* is a question
-about a **distribution**. `pnpm styles` sweeps 12 cities for the generator;
+about a **distribution**. `pnpm styles` sweeps 12 generated islands;
 `slatesweep.mjs` is that question asked of the player path, and it has to sweep
 for the same reason. A family absent from a harbour town whose tallest building
 is fourteen floors is **correct**, and you cannot tell that from broken without

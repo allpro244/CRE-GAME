@@ -101,23 +101,30 @@ dome, cupola, clock stage, spire, smokestack, tank tower, sign letters, urns,
 dormers, helipad, pergola, planters, greenhouse, flagpole, mast, dish farm,
 davit, ventilators, chimney pots).
 
-**Current audit** (`pnpm styles`, 12 cities — 2 towns x 6 seeds — 9,563
-buildings, 144 facade families):
+**Current audit** (`pnpm styles`, 12 generated islands, 9,625 buildings, 144
+facade families):
 
 ```
 DEAD (unreachable by any input): none
-untenanted (reachable, absent from these towns):
-    diagrid (needs office 20fl 2000), skygarden (needs office 6fl 2015),
-    megabrace (needs office 12fl 2000), pvclad (needs office 6fl 2015)
+untenanted (reachable, absent from these islands):
+    diagrid (needs office 20fl 2000), steelshelf (needs office 6fl 2015),
+    skygarden (needs office 6fl 2015), megabrace (needs office 12fl 2000)
 DOMINANT : none
-top-5 share: 20.2%      (the two-family era was 71%)
-office 72 families · retail 65 · multifamily 48 · industrial 33
+top-5 share: 21.5%      (the two-family era was 71%)
+office 72 families · retail 65 · multifamily 47 · industrial 33
 ```
+
+It sweeps GENERATED islands, which is a change worth knowing about: it used to
+walk the two hand-drawn configs at six seeds each, and those are harness
+fixtures now rather than places anybody plays — an audit of them would have
+been an audit of a city nobody sees. A generated island rerolls its coast, its
+districts and its street plan as well as its buildings, so this is a wider
+sweep as well as an honest one.
 
 That audit covers the stock a town STARTS with. For the other path — everything
 the player and the rivals put up — `tools/probe/slatesweep.mjs` asks the same
 question of `setPlayerBuildings`, and it has to sweep seeds for the same reason
-this one does. Across 6 random towns on both islands, 120 built lots each:
+this one does. Across 6 randomly generated islands, 120 built lots each:
 
 ```
 facade families per town: min 40 · median 44 · max 45   (union 55)
@@ -206,7 +213,7 @@ printing the shape of building that would select it.
 This is the single most common way a family ends up dead, and it happened four
 separate times:
 
-- **No industrial building in New Alden has five floors.** The class runs 2 at
+- **No industrial building in a generated town has five floors.** The class runs 2 at
   the quartile and 4 at the ninth decile, so `f >= 5` was unreachable.
 - **A silo has no floors.** The generator gives every building a floor count
   because everything gets one, but a grain elevator is a thirty-metre drum.
@@ -368,8 +375,8 @@ node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/slate.png --wait 12000 \
   box — an axis-aligned box reports a slab lying at 45 degrees to world x as
   barely changed, and city lots are rarely square to the grid.
 - **`slatesweep.mjs`** — the same question across N fresh browser profiles,
-  which means N random seeds, on both islands. One town is a screenshot; see
-  below.
+  which means N random seeds — and therefore N different coastlines, street
+  plans and park programmes. One town is a screenshot; see below.
 
 **A test that cannot fail is itself a fake.** Before trusting that a number
 moved, check that it *can* move — a gate on a condition the generator never

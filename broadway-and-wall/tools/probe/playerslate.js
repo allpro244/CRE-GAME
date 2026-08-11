@@ -23,11 +23,10 @@
   const S = () => window.__store.getState();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (!S().parcels) {
-    // ?bwtown=kestrel cuts a town on that island instead of the default one.
-    // A fresh profile then gives a random seed, which is the point: one town
-    // is a screenshot, and this path's distribution is not a screenshot.
-    const town = new URLSearchParams(location.search).get("bwtown");
-    if (town) { try { localStorage.setItem("bw:city", town); } catch { /* private mode */ } }
+    // A fresh browser profile gives a random seed, and since the drawn cities
+    // were retired the seed decides the coast and the street plan too — so
+    // every run of this is a different town. That is the point: one town is a
+    // screenshot, and this path's distribution is not a screenshot.
     const b = [...document.querySelectorAll("button")];
     (b.find((x) => /Continue|Resume|Pick it back up/i.test(x.textContent || "")) ||
      b.find((x) => /Break ground/.test(x.textContent || ""))).click();

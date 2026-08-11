@@ -110,7 +110,7 @@ untenanted (reachable, absent from these islands):
     diagrid (needs office 20fl 2000), steelshelf (needs office 6fl 2015),
     skygarden (needs office 6fl 2015), megabrace (needs office 12fl 2000)
 DOMINANT : none
-top-5 share: 20.5%      (the two-family era was 71%)
+top-5 share: 21.0%      (the two-family era was 71%)
 office 72 families · retail 65 · multifamily 47 · industrial 33
 ```
 

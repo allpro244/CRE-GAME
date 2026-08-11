@@ -36,7 +36,7 @@ const CITY_SEED = Number(process.env.CITY_SEED ?? 20261);
 const USES = ["office", "retail", "multifamily", "industrial"];
 mkdirSync(OUT, { recursive: true });
 
-const built = makeCity(process.env.BW_CITY ?? "newalden", CITY_SEED);
+const built = makeCity(process.env.BW_CITY ?? "somewhere", CITY_SEED);
 E.normalizeParcels(built.parcels);
 const BASE = { parcels: built.parcels, adjacency: built.adjacency, bbls: Object.keys(built.parcels) };
 const clone = (x) => JSON.parse(JSON.stringify(x));

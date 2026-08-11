@@ -57,7 +57,7 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
  * produce one — a bot that haggles would be measuring its own patience.
  */
 function run(seed) {
-  const b = makeCity("newalden", 1);
+  const b = makeCity("somewhere", 1);
   E.normalizeParcels(b.parcels);
   const parcels = JSON.parse(JSON.stringify(b.parcels));
   const bbls = Object.keys(parcels);

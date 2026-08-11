@@ -19,7 +19,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
-const CITY = process.env.BW_CITY ?? "newalden";
+const CITY = process.env.BW_CITY ?? "somewhere";
 
 const CLASSES = ["office", "retail", "multifamily", "industrial"];
 const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };

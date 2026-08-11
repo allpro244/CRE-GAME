@@ -1095,9 +1095,34 @@ export function generateCity(cfg) {
     // on the industrial fringe, which is where the gaps actually are.
     return Math.min(0.88, Math.max(0.05, base * (DZ.vac ?? 1)));
   }
-  function yearFor(name) {
+
+  const FOUNDED = cfg.cores?.[0]?.xy ?? [0, 0];
+  const FOUND_MAX = (() => {
+    let m = 1;
+    for (const q of innerRing) m = Math.max(m, dist(FOUNDED, q));
+    return m;
+  })();
+  const growthRing = (p) => Math.min(1, dist(p, FOUNDED) / FOUND_MAX);
+  const RING_W = 0.60;
+  const pendingYears = [];
+  function yearFor(name, at) {
     const [a0, a1, p, b0, b1] = flavorOf(name).yr;
-    return Math.round(rand() < p ? rr(a0, a1) : rr(b0, b1));
+    const u0 = rand();
+    const mode = rand() < p;
+    const rec = { name, ring: growthRing(at), u0, a0, a1, b0, b1, mode, year: 0 };
+    pendingYears.push(rec);
+    return rec;
+  }
+  function settleYears() {
+    if (!pendingYears.length) return;
+    const mean = pendingYears.reduce((a, r) => a + r.ring, 0) / pendingYears.length;
+    for (const r of pendingYears) {
+      const ring = 0.5 + (r.ring - mean);
+      const u = Math.min(1, Math.max(0, r.u0 * (1 - RING_W) + ring * RING_W));
+      r.year = Math.round(r.mode ? r.a0 + (r.a1 - r.a0) * u : r.b0 + (r.b1 - r.b0) * u);
+      if (r.pf) r.pf.properties.yearbuilt = r.year;
+      if (r.bf) r.bf.properties.cnstrct_yr = r.year;
+    }
   }
 
   const corridorDist = (p) => {
@@ -1172,7 +1197,8 @@ export function generateCity(cfg) {
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand);
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 
-      const yearbuilt = vacant ? 0 : yearFor(d);
+      const yearRec = vacant ? null : yearFor(d, c);
+      const yearbuilt = 0;
       let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
       if (!vacant) {
         const fl = flavorOf(d);
@@ -1341,6 +1367,7 @@ export function generateCity(cfg) {
         },
       });
 
+      if (yearRec) yearRec.pf = parcels.features[parcels.features.length - 1];
       if (!vacant && footprint) {
         builtLots.push({ h, areaM2, floors, cls, lotArea,
                          pf: parcels.features[parcels.features.length - 1],
@@ -1357,12 +1384,16 @@ export function generateCity(cfg) {
             groundelev: Math.round(rr(3, 20)),
           },
         });
+        if (yearRec) yearRec.bf = buildings.features[buildings.features.length - 1];
       }
       houseNo += Math.round(rr(2, 8));
       lotNo++;
     }
     blockNo++;
   }
+
+  // Every lot is cut; now the years can be centred on them. See yearFor.
+  settleYears();
 
   // --- decorative waterfront ------------------------------------------------
   //

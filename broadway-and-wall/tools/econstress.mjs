@@ -19,7 +19,7 @@ import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E, USES, MONTHS, run, city, med, mean, pct, districtsOf } from "./econaudit-core.mjs";
-import { makeCity, CITIES } from "../src/citygen/index.mjs";
+import { makeCity, PROCEDURAL } from "../src/citygen/index.mjs";
 import { leaseAtMarket } from "../test/leasepolicy.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -779,14 +779,15 @@ if (want("E")) {
 // ===========================================================================
 // F. GEOGRAPHY CHANGES THE ANSWER — or the maps are wallpaper
 // ===========================================================================
-// Five cities exist. If the same strategy on the same market seed returns the
+// Five generated islands. If the same strategy on the same market seed returns the
 // same money on all five, then the coastlines, the grids and the parks are a
 // skin over one town and there is no reason to play the second one.
 if (want("F")) {
   const lines = [];
   const rows = [];
-  for (const id of Object.keys(CITIES)) {
-    const b = cityNamed(id, CITIES[id].seed);
+  const GEO_SEEDS = [1, 20261, 30411, 481923, 550991];
+  for (const seed of GEO_SEEDS) {
+    const b = cityNamed(PROCEDURAL, seed);
     const outs = MARKET_SEEDS.slice(0, 2).map((ms) => playStrategy("core", ms, b));
     const lots = b.bbls.length;
     const landShare = b.bbls.filter((x) => b.parcels[x].class === "land").length / lots;

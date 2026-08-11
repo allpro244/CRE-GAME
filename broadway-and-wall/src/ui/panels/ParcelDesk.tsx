@@ -5,7 +5,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee, landRead } from "@/engine/value";
+import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee, landRead } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -57,12 +57,15 @@ function ParcelPanelInner({
   const appr = game.approaches[selectedBBL];
   const cond = holding?.condition ?? initialCondition(rec);
   const glLive = holding ? game.groundLeases?.[selectedBBL] : undefined;
-  const value = holding
+  const simValue = holding
     ? (holding.groundLeased && glLive
       ? leasedFeeValue(glLive, bareLandRec(parcels, game, selectedBBL) ?? rec, game.econ, game.month,
         glLive.sf ?? game.built?.[selectedBBL]?.bldgArea ?? 0)
       : holdingValue(rec, game.econ, holding, game.month))
     : assetValue(rec, game.econ, cond);
+  const value = holding?.groundLeased && glLive
+    ? simValue
+    : displayValue(rec, game.econ, simValue);
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -230,6 +233,24 @@ function ParcelPanelInner({
 
       {on("summary") && <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
+        {(() => {
+          const prem = rec.locPremium ?? 1;
+          const tags: string[] = [];
+          if (rec.corner) tags.push("corner");
+          if ((rec.shoreM ?? 9999) < 300) tags.push("waterfront");
+          if ((rec.corridorM ?? 9999) < 90) tags.push("high street");
+          if (tags.length === 0 && prem <= 1.001) return null;
+          const bump = ((prem - 1) * 100).toFixed(0);
+          return (
+            <Row
+              k="Location"
+              v={tags.length
+                ? `${tags.join(" · ")}${prem > 1.001 ? ` · +${bump}% on land` : ""}`
+                : `+${bump}% on land`}
+              strong={prem > 1.08}
+            />
+          );
+        })()}
         {/* ONE LINE PER MARKET, because a building with shops under offices is
             in two of them and the average of the two is a rent nobody signs.
             The blend is the right number for an appraisal and the wrong one

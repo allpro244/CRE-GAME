@@ -3,10 +3,8 @@
 // There is one island and it is generated: `island.mjs` draws its coast, its
 // districts, its parks and every street name from the run's seed, so a new
 // campaign is a new place rather than the same place reshuffled. New Alden and
-// Kestrel Point were drawn by hand and are gone from the game — see the CITIES
-// note in citygen/cities.mjs for what measurement retired them. They survive
-// as harness fixtures, which is why `makeCity("newalden", 1)` still works and
-// why an old save that names one still resumes.
+// Kestrel Point were hand-drawn fixtures and are gone — old saves that name
+// them are refused on Continue.
 //
 // THE SEED IS THE SECOND HALF OF THE ADDRESS, and now most of the first half
 // too. A city is still `(island, seed, size)` and every one of those has to

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Cities live in per-city dirs now; the harness runs against one of them.
-// BW_CITY picks which (default newalden — the original balance target).
+// BW_CITY picks which island (default somewhere — generated).
 const E = await import(process.env.ENGINE ?? join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);

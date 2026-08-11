@@ -113,7 +113,7 @@ const step = (g, parcels) => E.advanceQuarter(g, parcels, bbls, adjacency);
 const realNW = (g, parcels) => E.netWorth(g, parcels) / (g.econ.cpi || 1);
 
 console.log(`\nB. CAPITAL MARKETS — ${SEEDS.length} seed(s), ${YRS}y macro / ${HOLD_Y}y leverage / ${REFI_Y}y refi`);
-console.log(`   seeds ${SEEDS.join(", ")}   city ${process.env.BW_CITY ?? "newalden"}\n`);
+console.log(`   seeds ${SEEDS.join(", ")}   city ${process.env.BW_CITY ?? "somewhere"}\n`);
 
 // =============================================================================
 // THE SHARED MACRO PASS — one null-player century per seed, feeding §1 and §5.

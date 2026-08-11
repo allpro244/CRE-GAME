@@ -24,7 +24,7 @@ const GRADES = ["obsolete", "worn", "standard", "good"];
 const med = (a) => { const b = [...a].sort((x, y) => x - y); return b[Math.floor((b.length - 1) / 2)]; };
 const pct = (x) => (x * 100).toFixed(1) + "%";
 
-const built = makeCity(process.env.BW_CITY ?? "newalden", CITY_SEED);
+const built = makeCity(process.env.BW_CITY ?? "somewhere", CITY_SEED);
 E.normalizeParcels(built.parcels);
 const BASE = built.parcels, BBLS = Object.keys(BASE), ADJ = built.adjacency;
 

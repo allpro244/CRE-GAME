@@ -86,7 +86,7 @@ const pct = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => 
 //
 // Each returns { key: value } and says, in its comment, what going wrong looks
 // like. `id` in the name marks an identity: it is not allowed to move at all.
-const CITY = "newalden", CITY_SEED = 1, SEEDS = [550991, 12007, 73303, 4242, 91117, 20603];
+const CITY = "somewhere", CITY_SEED = 1, SEEDS = [550991, 12007, 73303, 4242, 91117, 20603];
 
 function freshCity() {
   const built = makeCity(CITY, CITY_SEED);

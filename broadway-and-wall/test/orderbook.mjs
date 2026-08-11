@@ -9,7 +9,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
-const N = +(process.env.N ?? 2);
+const N = +(process.env.N ?? 6);
 const HZ = +(process.env.HZ ?? 360);
 const WIN = +(process.env.WIN ?? 12);
 const OFF = +(process.env.OFF ?? 0);
@@ -86,7 +86,13 @@ const leadSum = ["office", "multifamily"].reduce((a, k) => {
   const r = rOf(k); return a + (Number.isFinite(r) && r > 0 ? r : 0);
 }, 0);
 ok("office+multifamily track the book", leadSum >= 0.35, `positive r sum=${leadSum.toFixed(2)}`);
-ok("no classAppetite mirror (pick reads startOwed)", true, "clamp rail removed in useForZone");
+const std = (arr) => {
+  const m = arr.reduce((a, v) => a + v, 0) / arr.length;
+  return Math.sqrt(arr.reduce((a, v) => a + (v - m) ** 2, 0) / arr.length);
+};
+const retailSpread = std(brokeS.retail);
+ok("retail composition responds to the book", retailSpread > 0.04,
+  `break-share σ=${retailSpread.toFixed(3)}`);
 
 console.log(`\n${fails === 0 ? "orderbook pass" : `${fails} orderbook failure(s)`}`);
 process.exit(fails === 0 ? 0 : 1);

@@ -1831,6 +1831,26 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
   return Math.max(asIs === null ? income : Math.max(income, asIs), land * 0.92);
 }
 
+/**
+ * Appraisal-facing value — adds the hedonic location premium on the land
+ * component only. Sim paths (acquisition, development, order book) use
+ * `assetValue`; panels and vs-appraisal readouts use this.
+ */
+export function appraisalAssetValue(rec: ParcelRecord, econ: Econ, condition: Condition): number {
+  const base = assetValue(rec, econ, condition);
+  const prem = rec.locPremium ?? 1;
+  if (prem <= 1.001) return base;
+  const land = landValue(rec, econ);
+  return Math.round(base + land * (prem - 1));
+}
+
+/** Panel/appraisal readout — location premium on the land slice, sim unchanged. */
+export function displayValue(rec: ParcelRecord, econ: Econ, simValue: number): number {
+  const prem = rec.locPremium ?? 1;
+  if (prem <= 1.001) return simValue;
+  return Math.round(simValue + landValue(rec, econ) * (prem - 1));
+}
+
 // owned assets appraise on a blend of in-place income and stabilized market —
 // an empty building isn't worthless, but it isn't stabilized either
 /**

@@ -42,7 +42,7 @@ const fmt = (x, d = 2) => Number.isFinite(x) ? x.toFixed(d) : "—";
 console.log(`\nCENTURY REPORT — ${SEEDS} seeds × ${YEARS} years · city ${CITY_SEED}\n`);
 const t0 = performance.now();
 
-const built = makeCity(process.env.BW_CITY ?? "newalden", CITY_SEED);
+const built = makeCity(process.env.BW_CITY ?? "somewhere", CITY_SEED);
 E.normalizeParcels(built.parcels);
 const parcels = built.parcels;
 const adjacency = built.adjacency;

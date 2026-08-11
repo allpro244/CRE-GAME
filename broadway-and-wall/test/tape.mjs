@@ -60,7 +60,7 @@ const template = (t) => String(t ?? "")
   .slice(0, 80);
 
 function play(seed, active) {
-  const b = makeCity("newalden", 1);
+  const b = makeCity("somewhere", 1);
   E.normalizeParcels(b.parcels);
   const parcels = JSON.parse(JSON.stringify(b.parcels));
   const bbls = Object.keys(parcels);

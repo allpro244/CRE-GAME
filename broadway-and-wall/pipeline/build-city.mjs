@@ -1,6 +1,6 @@
-// Generate one of pipeline/cities.mjs into pipeline/raw/, then report.
+// Generate a procedural island into pipeline/raw/, then report.
 //
-//   node pipeline/build-city.mjs kestrel
+//   node pipeline/build-city.mjs 550991
 //   node pipeline/build-city.mjs --all --dry     (coverage only, writes nothing)
 //
 // The number that matters is COVERAGE: the share of buildable land that is
@@ -14,36 +14,39 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CITIES } from "../src/citygen/cities.mjs";
+import { islandConfig } from "../src/citygen/island.mjs";
 import { generateCity } from "../src/citygen/citygen.mjs";
+import { REFERENCE_SEED } from "../src/citygen/index.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RAW = join(ROOT, "raw");
 
+const SAMPLE_SEEDS = [REFERENCE_SEED, 20261, 481923, 550991, 73303];
+
 const args = process.argv.slice(2);
 const dry = args.includes("--dry");
 const all = args.includes("--all");
-const names = all ? Object.keys(CITIES) : args.filter((a) => !a.startsWith("--"));
-if (!names.length) {
-  console.error(`usage: node pipeline/build-city.mjs <${Object.keys(CITIES).join("|")}> [--dry]`);
+const seeds = all
+  ? SAMPLE_SEEDS
+  : args.filter((a) => !a.startsWith("--")).map((s) => Number(s) >>> 0).filter(Boolean);
+if (!seeds.length) {
+  console.error(`usage: node pipeline/build-city.mjs <seed> [seed…] [--dry]  or  --all`);
   process.exit(1);
 }
 
-for (const name of names) {
-  const cfg = CITIES[name];
-  if (!cfg) { console.error(`unknown city: ${name}`); process.exit(1); }
+for (const seed of seeds) {
+  const cfg = islandConfig(seed);
   const t0 = Date.now();
-  const city = generateCity(cfg);
+  const city = generateCity({ ...cfg, seed });
   const s = city.stats;
   const cov = s.coverage;
 
-  console.log(`\n${cfg.name} (${name})  ${Date.now() - t0} ms`);
+  console.log(`\n${cfg.name} (seed ${seed})  ${Date.now() - t0} ms`);
   console.log(`  ${s.lots} lots on ${s.blocks} blocks (${s.unbuiltPct}% unbuilt), ${s.buildings} buildings`);
   console.log(`  districts: ${Object.entries(s.byDistrict).map(([k, v]) => `${k} ${v}`).join(", ")}`);
   console.log(`  COVERAGE ${cov.pct.toFixed(2)}%  of ${(cov.landM2 / 1e6).toFixed(2)} km2 buildable` +
     (cov.voidM2 ? `  — ${(cov.voidM2 / 1e3).toFixed(0)}k m2 bare` : "  — no bare ground"));
   if (cov.voids.length) {
-    // where the holes are, so a bad cut is findable instead of hunted for
     const clusters = [];
     for (const p of cov.voids) {
       const near = clusters.find((c) => Math.hypot(c.x / c.n - p[0], c.y / c.n - p[1]) < 90);

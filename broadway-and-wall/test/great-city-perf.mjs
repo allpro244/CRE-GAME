@@ -16,7 +16,7 @@ const check = (ok, msg) => {
 console.log("\nGREAT CITY PERFORMANCE\n");
 
 const tBuild0 = performance.now();
-const built = makeCity("newalden", 20261, { size: "giant" });
+const built = makeCity("somewhere", 20261, { size: "giant" });
 if (E.normalizeParcels) E.normalizeParcels(built.parcels);
 const buildMs = performance.now() - tBuild0;
 const parcels = built.parcels;

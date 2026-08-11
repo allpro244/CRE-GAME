@@ -1,7 +1,7 @@
 // A flat plan of a generated city, as SVG. Fast enough to iterate against —
 // no tiling, no build, no browser, about a second per city.
 //
-//   node pipeline/plan.mjs kestrel            -> pipeline/plan/kestrel.svg
+//   node pipeline/plan.mjs 550991            -> pipeline/plan/550991.svg
 //   node pipeline/plan.mjs --all
 //
 // This is a DIAGNOSTIC view, not the game's palette. Three failure modes are
@@ -14,22 +14,31 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CITIES } from "../src/citygen/cities.mjs";
+import { islandConfig } from "../src/citygen/island.mjs";
 import { generateCity } from "../src/citygen/citygen.mjs";
+import { REFERENCE_SEED } from "../src/citygen/index.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUT = join(ROOT, "plan");
 mkdirSync(OUT, { recursive: true });
 
-const args = process.argv.slice(2);
-const names = args.includes("--all") ? Object.keys(CITIES) : args.filter((a) => !a.startsWith("--"));
+const SAMPLE_SEEDS = [REFERENCE_SEED, 20261, 481923, 550991, 73303];
 
-for (const name of names) {
-  const cfg = CITIES[name];
-  const city = generateCity(cfg);
+const args = process.argv.slice(2);
+const seeds = args.includes("--all")
+  ? SAMPLE_SEEDS
+  : args.filter((a) => !a.startsWith("--")).map((s) => Number(s) >>> 0).filter(Boolean);
+if (!seeds.length) {
+  console.error(`usage: node pipeline/plan.mjs <seed> [seed…]  or  --all`);
+  process.exit(1);
+}
+
+for (const seed of seeds) {
+  const cfg = islandConfig(seed);
+  const city = generateCity({ ...cfg, seed });
+  const name = String(seed);
   const W = 1500;
 
-  // work back from lon/lat to the local metre frame the config was written in
   const coords = [];
   const eat = (c) => { if (typeof c[0] === "number") coords.push(c); else c.forEach(eat); };
   for (const f of city.context.features) if (f.geometry) eat(f.geometry.coordinates);
@@ -37,9 +46,6 @@ for (const name of names) {
   for (const [x, y] of coords) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   const pad = (x1 - x0) * 0.02;
   x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
-  // degrees of longitude are shorter than degrees of latitude at 41 N; without
-  // this the whole city renders stretched east-west and a peninsula reads as a
-  // blob
   const AR = Math.cos((cfg.center[1] * Math.PI) / 180);
   const k = W / ((x1 - x0) * AR);
   const H = Math.round((y1 - y0) * k);
@@ -54,8 +60,6 @@ for (const name of names) {
   out.push(`<rect width="${W}" height="${H}" fill="#b8d3e6"/>`);
   for (const f of byKind("land")) out.push(`<path d="${path(poly(f))}" fill="#e6e3d9"/>`);
   for (const f of byKind("esplanade")) out.push(`<path d="${path(f.geometry.coordinates[0])} ${path(f.geometry.coordinates[1])}" fill="#e9ebe0" fill-rule="evenodd"/>`);
-  // diagnostic: the backstop is tinted differently from real street cells, so
-  // "no block here" and "no cell here" are two visibly different failures
   for (const f of byKind("paveland")) out.push(`<path d="${path(poly(f))}" fill="#d8b8b0"/>`);
   for (const f of byKind("apron")) out.push(`<path d="${path(poly(f))}" fill="#b9b6ae"/>`);
   for (const f of byKind("pier")) out.push(`<path d="${path(poly(f))}" fill="#e9e7e1"/>`);
@@ -63,13 +67,10 @@ for (const name of names) {
   for (const f of byKind("block")) out.push(`<path d="${path(poly(f))}" fill="#e9e6dc"/>`);
   for (const f of byKind("park")) out.push(`<path d="${path(poly(f))}" fill="#cde3c6" stroke="#b3cba6"/>`);
 
-  // lot lines — without them a block reads as one pale slab and the plat that
-  // the whole game is played on is invisible
   for (const f of city.parcels.features) {
     out.push(`<path d="${path(f.geometry.coordinates[0])}" fill="none" stroke="#c9c4b5" stroke-width="0.5"/>`);
   }
 
-  // building footprints, shaded by height — the skyline, read from above
   for (const f of city.buildings.features) {
     const h = f.properties.heightroof / 3.28084;
     const t = Math.min(1, h / 90);
@@ -77,9 +78,7 @@ for (const name of names) {
     out.push(`<path d="${path(f.geometry.coordinates[0])}" fill="rgb(${g + 18},${g + 12},${g})" fill-opacity="0.92"/>`);
   }
 
-  // BARE GROUND — the thing this render exists to expose
   const cov = city.stats.coverage;
-  // voids come back in the config's metre frame; re-project through the city's
   const { makeProjection } = await import("../src/citygen/geom.mjs");
   const pr = makeProjection(cfg.center[0], cfg.center[1]);
   for (const v of cov.voids) {
@@ -93,5 +92,5 @@ for (const name of names) {
 
   const file = join(OUT, `${name}.svg`);
   writeFileSync(file, out.join("\n"));
-  console.log(`${cfg.name}: ${file}  (coverage ${cov.pct.toFixed(2)}%, ${cov.voids.length} bare samples)`);
+  console.log(`${cfg.name} (seed ${seed}): ${file}  (coverage ${cov.pct.toFixed(2)}%, ${cov.voids.length} bare samples)`);
 }

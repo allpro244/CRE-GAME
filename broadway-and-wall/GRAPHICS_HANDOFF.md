@@ -141,25 +141,40 @@ is three things, all geometry: a deep opening **hides its own glass** off-axis,
 what glass you still see **sees less sky**, and the jamb **shadows the opening**
 when the sun runs along the wall. See `BUILDINGS.md` §5.
 
-### 4.4 · Mid-rise silhouette — the next one
+### ◐ 4.4 · Mid-rise silhouette — half done
 
-Below twenty floors, `setPlayerBuildings` picks from five silhouettes and
-**every one of them is the plate scaled toward its own centre**: a podium, a
-setback, a three-stage wedding cake, a tower-on-podium, a plain prism. That is
-a 1961 move and the code says so in its own comment. Above twenty floors
-`towerMassing` already rotates the plate, offsets it, cuts its corners and lets
-the top oversail — ten families of it — and none of that is reachable
-below the twenty-floor gate. How much of what a player actually builds lands in
-that band is not measured — measure it before sizing the work.
+Below the twenty-floor tower gate, `setPlayerBuildings` had five silhouettes
+and **every one was the plate scaled toward its own centroid**: podium,
+setback, three-stage wedding cake, tower on podium, prism. That is the
+1916-to-1961 envelope, and it is the wrong shape twice over for a building
+finished after 2000 — it puts the top of every building directly over the
+middle of its bottom, and it steps back on all four sides including the two
+that are party walls a neighbour is standing against.
 
-The generator has eleven **plan** families (`build.mjs` — courtyard, light
-court, dumbbell, campanile, end towers, twins, cruciform, shifted stack,
-notched slab, chamfer taper, twist) and `setPlayerBuildings` reaches none of
-them either. A courtyard block and a dumbbell are ordinary mid-rise
-plans and the player cannot build either.
+**Done.** Three of the eight shapes are no longer centroid scales — the shaft
+travels to one end of the plate's deep axis, a slab narrows on *one* axis
+(which is what a mid-rise apartment building is, and which a uniform scale
+cannot make), and a chamfered shaft takes its corners off. The wedding cake is
+now the rare answer for a tall building on a big plate rather than a third of
+everything. Measured on 45 buildings over 22 m: off-centre 9% → 31%, shifted
+more than 3 m 0% → 9%, plan aspect changed 2% → 9%. The 9/0/2 baseline is the
+tower kit, which already did this and which nothing below it could reach.
 
-Read the gates off the stock before writing them — see `BUILDINGS.md` §4. The
-usual failure here is a gate on a condition the generator never produces.
+**Left, and worth more than what was taken.**
+
+- **Which end is the street.** The shaft steps back toward one end of the deep
+  axis and *which* end is hashed off the deed, because this layer has the lot
+  ring and not the street graph. A block reads best when every shaft steps back
+  from the same side; right now half of them step toward the street. Wiring the
+  frontage through is the single biggest remaining win in massing.
+- **The plan families.** The generator has eleven (`build.mjs` — courtyard,
+  light court, dumbbell, campanile, end towers, twins, cruciform, shifted
+  stack, notched slab, chamfer taper, twist) and `setPlayerBuildings` reaches
+  none of them. A courtyard block and a dumbbell are ordinary mid-rise plans
+  and the player cannot build either. `capRoof` already takes a holes argument
+  and is always passed `[]`, which is most of what a courtyard needs.
+- **How much of what a player builds lands in this band** is not measured.
+  Measure it before sizing any of the above.
 
 ### 4.5 · Candidates after that, unranked and unmeasured
 

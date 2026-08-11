@@ -115,9 +115,20 @@ office 72 families · retail 65 · multifamily 48 · industrial 33
 ```
 
 That audit covers the stock a town STARTS with. For the other path — everything
-the player and the rivals put up — see `tools/probe/slatesweep.mjs` in §7; it is
-the same question asked of `setPlayerBuildings`, and it has to sweep seeds for
-the same reason this one does.
+the player and the rivals put up — `tools/probe/slatesweep.mjs` asks the same
+question of `setPlayerBuildings`, and it has to sweep seeds for the same reason
+this one does. Across 6 random towns on both islands, 120 built lots each:
+
+```
+facade families per town: min 40 · median 44 · max 45   (union 55)
+roof surfaces per town:   6 in every town
+```
+
+The comparison worth keeping is that the old number was **6 in every town, at
+every seed** — not six because a harbour town is small, six because the choice
+was a hard-coded ladder on the asset class that no property of the town could
+move. A constant across seeds is the signature of a decision that is not
+reading its inputs, and sweeping is how you see it.
 
 ---
 
@@ -333,17 +344,32 @@ node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/slate.png --wait 12000 \
 
 - **`fingerprint.js`** — mesh count, vertex count, the summed x and z of every
   position, and the vertex count per style id, over the whole scene. This is
-  what makes an extraction reviewable: `Mason`, `crownTop` and `roofDeck` were
-  all lifted out of the generator's closure and all three were checked to
-  leave 164,330 vertices and 152 per-style counts *exactly* where they were.
-  A refactor of code this shape cannot be eyeballed.
+  what makes an extraction reviewable: `Mason`, `crownTop`, `roofDeck`,
+  `roofKitWants` and `propKit` were all lifted out of the generator's closure
+  and every one was checked to leave 164,330 vertices and 152 per-style counts
+  *exactly* where they were. A refactor of this shape cannot be eyeballed.
+
+  Compare the readings by PARSING them, not with `diff`. The shoot wrapper
+  puts its own text on the same line, and a `diff` of the raw output reported
+  a difference on an extraction where zero of the 152 counts had moved — a
+  false alarm is how a check stops being trusted.
 - **`playerslate.js`** — paints a controlled spread of classes, floors and
   years over a block of real parcels through `setPlayerBuildings`, then counts
-  facade families and roof surfaces. That is what showed 6 facade families
-  reaching the mesh where the registry offers 82. It is now 46 on the same
-  slate, and 6 roof surfaces where the private ladder could reach 4. Nothing
-  in the repo could see either number before, because `pnpm styles` only
-  sweeps the generator.
+  what reached the mesh: facade families, roof surfaces, roof prop kinds, and
+  three massing numbers. That is what showed 6 facade families where the
+  registry offers 144, 4 roof prop kinds of 42, and 0% of mid-rises with a top
+  that is not directly over the middle of its base. Nothing in the repo could
+  see any of it, because `pnpm styles` only sweeps the generator.
+
+  The massing line is worth reading carefully, because no one number covers
+  it: **off-centre** catches a shifted shaft and misses a chamfer;
+  **aspect changed** catches a slab and misses a shift. The aspect figure is
+  the plan's own principal-axis ratio off the 2D covariance, not a bounding
+  box — an axis-aligned box reports a slab lying at 45 degrees to world x as
+  barely changed, and city lots are rarely square to the grid.
+- **`slatesweep.mjs`** — the same question across N fresh browser profiles,
+  which means N random seeds, on both islands. One town is a screenshot; see
+  below.
 
 **A test that cannot fail is itself a fake.** Before trusting that a number
 moved, check that it *can* move — a gate on a condition the generator never

@@ -64,6 +64,203 @@ function scatterInRing(ring: [number, number][], n: number, seed: number): [numb
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE MASONRY. Four operations, and everything above ground is made of them.
+//
+// These were closures inside the generator's one big rebuild, which meant the
+// only code that could lay a course of brick was code running inside that
+// loop — and that is why the buildings the PLAYER puts up end in a flat plane
+// while the ones the town started with have twelve different tops. The crown
+// ladder could not be reached from the other path because the trowel could
+// not be.
+//
+// They are pure geometry and they carry no state of their own; the per-volume
+// scalars every triangle inherits live in a `MasonState` the caller owns and
+// mutates as it walks its buildings. That is exactly how `curEra` and friends
+// worked before, so the emitted vertex stream is unchanged.
+
+/** The vertex buffers a wall or roof emitter writes into. */
+export interface GeomBuf {
+  pos: number[]; norm: number[]; u: number[]; style: number[]; rand: number[];
+  varr: number[]; top: number[]; fh: number[]; seg: number[]; ccv: number[]; era: number[];
+}
+
+/** Blank buffers in the one shape every emitter here agrees on. */
+export function geomBuf(): GeomBuf {
+  return {
+    pos: [], norm: [], u: [], style: [], rand: [],
+    varr: [], top: [], fh: [], seg: [], ccv: [], era: [],
+  };
+}
+
+/**
+ * What every triangle emitted right now inherits, beyond its own meta.
+ *
+ * `era` is 0 = 1870, 1 = 2030 and is read by the facade and roof shaders for
+ * patina and palette; `deck` and `wear` are the roof's surface and how tired
+ * it is; `bearX`/`bearY` is the seam bearing the deck's felt runs along.
+ */
+export interface MasonState { era: number; deck: number; wear: number; bearX: number; bearY: number }
+
+/**
+ * Pull a ring in by `m` metres — negative to push it out, which is how a
+ * cornice oversails. Toward the centroid rather than along the true offset,
+ * so it collapses gracefully on a sliver instead of self-intersecting.
+ */
+export function insetRing(ring: [number, number][], m: number): [number, number][] | null {
+  let cx = 0, cy = 0;
+  for (const [x, y] of ring) { cx += x; cy += y; }
+  cx /= ring.length; cy /= ring.length;
+  return ring.map(([x, y]) => {
+    const vx = x - cx, vy = y - cy;
+    const len = Math.hypot(vx, vy) || 1;
+    const k = Math.max(0, 1 - m / len);
+    return [cx + vx * k, cy + vy * k] as [number, number];
+  });
+}
+
+/**
+ * +1 at a convex ring vertex, -1 at a reflex one. Inside corners collect
+ * shadow; outside corners catch light.
+ */
+function cornerSigns(ring: [number, number][]): number[] {
+  const n = ring.length;
+  return ring.map((p, i) => {
+    const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
+    const cross = (p[0] - prev[0]) * (next[1] - p[1]) - (p[1] - prev[1]) * (next[0] - p[0]);
+    return cross >= 0 ? 1 : -1;   // rings are wound CCW by this point
+  });
+}
+
+/**
+ * On a roof, aU carries distance to the nearest edge — the shader uses it to
+ * sink the deck into shade under its own parapet.
+ */
+function edgeDist(ring: [number, number][], p: [number, number]): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const l2 = dx * dx + dy * dy;
+    let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
+  }
+  return best;
+}
+
+export interface Mason {
+  /** One wall triangle, with its own edge span and corner convexity. */
+  tri(T: GeomBuf, a: number[], b: number[], c: number[], n: number[], us: number[], meta: number[],
+      seg?: [number, number], ccv?: [number, number]): void;
+  /** A ring of wall between two heights. */
+  wall(T: GeomBuf, ring: [number, number][], z0: number, z1: number, meta: number[]): void;
+  /** A flat deck across a ring, subdivided so the edge gradient stays smooth. */
+  cap(T: GeomBuf, ring: [number, number][], z: number, meta: number[]): void;
+  /**
+   * A PITCHED CAP: loft the footprint up and inward to a smaller ring, then
+   * lay a deck across the top.
+   *
+   * One construction covers both roofs the old city is actually made of. Pull
+   * the top ring in hard and the slopes nearly meet — a hip. Leave it wide and
+   * make the rise steep and you get a mansard, its flat deck hidden behind the
+   * slope, which is exactly what a Second Empire roof is. It works on any
+   * convex footprint, unlike the four-sided gable path, so it reaches most of
+   * the fabric instead of a handful of cottages.
+   *
+   * Returns false when the inset ate the whole footprint, so the caller can
+   * fall back to a flat roof rather than emit a cone of slivers.
+   */
+  pitch(T: GeomBuf, ring: [number, number][], z: number, rise: number, inset: number, meta: number[]): boolean;
+}
+
+export function makeMason(st: MasonState): Mason {
+  const tri: Mason["tri"] = (T, a, b, c, n, us, meta, seg = [-1e6, 1e6], ccv = [0, 0]) => {
+    T.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    for (let i = 0; i < 3; i++) T.norm.push(n[0], n[1], n[2]);
+    T.u.push(us[0], us[1], us[2]);
+    for (let i = 0; i < 3; i++) {
+      T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+      T.era.push(st.era);
+      T.seg.push(seg[0], seg[1]);
+      T.ccv.push(ccv[0], ccv[1]);
+    }
+  };
+  const wall: Mason["wall"] = (T, ring, z0, z1, meta) => {
+    const signs = cornerSigns(ring);
+    let perim = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 0.05) continue;
+      const n = [dy / len, -dx / len, 0];
+      const u0 = perim, u1 = perim + len;
+      perim += len;
+      const seg: [number, number] = [u0, u1];
+      const cc: [number, number] = [signs[i], signs[(i + 1) % ring.length]];
+      tri(T, [a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], n, [u0, u1, u1], meta, seg, cc);
+      tri(T, [a[0], a[1], z0], [b[0], b[1], z1], [a[0], a[1], z1], n, [u0, u1, u0], meta, seg, cc);
+    }
+  };
+  const cap: Mason["cap"] = (T, ring, z, meta) => {
+    const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
+    let tris: number[][] = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
+    // subdivide big triangles so the edge-distance gradient is smooth
+    for (const t of tris) {
+      const P = t.map((i) => ring[i]);
+      const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const emit = (q: [number, number][]) => {
+        const d = q.map((p) => edgeDist(ring, p));
+        T.pos.push(q[0][0], q[0][1], z, q[1][0], q[1][1], z, q[2][0], q[2][1], z);
+        for (let i = 0; i < 3; i++) T.norm.push(0, 0, 1);
+        T.u.push(d[0], d[1], d[2]);
+        for (let i = 0; i < 3; i++) {
+          T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+          T.era.push(st.era);
+          T.seg.push(st.deck, st.wear); T.ccv.push(st.bearX, st.bearY);
+        }
+      };
+      const area = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) - (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
+      if (area > 90) {
+        const m01 = mid(P[0], P[1]), m12 = mid(P[1], P[2]), m20 = mid(P[2], P[0]);
+        emit([P[0], m01, m20]); emit([m01, P[1], m12]); emit([m20, m12, P[2]]); emit([m01, m12, m20]);
+      } else emit(P as [number, number][]);
+    }
+  };
+  const pitch: Mason["pitch"] = (T, ring, z, rise, inset, meta) => {
+    const top = insetRing(ring, inset);
+    if (!top) return false;
+    let span = 0;
+    for (let i = 0; i < top.length; i++) {
+      const a = top[i], b = top[(i + 1) % top.length];
+      span = Math.max(span, Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
+    if (span < 1.0) return false;   // insetRing clamps at the centroid
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const c = top[(i + 1) % top.length], d = top[i];
+      const A = [a[0], a[1], z], B = [b[0], b[1], z];
+      const C = [c[0], c[1], z + rise], D = [d[0], d[1], z + rise];
+      const ux = B[0] - A[0], uy = B[1] - A[1];
+      const wx = D[0] - A[0], wy = D[1] - A[1];
+      // cross of the eave run (ux, uy, 0) with the rake (wx, wy, rise)
+      let n = [uy * rise, -ux * rise, ux * wy - uy * wx];
+      const L = Math.hypot(n[0], n[1], n[2]) || 1;
+      n = n.map((q) => q / L);
+      if (n[2] < 0) n = n.map((q) => -q);
+      // u = 3 keeps the slope out of the parapet's edge-shading term, which
+      // only means anything on a flat deck
+      tri(T, A, B, C, n, [3, 3, 3], meta);
+      tri(T, A, C, D, n, [3, 3, 3], meta);
+    }
+    cap(T, top, z + rise, meta);
+    return true;
+  };
+  return { tri, wall, cap, pitch };
+}
+
 
 // What each decorative kind is painted. The harbor used to be a fleet of
 // uniform grey boxes; a hull is navy or rust, a wheelhouse is white, a crane
@@ -5740,11 +5937,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildCity() {
-    const blank = () => ({
-      pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
-      rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
-      seg: [] as number[], ccv: [] as number[], era: [] as number[],
-    });
+    const blank = geomBuf;
     const W = blank();
     const R = blank();
     /**
@@ -5766,8 +5959,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
      * One float fixes it. Set once per volume, read by every triangle that
      * volume emits, so a building's cornice ages with its wall.
      */
-    let curEra = 0.5;
-    let curDeck = 0, curWear = 0.5, curBearX = 1, curBearY = 0;
+    const mst: MasonState = { era: 0.5, deck: 0, wear: 0.5, bearX: 1, bearY: 0 };
     const wallRanges: { bbl: string; r: Ranges }[] = [], roofRanges: { bbl: string; r: Ranges }[] = [];
     // EVERY PROP KNOWS WHICH BUILDING IT IS STANDING ON. Water tanks, cooling
     // towers, aerials and fire escapes were pushed into scene-level instanced
@@ -5779,148 +5971,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const volsPerBBL = new Map<string, number>();
     for (const v of this.volumes) if (v.b && !v.k) volsPerBBL.set(v.b, (volsPerBBL.get(v.b) ?? 0) + 1);
 
-    const pushWallTri = (
-      T: typeof W, a: number[], b: number[], c: number[], n: number[], us: number[], meta: number[],
-      seg: [number, number] = [-1e6, 1e6], ccv: [number, number] = [0, 0],
-    ) => {
-      T.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-      for (let i = 0; i < 3; i++) T.norm.push(n[0], n[1], n[2]);
-      T.u.push(us[0], us[1], us[2]);
-      for (let i = 0; i < 3; i++) {
-        T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
-        T.era.push(curEra);
-        T.seg.push(seg[0], seg[1]);
-        T.ccv.push(ccv[0], ccv[1]);
-      }
-    };
-
-    // +1 at a convex ring vertex, -1 at a reflex one. Inside corners collect
-    // shadow; outside corners catch light.
-    const cornerSigns = (ring: [number, number][]): number[] => {
-      const n = ring.length;
-      return ring.map((p, i) => {
-        const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
-        const cross = (p[0] - prev[0]) * (next[1] - p[1]) - (p[1] - prev[1]) * (next[0] - p[0]);
-        return cross >= 0 ? 1 : -1;   // rings are wound CCW by this point
-      });
-    };
-
-    const extrudeWalls = (T: typeof W, ring: [number, number][], z0: number, z1: number, meta: number[]) => {
-      const signs = cornerSigns(ring);
-      let perim = 0;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const len = Math.hypot(dx, dy);
-        if (len < 0.05) continue;
-        const n = [dy / len, -dx / len, 0];
-        const u0 = perim, u1 = perim + len;
-        perim += len;
-        const seg: [number, number] = [u0, u1];
-        const cc: [number, number] = [signs[i], signs[(i + 1) % ring.length]];
-        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], n, [u0, u1, u1], meta, seg, cc);
-        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z1], [a[0], a[1], z1], n, [u0, u1, u0], meta, seg, cc);
-      }
-    };
-
-    // On a roof, aU carries distance to the nearest edge — the shader uses it
-    // to sink the deck into shade under its own parapet.
-    const edgeDist = (ring: [number, number][], p: [number, number]): number => {
-      let best = Infinity;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const l2 = dx * dx + dy * dy;
-        let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
-        t = Math.max(0, Math.min(1, t));
-        best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
-      }
-      return best;
-    };
-
-    const capRoof = (T: typeof R, ring: [number, number][], z: number, meta: number[]) => {
-      const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
-      let tris: number[][] = [];
-      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
-      // subdivide big triangles so the edge-distance gradient is smooth
-      for (const t of tris) {
-        const P = t.map((i) => ring[i]);
-        const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-        const emit = (q: [number, number][]) => {
-          const d = q.map((p) => edgeDist(ring, p));
-          T.pos.push(q[0][0], q[0][1], z, q[1][0], q[1][1], z, q[2][0], q[2][1], z);
-          for (let i = 0; i < 3; i++) T.norm.push(0, 0, 1);
-          T.u.push(d[0], d[1], d[2]);
-          for (let i = 0; i < 3; i++) {
-            T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
-            T.era.push(curEra);
-            T.seg.push(curDeck, curWear); T.ccv.push(curBearX, curBearY);
-          }
-        };
-        const area = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) - (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
-        if (area > 90) {
-          const m01 = mid(P[0], P[1]), m12 = mid(P[1], P[2]), m20 = mid(P[2], P[0]);
-          emit([P[0], m01, m20]); emit([m01, P[1], m12]); emit([m20, m12, P[2]]); emit([m01, m12, m20]);
-        } else emit(P as [number, number][]);
-      }
-    };
-
-    const insetRing = (ring: [number, number][], m: number): [number, number][] | null => {
-      let cx = 0, cy = 0;
-      for (const [x, y] of ring) { cx += x; cy += y; }
-      cx /= ring.length; cy /= ring.length;
-      const out = ring.map(([x, y]) => {
-        const vx = x - cx, vy = y - cy;
-        const len = Math.hypot(vx, vy) || 1;
-        const k = Math.max(0, 1 - m / len);
-        return [cx + vx * k, cy + vy * k] as [number, number];
-      });
-      return out;
-    };
-
-    /**
-     * A PITCHED CAP: loft the footprint up and inward to a smaller ring, then
-     * lay a deck across the top.
-     *
-     * One construction covers both roofs the old city is actually made of.
-     * Pull the top ring in hard and the slopes nearly meet — a hip. Leave it
-     * wide and make the rise steep and you get a mansard, its flat deck hidden
-     * behind the slope, which is exactly what a Second Empire roof is. It
-     * works on any convex footprint, unlike the four-sided gable path, so it
-     * reaches most of the fabric instead of a handful of cottages.
-     *
-     * Returns false when the inset ate the whole footprint, so the caller can
-     * fall back to a flat roof rather than emit a cone of slivers.
-     */
-    const pitchCap = (ring: [number, number][], z: number, rise: number, inset: number, meta: number[]) => {
-      const top = insetRing(ring, inset);
-      if (!top) return false;
-      let span = 0;
-      for (let i = 0; i < top.length; i++) {
-        const a = top[i], b = top[(i + 1) % top.length];
-        span = Math.max(span, Math.hypot(b[0] - a[0], b[1] - a[1]));
-      }
-      if (span < 1.0) return false;   // insetRing clamps at the centroid
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const c = top[(i + 1) % top.length], d = top[i];
-        const A = [a[0], a[1], z], B = [b[0], b[1], z];
-        const C = [c[0], c[1], z + rise], D = [d[0], d[1], z + rise];
-        const ux = B[0] - A[0], uy = B[1] - A[1];
-        const wx = D[0] - A[0], wy = D[1] - A[1];
-        // cross of the eave run (ux, uy, 0) with the rake (wx, wy, rise)
-        let n = [uy * rise, -ux * rise, ux * wy - uy * wx];
-        const L = Math.hypot(n[0], n[1], n[2]) || 1;
-        n = n.map((q) => q / L);
-        if (n[2] < 0) n = n.map((q) => -q);
-        // u = 3 keeps the slope out of the parapet's edge-shading term, which
-        // only means anything on a flat deck
-        pushWallTri(R, A, B, C, n, [3, 3, 3], meta);
-        pushWallTri(R, A, C, D, n, [3, 3, 3], meta);
-      }
-      capRoof(R, top, z + rise, meta);
-      return true;
-    };
+    // ONE TROWEL, SHARED. These were six local closures; they are the module
+    // level `Mason` now so that `setPlayerBuildings` can lay the same courses.
+    // `mst` is what `curEra` / `curDeck` / `curWear` / the deck bearing were —
+    // mutated per volume below, read by every triangle that volume emits.
+    const mason = makeMason(mst);
+    const { tri: pushWallTri, wall: extrudeWalls, cap: capRoof } = mason;
+    // Every pitched roof in the static stock goes into the roof buffer.
+    const pitchCap = (ring: [number, number][], z: number, rise: number, inset: number, meta: number[]) =>
+      mason.pitch(R, ring, z, rise, inset, meta);
 
     const decoTintRanges: { attr: number; r: Ranges; c: [number, number, number] }[] = [];
     for (const v of this.volumes) {
@@ -5944,7 +6003,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // Two independent hashes now, mixed with the city seed, so a reroll is a
       // genuinely different town and neighbours are uncorrelated.
       // 0 = 1870, 1 = 2030. Every triangle this volume emits carries it.
-      curEra = Math.max(0, Math.min(1, ((v.y || 1950) - 1870) / 160));
+      mst.era = Math.max(0, Math.min(1, ((v.y || 1950) - 1870) / 160));
       const key = keyOf(v.b) ^ Math.imul(v.t + 1, 0x9e3779b1);
       const rnd = hash01(key, this.citySeed);
       const varr = hash01(key ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
@@ -5969,9 +6028,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         else                pool.push(7, 7, 7, 6, 6, 6, 8, 8, 2, 5, 4);
         if (modernCls && bigPlate && yr >= 1982) pool.push(6, 6, 7, 7, 2, 2);
         if (style === S_MILL && yr < 1975) pool.push(0, 0, 4, 1, 1);
-        curDeck = pool[Math.min(pool.length - 1, Math.floor(hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) * pool.length))];
-        if (v.d) curDeck = 8;
-        curWear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
+        mst.deck = pool[Math.min(pool.length - 1, Math.floor(hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) * pool.length))];
+        if (v.d) mst.deck = 8;
+        mst.wear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
         let bi = 0, bl = -1;
         for (let i = 0; i < ring.length; i++) {
           const p0 = ring[i], p1 = ring[(i + 1) % ring.length];
@@ -5980,7 +6039,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
         const p0 = ring[bi], p1 = ring[(bi + 1) % ring.length];
         const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
-        curBearX = (p1[0] - p0[0]) / L; curBearY = (p1[1] - p0[1]) / L;
+        mst.bearX = (p1[0] - p0[0]) / L; mst.bearY = (p1[1] - p0[1]) / L;
       }
 
       const wallStart = W.pos.length / 3;
@@ -6466,7 +6525,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const plateM = Math.sqrt(Math.max(1, Math.abs(area) / 2));
         const oldStone = has(T_STONE, style);
         const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
-        const bearOf = () => Math.atan2(curBearY, curBearX);
+        const bearOf = () => Math.atan2(mst.bearY, mst.bearX);
         const put = (kind: number, s: number, rot = 0) => {
           // Room to stand on: half the plate has to clear the object's own
           // footprint, or a dome ends up wider than the building under it.

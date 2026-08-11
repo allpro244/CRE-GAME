@@ -99,7 +99,8 @@ export default function TopBar() {
       + asksOnDesk
       + Object.keys(deferredGame.talks ?? {}).length
       + (deferredGame.portfolioSale?.bids?.length ?? 0)
-      + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer || (h.sale?.bids?.length ?? 0) > 0).length;
+      + Object.values(deferredGame.holdings).filter((h) =>
+        h.sale?.offer || (h.sale?.bids ?? []).some((b) => !b.dropped)).length;
     // What happened THIS MONTH that was not routine — the badge is the reason to
     // look, not a count of everything ever written.
     const unread = deferredGame.news.filter((n) =>

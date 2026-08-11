@@ -35,6 +35,7 @@ import { useSf } from "./mix";
 import { prepayPenalty } from "./debt";
 import { recordComp } from "./comps";
 import { saleTaxQuote, EXCHANGE_WINDOW_M, transferGroundLeaseOffBook } from "./actions";
+import { releaseCost } from "./facility";
 import { sponsorStanding } from "./sponsor";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -459,7 +460,11 @@ export function acceptPortfolioBid(
   const totalMark = marks.reduce((a, v) => a + v, 0);
   if (totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
 
-  let proceeds = 0, taxTotal = 0, gainTotal = 0;
+  // Same waterfall as acceptSaleOffer, deed by deed: loan, kicker, break fee,
+  // facility release, deposits (including assemblage children). The old path
+  // booked kick/break as debtSvc while also netting them out of sold — conserve
+  // saw money appear — and skipped release + child deposits entirely.
+  let cashToYou = 0, soldGross = 0, feeExp = 0, taxTotal = 0, gainTotal = 0;
   live.forEach((bbl, i) => {
     const h = next.holdings[bbl];
     const rec = resolveRec(parcels, next, bbl)!;
@@ -467,11 +472,19 @@ export function acceptPortfolioBid(
     // proportion to what it was worth, which is how the schedule gets written
     // and why one weak building drags the tax basis of every strong one.
     const price = Math.round(bid.price * (marks[i] / totalMark));
-    const { net, gain, tax } = saleTaxQuote(h, price, s);
+    const { net, gain, tax } = saleTaxQuote(h, price, next);
     const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
     const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
-    proceeds += net - (h.loan?.balance ?? 0) - kick - breakFee;
-    if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
+    const release = releaseCost(next, parcels, bbl);
+    const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
+    cashToYou += toSeller;
+    soldGross += toSeller + kick + breakFee;
+    feeExp += kick + breakFee;
+    if (release > 0 && next.facility) {
+      next.facility.balance = Math.max(0, next.facility.balance - release);
+      next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
+      if (next.facility.balance <= 0) delete next.facility;
+    }
     gainTotal += gain;
     taxTotal += tax;
     next.exits.push({
@@ -484,7 +497,9 @@ export function acceptPortfolioBid(
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
       if (parent !== bbl) continue;
       delete next.merged![child];
+      next.cash -= depositsOn(next.holdings[child]);
       delete next.holdings[child];
+      if (next.workouts?.[child]) delete next.workouts[child];
     }
     next.lastTradeM = next.lastTradeM ?? {};
     next.lastTradeM[bbl] = next.month;
@@ -493,8 +508,9 @@ export function acceptPortfolioBid(
     next.lois = next.lois.filter((l) => l.bbl !== bbl);
   });
   while (next.exits.length > 200) next.exits.shift();
-  next.cash += proceeds;
-  logBooks(next, "sold", proceeds);
+  next.cash += cashToYou;
+  logBooks(next, "sold", soldGross);
+  if (feeExp > 0) logBooks(next, "debtSvc", feeExp);
   if (exchange && taxTotal > 0) {
     next.exchange = {
       deferredTax: taxTotal, rolledGain: gainTotal, minPrice: bid.price,
@@ -509,7 +525,7 @@ export function acceptPortfolioBid(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Closed the portfolio: ${live.length} buildings to ${bid.name} at ${money(bid.price)}, `
-      + `${money(proceeds)} to you after payoffs. `
+      + `${money(cashToYou)} to you after payoffs. `
       + (exchange
         ? `1031 clock running — redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} of tax comes due.`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),

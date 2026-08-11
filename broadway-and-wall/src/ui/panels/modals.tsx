@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
-import { saleTaxQuote } from "@/engine/actions";
+import { saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
@@ -501,14 +501,14 @@ function AlertBody() {
 function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
   if (!g || g.gameOver || popupsOff) return false;
   if (g.portfolioSale?.bids?.[0]) return true;
-  // Desk-covered letters stay quiet (agent / exclusive / staff / renewals).
+  // Desk-covered letters stay quiet (agent / exclusive / renewals).
   // Ground-leased fees never wake the modal — the lessee is the landlord.
   if (g.lois.some((l) => loiNeedsPrincipal(g, l))) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
-    // Marketed bid lists used to be invisible here — only quiet `sale.offer`
-    // woke the modal, so a campaign's whole point could expire unread.
-    if (h.sale?.bids?.length) return true;
+    // Live bids only — a best-and-final where everyone walked left bids.length
+    // > 0 with every row dropped, so the modal still woke and Take errored.
+    if ((h.sale?.bids ?? []).some((b) => !b.dropped)) return true;
   }
   return false;
 }
@@ -568,6 +568,24 @@ function DecisionBody({
     const live = game.portfolioSale!;
     const q = portfolioQuote(game, parcels, live.bbls);
     const inside = q.sumOfParts > 0 ? (1 - pb.price / q.sumOfParts) * 100 : 0;
+    // Same per-deed waterfall acceptPortfolioBid runs — payoffs, kick, break,
+    // facility release, tax — so the button is not the gross bid.
+    const marks = live.bbls.map((b) => {
+      const h = game.holdings[b];
+      return h ? ownedHoldingValue(game, parcels, h) : 0;
+    });
+    const totalMark = marks.reduce((a, v) => a + v, 0) || 1;
+    let netToYou = 0, taxAtClose = 0, releaseTot = 0, loanTot = 0;
+    live.bbls.forEach((bbl, i) => {
+      const h = game.holdings[bbl];
+      if (!h) return;
+      const price = Math.round(pb.price * (marks[i] / totalMark));
+      const p = saleProceedsToSeller(game, parcels, h, price);
+      netToYou += p.toSeller - p.tax;
+      taxAtClose += p.tax;
+      releaseTot += p.release;
+      loanTot += p.loanPayoff + p.breakFee + p.kick;
+    });
     return (
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
@@ -579,6 +597,10 @@ function DecisionBody({
             <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />
             <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
             <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
+            <Row k="Loan / fee payoffs" v={usd(loanTot)} />
+            {releaseTot > 0 && <Row k="Facility releases" v={usd(releaseTot)} bad />}
+            {taxAtClose > 0 && <Row k="Capital-gains tax" v={usd(taxAtClose)} bad />}
+            <Row k="Net to you" v={usd(netToYou)} strong bad={netToYou < 0} />
             <PortfolioCap q={q} ask={pb.price} bbls={live.bbls} />
             {pb.countered && <Row k="Rounds" v="you have been back to them once" bad />}
           </div>
@@ -588,11 +610,11 @@ function DecisionBody({
           </div>
           <div className="modal-actions">
             <button className="btn btn-buy" onClick={() => { useStore.getState().acceptPortfolio(false); setDeferred((d) => new Set(d).add(-2)); }}>
-              Close it — {usd(pb.price)}
+              Close it · net {usd(netToYou)}
             </button>
             <button className="btn btn-buy" title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"
               onClick={() => { useStore.getState().acceptPortfolio(true); setDeferred((d) => new Set(d).add(-2)); }}>
-              Close into a 1031
+              Close into a 1031{taxAtClose > 0 ? ` · defer ${usd(taxAtClose)}` : ""}
             </button>
             {!pb.countered && (
               <button className="btn" title="Set the number by hand on the portfolio desk"
@@ -610,36 +632,40 @@ function DecisionBody({
   // A MARKETED BID LIST — the campaign's whole reason for existing.
   const bidBbl = deferred.has(-3)
     ? undefined
-    : Object.keys(game.holdings).find((b) => (game.holdings[b].sale?.bids?.length ?? 0) > 0);
+    : Object.keys(game.holdings).find((b) =>
+      (game.holdings[b].sale?.bids ?? []).some((x) => !x.dropped));
   if (bidBbl) {
     const h = game.holdings[bidBbl];
     const sale = h.sale!;
-    const bids = sale.bids!;
-    const top = bids[0];
+    const live = (sale.bids ?? [])
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => !b.dropped);
+    const top = live[0]!;
+    const second = live[1];
     const rec = resolveRec(parcels, game, bidBbl);
     return (
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
-          <div className="modal-kicker">◆ BIDS ARE IN — {bids.length} name{bids.length === 1 ? "" : "s"} on the list</div>
-          <div className="modal-title">{usd(top.price)} from {top.name}</div>
+          <div className="modal-kicker">◆ BIDS ARE IN — {live.length} name{live.length === 1 ? "" : "s"} on the list</div>
+          <div className="modal-title">{usd(top.b.price)} from {top.b.name}</div>
           <div className="modal-sub">
             {rec?.address ?? bidBbl} · your whisper {usd(sale.ask)}
-            {bids.length > 1 ? ` · second ${usd(bids[1].price)}` : ""}
+            {second ? ` · second ${usd(second.b.price)}` : ""}
           </div>
           <div className="grid">
-            <Row k="Best bid" v={usd(top.price)} strong />
-            <Row k="vs. whisper" v={`${((top.price / Math.max(1, sale.ask) - 1) * 100).toFixed(1)}%`}
-              bad={top.price < sale.ask} />
-            <Row k="On the list" v={`${bids.length} bidder${bids.length === 1 ? "" : "s"}`} />
-            {top.note && <Row k="Their paper" v={top.note} />}
+            <Row k="Best bid" v={usd(top.b.price)} strong />
+            <Row k="vs. whisper" v={`${((top.b.price / Math.max(1, sale.ask) - 1) * 100).toFixed(1)}%`}
+              bad={top.b.price < sale.ask} />
+            <Row k="On the list" v={`${live.length} bidder${live.length === 1 ? "" : "s"}`} />
+            {top.b.note && <Row k="Their paper" v={top.b.note} />}
           </div>
           <div className="hint">
             A bid list lives on the property desk — take the top number, go back for best-and-final, or work a lower name.
             Sitting on it too long is how the whole campaign dies.
           </div>
           <div className="modal-actions">
-            <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, 0); setDeferred((d) => new Set(d).add(-3)); }}>
-              Take {top.name} · {usd(top.price)}
+            <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, top.i); setDeferred((d) => new Set(d).add(-3)); }}>
+              Take {top.b.name} · {usd(top.b.price)}
             </button>
             <button className="btn" onClick={() => {
               setDeferred((d) => new Set(d).add(-3));
@@ -766,8 +792,10 @@ function DecisionBody({
   const h = game.holdings[offerBbl!]!;
   const rec = resolveRec(parcels, game, offerBbl!);
   const offer = h.sale!.offer!;
-  if (!rec) return null;
-  const tq = saleTaxQuote(h, offer.price);
+  if (!rec || !parcels) return null;
+  // Same waterfall acceptSaleOffer runs — loan, kicker, break fee, facility release, tax.
+  const proceeds = saleProceedsToSeller(game, parcels, h, offer.price);
+  const cashAtClose = proceeds.toSeller - (game.exchange ? 0 : proceeds.tax);
   const value = ownedHoldingValue(game, parcels, h);
   return (
     <div className="modal-backdrop modal-layer-decision">
@@ -789,18 +817,21 @@ function DecisionBody({
           <Row k="Offer" v={usd(offer.price)} strong />
           <Row k="vs. your ask" v={`${((offer.price / h.sale!.ask - 1) * 100).toFixed(1)}%`} />
           <Row k="vs. appraisal" v={`${((offer.price / apMid(offerBbl!, value) - 1) * 100).toFixed(1)}%`} />
-          <Row k="Loan payoff" v={usd(h.loan?.balance ?? 0)} />
-          <Row k="Gain over basis" v={usd(tq.gain)} bad={tq.gain < 0} />
-          {tq.tax > 0 && <Row k="Capital-gains tax" v={usd(tq.tax)} bad />}
-          <Row k="Net to you" v={usd(tq.net - (h.loan?.balance ?? 0) - tq.tax)} strong />
+          <Row k="Loan payoff" v={usd(proceeds.loanPayoff)} />
+          {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}
+          {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
+          {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
+          <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
+          {proceeds.tax > 0 && <Row k="Capital-gains tax" v={usd(proceeds.tax)} bad />}
+          <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />
         </div>
         <div className="modal-actions">
           <button className="btn btn-buy" onClick={() => acceptOffer(offerBbl!)}>
-            Accept · net {usd(tq.net - (h.loan?.balance ?? 0) - tq.tax)}
+            Accept · net {usd(cashAtClose)}
           </button>
-          {tq.tax > 0 && !game.exchange && (
+          {proceeds.tax > 0 && !game.exchange && (
             <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => acceptOffer(offerBbl!, true)}>
-              1031 · defer {usd(tq.tax)}
+              1031 · defer {usd(proceeds.tax)}
             </button>
           )}
           {!offer.countered && !saleCounter && (

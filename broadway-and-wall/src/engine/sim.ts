@@ -15,10 +15,10 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate } from "./credit";
-import { tickFacility } from "./facility";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
+import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
-import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
+import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
@@ -26,7 +26,7 @@ import { initRivals, tickRivals, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
-import { tickWorkouts } from "./workout";
+import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
@@ -450,6 +450,7 @@ function tickMonth(
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickGroundLeases(s, parcels);
+  tickBuildToSuit(s, parcels);
   tickSales(s, parcels, adjacency);
   // The dirt reprices off what the dirt has been fetching — after the month's
   // trades have printed, so a quarter's marks read that quarter's sales.
@@ -711,6 +712,12 @@ function tickMonth(
       s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
     }
     if (s.insolventMs >= 12) {
+      // Last draw before the bailiff — if the line still covers the hole,
+      // there is nothing to seize.
+      coverCashShortfall(s, parcels);
+      if (s.cash >= 0) {
+        s.insolventMs = 0;
+      } else {
       // A FILE ON THE DESK OUTRANKS THE BAILIFF.
       //
       // This seizure path predates the workout desk and ran alongside it: a
@@ -718,9 +725,12 @@ function tickMonth(
       // negotiating and get taken by the general creditors instead, deleting
       // the file mid-conversation. Anything already in workout is spoken for —
       // that lender has a lien and a process, and the unsecured creditors
-      // queue behind both.
+      // queue behind both. A note whose monthly coupon the firm can still
+      // fund (cash or line) is also off-limits — that is a performing debt,
+      // not salvage for the general creditors.
       const owned = Object.values(s.holdings)
-        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]);
+        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]
+          && !(h.loan && couponFundable(s, parcels, h)));
       if (owned.length) {
         // creditors take the most valuable thing you own
         let pick = owned[0], pickV = -Infinity;
@@ -753,10 +763,18 @@ function tickMonth(
         const { net, tax } = saleTaxQuote(pick, gross, s);
         const lien = pick.loan?.balance ?? 0;
         const breakFee = pick.loan ? prepayPenalty(pick.loan, s.month) : 0;
-        const proceeds = Math.max(0, net - lien - breakFee);
+        // Facility collateral used to walk off at seizure with only the
+        // mortgage waterfall — facility loans clear the deed mortgage, so lien
+        // was $0 and tickFacility then silently dropped the BBL. Same money
+        // pump a voluntary sale pays releaseCost to stop.
+        const release = releaseCost(s, parcels, pick.bbl);
+        const toBorrower = net - lien - breakFee - release;
         const shortfall = Math.max(0, lien + breakFee - net);
-        s.cash += proceeds;
-        logBooks(s, "sold", proceeds);
+        // toBorrower can go negative when the release premium exceeds net —
+        // same as acceptSaleOffer: the lien settles even if cash deepens.
+        s.cash += toBorrower;
+        if (toBorrower >= 0) logBooks(s, "sold", toBorrower);
+        else logBooks(s, "debtSvc", -toBorrower);
         // A forced disposition is a taxable one. The bill on a gain you never
         // saw in cash is the thing that finishes a distressed sponsor, and it
         // is the reason handing back the keys beats being levied.
@@ -768,6 +786,11 @@ function tickMonth(
         if (shortfall > 0 && pick.loan) {
           if (pick.loan.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
           else chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, shortfall);
+        }
+        if (release > 0 && s.facility) {
+          s.facility.balance = Math.max(0, s.facility.balance - release);
+          s.facility.bbls = s.facility.bbls.filter((b) => b !== pick.bbl);
+          if (s.facility.balance <= 0) delete s.facility;
         }
         recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
@@ -786,17 +809,17 @@ function tickMonth(
         s.news.unshift({
           q: s.month, kind: "warn",
           text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
-            + (lien > 0
+            + (lien > 0 || release > 0
               ? shortfall > 0
                 ? `It did not cover the $${(lien / 1e6).toFixed(2)}M mortgage${pick.loan?.recourse ? `, and you signed for the $${(shortfall / 1e6).toFixed(2)}M shortfall` : `, and the paper was non-recourse`}. `
-                : `The mortgage was paid off the top and $${(proceeds / 1e6).toFixed(2)}M of surplus reached you. `
-              : `$${(proceeds / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
+                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and $${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M of surplus reached you. `
+              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = s.cash < 0 ? 8 : 0;
-      } else if (locAvailable(s, parcels) > 0) {
-        // Book empty of seizable deeds (or everything is in workout /
-        // development) but the revolver still advances — keep the run alive.
+      } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
+        // Book empty of seizable deeds (everything in workout / development /
+        // coupon-current) but liquidity remains — keep the run alive.
         coverCashShortfall(s, parcels);
         if (s.cash >= 0) s.insolventMs = 0;
       } else {
@@ -805,6 +828,7 @@ function tickMonth(
         };
         s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors own it now." });
       }
+      } // cash still negative after the last draw
     }
   } else {
     s.insolventMs = 0;
@@ -1147,7 +1171,10 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     // Forward runway: cash still positive but less than three months of
     // contractual debt service. Waiting for cash < 0 is waiting for the clock.
     const monthlyDebt = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0)
-      + (s.facility ? (s.facility.balance * s.facility.ratePct) / 100 / 12 : 0)
+      // Use the contractual facility coupon, not an IO proxy off balance×rate —
+      // post-IO amortizing paper is larger, and the runway warning was quiet
+      // while the real cheque would drain the account in under three months.
+      + (s.facility?.monthlyPmt ?? 0)
       + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
     if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
       out.push({

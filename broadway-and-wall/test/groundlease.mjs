@@ -26,7 +26,8 @@ g.built[bbl] = {
 };
 g.groundLeases = {
   [bbl]: {
-    bbl, startM: 0, endM: 720, rentYr: 600_000, openRentYr: 600_000,
+    // 75-year term — free aged reversion. Shorter paper is tested separately.
+    bbl, startM: 0, endM: 900, rentYr: 600_000, openRentYr: 600_000,
     stepPct: 10, stepEveryM: 120, lastStepM: 0,
     tenant: "Test Ground Tenant", review: "fixed",
     use: "office", sf: 100_000, floors: 8, builtM: 24,
@@ -115,13 +116,90 @@ console.log("\nLAND LOAN BLOCKS THE OFFER\n");
     assessed: landPx, condIdx: 0.55, svcIdx: 0.55,
     service: 0, stance: 0, plan: 1, cfHistory: [],
   };
-  const blocked = E.offerGroundLease(g2, parcels, landBbl, 60, "fixed");
+  const blocked = E.offerGroundLease(g2, parcels, landBbl, 75, "fixed");
   check(!!blocked.err && /mortgage|lender/i.test(blocked.err),
     "offer refused while a land loan is outstanding");
   delete g2.holdings[landBbl].loan;
-  const open = E.offerGroundLease(g2, parcels, landBbl, 60, "fixed");
+  const tooShort = E.offerGroundLease(g2, parcels, landBbl, 30, "fixed");
+  check(!!tooShort.err && /49|years/i.test(tooShort.err),
+    "offer refused under the 49-year floor");
+  const open = E.offerGroundLease(g2, parcels, landBbl, 75, "fixed");
   check(!open.err && !!open.s.holdings[landBbl].groundOffer,
     "offer opens once the land loan is gone");
+  const padQ = E.groundLeaseQuote(g2, parcels, landBbl, 55, "fixed");
+  const towerQ = E.groundLeaseQuote(g2, parcels, landBbl, 75, "fixed");
+  check(!!padQ?.padOnly && padQ.takeMult < (towerQ?.takeMult ?? 1),
+    "short paper is pad-only and harder to place than tower term");
+  check(!!towerQ && !towerQ.padOnly, "75-year paper allows tower reversion");
+}
+
+console.log("\nLESSEE RESPECTS LEGAL FAR\n");
+{
+  const landBbl = bbls.find((x) =>
+    parcels[x]?.class === "land" && (parcels[x]?.lotArea ?? 0) > 2_000
+    && !g.built?.[x]);
+  if (!landBbl) throw new Error("No land parcel for FAR check.");
+  let gFar = structuredClone(g);
+  if (!gFar.holdings[landBbl]) {
+    const landPx = Math.round(E.landValue(parcels[landBbl], gFar.econ));
+    gFar.holdings[landBbl] = {
+      bbl: landBbl, boughtM: 0, costBasis: landPx, condition: "average",
+      tenants: [], loan: null, assessed: landPx, condIdx: 0.55, svcIdx: 0.55,
+      service: 0, stance: 0, plan: 1, cfHistory: [],
+    };
+  }
+  for (const use of ["office", "retail", "industrial", "multifamily"]) {
+    const prog = E.groundLesseeBuildableSf(gFar, parcels, landBbl, use);
+    if (!prog) continue;
+    const realized = prog.sf / Math.max(1, E.bareLandRec(parcels, gFar, landBbl).lotArea);
+    check(realized <= prog.far + 0.02,
+      `${use} lessee FAR ${realized.toFixed(2)} ≤ legal ${prog.far.toFixed(2)} (sf ${prog.sf}, envelope ${Math.round(prog.envelope)})`);
+    // The bug shape: coverage × ceil(FAR/cov) floors without the clamp.
+    const bare = E.bareLandRec(parcels, gFar, landBbl);
+    const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
+    const fl = Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
+      Math.ceil(prog.far / cov));
+    const uncapped = bare.lotArea * cov * fl;
+    if (uncapped > prog.envelope * 1.02) {
+      check(prog.sf <= prog.envelope + 50,
+        `${use} clamp bites when uncapped plate (${Math.round(uncapped)}) exceeds envelope`);
+    }
+  }
+}
+
+console.log("\nSHORT PAPER DOES NOT GIFT THE TOWER\n");
+{
+  let gShort = structuredClone(g);
+  // 60-year lease — below tower free-reversion floor.
+  gShort.groundLeases[bbl] = {
+    ...gShort.groundLeases[bbl],
+    startM: 0, endM: 720, // 60y
+  };
+  check(!E.groundLeaseFreeReversion(gShort.groundLeases[bbl]),
+    "60-year paper is not free-reversion");
+  gShort.month = 720;
+  gShort.groundLeases[bbl].endM = 720;
+  gShort.cash = 0; // cannot fund buyout
+  E.tickGroundLeases(gShort, parcels);
+  check(!gShort.groundLeases?.[bbl], "short term still clears the encumbrance");
+  check(!gShort.built?.[bbl], "unfunded short reversion clears the improvement");
+  check(!gShort.holdings[bbl].groundLeased, "fee is freehold dirt again");
+}
+
+console.log("\nLONG PAPER STILL REVERTS THE BONES\n");
+{
+  let gLong = structuredClone(g);
+  gLong.groundLeases[bbl] = {
+    ...gLong.groundLeases[bbl],
+    startM: 0, endM: 900, // 75y
+  };
+  check(E.groundLeaseFreeReversion(gLong.groundLeases[bbl]),
+    "75-year paper earns free reversion");
+  gLong.month = 900;
+  gLong.groundLeases[bbl].endM = 900;
+  E.tickGroundLeases(gLong, parcels);
+  check(gLong.built[bbl]?.bldgArea === 100_000 && gLong.holdings[bbl].tenants.length === 0,
+    "long term still hands back the vacant shell");
 }
 
 console.log("\nSALE TRANSFERS THE LEASED FEE\n");
@@ -142,8 +220,8 @@ console.log("\nSALE TRANSFERS THE LEASED FEE\n");
 console.log("\nREVERSION AGES THE BUILDING\n");
 {
   let g4 = structuredClone(g);
-  g4.month = 720; // term end
-  g4.groundLeases[bbl].endM = 720;
+  g4.month = 900; // term end (75y)
+  g4.groundLeases[bbl].endM = 900;
   E.tickGroundLeases(g4, parcels);
   check(!g4.groundLeases?.[bbl] && !g4.holdings[bbl].groundLeased,
     "term expiry clears the encumbrance");
@@ -151,9 +229,9 @@ console.log("\nREVERSION AGES THE BUILDING\n");
     "reversion keeps the lessee's opening month — not a fresh delivery mark");
   check(g4.holdings[bbl].tenants.length === 0 && g4.holdings[bbl].occ === 0,
     "reverted shell arrives vacant");
-  const ageYrs = 2000 + Math.floor(720 / 12) - 2002;
+  const ageYrs = 2000 + Math.floor(900 / 12) - 2002;
   check(ageYrs >= 50 && g4.holdings[bbl].condIdx < 0.7,
-    "sixty-year bones are worn, not marked as new");
+    "seventy-year bones are worn, not marked as new");
 }
 
 console.log("\nDEFAULT STILL REVERTS CONTROL\n");

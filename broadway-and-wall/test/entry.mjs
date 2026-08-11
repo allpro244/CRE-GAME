@@ -53,6 +53,8 @@ export const MODULES = [
   "history",
   // save exposes pure migration steps for round-trip coverage.
   "save",
+  // attentionRoute — inbox key → desk routing (attention-route harness).
+  "attentionRoute",
 ];
 
 export function writeEntry(path) {

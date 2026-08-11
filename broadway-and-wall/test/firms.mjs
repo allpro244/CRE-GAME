@@ -14,7 +14,7 @@ const ok = (name, cond, detail = "") => {
   else console.log(`PASS  ${name}${detail ? " — " + detail : ""}`);
 };
 
-const { parcels, bbls } = loadCity(0, E.normalizeParcels);
+const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
 // Pitch can say no — product term goes to zero when nobody trades.
 {
@@ -110,6 +110,33 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("star departure queues founder bid", queued
     || (g.news ?? []).some((n) => /Gus Radcliffe/.test(n.text)),
     queued ? "bid queued" : "news only / still employed");
+}
+
+// Living firm count over a century — output, not a hard refill rail (#48/#49).
+{
+  const SEEDS = [7777, 4242];
+  let last = null;
+  for (const seed of SEEDS) {
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    const samples = [];
+    for (let m = 0; m < 1200; m++) {
+      if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
+      if (m % 120 === 0) {
+        samples.push((g.rivals ?? []).filter((r) => r.failedM === undefined).length);
+      }
+      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    }
+    last = g;
+    const min = Math.min(...samples);
+    const max = Math.max(...samples);
+    ok(`seed ${seed}: street never empties`, min >= 5, `min=${min}`);
+    ok(`seed ${seed}: not hard-capped at 24`, max > 24, `max=${max}`);
+    ok(`seed ${seed}: firms survive century`, samples[samples.length - 1] >= 5,
+      `end=${samples[samples.length - 1]}`);
+  }
+  const spinouts = (last?.rivals ?? []).filter((r) => r.spawnedFrom?.firmName);
+  ok("spinouts carry genealogy when present", spinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.personName),
+    `${spinouts.length} with lineage`);
 }
 
 console.log(`\n${fails === 0 ? "firms pass" : `${fails} firms failure(s)`}`);

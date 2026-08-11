@@ -1523,8 +1523,11 @@ export function tickEcon(s: GameState) {
   // a player who wrecked his own city was handed a rate cut for it. The nation
   // sets the price of money now; see the block above.
 
-  // cycle deviation drifts with phase, spring-loaded toward its bounds
-  e.cycleDev = clamp(e.cycleDev + c2.devDrift + rrange(s, -0.03, 0.03), -1, 1);
+  // cycle deviation drifts with phase, spring-loaded toward zero at the extremes
+  // instead of pinning on hard rails — the restoring force is the mechanism.
+  const step = c2.devDrift + rrange(s, -0.03, 0.03);
+  const spring = -0.048 * e.cycleDev;
+  e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);
 
   // --- capital availability -------------------------------------------------
   // Money is not a smooth function of the policy rate. It leaves the room in a

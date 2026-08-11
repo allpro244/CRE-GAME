@@ -219,11 +219,11 @@ function chamfer(ring, i, cut) {
 export const FLAVOR = {
   // `assemble` is how hard the twentieth century bought this district up and
   // threw the lots together. Downtown hardest, row housing barely at all.
-  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, assemble: 1.30, matGain: 1.00, yr: [1925, 1960, 0.30, 1960, 2018] },
-  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, assemble: 0.85, matGain: 0.72, yr: [1885, 1945, 0.70, 1950, 1990] },
-  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  assemble: 0.40, matGain: 0.26, yr: [1900, 1950, 0.60, 1955, 1995] },
-  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  assemble: 1.05, matGain: 0.10, yr: [1915, 1978, 1.00, 1915, 1978] },
-  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, assemble: 1.00, matGain: 0.88, yr: [1972, 2024, 1.00, 1972, 2024] },
+  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, assemble: 1.30, matGain: 1.00, yr: [1925, 1960, 0.30, 1960, 2018], massAspect: 0.88, heightSpread: 1.05 },
+  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, assemble: 0.85, matGain: 0.72, yr: [1885, 1945, 0.70, 1950, 1990], massAspect: 0.95, heightSpread: 0.85 },
+  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  assemble: 0.40, matGain: 0.26, yr: [1900, 1950, 0.60, 1955, 1995], massAspect: 1.0, heightSpread: 0.75 },
+  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  assemble: 1.05, matGain: 0.10, yr: [1915, 1978, 1.00, 1915, 1978], massAspect: 1.38, heightSpread: 0.45 },
+  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, assemble: 1.00, matGain: 0.88, yr: [1972, 2024, 1.00, 1972, 2024], massAspect: 0.92, heightSpread: 1.0 },
 };
 
 // WHAT GETS BUILT WHERE.
@@ -1181,19 +1181,24 @@ export function generateCity(cfg) {
         // district because a dear block in a row-house neighbourhood gets
         // brownstones, not a mid-rise.
         const mat = h * h * 7.5 * (fl.matGain ?? 1) * DZ.mat;
+        const hSpread = fl.heightSpread ?? 1;
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
           floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) * (DZ.base ?? 1) + mat * rr(0.55, 1.25));
-          floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7)));
+          floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7) * hSpread));
           coverage = rr(0.55, 0.72);
         } else {
           floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) + mat * rr(0.22, 0.78));
-          floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6)));
+          floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6) * hSpread));
           coverage = rr(0.6, 0.78);
         }
+        // Industrial yards read wide and low; office cores read narrower plates.
+        const massAspect = fl.massAspect ?? 1;
+        if (massAspect > 1.05) coverage = Math.min(0.88, coverage * massAspect);
+        else if (massAspect < 0.95) coverage = Math.max(0.48, coverage * massAspect);
         // A tall building does not cover its lot the way a walk-up does: the
         // core, the light and the setback all take plate off it as it climbs.
         if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);

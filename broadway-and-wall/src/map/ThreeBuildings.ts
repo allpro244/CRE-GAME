@@ -6209,9 +6209,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const deco = style === S_ARTDECO;
         const modern = has(T_MODERN, style);
         const stone = has(T_STONE, style);
+        const industrial = v.c === "industrial";
         // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
         const crowns: string[] = [];
-        if (v.z1 >= 12) {
+        if (industrial) {
+          crowns.push("coping", "coping", "corbel", "slope", "mech");
+        } else if (v.z1 >= 12) {
           if (stone) crowns.push("cornice", "cornice", "corbel", "decapitated");
           if (stone && tall) crowns.push("temple", "pyramid", "lantern");
           if (deco && tall) crowns.push("ziggurat", "ziggurat", "fin", "fin");

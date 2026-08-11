@@ -43,7 +43,7 @@ console.log("\nCONTINUE PATH\n");
 
   const prepared = E.prepareSaveForResume(snap);
   check(prepared.ok === true, "v31 campaign prepares for resume after migration");
-  check(prepared.state?.v === 32, "prepare bumps save version to current");
+  check(prepared.state?.v === 33, "prepare bumps save version to current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -54,6 +54,38 @@ console.log("\nCONTINUE PATH\n");
   }
   check(fingerprint(resumed) === fingerprint(twin),
     "migrated Continue path matches an uninterrupted twin over 12 months");
+}
+
+// THE HARD BREAK, AND PROOF THAT IT FIRES.
+//
+// From v33 the generated island's lot lines are cut differently — park shapes,
+// the esplanade and the linear park all change what the obstacle subtraction
+// removes. A campaign cut on `somewhere` before that rebuilds onto ground its
+// deeds no longer describe: measured across three seeds, ~30% of deeds vanish
+// and 99% of the survivors are a DIFFERENT parcel under the same number. So
+// `migrateSaveState` deliberately refuses to bump those, and this asserts it,
+// because a gate nobody has watched fail is not a gate.
+//
+// The drawn islands are byte-identical across the same change and must still
+// open — that is the second half, and it is the half that would break if
+// somebody widened the refusal to every old save.
+{
+  const base = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+  base.citySeed = seed; base.citySize = "standard"; base.cityDev = "established";
+
+  const gen = structuredClone(base); gen.cityIsland = "somewhere"; gen.v = 31;
+  const genOut = E.prepareSaveForResume(gen);
+  check(genOut.ok === false, "a pre-v33 campaign on a GENERATED island is refused");
+  check(/older map generator/.test(genOut.reason ?? ""),
+    "...and says the island moved, not just 'older build'");
+
+  const drawn = structuredClone(base); drawn.cityIsland = "newalden"; drawn.v = 31;
+  check(E.prepareSaveForResume(drawn).ok === true,
+    "a pre-v33 campaign on a DRAWN island still opens — that ground did not move");
+
+  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 33;
+  check(E.prepareSaveForResume(now).ok === true,
+    "a v33 campaign on a generated island opens normally");
 }
 
 {

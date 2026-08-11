@@ -128,7 +128,7 @@ function targetListings(s: GameState, totalLots: number): number {
  */
 export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
   const s: GameState = {
-    v: 32,
+    v: 33,
     seed,
     rng: seed,
     streams: initStreams(seed),

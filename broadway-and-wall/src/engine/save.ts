@@ -52,7 +52,30 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 32 as const;
+export const SAVE_VERSION = 33 as const;
+
+/**
+ * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
+ *
+ * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
+ * so anything that changes what a seed produces changes the ground under a
+ * campaign's deeds. Park shapes, the esplanade and the linear park all change
+ * which cells the obstacle subtraction removes, so the lot lines on a procedural
+ * island are cut differently from v33 on.
+ *
+ * Measured across three seeds, old generator against new: about 30% of deeds
+ * vanish outright, and of the ones that survive by BBL, NINETY-NINE PER CENT
+ * ARE A DIFFERENT PARCEL — same number, different ground, different size,
+ * somewhere else on the island. That is silent corruption and it is much worse
+ * than a missing deed: the campaign opens, the portfolio page fills in, and
+ * every building the player owns is quietly somewhere they did not buy.
+ *
+ * The drawn islands are unaffected — `makeCity("newalden", 1)` is byte-identical
+ * across the change, verified on the bbl set, the centroids and the lot areas —
+ * so a legacy campaign on one of those is let through rather than thrown away.
+ */
+const ISLAND_GROUND_MOVED_AT = 33;
+const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
@@ -64,10 +87,17 @@ export function migrateSaveState(state: GameState): GameState {
     };
     delete state.varianceApp;
   }
-  // Older campaigns bump forward once shape migrations have run. A future
-  // hard break should refuse here rather than silently inventing fields.
+  // Older campaigns bump forward once shape migrations have run — EXCEPT
+  // across a break the migration cannot repair. This is the "future hard
+  // break" the previous note anticipated: no rearrangement of the save's
+  // fields can put a deed back on ground the generator no longer cuts, so the
+  // save is left at its own version and the gate below refuses it. Refusing a
+  // campaign is bad; opening one whose every deed points somewhere else is
+  // worse, and it is worse quietly.
   if (typeof state.v === "number" && state.v < SAVE_VERSION) {
-    state.v = SAVE_VERSION;
+    const groundMoved = state.v < ISLAND_GROUND_MOVED_AT
+      && state.cityIsland === PROCEDURAL_ISLAND;
+    if (!groundMoved) state.v = SAVE_VERSION;
   }
   return state;
 }
@@ -81,7 +111,16 @@ export function prepareSaveForResume(state: GameState):
   { ok: true; state: GameState } | { ok: false; reason: string } {
   const migrated = migrateSaveState(structuredClone(state));
   if (migrated.v !== SAVE_VERSION) {
-    return { ok: false, reason: "unsupported save version" };
+    // Say WHICH kind of stale it is. "Older build" sends somebody looking for
+    // a bug in the save format; the truth is that the island itself is cut
+    // differently now and the deeds no longer describe real ground.
+    return {
+      ok: false,
+      reason: typeof migrated.v === "number" && migrated.v < ISLAND_GROUND_MOVED_AT
+        && migrated.cityIsland === PROCEDURAL_ISLAND
+        ? "this campaign's island was drawn by an older map generator, and its deeds no longer match the ground"
+        : "unsupported save version",
+    };
   }
   if (migrated.citySeed === undefined) {
     return { ok: false, reason: "save has no city seed" };

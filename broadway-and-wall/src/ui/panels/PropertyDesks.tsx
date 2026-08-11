@@ -616,20 +616,21 @@ export function LandDesk({ bbl }: { bbl: string }) {
             onChange={setFarMultiple}
             format={() => `${vq.targetFar.toFixed(1)} FAR · ${farMultiple.toFixed(2)}× current · ${sf(Math.round(rec.lotArea * vq.targetFar))} gross envelope`}
             marks={[{ at: 1.34, label: "ordinary" }, { at: 2, label: "2×" }, { at: 3, label: "3×" }]}
-            hint="You may ask for a much taller envelope. Larger requests cost more, take longer and are harder to approve; engineering and the 40-FAR city ceiling still apply."
+            hint="You may ask for a much taller envelope. Larger requests cost more, take longer and are harder to approve; a second trip after a grant is still possible, just tougher. Engineering and the 40-FAR city ceiling still apply."
           />
           <div className="grid">
             <Row k="District envelope" v={`${Math.max(rec.farMaxComm, rec.farMaxRes).toFixed(1)} FAR${game.zoneAdj?.[rec.district] ? ` · rezoned to ${((game.zoneAdj[rec.district]) * 100).toFixed(0)}%` : ""}`} />
-            {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Variance already won" v={`+${game.variance![bbl].toFixed(1)} FAR`} />}
+            {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Variance already won" v={`+${game.variance![bbl].toFixed(1)} FAR · next hearing is harder`} />}
             <Row k="Ask the board for" v={`${vq.targetFar.toFixed(1)} FAR total · +${vq.grant.toFixed(1)}`} strong />
             <Row k="Fees" v={usd(vq.cost)} />
             <Row k="They decide in" v={`${vq.months} months · ${(vq.odds * 100).toFixed(0)}% say yes`} bad={vq.odds < 0.3} />
           </div>
           <button className="btn" onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
           <div className="hint">
-            Lawyers, an architect and a year of hearings, spent whether they say yes or not. On a site you have just
-            assembled this is the other half of the trade — the lots are worth putting together because of what you
-            are allowed to build on them.
+            Lawyers, an architect and a year of hearings, spent whether they say yes or not. You can come back after a
+            grant — the board will hear it — but each FAR already won makes the next ask costlier and less likely.
+            On a site you have just assembled this is the other half of the trade: the lots are worth putting together
+            because of what you are allowed to build on them.
           </div>
         </>
       )}

@@ -58,5 +58,29 @@ E.tickPlanning(g, parcels, bbls);
 check(Object.keys(g.varianceApps ?? {}).length === 0, "both due hearings resolve");
 check(lots.every((b) => !!g.varianceLog?.[b]), "each site records its own board decision");
 
+console.log("\nREFILE AFTER A GRANT\n");
+
+// Force a grant on lot 0 so we can prove the board will hear a second ask.
+const virgin = E.varianceQuote(g, parcels, lots[0], baseFar0 * 1.34);
+g.variance = { ...(g.variance ?? {}), [lots[0]]: 2.5 };
+g.varianceLog = {
+  ...(g.varianceLog ?? {}),
+  [lots[0]]: { m: g.month, granted: true, far: 2.5, cost: 200_000 },
+};
+const afterGrant = E.resolveRec(parcels, g, lots[0]);
+const curFar = Math.max(afterGrant.farMaxComm, afterGrant.farMaxRes, 2);
+const reQuote = curFar >= E.FAR_CEILING - 0.05
+  ? null
+  : E.varianceQuote(g, parcels, lots[0], Math.min(E.FAR_CEILING, curFar * 1.25));
+check(!!reQuote, "board still quotes after a prior grant (until the city ceiling)");
+if (reQuote && virgin) {
+  check(reQuote.odds < virgin.odds, "second trip has worse odds than a first hearing");
+  check(reQuote.cost > virgin.cost, "second trip costs more than a first hearing");
+}
+const refile = E.fileVariance(g, parcels, lots[0], reQuote?.targetFar);
+check(!refile.err, `can file again after a grant${refile.err ? ` (${refile.err})` : ""}`);
+g = refile.s;
+check(!!g.varianceApps?.[lots[0]], "second application sits pending");
+
 console.log("");
 process.exit(bad ? 1 : 0);

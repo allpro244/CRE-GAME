@@ -205,13 +205,15 @@ export function varianceQuote(
   // whole application. The old +34% request is the pivot and prices exactly as
   // before.
   const scale = Math.sqrt(askShare / 0.34);
-  const cost = Math.round(baseCost * scale);
-  const months = Math.round(9 + 6 * scale);
-  // ONE EXCEPTION PER LOT. A board that has already granted you relief on this
-  // site does not entertain a second application for more of the same, and
-  // decaying the odds instead let a patient bot refile its way to forty-one
-  // FAR on a single parcel — which the invariant sweep caught immediately.
-  if ((s.variance?.[bbl] ?? 0) > 0) return null;
+  // Prior relief is allowed — the board can bend again — but each FAR already
+  // won makes the next hearing harder and more expensive. Absolute stop is the
+  // city ceiling on the resolved envelope (current already includes variance);
+  // without that decay a patient refile loop once walked a parcel past forty.
+  const already = s.variance?.[bbl] ?? 0;
+  const priorCost = already > 0 ? 1.35 + 0.12 * already : 1;
+  const priorOdds = already > 0 ? Math.exp(-0.55 * already) : 1;
+  const cost = Math.round(baseCost * scale * priorCost);
+  const months = Math.round(9 + 6 * scale + (already > 0 ? 3 : 0));
   const grant = +(target - current).toFixed(2);
   // A site the neighbourhood already accepts as dense is an easier hearing
   // than one on a quiet street.
@@ -220,7 +222,10 @@ export function varianceQuote(
   // Asking beyond the old one-third request is possible, not free. Opposition
   // compounds with the magnitude of relief; a 2× envelope has roughly half
   // the ordinary odds and a 3× ask is a genuine long shot.
-  const odds = clamp(ordinaryOdds * Math.exp(-1.1 * Math.max(0, askShare - 0.34)), 0.03, 0.82);
+  const odds = clamp(
+    ordinaryOdds * Math.exp(-1.1 * Math.max(0, askShare - 0.34)) * priorOdds,
+    0.02, 0.82,
+  );
   return { cost, months, grant, targetFar: +target.toFixed(2), currentFar: current, odds };
 }
 
@@ -230,17 +235,12 @@ export function fileVariance(
   if (!s.holdings[bbl]) return { s, err: "You have to own it to ask for anything." };
   if (pendingVariances(s)[bbl]) return { s, err: "This site already has an application in front of the board." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
-  if ((s.variance?.[bbl] ?? 0) > 0) return { s, err: "The board has already granted relief on this site. They will not do it twice." };
   const q = varianceQuote(s, parcels, bbl, targetFar);
   if (!q) {
-    // "NOTHING TO APPLY FOR HERE" WAS FOUR DIFFERENT ANSWERS WEARING ONE
-    // SENTENCE. varianceQuote returns null for an unknown parcel, a lot with no
-    // area, a landmark and an already-granted site, and the two of those the
-    // caller does not test for itself both LOOK like the button is broken —
-    // which is exactly how it was reported: "it wouldn't let me file a
-    // variance", with no way to find out why. A refusal that does not name its
-    // reason is indistinguishable from a bug, and one of these is a real fault
-    // upstream that this sentence was hiding.
+    // "NOTHING TO APPLY FOR HERE" WAS SEVERAL ANSWERS WEARING ONE SENTENCE.
+    // varianceQuote returns null for an unknown parcel, a lot with no area, a
+    // landmark, or a site already at the city FAR ceiling — and a refusal that
+    // does not name its reason looks like a broken button.
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) return { s, err: "There is no parcel there to apply about." };
     if (!rec.lotArea) {
@@ -252,6 +252,10 @@ export function fileVariance(
           : `${rec.address} has no lot area on record, so there is no site to grant relief on. `
             + "That is a fault rather than a rule — please report the address.",
       };
+    }
+    const current = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+    if (current >= FAR_CEILING - 0.05) {
+      return { s, err: `The envelope is already at the city ceiling (${FAR_CEILING} FAR). There is nothing more to ask for.` };
     }
     return { s, err: "Nothing to apply for here." };
   }

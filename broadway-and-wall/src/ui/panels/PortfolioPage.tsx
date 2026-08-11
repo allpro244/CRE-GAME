@@ -11,13 +11,17 @@ import { fundableNow } from "@/engine/credit";
 import { portfolioQuote } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
+import { allocatedAmount } from "@/engine/facility";
 import { usd, sf } from "@/ui/format";
-import { ListSection, RefiSection } from "@/ui/panels/ParcelDesk";
+import { ListSection, RefiSection, GroundLeaseSection } from "@/ui/panels/ParcelDesk";
+import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
+import { siteDeeds } from "@/engine/actions";
 import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
 
 export function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
+  const adjacency = useStore((s) => s.adjacency);
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   // Child deeds of an assemblage keep a $0 holding for title — they are not
@@ -34,6 +38,11 @@ export function PortfolioPage() {
   const [refiRow, setRefiRow] = useState<string | null>(null);
   // The ask you are about to name, per row. See ListSection.
   const [listRow, setListRow] = useState<string | null>(null);
+  // Vacant dirt: offer a ground lease from the row — same reach as List / Refi.
+  const [glRow, setGlRow] = useState<string | null>(null);
+  // Fold contiguous vacant lots from the book — same desk as Property → Build,
+  // without leaving the portfolio when you notice two addresses that touch.
+  const [assembleRow, setAssembleRow] = useState<string | null>(null);
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
@@ -59,10 +68,13 @@ export function PortfolioPage() {
     // Deed NOI — building roll or ground coupon. Same number the header CF
     // annualises (before firm-level construction / facility / revolver).
     const noi = ownedHoldingNoiYr(game, parcels, h);
+    // Facility replaces the deed mortgage — allocated share is the lien that
+    // still sits on this row once the pool is papered.
+    const debt = (h.loan?.balance ?? 0) + allocatedAmount(game, parcels, h.bbl);
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
-    totV += v; totD += h.loan?.balance ?? 0;
+    totV += v; totD += debt;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
     // several of them were impossible to sort by: they did not exist until the
@@ -88,8 +100,8 @@ export function PortfolioPage() {
       // its dirt does not have a basis per foot of anything; it sorts last.
       basisPsf: rec && rec.bldgArea > 0 ? h.costBasis / rec.bldgArea : 0,
       gain: v - h.costBasis,
-      debt: h.loan?.balance ?? 0,
-      equity: v - (h.loan?.balance ?? 0),
+      debt,
+      equity: v - debt,
       ds: h.loan?.monthlyPmt ?? 0,
     };
   });
@@ -364,10 +376,18 @@ export function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ }, i) => {
+          {shown.map(({ h, rec, v, noi, cf, occ, debt }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
+            // Vacant fee only — leased fees and improved sites are not this desk.
+            const canGround = !!rec
+              && rec.class === "land"
+              && (rec.bldgArea ?? 0) === 0
+              && !(game.built?.[h.bbl]?.bldgArea)
+              && !h.groundLeased
+              && !game.groundLeases?.[h.bbl]
+              && !dv;
             return (
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
@@ -466,8 +486,8 @@ export function PortfolioPage() {
                   </td>
                 );
               })()}
-              <td className="num">{usd(h.loan?.balance ?? 0)}</td>
-              <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
+              <td className="num">{usd(debt)}</td>
+              <td className="num">{usd(v - debt)}</td>
               {/* A LEADING MINUS THAT WRAPS IS A BARE DASH. In a 62px column
                   `"−" + usd(...)` breaks after the sign, so a real payment
                   rendered as a dash over a number — visually identical to the
@@ -489,6 +509,8 @@ export function PortfolioPage() {
                   h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
                   h.program ? "CAPEX" : null,
+                  siteDeeds(game, h.bbl).length > 1 ? "ASSEMBLED" : null,
+                  game.btsProspects?.[h.bbl] ? "BTS TERMS" : h.btsOffer ? "BTS LISTED" : null,
                   game.groundLeases?.[h.bbl] ? "GROUND-LEASED" : h.groundOffer ? "GL OFFERED" : null].filter(Boolean).join(" · ")}
                 {(() => {
                   const g = game.groundLeases?.[h.bbl];
@@ -506,7 +528,7 @@ export function PortfolioPage() {
                 </div>}
               </td>
               <td>
-                {/* list it from the row — no need to open the record */}
+                {/* list / refi / ground-lease from the row — no need to open the record */}
                 <div className="btn-row" style={{ gap: 4, margin: 0 }}>
                   {h.sale ? (
                     <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); delistSale(h.bbl); }}
@@ -529,6 +551,31 @@ export function PortfolioPage() {
                   >
                     Refi
                   </button>
+                  {canGround && (
+                    <button
+                      className={"btn btn-sm" + (glRow === h.bbl || h.groundOffer ? " btn-on" : "")}
+                      onClick={(ev) => { ev.stopPropagation(); setGlRow(glRow === h.bbl ? null : h.bbl); }}
+                      title={h.groundOffer
+                        ? `Ground lease offered (${h.groundOffer.years} yr) — open to pull or review terms`
+                        : h.loan || game.facility?.bbls?.includes(h.bbl) || h.sale
+                          ? "Clear the lien or listing first, then offer a ground lease"
+                          : "Offer vacant dirt as an absolutely-net ground lease"}
+                    >
+                      {h.groundOffer ? "GL" : "Ground"}
+                    </button>
+                  )}
+                  {canAssembleFromBook(game, adjacency, h.bbl) && (
+                    <button
+                      className={"btn btn-sm" + (assembleRow === h.bbl ? " btn-on" : "")}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setAssembleRow(assembleRow === h.bbl ? null : h.bbl);
+                      }}
+                      title="You own contiguous vacant dirt next to this site — fold the deeds into one plate"
+                    >
+                      Assemble
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -543,6 +590,20 @@ export function PortfolioPage() {
               <tr>
                 <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
+                </td>
+              </tr>
+            )}
+            {glRow === h.bbl && canGround && (
+              <tr>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <GroundLeaseSection bbl={h.bbl} onDone={() => setGlRow(null)} />
+                </td>
+              </tr>
+            )}
+            {assembleRow === h.bbl && (
+              <tr>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <AssembleSection bbl={h.bbl} onDone={() => setAssembleRow(null)} />
                 </td>
               </tr>
             )}

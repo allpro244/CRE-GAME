@@ -174,7 +174,8 @@ function run(botName, seed) {
         } else if (m % 27 === 5) {
           // grantGroundLease conjured a tenant on click; the reshaped flow
           // OFFERS the ground and a counterparty arrives (or not) in the tick
-          const r = E.offerGroundLease(g, parcels, bbl, 30 + (m % 4) * 20);
+          // Floor is GROUND_TERM_MIN (49); tower reversion needs 75+.
+          const r = E.offerGroundLease(g, parcels, bbl, 49 + (m % 4) * 15);
           if (!r.err) { g = r.s; break; }
         }
       }

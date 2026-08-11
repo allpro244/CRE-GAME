@@ -44,6 +44,7 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     g.econ.rentIdx?.industrial,
     g.econ.cycleDev,
     g.agent ? 1 : 0,
+    g.teamLeasing ? 1 : 0,
     g.loc?.balance ?? 0,
     g.facility?.balance ?? 0,
     // Assemble / neighbour gates — another deed in the book can unlock the desk
@@ -67,6 +68,13 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     h?.leasingHold ? 1 : 0,
     h?.plan,
     h?.service,
+    // Stance / capital-program toggles used to update the engine without
+    // changing this signature — the docked card looked dead until something
+    // else (cash, loan) moved and forced a re-render.
+    h?.stance,
+    h?.program ? `${h.program.id}:${h.program.untilM}` : "",
+    // programsDone is id → completed month, not an array.
+    Object.entries(h?.programsDone ?? {}).map(([k, v]) => `${k}:${v}`).join(","),
     sale?.ask,
     sale?.offer?.price,
     sale?.offer?.expiresM,
@@ -119,6 +127,10 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     varianceApp ? `${varianceApp.filedM}:${varianceApp.decideM}:${varianceApp.grant}:${varianceApp.odds}` : "",
     varianceLog ? `${varianceLog.m}:${varianceLog.granted ? 1 : 0}:${varianceLog.far}` : "",
     h?.groundOffer ? `${h.groundOffer.years}:${h.groundOffer.review ?? "fixed"}:${h.groundOffer.sinceM}` : "",
+    h?.btsOffer ? `${h.btsOffer.use}:${h.btsOffer.floors}:${h.btsOffer.coverage}:${h.btsOffer.sinceM}` : "",
+    g.btsProspects?.[bbl]
+      ? `${g.btsProspects[bbl]!.name}:${g.btsProspects[bbl]!.use}:${g.btsProspects[bbl]!.sf}:${g.btsProspects[bbl]!.signedM}`
+      : "",
     g.merged?.[bbl] ?? "",
     g.built?.[bbl] ? 1 : 0,
     (h?.hist?.length ?? 0),

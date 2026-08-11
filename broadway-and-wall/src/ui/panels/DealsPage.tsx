@@ -119,7 +119,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
   const [countering, setCountering] = useState(false);
   const h = game.holdings[bbl];
   const offer = h?.sale?.offer;
-  const bids = h?.sale?.bids;
+  const liveBids = (h?.sale?.bids ?? [])
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => !b.dropped);
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   return (
     <div className="loi">
@@ -147,17 +149,17 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           );
         })()}
       </div>
-      {bids && bids.length > 0 ? (
+      {liveBids.length > 0 ? (
         <>
           <div className="loi-line mono">
-            <b>{bids.length} bid{bids.length === 1 ? "" : "s"}</b>
-            {" "}· best <b>{usd(bids[0].price)}</b> from {bids[0].name}
-            {bids.length > 1 ? ` · second ${usd(bids[1].price)}` : ""}
-            {" "}· {((bids[0].price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
+            <b>{liveBids.length} bid{liveBids.length === 1 ? "" : "s"}</b>
+            {" "}· best <b>{usd(liveBids[0].b.price)}</b> from {liveBids[0].b.name}
+            {liveBids.length > 1 ? ` · second ${usd(liveBids[1].b.price)}` : ""}
+            {" "}· {((liveBids[0].b.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
           </div>
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => takeBid(bbl, 0)}>
-              Take {bids[0].name} · {usd(bids[0].price)}
+            <button className="btn btn-buy" onClick={() => takeBid(bbl, liveBids[0].i)}>
+              Take {liveBids[0].b.name} · {usd(liveBids[0].b.price)}
             </button>
             <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters and the full list live on the property">
               Open the list…

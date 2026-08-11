@@ -7,7 +7,7 @@ import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec,
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
 import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
-import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
@@ -20,6 +20,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
+import type { GroundReview } from "@/engine/types";
 
 
 function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
@@ -1715,9 +1716,23 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // competing with product chips and the underwriting grid on the same scroll.
   const [stage, setStage] = useState<"thesis" | "structure" | "commit">("thesis");
   const offerPrice = Math.round(price);
-  const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
+  // Same pattern as RefiSection: default "savings" often won't quote, while
+  // another desk will — fall through to a desk that actually writes so Commit
+  // does not silently close all-cash against a card full of loan terms.
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"));
+  const picked = (() => {
+    const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
+    if (product === "cash" || direct.principal > 0) return product;
+    const alt = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);
+    return alt?.id ?? "cash";
+  })();
+  const max = buyQuote(game, parcels, bbl, offerPrice, picked, 1);
   const principal = Math.round(max.principal * lev);
-  const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
+  const equity = max.equity > 0 && lev >= 0.999
+    ? max.equity
+    : offerPrice - principal + Math.round(offerPrice * 0.02)
+      + (max.capPremium ? Math.round(max.capPremium * lev) : 0)
+      + Math.round((max.pointsFee ?? 0) * lev);
   // THE RESOLVED RECORD, for the same reason buyQuote uses one: the static
   // table is the lot at generation, not what is standing on it today.
   const rec = resolveRec(parcels, game, bbl);
@@ -1734,7 +1749,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
   // coupon-only for IO periods — not the IO approximation for everything.
-  const prodDef = PRODUCTS.find((pp) => pp.id === product);
+  // Key off `picked` (the desk the numbers describe), not the chip the player
+  // last clicked when that chip would not quote.
+  const prodDef = PRODUCTS.find((pp) => pp.id === picked);
   const annualDs = principal > 0
     ? (prodDef && prodDef.ioM > 0
       ? principal * (max.ratePct / 100)
@@ -1794,12 +1811,12 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
       {stage === "structure" && (
         <div className="deal-stage" role="tabpanel">
           <div className="btn-row" style={{ marginTop: 4 }}>
-            {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
+            {productChoices.map((p) => {
               const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
               return (
                 <button
                   key={p.id}
-                  className={"btn" + (product === p.id ? " btn-on" : "")}
+                  className={"btn" + (picked === p.id ? " btn-on" : "")}
                   disabled={pq.principal <= 0}
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
@@ -1811,7 +1828,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 </button>
               );
             })}
-            <button className={"btn" + (product === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
+            <button className={"btn" + (picked === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
               All cash
             </button>
           </div>
@@ -1846,7 +1863,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </div>
           )}
           {max.principal <= 0 && (
-            <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+            <div className="hint">{picked === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
           )}
           <div className="btn-row" style={{ marginTop: 10 }}>
             <button type="button" className="btn" onClick={() => setStage("thesis")}>◂ Thesis</button>
@@ -1885,7 +1902,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               className="btn btn-buy"
               disabled={equity > game.cash}
               onClick={() => {
-                const prod = principal <= 0 ? "cash" : product;
+                const prod = principal <= 0 ? "cash" : picked;
                 const l = principal <= 0 ? 1 : lev;
                 if (off) buyOff(bbl, prod as never, l, bid);
                 else useStore.getState().closeDeal(bbl, prod, l);
@@ -1922,6 +1939,110 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
  * on the record: a decision with two numbers on it is a decision, and a
  * decision with an adjective on it is a paragraph.
  */
+/**
+ * OFFER A GROUND LEASE FROM THE BOOK — same job as LandDesk's "Or ground-lease
+ * it" block, sized for a portfolio expand row so vacant dirt does not force a
+ * trip through Property → Build.
+ */
+export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () => void }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const { groundLease, pullGroundOffer } = useStore.getState();
+  const h = game.holdings[bbl];
+  const rec = resolveRec(parcels, game, bbl);
+  const [years, setYears] = useState(GROUND_TOWER_TERM_MIN);
+  const [review, setReview] = useState<GroundReview>("fixed");
+  if (!h || !rec) return null;
+  const vacant = rec.class === "land" && (rec.bldgArea ?? 0) === 0
+    && !(game.built?.[bbl]?.bldgArea) && !h.groundLeased && !game.groundLeases?.[bbl];
+  const offer = h.groundOffer;
+  const oq = offer && vacant
+    ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
+  const blocked = !vacant
+    ? "Only vacant dirt can be offered for ground lease."
+    : h.sale ? "Pull the listing first — you cannot encumber a marketed lot."
+    : game.developments[bbl] ? "Construction is already underway."
+    : game.merged?.[bbl] ? "That lot is part of an assemblage — lease the whole site."
+    : h.loan ? "Pay off the mortgage first — a land lender will not sit under a ground lease."
+    : game.facility?.bbls?.includes(bbl)
+      ? "Release it from the facility first — the line is secured by vacant dirt, not a leased fee."
+      : null;
+  const q = vacant && !offer && !blocked
+    ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
+
+  if (offer) {
+    return (
+      <div style={{ padding: "8px 2px" }}>
+        <div className="deal-head">Offered for ground lease</div>
+        <div className="grid">
+          <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
+          <Row k="Structure" v={GROUND_REVIEW_LABEL[offer.review ?? "fixed"]} />
+          <Row k="Terms as of today" v={oq
+            ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
+            : "—"} strong />
+          {oq && <Row k="Net cash income" v={`${usd(oq.cashFlow.netRentYr)} / yr`} strong />}
+        </div>
+        <div className="hint">
+          Ground lessees are scarce. The deal signs at the terms quoted the month they arrive.
+        </div>
+        <div className="btn-row" style={{ marginTop: 6 }}>
+          <button className="btn" onClick={() => { pullGroundOffer(bbl); onDone?.(); }}>
+            Pull the offer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (blocked || !q) {
+    return (
+      <div style={{ padding: "8px 2px" }}>
+        <div className="deal-head">Ground lease</div>
+        <div className="hint">{blocked ?? "Nobody will ground-lease that today."}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "8px 2px" }}>
+      <div className="deal-head">Offer a ground lease</div>
+      <div className="btn-row" style={{ marginBottom: 8 }}>
+        {(["fixed", "cpi", "fmv"] as GroundReview[]).map((r) => (
+          <button key={r} className={"btn" + (review === r ? " btn-on" : "")} onClick={() => setReview(r)}>
+            {GROUND_REVIEW_LABEL[r]}
+          </button>
+        ))}
+      </div>
+      <Slider
+        label="Term"
+        value={years}
+        min={GROUND_TERM_MIN}
+        max={99}
+        step={1}
+        onChange={setYears}
+        format={(v) => `${v} years`}
+        hint={q.reviewNote}
+      />
+      <div className="grid">
+        <Row k="Gross ground rent" v={`${usd(q.cashFlow.grossRentYr)} / yr · ${q.capPct}% of land value`} />
+        <Row k="Owner expenses" v="$0 tax · $0 opex · $0 TI · $0 signing — lessee pays" />
+        <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
+        <Row k="At term" v={q.padOnly
+          ? "Dirt back — bones only if you fund a leasehold buyout"
+          : `Aged vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
+      </div>
+      <div className="hint">
+        Absolutely-net form. {q.termNote} Fixed places faster; FMV opens cheaper and slower.
+      </div>
+      <div className="btn-row" style={{ marginTop: 6 }}>
+        <button className="btn btn-buy" onClick={() => { groundLease(bbl, years, review); onDone?.(); }}>
+          Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal: number; onDone: () => void }) {
   const game = useHeldGame(bbl);
   const listSale = useStore((s) => s.listSale);
@@ -2364,6 +2485,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
+  const btsOffer = game.holdings[bbl]?.btsOffer;
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank);
   // Turn the chosen unit counts into sf-per-space, against the programme that
   // is actually going to be built.
@@ -2408,16 +2530,48 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <Row k="Rent" v={`$${bts.rentPsf.toFixed(2)}/sf · below market for certainty`} />
                 <Row k="Tenant work" v={`$${bts.tiPsf}/sf · ${bts.recovery.toUpperCase()}`} />
               </div>
+              <div className="hint">
+                Terms arrived off the listing. Break ground on their shell, or send them away and go back to spec.
+              </div>
               <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Return to spec</button>
+            </>
+          ) : btsOffer ? (
+            <>
+              <div className="grid">
+                <Row
+                  k="On the BTS book"
+                  v={`${btsOffer.floors} fl of ${btsOffer.use} · since ${monthLabel(btsOffer.sinceM)}${
+                    game.month - btsOffer.sinceM > 0
+                      ? ` · ${game.month - btsOffer.sinceM} month${game.month - btsOffer.sinceM === 1 ? "" : "s"} waiting`
+                      : ""
+                  }`}
+                  strong
+                />
+              </div>
+              <div className="hint">
+                A credit tenant who will commit before groundbreak is scarce — they turn up when demand, the build
+                climate and the size of the shell say so. Change the programme below and re-list to update what you
+                are shopping; pull the listing to go back to pure spec.
+              </div>
+              <div className="btn-row">
+                {(btsOffer.use !== use || btsOffer.floors !== fl || Math.abs(btsOffer.coverage - cov) > 0.001) && (
+                  <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
+                    Update listing · {fl} fl of {use}
+                  </button>
+                )}
+                <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Pull the listing</button>
+              </div>
             </>
           ) : (
             <>
               <div className="hint">
-                Build on spec for market rent and lease-up risk, or find one credit tenant before groundbreak:
-                lower rent and concentration risk in exchange for long term, day-one occupancy and stronger financing.
+                Build on spec for market rent and lease-up risk, or list the shell for a build-to-suit: one credit
+                tenant before groundbreak, lower rent and concentration risk in exchange for long term, day-one
+                occupancy and stronger financing. An anchor arrives when one arrives — this is a listing, not a desk
+                that invents tenants on demand.
               </div>
               <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
-                Find build-to-suit tenant
+                List for build-to-suit
               </button>
             </>
           )}

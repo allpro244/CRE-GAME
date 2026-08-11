@@ -8,7 +8,7 @@ import {
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN,
   AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
-  deskHoldsPen, deskMonthNow, loiNeedsPrincipal,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam,
 } from "@/engine/leasing";
 import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
@@ -24,7 +24,7 @@ export function LeasingPage() {
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const {
-    setAgent, setRenewalMgmt, setAgentFloor, setAgentPassBelow,
+    setAgent, setTeamLeasing, setRenewalMgmt, setAgentFloor, setAgentPassBelow,
     setAgentMinCredit, setAgentMaxTiMonths, setAgentMaxSigningMonths, broker,
   } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
@@ -115,19 +115,47 @@ export function LeasingPage() {
 
   function AgentBar() {
     const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
+    const teamOn = !!game.teamLeasing && hasLeasingTeam(game);
+    const teamReady = hasLeasingTeam(game);
+    const title = game.agent
+      ? "Your leasing agent has the book."
+      : teamOn
+        ? "Your leasing team has the book."
+        : "You are handling leasing yourself.";
+    const sub = game.agent
+      ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign. Routine letters do not interrupt you; the scorecard below is how you know they are still closing${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      : teamOn
+        ? `Your people sign and counter inside the mandate below at the ordinary 4%/2% commissions — no LOI popups unless they refer something back. Watch the scorecard${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on Deals.` : "."}`
+        : "Every letter lands on you unless a building has an exclusive broker, or you hand renewals to management below. Hand the book to your team (hire leasing on Staff first) or hire the outside agent at 6% — either way, routine LOIs stop interrupting.";
     return (
       <div className="agent-bar">
         <div>
-          <div className="agent-title">{game.agent ? "Your leasing agent has the book." : "You are handling leasing yourself."}</div>
-          <div className="agent-sub">
-            {game.agent
-              ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign. Routine letters do not interrupt you; the scorecard below is how you know they are still closing${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-              : "Every letter lands on you unless a building has an exclusive broker, or you hand renewals to management below. In-house leasing hires still raise traffic and judgment — they do not sign for you. Hire the agent to hand over the whole book."}
-          </div>
+          <div className="agent-title">{title}</div>
+          <div className="agent-sub">{sub}</div>
         </div>
-        <button className={"btn" + (game.agent ? "" : " btn-on")} onClick={() => setAgent(!game.agent)}>
-          {game.agent ? "Take leasing back" : "Hire the agent · 6%"}
-        </button>
+        <div className="btn-row" style={{ flexShrink: 0 }}>
+          {game.agent ? (
+            <button className="btn" onClick={() => setAgent(false)}>Take leasing back</button>
+          ) : teamOn ? (
+            <button className="btn" onClick={() => setTeamLeasing(false)}>Take leasing back</button>
+          ) : (
+            <>
+              <button
+                className="btn btn-on"
+                disabled={!teamReady}
+                title={teamReady
+                  ? "Your leasing hires sign inside your mandate — no LOI popups"
+                  : "Hire a leasing person on Staff first"}
+                onClick={() => setTeamLeasing(true)}
+              >
+                Hand to your team
+              </button>
+              <button className="btn" onClick={() => setAgent(true)}>
+                Hire outside agent · 6%
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -195,7 +223,8 @@ export function LeasingPage() {
    * the renewals and offering both would be offering the same thing twice.
    */
   function RenewalBar() {
-    if (game.agent) return null;
+    // Whole-book handoffs already cover renewals.
+    if (game.agent || game.teamLeasing) return null;
     const on = !!game.renewalMgmt;
     return (
       <div className="agent-bar">

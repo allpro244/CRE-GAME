@@ -61,7 +61,7 @@ import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
-import { ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
+import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
 import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote, advanceFactor } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
@@ -464,31 +464,71 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
     ? Math.ceil((f.balance * f.ratePct) / 100 / 12)
     : Math.round(monthlyPayment(f.balance, f.ratePct, yearsLeft));
   const interest = (f.balance * f.ratePct) / 100 / 12;
-  const principalPay = io ? 0 : Math.max(0, Math.min(f.balance, f.monthlyPmt - interest));
-  f.balance = Math.max(0, f.balance - principalPay);
-  let out = f.monthlyPmt;
+  const principalWanted = io ? 0 : Math.max(0, Math.min(f.balance, f.monthlyPmt - interest));
   // Cash first, then the line — same stack as a single-asset loan. Going
   // straight to `s.cash -=` left the revolver unused while the facility
   // breached on a temporary cash hole.
-  fundCashNeed(s, parcels, out);
+  //
+  // AND ONLY FUNDED DOLLARS AMORTIZE. This used to cut principal and return
+  // the full coupon even when fundCashNeed paid $0 — free delever and a
+  // Books line that lied about debt service. Amortize and book the dollars
+  // that actually cleared.
+  const funded = fundCashNeed(s, parcels, f.monthlyPmt);
+  const principalPay = f.monthlyPmt > 0
+    ? Math.round(principalWanted * (funded / f.monthlyPmt))
+    : 0;
+  f.balance = Math.max(0, f.balance - principalPay);
+  let out = funded;
+  // MISSED COUPON. Partial payment used to end here with no clock — covenants
+  // could still clear and the unpaid interest vanished. Accrue what was not
+  // funded onto the balance and count consecutive short months toward a
+  // payment default (same shape as single-asset arrears, pool-wide).
+  const unpaid = Math.max(0, f.monthlyPmt - funded);
+  if (unpaid > 0) {
+    const unpaidInterest = Math.min(unpaid, Math.max(0, interest));
+    f.balance = Math.round(f.balance + unpaidInterest);
+    f.arrearsMs = (f.arrearsMs ?? 0) + 1;
+    if ((f.arrearsMs ?? 0) >= 3) {
+      f.breachedSince ??= q;
+      f.sweep = true;
+      if ((f.arrearsMs ?? 0) >= FACILITY_CURE_M && f.accelM === undefined) {
+        f.accelM = q;
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${f.lender} has accelerated the facility after ${f.arrearsMs} months of unpaid debt service. `
+            + `The whole balance is due over all ${f.bbls.length} buildings.`,
+        });
+        return out;
+      }
+      if (f.arrearsMs === 3) {
+        s.news.unshift({
+          q, kind: "warn",
+          text: `Three months of short facility payments — ${f.lender} has put the pool into default. `
+            + `Cash flow is swept and you have ${FACILITY_CURE_M} months to bring it current or they accelerate.`,
+        });
+      }
+    }
+  } else {
+    f.arrearsMs = 0;
+  }
 
   const m = facilityMetrics(s, parcels);
   const holiday = q < f.originM + 12;
   let breached = !holiday && ((m.dscr !== null && m.dscr < f.minDSCR) || (m.ltv !== null && m.ltv > f.maxLTV));
 
   // THE EQUITY CURE, POOL-WIDE. Identical in kind to the one on a single loan —
-  // pay principal down to the covenant out of cash you actually have (and the
-  // undrawn line when cash is short) — because it is the same clause in the
-  // same kind of agreement, and a sponsor who can write the cheque writes it
-  // here too. What is different is the SIZE: a covenant struck against a whole
-  // book needs a whole book's worth of cure, and that is the honest reason a
+  // pay principal down to the covenant out of CASH (not the revolver). Single-
+  // asset cures already refuse the line (`allowLoc: false`) so a thin sponsor
+  // cannot immortalize a breach by drawing; the facility used to let them.
+  // What is different is the SIZE: a covenant struck against a whole book
+  // needs a whole book's worth of cure, and that is the honest reason a
   // facility is dangerous. There is no cure small enough to be painless.
-  if (breached && fundableNow(s, parcels) > 0) {
+  if (breached && fundableNow(s, parcels, { allowLoc: false }) > 0) {
     let target = f.balance;
     if (m.dscr !== null && m.dscr < f.minDSCR) target = Math.min(target, f.balance * (m.dscr / f.minDSCR));
     if (m.ltv !== null && m.ltv > f.maxLTV && m.value > 0) target = Math.min(target, f.maxLTV * m.value);
     const need = Math.ceil(f.balance - target);
-    const pay = fundCashNeed(s, parcels, need);
+    const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
     if (pay > 0) {
       f.balance -= pay;
       out += pay;
@@ -526,10 +566,29 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       });
       return out;
     }
-  } else if (f.breachedSince !== undefined) {
+  } else if (f.breachedSince !== undefined && (f.arrearsMs ?? 0) === 0) {
     delete f.breachedSince;
     delete f.sweep;
     s.news.unshift({ q, kind: "deal", text: "The facility is back inside its covenants and the sweep has been lifted." });
+  }
+
+  // THE SWEEP IS A TRAP, NOT A FLAG. Single-asset loans skim surplus NOI into
+  // principal (`tickLoan`); the facility used to announce a pool-wide sweep
+  // and still let every building's cash flow reach the sponsor.
+  if (f.sweep && f.balance > 0) {
+    let poolNoi = 0;
+    for (const bbl of f.bbls) {
+      const h = s.holdings[bbl];
+      if (!h) continue;
+      poolNoi += ownedMonthlyNoi(s, parcels, h);
+    }
+    const surplus = Math.max(0, Math.floor(poolNoi - funded));
+    const skim = Math.min(surplus, Math.max(0, Math.floor(s.cash)), f.balance);
+    if (skim > 0) {
+      s.cash -= skim;
+      f.balance = Math.max(0, f.balance - skim);
+      out += skim;
+    }
   }
 
   // THE BALLOON. A facility matures like any other term loan and it matures

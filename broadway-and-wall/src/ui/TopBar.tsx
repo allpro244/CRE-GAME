@@ -70,6 +70,8 @@ export default function TopBar() {
   const deferredGame = useDeferredValue(game);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
+  const mapOnly = useStore((s) => s.mapOnly);
+  const setMapOnly = useStore((s) => s.setMapOnly);
   const advance = useStore((s) => s.advance);
   const advanceYear = useStore((s) => s.advanceYear);
   const advanceUntil = useStore((s) => s.advanceUntil);
@@ -502,6 +504,13 @@ export default function TopBar() {
           >
             ◫ Owners
           </button>
+          <button
+            className={"lens-btn" + (lens === "leases" ? " lens-on" : "")}
+            onClick={() => setLens(lens === "leases" ? "none" : "leases")}
+            title="Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT."
+          >
+            ◬ Leases
+          </button>
           </div>
           <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
@@ -519,6 +528,13 @@ export default function TopBar() {
       )}
 
       <div className="topbar-right">
+        <button
+          className={"lens-btn" + (mapOnly ? " lens-on" : "")}
+          title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
+          onClick={() => setMapOnly(!mapOnly)}
+        >
+          ◈ Map
+        </button>
         {/* SAVES, WHERE SOMEBODY CAN FIND THEM. The whole save/load panel was
             built and then rendered only at the bottom of the Books page, under
             the ledger — which is the same as not having one. It is a top-level

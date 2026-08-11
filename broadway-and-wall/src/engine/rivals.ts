@@ -2590,9 +2590,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const rate = s.econ.indexRate + RATE_SPREAD;
   maybeNewFirm(s);
-  // The jobs come first: a firm's construction draw is a call on this month's
-  // cash, and it has to land before the solvency test reads that cash.
-  fundJobs(s);
+  // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
+  // so schedule slips and orphans are visible to the space market. Cash draws
+  // already landed; the solvency test below reads the same balances.
   orphanToTape(s, parcels);
   rescueOrphan(s, parcels, ci);
 

@@ -30,6 +30,7 @@ export default function GamePanels() {
   const gameOver = useStore((s) => !!s.game?.gameOver);
   const hasGame = useStore((s) => !!s.game);
   const page = useStore((s) => s.page);
+  const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -45,6 +46,11 @@ export default function GamePanels() {
         return;
       }
       const st = useStore.getState();
+      if (e.code === "KeyM" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        st.setMapOnly(!st.mapOnly);
+        return;
+      }
       if (st.advancing) return;
       const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
       if (wantsTime && document.querySelector(".modal-backdrop")) {
@@ -107,7 +113,7 @@ export default function GamePanels() {
     <>
       <InboxRail />
       {page === "none" && <ParcelPanel />}
-      {page !== "none" && (
+      {page !== "none" && !mapOnly && (
         <div
           className="page-backdrop"
           onMouseDown={(e) => {

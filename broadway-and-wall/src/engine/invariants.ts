@@ -142,9 +142,28 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (p.bbl && p.source !== "legacy") {
         if (seen.has(p.bbl)) bad("supply", at, `duplicate live project on ${p.bbl}`);
         seen.add(p.bbl);
-        const physical = !!s.developments[p.bbl] || (s.cityJobs ?? []).some((j) => j.bbl === p.bbl);
+        const d = s.developments[p.bbl];
+        const j = (s.cityJobs ?? []).find((x) => x.bbl === p.bbl);
+        const physical = !!d || !!j;
         if (!physical) bad("supply", at, "economic delivery has no physical project");
+        if (d && d.deliverM !== p.deliverM) {
+          bad("supply", at, `player deliverM ${d.deliverM} ≠ queue ${p.deliverM}`);
+        }
+        if (j && !j.orphaned && j.deliverM !== p.deliverM) {
+          bad("supply", at, `city deliverM ${j.deliverM} ≠ queue ${p.deliverM}`);
+        }
+        if (j?.orphaned && p.status === "active") {
+          bad("supply", at, "orphaned city job still active on the queue");
+        }
       }
+    }
+    for (const d of Object.values(s.developments ?? {})) {
+      if (!d.piped) continue;
+      if (!seen.has(d.bbl)) bad("supply", `dev ${d.bbl}`, "piped development missing from deliveryQueue");
+    }
+    for (const j of s.cityJobs ?? []) {
+      if (j.orphaned || !j.bbl) continue;
+      if (!seen.has(j.bbl)) bad("supply", `job ${j.bbl}`, "live city job missing from deliveryQueue");
     }
     for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
       const queued = s.econ.deliveryQueue

@@ -184,20 +184,24 @@ for (let i = 0; i < N; i++) {
     const e = g.econ, cpi = e.cpi || 1;
     // ORDERS: square feet the market asked for this month, before a site is picked.
     s.orders.push(e.starts?.[K] ?? 0);
-    // BREAKS: square feet that actually went into the ground this month, from
-    // every path — the anonymous city, the teardown replacements and the street.
+    // BREAKS / DELIVERIES off the authoritative deliveryQueue — player and
+    // city jobs share one clock. Measuring cityJobs alone hid player supply
+    // and disagreed with settleSupplyDeliveries (HANDOFF #1).
     let broke = 0;
-    for (const j of g.cityJobs ?? []) {
-      const key = j.bbl + "#" + j.startM;
+    for (const p of g.econ.deliveryQueue ?? []) {
+      if (!p.bbl || p.status === "cancelled") continue;
+      const key = p.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      const share = j.mix?.[K] ?? (j.use === K ? 1 : 0);
-      const sf = j.sf * share;
-      if (sf > 0) { broke += sf; dueAt.set(j.deliverM, (dueAt.get(j.deliverM) ?? 0) + sf); }
+      const sf = Math.max(0, Math.round(p.sfByUse?.[K] ?? 0));
+      if (sf > 0) {
+        broke += sf;
+        dueAt.set(p.deliverM, (dueAt.get(p.deliverM) ?? 0) + sf);
+      }
     }
     s.breaks.push(broke);
-    // DELIVERIES: gross, from those same jobs landing. Not the change in stock,
-    // which nets off demolition and reads zero in a month the wrecking ball won.
+    // DELIVERIES: gross from the queue's due dates. Completions12 is smoothed;
+    // dueAt tracks the same projects as settleSupplyDeliveries.
     s.deliv.push(dueAt.get(g.month) ?? 0);
     s.vac.push(e.cityVac?.[K] ?? 0);
     s.rent.push((e.effRentIdx?.[K] ?? e.rentIdx[K]) / cpi);

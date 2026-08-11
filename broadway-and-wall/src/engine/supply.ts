@@ -184,20 +184,75 @@ export function reconcileSupplyQueue(s: GameState, parcels: ParcelTable): void {
 /**
  * Settle all projects due this month atomically. Mixed-use legs arrive
  * together; stalled and cancelled jobs contribute nothing.
+ *
+ * Callers must have already run fundJobs + reconcileSupplyQueue this month so
+ * orphaned / slipped physical jobs are not still marked active with a due date.
  */
 export function settleSupplyDeliveries(
   s: GameState,
 ): Record<BuiltClass, number> {
   const delivered = emptyByClass(() => 0);
   const still: SupplyProject[] = [];
+  const settledBbls: string[] = [];
+  const cityByBbl = new Map((s.cityJobs ?? []).map((j) => [j.bbl, j]));
   for (const p of ensureQueue(s.econ)) {
     if (p.status !== "active" || p.deliverM > s.month) {
       still.push(p);
       continue;
     }
+    // Belt when a physical record exists: do not book stock for an orphaned
+    // or slipped job. Absence of a physical row is reconcile's job to cancel;
+    // settling still allows harness / legacy paths that only write the queue.
+    if (p.bbl && p.source !== "legacy") {
+      const d = s.developments[p.bbl];
+      const j = cityByBbl.get(p.bbl);
+      if (d && d.deliverM > s.month) { still.push(p); continue; }
+      if (j && (j.orphaned || j.deliverM > s.month)) { still.push(p); continue; }
+    }
     for (const k of CLASSES) delivered[k] += Math.max(0, Math.round(p.sfByUse[k] ?? 0));
+    if (p.bbl) settledBbls.push(p.bbl);
   }
   s.econ.deliveryQueue = still;
+  // Ephemeral — clawbackSlippedDeliveries reads this after tickDevelopments.
+  (s.econ as { settledBbls?: string[] }).settledBbls = settledBbls;
   syncSupplyViews(s.econ, true);
   return delivered;
+}
+
+/**
+ * PLAYER SCHEDULE SLIPS AFTER SETTLE.
+ *
+ * City funding runs before tickEcon. Player site-risk runs inside
+ * tickDevelopments, after settle. When a job that just settled is slipped out
+ * of this month, put its square feet back on the queue and out of stock —
+ * otherwise vacancy absorbs a building that is still a frame on the map.
+ */
+export function clawbackSlippedDeliveries(s: GameState): void {
+  const settled = (s.econ as { settledBbls?: string[] }).settledBbls ?? [];
+  delete (s.econ as { settledBbls?: string[] }).settledBbls;
+  if (!settled.length) return;
+
+  let changed = false;
+  for (const bbl of settled) {
+    const d = s.developments[bbl];
+    if (!d || d.deliverM <= s.month) continue;
+    const sfByUse = programmeSf(d.sf, d.mix);
+    for (const k of CLASSES) {
+      const sf = Math.max(0, Math.round(sfByUse[k] ?? 0));
+      if (!sf || !s.econ.stock) continue;
+      s.econ.stock[k] = Math.max(0, (s.econ.stock[k] ?? 0) - sf);
+      if (s.econ.completions12) {
+        s.econ.completions12[k] = Math.max(0, (s.econ.completions12[k] ?? 0) - sf);
+      }
+    }
+    queueSupplyProject(s, {
+      bbl,
+      source: d.mode === "reuse" ? "reuse" : "player",
+      startM: d.startM,
+      deliverM: d.deliverM,
+      sfByUse,
+    });
+    changed = true;
+  }
+  if (changed) syncSupplyViews(s.econ, true);
 }

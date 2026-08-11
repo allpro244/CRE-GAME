@@ -179,6 +179,7 @@ export function SettingsPage() {
         <Row k="Space" v="Advance one month" />
         <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
         <Row k="N" v="Skip to the next decision, up to three years" />
+        <Row k="M" v="Map only — hide firm pages, keep the skyline" />
         <Row k="Escape" v="Close the open page" />
       </div>
       <div className="hint">

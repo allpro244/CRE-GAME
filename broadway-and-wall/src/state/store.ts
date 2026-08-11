@@ -42,7 +42,7 @@ import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveFo
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
-export type Lens = "none" | "land" | "demand" | "owners" | "zoning";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
 
 /**
@@ -176,6 +176,12 @@ interface AppState {
    */
   preferFps: boolean;
   setPreferFps: (v: boolean) => void;
+  /**
+   * Map-only mode — hide firm page sheets so the skyline is the desk.
+   * HUD, inbox, digest and decision cards stay. UI preference, not save state.
+   */
+  mapOnly: boolean;
+  setMapOnly: (v: boolean) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -437,6 +443,7 @@ export const useStore = create<AppState>((set, get) => ({
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
+  mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   toast: null,
   fps: 0,
   loadError: null,
@@ -478,13 +485,22 @@ export const useStore = create<AppState>((set, get) => ({
       }));
     }
     if (route.auction) set({ auctionOpen: true });
-    if (route.page) startTransition(() => set({ page: route.page! }));
+    // Opening a desk leaves map-only — the skyline mode is for watching, not answering.
+    if (route.page) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+      startTransition(() => set({ page: route.page!, mapOnly: false }));
+    }
   },
   dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   setLens: (lens) => set({ lens }),
   setPage: (page) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
-    // highlight paints before the page body.
+    // highlight paints before the page body. Opening a desk leaves map-only.
+    if (page !== "none" && get().mapOnly) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+      startTransition(() => set({ page, mapOnly: false }));
+      return;
+    }
     startTransition(() => set({ page }));
   },
   setFps: (fps) => set({ fps }),
@@ -663,6 +679,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPreferFps: (v) => {
     try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ preferFps: v });
+  },
+
+  setMapOnly: (v) => {
+    try { localStorage.setItem("bw:map-only", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ mapOnly: v, ...(v ? { page: "none" as Page } : {}) });
   },
 
   dismissAlert: () => {

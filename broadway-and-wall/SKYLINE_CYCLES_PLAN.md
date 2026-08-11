@@ -344,7 +344,7 @@ money-moving phases also require `pnpm gate`.
 [x] Phase 4 — cycle digest + balloon notices on map
 [x] Phase 5 — Primer offer + glossary + Summary/Full OM
 [x] Phase 6–7 (partial) — portfolio show on map; rival delivery toast path
-[ ] Phase 8 — unified delivery queue (engine)
-[ ] Phase 9 — map polish à la carte
+[x] Phase 8 — fundJobs before settle + clawback + queue readers/invariants
+[x] Phase 9 — lease lens + map-only mode (M)
 [x] Draft PR: https://github.com/allpro244/CRE-GAME/pull/67
 ```

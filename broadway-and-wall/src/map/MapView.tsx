@@ -589,6 +589,36 @@ export default function MapView() {
     zoneRef.current = next;
   }, [paintSig, parcels, mapReady, lens]);
 
+  // LEASE LENS — months to the next expiry on buildings you own.
+  // Bright = soon (rollover risk); dark = long WALT. Unowned lots stay mute.
+  const leaseRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const game = useStore.getState().game;
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    if (lens !== "leases") return;
+    const next = new Map<string, number>();
+    for (const h of Object.values(game.holdings)) {
+      if (h.groundLeased || !h.tenants?.length) continue;
+      let soonest = Infinity;
+      for (const t of h.tenants) {
+        const left = t.endM - game.month;
+        if (left >= 0 && left < soonest) soonest = left;
+      }
+      if (!Number.isFinite(soonest)) continue;
+      // 0–24 months mapped to 100–0 (bright when near). Beyond 24 → 0 (dark).
+      next.set(h.bbl, Math.round(100 * Math.max(0, 1 - Math.min(24, soonest) / 24)));
+    }
+    for (const [bbl, v] of next) {
+      if (leaseRef.current.get(bbl) === v) continue;
+      map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { leaseSoon: v });
+    }
+    for (const bbl of leaseRef.current.keys()) {
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "leaseSoon");
+    }
+    leaseRef.current = next;
+  }, [paintSig, parcels, mapReady, lens]);
+
   // name labels: districts, parks, water — DOM markers, no glyph server needed
   useEffect(() => {
     const map = mapRef.current;
@@ -857,7 +887,7 @@ export default function MapView() {
     // the district names come up full-strength at every zoom (the CSS side of
     // the class below) and the seams between districts get a dashed line.
     // Both go away with the lens — the normal view keeps its clean model look.
-    const hoods = lens === "demand" || lens === "land" || lens === "zoning";
+    const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases";
     map.getContainer().classList.toggle("bw-lens-hoods", hoods);
     if (hoods && !map.getLayer("bw-hood-line")) {
       const ctx = useStore.getState().city?.context as GeoJSON.FeatureCollection | null;
@@ -897,6 +927,19 @@ export default function MapView() {
         0, "#3b3327", 10, "#6b5836", 25, "#9c7f3c", 50, "#c9a23f", 75, "#e3c766", 100, "#f5e6a8",
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.85 as never);
+      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
+      return;
+    }
+    if (lens === "leases" && game && parcels) {
+      ghostBuildings(true);
+      // Mute lots with no state (−1); owned roll-risk paints warm. leaseSoon is 0–100.
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "case",
+        ["<", ["coalesce", ["feature-state", "leaseSoon"], -1], 0], "#d8d2c4",
+        ["interpolate", ["linear"], ["coalesce", ["feature-state", "leaseSoon"], 0],
+          0, "#3a3428", 25, "#6b5230", 50, "#b07a2e", 75, "#d4a03a", 100, "#f0c96a"],
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
       map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
       return;
     }

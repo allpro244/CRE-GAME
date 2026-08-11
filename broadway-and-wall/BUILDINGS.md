@@ -13,9 +13,9 @@ found by counting rather than by looking. `pnpm styles` is the counter.
 
 | File | What is in it |
 |---|---|
-| `src/map/styles.ts` | The style registry: every facade family, the trait tables, and `stylePool` / `styleFor`, which decide what a given building wears. **Imports nothing from three.js or MapLibre** — that is deliberate, see §4. |
+| `src/map/styles.ts` | The style registry: every facade family, the trait tables, and `stylePool` / `styleFor` / `styleForBuilt`, which decide what a given building wears. **Imports nothing from three.js or MapLibre** — that is deliberate, see §4. |
 | `src/map/volume.ts` | `BuildingVolume`, the one record a building mass is described by. Its own file for the same reason. |
-| `src/map/ThreeBuildings.ts` | The renderer. Facade shader (`FRAG`), roof shader (`ROOF_FRAG`), the crown block, the roof-prop kit, the tower kit, and the player-build path. |
+| `src/map/ThreeBuildings.ts` | The renderer. Facade shader (`FRAG`), roof shader (`ROOF_FRAG`), the `Mason`, `crownTop`, `roofDeck`, the roof-prop kit, the tower kit, and the player-build path. |
 | `src/citygen/build.mjs` | `massing()` — the silhouette a *generated* building stands as. |
 | `tools/styleaudit.mjs` | `pnpm styles`. Runs the real chooser over every building of every town across every seed. |
 
@@ -24,6 +24,38 @@ generator (`build.mjs`) makes the stock a city *starts* with; the renderer's
 `setPlayerBuildings` makes everything the player and the rivals put up
 afterwards. A family added to one and not the other is half-missing, and the
 audit will not catch it because the audit only sees the generator.
+
+### The player path is not a second renderer, and every time it forgot that it drifted
+
+`setPlayerBuildings` had grown a private copy of five decisions the registry
+already owned, and every one of them was worse than the shared answer:
+
+| it decided | it had | it has |
+|---|---|---|
+| the facade | six hard-coded ids off the class | `styleForBuilt` |
+| the era | a fixed 1992-2017 band | the delivery year the engine stamps |
+| the roof surface | four of the nine, off the deed hash | `roofDeck` |
+| the crown | nothing at all | `crownTop` |
+| corner shading | every corner declared convex | the shared `Mason` |
+
+None of these were visible from a screenshot of one building, and none of
+them could fail a test, because there was no second opinion to disagree with.
+They were found by asking the same question of both paths and diffing the
+answers, which is the only thing that finds this class of fault. **If you add
+a decision to one path, the reviewable question is not "does it look right",
+it is "which function owns this, and is the other path calling it".**
+
+The two things that made the sharing possible are worth knowing about:
+
+- **`Mason`** is the four operations everything above ground is made of —
+  `tri`, `wall`, `cap`, `pitch`. They used to be closures inside the
+  generator's rebuild loop, which is the mechanical reason the player's
+  buildings had no crown: the ladder could not be reached because the trowel
+  could not be. The per-volume scalars every triangle inherits (era, deck
+  surface, wear, seam bearing) live in a `MasonState` the caller mutates.
+- **`crownTop`** takes a Mason, the two buffers and one volume's worth of
+  facts, and returns the deck the roof kit should then be fitted to — the
+  bulkhead's top when it grew one, the roof itself when it did not.
 
 ---
 
@@ -93,6 +125,12 @@ never appears at all.
 6. **Signature math**, optional but it is the whole point — see §5.
 
 Then `pnpm styles` and check it is not DEAD.
+
+Nothing extra is needed to reach the buildings the player puts up — that path
+calls `styleForBuilt`, which is `stylePool` less `NOT_BUILT_TO_ORDER`. Add a
+family to that set only if it is a thing a town HAS but nobody develops as an
+investment: the parking deck, the substation, the bus canopy, the control
+tower. It is a short list on purpose.
 
 ### Numbers that will bite you
 
@@ -179,6 +217,32 @@ edges, which genuinely cannot be drawn at two pixels a floor. Below it:
 distance. New detail must go in the correct half or it will be averaged into a
 flat colour before it reaches the screen.
 
+**Reveal depth was in the wrong half for a while, and it is the biggest cue
+there is.** All of it lived in the parallax and the per-pixel jamb shading, so
+the far view got `mix(wall, glass, winFrac)` and the 28 mm to 900 mm range
+collapsed into the palette. What depth is at two pixels a floor is three
+things, all of them geometry and all of them below the dissolve now:
+
+- a deep opening **hides its own glass** off-axis, because the jamb is in the
+  way — depth times the tangent of the view angle, per axis, against the
+  opening in metres;
+- what glass you can still see **sees less sky**, by the form factor of its
+  own slot (17% for a board-formed slot, 1% for a unitised lite);
+- and the jamb **shadows the opening** when the sun runs along the wall.
+
+Because that is measured against the opening in metres, `colW` and `win` reach
+the far view too, where before only their product did.
+
+### Measuring a far-LOD cue
+
+An `sd` of luminance over the built pixels of a fixed frame is the cheap test:
+a cue that works widens it, a palette change moves the mean and leaves it
+alone. Two things make it honest. **Establish the noise floor** — shoot the
+same build twice; the traffic and the pedestrians move, and here that is 2.0%
+of built pixels and 0.008 of `sd`. **And check the metric can move** before
+believing that it did: at 3x the coefficient, the reveal cue's reach goes from
+9.3% of built pixels to 18.9% and `sd` from 37.77 to 38.75.
+
 **Crowns are 29% of a tower's pixels** and roofs are 9.5% of the whole frame —
 a bigger surface than the walls. "They all look similar" is almost always a
 complaint about crowns, not facades.
@@ -191,8 +255,8 @@ complaint about crowns, not facades.
 
 **Buildings agent owns** — `src/citygen/`, `src/map/styles.ts`,
 `src/map/volume.ts`, and inside `ThreeBuildings.ts`: `FRAG`'s per-style
-branches, the crown block, `fitRoofKit`, the `*Geom()` prop builders, the tower
-kit, and `setPlayerBuildings`' massing.
+branches, `Mason` / `crownTop` / `roofDeck`, `fitRoofKit`, the `*Geom()` prop
+builders, the tower kit, and `setPlayerBuildings`' massing.
 
 **Graphics agent owns** — `render()`, `bakeShadows()`, the post stage,
 `buildWater`, `plantStreets`, `buildLawns`, `propMaterial`, and the
@@ -234,6 +298,25 @@ touches `ThreeBuildings.ts`.
 To count what actually reached the scene rather than what the rules say should
 have, prop meshes are named `prop:<kind>` and the wall mesh carries `aStyle`
 per vertex. Both can be read straight off `map.getLayer("bw-three-buildings")`.
+
+### Two probes worth rebuilding, because reading the diff will not do it
+
+Both drive `window.__three` and `window.__store` in a headless browser, and
+both want a **fixed browser profile** so the autosave survives between runs and
+every shot is the same town — `startRun` rerolls the seed, so a fresh profile
+is a different city and nothing is comparable.
+
+- **A geometry fingerprint** — mesh count, vertex count, the summed x and z of
+  every position, and the vertex count per style id, over the whole scene.
+  This is what makes an extraction reviewable: `Mason`, `crownTop` and
+  `roofDeck` were all lifted out of the generator's closure and all three were
+  checked to leave 164,330 vertices and 152 per-style counts *exactly* where
+  they were. A refactor of code this shape cannot be eyeballed.
+- **A player-building slate** — paint a controlled spread of classes, floors
+  and years over a block of real parcels through `setPlayerBuildings`, then
+  count `aStyle`. That is what showed 6 facade families reaching the mesh
+  where the registry offers 82, and 43 after. Nothing in the repo could see
+  that number before, because the audit only sweeps the generator.
 
 **A test that cannot fail is itself a fake.** Before trusting that a number
 moved, check that it *can* move — a gate on a condition the generator never

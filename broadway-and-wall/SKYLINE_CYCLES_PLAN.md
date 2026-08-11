@@ -333,16 +333,18 @@ money-moving phases also require `pnpm gate`.
 
 ---
 
-## Agent execution checklist (next session)
+## Agent execution checklist
 
 ```
-[ ] git checkout -b cursor/skyline-cycles-d634
-[ ] pnpm install && pnpm engine && pnpm check
-[ ] Phase 1 — map click + MapHud
-[ ] pnpm check && commit + push
-[ ] Phase 2 — InboxRail
-[ ] … continue in PR order …
-[ ] Open draft PR when PR1 lands
+[x] git checkout -b cursor/skyline-cycles-d634
+[x] pnpm install && pnpm engine && pnpm check
+[x] Phase 1 — map click + MapHud
+[x] Phase 2 — InboxRail
+[x] Phase 3 — developable + delivery ceremony (construction height already existed)
+[x] Phase 4 — cycle digest + balloon notices on map
+[x] Phase 5 — Primer offer + glossary + Summary/Full OM
+[x] Phase 6–7 (partial) — portfolio show on map; rival delivery toast path
+[ ] Phase 8 — unified delivery queue (engine)
+[ ] Phase 9 — map polish à la carte
+[x] Draft PR: https://github.com/allpro244/CRE-GAME/pull/67
 ```
-
-**First commit message template:** `feat(ui): map click flies to parcel and opens glance card`

@@ -1499,7 +1499,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // HOW BIG THE REQUIREMENT IS, drawn from the city's own distribution
         // of requirements rather than from the size of your building. A firm
         // looking for eight thousand feet is looking for eight thousand feet
-        // whoever owns the floor.
+        // whoever owns the floor. Office rarely draws a consolidator above
+        // 120k (see OFFICE_WHALE_* in absorption.ts) — still capped here by
+        // what this address has left to demise.
         // ...capped by the pool this ADDRESS has left. Odds taper as a
         // building nears what its corner supports, but odds cannot stop a
         // deal already in flight: a letter sized against raw vacancy could

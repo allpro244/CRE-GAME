@@ -4,7 +4,8 @@ import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
-import { netWorth } from "@/engine/value";
+import { isLeasedFee, netWorth, resolveRec } from "@/engine/value";
+import { useSf } from "@/engine/mix";
 import { portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
@@ -79,7 +80,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, line: 0, dealsCount: 0, unread: 0,
+        nw: 0, cf: 0, occSf: 0, occLeased: 0, line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
       };
@@ -88,6 +89,19 @@ export default function TopBar() {
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
     const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    // Same book Leasing totals: operated deeds only (not coupon-only ground
+    // fees), commercial tenants plus multifamily physical occupancy.
+    let occSf = 0, occLeased = 0;
+    if (parcels) {
+      for (const h of Object.values(deferredGame.holdings)) {
+        if (isLeasedFee(h)) continue;
+        const rec = resolveRec(parcels, deferredGame, h.bbl);
+        if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+        occSf += rec.bldgArea;
+        const resSf = useSf(rec, "multifamily");
+        occLeased += h.tenants.reduce((a, t) => a + t.sf, 0) + Math.round((h.occ ?? 0) * resSf);
+      }
+    }
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
@@ -133,13 +147,13 @@ export default function TopBar() {
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
-      nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+      nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
   }, [deferredGame]);
-  const { nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  const { nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -297,7 +311,17 @@ export default function TopBar() {
             w={88}
             title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
           />
-          {/* Base rate rides with NW/CF (drop 2). Market phase and vacant-lot
+          <Stat
+            label="Occupancy"
+            value={occSf ? ((100 * occLeased) / occSf).toFixed(1) + "%" : "—"}
+            bad={occSf > 0 && occLeased / occSf < 0.8}
+            drop={2}
+            w={80}
+            title={occSf
+              ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
+              : "Portfolio occupancy — appears once you own an operated building."}
+          />
+          {/* Base rate rides with NW/CF/occ (drop 2). Market phase and vacant-lot
               counts are drop 3 — only on very wide screens — so they cannot
               clip into "MA" under the Portfolio button on a normal desktop. */}
           <Stat

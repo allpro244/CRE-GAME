@@ -117,16 +117,17 @@ export function LeasingPage() {
     const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
     const teamOn = !!game.teamLeasing && hasLeasingTeam(game);
     const teamReady = hasLeasingTeam(game);
+    // Three covers, one question: who holds the pen?
     const title = game.agent
-      ? "Your leasing agent has the book."
+      ? "Outside agent holds the pen."
       : teamOn
-        ? "Your leasing team has the book."
-        : "You are handling leasing yourself.";
+        ? "Your leasing desk holds the pen."
+        : "You hold the pen.";
     const sub = game.agent
-      ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign. Routine letters do not interrupt you; the scorecard below is how you know they are still closing${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They sign inside your mandate, counter soft letters, pick clear tour winners, and refer expansions, dead heats and capital calls. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
       : teamOn
-        ? `Your people sign and counter inside the mandate below at the ordinary 4%/2% commissions — no LOI popups unless they refer something back. Watch the scorecard${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on Deals.` : "."}`
-        : "Every letter lands on you unless a building has an exclusive broker, or you hand renewals to management below. Hand the book to your team (hire leasing on Staff first) or hire the outside agent at 6% — either way, routine LOIs stop interrupting.";
+        ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
+        : "Default. Every letter lands on you unless a building has an exclusive, or you hand renewals to management below. Hire leasing on Staff, then hand them the book — or hire outside coverage at 6%.";
     return (
       <div className="agent-bar">
         <div>
@@ -135,23 +136,23 @@ export function LeasingPage() {
         </div>
         <div className="btn-row" style={{ flexShrink: 0 }}>
           {game.agent ? (
-            <button className="btn" onClick={() => setAgent(false)}>Take leasing back</button>
+            <button className="btn" onClick={() => setAgent(false)}>Take the pen back</button>
           ) : teamOn ? (
-            <button className="btn" onClick={() => setTeamLeasing(false)}>Take leasing back</button>
+            <button className="btn" onClick={() => setTeamLeasing(false)}>Take the pen back</button>
           ) : (
             <>
               <button
                 className="btn btn-on"
                 disabled={!teamReady}
                 title={teamReady
-                  ? "Your leasing hires sign inside your mandate — no LOI popups"
+                  ? "Hand the leasing desk to your hires — no LOI popups"
                   : "Hire a leasing person on Staff first"}
                 onClick={() => setTeamLeasing(true)}
               >
-                Hand to your team
+                Hand desk to staff
               </button>
               <button className="btn" onClick={() => setAgent(true)}>
-                Hire outside agent · 6%
+                Outside coverage · 6%
               </button>
             </>
           )}

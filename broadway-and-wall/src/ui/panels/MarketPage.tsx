@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { assetValue, marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
+import { streetBookStats } from "@/engine/portfoliosale";
 import { holderOf } from "@/engine/owners";
 import { demandNow } from "@/engine/demand";
 import { LineChart } from "@/ui/Chart";
 import { marketAppetite, ownerOf, gradeOf } from "@/engine/rivals";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, pct } from "@/ui/format";
 import { BrokerCalls } from "@/ui/panels/broker";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
 
@@ -287,6 +288,22 @@ export function MarketPage() {
             const open = expandedBook === p.id;
             const seller = p.sellerLender
               ?? (p.sellerId ? (game.rivals?.find((r) => r.id === p.sellerId)?.name ?? "A fund") : "A seller");
+            // Income, occupancy, yield — the numbers a buyer underwrites before
+            // the discount means anything. See streetBookStats.
+            const st = streetBookStats(game, parcels, p);
+            const mix = st.byClass
+              .filter((c) => c.cls !== "land")
+              .slice(0, 4)
+              .map((c) => `${c.n} ${c.cls === "multifamily" ? "apt" : c.cls.slice(0, 3)}`)
+              .join(" · ");
+            const basisHint = st.basis === "receiver"
+              ? "NOI and occupancy are underwritten worn at the borrower's book occupancy — the same basis the foreclosure docket uses, not a clean appraisal."
+              : st.basis === "disclosed"
+                ? "NOI and occupancy come off disclosed rent rolls."
+                : st.basis === "mixed"
+                  ? "Some buildings have disclosed rolls; the rest are underwritten on the market model or a receiver basis."
+                  : "No rent roll has been disclosed — NOI and occupancy are the market model at street grade.";
+            const monthsOut = Math.max(0, game.month - p.listedM);
             return (
               <div key={p.id} className="deal" style={{ marginBottom: 8 }}>
                 <div className="deal-head" style={{ cursor: "pointer" }}
@@ -294,29 +311,90 @@ export function MarketPage() {
                   <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
                   {p.reo ? "REO · " : ""}{p.bbls.length} buildings
                   {p.reoBorrower ? ` off ${p.reoBorrower}` : ""} · {seller}
+                  {st.occ !== null && (
+                    <span className={"mono" + (st.occ < 0.7 ? " neg" : "")} style={{ marginLeft: 10 }}>
+                      {(st.occ * 100).toFixed(0)}% occ
+                    </span>
+                  )}
+                  {st.yieldOnAsk !== null && (
+                    <span className="mono dim" style={{ marginLeft: 8 }}>
+                      {pct(st.yieldOnAsk * 100)} on ask
+                    </span>
+                  )}
                 </div>
                 <div className="grid">
                   <Row k="Ask" v={usd(p.ask)} strong />
                   <Row k="Sum of the parts" v={usd(p.gross)} />
                   <Row k="Inside the parts" v={`${disc.toFixed(0)}% back`} bad={disc > 8} />
-                  <Row k="On the market since" v={monthLabel(p.listedM)} />
+                  <Row
+                    k="Occupancy"
+                    v={st.occ !== null ? `${(st.occ * 100).toFixed(0)}% · ${sf(st.leasedSf)} of ${sf(st.totSf)}` : "—"}
+                    bad={st.occ !== null && st.occ < 0.7}
+                  />
+                  <Row
+                    k="NOI / yr"
+                    v={usd(st.noi)}
+                    bad={st.noi <= 0}
+                    title={basisHint}
+                  />
+                  <Row
+                    k="Going-in on ask"
+                    v={st.yieldOnAsk !== null ? pct(st.yieldOnAsk * 100) : "—"}
+                    strong={st.yieldOnAsk !== null && st.yieldOnAsk > 0.08}
+                    title="In-place NOI ÷ package ask — the yield the cash cheque buys today"
+                  />
+                  <Row
+                    k="Cap on appraisal"
+                    v={st.yieldOnGross !== null ? pct(st.yieldOnGross * 100) : "—"}
+                    title="Same NOI against the sum of the parts — what the discount is buying you"
+                  />
+                  <Row k="Building area" v={st.totSf ? sf(st.totSf) : "sites only"} />
+                  {st.askPsf !== null && <Row k="Ask / sf" v={`$${st.askPsf.toFixed(0)}`} />}
+                  {mix && <Row k="Mix" v={mix} />}
+                  <Row
+                    k="On the market"
+                    v={monthsOut === 0 ? monthLabel(p.listedM) : `${monthsOut} mo · since ${monthLabel(p.listedM)}`}
+                  />
                   {p.cuts > 0 && <Row k="Price cuts" v={`${p.cuts} — walking down every quarter`} bad />}
                 </div>
                 <div className="hint" style={{ marginTop: 4 }}>{p.reason}</div>
+                <div className="hint dim" style={{ marginTop: 2 }}>{basisHint}</div>
                 {open && (
-                  <div className="mini-list" style={{ marginTop: 8 }}>
-                    {p.bbls.map((bbl) => {
-                      const rec = resolveRec(parcels, game, bbl);
-                      return (
-                        <button key={bbl} className="neighbor" onClick={() => go(bbl)}>
-                          <span className="neighbor-addr">{rec?.address ?? bbl}</span>
-                          <span className="neighbor-meta mono">
-                            {rec ? `${useLabel(rec)} · ${sf(rec.bldgArea)}` : bbl}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <table className="tbl" style={{ marginTop: 8 }}>
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Class</th>
+                        <th className="num">Area</th>
+                        <th className="num">Occ</th>
+                        <th className="num">NOI / yr</th>
+                        <th className="num">Appraisal</th>
+                        <th className="num">Share of ask</th>
+                        <th className="num">Cap on share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {st.assets.map((a) => {
+                        const shareCap = a.askShare > 0 && !a.land ? (a.noi / a.askShare) * 100 : null;
+                        return (
+                          <tr key={a.bbl} style={{ cursor: "pointer" }} onClick={() => go(a.bbl)}>
+                            <td>{a.address}</td>
+                            <td className="dim">{a.land ? "land" : a.cls}{a.floors ? ` · ${a.floors}fl` : ""}</td>
+                            <td className="num">{a.land ? "—" : sf(a.sf)}</td>
+                            <td className={"num" + (!a.land && a.occ < 0.7 ? " neg" : "")}>
+                              {a.land ? "—" : `${(a.occ * 100).toFixed(0)}%`}
+                            </td>
+                            <td className={"num" + (a.noi <= 0 && !a.land ? " neg" : "")}>
+                              {a.land ? "—" : usd(a.noi)}
+                            </td>
+                            <td className="num">{usd(a.val)}</td>
+                            <td className="num">{usd(a.askShare)}</td>
+                            <td className="num">{shareCap !== null ? pct(shareCap) : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
                 <div className="btn-row" style={{ marginTop: 8 }}>
                   <button
@@ -324,13 +402,15 @@ export function MarketPage() {
                     disabled={short > 0}
                     title={short > 0
                       ? `Need ${usd(need)} including 2% closing — short ${usd(short)}`
-                      : `${usd(p.ask)} plus ~${usd(closing)} closing, all cash`}
+                      : `${usd(p.ask)} plus ~${usd(closing)} closing, all cash`
+                        + (st.yieldOnAsk !== null ? ` · ${pct(st.yieldOnAsk * 100)} going-in` : "")}
                     onClick={() => buyStreetBook(p.id)}
                   >
                     Buy the book · {usd(p.ask)}
+                    {st.yieldOnAsk !== null ? ` · ${pct(st.yieldOnAsk * 100)}` : ""}
                   </button>
                   <button className="btn" onClick={() => setExpandedBook(open ? null : p.id)}>
-                    {open ? "Hide addresses" : "See the addresses"}
+                    {open ? "Hide schedule" : "See the schedule"}
                   </button>
                   {short > 0 && (
                     <span className="dim">Short {usd(short)} of the {usd(need)} cheque.</span>

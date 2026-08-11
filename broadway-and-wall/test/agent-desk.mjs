@@ -139,6 +139,39 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
   delete g.holdings[boughtBbl].broker;
 }
 
+// Taking leasing back: hired staff raise skill, they do not hold the pen.
+{
+  g.agent = false;
+  g.renewalMgmt = false;
+  delete g.holdings[boughtBbl].broker;
+  g.holdings[boughtBbl].tenants = [];
+  g.staff = [{
+    id: 1, name: "Test Leaser", role: "leasing", hiredM: 0, salary: 90_000, band0: 20,
+    attrs: { urgency: 70, relationships: 70, marketKnowledge: 70, negotiation: 70, judgment: 70 },
+    obs: { urgency: 70, relationships: 70, marketKnowledge: 70, negotiation: 70, judgment: 70 },
+    // Unassigned used to cover the WHOLE book — that was the bug.
+    assignedBbls: [],
+  }];
+  g.lois = [{
+    id: 451, bbl: boughtBbl, kind: "new", use, name: "Principal Owns This",
+    sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 1.0).toFixed(2),
+    termM: 84, tiPsf: 4, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+  }];
+  check(E.loiNeedsPrincipal(g, g.lois[0]),
+    "loiNeedsPrincipal is true with leasing staff and agent off");
+  check(!E.deskCoverage(g, boughtBbl),
+    "deskCoverage is null for staff alone — exclusive/agent only");
+  check(!E.deskHoldsPen(g),
+    "deskHoldsPen is false when only staff are hired");
+  const before = g.lois.length;
+  E.workLeasingDesk(g, parcels);
+  check(g.lois.length === before && !g.lois[0].referred,
+    "workLeasingDesk leaves letters alone when the principal holds the book");
+  check(g.holdings[boughtBbl].tenants.length === 0,
+    "staff did not auto-sign while the player has leasing");
+  g.staff = [];
+}
+
 console.log("\nQUIET DESK SCORECARD\n");
 {
   g.agent = true;

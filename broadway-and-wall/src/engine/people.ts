@@ -221,10 +221,16 @@ export function makeRivalPrincipal(s: GameState, firmId: string, firmName: strin
  * Birth month for a new hire, drawn from peopleRng AFTER staffRng work is done
  * so the staff stream's step count is unchanged. Age 28–55 at hire.
  */
-export function stampEmployeeLife(s: GameState, st: { bornM?: number; diesM?: number }): void {
+export function stampEmployeeLife(
+  s: GameState,
+  st: { bornM?: number; diesM?: number; hiredM?: number },
+): void {
   if (st.bornM === undefined) {
     const age = Math.round(prrange(s, 28, 55));
-    st.bornM = s.month - age * 12;
+    // Anchor age at hire month when known so a migrated decade-old desk
+    // does not become "thirty today" on load.
+    const at = typeof st.hiredM === "number" && st.hiredM >= 0 ? st.hiredM : s.month;
+    st.bornM = at - age * 12;
   }
   if (st.diesM === undefined) {
     st.diesM = drawDeathM(s, st.bornM, s.month);

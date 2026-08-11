@@ -20,7 +20,7 @@ import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
-import { refinance, buyRateCap } from "@/engine/debt";
+import { refinance, buyRateCap, payOffLoan } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
@@ -180,6 +180,8 @@ interface AppState {
    */
   hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
+  /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
+  payOffLoan: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
   clearBts: (bbl: string) => void;
@@ -628,6 +630,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Repriced. New paper, new clock.");
+    void persist(r.s);
+  },
+
+  payOffLoan: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = payOffLoan(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Paid off.");
     void persist(r.s);
   },
 

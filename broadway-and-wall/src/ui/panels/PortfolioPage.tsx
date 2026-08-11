@@ -8,6 +8,7 @@ import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
+import { payOffDue } from "@/engine/debt";
 import { portfolioQuote } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
@@ -551,6 +552,22 @@ export function PortfolioPage() {
                   >
                     Refi
                   </button>
+                  {h.loan && !game.facility?.bbls?.includes(h.bbl) && (() => {
+                    const due = payOffDue(h.loan, game.month);
+                    const canPay = fundableNow(game, parcels) >= due.due;
+                    return (
+                      <button
+                        className={"btn btn-sm" + (due.balance < 25_000 ? " btn-buy" : "")}
+                        disabled={!canPay}
+                        onClick={(ev) => { ev.stopPropagation(); useStore.getState().payOffLoan(h.bbl); }}
+                        title={canPay
+                          ? `Retire the note for ${usd(due.due)}${due.penalty > 0 ? ` (incl. ${usd(due.penalty)} break)` : ""} — clears the lien for a ground lease`
+                          : `Need ${usd(due.due)} to pay this off`}
+                      >
+                        Pay off
+                      </button>
+                    );
+                  })()}
                   {canGround && (
                     <button
                       className={"btn btn-sm" + (glRow === h.bbl || h.groundOffer ? " btn-on" : "")}
@@ -558,7 +575,7 @@ export function PortfolioPage() {
                       title={h.groundOffer
                         ? `Ground lease offered (${h.groundOffer.years} yr) — open to pull or review terms`
                         : h.loan || game.facility?.bbls?.includes(h.bbl) || h.sale
-                          ? "Clear the lien or listing first, then offer a ground lease"
+                          ? "Clear the lien first (Pay off), then offer a ground lease"
                           : "Offer vacant dirt as an absolutely-net ground lease"}
                     >
                       {h.groundOffer ? "GL" : "Ground"}

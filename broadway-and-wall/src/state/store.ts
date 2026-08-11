@@ -26,7 +26,7 @@ import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facil
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import {
   hire, fire, refreshPool, POOL_REFRESH_M,
-  setSearchTier, setOwnerStyle, setBenchStyle, assignStaff, unassignStaff,
+  setSearchTier, assignStaff, unassignStaff,
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
@@ -1396,26 +1396,12 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  setStaffOwnerStyle: (style) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setOwnerStyle(game, style);
-    set({ game: r.s });
-    toast(style === "handsOn"
-      ? "Hands-on: you keep more cover yourself."
-      : "Delegated: you need staff sooner.");
-    void persist(r.s);
+  setStaffOwnerStyle: (_style) => {
+    // Free capacity dial removed — firm shape emerges from headcount.
   },
 
-  setStaffBenchStyle: (style) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setBenchStyle(game, style);
-    set({ game: r.s });
-    toast(style === "boutique"
-      ? "Boutique: fewer stars move the needle more."
-      : "Platform: a deeper mid-tier bench.");
-    void persist(r.s);
+  setStaffBenchStyle: (_style) => {
+    // Free capacity dial removed — firm shape emerges from headcount.
   },
 
   assignStaffBuilding: (staffId, bbl) => {

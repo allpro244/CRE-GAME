@@ -25,6 +25,9 @@ export const MODULES = [
   // cannot ask what a hire is worth and has to re-derive the band — the exact
   // drift this file exists to prevent.
   "staff",
+  // people is the Person substrate (player, hires, rival principals). Missing
+  // from this list once made every harness re-derive a person — silent drift.
+  "people",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

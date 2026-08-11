@@ -1986,7 +1986,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 32;
+  v: 33;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -2058,15 +2058,31 @@ export interface GameState {
   pmDeskSlip?: number;
   /** How the market reads your hiring history — 0..1, default 0.55. */
   hireReputation?: number;
-  /** handsOn: you cover more sf yourself; delegated: you need staff sooner. */
+  /**
+   * @deprecated Free capacity dial — ignored. Firm shape emerges from headcount
+   * via effectiveOwnerStyle(). Cleared on migrate to v33.
+   */
   ownerStyle?: "handsOn" | "delegated";
-  /** boutique: wider star spread; platform: flatter, reliable mid. */
+  /**
+   * @deprecated Free capacity dial — ignored. Cleared on migrate to v33.
+   */
   benchStyle?: "boutique" | "platform";
   pendingHires?: { staff: import("./staff").Staff; startM: number }[];
   hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
   nextStaffId?: number;
   /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
   staffRng?: number;
+  /**
+   * People stream — mortality, principal synthesis, hire life stamps.
+   * Seeded `seed ^ 0x50454f50`. Must not step s.rng. See people.ts.
+   */
+  peopleRng?: number;
+  /** The participant the player controls — a Person, seat "you". */
+  principal?: import("./people").Person;
+  /** Operating principal per living rival firm id. */
+  rivalPrincipals?: Record<string, import("./people").Person>;
+  /** Ids for non-staff persons (rival principals, heirs). Staff keep nextStaffId. */
+  nextPersonId?: number;
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *

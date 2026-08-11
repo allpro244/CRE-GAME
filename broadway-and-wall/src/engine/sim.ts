@@ -20,6 +20,7 @@ import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
+import { ensurePeople } from "./people";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -128,12 +129,14 @@ function targetListings(s: GameState, totalLots: number): number {
  */
 export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
   const s: GameState = {
-    v: 32,
+    v: 33,
     seed,
     rng: seed,
     streams: initStreams(seed),
     month: 0,
     cash: cash0,
+    peopleRng: (seed ^ 0x50454f50) | 0,
+    nextPersonId: 1,
     econ: null as never,
     holdings: {},
     listings: [],
@@ -180,6 +183,9 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
   };
   s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
+  // Person substrate (player + rival principals). peopleRng only — after every
+  // s.rng draw in initRivals so BASELINE stays bit-identical.
+  ensurePeople(s);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.

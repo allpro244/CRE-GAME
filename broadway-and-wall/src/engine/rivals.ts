@@ -43,6 +43,7 @@ import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
+import { makeRivalPrincipal } from "./people";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1470,11 +1471,14 @@ function maybeNewFirm(s: GameState) {
   // Cash is what has been CALLED. Uncalled is the reserve the LPs signed for —
   // it becomes cash only through callCapital. Handing both as spendable money
   // made every new fund 30–50% overcapitalised on day one.
+  const id = `r${s.rivals.length}`;
   s.rivals.push({
-    id: `r${s.rivals.length}`, name: f.name, style: f.style,
+    id, name: f.name, style: f.style,
     cash: equity - uncalled, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
     uncalled,
   });
+  // Operating principal — peopleRng only, after every rivals-stream draw above.
+  (s.rivalPrincipals ??= {})[id] = makeRivalPrincipal(s, id, f.name);
   s.news.unshift({
     q: s.month, kind: "event",
     text: `${f.name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,

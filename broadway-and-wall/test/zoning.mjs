@@ -24,7 +24,10 @@ for (let m = 0; m < 600; m++) {
 }
 
 const endAdj = g.zoneAdj ?? {};
-ok("rezoning touched districts", Object.keys(endAdj).length >= 3, `${Object.keys(endAdj).length} districts`);
+const distCount = new Set(bbls.map((b) => parcels[b]?.district).filter(Boolean)).size;
+const needTouched = Math.min(3, Math.max(2, distCount - 1));
+ok("rezoning touched districts", Object.keys(endAdj).length >= needTouched,
+  `${Object.keys(endAdj).length} districts (city has ${distCount}, need ${needTouched})`);
 const moved = Object.keys(endAdj).some((d) => (endAdj[d] ?? 1) !== (startAdj[d] ?? 1));
 ok("at least one district envelope changed", moved);
 

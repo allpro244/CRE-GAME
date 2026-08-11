@@ -1546,15 +1546,24 @@ export function startDevelopment(
   const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);   // and a margin for change orders — origination is cash at close too
   const fundable = s.cash + locAvailable(s, parcels);
   if (fundable < commitCap) {
+    const short = commitCap - fundable;
     return {
       s,
-      err: `This job needs $${(plan.equity / 1e6).toFixed(2)}M of equity in total — $${(plan.equityAtClose / 1e6).toFixed(2)}M at close `
-        + `and the rest drawn as it goes up, plus a margin for change orders. You can fund $${(fundable / 1e6).toFixed(2)}M `
-        + `including the line. No lender closes without evidence you can finish it.`,
+      err: `Equity short $${(short / 1e6).toFixed(2)}M to finish this job. `
+        + `Needs $${(plan.equity / 1e6).toFixed(2)}M equity all-in ($${(plan.equityAtClose / 1e6).toFixed(2)}M at close) `
+        + `plus change-order margin; you can fund $${(fundable / 1e6).toFixed(2)}M including the line. `
+        + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
   if (s.cash < plan.equityAtClose + plan.pointsCost) {
-    return { s, err: `The bank funds nothing until your equity is in the ground. That is $${((plan.equityAtClose + plan.pointsCost) / 1e6).toFixed(2)}M at close — equity plus origination — of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. You're short.` };
+    const dayOne = plan.equityAtClose + plan.pointsCost;
+    const short = dayOne - s.cash;
+    return {
+      s,
+      err: `Equity short $${(short / 1e6).toFixed(2)}M at close. `
+        + `The bank funds nothing until $${(dayOne / 1e6).toFixed(2)}M is in the ground (equity plus origination) `
+        + `of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. Cut the massing or raise cash first.`,
+    };
   }
   const next = clone(s);
   // The origination fee is the lender's, paid at close and never part of the

@@ -13,7 +13,7 @@ import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickTalks } from "./acquire";
-import { tickLoan, prepayPenalty, productById } from "./debt";
+import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
 import { releaseCost, tickFacility } from "./facility";
@@ -30,6 +30,7 @@ import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
+import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue } from "./supply";
@@ -448,6 +449,11 @@ function tickMonth(
   // and the August hammer. It reads the street the banks have just had, and
   // it must settle BEFORE the note desk services anything it just resolved.
   tickAuction(s, parcels);
+  // Private credit asks spawn from the same stress the banks just revealed;
+  // funding writes Notes that tickNotes will service. Phase B borrow quotes
+  // read the same month — banks that just refused a takeout.
+  tickPrivateCredit(s, parcels);
+  tickPrivateBorrow(s, parcels);
   // The paper desk reads the month the banks and the street have just had:
   // whose capital ratio broke, who stopped leasing, whose building sold out
   // from under whose mortgage. It cannot run before either of them.
@@ -771,8 +777,11 @@ function tickMonth(
         // does not cover does not evaporate either: it is the lender's loss on
         // non-recourse paper and yours on paper you signed for.
         const { net, tax } = saleTaxQuote(pick, gross, s);
-        const lien = pick.loan?.balance ?? 0;
-        const breakFee = pick.loan ? prepayPenalty(pick.loan, s.month) : 0;
+        // Senior + mezz — same stack as a voluntary sale. Leaving mezz off
+        // the waterfall paid the sponsor Cordage's junior in cash.
+        const stack = stackPayoff(pick, s.month);
+        const lien = stack.balance;
+        const breakFee = stack.penalty;
         // Facility collateral used to walk off at seizure with only the
         // mortgage waterfall — facility loans clear the deed mortgage, so lien
         // was $0 and tickFacility then silently dropped the BBL. Same money
@@ -793,9 +802,19 @@ function tickMonth(
           s.taxesPaid = (s.taxesPaid ?? 0) + tax;
           logBooks(s, "taxes", tax);
         }
-        if (shortfall > 0 && pick.loan) {
-          if (pick.loan.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
-          else chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, shortfall);
+        if (shortfall > 0 && (pick.loan || pick.mezz)) {
+          if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
+          else {
+            // Senior eats first; Cordage takes what's left of the hole.
+            const seniorHole = Math.min(shortfall, stack.seniorBal + stack.seniorPenalty);
+            const mezzHole = shortfall - seniorHole;
+            if (seniorHole > 0 && pick.loan) {
+              chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, seniorHole);
+            }
+            if (mezzHole > 0) {
+              chargeLenderLoss(s, pick.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+            }
+          }
         }
         if (release > 0 && s.facility) {
           s.facility.balance = Math.max(0, s.facility.balance - release);
@@ -918,7 +937,7 @@ function tickMonth(
   // its default with it — a file on a building you no longer own would
   // otherwise sit there and eventually foreclose on somebody else's property.
   for (const bbl of Object.keys(s.workouts ?? {})) {
-    if (!s.holdings[bbl]?.loan) delete s.workouts![bbl];
+    if (!s.holdings[bbl]?.loan && !(s.holdings[bbl]?.mezz?.balance)) delete s.workouts![bbl];
   }
 }
 
@@ -1021,7 +1040,9 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
       title: `Cash is negative — the insolvency clock starts if the line cannot cover it. City phase: ${s.econ.phase}.`,
     };
   }
-  const monthlyDebt = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0)
+  const monthlyDebt = Object.values(s.holdings).reduce(
+    (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+  )
     + (s.facility?.monthlyPmt ?? 0)
     + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
   if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
@@ -1201,6 +1222,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   for (const o of s.noteOffers ?? []) {
     out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents` });
   }
+  // Private-credit asks lapse in two months — same Stop-on-new as bank paper.
+  for (const a of s.privateAsks ?? []) {
+    out.push({
+      key: `private-ask:${a.id}`,
+      label: `${a.rivalName} wants ${a.ratePct.toFixed(1)}% private money on ${a.address} — answer by ${monthLabel(a.expiresM)}`,
+    });
+  }
+  for (const q of s.privateBorrowQuotes ?? []) {
+    out.push({
+      key: `private-borrow:${q.id}`,
+      label: `${q.lenderName} will lend on ${q.address} at ${q.ratePct.toFixed(1)}% — answer by ${monthLabel(q.expiresM)}`,
+    });
+  }
   // Receiver books and fund wind-downs — buyable on Marketplace. Without this
   // Skip runs past the best buying window in the game while rivals clear them.
   for (const p of s.portfolios ?? []) {
@@ -1242,7 +1276,9 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   } else {
     // Forward runway: cash still positive but less than three months of
     // contractual debt service. Waiting for cash < 0 is waiting for the clock.
-    const monthlyDebt = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0)
+    const monthlyDebt = Object.values(s.holdings).reduce(
+      (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+    )
       // Use the contractual facility coupon, not an IO proxy off balance×rate —
       // post-IO amortizing paper is larger, and the runway warning was quiet
       // while the real cheque would drain the account in under three months.
@@ -1335,7 +1371,7 @@ export function portfolioPropertyMonthlyCF(s: GameState, parcels: ParcelTable): 
   let cf = 0;
   for (const h of Object.values(s.holdings)) {
     if (!resolveRec(parcels, s, h.bbl)) continue;
-    cf += ownedMonthlyNoi(s, parcels, h) - (h.loan?.monthlyPmt ?? 0);
+    cf += ownedMonthlyNoi(s, parcels, h) - (h.loan?.monthlyPmt ?? 0) - (h.mezz?.monthlyPmt ?? 0);
   }
   return cf;
 }

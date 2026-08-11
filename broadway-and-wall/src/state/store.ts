@@ -16,11 +16,15 @@ import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
+import {
+  fundPrivateAsk, declinePrivateAsk,
+  acceptPrivateBorrowQuote, declinePrivateBorrowQuote,
+} from "@/engine/privateCredit";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
-import { refinance, buyRateCap, payOffLoan } from "@/engine/debt";
+import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
@@ -180,6 +184,8 @@ interface AppState {
    */
   hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
+  /** Cordage mezz behind a bank senior — Phase C private-credit stack. */
+  placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
@@ -215,6 +221,10 @@ interface AppState {
   restructureNote: (id: string) => void;
   fileNote: (id: string) => void;
   offloadNote: (id: string) => void;
+  fundPrivateAsk: (id: string) => void;
+  declinePrivateAsk: (id: string) => void;
+  acceptPrivateBorrowQuote: (id: string) => void;
+  declinePrivateBorrowQuote: (id: string) => void;
   /** Buy a street / REO book off Marketplace — see engine/portfoliosale.buyPortfolio. */
   buyStreetBook: (id: string) => void;
   bidAuction: (bids: Record<string, number>) => void;
@@ -632,6 +642,15 @@ export const useStore = create<AppState>((set, get) => ({
     toast("Repriced. New paper, new clock.");
     void persist(r.s);
   },
+  placeMezz: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = placeMezz(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Mezz closed.");
+    void persist(r.s);
+  },
 
   payOffLoan: (bbl) => {
     const { game, parcels } = get();
@@ -945,6 +964,34 @@ export const useStore = create<AppState>((set, get) => ({
     const r = sellNote(game, parcels, id);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Sold."); void persist(r.s);
+  },
+  fundPrivateAsk: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fundPrivateAsk(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Funded."); void persist(r.s);
+  },
+  declinePrivateAsk: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateAsk(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
+  },
+  acceptPrivateBorrowQuote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptPrivateBorrowQuote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Borrowed."); void persist(r.s);
+  },
+  declinePrivateBorrowQuote: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateBorrowQuote(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
   },
   // A RECEIVER'S BOOK — or a fund winding down. Lives on Marketplace; the
   // engine always put packages on game.portfolios, but nothing ever called

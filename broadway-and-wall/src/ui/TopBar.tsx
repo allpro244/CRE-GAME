@@ -144,15 +144,22 @@ export default function TopBar() {
     const bcalls = liveBrokerCalls(deferredGame);
     const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
     const notesLive = (deferredGame.noteOffers?.length ?? 0)
+      + (deferredGame.privateAsks?.length ?? 0)
       + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    const privateBorrowLive = deferredGame.privateBorrowQuotes?.length ?? 0;
     // Receiver books / fund packages on Marketplace — the seizure alert's desk.
     const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length
       + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
     let debtBal = 0, debtWall = 0;
     for (const h of Object.values(deferredGame.holdings)) {
-      if (!h.loan) continue;
-      debtBal += h.loan.balance;
-      if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      if (h.loan) {
+        debtBal += h.loan.balance;
+        if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      }
+      if (h.mezz && h.mezz.balance > 0) {
+        debtBal += h.mezz.balance;
+        if (h.mezz.maturityM - deferredGame.month <= 36) debtWall += h.mezz.balance;
+      }
     }
     if (deferredGame.facility) {
       debtBal += deferredGame.facility.balance;
@@ -160,7 +167,7 @@ export default function TopBar() {
     }
     return {
       nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-      debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
+      debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };

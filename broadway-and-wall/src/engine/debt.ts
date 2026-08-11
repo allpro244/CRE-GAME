@@ -379,6 +379,28 @@ export function prepayPenalty(loan: Loan, month: number): number {
 }
 
 /** Balance + break cost to retire a mortgage today. */
+/**
+ * SENIOR + MEZZ AT THE CLOSING TABLE. Sale, seizure, facility, private
+ * takeout and payoff all need the same stack maths — using only `h.loan`
+ * left Cordage junior unpaid and leaked conserve.
+ */
+export function stackPayoff(h: Holding, month: number): {
+  seniorBal: number; mezzBal: number; balance: number;
+  seniorPenalty: number; mezzPenalty: number; penalty: number; due: number;
+} {
+  const senior = h.loan ? payOffDue(h.loan, month) : { balance: 0, penalty: 0, due: 0 };
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, month) : { balance: 0, penalty: 0, due: 0 };
+  return {
+    seniorBal: senior.balance,
+    mezzBal: mezz.balance,
+    balance: senior.balance + mezz.balance,
+    seniorPenalty: senior.penalty,
+    mezzPenalty: mezz.penalty,
+    penalty: senior.penalty + mezz.penalty,
+    due: senior.due + mezz.due,
+  };
+}
+
 export function payOffDue(loan: Loan, month: number): { balance: number; penalty: number; due: number } {
   const balance = Math.max(0, Math.round(loan.balance));
   if (balance <= 0) return { balance: 0, penalty: 0, due: 0 };
@@ -406,9 +428,14 @@ export function payOffLoan(
   if (next.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
   }
-  const { balance, penalty, due } = payOffDue(h.loan, next.month);
+  const senior = payOffDue(h.loan, next.month);
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, next.month) : null;
+  const balance = senior.balance + (mezz?.balance ?? 0);
+  const penalty = senior.penalty + (mezz?.penalty ?? 0);
+  const due = senior.due + (mezz?.due ?? 0);
   if (balance <= 0) {
     h.loan = null;
+    if (h.mezz) h.mezz = null;
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
     return { s: next, msg: "Cleared — nothing was left on the note." };
   }
@@ -428,16 +455,21 @@ export function payOffLoan(
   }
   logBooks(next, "debtSvc", due);
   h.loan = null;
+  if (h.mezz) h.mezz = null;
   if (next.workouts?.[bbl]) delete next.workouts[bbl];
   // Paying as agreed is the quiet good file — not a celebration, not a ding.
   bumpLenderRel(next, lender, 0.5);
+  if (mezz) bumpLenderRel(next, "Cordage Debt Partners", 0.5);
   const addr = rec.address ?? bbl;
   next.news.unshift({
     q: next.month, kind: "deal",
     text: penalty > 0
       ? `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
+        + (mezz ? " and Cordage mezz" : "")
         + ` plus $${penalty.toLocaleString()} to break the paper. The deed is free and clear.`
-      : `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}. The deed is free and clear.`,
+      : `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
+        + (mezz ? " and Cordage mezz" : "")
+        + `. The deed is free and clear.`,
   });
   return {
     s: next,
@@ -936,7 +968,12 @@ export function tickLoan(
   // dollar a month never amortise to exact zero). Under a dollar is noise —
   // clear the lien so a ground lease or sale is not blocked by rounding.
   if (loan.balance > 0 && loan.balance < 1) loan.balance = 0;
-  if (loan.balance === 0) { h.loan = null; return cashOut; }
+  if (loan.balance === 0) {
+    h.loan = null;
+    // Senior gone — mezz is still a claim; it does not vanish with the first lien.
+    cashOut += serviceMezz(s, parcels, rec, h);
+    return cashOut;
+  }
 
   // the balloon. An automatic refi rolls the SAME balance — the bank isn't
   // in the business of handing you equity unasked. Cash-out is a choice you
@@ -986,14 +1023,16 @@ export function tickLoan(
       // Prefer retiring the note when liquidity covers the whole balloon —
       // cleaner than papering a scrap takeout. Then bridge a partial refi.
       // Only open a workout file when the firm cannot fund either path.
-      if (fundableNow(s, parcels) >= payoff) {
-        const paid = fundCashNeed(s, parcels, payoff);
+      const mezzDue = h.mezz?.balance ?? 0;
+      if (fundableNow(s, parcels) >= payoff + mezzDue) {
+        const paid = fundCashNeed(s, parcels, payoff + mezzDue);
         logBooks(s, "debtSvc", paid);
         h.loan = null;
+        if (h.mezz) h.mezz = null;
         s.news.unshift({
           q, kind: "deal",
           text: `Balloon at ${rec.address}: no clean refinancing, so you retired the `
-            + `$${(payoff / 1e6).toFixed(2)}M note out of firm liquidity. The building is free and clear.`,
+            + `$${(payoff / 1e6).toFixed(2)}M note${mezzDue ? ` and ${((mezzDue) / 1e6).toFixed(2)}M of mezz` : ""} out of firm liquidity. The building is free and clear.`,
         });
       } else if (fundableNow(s, parcels) >= shortfall) {
         const paid = fundCashNeed(s, parcels, shortfall);
@@ -1037,11 +1076,165 @@ export function tickLoan(
       }
     }
   }
+  cashOut += serviceMezz(s, parcels, rec, h);
   return cashOut;
 }
 
-// A 3-year rate cap on a floating loan: pay ~1.25% of balance today, and the
-// index leg can't reprice above (current index + 0.5) until it expires.
+/** Bank seniors that can carry Cordage mezz behind them — not bridge / private. */
+const MEZZ_SENIOR_OK = new Set(["savings", "harbor", "pelican", "conduit"]);
+
+/**
+ * ONE MONTH OF MEZZ. Senior has already taken its coupon. Mezz is IO to the
+ * balloon; miss → Cordage marks the file (workout on the deed if none open).
+ */
+function serviceMezz(
+  s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding,
+): number {
+  const m = h.mezz;
+  if (!m || m.balance <= 0) {
+    if (m && m.balance <= 0) h.mezz = null;
+    return 0;
+  }
+  if (m.floating) {
+    m.ratePct = +(s.econ.indexRate + m.spread).toFixed(2);
+  }
+  m.monthlyPmt = Math.ceil((m.balance * m.ratePct) / 100 / 12);
+  const pmt = m.monthlyPmt;
+  if (fundableNow(s, parcels) >= pmt) {
+    const paid = fundCashNeed(s, parcels, pmt);
+    logBooks(s, "debtSvc", paid);
+    m.arrearsMs = 0;
+  } else {
+    m.arrearsMs = (m.arrearsMs ?? 0) + 1;
+    if ((m.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
+      openWorkout(s, h.bbl, "arrears", m.balance);
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `Mezz at ${rec.address} has missed three coupons. ${m.holder ?? "Cordage Debt Partners"} `
+          + `has opened a file — the senior is still current, but the junior is not.`,
+      });
+    }
+  }
+  if (s.month >= m.maturityM && !s.workouts?.[h.bbl]) {
+    if (fundableNow(s, parcels) >= m.balance) {
+      const paid = fundCashNeed(s, parcels, m.balance);
+      logBooks(s, "debtSvc", paid);
+      h.mezz = null;
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `Mezz balloon at ${rec.address} retired — $${(m.balance / 1e6).toFixed(2)}M back to `
+          + `${m.holder ?? "Cordage Debt Partners"}.`,
+      });
+    } else {
+      openWorkout(s, h.bbl, "balloon", m.balance);
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The mezz balloon came due at ${rec.address} and you cannot clear `
+          + `$${(m.balance / 1e6).toFixed(2)}M. Cordage has put the junior in workout.`,
+      });
+    }
+  }
+  return pmt;
+}
+
+export interface MezzQuote {
+  available: boolean;
+  principal: number;
+  ratePct: number;
+  points: number;
+  termM: number;
+  ltvCombined: number;
+  why?: string;
+}
+
+/**
+ * Cordage mezz behind YOUR bank senior only. Not a refinance replace — a
+ * second lien on Holding.mezz. Refuses private/Cordage seniors, facility
+ * pledges, workouts, and a second stack.
+ */
+export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): MezzQuote {
+  const h = s.holdings[bbl];
+  const rec = resolveRec(parcels, s, bbl);
+  const empty: MezzQuote = { available: false, principal: 0, ratePct: 0, points: 0.025, termM: 84, ltvCombined: 0 };
+  if (!h || !rec) return { ...empty, why: "You don't own that." };
+  if (!h.loan) return { ...empty, why: "Mezzanine sits behind a senior — put a first mortgage on first." };
+  if (h.mezz && h.mezz.balance > 0) return { ...empty, why: "There is already mezz on this deed." };
+  if (s.facility?.bbls.includes(bbl)) {
+    return { ...empty, why: "This deed is pledged to your facility." };
+  }
+  if (s.workouts?.[bbl]) return { ...empty, why: "A workout file is open — nobody stacks behind a problem." };
+  if (!MEZZ_SENIOR_OK.has(h.loan.product) || h.loan.holder) {
+    return { ...empty, why: "Mezz only stacks behind clean bank seniors — not Cordage, not private holders." };
+  }
+  const product = productById("mezz");
+  if (!productOpen(s, product) || !windowOpen(s, product)) {
+    return { ...empty, why: "Cordage will not look at mezz for you right now." };
+  }
+  const value = ownedHoldingValueFromRec(s, rec, h);
+  const room = Math.max(0, value * product.ltv - h.loan.balance);
+  const principal = Math.floor(room / 25_000) * 25_000;
+  if (principal < 250_000) {
+    return { ...empty, why: "No room behind the senior to the 85% stack — pay down the first lien or wait for value." };
+  }
+  const ratePct = +(s.econ.indexRate + product.spread).toFixed(2);
+  return {
+    available: true,
+    principal,
+    ratePct,
+    points: product.points,
+    termM: product.termM,
+    ltvCombined: (h.loan.balance + principal) / Math.max(1, value),
+  };
+}
+
+export function placeMezz(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): { s: GameState; err?: string; msg?: string } {
+  const q = mezzQuote(s, parcels, bbl);
+  if (!q.available || q.principal < 250_000) {
+    return { s, err: q.why ?? "No mezz quote." };
+  }
+  const next = cloneState(s);
+  const h = next.holdings[bbl]!;
+  const rec = resolveRec(parcels, next, bbl)!;
+  const points = Math.round(q.principal * q.points);
+  const net = q.principal - points;
+  next.cash += net;
+  logBooks(next, "borrowed", q.principal);
+  logBooks(next, "debtSvc", points);
+  h.mezz = {
+    product: "mezz",
+    holder: "Cordage Debt Partners",
+    floating: false,
+    points: q.points,
+    recourse: false,
+    prepay: "stepdown",
+    prepayUntilM: next.month + 48,
+    principal: q.principal,
+    balance: q.principal,
+    ratePct: q.ratePct,
+    spread: productById("mezz").spread,
+    ioUntilM: next.month + productById("mezz").ioM,
+    amortYears: 30,
+    maturityM: next.month + q.termM,
+    monthlyPmt: Math.round((q.principal * q.ratePct) / 100 / 12),
+    minDSCR: productById("mezz").minDSCR,
+    maxLTV: productById("mezz").maxLTV,
+    sweep: false,
+    cleanQs: 0,
+    originM: next.month,
+    origValue: Math.round(ownedHoldingValueFromRec(next, rec, h)),
+  };
+  bumpLenderRel(next, "Cordage Debt Partners", 2);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Cordage stacked $${(q.principal / 1e6).toFixed(2)}M of mezz behind the senior at ${rec.address} — `
+      + `${q.ratePct.toFixed(2)}%, ${(q.points * 100).toFixed(1)} points, due ${monthLabel(next.month + q.termM)}. `
+      + `You cleared $${(net / 1e6).toFixed(2)}M. The coupon is why nobody does this twice.`,
+  });
+  sweepLocIdleCash(next, { announce: true });
+  return { s: next, msg: `Mezz closed — $${(q.principal / 1e6).toFixed(2)}M.` };
+}
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {
   return Math.round(loan.balance * 0.0125);
@@ -1237,7 +1430,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : p.minCondition === "good" && h.condition !== "good"
         ? "Life-company money wants a well-kept building. Renovate first."
         : p.mezz
-        ? "Mezzanine sits behind a senior — this desk does not stack liens on refinance yet. Reprice the first mortgage, or leave it."
+        ? "Mezzanine sits behind a senior — use Place mezz on the refinance desk, do not replace the first lien."
         : p.minLoan && q.principal === 0 && !vacantDirt
         ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
         /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
@@ -1260,7 +1453,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : undefined,
     } satisfies RefiQuote;
   });
-  return { quotes, value, payoff: h.loan?.balance ?? 0 };
+  return { quotes, value, payoff: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) };
 }
 
 // Player-initiated refinance at current rates and value. `lev` scales the new
@@ -1275,7 +1468,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   }
   const product = productById(productId);
   if (product.mezz) {
-    return { s, err: "Mezzanine sits behind a senior — this desk does not stack liens on refinance yet. Reprice the first mortgage, or leave it." };
+    return { s, err: "Mezzanine sits behind a senior — use Place mezz, do not replace the first lien." };
   }
   if (!productOpen(next, product)) {
     return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge money will still talk.` };
@@ -1292,8 +1485,11 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
   const full = quote(next, product, value, noi, quoteClass, false, stab);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
-  const oldBal = h.loan?.balance ?? 0;
-  const penalty = h.loan ? prepayPenalty(h.loan, next.month) : 0;
+  const seniorBal = h.loan?.balance ?? 0;
+  const mezzBal = h.mezz?.balance ?? 0;
+  const oldBal = seniorBal + mezzBal;
+  const penalty = (h.loan ? prepayPenalty(h.loan, next.month) : 0)
+    + (h.mezz ? prepayPenalty(h.mezz, next.month) : 0);
   const points = Math.round(qd.principal * product.points);
   const capPremium = product.floating ? Math.round(qd.principal * 0.0125) : 0;
   const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty + capPremium;
@@ -1306,7 +1502,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
       s,
       err: penalty > 0
         ? `Proceeds don't cover the payoff. Breaking the old loan early costs $${(penalty / 1e6).toFixed(2)}M in ${h.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment"}.`
-        : "Proceeds don't cover the payoff — you're underwater on this refi.",
+        : mezzBal > 0
+          ? "Proceeds don't cover the senior and the mezz — you're underwater on this refi."
+          : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
   const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab);
@@ -1322,6 +1520,8 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (netDraw > 0) logBooks(next, "borrowed", netDraw);
   else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
   h.loan = newLoan;
+  // A takeout retires the stack — mezz does not survive a senior refinance.
+  if (h.mezz) h.mezz = null;
   // A takeout is a cure. Leaving the workout file open made the desk keep
   // asking for a refinancing after you had just closed one — and refreshed
   // the cure against the NEW balance.
@@ -1329,6 +1529,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Refinanced ${rec.address}: $${(qd.principal / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% (${product.label})`
+      + (mezzBal > 0 ? `, retiring $${(mezzBal / 1e6).toFixed(2)}M of mezz` : "")
       + (penalty > 0 ? `, after $${(penalty / 1e6).toFixed(2)}M to break the old paper` : "")
       + (capPremium > 0 ? `, plus $${(capPremium / 1e6).toFixed(2)}M for the rate cap` : "")
       + ".",

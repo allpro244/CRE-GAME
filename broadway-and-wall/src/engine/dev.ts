@@ -1132,7 +1132,7 @@ export function adaptiveReuseEligibility(
   if (s.developments[bbl]) return { ok: false, why: "A project is already under way." };
   if (h.groundLeased || s.groundLeases?.[bbl]) return { ok: false, why: "The ground lessee controls the improvement." };
   if (h.sale) return { ok: false, why: "Pull the sale process before starting a conversion." };
-  if (h.loan || s.facility?.bbls.includes(bbl)) {
+  if (h.loan || (h.mezz?.balance ?? 0) > 0 || s.facility?.bbls.includes(bbl)) {
     return { ok: false, why: "Existing secured debt must be paid off or released before a conversion loan closes." };
   }
   const occupied = h.tenants.reduce((a, t) => a + t.sf, 0)
@@ -1739,6 +1739,9 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (h.sale) return { s, err: "It's on the market — pull the listing first." };
+  if (h.loan || (h.mezz?.balance ?? 0) > 0) {
+    return { s, err: "Pay off the mortgage first — nobody demolishes under a lien." };
+  }
   // OCCUPIED SPACE IS OCCUPIED SPACE — including the flats, which this used to
   // ignore entirely, so a full apartment block with no commercial roll could be
   // knocked down with people living in it.

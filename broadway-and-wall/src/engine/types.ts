@@ -377,6 +377,14 @@ export interface Holding {
   lastTaxAppealM?: number;
   loan: Loan | null;
   /**
+   * JUNIOR PAPER BEHIND YOUR SENIOR. Cordage mezz only — never a second first
+   * lien. Absent unless you closed a Phase C stack. See debt.placeMezz and
+   * PRIVATE_CREDIT.md.
+   */
+  mezz?: Loan | null;
+  /** Month you last closed a private bridge on this deed — cooldown for re-quotes. */
+  lastPrivateBridgeM?: number;
+  /**
    * The label. It is a READING of condIdx below, recomputed every month — see
    * condGrade in value.ts. Kept as a string because every consumer in the
    * engine (rent multiplier, cap spread, lender minimums, leasing odds, bundle
@@ -2313,6 +2321,18 @@ export interface GameState {
   noteOffers?: NoteOffer[];
   nextNoteId?: number;
   /**
+   * RIVALS ASKING YOU FOR HARD MONEY. Shortlist, expires — same choreography
+   * as note offers. See engine/privateCredit.ts and PRIVATE_CREDIT.md.
+   */
+  privateAsks?: PrivateCreditAsk[];
+  nextPrivateAskId?: number;
+  /**
+   * HARD-MONEY OFFERS TO YOU. Shortlist, expires — when banks refuse or
+   * hold-cap a takeout. See engine/privateCredit.ts Phase B.
+   */
+  privateBorrowQuotes?: PrivateBorrowQuote[];
+  nextPrivateBorrowId?: number;
+  /**
    * PAPER YOU PASSED ON.
    *
    * An offer that expires unbought is taken by somebody with money, and
@@ -2778,6 +2798,12 @@ export interface Note {
   collected: number;       // coupon received to date
   mods: number;            // times you have modified it; one is the limit
   /**
+   * YOU WROTE THIS PAPER. Not bought off a bank — originated from the private
+   * credit sleeve. Maturity / sale payoff must clear the rival's debt and the
+   * cityLoans row; purchased notes already left the bank ledger at buy.
+   */
+  privateOriginated?: boolean;
+  /**
    * MISSED COUPON, ACCUMULATING. From the month it stops paying, the coupon it
    * is not paying piles up here — and it is a real claim: a borrower who
    * reinstates pays it all, with a penalty, and a sale that clears above the
@@ -2788,6 +2814,51 @@ export interface Note {
   saleM?: number;          // the July it crosses the block — see engine/auction.ts
   /** The month it last told you something, so it cannot tell you twice. */
   toldM?: number;
+}
+
+/**
+ * A RIVAL WANTS YOUR MONEY. Hard-money bridge — not a permanent bank product.
+ * See PRIVATE_CREDIT.md.
+ */
+export interface PrivateCreditAsk {
+  id: string;
+  rivalId: string;
+  rivalName: string;
+  bbl: string;
+  address: string;
+  face: number;
+  ratePct: number;
+  /** Origination fee as a share of face — cash to you at close. */
+  points: number;
+  termM: number;
+  ltv: number;
+  asIs: number;
+  why: string;
+  offeredM: number;
+  expiresM: number;
+}
+
+/**
+ * A RIVAL (OR CORDAGE-LIKE DESK) WILL LEND TO YOU. Mirror of PrivateCreditAsk
+ * with the obligor flipped — closes into Holding.loan so tickLoan / workouts
+ * already apply. See PRIVATE_CREDIT.md Phase B.
+ */
+export interface PrivateBorrowQuote {
+  id: string;
+  lenderId: string;
+  lenderName: string;
+  bbl: string;
+  address: string;
+  principal: number;
+  ratePct: number;
+  /** Origination fee as a share of principal — keeps with the lender. */
+  points: number;
+  termM: number;
+  ltv: number;
+  asIs: number;
+  why: string;
+  offeredM: number;
+  expiresM: number;
 }
 
 /**

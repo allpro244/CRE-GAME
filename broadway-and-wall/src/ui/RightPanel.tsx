@@ -95,7 +95,7 @@ export default function GamePanels() {
     : page === "saves" ? "Autosave status and named points you can return to."
     : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
     : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
-    : page === "notes" ? "Loans and distressed paper available away from the deed market."
+    : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
     : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."

@@ -1051,16 +1051,28 @@ export function DebtPage() {
     for (const { h, v, noi: nn } of rows) {
       val += v; noi += nn;
       const l = h.loan;
-      if (!l) continue;
-      n++;
-      bal += l.balance;
-      wRate += l.balance * l.ratePct;
-      wam += l.balance * Math.max(0, (l.maturityM - game.month) / 12);
-      if (l.floating ?? l.product === "float") flo += l.balance;
-      if (l.maturityM - game.month <= 36) wall36 += l.balance;
-      if (game.month < l.ioUntilM) ioBal += l.balance;
-      if (productById(l.product).recourse) recourseBal += l.balance;
-      ds += l.monthlyPmt * 12;
+      const m = h.mezz && h.mezz.balance > 0 ? h.mezz : null;
+      if (!l && !m) continue;
+      if (l) {
+        n++;
+        bal += l.balance;
+        wRate += l.balance * l.ratePct;
+        wam += l.balance * Math.max(0, (l.maturityM - game.month) / 12);
+        if (l.floating ?? l.product === "float") flo += l.balance;
+        if (l.maturityM - game.month <= 36) wall36 += l.balance;
+        if (game.month < l.ioUntilM) ioBal += l.balance;
+        if (productById(l.product).recourse) recourseBal += l.balance;
+        ds += l.monthlyPmt * 12;
+      }
+      if (m) {
+        if (!l) n++;
+        bal += m.balance;
+        wRate += m.balance * m.ratePct;
+        wam += m.balance * Math.max(0, (m.maturityM - game.month) / 12);
+        if (m.maturityM - game.month <= 36) wall36 += m.balance;
+        if (game.month < m.ioUntilM) ioBal += m.balance;
+        ds += m.monthlyPmt * 12;
+      }
     }
     const f = game.facility;
     if (f) {
@@ -1103,7 +1115,12 @@ export function DebtPage() {
   const ladder = (() => {
     const by = new Map<number, number>();
     const yr = (m: number) => START_YEAR + Math.floor(m / 12);
-    for (const { h } of rows) if (h.loan) by.set(yr(h.loan.maturityM), (by.get(yr(h.loan.maturityM)) ?? 0) + h.loan.balance);
+    for (const { h } of rows) {
+      if (h.loan) by.set(yr(h.loan.maturityM), (by.get(yr(h.loan.maturityM)) ?? 0) + h.loan.balance);
+      if (h.mezz && h.mezz.balance > 0) {
+        by.set(yr(h.mezz.maturityM), (by.get(yr(h.mezz.maturityM)) ?? 0) + h.mezz.balance);
+      }
+    }
     if (game.facility) by.set(yr(game.facility.maturityM), (by.get(yr(game.facility.maturityM)) ?? 0) + game.facility.balance);
     for (const d of Object.values(game.developments ?? {})) {
       if (d.loanBalance > 0) by.set(yr(d.deliverM + 12), (by.get(yr(d.deliverM + 12)) ?? 0) + d.loanBalance);
@@ -1145,6 +1162,47 @@ export function DebtPage() {
           Books still shows the drawn balance as a liability; draw and repay live
           here with the mortgages and the facility. */}
       <CreditLine />
+
+      {(game.privateBorrowQuotes?.length ?? 0) > 0 && (
+        <>
+          <div className="page-section">Private borrow offers</div>
+          <div className="hint" style={{ marginBottom: 8 }}>
+            When the banks refuse or hold-cap a takeout, a rival with powder may quote a short bridge.
+            Accept on the property refinance desk, or here. Expensive, finite, enforceable.
+          </div>
+          {(game.privateBorrowQuotes ?? []).map((q) => {
+            const h = game.holdings[q.bbl];
+            const payoff = (h?.loan?.balance ?? 0) + (h?.mezz?.balance ?? 0);
+            const pts = Math.round(q.principal * q.points);
+            const penalty = (h?.loan ? payOffDue(h.loan, game.month).penalty : 0)
+              + (h?.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, game.month).penalty : 0);
+            const net = q.principal - payoff - pts - penalty;
+            return (
+              <div key={q.id} className="hint" style={{ marginBottom: 10 }}>
+                <div style={{ cursor: "pointer" }} onClick={() => useStore.getState().focus(q.bbl, true)}>
+                  <strong>{q.address}</strong> · {q.lenderName} will write{" "}
+                  <b className="mono">{usd(q.principal)}</b> at <b className="mono">{q.ratePct.toFixed(2)}%</b>,{" "}
+                  {(q.points * 100).toFixed(1)} points, {q.termM} months
+                </div>
+                <div className="dim" style={{ marginTop: 4 }}>{q.why}</div>
+                <div style={{ marginTop: 4 }}>
+                  Net after takeout:{" "}
+                  <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
+                  {" · "}lapses {monthLabel(q.expiresM)}.
+                </div>
+                <div className="btn-row" style={{ marginTop: 6 }}>
+                  <button className="btn" onClick={() => useStore.getState().acceptPrivateBorrowQuote(q.id)}>
+                    Take private · {usd(q.principal)}
+                  </button>
+                  <button className="btn-mini" onClick={() => useStore.getState().declinePrivateBorrowQuote(q.id)}>
+                    Pass
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {/* THE THREE THINGS THAT ACTUALLY END FIRMS, and none of them is the
           coupon: how much of the book reprices, how much of it is due soon,

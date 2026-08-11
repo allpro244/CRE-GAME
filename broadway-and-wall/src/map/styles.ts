@@ -752,6 +752,53 @@ export function styleFor(v: BuildingVolume): number {
   // The BUILDING, not just its year and its height — see stylePool. Keying on
   // the deed is what stops two towers finished the same year being twins.
   const pool = stylePool(v);
+  return pick(pool, v);
+}
+
+/** The chooser both entry points share, so they cannot drift apart. */
+function pick(pool: number[], v: BuildingVolume): number {
   const h = hash01(keyOf(v.b) ^ 0x5f3a91c7, ((v.y | 0) * 2654435761) >>> 0);
   return pool[Math.min(pool.length - 1, Math.floor(h * pool.length))];
+}
+
+/**
+ * NOT EVERY BUILDING IN A CITY IS A BUILDING SOMEBODY DEVELOPED.
+ *
+ * These four are in the pools because a town HAS them and they have to be
+ * drawn — but none of them is a lettable asset, and none of them is a thing a
+ * developer builds and holds. A parking deck has no leasable floor in it at
+ * all; a substation, a bus canopy and a control tower are infrastructure that
+ * arrives with a utility or an airfield rather than with a capital stack.
+ *
+ * The distinction only matters on the built-to-order path, where the class is
+ * something the player chose and underwrote. The generator keeps all four:
+ * that is the difference between "what stands here" and "what was developed".
+ */
+const NOT_BUILT_TO_ORDER = new Set([S_GARAGE, S_SUBSTATION, S_BUSCANOPY, S_CONTROLTWR]);
+
+/**
+ * WHAT A BUILDING SOMEBODY JUST FINISHED WEARS.
+ *
+ * The renderer has two paths that make buildings and only one of them was
+ * asking this file. `setPlayerBuildings` — everything the player and the
+ * rivals put up, which after twenty years is most of downtown — carried its
+ * own ladder of six hard-coded ids, and three of the six were era-wrong for a
+ * building finished this month: new retail came out as mid-century ribbon
+ * windows, new industrial as nineteenth-century mill sash, and one office in
+ * seven as 1920s deco piers. A hundred and forty-four families existed and the
+ * half of the city the player is responsible for could reach six of them.
+ *
+ * So it asks the same chooser the stock does, on the same inputs, minus the
+ * families above. Same class, same year, same floors, same deed hash — which
+ * means a tower the player finishes in 2014 is drawn by the rules that would
+ * have drawn it had the generator put it there in 2014, and the two
+ * populations stop being distinguishable by eye. That was the whole point of
+ * `styles.ts` being its own file; half the city was not using it.
+ */
+export function styleForBuilt(v: BuildingVolume): number {
+  if (v.d) return S_PLAIN;
+  const pool = stylePool(v).filter((s) => !NOT_BUILT_TO_ORDER.has(s));
+  // A pool is never empty, but a filtered one could be — fall back rather than
+  // return undefined and paint the whole building flat grey.
+  return pool.length ? pick(pool, v) : styleFor(v);
 }

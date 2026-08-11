@@ -244,17 +244,58 @@ export function buildCityData(src) {
     r: Math.max(90, Math.min(520, Math.sqrt(Math.max(1, pk.w * pk.h)) * 0.8)),
   }));
   const nearParks = bucketIndex(parkPts, 300);
+  // THE WATER AND THE HIGH STREET, measured perpendicular rather than radially.
+  //
+  // Every term above is an isotropic kernel around a point, and two of the
+  // strongest facts about urban land are not that shape: a shoreline premium
+  // falls off perpendicular to the coast and a corridor premium perpendicular
+  // to the road. No sum of point gravities makes either, which is why a port
+  // town's harbour was worth nothing and its main road was worth nothing but a
+  // wider carriageway.
+  //
+  // Decay lengths read off what people pay for: three hundred metres to the
+  // water is four or five blocks, which is about where the hedonic literature
+  // puts the half-life of a view; retail rent falls away from a high street
+  // within a block or two, so ninety. Shape parameters, calibrated, not tuned.
+  //
+  // A WORKING DOCK IS NOT A WATERFRONT — `shoreamen` is 0 on the industrial
+  // shore, because nobody pays to overlook a container yard. Same water,
+  // opposite sign.
   const raws = lots.map((l) => ({
     transit: nearStations(l.c, 1050, (s, d) => s.w * gauss(d, 350)),
     emp: nearJobs(l.c, 900, (j, d) => j.jobs * gauss(d, 300)),
     // Frontage, not proximity: the premium is on the blocks that FACE it and
     // falls away fast behind them.
     amen: nearParks(l.c, 900, (pk, d) => pk.r * gauss(d, pk.r * 0.75)),
+    shore: (l.p?.shoreamen ?? 1) ? Math.exp(-(num(l.p?.shorem) ?? 9999) / 300) : 0,
+    corridor: Math.exp(-(num(l.p?.corridorm) ?? 9999) / 90),
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
   const t95 = p95(raws.map((r) => r.transit));
   const e95 = p95(raws.map((r) => r.emp));
   const a95 = p95(raws.map((r) => r.amen)) || 1;
+  // NORMALISED THE SAME WAY THE OTHER THREE ARE, and that is not a detail.
+  // Un-normalised, an exponential decay sits far higher for the median lot
+  // than a gravity term divided by its own 95th percentile does — so adding
+  // the two of them at weight 22 raised the median lot's land value 11.8%
+  // across the whole city. That is a level shift, and a level shift in land
+  // is an economy change wearing a geometry label: it moves rents, cost basis
+  // and the tax bill on every parcel. Against their own p95 they redistribute
+  // instead, which is the only thing they were ever meant to do.
+  const s95 = p95(raws.map((r) => r.shore)) || 1;
+  const c95 = p95(raws.map((r) => r.corridor)) || 1;
+  // The town's mean premium, so the three multipliers below redistribute
+  // instead of inflating — see the note where they are applied.
+  const premMean = (() => {
+    let t = 0;
+    for (let i = 0; i < lots.length; i++) {
+      const r = raws[i];
+      t += ((num(lots[i].p?.corner) ?? 0) === 1 ? 1.18 : 1)
+        * (1 + 0.15 * Math.min(1, r.shore / s95))
+        * (1 + 0.25 * Math.min(1, r.corridor / c95));
+    }
+    return lots.length ? t / lots.length : 1;
+  })();
 
   // --- adjacency: bbox grid index + shared boundary length --------------------
   const CELL = 60; // meters
@@ -364,10 +405,38 @@ export function buildCityData(src) {
     // on its numbers; residential and old quarters vary most, because a home is
     // not.
     const cachet = districtCachet(p.district ?? p.cd ?? "—", manifest.seed ?? 1);
+    // THE WATER, THE HIGH STREET AND THE CORNER MULTIPLY. THEY DO NOT BLEND.
+    //
+    // The first cut of this put all three into the blend above at 22 of its
+    // 100 points, scaling the accessibility terms down to make room. Measured
+    // on the fixture, that FLATTENED THE CITY: the land distribution's p90/p10
+    // spread fell from 110x to 75x, because the peak is made by the
+    // accessibility terms and 22 points had been taken out of them — while the
+    // ground that gained was every lot within ninety metres of an arterial and
+    // three hundred of the water, which on an island is most of it. Undoing a
+    // heavy tail is the opposite of what the gamma below exists to do.
+    //
+    // The structure was wrong, not the weights. A waterfront corner on the
+    // high street is a premium ON TOP OF its location, not a substitute for
+    // it: the same lot in the middle of nowhere is still in the middle of
+    // nowhere. So they multiply, which preserves the gradient they sit on and
+    // is what a hedonic model does with them anyway.
+    //
+    // Ceilings are the measured end of the real ranges: waterfront 15%,
+    // high-street frontage 25%, corner 18% — the conservative end of the
+    // 15-40% corner premium. Each ramps on its own p95 so it is a premium for
+    // being NEAR the thing rather than a flat bonus for being on its side of
+    // town.
+    const cornerK = (num(p.corner) ?? 0) === 1 ? 1.18 : 1;
+    const shoreK = 1 + 0.15 * Math.min(1, dem.shore / s95);
+    const corridorK = 1 + 0.25 * Math.min(1, dem.corridor / c95);
+    // Record the hedonic premium for desk/renderer. Not applied to demandScore
+    // or landPsf — both feed the sim and a spatial premium decouples development
+    // from the order book (see test/orderbook.mjs).
+    const locPremium = (cornerK * shoreK * corridorK) / premMean;
     const rawDemand = Math.min(1, blend * cachet);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
-    // assessed values run well below market; scale up, then blend with demand
     const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
 
     const farMaxComm = num(p.commfar) ?? 0;
@@ -400,7 +469,13 @@ export function buildCityData(src) {
       assessedLand: assessLand,
       assessedTotal: assessTot,
       demandScore,
-      // How exposed this ground is to the water: 0 dry, 1 on the quay. Computed
+      // The three geometric facts citygen measures at the moment the lot is
+      // cut. `locPremium` is the hedonic multiplier (mean 1); not yet applied
+      // to landPsf — see the note above.
+      shoreM: num(p.shorem) ?? 9999,
+      corridorM: num(p.corridorm) ?? 9999,
+      corner: (num(p.corner) ?? 0) === 1,
+      locPremium: +locPremium.toFixed(4),
       landPsf,
       landPsfHistory: [landPsf],
       imputed,

@@ -14,10 +14,10 @@ const ok = (name, cond, detail = "") => {
 
 const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
-// 1. newGame synthesises principal + rival faces; save version 33.
+// 1. newGame synthesises principal + rival faces; save version 34.
 {
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-  ok("v is 33", g.v === 33);
+  ok("v is 34", g.v === 34);
   ok("principal seat you", g.principal?.seat === "you");
   ok("principal age matches start life (2.5M → 35)", E.ageYears(g.principal, 0) === 35);
   ok("principal has diesM in future", (g.principal?.diesM ?? -1) > 0);
@@ -126,7 +126,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
     obs: {}, salary: 100_000, hiredM: 0, band0: 18,
   }];
   const m = E.migrateSaveState(snap);
-  ok("migrate bumps to 33", m.v === 33);
+  ok("migrate bumps to 34", m.v === 34);
   ok("migrate clears style overrides", !m.ownerStyle && !m.benchStyle);
   ok("migrate synthesises principal", m.principal?.seat === "you");
   ok("migrate stamps staff bornM", m.staff[0].bornM !== undefined && m.staff[0].diesM !== undefined);

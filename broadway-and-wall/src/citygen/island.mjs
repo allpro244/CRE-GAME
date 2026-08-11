@@ -1719,32 +1719,130 @@ export function islandConfig(seed) {
   const Dp = dice(stream(s, 0x9a2c5));
   const parkDeg = +(-districts[kCore].bearingDeg).toFixed(1);
   const parks = [];
-  const fits = (cx, cy, w, h, deg) => {
-    const r = rect(cx, cy, w, h, deg);
-    const probes = [...r, ...r.map((p, i) => {
-      const q = r[(i + 1) % r.length];
+  // ---- WHAT SHAPE A PARK IS ------------------------------------------------
+  //
+  // Every park in this game was a rotated rectangle, and every park in a town
+  // shared one bearing. A rectangle is the one shape that says SOMEBODY DREW
+  // THIS ON A PLAN, which is true of a formal square and true of almost
+  // nothing else: a real park is usually the shape of the leftover. It is the
+  // wedge where two grids meet at different angles, the strip along a shore or
+  // a filled canal, the green whose corners were cut away for the traffic.
+  //
+  // THEY HAVE TO STAY CONVEX. Parks are obstacles the generator differences
+  // out of the blocks around them, and `subtractConvex` decomposes cell \
+  // obstacle into convex pieces using the obstacle's own half-planes — which
+  // is what guarantees the map has no holes in it. An L-shaped green would
+  // break that guarantee, so the shapes below are all convex and an L is
+  // deliberately not among them.
+  const parkShape = (kind, cx, cy, w, h, deg, k) => {
+    const t = (deg * Math.PI) / 180, ct = Math.cos(t), st = Math.sin(t);
+    const put = (pts) => pts.map(([x, y]) => [x * ct - y * st + cx, x * st + y * ct + cy]);
+    if (kind === "wedge") {
+      // THE LEFTOVER BETWEEN TWO GRIDS. Where a district at one bearing meets
+      // one at another, the ground between them is a trapezoid, and a trapezoid
+      // is what a great many real city greens actually are.
+      const taper = 0.30 + 0.34 * k;
+      return put([[-w / 2, -h / 2], [w / 2, -h * taper / 2], [w / 2, h * taper / 2], [-w / 2, h / 2]]);
+    }
+    if (kind === "clipped") {
+      // CORNERS CUT FOR THE TRAFFIC. An octagonal green — the commonest thing
+      // that happens to a square once carriages have to get round it.
+      const c = Math.min(w, h) * (0.16 + 0.16 * k);
+      return put([
+        [-w / 2 + c, -h / 2], [w / 2 - c, -h / 2], [w / 2, -h / 2 + c], [w / 2, h / 2 - c],
+        [w / 2 - c, h / 2], [-w / 2 + c, h / 2], [-w / 2, h / 2 - c], [-w / 2, -h / 2 + c],
+      ]);
+    }
+    if (kind === "lozenge") {
+      // A green on the skew, which is what you get when the reservation was
+      // surveyed before the streets that ended up round it.
+      const c = Math.min(w, h) * 0.34;
+      return put([
+        [-w / 2, -h / 2 + c], [-w / 2 + c, -h / 2], [w / 2 - c, -h / 2], [w / 2, -h / 2 + c],
+        [w / 2, h / 2 - c], [w / 2 - c, h / 2], [-w / 2 + c, h / 2], [-w / 2, h / 2 - c],
+      ]);
+    }
+    return rect(cx, cy, w, h, deg);
+  };
+
+  // The direction the shore runs at a point — the tangent of the nearest coast
+  // edge. An esplanade that ignores this is a rectangle lying across the beach.
+  const coastBearing = (p) => {
+    let best = Infinity, ang = parkDeg;
+    for (let i = 0; i < inner.length; i++) {
+      const a = inner[i], b = inner[(i + 1) % inner.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const l2 = dx * dx + dy * dy || 1;
+      let u = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2;
+      u = Math.max(0, Math.min(1, u));
+      const d = dist(p, [a[0] + u * dx, a[1] + u * dy]);
+      if (d < best) { best = d; ang = (Math.atan2(dy, dx) * 180) / Math.PI; }
+    }
+    return ang;
+  };
+
+  // `clear` is how close to the water this park may come. Everything inland
+  // keeps the old street's-width standoff; an esplanade is allowed to reach the
+  // shore, because reaching the shore is the entire point of one.
+  const fitsRing = (ring, cx, cy, w, h, clear = 14, seamPad = 26) => {
+    const probes = [...ring, ...ring.map((p, i) => {
+      const q = ring[(i + 1) % ring.length];
       return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
     }), [cx, cy]];
-    return probes.every((p) => inRing(p, inner) && distToRing(p, inner) > 14)
+    return probes.every((p) => inRing(p, inner) && distToRing(p, inner) > clear)
       && parks.every((q) => dist([cx, cy], [q.cx, q.cy]) > (Math.max(w, h) + Math.max(q.w, q.h)) * 0.62)
-      // Nor on top of a seam street. Both are obstacles the generator
-      // differences out of the same cells, so a common laid across one comes
+      // Nor ON TOP OF a seam street. Both are obstacles the generator
+      // differences out of the same cells, so a common laid ACROSS one comes
       // out as a green with a road through the middle of it and no way in.
-      && seams.every((q) => !probes.some((p) => inRing(p, rect(q.cx, q.cy, q.w, q.h + 26, q.deg))));
+      //
+      // Beside one is a different thing entirely, and it is the other park a
+      // town like this should have: the long thin green along the arterial,
+      // which exists precisely because the ground left over where two grids
+      // are reconciled is too awkward to build on. `seamPad` is how much
+      // clearance the test demands — the default keeps a green well clear, and
+      // a linear park asks for the minimum that still leaves the road its
+      // carriageway.
+      && seams.every((q) => !probes.some((p) => inRing(p, rect(q.cx, q.cy, q.w, q.h + seamPad, q.deg))));
   };
-  const placePark = (target, w0, h0, name, want) => {
+
+  /**
+   * `opts` — { want, shape, clear, bearing, aspect }. `bearing` is a function
+   * of the candidate point, so an esplanade can follow the shore while an
+   * inland green keeps the town's own grain.
+   */
+  const placePark = (target, w0, h0, name, opts = {}) => {
+    const { want = null, shape = "square", clear = 14, bearing = null, seamPad = 26 } = opts;
     for (let shrink = 0; shrink < 4; shrink++) {
       const w = w0 * (1 - 0.14 * shrink), h = h0 * (1 - 0.14 * shrink);
-      let best = null, bd = Infinity;
+      let best = null, bd = Infinity, bestRing = null, bestDeg = parkDeg;
       for (const l of land) {
         if (want && l.d !== want) continue;
         const d = dist(l.p, target);
         if (d >= bd) continue;
-        if (!fits(l.p[0], l.p[1], w, h, parkDeg)) continue;
-        bd = d; best = l.p;
+        // A GREEN IS SURVEYED WITH ITS NEIGHBOURHOOD, not with the town hall.
+        // Every park shared one bearing — the core district's — so a square
+        // dropped into a quarter laid out thirty degrees off sat skew to every
+        // street around it. It takes the grid of the district it lands in,
+        // which is what makes it read as part of that quarter rather than as
+        // something the map remembered from somewhere else.
+        const deg = bearing ? bearing(l.p)
+          : l.d && districts[l.d] ? +(-districts[l.d].bearingDeg).toFixed(1)
+            : parkDeg;
+        const k = Dp.rand();
+        const ring = parkShape(shape, l.p[0], l.p[1], w, h, deg, k);
+        if (!fitsRing(ring, l.p[0], l.p[1], w, h, clear, seamPad)) continue;
+        bd = d; best = l.p; bestRing = ring; bestDeg = deg;
       }
       if (best) {
-        parks.push({ cx: Math.round(best[0]), cy: Math.round(best[1]), w: Math.round(w), h: Math.round(h), deg: parkDeg, name });
+        parks.push({
+          cx: Math.round(best[0]), cy: Math.round(best[1]),
+          w: Math.round(w), h: Math.round(h), deg: +bestDeg.toFixed(1), name,
+          // The drawn shape. `w`/`h` stay the bounding box because the amenity
+          // term and the station namer size a park off them, and a park's pull
+          // is about how big it is rather than how many sides it has.
+          ring: bestRing.map(([x, y]) => [Math.round(x), Math.round(y)]),
+          shape,
+        });
         return true;
       }
     }
@@ -1784,6 +1882,15 @@ export function islandConfig(seed) {
     { key: "greens", w: 0.24, n: [2, 3], big: [300, 360], rest: [150, 230] },
     { key: "sparse", w: 0.12, n: [1, 2], big: [110, 170], rest: [70, 95] },
   ];
+  // MEASURED AND NOT A PROBLEM. Two things were suspected here and neither
+  // held. The programme is drawn without asking whether the island can seat it
+  // — but over 150 towns the great park was seatable at full size on every one
+  // of them, so a veto would have been a check that cannot fail. And the placer
+  // shrinks a park 14% and retries when it will not fit, which looked like it
+  // would make a park's size an artifact of crowding rather than a decision —
+  // but over 865 placements, 99.7% went down at full size, 0.3% shrank one
+  // step, and none failed. Left alone deliberately; see the note in
+  // GRAPHICS_HANDOFF.
   const programme = (() => {
     let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + p.w, 0);
     for (const p of PARK_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
@@ -1816,18 +1923,74 @@ export function islandConfig(seed) {
   // decision about where the seat of government stands.
   const midCore = [(cores[0].xy[0] + cores[1].xy[0]) / 2, (cores[0].xy[1] + cores[1].xy[1]) / 2];
   const bigW = Dp.f(programme.big[0], programme.big[1]);
-  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), null);
+  // The great one keeps its formal shape. A reservation that big was set aside
+  // by a plan, and a plan draws rectangles.
+  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: "square" });
+
+  // THE ESPLANADE, which a harbour town has and this one could not.
+  //
+  // `fits` required a street's width of dry land on every probe, so no park
+  // could ever reach the water — in a game whose whole setting is a port. The
+  // promenade along the shore is the most characteristic public ground such a
+  // town has, and it is long, thin, and lies ALONG the coast rather than
+  // across it, which is why it needs the shore's own bearing rather than the
+  // town's grain.
+  //
+  // Placed early and given its own aim point on the wettest ground available,
+  // because a strip that has to dodge three greens already down comes out
+  // somewhere inland with no water anywhere near it.
+  if (Dp.rand() < 0.62) {
+    const shore = land.reduce((a, l) => (l.edge < a.edge ? l : a), land[0]);
+    const len = bigW * Dp.f(0.75, 1.25);
+    placePark(shore.p, len, Dp.f(38, 62), `${nm.words[3]} Esplanade`, {
+      shape: "square", clear: 3, bearing: coastBearing,
+    });
+  }
+
+  // THE LINEAR PARK, on the ground the plan could not reconcile.
+  //
+  // A seam is where two grids at different bearings are made to meet, and the
+  // ground along one is the most awkward in the city — wedge-shaped lots, bad
+  // angles, frontage nobody wants. That is exactly the ground a town gives up
+  // on and plants: the strip along the arterial, the filled canal, the
+  // boulevard's central reservation. `fits` rejected all of it, because the
+  // one thing it knew about seams is that a park laid ACROSS one comes out
+  // with a road through the middle. Beside one is the opposite: it is the
+  // park that only exists because the road is there.
+  //
+  // Long, thin, on the seam's own bearing, and offset clear of the
+  // carriageway. `seamPad` drops to the width of the road itself so "beside"
+  // is reachable at all, and `placePark` still refuses anything overlapping.
+  if (seams.length && Dp.rand() < 0.5) {
+    const sm = seams[Math.floor(Dp.rand() * seams.length) % seams.length];
+    const t = (sm.deg * Math.PI) / 180;
+    const side = Dp.rand() < 0.5 ? 1 : -1;
+    const wide = Dp.f(34, 58);
+    const off = sm.h / 2 + wide / 2 + 16;
+    const aim = [sm.cx - Math.sin(t) * off * side, sm.cy + Math.cos(t) * off * side];
+    placePark(aim, Dp.f(150, 320), wide, `${nm.words[4]} Walk`, {
+      shape: "square", seamPad: 2, bearing: () => +sm.deg.toFixed(1),
+    });
+  }
+
   // ...and the rest are scattered across the cores in turn, so a city of
   // squares gets them spread through its districts rather than piled on
   // downtown. Each takes the next core round the ring, which is what stops
   // the set reading as a starburst.
+  //
+  // THE SHAPE IS PART OF WHAT KIND OF GREEN IT IS. A formal square is drawn;
+  // everything else is usually the shape of the ground that was left, so the
+  // small ones lean to the wedge and the cut corner and the great one above
+  // does not.
+  const SHAPES = ["square", "clipped", "wedge", "lozenge", "square", "wedge"];
   for (let i = 1; i < nPark; i++) {
     const target = cores[i % cores.length].xy;
     const w = Dp.f(programme.rest[0], programme.rest[1]);
     // A jittered aim point, or every park after the first lands on the same
     // few cells and `fits` rejects it for sitting on its predecessor.
     const aim = [target[0] + Dp.f(-260, 260), target[1] + Dp.f(-260, 260)];
-    placePark(aim, w, w * Dp.f(0.66, 1.0), parkName(i), null);
+    const shape = SHAPES[Math.floor(Dp.rand() * SHAPES.length) % SHAPES.length];
+    placePark(aim, w, w * Dp.f(0.66, 1.0), parkName(i), { shape });
   }
 
   // --- 7. the streets that refuse the grid -----------------------------------

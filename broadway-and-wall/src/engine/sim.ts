@@ -138,7 +138,7 @@ export function newGame(
 ): GameState {
   const startAge = age0 ?? lifeForCash(cash0).age;
   const s: GameState = {
-    v: 33,
+    v: 34,
     seed,
     rng: seed,
     streams: initStreams(seed),

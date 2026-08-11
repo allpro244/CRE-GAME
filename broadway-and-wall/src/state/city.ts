@@ -1,31 +1,32 @@
 // WHICH CITY, AND WHICH ONE OF IT.
 //
-// Two islands are drawn — New Alden and Kestrel Point — and each one is a
-// different game: an open grid with a hinterland behind it, and a peninsula
-// where frontage is the scarce thing. The third, `somewhere`, is not drawn at
-// all: island.mjs generates its coast, its districts and its names from the
-// run's seed. That choice lives in localStorage and switching reloads the page,
-// because the map sources, the parcel table and the autosave slot all key off
-// it, and a clean reload is honest where hot-swapping five data feeds is not.
+// There is one island and it is generated: `island.mjs` draws its coast, its
+// districts, its parks and every street name from the run's seed, so a new
+// campaign is a new place rather than the same place reshuffled. New Alden and
+// Kestrel Point were drawn by hand and are gone from the game — see the CITIES
+// note in citygen/cities.mjs for what measurement retired them. They survive
+// as harness fixtures, which is why `makeCity("newalden", 1)` still works and
+// why an old save that names one still resumes.
 //
-// THE SEED IS THE SECOND HALF OF THE ADDRESS. On the drawn islands the island
-// is fixed and the seed decides every block, every lot line and every building
-// on it. On the generated one the seed decides the coastline as well — which
-// changes nothing about the bookkeeping here, and that is the point: a city is
-// `(island, seed, size)` either way, and every one of those has to survive a
-// reload or a deed in a save points at a parcel that no longer exists.
+// THE SEED IS THE SECOND HALF OF THE ADDRESS, and now most of the first half
+// too. A city is still `(island, seed, size)` and every one of those has to
+// survive a reload, or a deed in a save points at a parcel that no longer
+// exists. The island id stays in that tuple even though there is currently one
+// value a new run can take: a save written last year names the island it was
+// cut on, and dropping the field would be dropping the only thing that lets
+// that save find its own parcels again.
 //
 // Nothing below knows which kind of island it is holding an id for, and nothing
-// below should. That is what makes `somewhere` a third entry rather than a
-// second code path.
-import { randomSeed } from "@/citygen/index.mjs";
+// below should.
+import { randomSeed, PROCEDURAL } from "@/citygen/index.mjs";
 import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
 
 const KEY = "bw:city";
 const SEED_KEY = "bw:seed:";
-const DEFAULT_CITY = "newalden";
+// The one island a new run can be cut on. An old save carries its own.
+const DEFAULT_CITY = PROCEDURAL;
 
 export function currentCity(): string {
   try {

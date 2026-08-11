@@ -1666,7 +1666,7 @@ export const useStore = create<AppState>((set, get) => ({
     const raw = await loadGame(slot);
     if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
     const prepared = prepareSaveForResume(raw);
-    if (!prepared.ok) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (!prepared.ok) { toast(`That save can't be opened — ${prepared.reason}.`, "err"); return; }
     const saved = prepared.state;
 
     // A SAVE CARRIES ITS OWN TOWN.

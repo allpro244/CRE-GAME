@@ -6,7 +6,7 @@ import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle 
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, START_YEAR } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { siteDeeds } from "@/engine/actions";
@@ -873,11 +873,18 @@ export default function MapView() {
     // other and get compared by eye. 3.55 is the city's, and the city is the
     // thing there is more of.
     const FLOOR_M = 3.55;
-    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number }[] = [];
+    // THE YEAR IT WAS FINISHED, because that is what decides what it looks
+    // like. The renderer used to guess — every building the player or a rival
+    // put up was painted somewhere in a hard-coded 1992-2017 band, whatever
+    // year the campaign was actually in — and it chose its facade off class
+    // alone. Both of those are answers `styles.ts` already has, and it needs
+    // the year to give them.
+    const nowYear = START_YEAR + Math.floor(game.month / 12);
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
-      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * FLOOR_M * prog, floors: d.floors, construction: true, cov: d.coverage });
+      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * FLOOR_M * prog, floors: d.floors, construction: true, cov: d.coverage, year: nowYear });
     }
     // EVERYBODY ELSE'S CRANES. The city's pipeline was invisible until the day
     // it opened, so the supply you were reading about on the Economy page had
@@ -889,14 +896,17 @@ export default function MapView() {
       const total = Math.max(1, j.deliverM - j.startM);
       const raw = (game.month - j.startM + 1) / total;
       const prog = Math.min(1, Math.max(0.12, j.orphaned ? Math.min(raw, 0.75) : raw));
-      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true });
+      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true, year: nowYear });
     }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       if (game.developments?.[bbl]) continue; // conversion shell is represented by the construction massing
       // bunting for the first three months after delivery — a grand opening
       const dM = game.holdings[bbl]?.deliveredM;
       const fresh = dM !== undefined && game.month - dM <= 3;
-      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov });
+      // b.yearBuilt is the delivery year the engine stamped. A building keeps
+      // the skin of the decade it went up in for the rest of the campaign;
+      // it does not restyle itself as the years pass.
+      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov, year: b.yearBuilt || nowYear });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out

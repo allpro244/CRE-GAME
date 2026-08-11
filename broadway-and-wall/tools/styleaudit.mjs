@@ -6,7 +6,7 @@
 // that compiles, renders nothing, and is invisible to every other check in the
 // repo — six were found that way and only by counting.
 //
-// So: build N cities across the shipped towns and seeds, run the real chooser
+// So: generate N islands, run the real chooser over every building on each
 // over every building, and report. Three things are faults, not opinions.
 //
 //   DEAD      a family no city ever chose. It is dead code.
@@ -25,21 +25,31 @@ execFileSync("npx", ["esbuild", "src/map/styles.ts", "--bundle", "--format=esm",
 const S = await import(out);
 const { generateCity } = await import("../src/citygen/citygen.mjs");
 const { buildCityData } = await import("../src/citygen/build.mjs");
-const { CITIES } = await import("../src/citygen/cities.mjs");
+const { islandConfig } = await import("../src/citygen/island.mjs");
 
 const NAME = {};
 for (const [k, v] of Object.entries(S)) if (/^S_[A-Z_]+$/.test(k) && typeof v === "number") NAME[v] = k.slice(2).toLowerCase();
 
-const SEEDS = Number(process.argv[2] ?? 6);
-const towns = Object.keys(CITIES);
+// SWEEP THE ISLANDS THE GAME ACTUALLY CUTS.
+//
+// This used to walk the two hand-drawn configs at N seeds each. Those are
+// harness fixtures now and nothing a player can reach, so an audit of them
+// would be an audit of a city nobody sees — the same fault as a test measuring
+// a stale build: it can fail, just not about anything real.
+//
+// A generated island changes its coast, its districts and its street plan with
+// the seed, not only its buildings, so this is a wider sweep than the old one
+// as well as an honest one. Four of the six district plans — curvi, radial,
+// chamfer, superblock — were unreachable from the drawn pair and appear here.
+const SEEDS = Number(process.argv[2] ?? 12);
 const total = {};
 const perClass = {};
 let buildings = 0, cities = 0;
 
-for (const town of towns) {
+{
   for (let i = 0; i < SEEDS; i++) {
     const seed = (20261 + i * 7919) >>> 0;
-    const city = generateCity({ ...CITIES[town], seed });
+    const city = generateCity({ ...islandConfig(seed), seed });
     const data = buildCityData({
       rawParcels: city.parcels, rawBuildings: city.buildings, rawStations: city.stations,
       manifest: { ...city.manifest, seed }, employment: city.employment ?? null,
@@ -66,7 +76,7 @@ const facades = ids.filter((i) => !NOT_A_FACADE.has(i));
 const rows = facades.map((i) => ({ i, n: total[i] ?? 0, p: (100 * (total[i] ?? 0)) / buildings }))
   .sort((a, b) => b.n - a.n);
 
-console.log(`${cities} cities (${towns.join(", ")} x ${SEEDS} seeds), ${buildings} buildings, ${facades.length} facade families\n`);
+console.log(`${cities} generated islands, ${buildings} buildings, ${facades.length} facade families\n`);
 console.log("family                 count    share");
 for (const r of rows) {
   const flag = r.n === 0 ? "  DEAD" : r.p < 0.1 ? "  rare" : r.p > 12 ? "  DOMINANT" : "";
@@ -108,7 +118,7 @@ const rare = rows.filter((r) => r.n > 0 && r.p < 0.1).map((r) => NAME[r.i]);
 const dom = rows.filter((r) => r.p > 12).map((r) => NAME[r.i]);
 console.log("\n--- verdict ---");
 console.log("DEAD (unreachable by any input):", dead.length ? dead.join(", ") : "none");
-console.log("untenanted (reachable, absent from these towns):",
+console.log("untenanted (reachable, absent from these islands):",
   untenanted.length
     ? untenanted.map((r) => { const g = reachable.get(r.i); return `${NAME[r.i]} (needs ${g.c} ${g.f}fl ${g.y})`; }).join(", ")
     : "none");

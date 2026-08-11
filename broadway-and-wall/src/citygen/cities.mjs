@@ -1,5 +1,10 @@
-// TWO CITIES. Each is a config for pipeline/lib/citygen.mjs — same generator,
-// same guarantees, different geography. They are both roughly New Alden's size,
+// TWO HARNESS FIXTURES, and nothing a player can reach. See the note on the
+// CITIES export at the bottom of this file before you touch either of them, or
+// before you add a third: the game generates its island now, and a config
+// written down by hand is the reason the parks never changed.
+//
+// Each is a config for pipeline/lib/citygen.mjs — same generator, same
+// guarantees, different geography. They are both roughly New Alden's size,
 // which is the scale where a player can hold the whole market in their head:
 // about two miles end to end, four neighbourhoods, some fourteen hundred lots.
 //
@@ -225,30 +230,39 @@ const newalden = {
 // Common, the oldest public park in the country. Nothing here is at right
 // angles to anything else, and that is the game.
 
-// A one-line blurb per city, shown in the picker. What kind of game each is.
+// Kept for the harnesses that print which fixture they ran on. Not a picker
+// blurb any more — there is no picker; see CITIES below.
 export const TAGLINES = {
-  newalden: "The original. A colonial landing, a numbered grid, and Broadway cutting both.",
-  kestrel: "A narrow peninsula — frontage is scarce and the only cheap land is at the tip.",
+  newalden: "Harness fixture. A colonial landing, a numbered grid, and Broadway cutting both.",
+  kestrel: "Harness fixture. A narrow peninsula where frontage is the scarce thing.",
 };
 
-// TWO CITIES, NOT SIX.
+// NO CITIES, ONLY FIXTURES.
 //
-// Marrow, Thorne, Calder and Sable are gone. Six maps was breadth, and breadth
-// was never what this is for: every one of them had to be regenerated, audited
-// for density and re-verified on every change to the generator, and none of
-// them made the game deeper than New Alden and Kestrel Point already do. These
-// two are genuinely different games — an open grid with a hinterland, and a
-// peninsula where frontage is the scarce thing — and that is the whole of what
-// a second map has to earn.
-// ONLY THE INVENTED ONES.
+// Six traced maps became two drawn ones became none. The last step is the one
+// worth writing down, because these two configs are still here and it would be
+// easy to mistake them for content.
 //
-// New York, Chicago and Boston are gone. They were traced from real street
-// grids and they never worked: oversized sparse blocks, a Manhattan the wrong
-// shape, and a generator whose BSP partition assumes one tiled plane and
-// threads a single `coast` ring through thirteen call sites — which is what
-// blocked the five-borough map and would have kept blocking it. A city this
-// engine invents for itself is both better looking and honest about what it
-// is, and procedural generation is where this is going anyway.
+// THEY ARE NOT PLAYABLE. `cityList()` offers one island and it is generated.
+// What finally disqualified these two was measurable: across five seeds each,
+// every part of the plan rerolled — lot lines, building heights, lot counts —
+// except the parks, which are literals forty lines above this comment. Every
+// campaign anybody ever played on New Alden had the same three parks in the
+// same three places, the largest carrying 79% of the island's green. The
+// generator grew five park programmes to fix exactly that fault (island.mjs,
+// "WHAT KIND OF PARK CITY THIS IS") and a hand-written config cannot use one.
+//
+// The same went for the street plans. Six district kinds exist; these two use
+// lattice and organic, so curvi, radial, chamfer and superblock had never
+// appeared in a game anybody played. A generated island runs three distinct
+// kinds in the median town.
+//
+// WHAT THEY ARE NOW is the fixed reference town for the harnesses. `pnpm
+// baseline` measures ~31 standing numbers on `makeCity("newalden", 1)` and
+// fourteen probes default to it; a baseline whose town moves underneath it is
+// not a baseline. `makeCity` still builds them by id and always will. If you
+// are here to add a city, do not — add it to the generator instead, where
+// every seed gets it.
 export const CITIES = { newalden, kestrel };
 
 /**
@@ -311,7 +325,26 @@ function scaleDistricts(ds, k) {
 
 export function scaleCity(cfg, k) {
   if (!isNum(k) || Math.abs(k - 1) < 1e-6) return cfg;
-  const box = (o) => ({ ...o, cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k });
+  // A BOX MAY CARRY A DRAWN RING, AND THE RING IS THE THING THAT GETS DRAWN.
+  //
+  // `...o` spread the park `ring` added by the park work through UNSCALED
+  // while its bounding box moved, so the same park had two positions and two
+  // areas: citygen cuts, aprons and turfs `p.ring ?? rect(cx,cy,w,h)` — the
+  // ring wins on every generated island — while build.mjs sites the amenity
+  // premium off the scaled `cx/cy/w/h`. At Great City that put the premium
+  // ~400 m from the green it was for; at Hamlet the k=1 ring on a shrunken
+  // coastline put 19 of 29 greens partly ON THE WATER, with every invariant
+  // `fitsRing` checked — dry land, clear of a seam, clear of its neighbours —
+  // validated in a coordinate frame the town is not built in.
+  //
+  // Invisible to every harness: the drawn fixtures carry no ring and BASELINE
+  // runs at the default size, where scaleCity early-returns. Every live run at
+  // any other size hit it, and all five sizes are player-selectable.
+  const box = (o) => ({
+    ...o,
+    cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k,
+    ...(o.ring ? { ring: o.ring.map((p) => pt(p, k)) } : {}),
+  });
   return {
     ...cfg,
     coast: cfg.coast.map((p) => pt(p, k)),

@@ -84,18 +84,34 @@ export function developmentList() {
  */
 export const PROCEDURAL = "somewhere";
 
-/** The cities you can play, for the picker. */
+/**
+ * The cities you can play. There is one, and it is different every time.
+ *
+ * New Alden and Kestrel Point are no longer among them. They were two islands
+ * hand-drawn in `cities.mjs`, and being drawn is exactly what was wrong with
+ * them: measured over five seeds each, every part of the plan rerolled — lot
+ * lines, building heights, lot counts — EXCEPT the parks, which are literals
+ * in the config and therefore identical in every campaign anybody ever played
+ * on them. One 7.6-hectare park and two pocket parks, in the same three
+ * places, forever, carrying 79% and 70% of all the green on the island.
+ *
+ * They were also the narrowest possible slice of what the generator can do.
+ * Six district plans exist — lattice, organic, curvi, radial, chamfer,
+ * superblock — and those two configs used two of them, so four have never
+ * appeared in a game anybody played. A generated island uses all six, three
+ * distinct kinds in the median town.
+ *
+ * The configs survive in `cities.mjs` because fourteen economy harnesses and
+ * `BASELINE.json` measure their standing numbers on `makeCity("newalden", 1)`
+ * and a fixed reference town is the whole point of a baseline. They are test
+ * fixtures now, and `cities.mjs` says so. They are not places you can play.
+ */
 export function cityList() {
   return [
-    ...Object.keys(CITIES).map((id) => ({
-      id,
-      name: CITIES[id].name,
-      tagline: TAGLINES[id] ?? "",
-    })),
     {
       id: PROCEDURAL,
       name: "Somewhere else",
-      tagline: "An island nobody has drawn. The coast, the districts and every street name come out of your seed.",
+      tagline: "An island nobody has drawn. The coast, the districts, the parks and every street name come out of your seed.",
     },
   ];
 }

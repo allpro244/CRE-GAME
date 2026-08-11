@@ -191,6 +191,23 @@ function erode(ring, dOf) {
   return r ? cleanRing(r) : null;
 }
 
+function dilateConvex(ring, d) {
+  const ccw = ringArea(ring) > 0;
+  const [x0, y0, x1, y1] = bboxOfRing(ring);
+  const m = d + 10;
+  let r = [[x0 - m, y0 - m], [x1 + m, y0 - m], [x1 + m, y1 + m], [x0 - m, y1 + m]];
+  for (let i = 0; i < ring.length && r; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-9) continue;
+    const ox = ccw ? ey / len : -ey / len;
+    const oy = ccw ? -ex / len : ex / len;
+    r = clipRingHalfPlane(r, ox, oy, a[0] * ox + a[1] * oy + d);
+  }
+  return r ? cleanRing(r) : null;
+}
+
 function chamfer(ring, i, cut) {
   const n = ring.length;
   const prev = ring[(i - 1 + n) % n], cur = ring[i], nxt = ring[(i + 1) % n];
@@ -398,7 +415,7 @@ export function generateCity(cfg) {
   // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
   // kerb rather than turf painted to the reservation line.
   const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
-  const PARKS_M = cfg.parks.map((p) => rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
+  const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
   const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
@@ -408,7 +425,9 @@ export function generateCity(cfg) {
   // leaves is the frontage road around the park — it has to be PAVED, or the
   // park comes ringed in a metre-wide moat of bare ground.
   const APRONS = [
-    ...cfg.parks.map((p) => rect(p.cx, p.cy, p.w + 2 * PARK_CLEAR, p.h + 2 * PARK_CLEAR, p.deg ?? 0)),
+    ...cfg.parks.map((p, i) => (p.ring
+      ? (dilateConvex(PARKS_M[i], PARK_CLEAR) ?? PARKS_M[i])
+      : rect(p.cx, p.cy, p.w + 2 * PARK_CLEAR, p.h + 2 * PARK_CLEAR, p.deg ?? 0))),
     ...(cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w + 2 * DIAG_CLEAR, d.h + 2 * DIAG_CLEAR, d.deg)),
   ];
   const OBSTACLES = [
@@ -1081,6 +1100,14 @@ export function generateCity(cfg) {
     return Math.round(rand() < p ? rr(a0, a1) : rr(b0, b1));
   }
 
+  const corridorDist = (p) => {
+    let best = Infinity;
+    for (const r of DIAG_M) best = Math.min(best, inRing(p, r) ? 0 : distToRing(p, r));
+    return Number.isFinite(best) ? best : 9999;
+  };
+  const cornerLot = (lotRing, blockRing) => lotRing !== blockRing
+    && blockRing.some((v) => lotRing.some((q) => Math.abs(q[0] - v[0]) < 0.05 && Math.abs(q[1] - v[1]) < 0.05));
+
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
   const builtLots = [];   // the landmark pass picks its sites out of this
@@ -1133,6 +1160,7 @@ export function generateCity(cfg) {
     else splitLots(street, lotOptOf(d, heat), lots);
 
     let lotNo = 1;
+    const blockCorners = street;
     for (const lotRing of lots) {
       const areaM2 = polygonArea([lotRing]);
       if (areaM2 < 70) continue;
@@ -1306,6 +1334,10 @@ export function generateCity(cfg) {
           lotarea: lotArea, bldgarea: bldgArea, numfloors: floors,
           yearbuilt, assessland, assesstot, unitsres,
           cd: cfg.district, district: d,
+          shorem: Math.round(distToRing(c, innerRing)),
+          shoreamen: blkFl === FLAVOR.industrial ? 0 : 1,
+          corridorm: Math.round(corridorDist(c)),
+          corner: cornerLot(lotRing, blockCorners) ? 1 : 0,
         },
       });
 

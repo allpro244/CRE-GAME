@@ -1,259 +1,422 @@
-# GRAPHICS & BUILDING DESIGN — Claude Code handoff
+# GRAPHICS & BUILDING DESIGN — handoff
 
-Written for a cold start in **Claude Code** (Claude Max / Opus). Owner is Brian.
-He cannot playtest tonight; the brief is a **pure presentation pass** — massing,
-façades, roofs/crowns, LOD, atmosphere — not economy or desk UI.
+The brief for a **pure presentation pass**: massing, façades, roofs and crowns,
+LOD, atmosphere. Not economy, not desk UI.
 
-**Read this, then `BUILDINGS.md`, then the files you will touch.** Do not skim
-`CLAUDE.md` for economy philosophy unless you wander into `src/engine/` (you
-must not).
-
-Re-measure before you believe counts in older docs. `BUILDINGS.md` §2 still
-says “82 families”; `styles.ts` now has **152** `S_*` ids. Run `pnpm styles`.
+Companion to `BUILDINGS.md`, which is the reference — families, traits, the
+audit, how to add a skin. This file is the *brief*: scope, order of work, and
+what has already been taken.
 
 ---
 
-## 0 · PASTE THIS INTO CLAUDE CODE FIRST
+## 0 · SCOPE, AND THE THREE LINES THAT DEFINE IT
 
-```
-You are working on Broadway & Wall only (broadway-and-wall/).
+**In.** `src/citygen/`, `src/map/styles.ts`, `src/map/volume.ts`, and inside
+`src/map/ThreeBuildings.ts`: `FRAG`'s per-style branches, `Mason`, `crownTop`,
+`roofKitWants`, `roofDeck`, `propKit`, `fitRoofKit`, the `*Geom()` prop
+builders, the tower kit, and `setPlayerBuildings`' massing.
 
-Repo rules: read /workspace/AGENTS.md (or repo-root AGENTS.md). Game code is
-ONLY under broadway-and-wall/. Do not restore Groundwork / Meridian / root src/.
+**Not yours, on the map side.** `render()`, `bakeShadows()`, the post stage,
+`buildWater`, `plantStreets`, `buildLawns`, `propMaterial`, and the `LIGHT` /
+`HAZE` / `SEASON` / `SHADOW` GLSL blocks, plus `src/map/style.ts`. Those belong
+to whoever is doing atmosphere.
 
-Branch: cut from tip `claude/realestate-game-claude-code-32bppd` (or whatever
-tip Brian has after merging open PRs). Name: `cursor/building-look-<suffix>`
-lowercase. Do not stack on stale branches (especially not cursor/cf-yr-fix-*).
+**Not yours at all.** `src/engine/` — money, rents, debt, rivals RNG, harness
+baselines. And `TopBar.tsx`, `RightPanel.tsx`, `Chart.tsx`.
 
-Mission: graphics + building design only. No src/engine/ money, rents, debt,
-rivals RNG, or harness baseline retunes. No TopBar / RightPanel / Chart work.
-
-Canonical map docs:
-  broadway-and-wall/GRAPHICS_HANDOFF.md   ← this brief
-  broadway-and-wall/BUILDINGS.md          ← families, traits, how to add a skin
-
-Stack: MapLibre camera + parcels; Three.js custom layer paints buildings.
-Highest leverage first (see GRAPHICS_HANDOFF §4). After every ThreeBuildings
-touch: pnpm styles (if styles/pools changed) and
-  node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/bw-shoot.png --wait 20000
-tsc does not catch GLSL string errors.
-
-Start by inventorying setPlayerBuildings mid-rise style selection vs styleFor,
-then crowns/roof kit, then far LOD value signatures. Ship small reviewable
-commits. Prefer proportion/depth over new hue tables.
-```
+Repo rules first: root `AGENTS.md`. Game code is only under
+`broadway-and-wall/`. Do not restore Groundwork / Meridian / root `src/`.
 
 ---
 
-## 1 · WHERE YOU ARE
+## 1 · THE STACK, IN ONE PARAGRAPH
 
-| | |
-|---|---|
-| **Product** | Broadway & Wall — CRE century sim |
-| **Game root** | `broadway-and-wall/` |
-| **Preferred tip** | `claude/realestate-game-claude-code-32bppd` (confirm with `git log -1`) |
-| **Open nearby** | `#57` wishlist top-5 (economy/HUD) — **orthogonal**; do not mix into a graphics PR unless Brian asks |
-| **Node / pnpm** | Node 22, pnpm 10 |
-
-```bash
-cd broadway-and-wall   # or repo root — pnpm scripts delegate
-pnpm install
-pnpm dev               # vite → localhost:5173
-# Cloud / remote: pnpm dev --host 0.0.0.0 --port 5173
-```
-
-City is **generated at runtime** from a seed. No pipeline required for visual work.
-
----
-
-## 2 · STACK (ONE PICTURE)
-
-```
-citygen (class, floors, year, footprint)
-    → BuildingVolume[] + buildings3d
-    → MapView.tsx (MapLibre)
-         → ThreeBuildings.ts  ← almost all "building look"
-         → style.ts           ← parcel fills, sky, ghost extrusions
-```
-
-- **Three.js** (`three@^0.185`) inside MapLibre `CustomLayerInterface` id `bw-three-buildings`.
-- MapLibre **fill-extrusion** is fallback only if the Three layer fails.
-- Façade “themes” are era × class pools in `styles.ts`, not CSS brand packs.
-
----
-
-## 3 · FILE OWNERSHIP (STAY IN YOUR LANE)
-
-| Path | Role | Touch? |
-|---|---|---|
-| `src/map/styles.ts` | Style registry, traits, `stylePool` / `styleFor` | **Yes** |
-| `src/map/volume.ts` | `BuildingVolume` record | Yes if mass fields need extending carefully |
-| `src/map/ThreeBuildings.ts` (~10k lines) | Shaders, crowns, roof kit, towers, player builds, light/haze/post | **Yes** (see split below) |
-| `src/map/style.ts` | MapLibre style JSON, sky/atmosphere | Yes (graphics) |
-| `src/map/cityVisuals.ts` | Weather/activity from month/econ (**read-only** on sim) | Yes for look signals |
-| `src/map/MapView.tsx` | Map mount, wires volumes → Three, camera fly-in | Yes for visual wiring only |
-| `src/citygen/build.mjs` | Generator `massing()` plan families | Yes for stock silhouettes; **do not** change floors/class/year economics |
-| `src/citygen/citygen.mjs` / `cities.mjs` | Lots, islands | Only if silhouette work requires it; keep economic fields fixed |
-| `tools/styleaudit.mjs` | `pnpm styles` | Run; edit only if audit API needs it |
-| `tools/shoot.mjs` | Screenshot + GLSL/console catch | Run after merges |
-| `src/engine/**` | Money, markets, debt, rivals | **NO** |
-| `src/ui/TopBar.tsx`, desks, `Chart.tsx` | UI session | **NO** |
-
-Inside `ThreeBuildings.ts`, the working split from `BUILDINGS.md`:
-
-- **Buildings:** `FRAG` per-style branches, crown block, `fitRoofKit`, `*Geom()` props, tower kit, `setPlayerBuildings` massing/look.
-- **Graphics:** `render()`, `bakeShadows()`, post, water, streets, lawns, `LIGHT` / `HAZE` / `SEASON` / `SHADOW` GLSL, plus `style.ts`.
-
-One agent can do both tonight if Brian is solo — still keep commits separable
-(`facades:` / `atmosphere:`) so review stays sane.
-
----
-
-## 4 · HIGHEST-LEVERAGE WORK (DO IN THIS ORDER)
-
-### A — Player / rival mid-rises use the real style pool *(impact high, risk low)*
-
-`setPlayerBuildings` (~L7874) still picks mid-rise skins with a **short numeric
-ladder** (`industrial → 3`, `retail → 7`, office coin-flips on 0/4/6/7…) while
-generator stock goes through `styleFor` / `stylePool` (rich era × class pools).
-
-Century play stares at **what you and rivals build**. Wire mid-rises through
-`styleFor` (or an equivalent that takes class + synthetic year + floors + BBL
-hash) so new stock matches generator richness. Towers (`fl >= 20`) already use
-`towerMassing` + `TOWER_SKINS` — leave that path stable unless you are in §C.
-
-**Do not** change floor counts, coverage economics, or RNG *draw counts* that
-re-roll silhouettes mid-save. Hash → style id is fine; adding new `rng(s,…)`
-stream draws in the engine is not (and you should not be in the engine).
-
-### B — Crowns, parapets, roof kit *(high impact — crowns ≈ 29% of tower pixels)*
-
-Roofs ≈ 9.5% of frame. “Everything looks the same” is usually crowns, not wall
-hue. Touch `fitRoofKit`, crown block, `modernCap`, parapet traits
-(`T_CAPPED_*`, `T_MODERN` / `T_STONE`).
-
-### C — Far LOD value signatures *(high at gameplay camera)*
-
-Shader splits at `lod` dissolve: near = edge pattern; far = **tone/value**.
-New detail in the wrong half disappears. Strengthen far-half signatures so
-types still read when a floor is two pixels.
-
-### D — Tower skins / silhouette polish *(med–high risk)*
-
-`TOWER_FAMILIES` / `TOWER_SKINS` / `towerMassing`. Coverage dial historically
-did not reach the tower cleanly — there is measured commentary in
-`setPlayerBuildings` about similarity transforms vs walking off the deed.
-Prefer skin/crown polish before inventing new massing recipes; if you add
-massing, keep tiers clipped to the lot (`plClipToLot`).
-
-### E — Ground-floor vacancy as a *look* *(optional second pass)*
-
-`IDEA_FEST.md` §4: dark shopfronts / block trouble visible from the air.
-Read occupancy from the store / holdings **without writing** sim state.
-`cityVisuals.ts` pattern: derive uniforms from existing fields.
-
-### F — Atmosphere last
-
-`LIGHT` / `HAZE` / `SHADOW` / bloom / shafts. Easy to wash contrast. Touch only
-after A–C look right in `shoot.mjs` stills.
-
-### Skip for now
-
-- Rebalancing `stylePool` gates without measuring stock (`pnpm styles`).
-- New hue tables as the main move (proportion + reveal depth first).
-- Named landmark cosmetics (`IDEA_FEST` §6) until A–C land.
-- Anything in `src/engine/`.
-
----
-
-## 5 · RULES THAT WILL BITE YOU
-
-From `BUILDINGS.md` — non-negotiable:
-
-1. **Base albedo &lt; ~0.80** (linear contrast around ~0.18 pivot; pale ≠ glossy).
-2. **Never compare style ids numerically** (`s < 8`). Ask **traits** (`has`, `T_*`).
-3. **`win = vec2(0.0)`** opts out of interior mapping (sheds, blank walls).
-4. **Never gate on `v.z1`** for material (wedding-cake seam). Gate on **floors**.
-5. **Two paths must be fed:** generator (`build.mjs` + `styleFor`) and
-   `setPlayerBuildings`. Audit only sees the generator.
-6. Geometry that moves in a **vertex** shader is invisible to the shadow bake —
-   mark `userData.noShadow` or you get orphan shadows.
-7. No opaque geo at exactly `z = 0` (occlusion floor / water band).
-8. GLSL lives in **strings** — `tsc` will not save you; `shoot.mjs` will.
-
----
-
-## 6 · HOW TO ADD A FAÇADE FAMILY (CHECKLIST)
-
-Six edits — miss any of 1–5 and you get flat grey or never appear:
-
-1. `export const S_THING = <next id>;` in `styles.ts`
-2. Trait membership (`T_MASONRY`, `T_GLASSY`, `T_TRADE`, `T_FLOORLINE`, …)
-3. Palette branch in `FRAG` (`wall`, `glassA`, `glassB`, `colW`, `win`)
-4. Reveal depth + roof colour ladders
-5. `stylePool` entry in the right era × class
-6. Optional signature math (the point — see BUILDINGS §5)
-
-Then `pnpm styles` — **DEAD** must stay empty.
-
----
-
-## 7 · VERIFY (EVERY SESSION)
+MapLibre owns the camera, the ground, the parcels and the picking. A Three.js
+custom layer paints every building as a real mesh with a procedural façade —
+window grids aligned to actual floor counts, view-dependent sky on glass,
+cornices, crowns, rooftop furniture. **Two code paths make buildings.** The
+generator (`src/citygen/build.mjs` → `buildCity`) makes the stock a town
+*starts* with; `setPlayerBuildings` makes everything the player and the rivals
+put up afterwards, which after twenty years is most of downtown. Read
+`BUILDINGS.md` §1 before touching either.
 
 ```bash
 cd broadway-and-wall
-pnpm styles                         # DEAD / rare / DOMINANT
-npx tsc -b                          # types only — not GLSL
-pnpm dev                            # separate terminal
+pnpm install
+pnpm dev                 # → 127.0.0.1:5173   (remote: --host 0.0.0.0 --port 5173)
+```
+
+---
+
+---
+
+## 1b · FILE OWNERSHIP — STAY IN YOUR LANE
+
+From the original brief, corrected where the code moved under it.
+
+| Path | Role | Touch? |
+|---|---|---|
+| `src/map/styles.ts` | Style registry, traits, `stylePool` / `styleFor` / `styleForBuilt` | **Yes** |
+| `src/map/volume.ts` | `BuildingVolume` record | Yes, if mass fields need extending carefully |
+| `src/map/ThreeBuildings.ts` | Shaders, crowns, roof kit, towers, player builds, light/haze/post | **Yes** |
+| `src/map/style.ts` | MapLibre style JSON, sky/atmosphere | Yes |
+| `src/map/cityVisuals.ts` | Weather/activity from month/econ (**read-only** on the sim) | Yes, for look signals |
+| `src/map/MapView.tsx` | Map mount, volumes → Three, camera fly-in | Visual wiring only |
+| `src/citygen/build.mjs` | `massing()` plan families **and** the demand blend | Silhouettes yes; the value terms are economy — measure and say so |
+| `src/citygen/citygen.mjs` · `island.mjs` · `cities.mjs` | Lots, islands, parks | Yes, but a change here moves the ground under saved deeds — see `SAVE_VERSION` |
+| `tools/styleaudit.mjs` · `tools/shoot.mjs` · `tools/probe/*` | `pnpm styles`, screenshots, the player-path slate | Run them; edit if the probe needs it |
+| `src/engine/**` | Money, markets, debt, rivals | **NO** — except `save.ts` when the generator's output changes |
+| `src/ui/TopBar.tsx`, desks, `Chart.tsx` | UI session | **NO** |
+
+The working split inside `ThreeBuildings.ts`: **buildings** are the `FRAG`
+per-style branches, `crownTop`, `roofKitWants` / `propKit`, the `*Geom()`
+props, the tower kit and `setPlayerBuildings`; **graphics** are `render()`,
+`bakeShadows()`, post, water, streets, lawns and the `LIGHT` / `HAZE` /
+`SEASON` / `SHADOW` GLSL. Keep the commits separable either way.
+
+## 2 · AFTER EVERY `ThreeBuildings` TOUCH
+
+```bash
+npx tsc -b                                        # proves nothing about GLSL
+pnpm styles                                       # if styles/pools changed
 node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/bw-shoot.png --wait 20000
 ```
 
-`shoot.mjs` prints GLSL compile errors and page exceptions in its output line.
+**`tsc` does not catch GLSL string errors.** The shaders are template
+literals; a merge that turns one into nonsense compiles clean in TypeScript and
+renders a black layer. `shoot.mjs` reports GLSL compile errors and console
+exceptions on its output line, in about twenty seconds. Run it.
 
-Optional: inspect live layer — prop meshes named `prop:<kind>`, walls carry
-`aStyle` per vertex on `map.getLayer("bw-three-buildings")`.
-
-**Do not run `pnpm gate` / century harnesses for a paint-only PR** unless you
-touched citygen fields that change floors/stock. If you only touched `src/map/`,
-`tsc -b` + `pnpm styles` + `shoot.mjs` is the contract.
-
----
-
-## 8 · COMMIT / PR HYGIENE
-
-- Branch: `cursor/building-look-9786` (or Brian’s cloud suffix if different).
-- Commits: small, visual, named (`Wire player mid-rises through styleFor`,
-  `Strengthen far-LOD masonry value signatures`, …).
-- PR body: before/after **screenshots** from `shoot.mjs` (wide establish +
-  street-level + tower crown). List files. Explicit “no engine changes”.
-- Base: current tip (`claude/realestate-game-claude-code-32bppd` unless Brian
-  says otherwise).
-- Do not reopen economy wishlist items here.
+For anything you intend to *claim*, see §5 — the eyeball is not a measurement
+and this document has already been wrong once because somebody trusted it.
 
 ---
 
-## 9 · SUCCESS LOOKS LIKE
+## 3 · MEASURE BEFORE YOU BELIEVE ANY NUMBER IN HERE
 
-Brian can open a fresh City or Great City, fly the default camera, and within
-ten seconds tell:
+`BUILDINGS.md` §2 said **82 facade families** for long enough that the number
+reached commit messages and source comments. It was **144** by then, out of 152
+`S_*` ids. Nothing was lying; the code had moved and the prose had not.
 
-1. Pre-war fabric from postwar slabs from modern towers **by silhouette and
-   depth**, not by a legend.
-2. A building **he just delivered** does not look like a photocopied glass box
-   next to rich generator neighbours.
-3. Crowns and roof kit break the skyline; far blocks still have type, not mush.
-4. `pnpm styles` is clean; `shoot.mjs` has no GLSL errors.
+```bash
+pnpm styles                                       # first line prints the count
+grep -c '^export const S_' src/map/styles.ts      # id count
+```
+
+Neither takes a second. Treat every count in every doc here — this one
+included — as a claim with a date on it.
 
 ---
 
-## 10 · IF YOU GET LOST
+## 4 · WHERE THE LEVERAGE IS
+
+Ordered by pixels moved per line changed. The first three are **done**; they
+are written up because the *reasoning* is the reusable part, and because the
+fourth item is what is left.
+
+### ✅ 4.1 · `setPlayerBuildings` vs the registry — done
+
+The single biggest thing wrong with the picture, and invisible from any
+screenshot of one building. That path had grown a private copy of five
+decisions `styles.ts` already owned:
+
+| decided | had | has |
+|---|---|---|
+| façade | six hard-coded ids off the asset class | `styleForBuilt` |
+| era | a fixed 1992-2017 band | the delivery year the engine stamps |
+| roof surface | four of nine, off the deed hash | `roofDeck` |
+| crown | **nothing at all** | `crownTop` |
+| roof furniture | four of forty-two, four coin flips | `roofKitWants` + `propKit` |
+| corner shading, deck edge distance | every corner convex, constant 4 m | `Mason` |
+
+Three of the six façade ids were also era-wrong for a building finished *this
+month*: new retail came out as mid-century ribbon glazing, new industrial as
+19th-century mill sash, one office in seven as 1920s deco piers.
+
+**The general rule this leaves behind.** When you add a decision to one path,
+the reviewable question is not "does it look right", it is **"which function
+owns this, and is the other path calling it"**. None of the six could fail a
+test, because there was no second opinion to disagree with. They were found by
+asking both paths the same question and diffing the answers.
+
+### ✅ 4.2 · Crowns and the roof kit — done
+
+Crowns are 29% of a tower's pixels and roofs are 9.5% of the whole frame, which
+is more surface than the walls. *"They all look similar"* is almost always a
+complaint about crowns rather than façades.
+
+The player's buildings ended at a bare plane with one grey box on it. Twelve
+crown families existed and none was reachable — for a mechanical reason worth
+remembering: the masonry primitives were **closures inside the generator's
+rebuild loop**, so the ladder could not be reached because the trowel could not
+be. `Mason`, `crownTop`, `roofKitWants`, `roofDeck` and `propKit` are module
+level now and both paths call them.
+
+### ✅ 4.3 · Far-LOD value signatures — done for reveal depth
+
+A floor is about two pixels tall at the camera this game sits at, so the window
+grid has to dissolve before it aliases. Above the dissolve: **pattern**. Below
+it: **value**. Anything in the wrong half is averaged into a flat colour before
+it reaches the screen.
+
+Reveal depth was in the wrong half, and it is the strongest cue there is — 28
+mm to 900 mm across the families. All of it lived in the parallax and the
+per-pixel jamb shading, so the far view got `mix(wall, glass, winFrac)` and the
+whole range collapsed into the palette. What depth *is* at two pixels a floor
+is three things, all geometry: a deep opening **hides its own glass** off-axis,
+what glass you still see **sees less sky**, and the jamb **shadows the opening**
+when the sun runs along the wall. See `BUILDINGS.md` §5.
+
+### ◐ 4.4 · Mid-rise silhouette — half done
+
+Below the twenty-floor tower gate, `setPlayerBuildings` had five silhouettes
+and **every one was the plate scaled toward its own centroid**: podium,
+setback, three-stage wedding cake, tower on podium, prism. That is the
+1916-to-1961 envelope, and it is the wrong shape twice over for a building
+finished after 2000 — it puts the top of every building directly over the
+middle of its bottom, and it steps back on all four sides including the two
+that are party walls a neighbour is standing against.
+
+**Done.** Three of the eight shapes are no longer centroid scales — the shaft
+travels to one end of the plate's deep axis, a slab narrows on *one* axis
+(which is what a mid-rise apartment building is, and which a uniform scale
+cannot make), and a chamfered shaft takes its corners off. The wedding cake is
+now the rare answer for a tall building on a big plate rather than a third of
+everything. Measured on 45 buildings over 22 m: off-centre 9% → 31%, shifted
+more than 3 m 0% → 9%, plan aspect changed 2% → 9%. The 9/0/2 baseline is the
+tower kit, which already did this and which nothing below it could reach.
+
+**Left, and worth more than what was taken.**
+
+- **Which end is the street.** The shaft steps back toward one end of the deep
+  axis and *which* end is hashed off the deed, because this layer has the lot
+  ring and not the street graph. A block reads best when every shaft steps back
+  from the same side; right now half of them step toward the street. Wiring the
+  frontage through is the single biggest remaining win in massing.
+- **The plan families.** The generator has eleven (`build.mjs` — courtyard,
+  light court, dumbbell, campanile, end towers, twins, cruciform, shifted
+  stack, notched slab, chamfer taper, twist) and `setPlayerBuildings` reaches
+  none of them. A courtyard block and a dumbbell are ordinary mid-rise plans
+  and the player cannot build either. `capRoof` already takes a holes argument
+  and is always passed `[]`, which is most of what a courtyard needs.
+- **How much of what a player builds lands in this band** is not measured.
+  Measure it before sizing any of the above.
+
+### ✗ 4.4b · "Make height follow value" — measured, rejected
+
+Worth writing down because the premise looked solid and was wrong, and the
+mistake is easy to repeat.
+
+The observation was real: the generator shapes the fabric off `coreHeat`, a sum
+of isotropic Gaussians on the core points, while `build.mjs` prices the same
+ground off transit + jobs + parks + the water + the high street. Two answers to
+one question. And `corr(log floors, log land$)` measured 0.42-0.55 against the
+0.6-0.8 a real city runs.
+
+**The correlation was measured wrong.** Pooling every asset class together
+measures the class HEIGHT CAPS, not the value surface — retail is capped at 2
+floors and industrial at 4, so neither can correlate with anything. Within
+class:
+
+```
+office        0.59 · 0.72          multifamily   0.60 · 0.68
+retail        0.00 · 0.06          industrial    0.14 · 0.20
+```
+
+Office and multifamily are already in the real range. There was nothing to fix.
+
+A rank-matched site-value surface was built anyway — mirroring build.mjs's
+weights on what the generator knows, rank-matched back onto `coreHeat` so the
+multiset of heat values was byte-identical and only the assignment moved. A/B
+on within-class correlation: office 0.64 -> 0.59 on one seed, multifamily
+0.60 -> 0.68 on another. Noise. Reverted.
+
+Two things survive it. **A pooled correlation over classes with hard caps is
+not a measurement of anything** — split by class first. And the structural
+observation still stands even though the metric did not support it: the fabric
+and the price genuinely do read different surfaces, and if a future change
+needs them unified, the rank-match is the safe shape for it, because a
+differently-shaped surface would otherwise raise or lower height, bulk and
+vacancy across the whole city at once.
+
+### ⏸ 4.6 · Topography — scoped, not started, and here is why
+
+The ground is perfectly flat. There is no elevation anywhere in `citygen`, and
+the generator has `curvi` street plans that exist to follow contours and names
+districts *Trembyhill* and *Elldon Hill* — the plan and the names both imply
+terrain the ground does not have. It is the single biggest change available to
+how this game looks.
+
+It is also not a step, it is a project, and the reason is one line of the
+renderer plus twenty of the style:
+
+**Every surface the player walks on is a flat MapLibre fill at z = 0.** `land`,
+`shallows`, `esplanade`, `paveland`, `apron`, `piers`, `parks`, `park-paths`,
+`park-pond`, `pavement`, `crosswalk`, `blocks`, `sidewalk`, `curb`,
+`lane-divider`, `streets`, `bw-parcel-fill` — around twenty of them. And
+`ThreeBuildings.project()` returns `[x, y]`: the 3D layer has no notion of
+ground height either, so its lawns, water, street furniture and shadow bake all
+assume a plane.
+
+Raising the buildings alone does not work. Put a building on a hill and its
+street stays at sea level, so it floats; sink it and the pavement cuts through
+the ground floor. **The vector layers have to drape**, and in MapLibre that
+means real terrain: a raster-DEM source, Terrain-RGB encoded, and
+`map.setTerrain()`. Nothing less makes the twenty fills follow the hill.
+
+So the work, in the order it has to happen:
+
+1. **An elevation field in the generator**, consistent with the coastline it
+   already draws — the coast is exactly where the surface crosses zero, so this
+   constrains `island.mjs`'s existing `coastline()` rather than sitting beside
+   it. Hills placed where the district names and the `curvi` plans want them.
+2. **A DEM the map can read.** Rasterise the field, encode Terrain-RGB, serve
+   it as tiles or data URIs, `addSource({type: "raster-dem"})` +
+   `setTerrain({source, exaggeration})`.
+3. **Ground height into the 3D layer.** `project()` gains a z, sampled from the
+   same field; every volume's `z0` becomes its site's elevation; `bakeShadows`
+   fits its frustum to a range rather than a plane. This is the part most
+   likely to bite — the shadow pass and the far-LOD dissolve both currently
+   assume a flat world.
+4. **Then the consequences that are the actual point**: a view premium in the
+   value surface (elevation is a real driver and it is anisotropic in a way
+   nothing else here is — it is about what you can SEE, not what you are near),
+   `curvi` districts placed on the slopes that justify them, and the working
+   port pinned to the flat ground by the water where it belongs.
+
+Steps 1 and 4 are generator work and safe. Steps 2 and 3 are the project.
+Doing 1 and 4 alone would give the city a hill you can price and cannot see,
+which is worse than no hill: it is one quantity with two answers, which is the
+fault this whole codebase is organised against.
+
+### ✗ 4.7 · Two park worries that measurement did not support
+
+Both were mine, both sounded right, and neither survived being counted.
+
+**"The programme is drawn without asking whether the island can seat it."** A
+long peninsula cannot hold a 500 m reservation, so "one great park" ought
+sometimes to be undeliverable. Measured over 150 generated islands: the great
+park was seatable at full size on **every one**. A veto was written and then
+deleted, because a check that cannot fail is worse than no check — it looks
+like coverage.
+
+**"A park's size is an artifact of how crowded the map was."** `placePark`
+shrinks a park 14% and retries, up to four times, before giving up — which
+looked like it would make size an accident of placement order rather than a
+decision. Measured over 865 placements: **99.7% went down at full size**, 0.3%
+shrank one step, none failed. The retry is a guard that almost never fires,
+which is exactly what a guard should be.
+
+The transferable part is the same both times: a fallback path that exists in
+the code is not evidence that it runs. Count it before building on it.
+
+### 4.5 · Candidates after that, unranked and unmeasured
+
+- **Ground floor at distance.** The shopfront band survives the dissolve as
+  tone; the *plinth*, the stoop and the areaway do not. A masonry street reads
+  as a wall meeting the pavement at a line, and it does not have one yet.
+- **Trait-driven prop selection.** `roofKitWants` gates on `style ===` in
+  several places where it should ask a trait — the exact fault `BUILDINGS.md`
+  §3 warns about for façades, one layer up.
+- **Setback terraces.** Lower tiers get a flat cap and nothing else. A real
+  setback is where the plant, the terrace and the water tank actually live.
+
+---
+
+## 5 · HOW TO KNOW YOU DID SOMETHING
+
+Three probes, all in `tools/probe/`, all `--eval` scripts for `shoot.mjs`. The
+first two want `--profile <dir>` — a *fixed* browser profile, because
+`startRun` rerolls the city seed and a fresh profile is therefore a **different
+town**, which makes every before/after pair a comparison of two cities.
+
+| | answers |
+|---|---|
+| `fingerprint.js` | did this extraction change any geometry — 164,330 vertices, summed positions, per-style vertex counts |
+| `playerslate.js` | what does `setPlayerBuildings` actually reach, in one town |
+| `slatesweep.mjs` | ...and across N randomly generated islands |
+
+```bash
+P=/tmp/bw-prof
+node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/fp.png --wait 12000 \
+  --profile $P --verbose --settle 6000  --eval "$(cat tools/probe/fingerprint.js)"
+node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/slate.png --wait 12000 \
+  --profile $P --verbose --settle 20000 --eval "$(cat tools/probe/playerslate.js)"
+node tools/probe/slatesweep.mjs 3            # 3 fresh islands; ~45s each
+```
+
+### One town is a screenshot
+
+This is the same argument that put `styles.ts` in its own file. Every city here
+is generated from a seed, so *"which families does this draw"* is a question
+about a **distribution**. `pnpm styles` sweeps 12 generated islands;
+`slatesweep.mjs` is that question asked of the player path, and it has to sweep
+for the same reason. A family absent from a harbour town whose tallest building
+is fourteen floors is **correct**, and you cannot tell that from broken without
+more than one town.
+
+Pin the seed for an A/B. Sweep it for a claim. Do not confuse the two.
+
+### And check the measurement can move
+
+Before believing a number moved, check that it *can*. A gate on a condition the
+generator never produces reports a confident, permanent zero, and a metric
+pinned at a cap measures the cap.
+
+For anything read off the frame, **establish the noise floor first** — shoot
+the same build twice. The traffic and the pedestrians move; here that is 2.0%
+of built pixels and 0.008 of luminance `sd`. Then exaggerate your own
+coefficient and confirm the metric follows: the reveal-depth cue goes from 9.3%
+of built pixels to 18.9% at 3x, which is what makes the 9.3% believable.
+
+---
+
+## 6 · TASTE
+
+- **Proportion and depth before hue.** Bay width, the shape of the hole, and
+  how far back the glass sits do more work than every palette combined. A new
+  colour table is almost never the answer.
+- **One optical signature per family** — the thing you could name the building
+  by from across the harbour. The I-beam mullion, the pointed head, the wide
+  Chicago window, the slab edge, the dock door, the marquee.
+- **Base albedo under ~0.80.** Contrast runs in linear space about a 0.18
+  pivot; anything over ~0.85 clips to flat white before the light rig touches
+  it. A glaze reads bright because it is glossy, not because it is pale.
+- **Ask by trait, never by id.** `s < 8` was correct for the ids that existed
+  and silently wrong for every id added after.
+- **Small, reviewable commits.** An extraction that is verified geometry-neutral
+  is its own commit; the change that exploits it is the next one.
+
+---
+
+## 7 · HOW TO ADD A FACADE FAMILY
+
+Six edits. Miss any of 1-5 and the family is flat grey or never drawn at all.
+
+1. `export const S_THING = <next id>;` in `styles.ts`
+2. Trait membership (`T_MASONRY`, `T_GLASSY`, `T_TRADE`, `T_FLOORLINE`, ...)
+3. Palette branch in `FRAG` (`wall`, `glassA`, `glassB`, `colW`, `win`)
+4. Reveal depth and the roof-colour ladder
+5. A `stylePool` entry in the right era x class
+6. The optional signature math, which is the actual point — `BUILDINGS.md` §5
+
+Then `pnpm styles`, and **DEAD must stay empty**. If the family is meant to be
+reachable by the player and the rivals as well as by the generator, it must
+also survive `NOT_BUILT_TO_ORDER` in `styleForBuilt` — that set is the things
+nobody commissions (a garage, a substation, a bus canopy, a control tower), and
+anything else left out of the built pool is a family the player can never get.
+
+---
+
+## 8 · IF YOU GET LOST
 
 | Question | Answer |
 |---|---|
-| What makes a type read? | Bay width, hole shape, reveal depth — BUILDINGS §5 |
-| Why is my family never drawn? | Gate unreachable for this town’s stock — measure with `pnpm styles` / generateCity |
-| Why is player stock ugly? | `setPlayerBuildings` short ladder — §4A |
-| Why do towers match but mid-rises don’t? | Towers use `TOWER_SKINS`; mid-rises don’t use `styleFor` yet |
-| Can I change rents so vacancy shows on façades? | No — derive a look from existing occupancy; don’t retune the economy |
+| What makes a type read from the air? | Bay width, the shape of the hole, reveal depth — `BUILDINGS.md` §5 |
+| Why is my family never drawn? | Its gate is unreachable for this town's stock. Measure with `pnpm styles`, which now sweeps twelve generated islands rather than two drawn ones |
+| Is the player's stock still on a short ladder? | No — `styleForBuilt` puts it on the registry. Confirm with `node tools/probe/slatesweep.mjs`, which measures that path specifically |
+| Why did my change not show up? | You are probably looking at a different town. Every run generates its own island now; pin one with `tools/shoot.mjs --profile <dir>` |
+| Can I change rents so vacancy shows on the facade? | No. Derive the look from the occupancy that already exists; do not retune the economy to make a picture |
 
-When in doubt: **proportion and depth over colour; player path over new dead families; crowns over another wall tint.**
+When in doubt: **proportion and depth over colour; the player path over another
+dead family; crowns over another wall tint.**

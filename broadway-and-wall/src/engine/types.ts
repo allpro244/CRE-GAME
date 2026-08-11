@@ -1938,6 +1938,33 @@ export interface Rival {
   // Lifetime draw on their own credit, for the street table — a firm running
   // on its revolver is a firm you should be watching.
   revolver?: number;
+  /**
+   * Genealogy — who walked out of where to found this shop. Absent on the
+   * opening roster and on anonymous capital entry. See HANDOFF_PRINCIPAL.md §5.
+   */
+  spawnedFrom?: {
+    firmId: string;
+    firmName: string;
+    personName: string;
+  };
+}
+
+/**
+ * A person who left a firm and is trying to raise. Genealogy proposes; the
+ * product-gated raise in rivals.ts can still refuse (owner call #7).
+ */
+export interface FounderBid {
+  readyM: number;
+  name: string;
+  bornM: number;
+  diesM?: number;
+  attrs: Record<string, number>;
+  obs: Record<string, number>;
+  band0: number;
+  career?: import("./people").CareerLog;
+  role: "pm" | "leasing" | "construction";
+  fromFirmId: string;
+  fromFirmName: string;
 }
 
 /**
@@ -2132,6 +2159,11 @@ export interface GameState {
    * succession with the rest of the phone book.
    */
   fundFailedM?: number;
+  /**
+   * People who left a firm and are waiting to raise. Consumed by maybeNewFirm
+   * — the raise can still refuse. See FounderBid / HANDOFF_PRINCIPAL.md.
+   */
+  founderBids?: FounderBid[];
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *

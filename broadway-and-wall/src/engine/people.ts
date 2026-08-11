@@ -12,7 +12,7 @@
  * hazard — so the draw count is auditable and foreshadowing stays honest.
  */
 import type { ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { FounderBid, GameState } from "./types";
 import { START_YEAR } from "./types";
 import { mulberry32Step } from "./market";
 import { assetValue, initialCondition, resolveRec } from "./value";
@@ -207,6 +207,66 @@ function principalNameFromFirm(firmName: string, s: GameState): string {
   // Prefer a human name; firm name stays on FirmIdentity.
   void firmName;
   return pickName(s);
+}
+
+/**
+ * Queue a departed employee as a founder bid. They try to raise in
+ * ~3–9 months; rivals.ts can still refuse. peopleRng for the delay only.
+ */
+export function queueFounderBid(
+  s: GameState,
+  st: {
+    name: string;
+    bornM: number;
+    diesM?: number;
+    attrs: Record<string, number>;
+    obs: Record<string, number>;
+    band0: number;
+    career?: CareerLog;
+    role: "pm" | "leasing" | "construction";
+  },
+  fromFirmId: string,
+  fromFirmName: string,
+): void {
+  const delay = 3 + Math.floor(prng(s) * 7); // 3–9 months to raise
+  const bid: FounderBid = {
+    readyM: s.month + delay,
+    name: st.name,
+    bornM: st.bornM,
+    diesM: st.diesM,
+    attrs: { ...st.attrs },
+    obs: { ...st.obs },
+    band0: st.band0,
+    career: st.career ? {
+      classM: { ...st.career.classM },
+      districtM: { ...st.career.districtM },
+    } : undefined,
+    role: st.role,
+    fromFirmId,
+    fromFirmName,
+  };
+  (s.founderBids ??= []).push(bid);
+}
+
+/** Seat a founder bid as the operating principal of a new rival. */
+export function seatFounderAsRival(s: GameState, firmId: string, bid: FounderBid): Person {
+  const p: Person = {
+    id: nextPersonId(s),
+    name: bid.name,
+    bornM: bid.bornM,
+    diesM: bid.diesM,
+    attrs: { ...bid.attrs },
+    obs: { ...bid.obs },
+    band0: bid.band0,
+    seat: "rival",
+    firmId,
+    career: bid.career ? {
+      classM: { ...bid.career.classM },
+      districtM: { ...bid.career.districtM },
+    } : undefined,
+  };
+  if (p.diesM === undefined) p.diesM = drawDeathM(s, p.bornM, s.month);
+  return p;
 }
 
 /** Rival operating principal. */

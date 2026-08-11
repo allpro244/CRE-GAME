@@ -52,7 +52,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
-import { careerLoadMult, stampEmployeeLife, type Person } from "./people";
+import { careerLoadMult, queueFounderBid, stampEmployeeLife, type Person } from "./people";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -867,10 +867,15 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
   if (poached.length) {
     const ids = new Set(poached.map((x) => x.id));
     s.staff = (s.staff ?? []).filter((x) => !ids.has(x.id));
+    // Strong people do not vanish into another payroll — they try to raise.
+    // Genealogy proposes; the product-gated raise can still refuse.
+    const house = s.firm?.name ?? "your firm";
     for (const st of poached) {
+      queueFounderBid(s, st, "you", house);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `A rival poached ${st.name} — your ${ROLE_LABEL[st.role]} desk is empty again, and there is no severance when they choose to leave.`,
+        text: `${st.name} has left your ${ROLE_LABEL[st.role]} desk to raise. `
+          + `There is no severance when they choose to leave — and if the pitch clears, they will bid against you.`,
       });
     }
   }

@@ -17,6 +17,7 @@ export const MODULES = [
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
   "zoning", "lenders", "workout", "portfolio", "portfoliosale", "auction", "notes",
+  "privateCredit",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
@@ -25,6 +26,13 @@ export const MODULES = [
   // cannot ask what a hire is worth and has to re-derive the band — the exact
   // drift this file exists to prevent.
   "staff",
+  // people is the Person substrate (player, hires, rival principals). Missing
+  // from this list once made every harness re-derive a person — silent drift.
+  "people",
+  // estate is player mortality, the tax bill, §6166, continue-as-heir.
+  "estate",
+  // fund is the player vehicle — second cash account, raise, promote.
+  "fund",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

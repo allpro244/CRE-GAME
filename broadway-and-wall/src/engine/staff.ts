@@ -52,6 +52,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
+import { careerLoadMult, queueFounderBid, stampEmployeeLife, type Person } from "./people";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -114,19 +115,17 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
   pm: "Property Manager", leasing: "Leasing", construction: "Construction Manager",
 };
 
-export interface Staff {
-  id: number;
-  name: string;
+/**
+ * A hire is a Person with an employee seat and a payroll role. bornM / diesM
+ * are stamped from peopleRng after staffRng work so the economy stream and the
+ * hiring stream keep their step counts (see people.ts, HANDOFF_PRINCIPAL.md).
+ */
+export interface Staff extends Omit<Person, "seat" | "firmId"> {
+  seat?: "employee";
   role: StaffRole;
-  /** TRUE ability, 1-100. Never shown. */
-  attrs: Record<string, number>;
-  /** The first impression: what the interview and the references suggested. */
-  obs: Record<string, number>;
   /** Year-2000 dollars a year. Billed at costIdx. */
   salary: number;
   hiredM: number;
-  /** How wide the initial read was — narrowed at hire by paying for a search. */
-  band0: number;
   /**
    * Assets this person is on the hook for.
    * PM/leasing: operated holdings. Construction: live job BBLs (developments).
@@ -220,11 +219,15 @@ export function generateCandidate(s: GameState, role: StaffRole, band0: number):
   const attrs = drawAttrs(s, role);
   const name = `${FIRST[Math.floor(srng(s) * FIRST.length) % FIRST.length]} ${LAST[Math.floor(srng(s) * LAST.length) % LAST.length]}`;
   const ask = askFor(s, attrs, role);
-  return {
+  const cand = {
     id: s.nextStaffId ?? 1, name, role, attrs,
     obs: observe(s, attrs, band0),
     salary: ask, askSalary: ask, hiredM: -1, band0,
-  };
+    seat: "employee" as const,
+  } as Candidate;
+  // peopleRng only — after every staffRng step for this candidate.
+  stampEmployeeLife(s, cand);
+  return cand;
 }
 
 /**
@@ -303,14 +306,15 @@ export type OwnerStyle = "handsOn" | "delegated";
 export type BenchStyle = "boutique" | "platform";
 
 /**
- * FIRM SHAPE EMERGES FROM THE PAYROLL unless you override it.
+ * FIRM SHAPE EMERGES FROM THE PAYROLL.
  *
- * A one-person shop is hands-on and boutique whether or not you clicked a
- * button. Four specialists and a float desk is a platform. The old sliders
- * remain as an explicit override when you want to force the arithmetic.
+ * A one-person shop is hands-on and boutique. Four specialists and a float
+ * desk is a platform. Forced ownerStyle / benchStyle overrides were free
+ * capacity dials with no offsetting cost anywhere in the engine — deleted in
+ * the Principal work (HANDOFF_PRINCIPAL.md). Inferred form stays: shape is an
+ * OUTPUT of headcount, not a button.
  */
 export function effectiveOwnerStyle(s: GameState): OwnerStyle | null {
-  if (s.ownerStyle) return s.ownerStyle;
   const n = (s.staff ?? []).length;
   if (n <= 1) return "handsOn";
   if (n >= 4) return "delegated";
@@ -318,7 +322,6 @@ export function effectiveOwnerStyle(s: GameState): OwnerStyle | null {
 }
 
 export function effectiveBenchStyle(s: GameState): BenchStyle | null {
-  if (s.benchStyle) return s.benchStyle;
   const n = (s.staff ?? []).length;
   if (n <= 2) return "boutique";
   if (n >= 5) return "platform";
@@ -330,14 +333,13 @@ export function firmShapeLabel(s: GameState): string {
   const n = (s.staff ?? []).length;
   const owner = effectiveOwnerStyle(s);
   const bench = effectiveBenchStyle(s);
-  const forced = !!(s.ownerStyle || s.benchStyle);
   const bits: string[] = [];
   if (owner === "handsOn") bits.push("hands-on");
   else if (owner === "delegated") bits.push("delegated");
   if (bench === "boutique") bits.push("boutique");
   else if (bench === "platform") bits.push("platform");
   if (!bits.length) bits.push(n === 0 ? "you alone" : "growing firm");
-  return forced ? `${bits.join(" · ")} (set)` : `${bits.join(" · ")} · ${n} on payroll`;
+  return `${bits.join(" · ")} · ${n} on payroll`;
 }
 
 /**
@@ -448,7 +450,14 @@ function stateOf(capacity: number, covered: number, skill: number): RoleState {
 export function personRoleState(s: GameState, parcels: ParcelTable, st: Staff): RoleState {
   const capacity = personCapacitySf(s, st);
   let covered = 0;
-  for (const bbl of st.assignedBbls ?? []) covered += workSfAt(s, parcels, bbl, st.role);
+  for (const bbl of st.assignedBbls ?? []) {
+    const w = workSfAt(s, parcels, bbl, st.role);
+    const rec = resolveRec(parcels, s, bbl);
+    const mult = rec
+      ? careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+      : 1;
+    covered += w * mult;
+  }
   const keys = skillKeys(st.role);
   const skill = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
   return stateOf(capacity, covered, skill);
@@ -473,10 +482,24 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
   let covered = 0;
   let uncoveredSf = 0;
   let uncoveredN = 0;
+  // Float load: each floater's career weights their share; owner uses principal.
+  const ownerCareer = s.principal?.career;
   for (const bbl of deskAssetBbls(s, parcels, role)) {
     if (pinned.has(bbl)) continue;
     const w = workSfAt(s, parcels, bbl, role);
-    covered += w;
+    const rec = resolveRec(parcels, s, bbl);
+    let mult = 1;
+    if (rec) {
+      if (floaters.length) {
+        // Average floater familiarity — the float desk is a shared beat.
+        mult = floaters.reduce((a, st) => (
+          a + careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+        ), 0) / floaters.length;
+      } else {
+        mult = careerLoadMult(ownerCareer, rec.class, rec.district ?? "—");
+      }
+    }
+    covered += w * mult;
     // Uncovered = on the float with ZERO hired float capacity (owner only still counts as cover).
     if (!floaters.length && hired.length > 0 && hired.every((st) => !isFloatStaff(st))) {
       uncoveredSf += w;
@@ -844,10 +867,15 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
   if (poached.length) {
     const ids = new Set(poached.map((x) => x.id));
     s.staff = (s.staff ?? []).filter((x) => !ids.has(x.id));
+    // Strong people do not vanish into another payroll — they try to raise.
+    // Genealogy proposes; the product-gated raise can still refuse.
+    const house = s.firm?.name ?? "your firm";
     for (const st of poached) {
+      queueFounderBid(s, st, "you", house);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `A rival poached ${st.name} — your ${ROLE_LABEL[st.role]} desk is empty again, and there is no severance when they choose to leave.`,
+        text: `${st.name} has left your ${ROLE_LABEL[st.role]} desk to raise. `
+          + `There is no severance when they choose to leave — and if the pitch clears, they will bid against you.`,
       });
     }
   }
@@ -988,15 +1016,17 @@ export function setSearchTier(
   return { s: next };
 }
 
-export function setOwnerStyle(s: GameState, style: OwnerStyle): { s: GameState } {
+/** @deprecated Free capacity dial removed — firm shape emerges from headcount. */
+export function setOwnerStyle(s: GameState, _style: OwnerStyle): { s: GameState } {
   const next: GameState = cloneState(s);
-  next.ownerStyle = style;
+  delete next.ownerStyle;
   return { s: next };
 }
 
-export function setBenchStyle(s: GameState, style: BenchStyle): { s: GameState } {
+/** @deprecated Free capacity dial removed — firm shape emerges from headcount. */
+export function setBenchStyle(s: GameState, _style: BenchStyle): { s: GameState } {
   const next: GameState = cloneState(s);
-  next.benchStyle = style;
+  delete next.benchStyle;
   return { s: next };
 }
 

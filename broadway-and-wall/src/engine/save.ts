@@ -1,6 +1,7 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { GameState } from "./types";
+import { clearStyleOverrides, ensurePeople } from "./people";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -52,7 +53,7 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 32 as const;
+export const SAVE_VERSION = 33 as const;
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
@@ -64,11 +65,17 @@ export function migrateSaveState(state: GameState): GameState {
     };
     delete state.varianceApp;
   }
+  // v33 — The Principal: one Person type, peopleRng, drop free style dials.
+  // ensurePeople synthesises a principal and rival faces from peopleRng only;
+  // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
+  clearStyleOverrides(state);
+  ensurePeople(state);
   // Older campaigns bump forward once shape migrations have run. A future
   // hard break should refuse here rather than silently inventing fields.
   if (typeof state.v === "number" && state.v < SAVE_VERSION) {
     state.v = SAVE_VERSION;
   }
+  state.v = SAVE_VERSION;
   return state;
 }
 

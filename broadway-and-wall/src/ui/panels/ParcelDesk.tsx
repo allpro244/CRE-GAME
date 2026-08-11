@@ -10,7 +10,7 @@ import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, construct
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
-import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty, payOffDue } from "@/engine/debt";
+import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty, payOffDue, mezzQuote } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { locAvailable, fundableNow } from "@/engine/credit";
@@ -448,9 +448,17 @@ function ParcelPanelInner({
           <div className="grid">
             <Row k="Balance" v={usd(holding.loan.balance)} strong />
             <Row k="Coupon" v={pct(holding.loan.ratePct) + ((holding.loan.floating ?? holding.loan.product === "float") ? " (floating)" : " (fixed)")} />
+            {holding.loan.holder && <Row k="Holder" v={holding.loan.holder} />}
             {game.month < holding.loan.ioUntilM && <Row k="Interest-only" v={"until " + monthLabel(holding.loan.ioUntilM)} />}
             <Row k="Debt service / yr" v={usd(holding.loan.monthlyPmt * 12)} strong />
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
+            {holding.mezz && holding.mezz.balance > 0 && (
+              <Row
+                k="Mezz"
+                v={`${usd(holding.mezz.balance)} @ ${pct(holding.mezz.ratePct)} · ${holding.mezz.holder ?? "Cordage"} · due ${monthLabel(holding.mezz.maturityM)}`}
+                bad
+              />
+            )}
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
             {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
             {holding.loan.cap && <Row k="Rate cap" v={`base rate ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
@@ -856,7 +864,7 @@ function ParcelPanelInner({
             <Row k="Basis" v={usd(holding.costBasis)} />
             {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={"−" + usd(holding.deprTaken!)} />}
             <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
-            <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0))} strong />
+            <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0) - (holding.mezz?.balance ?? 0))} strong />
           </div>
         </div>
       )}
@@ -1938,7 +1946,20 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               </button>
             )}
           </div>
-          {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on Capital → Debt.</div>}
+          {(() => {
+            const fromFund = !!(game.fundPay && game.fund && !game.fund.settled
+              && game.month <= game.fund.investEndM);
+            const purse = fromFund ? (game.fund?.cash ?? 0) : game.cash;
+            if (equity <= purse) return null;
+            return (
+              <div className="hint">
+                Short {usd(equity - purse)}
+                {fromFund
+                  ? " — call more capital, or buy from firm cash on Capital → Debt."
+                  : " — the line of credit is on Capital → Debt."}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -2113,8 +2134,10 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
 export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
-  const { refi } = useStore.getState();
+  const { refi, placeMezz, acceptPrivateBorrowQuote, declinePrivateBorrowQuote } = useStore.getState();
   const holding = game.holdings[bbl];
+  const privateQuotes = (game.privateBorrowQuotes ?? []).filter((q) => q.bbl === bbl);
+  const mq = mezzQuote(game, parcels, bbl);
   // A leased fee with a ground rent is income paper, not vacant dirt — open
   // on an income desk even when the resolved class is still "land".
   const refiRec = resolveRec(parcels, game, bbl);
@@ -2124,7 +2147,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
   const cur = game.holdings[bbl]?.loan;
   const existing = cur ? prepayPenalty(cur, game.month) : 0;
-  if (!quotes.length) {
+  if (!quotes.length && !privateQuotes.length) {
     return (
       <div className="refi">
         <div className="deal-head">Refinance</div>
@@ -2132,6 +2155,40 @@ export function RefiSection({ bbl }: { bbl: string }) {
           No desk will quote against this today. Appraised at {usd(value)}{payoff > 0 ? `, ${usd(payoff)} outstanding` : ""} —
           the income is not there, or the credit window is shut.
         </div>
+      </div>
+    );
+  }
+  if (!quotes.length) {
+    return (
+      <div className="refi">
+        <div className="deal-head">Refinance</div>
+        <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off. The banks are silent — private paper below.</div>
+        {privateQuotes.map((pq) => {
+          const pts = Math.round(pq.principal * pq.points);
+          const mezzPen = holding?.mezz && holding.mezz.balance > 0
+            ? prepayPenalty(holding.mezz, game.month) : 0;
+          // payoff from refiQuotes is already senior + mezz balance
+          const net = pq.principal - payoff - pts - existing - mezzPen;
+          return (
+            <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
+              <div>
+                <strong>{pq.lenderName}</strong> · private bridge ·{" "}
+                <b className="mono">{usd(pq.principal)}</b> at <b className="mono">{pq.ratePct.toFixed(2)}%</b>
+              </div>
+              <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
+              <div style={{ marginTop: 4 }}>
+                After payoff and points:{" "}
+                <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
+              </div>
+              <div className="btn-row" style={{ marginTop: 6 }}>
+                <button className="btn" onClick={() => acceptPrivateBorrowQuote(pq.id)}>
+                  Take private · {usd(pq.principal)}
+                </button>
+                <button className="btn-mini" onClick={() => declinePrivateBorrowQuote(pq.id)}>Pass</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -2168,6 +2225,49 @@ export function RefiSection({ bbl }: { bbl: string }) {
           {existing > 0
             ? `Breaking the loan you have costs ${usd(existing)} in ${game.holdings[bbl]?.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment penalty"}.`
             : ""}
+        </div>
+      )}
+      {privateQuotes.map((pq) => {
+        const pts = Math.round(pq.principal * pq.points);
+        const mezzPen = holding?.mezz && holding.mezz.balance > 0
+          ? prepayPenalty(holding.mezz, game.month) : 0;
+        // payoff from refiQuotes is already senior + mezz balance
+        const net = pq.principal - payoff - pts - existing - mezzPen;
+        return (
+          <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
+            <div>
+              <strong>{pq.lenderName}</strong> · private bridge ·{" "}
+              <b className="mono">{usd(pq.principal)}</b> at <b className="mono">{pq.ratePct.toFixed(2)}%</b>,{" "}
+              {(pq.points * 100).toFixed(1)} points, {pq.termM} months · {(100 * pq.ltv).toFixed(0)}% of as-is
+            </div>
+            <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
+            <div style={{ marginTop: 4 }}>
+              After payoff and points:{" "}
+              <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
+              {" · "}lapses {monthLabel(pq.expiresM)}.
+            </div>
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <button className="btn" onClick={() => acceptPrivateBorrowQuote(pq.id)}>
+                Take private · {usd(pq.principal)}
+              </button>
+              <button className="btn-mini" onClick={() => declinePrivateBorrowQuote(pq.id)}>Pass</button>
+            </div>
+          </div>
+        );
+      })}
+      {mq.available && (
+        <div className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #7a6a45", paddingLeft: 8 }}>
+          <div>
+            <strong>Cordage mezz</strong> · behind your senior ·{" "}
+            <b className="mono">{usd(mq.principal)}</b> at <b className="mono">{mq.ratePct.toFixed(2)}%</b>,{" "}
+            {(mq.points * 100).toFixed(1)} points · stack to {(100 * mq.ltvCombined).toFixed(0)}% LTV
+          </div>
+          <div className="dim" style={{ marginTop: 4 }}>
+            A second lien, not a refinance. The coupon is why nobody does this twice.
+          </div>
+          <div className="btn-row" style={{ marginTop: 6 }}>
+            <button className="btn" onClick={() => placeMezz(bbl)}>Place mezz · {usd(mq.principal)}</button>
+          </div>
         </div>
       )}
       <div className="btn-row">
@@ -2841,6 +2941,24 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               bad={plan.contract === "costplus"}
             />
             <Row k="Schedule" v={plan.months + " months, built on spec"} />
+            {(() => {
+              const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
+              const fundable = game.cash + locAvailable(game, parcels);
+              const shortAll = Math.max(0, commitCap - fundable);
+              const dayOne = plan.equityAtClose + plan.pointsCost;
+              const shortClose = Math.max(0, dayOne - game.cash);
+              if (shortAll <= 0 && shortClose <= 0) return null;
+              return (
+                <Row
+                  k="Equity short"
+                  v={shortClose > 0
+                    ? `${usd(shortClose)} at close — cut floors/coverage or raise cash first`
+                    : `${usd(shortAll)} to finish (incl. line + change-order margin)`}
+                  bad
+                  title="No lender closes without evidence you can fund the whole sponsor share. A $2.5M opening cheque rarely finishes a mid-rise — buy income first, or shrink the massing."
+                />
+              );
+            })()}
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="hint">
@@ -2848,15 +2966,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             <b>{usd(plan.equity - plan.equityAtClose)}</b> more is drawn out of it as the building rises — equity funds
             first and in full, and the construction loan does not advance a dollar until it is spent. Budget for the
             whole {usd(equityRequired)}, not the first cheque.
+            {!canFund && " This massing is past what you can finish — that is a refuse, not a soft maybe."}
           </div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
               disabled={plan.equityAtClose + plan.pointsCost > game.cash || !canFund}
               onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender)}
-              title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
+              title={!canFund
+                ? `Equity short — needs ${usd(equityRequired)} all-in; you can fund ${usd(game.cash + locAvailable(game, parcels))} including the line.`
+                : `${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
-              Break ground · {usd(equityRequired)} of equity required
+              {canFund
+                ? `Break ground · ${usd(equityRequired)} of equity required`
+                : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - (game.cash + locAvailable(game, parcels))))}`}
             </button>
           </div>
         </>

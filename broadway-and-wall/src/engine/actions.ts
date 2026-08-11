@@ -13,7 +13,7 @@ import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifi
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
-import { originate, quote, productById, prepayPenalty, stabViewFor, monthlyPayment } from "./debt";
+import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
@@ -153,11 +153,22 @@ export function executePurchase(
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
-  if (s.cash < bq.equity) {
-    return { s, err: `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.` };
+  // Vehicle path: fundPay + live investment period draws `fund.cash`.
+  // Otherwise GP cash — the balance-sheet default.
+  const fromFund = !!(s.fundPay && s.fund && !s.fund.settled
+    && s.month <= s.fund.investEndM);
+  const purse = fromFund ? (s.fund?.cash ?? 0) : s.cash;
+  if (purse < bq.equity) {
+    return {
+      s,
+      err: fromFund
+        ? `This deal needs $${(bq.equity / 1e6).toFixed(2)}M from the vehicle — you're short.`
+        : `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.`,
+    };
   }
   const next = clone(s);
-  next.cash -= bq.equity;
+  if (fromFund && next.fund) next.fund.cash -= bq.equity;
+  else next.cash -= bq.equity;
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought).
   const pointsFee = bq.pointsFee ?? 0;
@@ -197,6 +208,8 @@ export function executePurchase(
     svcIdx: SVC_START,
     tenants: [],
     cfHistory: [],
+    // Vehicle deed — NOI and sale proceeds stay in fund.cash.
+    ...(fromFund ? { fundOwned: true } : {}),
     // A landmark stays a landmark when the deed moves.
     ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),
   };
@@ -286,9 +299,18 @@ export function executePurchase(
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the
     // advertisement. Cash in, liability up, no change in net worth.
-    next.cash += depositsOn(holding);
+    // Vehicle deed: deposits sit with the vehicle — same purse as the equity.
+    const dep = depositsOn(holding);
+    if (fromFund && next.fund) next.fund.cash += dep;
+    else next.cash += dep;
   } else {
     genRentRoll(next, rec, holding, wasDistress);
+    // genRentRoll settles deposits onto GP cash; a vehicle deed moves them over.
+    if (fromFund && next.fund) {
+      const dep = depositsOn(holding);
+      next.cash -= dep;
+      next.fund.cash += dep;
+    }
   }
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
@@ -554,7 +576,7 @@ function assembleBlocker(
     if (s.developments[d]) return `Construction is already underway at ${rec.address}.`;
     if (s.holdings[d].sale) return `${rec.address} is on the market — pull the listing first.`;
     if (s.groundLeases?.[d]) return `${rec.address} is under a ground lease. It is not yours to build on.`;
-    if (s.holdings[d].loan) {
+    if (s.holdings[d].loan || (s.holdings[d].mezz?.balance ?? 0) > 0) {
       return `${rec.address} still has a mortgage. Pay it off before you fold the title.`;
     }
     if (s.facility?.bbls?.includes(d)) {
@@ -768,8 +790,10 @@ export function offerGroundLease(
   // A land loan and a ground lease cannot share the same dirt: the land desk
   // underwrites vacant carry, and the moment a coupon appears the collateral
   // is income paper. Clear the lien before you encumber the fee.
-  if (s.holdings[bbl].loan) {
-    const bal = Math.round(s.holdings[bbl].loan!.balance);
+  if (s.holdings[bbl].loan || (s.holdings[bbl].mezz?.balance ?? 0) > 0) {
+    const bal = Math.round(
+      (s.holdings[bbl].loan?.balance ?? 0) + (s.holdings[bbl].mezz?.balance ?? 0),
+    );
     return {
       s,
       err: `Pay off the mortgage first (Debt → Pay off — $${bal.toLocaleString()} left) — a land lender will not sit under a ground lease.`,
@@ -2484,9 +2508,10 @@ export function saleProceedsToSeller(
 } {
   const { net, gain, tax } = saleTaxQuote(h, price, s);
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-  const breakFee = h.loan ? prepayPenalty(h.loan, s.month) : 0;
+  const stack = stackPayoff(h, s.month);
+  const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
-  const loanPayoff = h.loan?.balance ?? 0;
+  const loanPayoff = stack.balance;
   const toSeller = net - loanPayoff - kick - breakFee - release;
   return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller };
 }
@@ -2498,29 +2523,24 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { net, gain, tax } = saleTaxQuote(h, offer.price, s);
+  const { gain, tax } = saleTaxQuote(h, offer.price, s);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
   // the lender collects on the way out.
-  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-  // Leaving a loan inside its lockout costs the same on a sale as on a refi.
-  const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
-  // THE RELEASE PRICE. A building inside a portfolio facility cannot simply be
-  // sold out from under the lien — the lender is released only against payment
-  // of the building's allocated share of the balance at a premium, and that
-  // payment comes off the top at the closing table like any other payoff.
-  //
-  // Without this the facility would be a money pump: borrow against twelve
-  // deeds, sell all twelve, keep the proceeds and the loan. It is also the
-  // cost that makes the instrument a decision — your book has become harder to
-  // take apart than it was to assemble, and you find that out on the day you
-  // want to sell one thing.
-  const release = releaseCost(next, parcels, bbl);
-  const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
-  next.cash += toSeller;
+  // Same stack maths as saleProceedsToSeller — mezz comes off the table too.
+  const px = saleProceedsToSeller(next, parcels, h, offer.price);
+  const kick = px.kick;
+  const breakFee = px.breakFee;
+  const release = px.release;
+  const toSeller = px.toSeller;
+  // Vehicle deed: proceeds and tax sit on fund.cash so the promote has a
+  // counterparty. GP cash is untouched on a fund exit.
+  const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
+  if (intoFund && next.fund) next.fund.cash += toSeller;
+  else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //
   // The kicker and the break fee are already deducted from `toSeller` — they
@@ -2555,7 +2575,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
-    next.cash -= tax;
+    if (intoFund && next.fund) next.fund.cash -= tax;
+    else next.cash -= tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + tax;
     logBooks(next, "taxes", tax);
   }
@@ -2576,7 +2597,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
     // is exactly the size of a small building's roll. The parent's deposits
     // were handed over correctly a few lines below; the children's were not.
-    next.cash -= depositsOn(next.holdings[child]);
+    const childDep = depositsOn(next.holdings[child]);
+    if (intoFund && next.fund) next.fund.cash -= childDep;
+    else next.cash -= childDep;
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
@@ -2587,7 +2610,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
-  next.cash -= depositsOn(next.holdings[bbl]);
+  {
+    const dep = depositsOn(next.holdings[bbl]);
+    if (intoFund && next.fund) next.fund.cash -= dep;
+    else next.cash -= dep;
+  }
   // Somebody owns it now, and they will hold it for years — the tape does
   // not get it back next quarter.
   next.lastTradeM = next.lastTradeM ?? {};

@@ -280,11 +280,11 @@ export const CITIES = { newalden, kestrel };
  * different city rather than a bigger one.
  */
 export const SIZES = {
-  hamlet: { k: 0.55, name: "Hamlet", note: "A few hundred lots. You can hold every corner of it in your head." },
+  hamlet: { k: 0.55, name: "Hamlet", note: "A few hundred lots — same opening cheque, small pond. You can hold every corner, and own a real slice of it." },
   town:   { k: 0.78, name: "Town", note: "Half the standard map. Tight, and every mistake is visible." },
   city:   { k: 1.00, name: "City", note: "The standard island — about fourteen hundred lots, two miles end to end." },
-  metro:  { k: 1.45, name: "Metropolis", note: "Twice the land. Submarkets you will never personally visit." },
-  giant:  { k: 2.00, name: "Great City", note: "Four times the land. A career is not long enough to learn all of it." },
+  metro:  { k: 1.45, name: "Metropolis", note: "Twice the land. Same cheque, deeper pond — rivals and bank holds sized up with the map." },
+  giant:  { k: 2.00, name: "Great City", note: "Four times the land. Same opening money; you are a minnow. A career is not long enough to learn all of it." },
 };
 export const DEFAULT_SIZE = "city";
 

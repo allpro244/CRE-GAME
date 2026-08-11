@@ -50,8 +50,10 @@ const TOL = 1000;
 // `borrowed` is net new mortgage/facility principal drawn into cash — the
 // bucket that closes conserve's old blind spot on cash-out refinance and
 // facility draws. See BooksYear.borrowed and engine/debt.ts / facility.ts.
-const IN = ["noi", "sold", "interest", "borrowed"];
-const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga"];
+// `lpCalled` / `lpDistributed` are fund equity in/out against the vehicle's
+// second cash account — conserve reconciles Δ(cash + fund.cash).
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const M = (n) => `$${(n / 1e6).toFixed(3)}M`;
 
 const bookTotals = (g) => {
@@ -65,6 +67,7 @@ const depositsHeld = (g) => {
   for (const h of Object.values(g.holdings ?? {})) for (const t of h.tenants ?? []) d += t.deposit ?? 0;
   return d;
 };
+const liquidity = (g) => g.cash + (g.fund?.cash ?? 0);
 
 const rows = [];
 let totalBreaks = 0, months = 0;
@@ -81,7 +84,7 @@ for (const seed of SEEDS) {
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
   const START = g.cash;
   let built = false;
-  let prev = { cash: g.cash, books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };
+  let prev = { cash: liquidity(g), books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };
   const breaks = [];
   let worst = 0, cum = 0;
 
@@ -197,13 +200,41 @@ for (const seed of SEEDS) {
         if (!r.err) { g = r.s; break; }
       }
     }
+    // FUND EQUITY BUCKETS — plant a vehicle once and call/distribute so
+    // `lpCalled` / `lpDistributed` are not decorative. Gates bypassed: this
+    // is coverage of the identity, not a raise-worthiness test (see pnpm fund).
+    if (m === 100 && !g.fund) {
+      g = structuredClone(g);
+      g.fund = {
+        raisedM: g.month, size: 10_000_000, uncalled: 4_000_000, cash: 0,
+        called: 0, distributed: 0, promotePaid: 0, prefAccrued: 0,
+        investEndM: g.month + 60, lifeEndM: g.month + 120,
+        pref: 0.08, promote: 0.20, gpCommit: 300_000,
+      };
+      const c = E.callFundCapital(g, 2_000_000);
+      if (!c.err) g = c.s;
+      const d = E.distributeFund(g, 400_000);
+      if (!d.err) g = d.s;
+    }
+    // ESTATE TAX — plant a due bill so the Principal path hits `taxes` for a
+    // reason that is not property tax. Do NOT mint cash to fund it — that is
+    // a free residual. Pay only what is already on the books.
+    if (m === 140 && !g.estateDue && g.cash >= 250_000) {
+      g = structuredClone(g);
+      const bill = Math.min(500_000, Math.round(g.cash * 0.25));
+      g.estateDue = {
+        gross: 40_000_000, tax: bill, remaining: bill,
+        deadlineM: g.month, deathM: g.month - 1, decedentName: "coverage plant",
+      };
+      E.tickEstateBill(g);
+    }
 
     const nb = bookTotals(g), nl = g.loc?.balance ?? 0, nd = depositsHeld(g);
     let inflow = 0, outflow = 0;
     for (const k of IN) inflow += nb[k] - prev.books[k];
     for (const k of OUT) outflow += nb[k] - prev.books[k];
     const explained = inflow - outflow + (nl - prev.loc) + (nd - prev.dep);
-    const resid = (g.cash - prev.cash) - explained;
+    const resid = (liquidity(g) - prev.cash) - explained;
     cum += resid;
     months++;
     if (Math.abs(resid) > TOL) {
@@ -217,7 +248,7 @@ for (const seed of SEEDS) {
         for (const k of [...IN, ...OUT]) { const d = nb[k] - prev.books[k]; if (d) parts[k] = Math.round(d); }
         breaks.push({
           m, resid,
-          dCash: Math.round(g.cash - prev.cash),
+          dCash: Math.round(liquidity(g) - prev.cash),
           dLoc: Math.round(nl - prev.loc),
           dDep: Math.round(nd - prev.dep),
           parts,
@@ -225,7 +256,7 @@ for (const seed of SEEDS) {
         });
       }
     }
-    prev = { cash: g.cash, books: nb, loc: nl, dep: nd };
+    prev = { cash: liquidity(g), books: nb, loc: nl, dep: nd };
     if (g.gameOver) break;
   }
   totalBreaks += breaks.length;
@@ -251,7 +282,7 @@ console.log(`\n${"=".repeat(64)}`);
 // somewhere, check that dollars went anywhere: an identity nothing exercises
 // reports a pass it did not earn. `sold` is exempt — the bot only lists when it
 // is short, so a run where it never had to is a healthy run, not a dead one.
-const REQUIRED = ["noi", "interest", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga"];
+const REQUIRED = ["noi", "interest", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
 const dead = REQUIRED.filter((k) => coverage[k] === 0);
 console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);
 if (dead.length) {

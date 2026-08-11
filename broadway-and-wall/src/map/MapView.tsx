@@ -691,6 +691,27 @@ export default function MapView() {
         }
       }
     }
+    // BLOCK TROUBLE AS A LOOK. One dark shop is noise; a street with three
+    // empty bays is what you see from the air months before the Economy page
+    // moves. Fold retail occupancy by block and write the block mean onto
+    // every shopfront on that block — same shader, legible neighbourhood.
+    {
+      const byBlock = new Map<string, { sum: number; n: number; bbls: string[] }>();
+      for (const [bbl, v] of ret) {
+        const rec = resolveRec(parcels, game, bbl);
+        if (!rec?.block) continue;
+        const row = byBlock.get(rec.block) ?? { sum: 0, n: 0, bbls: [] };
+        row.sum += v;
+        row.n++;
+        row.bbls.push(bbl);
+        byBlock.set(rec.block, row);
+      }
+      for (const row of byBlock.values()) {
+        if (row.n < 2) continue;
+        const mean = row.sum / row.n;
+        for (const bbl of row.bbls) ret.set(bbl, mean);
+      }
+    }
     layer.setOccupancy(occ);
     layer.setRetail(ret);
     // the courthouse on the door: auction lots and noticed foreclosures
@@ -917,9 +938,14 @@ export default function MapView() {
       // construction read as bare dirt on the one label you get without
       // clicking. The panel already flags it; the map did not.
       const job = g?.developments?.[rec.bbl];
+      const cityJob = !job ? (g?.cityJobs ?? []).find((j) => j.bbl === rec.bbl) : undefined;
       tip.textContent = job
         ? `${rec.address} · UNDER CONSTRUCTION · ${Math.round(job.sf).toLocaleString()} sf of ${job.use}`
           + `, ${job.floors} fl · opens ${monthLabel(job.deliverM)}`
+        : cityJob
+        ? `${rec.address} · CRANE · ${Math.round(cityJob.sf).toLocaleString()} sf of ${cityJob.use}`
+          + `, ${cityJob.floors} fl · ${cityJob.orphaned ? "stalled" : `due ${monthLabel(cityJob.deliverM)}`}`
+          + (cityJob.firmId ? ` · ${g?.rivals.find((r) => r.id === cityJob.firmId)?.name ?? "a rival"}` : " · the city")
         : rec.class === "land"
         ? `${rec.address} · vacant · ${rec.lotArea.toLocaleString()} sf lot · demand ${dmd}`
         : `${rec.address} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · demand ${dmd}`;

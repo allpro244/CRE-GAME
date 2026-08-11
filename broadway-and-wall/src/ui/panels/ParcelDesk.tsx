@@ -2011,7 +2011,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
     ?? quotes[0];
   const picked = q.id;
   const proceeds = Math.round(q.maxProceeds * lev);
-  const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing;
+  const capPremium = q.floating ? Math.round(proceeds * 0.0125) : 0;
+  const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing + capPremium;
   const toYou = proceeds - payoff - fee;
   // real annuity, not "coupon times 1.28" — the old shortcut overstated a
   // 30-yr amort by a full point of proceeds at today's rates
@@ -2057,13 +2058,14 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="scroll-x">
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Max LTV</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
           </thead>
           <tbody>
             {[...quotes]
               .map((x) => {
                 const px = Math.round(x.maxProceeds);
-                const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + existing;
+                const cap = x.floating ? Math.round(px * 0.0125) : 0;
+                const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + existing + cap;
                 return { x, px, net: px - payoff - f };
               })
               .sort((a, b) => b.net - a.net)
@@ -2085,7 +2087,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
                 >
                   <td>{x.id === picked ? "▸ " : ""}{x.label}</td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
-                  <td className="num">{(x.maxLTV * 100).toFixed(0)}%</td>
+                  <td className="num">{((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%</td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
                     {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
@@ -2102,7 +2104,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       </div>
       <div className="grid">
         <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
-        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${(q.maxLTV * 100).toFixed(0)}% advance rate`} />
+        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />
         {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
             dial is actually set to.
             This row printed `dscrAtMax` — the coverage at the LENDER'S maximum
@@ -2129,8 +2131,9 @@ export function RefiSection({ bbl }: { bbl: string }) {
           bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
-        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${(q.maxLTV * 100).toFixed(0)}% max LTV, ${q.floating ? "floating" : "fixed"}`} />
+        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`} />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
+        {capPremium > 0 && <Row k="Rate cap at close" v={usd(capPremium)} />}
         <Row
           k="Prepayment"
           v={q.prepay === "open" ? "open — leave any time"
@@ -2237,7 +2240,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
         })()}
       </div>
       <div className="btn-row">
-        <button className="btn btn-buy" disabled={proceeds < 100_000} onClick={() => refi(bbl, product, lev)}>
+        <button
+          className="btn btn-buy"
+          disabled={proceeds < 100_000 || !q.available}
+          onClick={() => refi(bbl, picked, lev)}
+        >
           {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
         </button>
       </div>

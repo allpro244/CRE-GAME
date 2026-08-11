@@ -200,7 +200,11 @@ export function executePurchase(
     // listing and the approach are not cleared until below. Sizing the loan
     // that actually gets written off a different number from the one quoted is
     // how a player ends up with paper they never agreed to.
-    holding.loan = originate(next, prod, price, inPlace(rec, next, bbl, price).noi, lev, holding.condition, rec.class);
+    // Same stabilised view buyQuote passed into `quote` — without it, bridge
+    // paper re-sizes on in-place income at close after showing a takeout on
+    // the term sheet.
+    const stab = stabViewFor(rec, next.econ, holding.condition, price);
+    holding.loan = originate(next, prod, price, inPlace(rec, next, bbl, price).noi, lev, holding.condition, rec.class, stab);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {

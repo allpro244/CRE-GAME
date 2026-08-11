@@ -2333,10 +2333,11 @@ export interface GameState {
   /**
    * WHAT THE DESK DID THIS MONTH while you were quiet.
    *
-   * When the firm agent, an exclusive, or an in-house leasing hire holds the
-   * pen, letters stop interrupting you — only referrals do. Without a scorecard
-   * a quiet month looks identical to a desk that is turning everyone away.
-   * Counts roll with `m`; readers treat a stale month as empty.
+   * When the firm agent or an exclusive holds the pen, letters stop
+   * interrupting you — only referrals do. Without a scorecard a quiet month
+   * looks identical to a desk that is turning everyone away. Counts roll with
+   * `m`; readers treat a stale month as empty. In-house leasing staff do not
+   * write this card on their own — they do not hold the pen.
    */
   deskMonth?: {
     m: number;

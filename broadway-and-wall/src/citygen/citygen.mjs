@@ -191,6 +191,36 @@ function erode(ring, dOf) {
   return r ? cleanRing(r) : null;
 }
 
+/**
+ * The opposite of `erode`, and it needs its own function rather than a negative
+ * distance: `erode` CLIPS, so it can only ever make a ring smaller — pass it a
+ * negative and every half-plane lands outside the ring, nothing is cut, and it
+ * hands back exactly what you gave it. That silently produced a park with no
+ * apron ring around it and dropped map coverage two points, which is the one
+ * fault this file exists to prevent.
+ *
+ * So: start from a box that certainly contains the result and clip it with the
+ * ring's own half-planes pushed OUT by d. On a convex ring that is the mitered
+ * offset — the same thing `rect(w + 2d, h + 2d)` gives for a rectangle, which
+ * is what this replaced.
+ */
+function dilateConvex(ring, d) {
+  const ccw = ringArea(ring) > 0;
+  const [x0, y0, x1, y1] = bboxOfRing(ring);
+  const m = d + 10;
+  let r = [[x0 - m, y0 - m], [x1 + m, y0 - m], [x1 + m, y1 + m], [x0 - m, y1 + m]];
+  for (let i = 0; i < ring.length && r; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-9) continue;
+    const ox = ccw ? ey / len : -ey / len;
+    const oy = ccw ? -ex / len : ex / len;
+    r = clipRingHalfPlane(r, ox, oy, a[0] * ox + a[1] * oy + d);
+  }
+  return r ? cleanRing(r) : null;
+}
+
 function chamfer(ring, i, cut) {
   const n = ring.length;
   const prev = ring[(i - 1 + n) % n], cur = ring[i], nxt = ring[(i + 1) % n];
@@ -398,7 +428,16 @@ export function generateCity(cfg) {
   // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
   // kerb rather than turf painted to the reservation line.
   const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
-  const PARKS_M = cfg.parks.map((p) => rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
+  // A PARK MAY CARRY ITS OWN SHAPE. `ring` is the drawn reservation, convex and
+  // in metres; `cx/cy/w/h/deg` remain its bounding box, because the amenity
+  // term and the station namer size a green off its area rather than its
+  // outline. Without a ring it is the rectangle it always was — which is still
+  // right for a formal square, and is what the harness fixtures carry.
+  //
+  // CONVEXITY IS LOAD-BEARING, not a stylistic choice: these rings go straight
+  // into insideFaces + subtractConvex, and that decomposition is what makes
+  // "the city has no holes" true. A concave park would silently drop blocks.
+  const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
   const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
@@ -408,7 +447,9 @@ export function generateCity(cfg) {
   // leaves is the frontage road around the park — it has to be PAVED, or the
   // park comes ringed in a metre-wide moat of bare ground.
   const APRONS = [
-    ...cfg.parks.map((p) => rect(p.cx, p.cy, p.w + 2 * PARK_CLEAR, p.h + 2 * PARK_CLEAR, p.deg ?? 0)),
+    ...cfg.parks.map((p, i) => (p.ring
+      ? (dilateConvex(PARKS_M[i], PARK_CLEAR) ?? PARKS_M[i])
+      : rect(p.cx, p.cy, p.w + 2 * PARK_CLEAR, p.h + 2 * PARK_CLEAR, p.deg ?? 0))),
     ...(cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w + 2 * DIAG_CLEAR, d.h + 2 * DIAG_CLEAR, d.deg)),
   ];
   const OBSTACLES = [

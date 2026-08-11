@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import Slider from "@/ui/Slider";
+import Slider, { widePriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
@@ -793,16 +793,21 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                 title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due">
                 Close into a 1031
               </button>
-              {!bid.countered && (
+              {!bid.countered && (() => {
+                const pb = widePriceBounds(bid.price, q.sumOfParts);
+                const cb = { ...pb, min: Math.max(pb.min, bid.price + pb.step) };
+                return (
                 <>
-                  <Slider min={bid.price} max={Math.round(bid.price * 1.18)} step={100_000}
+                  <Slider min={cb.min} max={cb.max} step={cb.step} editable
                     value={counter || Math.round(bid.price * 1.05)} onChange={setCounter}
-                    label="Counter at" format={(v: number) => usd(v)} />
+                    label="Counter at" format={(v: number) => usd(v)}
+                    hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />
                   <button className="btn" onClick={() => counterPortfolioBid(counter || Math.round(bid.price * 1.05))}>
                     Counter
                   </button>
                 </>
-              )}
+                );
+              })()}
               <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>Pull it</button>
             </div>
             <div className="hint">

@@ -347,6 +347,13 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
+            <Stat
+              label="Base rate"
+              value={pct(game.econ.indexRate)}
+              keep
+              w={72}
+              title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
+            />
             {/* Vacancy change, not level — the single highest-EV cycle tell. */}
             <Stat
               label="Vac Δ / yr"
@@ -376,16 +383,7 @@ export default function TopBar() {
             w={88}
             title={`Net worth in opening-year dollars — nominal ${usd(nw)} ÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}. Read this on long runs.`}
           />
-          {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
-              drop 3 — only on very wide screens — so they cannot clip into
-              "MA" under the Portfolio button on a normal desktop. */}
-          <Stat
-            label="Base rate"
-            value={pct(game.econ.indexRate)}
-            drop={2}
-            w={72}
-            title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
-          />
+          {/* NW rides drop 2. Market phase and vacant-lot counts are drop 3. */}
           <Stat
             label="Market"
             value={game.econ.phase}

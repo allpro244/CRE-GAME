@@ -84,6 +84,12 @@ export function PropertyPage() {
         ) : (
           <Big label="Occupancy" value={built ? (occ * 100).toFixed(0) + "%" : "—"} bad={built && occ < 0.75} />
         )}
+        {leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl] && (
+          <>
+            <Big label="Lessee building" value={`${game.groundLeases[bbl].floors ?? rec.floors} fl · ${sf(rec.bldgArea)}`} />
+            <Big label="Lessee" value={game.groundLeases[bbl].tenant} />
+          </>
+        )}
         {built && h && (() => {
           const u = unitStatus(rec, h, game.month);
           return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;

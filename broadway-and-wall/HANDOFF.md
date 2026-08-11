@@ -227,10 +227,13 @@ paydowns are cash-only (`fundCashNeed` / `fundableNow` with `{ allowLoc: false }
 Debt service may still draw the revolver; curing a breach with the revolver was
 the immortality path.
 
-**Holder relationships are wired to approaches only.** A holder who will not
-take your call still lists buildings to you on the open tape and still bids
-against you at auction. Extending the memory to listings and the broker's calls
-is the obvious next move on that feature.
+**~~Holder relationships are wired to approaches only~~ — CLOSED.** Cold
+holders block every acquire door (`buyListing` / `negotiate` / `buyOffMarket` /
+`counterOffMarket` / `submitBlindBid` / `acceptCounter`), hang up open talks
+and approaches across their book on `offend(..., parcels)`, and stay visible
+on the tape as **NOT TO YOU** (still for sale to the market). Broker pools
+already skipped them. Holders do not bid at auction — that HANDOFF claim was
+wrong. Harness: `pnpm holder`.
 
 ---
 
@@ -242,9 +245,10 @@ is the obvious next move on that feature.
    `clawbackSlippedDeliveries`. Economy / leadlag / invariants read the queue.
    Physical stores (`cityJobs` / `developments`) remain; the queue is the
    economic clock. See `SKYLINE_CYCLES_PLAN.md` Phase 8.
-2. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
+2. **~~Holder memory beyond approaches~~ — CLOSED.** See above; `pnpm holder`.
+3. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
    dual-supply and retail-glut mechanisms stand on their own.
-3. Holder memory beyond approaches; zoning depth (#36).
+4. Zoning depth (#36); #33 seller predictability; #48/#49 firm entry and exit.
 
 ---
 

@@ -403,6 +403,46 @@ export function relOf(s: GameState, id: string): HolderRel {
   return s.holderRel?.[id] ?? {};
 }
 
+/** Shared copy for every acquire door that reads holder memory. */
+export function coldRefuseMsg(held: Holder): string {
+  return `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it. `
+    + `It is still for sale — just not to you.`;
+}
+
+/** Named holder of this deed who is refusing you today, or null. */
+export function coldOnDeed(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
+  const held = holderOf(s, parcels, bbl);
+  if (held && isCold(s, held.id)) return held;
+  return null;
+}
+
+/**
+ * Hang up every open conversation with this holder across their book.
+ *
+ * An insult on one corner used to leave live asks and open talks on their
+ * other deeds — so you could still buyOffMarket / acceptCounter elsewhere
+ * while the register said they would not take your call. A family that has
+ * just been lowballed does not carefully keep that opinion filed under one
+ * address. Signed contracts (`talks.agreed`) stand; everything else dies.
+ */
+export function hangUpWithHolder(s: GameState, parcels: ParcelTable, id: string) {
+  const until = relOf(s, id).coldUntilM ?? s.month + 1;
+  for (const [bbl, a] of Object.entries(s.approaches)) {
+    if (holderOf(s, parcels, bbl)?.id !== id) continue;
+    s.approaches[bbl] = {
+      ...a,
+      refused: true,
+      coldUntilM: Math.max(a.coldUntilM ?? 0, until),
+    };
+  }
+  if (!s.talks) return;
+  for (const [bbl, t] of Object.entries(s.talks)) {
+    if (t.agreed) continue;
+    if (holderOf(s, parcels, bbl)?.id !== id) continue;
+    delete s.talks[bbl];
+  }
+}
+
 /**
  * AN OFFENCE AGAINST A HOLDER IS AN OFFENCE AGAINST EVERY DEED THEY OWN.
  *
@@ -412,8 +452,11 @@ export function relOf(s: GameState, id: string): HolderRel {
  * on the HOLDER, every approach to any of their buildings reads it, and it
  * hardens with repetition — the second insult costs half again as long as the
  * first, because by then they have a view about you rather than about an offer.
+ *
+ * Pass `parcels` so the hang-up reaches every live conversation in their book;
+ * tests that only assert the cold clock may omit it.
  */
-export function offend(s: GameState, id: string, months: number) {
+export function offend(s: GameState, id: string, months: number, parcels?: ParcelTable) {
   if (!s.holderRel) s.holderRel = {};
   const rel = s.holderRel[id] ?? {};
   const n = (rel.offences ?? 0) + 1;
@@ -424,6 +467,7 @@ export function offend(s: GameState, id: string, months: number) {
     coldUntilM: Math.max(rel.coldUntilM ?? 0, s.month + cold),
     lastM: s.month,
   };
+  if (parcels) hangUpWithHolder(s, parcels, id);
 }
 
 /** ...and a deal closed is the other half. A holder who has sold to you before

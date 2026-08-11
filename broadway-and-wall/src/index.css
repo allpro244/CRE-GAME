@@ -702,6 +702,8 @@ body {
 
 /* distress listings run hot */
 .chip-distress { background: #a8402e; color: #fdfbf4; }
+.chip-cold { background: #5c5348; color: #f3efe4; }
+.tbl tr.row-cold td { opacity: 0.72; }
 
 /* the net-worth chart: one century, one stroke */
 .nw-chart { width: 100%; height: auto; display: block; margin: 10px 0 4px; }

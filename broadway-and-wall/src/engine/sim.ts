@@ -20,6 +20,9 @@ import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
+import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
+import { tickPlayerMortality, lifeForCash } from "./estate";
+import { tickFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -127,14 +130,23 @@ function targetListings(s: GameState, totalLots: number): number {
  * screen — see START_CASH_CHOICES. It defaults so every existing caller,
  * harness and probe keeps working unchanged.
  */
-export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
+export function newGame(
+  seed: number,
+  parcels?: ParcelTable,
+  cash0: number = DEFAULT_START_CASH,
+  age0?: number,
+): GameState {
+  const startAge = age0 ?? lifeForCash(cash0).age;
   const s: GameState = {
-    v: 32,
+    v: 33,
     seed,
     rng: seed,
     streams: initStreams(seed),
     month: 0,
     cash: cash0,
+    startAge,
+    peopleRng: (seed ^ 0x50454f50) | 0,
+    nextPersonId: 1,
     econ: null as never,
     holdings: {},
     listings: [],
@@ -180,7 +192,12 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
     insolventMs: 0,
   };
   s.econ = initEcon(s, parcels);
+  // Player principal BEFORE rivals so start-age draws do not depend on roster
+  // size — peopleRng only; s.rng untouched.
+  s.principal = makePlayerPrincipal(s, startAge);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
+  // Fill rival principals + staff life stamps. Player already seated.
+  ensurePeople(s);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
@@ -241,7 +258,7 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
  * and will not.
  */
 function listHolderExit(s: GameState, parcels: ParcelTable) {
-  const { bbls, distress } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
+  const { bbls, distress, kind } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
   for (const bbl of bbls) {
     if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
@@ -249,11 +266,16 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
     if (value <= 0) continue;
     const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
+    // Only a true estate holder (or a rival-principal death in people.ts) may
+    // stamp reason:"estate". Partnership/fund/developer exits used to wear that
+    // badge too — Marketplace then read every book sale as an estate, and the
+    // Principal mortality signal was noise. Voluntary is the honest residual.
+    const reason: Listing["reason"] = kind === "estate" ? "estate" : "voluntary";
     const listing: Listing = {
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
-      reason: "estate",
+      reason,
     };
     if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
     s.listings.push(listing);
@@ -433,6 +455,11 @@ function tickMonth(
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
   tickStaff(s, parcels);
+  // Careers accrue from the book; rival principals die on their drawn date.
+  // peopleRng only for estate asks — s.rng untouched.
+  tickPeople(s, parcels);
+  tickPlayerMortality(s, parcels);
+  tickFund(s);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -510,7 +537,10 @@ function tickMonth(
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
-    monthCF += cf;
+    // Vehicle deeds keep their cash in the vehicle — promote needs a
+    // counterparty, and GP liquidity is not LP capital.
+    if (h.fundOwned && s.fund && !s.fund.settled) s.fund.cash += cf;
+    else monthCF += cf;
 
     // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
     // owner watches, stamped at the same moment the month's NOI is booked so
@@ -939,6 +969,17 @@ function tickMonth(
   for (const bbl of Object.keys(s.workouts ?? {})) {
     if (!s.holdings[bbl]?.loan && !(s.holdings[bbl]?.mezz?.balance)) delete s.workouts![bbl];
   }
+
+  // PHYSICAL AND ECONOMIC AGREE AT THE MONTH BOUNDARY.
+  //
+  // Reconcile already runs at the top of the tick so deliveries do not land
+  // from ghost jobs. Paths mid-month can still drop a cityJob (or take over a
+  // frame into developments) without cancelling the matching deliveryQueue
+  // row; invariants checked at month-end then see an orphan that the next
+  // month's opening reconcile would have cleared. Estate-driven rival exits
+  // made that race load-bearing. Close it here so the month that ends is the
+  // month the gate reads.
+  reconcileSupplyQueue(s, parcels);
 }
 
 export function advanceMonth(
@@ -1306,6 +1347,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         label: `Open lease signing costs ${n} would breach the cash reserve`,
       });
     }
+  }
+  // Estate tax — nine-month clock, or §6166 instalments still running.
+  if (s.estateDue && (s.estateDue.remaining ?? 0) > 0) {
+    const bill = s.estateDue;
+    const left = bill.deadlineM - s.month;
+    out.push({
+      key: `estate:${bill.deathM}`,
+      label: bill.elect6166
+        ? `Estate tax instalment — $${(bill.remaining / 1e6).toFixed(2)}M remaining under §6166`
+        : left <= 0
+          ? `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M is past due`
+          : `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M due ${monthLabel(bill.deadlineM)} — ${left} month${left === 1 ? "" : "s"}`,
+    });
   }
   // Milestones stay in the news tape; they are not decisions that should stop Skip.
   if (s.gameOver) out.push({ key: "over", label: "The run is over" });

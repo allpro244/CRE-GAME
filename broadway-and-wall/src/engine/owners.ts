@@ -532,7 +532,7 @@ function exitStory(h: Holder, n: number): string {
  */
 export function tickHolders(
   s: GameState, parcels: ParcelTable, rng: (s: GameState) => number,
-): { bbls: string[]; distress: boolean } {
+): { bbls: string[]; distress: boolean; kind?: string } {
   // ONLY THE NAMES WITH BOOKS. A one-building owner selling their one building
   // is not an event, it is a listing, and the tape already generates those
   // from the same stock — dressing it up with a headline would be the news
@@ -559,7 +559,7 @@ export function tickHolders(
   const hz = (EXIT_HAZARD[h.kind] ?? 0.03 / 12) * (h.tier === "major" ? 0.7 : 1) * reg.length;
   if (rng(s) > hz) return { bbls: [], distress: false };
   const book = holdingsOf(s, parcels, h.id).filter((b) => !s.listings.some((l) => l.bbl === b));
-  if (!book.length) return { bbls: [], distress: false };
+  if (!book.length) return { bbls: [], distress: false, kind: h.kind };
   // Not the whole book at once in every case: an estate sells everything, a
   // fund trims. What comes is enough to be a story.
   const share = h.kind === "estate" ? 1 : h.kind === "institution" ? 0.7 : h.kind === "developer" ? 0.4 : 0.8;
@@ -577,5 +577,9 @@ export function tickHolders(
   // WHO IS SELLING DECIDES WHETHER IT IS CHEAP. An estate and a split
   // partnership want it DONE and price it that way; a fund with a committee
   // and a developer recycling do not have to take a discount and will not.
-  return { bbls, distress: h.kind === "estate" || h.kind === "partnership" };
+  return {
+    bbls,
+    distress: h.kind === "estate" || h.kind === "partnership",
+    kind: h.kind,
+  };
 }

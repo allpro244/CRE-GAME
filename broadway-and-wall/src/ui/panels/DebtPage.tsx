@@ -15,6 +15,9 @@ import { locLimit, locRate } from "@/engine/credit";
 import { LineChart } from "@/ui/Chart";
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition, gradeOf } from "@/engine/rivals";
+import { rivalPrincipalOf } from "@/engine/people";
+import { PersonCard, personAgeLine } from "@/ui/PersonCard";
+import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE } from "@/engine/fund";
 import { compFlows, compStats } from "@/engine/comps";
 import { usd, sf, pct } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
@@ -485,14 +488,9 @@ export function TheStreet() {
   const rivals = game.rivals ?? [];
   if (!rivals.length) return null;
   const appetite = marketAppetite(game);
-  const playerEquity = (() => {
-    let v = game.cash;
-    for (const h of Object.values(game.holdings)) {
-      const rec = resolveRec(parcels, game, h.bbl);
-      if (rec) v += ownedHoldingValue(game, parcels, h) - (h.loan?.balance ?? 0);
-    }
-    return v;
-  })();
+  // Same number as TopBar / Books — a street rank that re-derives equity is
+  // one quantity with two answers (facility, loc, deposits, CIP, notes).
+  const playerEquity = netWorth(game, parcels);
   const marked = rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum);
   return (
@@ -504,7 +502,8 @@ export function TheStreet() {
         These firms bid on the same tape you do, with their own money — a firm without the equity does not
         close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
         get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
-        that bid is you. Click any firm for its balance sheet and what it owns.
+        that bid is you. The principal column is who runs the shop and how old they are — equity alone cannot
+        tell you the next thirty years. Click any firm for its balance sheet and what it owns.
       </div>
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
@@ -537,7 +536,7 @@ export function TheStreet() {
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Principal</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -547,11 +546,16 @@ export function TheStreet() {
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
             const isOpen = open === r.id;
+            const principal = rivalPrincipalOf(game, r.id);
             return (
               <Fragment key={r.id}>
               <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
-                <td>{isOpen ? "▾ " : "▸ "}{r.name}</td>
+                <td title={r.spawnedFrom ? `Spun out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
+                  {isOpen ? "▾ " : "▸ "}{r.name}
+                  {r.spawnedFrom ? <span className="dim"> · spinout</span> : null}
+                </td>
+                <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
@@ -584,12 +588,15 @@ export function TheStreet() {
               </tr>
               {isOpen && (
                 <tr>
-                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
                     {/* THE BALANCE SHEET, the same one you are judged on. Gross
                         assets less debt is their equity; NOI over assets is what
                         the book yields; distributions are what they have already
                         taken off the table, which is why a firm with modest
                         equity is not necessarily a firm that did badly. */}
+                    {principal && !dead && (
+                      <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
+                    )}
                     <div className="grid" style={{ margin: "8px 0" }}>
                       <Row k="Gross assets" v={usd(m.aum)} />
                       <Row k="Debt" v={usd(r.debt)} bad={m.ltv > 0.8} />
@@ -723,6 +730,91 @@ export const STYLE_WORD: Record<string, string> = {
   slumlord: "milking the stock",
 };
 
+
+/**
+ * THE FUND — optional second cash account. Balance-sheet path stays default;
+ * this panel is how you raise, call, distribute, and choose which purse buys.
+ */
+export function FundDesk() {
+  const game = useStore((s) => s.game)!;
+  const { raiseFund, callFundCapital, distributeFund, setFundPay } = useStore.getState();
+  const q = fundRaiseQuote(game);
+  const f = game.fund;
+  const live = f && !f.settled;
+  const fundDeeds = Object.values(game.holdings).filter((h) => h.fundOwned).length;
+  if (!live && !game.fundFailedM && !q.ok && (game.exits ?? []).length < 2) {
+    // Quiet until the player has something to show LPs — empty chrome is noise.
+    return null;
+  }
+  return (
+    <div className="page-section">
+      <div className="page-section-head">The fund</div>
+      {game.fundFailedM !== undefined && (
+        <div className="hint" style={{ color: "var(--neg, #a33)" }}>
+          Nobody will back you again. The last vehicle did not return capital
+          ({monthLabel(game.fundFailedM)}). Succession clears the name; nothing else does.
+        </div>
+      )}
+      {live && f ? (
+        <>
+          <div className="stat-strip">
+            <Big label="Vehicle cash" value={usd(f.cash)} />
+            <Big label="Called" value={usd(f.called)} />
+            <Big label="Uncalled" value={usd(f.uncalled)} />
+            <Big label="Distributed" value={usd(f.distributed)} />
+            <Big label="Promote paid" value={usd(f.promotePaid)} />
+            <Big label="Pref accrued" value={usd(f.prefAccrued)} bad={f.prefAccrued > 0} />
+          </div>
+          <div className="grid">
+            <Row k="Vintage" v={`${monthLabel(f.raisedM)} · $${(f.size / 1e6).toFixed(0)}M`} />
+            <Row k="Investment period" v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"}`} />
+            <Row k="Fund life" v={`ends ${monthLabel(f.lifeEndM)}`} />
+            <Row k="Waterfall" v={`${(FUND_PREF * 100).toFixed(0)}% pref · ${(FUND_PROMOTE * 100).toFixed(0)}% promote`} />
+            <Row k="Vehicle deeds" v={`${fundDeeds}`} />
+          </div>
+          <div className="btn-row">
+            <button className="btn" disabled={f.uncalled <= 0}
+              onClick={() => callFundCapital(Math.round(f.uncalled * 0.5))}>
+              Call half uncalled
+            </button>
+            <button className="btn" disabled={f.uncalled <= 0}
+              onClick={() => callFundCapital(f.uncalled)}>
+              Call remainder
+            </button>
+            <button className="btn" disabled={f.cash < 100_000}
+              onClick={() => distributeFund(Math.round(f.cash * 0.5))}>
+              Distribute half cash
+            </button>
+            <button className="btn" disabled={f.cash <= 0}
+              onClick={() => distributeFund(f.cash)}>
+              Distribute all cash
+            </button>
+          </div>
+          <div className="btn-row">
+            <button className={"btn" + (game.fundPay ? " btn-on" : "")}
+              disabled={!fundCanBuy(game) && !game.fundPay}
+              onClick={() => setFundPay(!game.fundPay)}>
+              {game.fundPay ? "Buying from the vehicle" : "Buy from the vehicle"}
+            </button>
+          </div>
+          <div className="hint">
+            Vehicle cash is not yours. NOI and sale proceeds on fund deeds stay in the vehicle;
+            the promote only crystallises once the pref is current. Miss returning capital and the street closes.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="hint">{q.reason}</div>
+          <div className="btn-row">
+            <button className="btn btn-buy" disabled={!q.ok} onClick={() => raiseFund()}>
+              {q.ok ? `Raise $${(q.size / 1e6).toFixed(0)}M` : "Cannot raise"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // The revolving line: up to 35% of net worth at prime + 400bps, and the
 // advance rate moves with the credit cycle — the label used to promise a
@@ -1161,6 +1253,7 @@ export function DebtPage() {
       {/* THE REVOLVER BELONGS WITH THE REST OF THE DEBT, not under the ledger.
           Books still shows the drawn balance as a liability; draw and repay live
           here with the mortgages and the facility. */}
+      <FundDesk />
       <CreditLine />
 
       {(game.privateBorrowQuotes?.length ?? 0) > 0 && (

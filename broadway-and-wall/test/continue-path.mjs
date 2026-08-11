@@ -43,7 +43,7 @@ console.log("\nCONTINUE PATH\n");
 
   const prepared = E.prepareSaveForResume(snap);
   check(prepared.ok === true, "v31 campaign prepares for resume after migration");
-  check(prepared.state?.v === 32, "prepare bumps save version to current");
+  check(prepared.state?.v === 33, "prepare bumps save version to current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;

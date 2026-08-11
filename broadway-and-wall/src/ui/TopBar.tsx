@@ -292,7 +292,17 @@ export default function TopBar() {
           <div className="topbar-summary">
           <div className="topbar-vital">
             <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
-            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
+            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep
+              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+            {game.fund && !game.fund.settled && (
+              <Stat
+                label="Vehicle"
+                value={usd(game.fund.cash)}
+                w={88}
+                keep
+                title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
+              />
+            )}
             {(() => {
               const drawn = game.loc?.balance ?? 0;
               const label = drawn > 0 ? "Line drawn" : "Line";
@@ -355,7 +365,7 @@ export default function TopBar() {
             value={usd(nw)}
             drop={2}
             w={96}
-            title={`Nominal net worth ${usd(nw)}. In today's dollars (÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}): ${usd(nwReal)}. Century scores that ignore inflation flatter every survivor.`}
+            title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). In today's dollars (÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}): ${usd(nwReal)}.`}
           />
           <Stat
             label="Real NW"
@@ -364,7 +374,7 @@ export default function TopBar() {
             w={88}
             title={`Net worth in opening-year dollars — nominal ${usd(nw)} ÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}. Read this on long runs.`}
           />
-          {/* Base rate rides drop 2. Market phase and vacant-lot counts are
+          {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
               drop 3 — only on very wide screens — so they cannot clip into
               "MA" under the Portfolio button on a normal desktop. */}
           <Stat

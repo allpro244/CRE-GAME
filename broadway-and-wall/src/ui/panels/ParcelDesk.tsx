@@ -1946,7 +1946,20 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               </button>
             )}
           </div>
-          {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on Capital → Debt.</div>}
+          {(() => {
+            const fromFund = !!(game.fundPay && game.fund && !game.fund.settled
+              && game.month <= game.fund.investEndM);
+            const purse = fromFund ? (game.fund?.cash ?? 0) : game.cash;
+            if (equity <= purse) return null;
+            return (
+              <div className="hint">
+                Short {usd(equity - purse)}
+                {fromFund
+                  ? " — call more capital, or buy from firm cash on Capital → Debt."
+                  : " — the line of credit is on Capital → Debt."}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

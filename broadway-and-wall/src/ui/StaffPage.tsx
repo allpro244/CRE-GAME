@@ -52,7 +52,7 @@ import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import {
   ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
-  LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
+  LEASING_BASE_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
   SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
   deskBacklog, firmShapeLabel, personRoleState, isFloatStaff,
   leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
@@ -60,6 +60,7 @@ import {
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
+import { PersonCard as PrincipalCard } from "./PersonCard";
 import { sf, usd } from "./format";
 
 const ROLES: StaffRole[] = ["pm", "leasing", "construction"];
@@ -171,7 +172,7 @@ export default function StaffPage() {
   const parcels = useStore((s) => s.parcels);
   const {
     hireStaff, fireStaff, postJob,
-    setStaffSearchTier, setStaffOwnerStyle, setStaffBenchStyle,
+    setStaffSearchTier,
     assignStaffBuilding, unassignStaffBuilding,
   } = useStore.getState();
   // Firing is three months of somebody's pay and two months of nobody in the
@@ -219,7 +220,7 @@ export default function StaffPage() {
         <Big
           label="You cover, alone"
           value={sf(ownerCover)}
-          title="How much commercial space you personally cover before the desk slips. Hands-on keeps more; delegated needs people sooner."
+          title="How much commercial space you personally cover before the desk slips. Grows or shrinks with payroll shape, not a dial."
         />
       </div>
 
@@ -235,42 +236,14 @@ export default function StaffPage() {
       <div className="page-section">
         <div className="page-section-head">Firm shape · {shape}</div>
         <div className="hint">
-          Shape emerges from headcount — a one-person shop is hands-on and boutique; a larger payroll reads as a platform —
-          unless you force it. Neither dial is a skill chip; they change capacity arithmetic.
-        </div>
-        <div className="btn-row" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className={"btn" + ((game.ownerStyle ?? "") === "handsOn" ? " btn-on" : "")}
-            onClick={() => setStaffOwnerStyle("handsOn")}
-            title={`You cover about ${sf(OWNER_SF * 1.35)} yourself.`}
-          >
-            Hands-on
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.ownerStyle === "delegated" ? " btn-on" : "")}
-            onClick={() => setStaffOwnerStyle("delegated")}
-            title={`You cover about ${sf(OWNER_SF * 0.72)} yourself — staff sooner.`}
-          >
-            Delegated
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.benchStyle === "boutique" ? " btn-on" : "")}
-            onClick={() => setStaffBenchStyle("boutique")}
-          >
-            Boutique
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.benchStyle === "platform" ? " btn-on" : "")}
-            onClick={() => setStaffBenchStyle("platform")}
-          >
-            Platform
-          </button>
+          Shape emerges from headcount — a one-person shop is hands-on and boutique; a larger payroll reads as a platform.
+          Capacity arithmetic follows the org chart; there is no free dial to force it.
         </div>
       </div>
+
+      {game.principal && (
+        <PrincipalCard person={game.principal} game={game} showAttrs title="You · the principal" />
+      )}
 
       {ROLES.map((role) => (
         <RoleDesk

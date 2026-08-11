@@ -359,6 +359,11 @@ export interface Loan {
 export interface Holding {
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
+  /**
+   * Bought with vehicle cash — NOI and sale proceeds route to `s.fund.cash`,
+   * not GP liquidity. See fund.ts / PRINCIPAL_CALLS.md #4.
+   */
+  fundOwned?: boolean;
   bbl: string;
   boughtM: number;
   costBasis: number;
@@ -1756,6 +1761,16 @@ export interface BooksYear {
    * the balance-sheet draws that land in the operating account.
    */
   borrowed?: number;
+  /**
+   * LP capital called into the fund vehicle — equity IN, not income.
+   * See fund.ts; conserve tracks this with `lpDistributed` against
+   * Δ(cash + fund.cash).
+   */
+  lpCalled?: number;
+  /**
+   * Distributions to LPs from the vehicle — equity OUT, not expense.
+   */
+  lpDistributed?: number;
 }
 
 /** Same flow buckets as BooksYear, stamped once per game month for the monthly statement. */
@@ -1772,6 +1787,8 @@ export interface BooksMonth {
   ga: number;
   interest: number;
   borrowed?: number;
+  lpCalled?: number;
+  lpDistributed?: number;
 }
 
 /**
@@ -1934,6 +1951,33 @@ export interface Rival {
   // Lifetime draw on their own credit, for the street table — a firm running
   // on its revolver is a firm you should be watching.
   revolver?: number;
+  /**
+   * Genealogy — who walked out of where to found this shop. Absent on the
+   * opening roster and on anonymous capital entry. See HANDOFF_PRINCIPAL.md §5.
+   */
+  spawnedFrom?: {
+    firmId: string;
+    firmName: string;
+    personName: string;
+  };
+}
+
+/**
+ * A person who left a firm and is trying to raise. Genealogy proposes; the
+ * product-gated raise in rivals.ts can still refuse (owner call #7).
+ */
+export interface FounderBid {
+  readyM: number;
+  name: string;
+  bornM: number;
+  diesM?: number;
+  attrs: Record<string, number>;
+  obs: Record<string, number>;
+  band0: number;
+  career?: import("./people").CareerLog;
+  role: "pm" | "leasing" | "construction";
+  fromFirmId: string;
+  fromFirmName: string;
 }
 
 /**
@@ -1999,7 +2043,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 32;
+  v: 33;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -2071,15 +2115,68 @@ export interface GameState {
   pmDeskSlip?: number;
   /** How the market reads your hiring history — 0..1, default 0.55. */
   hireReputation?: number;
-  /** handsOn: you cover more sf yourself; delegated: you need staff sooner. */
+  /**
+   * @deprecated Free capacity dial — ignored. Firm shape emerges from headcount
+   * via effectiveOwnerStyle(). Cleared on migrate to v33.
+   */
   ownerStyle?: "handsOn" | "delegated";
-  /** boutique: wider star spread; platform: flatter, reliable mid. */
+  /**
+   * @deprecated Free capacity dial — ignored. Cleared on migrate to v33.
+   */
   benchStyle?: "boutique" | "platform";
   pendingHires?: { staff: import("./staff").Staff; startM: number }[];
   hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
   nextStaffId?: number;
   /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
   staffRng?: number;
+  /**
+   * People stream — mortality, principal synthesis, hire life stamps.
+   * Seeded `seed ^ 0x50454f50`. Must not step s.rng. See people.ts.
+   */
+  peopleRng?: number;
+  /** The participant the player controls — a Person, seat "you". */
+  principal?: import("./people").Person;
+  /** Operating principal per living rival firm id. */
+  rivalPrincipals?: Record<string, import("./people").Person>;
+  /** Ids for non-staff persons (rival principals, heirs). Staff keep nextStaffId. */
+  nextPersonId?: number;
+  /**
+   * Outstanding estate tax after the principal's death. Absent while alive or
+   * once paid. See estate.ts — must never set gameOver on its own.
+   */
+  estateDue?: {
+    gross: number;
+    tax: number;
+    remaining: number;
+    deadlineM: number;
+    deathM: number;
+    decedentName: string;
+    elect6166?: boolean;
+    installmentMo?: number;
+  };
+  /** Opening age chosen on the start menu (Phase 5). */
+  startAge?: number;
+  /**
+   * Player fund vehicle — second cash account. Absent = balance-sheet path
+   * (the default). See fund.ts / PRINCIPAL_CALLS.md.
+   */
+  fund?: import("./fund").PlayerFund | null;
+  /**
+   * When true, new purchases draw equity from the live fund during its
+   * investment period. Opt-in path; balance-sheet remains the default until
+   * a raise flips this on.
+   */
+  fundPay?: boolean;
+  /**
+   * Month the last vehicle failed LPs — the second death. Cleared on
+   * succession with the rest of the phone book.
+   */
+  fundFailedM?: number;
+  /**
+   * People who left a firm and are waiting to raise. Consumed by maybeNewFirm
+   * — the raise can still refuse. See FounderBid / HANDOFF_PRINCIPAL.md.
+   */
+  founderBids?: FounderBid[];
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *
@@ -2490,7 +2587,10 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
   if (!e || e.yr !== yr) {
-    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0 };
+    e = {
+      yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+    };
     s.books.push(e);
   }
   e[key] = ((e[key] as number) ?? 0) + amt;
@@ -2502,7 +2602,7 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   if (!me || me.m !== s.month) {
     me = {
       m: s.month, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
     };
     s.booksMonthly.push(me);
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();

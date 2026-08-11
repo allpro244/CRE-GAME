@@ -30,7 +30,7 @@
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
+import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
@@ -44,6 +44,7 @@ import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
+import { makeRivalPrincipal, seatFounderAsRival } from "./people";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1415,35 +1416,96 @@ const DEPLOY_YR = 2;
  * about eighteen shops, the number is an OUTPUT of how many trades a year there
  * are to go round, and it is not a floor, a cap or a target.
  */
-function maybeNewFirm(s: GameState) {
+/**
+ * Entry pitch — leverage × product × thin, as a monthly hazard against RAISE_M.
+ * Exported so `pnpm firms` can assert the raise is still able to say no.
+ */
+export function firmEntryPitch(s: GameState): {
+  leverage: number; product: number; thin: number; pitch: number; traded: number; firms: number;
+} {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
   const spread = cap - (s.econ.indexRate + RATE_SPREAD);
-  if (spread <= 0) return;
-  const leverage = Math.min(1, spread / SPREAD_FULL);
-  // THE TOWN'S OWN TRADE FLOW, counted rather than asserted. `lastTradeM` is
-  // stamped by every path that conveys a deed, so this is the number of
-  // buildings that actually changed hands in the last year. It undercounts a
-  // building that traded twice, because the map keeps only the latest date —
-  // which biases the term DOWN in exactly the churn-heavy years, and is the
-  // safe direction for a term whose job is to say no.
+  const leverage = spread <= 0 ? 0 : Math.min(1, spread / SPREAD_FULL);
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
-  // AND THE CRANES COUNT. A fund that builds is deploying capital as surely as
-  // one that buys, and a groundbreaking never stamps `lastTradeM` — leaving
-  // them out would have told a developer there was nothing for him to do in the
-  // exact years the city was full of holes in the ground.
   for (const j of s.cityJobs ?? []) if (s.month - j.startM < 12) traded++;
   const firms = livingRivals(s).length;
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
-  if (product <= 0) return;
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
   const pitch = Math.min(1, leverage * product * thin);
-  if (rng(s, "rivals") > pitch / RAISE_M) return;
+  return { leverage, product, thin, pitch, traded, firms };
+}
+
+function styleFromFounderRole(role: FounderBid["role"]): RivalStyle {
+  if (role === "construction") return "developer";
+  if (role === "leasing") return "opportunistic";
+  return "pe";
+}
+
+function firmNameFromFounder(s: GameState, personName: string, used: Set<string>): string {
+  const last = personName.trim().split(/\s+/).pop() || "Spinout";
+  for (const house of HOUSES) {
+    const name = `${last} ${house}`;
+    if (!used.has(name)) return name;
+  }
+  // Fallback coins through the same surname table so we never stall.
+  for (let i = 0; i < 20; i++) {
+    const name = `${last} ${HOUSES[Math.floor(rng(s, "rivals") * HOUSES.length)]}`;
+    if (!used.has(name)) return name;
+  }
+  return `${last} Capital ${s.month}`;
+}
+
+function maybeNewFirm(s: GameState) {
+  const { leverage, product, pitch } = firmEntryPitch(s);
+  if (leverage <= 0 || product <= 0) return;
+
+  // Genealogy proposes first. A ready founder bid takes this month's raise
+  // slot — anonymous capital only enters when nobody is waiting to spin out.
+  const bids = s.founderBids ?? [];
+  const readyIdx = bids.findIndex((b) => b.readyM <= s.month);
+  const founder = readyIdx >= 0 ? bids[readyIdx] : null;
+  /** Months a ready founder keeps pitching before the street closes on them. */
+  const FOUNDER_WINDOW_M = 18;
+
+  if (rng(s, "rivals") > pitch / RAISE_M) {
+    // Not this month. Founders keep the slot and try again — a single roll
+    // must not erase a career. Only the window expiring (or a barren street
+    // for the whole window) sends them elsewhere.
+    if (founder && s.month - founder.readyM >= FOUNDER_WINDOW_M) {
+      s.founderBids = bids.filter((_, i) => i !== readyIdx);
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `${founder.name} could not raise out of ${founder.fromFirmName} — `
+          + `the street would not clear a first close. They took a seat elsewhere.`,
+      });
+    }
+    return;
+  }
+
   const used = new Set((s.rivals ?? []).map((r) => r.name));
-  const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
-  const f = pool.length ? pool[Math.floor(rng(s, "rivals") * pool.length)] : coinFirm(s, used);
-  if (!f) return;
+  let name: string;
+  let style: RivalStyle;
+  let spawnedFrom: Rival["spawnedFrom"] | undefined;
+
+  if (founder) {
+    s.founderBids = bids.filter((_, i) => i !== readyIdx);
+    name = firmNameFromFounder(s, founder.name, used);
+    style = styleFromFounderRole(founder.role);
+    spawnedFrom = {
+      firmId: founder.fromFirmId,
+      firmName: founder.fromFirmName,
+      personName: founder.name,
+    };
+  } else {
+    const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
+    const f = pool.length ? pool[Math.floor(rng(s, "rivals") * pool.length)] : coinFirm(s, used);
+    if (!f) return;
+    name = f.name;
+    style = f.style;
+  }
+
   // A NEW FUND IS A NEW FUND. This used to scale the raise by aggregate street
   // AUM — "sized to the era" — which sounds right and is not: once the twelve
   // incumbents crossed half a billion between them, every firm founded after
@@ -1452,9 +1514,10 @@ function maybeNewFirm(s: GameState) {
   // raise, not by how rich the people who started forty years earlier have
   // become. They compound their way up like everybody else.
   // Same band as before, then × island area — a Great City first close is not
-  // a Hamlet first close. No extra rng() calls.
+  // a Hamlet first close. No extra rng() calls. `style` is set for both
+  // genealogy spinouts and anonymous raises.
   const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s));
-  const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
+  const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**
    * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the
    * GP calls it as it deploys, and what has not been called yet is the
@@ -1481,14 +1544,23 @@ function maybeNewFirm(s: GameState) {
   // Cash is what has been CALLED. Uncalled is the reserve the LPs signed for —
   // it becomes cash only through callCapital. Handing both as spendable money
   // made every new fund 30–50% overcapitalised on day one.
+  const id = `r${s.rivals.length}`;
   s.rivals.push({
-    id: `r${s.rivals.length}`, name: f.name, style: f.style,
+    id, name, style,
     cash: equity - uncalled, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
     uncalled,
+    spawnedFrom,
   });
+  // Operating principal — peopleRng only, after every rivals-stream draw above.
+  (s.rivalPrincipals ??= {})[id] = founder
+    ? seatFounderAsRival(s, id, founder)
+    : makeRivalPrincipal(s, id, name);
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${f.name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
+    text: founder
+      ? `${founder.name} has raised $${(equity / 1e6).toFixed(0)}M as ${name}, spinning out of ${founder.fromFirmName}. `
+        + `There is competition on the tape again — and it knows your book.`
+      : `${name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
   });
 }
 

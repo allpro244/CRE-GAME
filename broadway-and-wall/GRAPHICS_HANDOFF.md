@@ -213,6 +213,56 @@ needs them unified, the rank-match is the safe shape for it, because a
 differently-shaped surface would otherwise raise or lower height, bulk and
 vacancy across the whole city at once.
 
+### ⏸ 4.6 · Topography — scoped, not started, and here is why
+
+The ground is perfectly flat. There is no elevation anywhere in `citygen`, and
+the generator has `curvi` street plans that exist to follow contours and names
+districts *Trembyhill* and *Elldon Hill* — the plan and the names both imply
+terrain the ground does not have. It is the single biggest change available to
+how this game looks.
+
+It is also not a step, it is a project, and the reason is one line of the
+renderer plus twenty of the style:
+
+**Every surface the player walks on is a flat MapLibre fill at z = 0.** `land`,
+`shallows`, `esplanade`, `paveland`, `apron`, `piers`, `parks`, `park-paths`,
+`park-pond`, `pavement`, `crosswalk`, `blocks`, `sidewalk`, `curb`,
+`lane-divider`, `streets`, `bw-parcel-fill` — around twenty of them. And
+`ThreeBuildings.project()` returns `[x, y]`: the 3D layer has no notion of
+ground height either, so its lawns, water, street furniture and shadow bake all
+assume a plane.
+
+Raising the buildings alone does not work. Put a building on a hill and its
+street stays at sea level, so it floats; sink it and the pavement cuts through
+the ground floor. **The vector layers have to drape**, and in MapLibre that
+means real terrain: a raster-DEM source, Terrain-RGB encoded, and
+`map.setTerrain()`. Nothing less makes the twenty fills follow the hill.
+
+So the work, in the order it has to happen:
+
+1. **An elevation field in the generator**, consistent with the coastline it
+   already draws — the coast is exactly where the surface crosses zero, so this
+   constrains `island.mjs`'s existing `coastline()` rather than sitting beside
+   it. Hills placed where the district names and the `curvi` plans want them.
+2. **A DEM the map can read.** Rasterise the field, encode Terrain-RGB, serve
+   it as tiles or data URIs, `addSource({type: "raster-dem"})` +
+   `setTerrain({source, exaggeration})`.
+3. **Ground height into the 3D layer.** `project()` gains a z, sampled from the
+   same field; every volume's `z0` becomes its site's elevation; `bakeShadows`
+   fits its frustum to a range rather than a plane. This is the part most
+   likely to bite — the shadow pass and the far-LOD dissolve both currently
+   assume a flat world.
+4. **Then the consequences that are the actual point**: a view premium in the
+   value surface (elevation is a real driver and it is anisotropic in a way
+   nothing else here is — it is about what you can SEE, not what you are near),
+   `curvi` districts placed on the slopes that justify them, and the working
+   port pinned to the flat ground by the water where it belongs.
+
+Steps 1 and 4 are generator work and safe. Steps 2 and 3 are the project.
+Doing 1 and 4 alone would give the city a hill you can price and cannot see,
+which is worse than no hill: it is one quantity with two answers, which is the
+fault this whole codebase is organised against.
+
 ### 4.5 · Candidates after that, unranked and unmeasured
 
 - **Ground floor at distance.** The shopfront band survives the dissolve as

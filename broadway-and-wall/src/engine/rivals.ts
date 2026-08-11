@@ -215,14 +215,23 @@ const AMORT_SHARE: Record<RivalStyle, number> = {
 // is free and regrets it; core and family capital does not take construction
 // risk, because that is the entire point of core and family capital.
 const BUILD_APPETITE: Record<RivalStyle, number> = {
-  developer: 1, opportunistic: 0.3, core: 0.06, family: 0,
+  // Named builders have to actually build. Appetite used to leave the street
+  // claiming ~3% of city jobs — noise, not "the rest" the docstring promised.
+  developer: 1.15, opportunistic: 0.45, core: 0.08, family: 0,
   // A merchant builder is MORE of a builder than a developer is — building is
   // the entire business and the hold is an accident. Everybody else has a
   // reason not to take construction risk, and the reason differs.
-  merchant: 1.25, pe: 0.35, reit: 0.10, vulture: 0.05,
-  owneruser: 0.20, foreign: 0, slumlord: 0,
+  merchant: 1.35, pe: 0.50, reit: 0.14, vulture: 0.06,
+  owneruser: 0.22, foreign: 0, slumlord: 0,
 };
 const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
+
+/** Concurrent live frames a style will carry. Developers/merchants are shops. */
+function maxLiveJobs(style: RivalStyle): number {
+  if (style === "developer" || style === "merchant") return 3;
+  if (style === "pe" || style === "opportunistic") return 2;
+  return 1;
+}
 
 /**
  * ONE DEED, ONE OWNER.
@@ -334,50 +343,58 @@ export function claimJob(
   // sites whose median land is $8.5M, and the median firm holds $0.8M of cash.
   // Requiring all of the first from all of the second failed by an order of
   // magnitude, every time, for fifty years.
-  const equity = Math.round((cost + land) * (1 - ltc));
+  // Sponsor equity against TOTAL project cost (land + hard). Day-one is a
+  // first equity draw of that total — not "100% of the dirt PLUS 85% of
+  // equity", which double-counted the site and left named firms at ~3% of
+  // groundbreaks against median land of several million.
+  const projectCost = cost + land;
+  const equity = Math.round(projectCost * (1 - ltc));
+  const dayOneEquity = Math.round(equity * 0.40);
 
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
     if (want <= 0) return false;
-    // one job at a time for most, two for a firm that does nothing else
-    const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
-    if (live >= (r.style === "developer" ? 2 : 1)) return false;
+    const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+    if (live >= maxLiveJobs(r.style)) return false;
     // A JOB HAS TO FIT THE FIRM. Nobody with twelve million of equity starts a
     // sixty-million-dollar tower, and a shop that does it anyway is not a
     // developer, it is a casualty.
-    if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return false;
-    // The equity goes in over the build, not on day one — but it goes in FIRST,
-    // ahead of the loan, which is how a construction facility is drawn. So what
-    // has to be in the bank to break ground is the sponsor's share of the whole
-    // project, not the whole site plus a slice of the building.
-    const dayOne = Math.round(equity * 0.85);
-    if (r.cash < dayOne + Math.max(1_000_000, r.cash * 0.06)) return false;
-    // A DEVELOPER GOES WHERE SOMEBODY HAS ALREADY PROVED THE BLOCK. Your
-    // building is the comp that makes their pro forma work, which is exactly
-    // why the crane goes up across the street from the last one that worked.
-    return rng(s, "rivals") < 0.5 * want * ci * (nearPlayer ? 3 : 1);
+    if (projectCost > (r.aum ?? 0) * 0.9 + r.cash * 5) return false;
+    if (r.cash < dayOneEquity + Math.max(400_000, r.cash * 0.04)) return false;
+    // Named builders should claim a real share of the pipeline. Near the
+    // player is still hotter (comp + tenant risk), but far sites are no longer
+    // a coin-flip against a 0.5× haircut that left them at ~3%.
+    const p = Math.min(0.95, want * ci * (nearPlayer ? 2.6 : 1.35));
+    return rng(s, "rivals") < p;
   });
   if (!runners.length) return null;
 
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
   for (const r of runners) {
-    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, equity)) * (0.6 + rng(s, "rivals") * 0.8);
+    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, dayOneEquity)) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
 
-  best.cash -= land;
+  best.cash -= dayOneEquity;
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
   const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
   if (job) {
     job.firmId = best.id;
-    job.cost = cost;
-    job.spent = 0;
-    job.equityLeft = Math.round(cost * (1 - ltc));
+    job.cost = projectCost;
+    // Day-one equity is in. Remaining work draws the construction facility —
+    // leaving a multi-million equityLeft balance orphaned every claimed job
+    // once sponsor cash ran dry before the loan ever advanced (debt stayed 0).
+    job.spent = dayOneEquity;
+    job.equityLeft = 0;
     job.debt = 0;
-    job.commitment = Math.round(cost * ltc);
+    // Facility covers the unpaid balance plus a thin interest reserve — without
+    // it, capitalised interest fills the commitment and the next month orphans
+    // a nearly finished frame.
+    job.commitment = Math.round(Math.max(0, projectCost - dayOneEquity) * 1.12);
     job.ratePct = plan.ratePct;
+    job.lender = plan.lender;
   }
   s.news.unshift({
     q: s.month, kind: "event",
@@ -422,12 +439,19 @@ function replenishCityBuildPool(s: GameState) {
   s.econ.cityBuildCash = Math.min(cap, (s.econ.cityBuildCash ?? monthly * 24) + monthly);
 }
 
-function monthJobSpend(j: { cost?: number; startM: number; deliverM: number }, month: number): number {
+function monthJobSpend(
+  j: { cost?: number; spent?: number; startM: number; deliverM: number },
+  month: number,
+): number {
+  // Gap to the S-curve target — not a raw monthly increment. Prefunding day-one
+  // equity (spent > 0 at groundbreak) used to leave the curve still demanding
+  // 100% of cost on top, so commitment filled, debt stopped, and every claimed
+  // job orphaned with the facility "fully drawn".
   const span = Math.max(1, j.deliverM - j.startM);
   const t1 = Math.min(1, (month - j.startM + 1) / span);
-  const t0 = Math.min(1, (month - j.startM) / span);
   const curve = (t: number) => t * t * (3 - 2 * t);
-  return Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+  const target = Math.round((j.cost ?? 0) * curve(t1));
+  return Math.max(0, target - (j.spent ?? 0));
 }
 
 /** True when a thin pool should kill the job rather than slip the schedule. */
@@ -580,6 +604,14 @@ export function fundJobs(s: GameState) {
       const capitalCall = afterEquity - fromDebt;
       const cashNeed = fromEquity + capitalCall;
       if (r.cash < cashNeed) {
+        // Prefer a month of schedule slip over a standing skeleton when the
+        // sponsor is only short this draw — orphans were eating most named
+        // starts before they could deliver.
+        if ((j.spent ?? 0) > (j.cost ?? 0) * 0.15) {
+          j.deliverM = (j.deliverM ?? s.month) + 1;
+          if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
+          continue;
+        }
         j.orphaned = true;
         s.news.unshift({
           q: s.month, kind: "event",
@@ -601,12 +633,12 @@ export function fundJobs(s: GameState) {
       const capitalised = Math.min(cap, Math.max(0, commitment - (j.debt ?? 0)));
       const cashInterest = cap - capitalised;
       if (cashInterest > r.cash) {
-        j.orphaned = true;
-        s.news.unshift({
-          q: s.month, kind: "event",
-          text: `${r.name} has stopped work after exhausting the construction interest reserve. `
-            + `They could not carry the $${(cashInterest / 1000).toFixed(0)}K monthly interest bill.`,
-        });
+        // Capitalise the coupon into the facility and slip — same survival
+        // path anonymous jobs get when the city pool is thin for a month.
+        j.debt = (j.debt ?? 0) + cap;
+        r.debt += cap;
+        j.deliverM = (j.deliverM ?? s.month) + 1;
+        if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
         continue;
       }
       j.debt = (j.debt ?? 0) + capitalised;
@@ -805,6 +837,14 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
     const r = parcels[b];
     return r && r.class !== "land" && r.bldgArea > 0;
   });
+  // Vacant dirt for the land bank. A developer who opens fully invested in
+  // standing buildings never builds — measured: zero vacant lots on every
+  // builder-style firm at month zero, and ~1.3 named deliveries per city in
+  // fifty years. The land bank is not decoration; it is how they break ground.
+  const vacant = bbls.filter((b) => {
+    const r = parcels[b];
+    return r && (r.class === "land" || !r.bldgArea) && (r.lotArea ?? 0) >= 2500;
+  });
   const taken = new Set<string>();
   rosterFor(s).forEach((f, i) => {
     const r: Rival = {
@@ -814,10 +854,43 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       // with, exactly like you do.
       cash: 0, bbls: [], debt: 0, targetLtv: f.ltv, bornM: 0, basis: 0,
     };
-    const reserveShare = rrange(s, 0.06, 0.16, "rivals");
+    const builder = BUILD_APPETITE[f.style] >= 0.9;
+    // Builders keep serious dry powder. A land bank without cash cannot break
+    // ground — measured after the first land-bank pass: firms held 7–14 lots
+    // and $1–4M, and still almost never started.
+    const reserveShare = builder
+      ? rrange(s, 0.34, 0.48, "rivals")
+      : rrange(s, 0.06, 0.16, "rivals");
     r.cash = Math.round(f.equity * reserveShare);
-    // buy until the deployable equity is spent
     let spend = f.equity - r.cash;
+
+    // LAND BANK FIRST for shops that build — a few sites, not the whole fund.
+    // Cap lots so dirt does not immobilise the equity needed to verticalize.
+    if (builder || f.style === "merchant" || f.style === "developer") {
+      const landBudget = Math.round(spend * (f.style === "merchant" ? 0.40 : 0.22));
+      const maxLots = f.style === "merchant" ? 4 : 3;
+      let landSpend = 0;
+      let lots = 0;
+      let landGuard = 0;
+      while (landSpend < landBudget && lots < maxLots && landGuard++ < 800) {
+        const bbl = vacant[Math.floor(rng(s, "rivals") * vacant.length)];
+        if (!bbl || taken.has(bbl)) continue;
+        const rec = parcels[bbl];
+        const v = landValue(rec, s.econ);
+        if (v <= 0 || v > landBudget - landSpend + spend * 0.05) continue;
+        // Prefer sites a first equity draw can actually verticalize.
+        if (v > r.cash * 1.8) continue;
+        if (v > spend - landSpend) continue;
+        taken.add(bbl);
+        r.bbls.push(bbl);
+        r.basis = Math.round((r.basis ?? 0) + v);
+        landSpend += v;
+        lots++;
+      }
+      spend -= landSpend;
+    }
+
+    // buy income product until the remaining deployable equity is spent
     let guard = 0;
     while (spend > 0 && guard++ < 3000) {
       const bbl = built[Math.floor(rng(s, "rivals") * built.length)];
@@ -1510,8 +1583,8 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
  */
 function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (BUILD_APPETITE[r.style] <= 0) return;
-  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
-  if (live >= (r.style === "developer" ? 2 : 1)) return;
+  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+  if (live >= maxLiveJobs(r.style)) return;
   // Vacant land first; when housable floor lags employment, densify worn or
   // obsolete stock they already own — same underwrite and order book as the
   // city's teardown desk (ECONOMY.md §F #2 / CENTURY OPEN #6).
@@ -1585,16 +1658,20 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     : undefined;
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
   if (!underwriting?.clears) return;
-  const startGate = redev ? 0.018 : 0.011;
+  // Land-bank starts were ~1%/month even for a full-appetite developer — so a
+  // firm sitting on dirt still almost never broke ground. Raise the monthly
+  // hazard so a funded land bank becomes buildings, not a slow bleed.
+  const startGate = redev ? 0.07 : 0.055;
   if (startsRoll >= startGate * BUILD_APPETITE[r.style] * ci * underwriting.appetite) return;
   const plan = underwriting.plan;
   sf = plan.sf;
   floors = plan.floors;
   if (redev && sf < rec.bldgArea * 1.08) return;
   const cost = plan.costTotal;
-  if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
-  // the dirt is already theirs, so only the build equity has to be in the bank
-  if (r.cash < Math.round(plan.equity * 0.45) + Math.max(1_000_000, r.cash * 0.06)) return;
+  if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
+  // Dirt is already theirs — first equity draw only (loan follows over the job).
+  const dayOneNeed = Math.round(plan.equity * 0.40);
+  if (r.cash < dayOneNeed + Math.max(400_000, r.cash * 0.03)) return;
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
   const months = plan.months;
@@ -1621,11 +1698,16 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // the street carries them. Settled here and carried on the job so the
   // pipeline below and the delivery record cannot disagree.
   const prog = plan.mix;
+  // First equity draw at groundbreak; the facility carries the rest. Funding
+  // the entire sponsor equity out of monthly cash calls is what stalled land-
+  // bank jobs with debt still at zero.
+  const dayOne = dayOneNeed;
+  r.cash -= dayOne;
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
-    firmId: r.id, cost, spent: 0,
-    equityLeft: plan.equity, debt: 0,
-    commitment: Math.round(cost * plan.ltc),
+    firmId: r.id, cost, spent: dayOne,
+    equityLeft: 0, debt: 0,
+    commitment: Math.round(Math.max(0, cost - dayOne) * 1.12),
     ratePct: plan.ratePct,
     lender: plan.lender,
   });

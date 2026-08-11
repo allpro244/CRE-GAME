@@ -186,9 +186,7 @@ export function PortfolioPage() {
   })();
 
   const showAllOnMap = () => {
-    setPage("none");
-    useStore.getState().setLens("owners");
-    if (holdings[0]) focus(holdings[0].bbl, true);
+    useStore.getState().showBookOnMap();
   };
 
   return (

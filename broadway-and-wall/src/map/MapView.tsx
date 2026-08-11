@@ -9,6 +9,7 @@ import { useSf } from "@/engine/mix";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
+import { siteDeeds } from "@/engine/actions";
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -210,10 +211,12 @@ export default function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const hoveredRef = useRef<string | null>(null);
-  const selectedRef = useRef<string | null>(null);
+  /** Every deed painted selected — a whole assemblage, not just the click. */
+  const selectedRef = useRef<string[]>([]);
   const neighborsRef = useRef<string[]>([]);
   const ownedRef = useRef<Set<string>>(new Set());
   const listedRef = useRef<Set<string>>(new Set());
+  const assembledRef = useRef<Set<string>>(new Set());
   const threeRef = useRef<ThreeBuildings | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const hover = useStore((s) => s.hover);
@@ -413,6 +416,8 @@ export default function MapView() {
   const selectedBBL = useStore((s) => s.selectedBBL);
   const adjacency = useStore((s) => s.adjacency);
   const parcels = useStore((s) => s.parcels);
+  // Re-paint the site when an assemble/unmerge changes the plate under the same click.
+  const mergedN = useStore((s) => Object.keys(s.game?.merged ?? {}).length);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) {
@@ -427,14 +432,26 @@ export default function MapView() {
       map.setFeatureState({ source: "bw-parcels", id }, state);
       map.setFeatureState({ source: "bw-buildings", id }, state);
     };
-    if (selectedRef.current) setState(selectedRef.current, { selected: false });
+    for (const d of selectedRef.current) setState(d, { selected: false });
     for (const n of neighborsRef.current) setState(n, { neighbor: false });
     neighborsRef.current = [];
-    selectedRef.current = selectedBBL;
+    selectedRef.current = [];
     if (selectedBBL) {
-      setState(selectedBBL, { selected: true });
-      const nbrs = adjacency?.[selectedBBL] ?? [];
-      for (const n of nbrs) setState(n, { neighbor: true });
+      // An assemblage is one site: paint every folded deed gold together so
+      // the teal join reads as a plate, not three unrelated lots.
+      const game = useStore.getState().game;
+      const site = game ? siteDeeds(game, selectedBBL) : [selectedBBL];
+      selectedRef.current = site;
+      for (const d of site) setState(d, { selected: true });
+      const siteSet = new Set(site);
+      const nbrs: string[] = [];
+      for (const d of site) {
+        for (const n of adjacency?.[d] ?? []) {
+          if (siteSet.has(n) || nbrs.includes(n)) continue;
+          nbrs.push(n);
+          setState(n, { neighbor: true });
+        }
+      }
       neighborsRef.current = nbrs;
       // ease toward the parcel if it's far from view
       const rec = parcels?.[selectedBBL];
@@ -444,7 +461,7 @@ export default function MapView() {
         if (d > 0.004) map.easeTo({ center: rec.centroid, duration: 800 });
       }
     }
-  }, [selectedBBL, adjacency, parcels]);
+  }, [selectedBBL, adjacency, parcels, mergedN]);
 
   // GO TO PROPERTY. An explicit request from a list somewhere in the panel —
   // unlike the gentle ease above, this one always moves and always zooms in
@@ -463,6 +480,44 @@ export default function MapView() {
       essential: true,
     });
   }, [flyTo, parcels]);
+
+  // Fit the whole book — portfolio "Show book on map" and Map HUD filter.
+  const fitBook = useStore((s) => s.fitBook);
+  useEffect(() => {
+    if (!fitBook) return;
+    const map = mapRef.current;
+    const game = useStore.getState().game;
+    if (!map || !parcels || !game) return;
+    const pts: [number, number][] = [];
+    for (const bbl of Object.keys(game.holdings)) {
+      if (game.merged?.[bbl]) continue;
+      const c = parcels[bbl]?.centroid;
+      if (c) pts.push(c);
+    }
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.flyTo({
+        center: pts[0],
+        zoom: Math.max(map.getZoom(), 15.6),
+        pitch: Math.max(map.getPitch(), 48),
+        duration: 1200,
+        essential: true,
+      });
+      return;
+    }
+    let w = pts[0][0], s = pts[0][1], e = pts[0][0], n = pts[0][1];
+    for (const [lng, lat] of pts) {
+      if (lng < w) w = lng;
+      if (lng > e) e = lng;
+      if (lat < s) s = lat;
+      if (lat > n) n = lat;
+    }
+    const pad = 0.0008;
+    map.fitBounds(
+      [[w - pad, s - pad], [e + pad, n + pad]],
+      { padding: 72, duration: 1400, pitch: Math.max(map.getPitch(), 48), essential: true },
+    );
+  }, [fitBook, parcels]);
 
   // ownership + listings → feature-state and rooftop markers
   // Subscribe to a paint signature, not `game` identity — see mapPaintSig.
@@ -485,6 +540,16 @@ export default function MapView() {
     for (const bbl of listedRef.current) if (!nowListed.has(bbl)) setState(bbl, { listed: false });
     for (const bbl of nowListed) if (!listedRef.current.has(bbl)) setState(bbl, { listed: true });
     listedRef.current = nowListed;
+
+    // Teal join on every multi-deed site — children plus their parents.
+    const nowAssembled = new Set<string>();
+    for (const [child, parent] of Object.entries(game.merged ?? {})) {
+      nowAssembled.add(child);
+      nowAssembled.add(parent);
+    }
+    for (const bbl of assembledRef.current) if (!nowAssembled.has(bbl)) setState(bbl, { assembled: false });
+    for (const bbl of nowAssembled) if (!assembledRef.current.has(bbl)) setState(bbl, { assembled: true });
+    assembledRef.current = nowAssembled;
 
     const src = map.getSource("bw-owned") as maplibregl.GeoJSONSource | undefined;
     src?.setData({
@@ -659,6 +724,7 @@ export default function MapView() {
 
   // mesh tints: gold selection/ownership, teal neighbors, warm hover
   const hoveredBBL = useStore((s) => s.hoveredBBL);
+  const mapFilter = useStore((s) => s.mapFilter);
   useEffect(() => {
     const game = useStore.getState().game;
     const layer = threeRef.current;
@@ -675,13 +741,43 @@ export default function MapView() {
       }
     }
     if (game) for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.28, 1.1, 0.72]);
+    // Assembled plates get a soft teal lift on the mesh so the join is
+    // readable in 3D, not only on the MapLibre lot lines.
+    if (game) {
+      for (const [child, parent] of Object.entries(game.merged ?? {})) {
+        tints.set(child, [0.78, 1.14, 1.12]);
+        tints.set(parent, [0.82, 1.16, 1.14]);
+      }
+    }
     if (selectedBBL) {
-      for (const n of adjacency?.[selectedBBL] ?? []) tints.set(n, [0.72, 1.12, 1.04]);
-      tints.set(selectedBBL, [1.5, 1.14, 0.5]);
+      const site = game ? siteDeeds(game, selectedBBL) : [selectedBBL];
+      const siteSet = new Set(site);
+      for (const d of site) {
+        for (const n of adjacency?.[d] ?? []) {
+          if (!siteSet.has(n)) tints.set(n, [0.72, 1.12, 1.04]);
+        }
+      }
+      for (const d of site) tints.set(d, [1.5, 1.14, 0.5]);
     }
     if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
+
+    // Map filter: dim everything outside the book / crane set without hiding it.
+    if (game && mapFilter !== "all") {
+      const keep = new Set<string>();
+      if (mapFilter === "owned") {
+        for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
+      } else {
+        for (const d of Object.values(game.developments ?? {})) keep.add(d.bbl);
+        for (const j of game.cityJobs ?? []) keep.add(j.bbl);
+      }
+      for (const bbl of layer.rangesByBBL.keys()) {
+        if (keep.has(bbl)) continue;
+        const cur = tints.get(bbl) ?? [1, 1, 1];
+        tints.set(bbl, [cur[0] * 0.55, cur[1] * 0.55, cur[2] * 0.55]);
+      }
+    }
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens]);
+  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens, mapFilter]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //

@@ -37,6 +37,11 @@ export default function GamePanels() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") {
+        const st0 = useStore.getState();
+        if (st0.photoFrame) {
+          st0.setPhotoFrame(false);
+          return;
+        }
         if (document.querySelector(".modal-backdrop")) {
           useStore.setState({
             toast: { text: "Use the card’s action or defer button before closing it.", kind: "err", at: Date.now() },
@@ -46,9 +51,15 @@ export default function GamePanels() {
         return;
       }
       const st = useStore.getState();
+      if (e.code === "KeyP" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        st.setPhotoFrame(!st.photoFrame);
+        return;
+      }
       if (e.code === "KeyM" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        st.setMapOnly(!st.mapOnly);
+        if (st.photoFrame) st.setPhotoFrame(false);
+        else st.setMapOnly(!st.mapOnly);
         return;
       }
       if (st.advancing) return;

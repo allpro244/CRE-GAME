@@ -180,7 +180,8 @@ export function SettingsPage() {
         <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
         <Row k="N" v="Skip to the next decision, up to three years" />
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />
-        <Row k="Escape" v="Close the open page" />
+        <Row k="P" v="Photo frame — hide all chrome for a clean skyline still" />
+        <Row k="Escape" v="Close the open page (or exit photo frame)" />
       </div>
       <div className="hint">
         Time shortcuts are disabled while a blocking decision card is on screen; answer or dismiss the card first.

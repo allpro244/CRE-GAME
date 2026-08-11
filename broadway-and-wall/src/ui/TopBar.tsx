@@ -535,6 +535,13 @@ export default function TopBar() {
         >
           ◈ Map
         </button>
+        <button
+          className="lens-btn"
+          title="Photo frame — hide all chrome for a clean skyline still (P)"
+          onClick={() => useStore.getState().setPhotoFrame(true)}
+        >
+          ◻ Frame
+        </button>
         {/* SAVES, WHERE SOMEBODY CAN FIND THEM. The whole save/load panel was
             built and then rendered only at the bottom of the Books page, under
             the ledger — which is the same as not having one. It is a top-level

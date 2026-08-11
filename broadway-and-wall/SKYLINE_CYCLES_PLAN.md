@@ -288,11 +288,12 @@ money-moving phases also require `pnpm gate`.
 
 | Item | Files | Notes |
 |------|-------|-------|
-| Lease-expiration lens | `MapView.tsx`, `store.ts` lens enum | Spec item; color by months to expiry |
-| Block assemblage outline | `MapView.tsx` adjacency | Teal join on merged sites |
-| District silhouettes | `ThreeBuildings.ts`, `citygen` | Millside vs Exchange massing |
-| Map-only mode | `TopBar.tsx`, `store.ts` | Hide page sheet, keep HUD + inbox |
-| Photo/export frame | `MapView.tsx` | Nice-to-have |
+| Lease-expiration lens | `MapView.tsx`, `store.ts` lens enum | Spec item; color by months to expiry — **done** |
+| Block assemblage outline | `MapView.tsx`, `style.ts` | Teal join on merged sites — **done** |
+| District silhouettes | `ThreeBuildings.ts`, `citygen` | Millside vs Exchange massing — deferred |
+| Map-only mode | `TopBar.tsx`, `store.ts` | Hide page sheet, keep HUD + inbox — **done** |
+| Map filter (book/cranes) | `MapHud.tsx`, `store.ts` | Dim non-matching; fit book from Portfolio — **done** |
+| Photo/export frame | `App.tsx`, `store.ts` | `P` hides chrome — **done** |
 
 ---
 
@@ -346,5 +347,6 @@ money-moving phases also require `pnpm gate`.
 [x] Phase 6–7 (partial) — portfolio show on map; rival delivery toast path
 [x] Phase 8 — fundJobs before settle + clawback + queue readers/invariants
 [x] Phase 9 — lease lens + map-only mode (M)
+[x] Phase 9 polish — assemblage outline, map filter, photo frame (P)
 [x] Draft PR: https://github.com/allpro244/CRE-GAME/pull/67
 ```

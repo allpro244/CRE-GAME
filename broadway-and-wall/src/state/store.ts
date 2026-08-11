@@ -43,6 +43,8 @@ import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, se
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases";
+/** Map emphasis filter — dims non-matching massing; never hides the city. */
+export type MapFilter = "all" | "owned" | "construction";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
 
 /**
@@ -86,7 +88,14 @@ interface AppState {
   // it fire — asking twice for the same building has to move the map twice, and
   // a bare bbl compares equal to itself.
   flyTo: { bbl: string; n: number } | null;
+  /**
+   * Fit the camera to the player's book. Counter-fired like `flyTo` so repeat
+   * clicks still move the map.
+   */
+  fitBook: number;
   lens: Lens;
+  mapFilter: MapFilter;
+  setMapFilter: (f: MapFilter) => void;
   page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   /**
@@ -182,6 +191,14 @@ interface AppState {
    */
   mapOnly: boolean;
   setMapOnly: (v: boolean) => void;
+  /**
+   * Photo frame — hide chrome for a clean skyline still. Escape or P exits.
+   * UI preference only; not saved with the campaign.
+   */
+  photoFrame: boolean;
+  setPhotoFrame: (v: boolean) => void;
+  /** Request MapView to fit the holdings bounding box. */
+  showBookOnMap: () => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -433,6 +450,8 @@ export const useStore = create<AppState>((set, get) => ({
   selectedBBL: null,
   hoveredBBL: null,
   flyTo: null,
+  fitBook: 0,
+  mapFilter: "all",
   lens: "none",
   page: "none",
   advancing: false,
@@ -444,6 +463,7 @@ export const useStore = create<AppState>((set, get) => ({
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
+  photoFrame: false,
   toast: null,
   fps: 0,
   loadError: null,
@@ -684,6 +704,27 @@ export const useStore = create<AppState>((set, get) => ({
   setMapOnly: (v) => {
     try { localStorage.setItem("bw:map-only", v ? "on" : "off"); } catch { /* private mode */ }
     set({ mapOnly: v, ...(v ? { page: "none" as Page } : {}) });
+  },
+
+  setPhotoFrame: (v) => {
+    set({
+      photoFrame: v,
+      ...(v ? { page: "none" as Page, mapOnly: true } : {}),
+    });
+  },
+
+  setMapFilter: (f) => set({ mapFilter: f }),
+
+  showBookOnMap: () => {
+    const st = get();
+    set({
+      page: "none" as Page,
+      lens: "owners" as Lens,
+      mapFilter: "owned" as MapFilter,
+      mapOnly: true,
+      fitBook: st.fitBook + 1,
+    });
+    try { localStorage.setItem("bw:map-only", "on"); } catch { /* */ }
   },
 
   dismissAlert: () => {

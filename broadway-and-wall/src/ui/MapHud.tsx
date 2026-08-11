@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useStore } from "@/state/store";
+import { useStore, type MapFilter } from "@/state/store";
 import { mapHudSnapshot } from "@/ui/mapHudData";
 import { developableSites } from "@/ui/developable";
 import { sf } from "@/ui/format";
@@ -15,6 +15,8 @@ export default function MapHud() {
   const focus = useStore((s) => s.focus);
   const setPage = useStore((s) => s.setPage);
   const setLens = useStore((s) => s.setLens);
+  const mapFilter = useStore((s) => s.mapFilter);
+  const setMapFilter = useStore((s) => s.setMapFilter);
 
   const snap = useMemo(() => {
     if (!game || game.gameOver) return null;
@@ -102,6 +104,28 @@ export default function MapHud() {
           Your deliveries · {sf(snap.deliveredSf)} built
         </div>
       )}
+
+      <div className="map-hud-filters" role="group" aria-label="Map emphasis">
+        {([
+          ["all", "City"],
+          ["owned", "Book"],
+          ["construction", "Cranes"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={"map-hud-filter" + (mapFilter === id ? " on" : "")}
+            onClick={() => setMapFilter(id as MapFilter)}
+            title={
+              id === "all" ? "Show the whole city"
+                : id === "owned" ? "Emphasize your book (dim the rest)"
+                  : "Emphasize jobs under construction"
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <button
         type="button"

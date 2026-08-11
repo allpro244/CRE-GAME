@@ -1892,6 +1892,47 @@ body {
   color: var(--ink-dim);
 }
 .map-hud-lens { margin-top: 6px; color: var(--ink-dim); font-size: 11.5px; }
+.map-hud-filters {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.map-hud-filter {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  padding: 4px 0;
+  border: 1px solid color-mix(in srgb, var(--ink-dim) 28%, transparent);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.map-hud-filter.on {
+  color: var(--gold-ink, #6b4e16);
+  border-color: color-mix(in srgb, var(--gold-ink, #6b4e16) 55%, transparent);
+  background: color-mix(in srgb, var(--gold, #d9a648) 14%, transparent);
+}
+.map-hud-filter:hover { color: var(--gold-ink, #6b4e16); }
+
+.app.photo-frame .maplibregl-ctrl-bottom-right { opacity: 0.35; }
+.photo-frame-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 80;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, #fff 22%, transparent);
+  background: color-mix(in srgb, #1a1814 55%, transparent);
+  color: #f3efe4;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.photo-frame-hint:hover { background: color-mix(in srgb, #1a1814 72%, transparent); }
 
 .inbox-list { display: flex; flex-direction: column; gap: 6px; }
 .inbox-row .year-rail-text {

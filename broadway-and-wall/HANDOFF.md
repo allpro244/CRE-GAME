@@ -239,16 +239,17 @@ wrong. Harness: `pnpm holder`.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
+**Execution plan (no playtest required):** `NO_PLAYTEST_PLAN.md` — phases 2–7
+(CI/audits, rail retirement, #33 sellers, #36 zoning, #48/#49 firms, optional
+graphics). Phase 1 (holder memory) is closed on tip.
+
 1. **~~Unify city-supply vs desk delivery~~ — CLOSED (settle moment).**
-   `fundJobs` now runs before `tickEcon` settles `deliveryQueue` (no extra
-   `rng` calls); player site-risk slips after settle are clawed back via
-   `clawbackSlippedDeliveries`. Economy / leadlag / invariants read the queue.
-   Physical stores (`cityJobs` / `developments`) remain; the queue is the
-   economic clock. See `SKYLINE_CYCLES_PLAN.md` Phase 8.
-2. **~~Holder memory beyond approaches~~ — CLOSED.** See above; `pnpm holder`.
-3. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
-   dual-supply and retail-glut mechanisms stand on their own.
-4. Zoning depth (#36); #33 seller predictability; #48/#49 firm entry and exit.
+   See `SKYLINE_CYCLES_PLAN.md` Phase 8.
+2. **~~Holder memory beyond approaches~~ — CLOSED.** `pnpm holder`.
+3. **Retire load-bearing rails** — `NO_PLAYTEST_PLAN.md` Phase 3; measure with
+   `pnpm rails` first.
+4. **Zoning depth (#36); #33 seller predictability; #48/#49 firm entry and exit**
+   — Phases 4–6 in `NO_PLAYTEST_PLAN.md`.
 
 ---
 

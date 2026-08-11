@@ -122,7 +122,7 @@ export function LeasingPage() {
           <div className="agent-sub">
             {game.agent
               ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign. Routine letters do not interrupt you; the scorecard below is how you know they are still closing${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-              : "Without the firm agent, an exclusive broker or an in-house leasing hire still counters on the buildings they cover — and those letters stay quiet too. Otherwise every letter lands on you — hire the agent below to hand over the whole book."}
+              : "Every letter lands on you unless a building has an exclusive broker, or you hand renewals to management below. In-house leasing hires still raise traffic and judgment — they do not sign for you. Hire the agent to hand over the whole book."}
           </div>
         </div>
         <button className={"btn" + (game.agent ? "" : " btn-on")} onClick={() => setAgent(!game.agent)}>
@@ -225,7 +225,7 @@ export function LeasingPage() {
    * "good enough" means. Only shown when somebody else holds the pen.
    */
   function MandateBar() {
-    // Firm agent, renewal desk, exclusive, or leasing hire — same mandate dials.
+    // Firm agent, renewal desk, or exclusive — same mandate dials.
     if (!deskHoldsPen(game)) return null;
     const floor = agentFloor(game);
     const pass = agentPassBelow(game);

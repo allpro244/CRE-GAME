@@ -8253,33 +8253,105 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (towerStyle >= 0) { meta[0] = towerStyle; }
       else if (item.construction || fl < 7 || h < 22) {
         tiers = [{ fp: inset(B), z0: 0, z1: h }];
-      } else if (mroll < 0.30) {
-        const podTop = Math.min(h * 0.28, fh2 * 3.2);
-        tiers = [
-          { fp: inset(B), z0: 0, z1: podTop },
-          { fp: inset(B * (0.60 + 0.12 * hash01(k ^ 0x51, this.citySeed))), z0: podTop, z1: h },
-        ];
-      } else if (mroll < 0.50) {
-        const cut = h * (0.62 + 0.13 * hash01(k ^ 0x52, this.citySeed));
-        tiers = [
-          { fp: inset(B), z0: 0, z1: cut },
-          { fp: inset(B * 0.74), z0: cut, z1: h },
-        ];
-      } else if (mroll < 0.65) {
-        const c1 = h * 0.45, c2 = h * 0.75;
-        tiers = [
-          { fp: inset(B), z0: 0, z1: c1 },
-          { fp: inset(B * 0.80), z0: c1, z1: c2 },
-          { fp: inset(B * 0.62), z0: c2, z1: h },
-        ];
-      } else if (mroll < 0.75 && fl >= 14) {
-        const podTop = fh2 * 2.2;
-        tiers = [
-          { fp: inset(B), z0: 0, z1: podTop },
-          { fp: inset(B * 0.52), z0: podTop, z1: h },
-        ];
       } else {
-        tiers = [{ fp: inset(B), z0: 0, z1: h }];
+        // ---- THE MID-RISE, WHICH WAS FIVE WAYS OF DOING ONE THING ---------
+        //
+        // Below the tower gate there were five silhouettes and EVERY ONE OF
+        // THEM WAS THE PLATE SCALED TOWARD ITS OWN CENTROID — a podium, a
+        // setback, a three-stage wedding cake, a tower on a podium, a prism.
+        // That is the 1916-to-1961 envelope, and it is the wrong shape twice
+        // over for a building finished after 2000. It puts the top of every
+        // building directly over the middle of its bottom, so a street of them
+        // is a row of pyramids; and it steps back on ALL FOUR SIDES, including
+        // the two that are party walls a neighbour is standing against.
+        //
+        // What a real one does instead: the street wall goes straight up to
+        // the lot line and the shaft goes to the BACK of the plate, so the
+        // block keeps a continuous frontage and the light plane is met on the
+        // side that has light to protect. That is one `plMove`, and no amount
+        // of centroid scaling can produce it.
+        //
+        // Three shapes are new and none of them is a centroid scale: the
+        // shifted shaft, the slab (narrowed on ONE axis, which is what an
+        // apartment building is), and the chamfered shaft. The wedding cake
+        // survives because terraced setbacks did come back — but as the rare
+        // answer it now is rather than a third of everything.
+        const P = tiers as TowerTier[];
+        const plate = inset(B) as Plate;
+        // The plate's own frame: `ax` is its long axis, which on an ordinary
+        // urban parcel is the deep direction — street to rear. Half-extents
+        // along and across it, measured rather than approximated off the area,
+        // because a deep narrow lot and a square one of the same area give
+        // very different answers about how far anything can travel.
+        const ax = plAxis(plate);
+        const ca = Math.cos(ax), sa = Math.sin(ax);
+        let deep = 0, wide = 0;
+        for (const [px, py] of plate) {
+          const dx = px - cx, dy = py - cy;
+          deep = Math.max(deep, Math.abs(dx * ca + dy * sa));
+          wide = Math.max(wide, Math.abs(-dx * sa + dy * ca));
+        }
+        // WHICH END IS THE STREET IS NOT KNOWABLE HERE. The layer has the lot
+        // ring and not the street graph, so the direction is hashed off the
+        // deed. That is a real limitation and it is worth fixing when the
+        // frontage is available — a block reads best when every shaft steps
+        // back from the SAME side. What survives either way, and is the whole
+        // point, is that the shaft is not over the middle of its own base.
+        const dirS = hash01(k ^ 0x5b1f, this.citySeed) < 0.5 ? 1 : -1;
+        const back = (fp: Plate, d: number): Plate => plMove(fp, ca * d * dirS, sa * d * dirS);
+        const podTop = Math.min(h * 0.28, fh2 * 3.2);
+        const resi = item.cls === "multifamily";
+        if (mroll < 0.26) {
+          // PODIUM AND SHAFT, SHAFT TO THE BACK. The zoning trade, done the
+          // way it is actually done.
+          const sc = 0.58 + 0.14 * hash01(k ^ 0x51, this.citySeed);
+          const off = deep * (1 - sc) * (0.5 + 0.4 * hash01(k ^ 0x53, this.citySeed));
+          P.push({ fp: inset(B), z0: 0, z1: podTop });
+          P.push({ fp: plClipToLot(back(inset(B * sc) as Plate, off), ring as Plate, cx, cy), z0: podTop, z1: h });
+        } else if (mroll < 0.46) {
+          // A SLAB. Narrowed on ONE axis only, which is what nearly every
+          // mid-rise apartment building on earth is, and which a centroid
+          // scale cannot make — it shrinks both dimensions together and gives
+          // you a smaller box instead of a thinner one.
+          const cut = h * (0.30 + 0.16 * hash01(k ^ 0x52, this.citySeed));
+          const thin = resi ? 0.46 + 0.12 * hash01(k ^ 0x54, this.citySeed) : 0.58 + 0.14 * hash01(k ^ 0x54, this.citySeed);
+          const slab = plScaleAxis(inset(B) as Plate, cx, cy, ax, 0.97, thin);
+          P.push({ fp: inset(B), z0: 0, z1: cut });
+          P.push({ fp: plClipToLot(back(slab, deep * 0.16), ring as Plate, cx, cy), z0: cut, z1: h });
+        } else if (mroll < 0.62) {
+          // A CHAMFERED SHAFT. Corners off the tower and not off the base —
+          // the base wants the floor area and the corner is where the tower
+          // reads. Cheap, and it stops the thing being a rectangle from every
+          // angle at once.
+          const cut2 = h * (0.22 + 0.14 * hash01(k ^ 0x55, this.citySeed));
+          const ch2 = Math.min(deep, wide) * (0.20 + 0.20 * hash01(k ^ 0x56, this.citySeed));
+          P.push({ fp: inset(B), z0: 0, z1: cut2 });
+          P.push({ fp: plChamfer(inset(B * 0.92) as Plate, ch2), z0: cut2, z1: h });
+        } else if (mroll < 0.74) {
+          // A SINGLE SETBACK, high up. The light-plane trade, and the one
+          // centroid move that is still right — a top-floor step-in is
+          // symmetric because it is above everything it could shade.
+          const cut3 = h * (0.66 + 0.14 * hash01(k ^ 0x57, this.citySeed));
+          P.push({ fp: inset(B), z0: 0, z1: cut3 });
+          P.push({ fp: inset(B * 0.76), z0: cut3, z1: h });
+        } else if (mroll < 0.80 && fl >= 14) {
+          // TOWER ON A THIN PODIUM, shaft to the back.
+          const pod = fh2 * 2.2;
+          P.push({ fp: inset(B), z0: 0, z1: pod });
+          P.push({ fp: plClipToLot(back(inset(B * 0.52) as Plate, deep * 0.40), ring as Plate, cx, cy), z0: pod, z1: h });
+        } else if (mroll < 0.85 && fl >= 12) {
+          // THE WEDDING CAKE. Kept, because terraced setbacks came back — Via
+          // 57, the Hudson Yards residential — but it is a form for a tall
+          // building on a big plate, not the answer to a third of everything.
+          const c1 = h * 0.45, c2 = h * 0.75;
+          P.push({ fp: inset(B), z0: 0, z1: c1 });
+          P.push({ fp: inset(B * 0.80), z0: c1, z1: c2 });
+          P.push({ fp: inset(B * 0.62), z0: c2, z1: h });
+        } else {
+          // A PLAIN SHAFT. The commonest building in any city and not a
+          // failure to choose — most mid-rise is a box on its lot line.
+          P.push({ fp: inset(B), z0: 0, z1: h });
+        }
       }
       const mkBuf = () => ({
         pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],

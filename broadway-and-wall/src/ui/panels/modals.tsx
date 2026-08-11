@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Slider from "@/ui/Slider";
+import Slider, { widePriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
@@ -13,6 +13,7 @@ import { usd } from "@/ui/format";
 import { PortfolioCap } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiTermsGrid, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
+import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 
 /**
  * THE JULY AUCTION — one card, once a year.
@@ -555,6 +556,7 @@ function DecisionBody({
   // handled it, including the unsolicited case; nothing here ever called it.
   const [saleCounter, setSaleCounter] = useState(false);
   const [scPx, setScPx] = useState(0);
+  const [saleAcceptConfirm, setSaleAcceptConfirm] = useState<null | { exchange?: boolean }>(null);
   if (!parcels || game.gameOver) return null;
 
   /* AN INDICATION ON YOUR BOOK IS A DECISION, AND IT ARRIVED SILENTLY.
@@ -797,6 +799,25 @@ function DecisionBody({
   const proceeds = saleProceedsToSeller(game, parcels, h, offer.price);
   const cashAtClose = proceeds.toSeller - (game.exchange ? 0 : proceeds.tax);
   const value = ownedHoldingValue(game, parcels, h);
+  const counterBounds = (() => {
+    const b = widePriceBounds(offer.price, apMid(offerBbl!, value));
+    return { ...b, min: Math.max(b.min, offer.price + b.step) };
+  })();
+  if (saleAcceptConfirm) {
+    return (
+      <SaleAcceptConfirm
+        address={rec.address}
+        price={offer.price}
+        net={cashAtClose}
+        exchange={saleAcceptConfirm.exchange}
+        onCancel={() => setSaleAcceptConfirm(null)}
+        onConfirm={() => {
+          acceptOffer(offerBbl!, saleAcceptConfirm.exchange);
+          setSaleAcceptConfirm(null);
+        }}
+      />
+    );
+  }
   return (
     <div className="modal-backdrop modal-layer-decision">
       <div className="modal" role="dialog" aria-modal="true">
@@ -826,11 +847,11 @@ function DecisionBody({
           <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />
         </div>
         <div className="modal-actions">
-          <button className="btn btn-buy" onClick={() => acceptOffer(offerBbl!)}>
+          <button className="btn btn-buy" onClick={() => setSaleAcceptConfirm({})}>
             Accept · net {usd(cashAtClose)}
           </button>
           {proceeds.tax > 0 && !game.exchange && (
-            <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => acceptOffer(offerBbl!, true)}>
+            <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>
           )}
@@ -852,9 +873,10 @@ function DecisionBody({
             <Slider
               label="Counter"
               value={scPx || Math.round(offer.price * 1.06)}
-              min={offer.price + 1000}
-              max={Math.round(Math.max(h.sale!.ask, offer.price * 1.3))}
-              step={Math.max(1000, Math.round(offer.price / 400))}
+              min={counterBounds.min}
+              max={counterBounds.max}
+              step={counterBounds.step}
+              editable
               onChange={setScPx}
               format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% on their bid`}
               marks={[
@@ -862,9 +884,7 @@ function DecisionBody({
                 { at: Math.round(offer.price * 1.08), label: "+8%" },
                 { at: h.sale!.ask, label: "ask" },
               ]}
-              hint={h.sale!.unsolicited
-                ? "Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them, because they were never on the market for it."
-                : "Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk."}
+              hint="Name any price above their bid. Well over appraisal and they may walk."
             />
             <div className="modal-actions">
               <button className="btn" onClick={() => { counterSale(offerBbl!, scPx || Math.round(offer.price * 1.06)); setSaleCounter(false); }}>

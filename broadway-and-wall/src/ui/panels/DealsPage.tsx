@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Slider from "@/ui/Slider";
+import Slider, { widePriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
@@ -7,11 +7,13 @@ import { holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow } from "@/engine/leasing";
+import { saleTaxQuote } from "@/engine/actions";
 import { usd, sf } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
-import { Row } from "@/ui/panels/shared";
+import { Row, apMid } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
+import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
@@ -114,17 +116,50 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
  */
 export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
   const { acceptOffer, declineOffer, counterSale, takeBid } = useStore.getState();
   const [counter, setCounter] = useState(0);
   const [countering, setCountering] = useState(false);
+  const [acceptConfirm, setAcceptConfirm] = useState<null | { exchange?: boolean; bidIndex?: number }>(null);
   const h = game.holdings[bbl];
   const offer = h?.sale?.offer;
   const liveBids = (h?.sale?.bids ?? [])
     .map((b, i) => ({ b, i }))
     .filter(({ b }) => !b.dropped);
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
+  const value = h && parcels ? apMid(bbl, ask) : ask;
+  const closeNet = (px: number) => {
+    if (!h) return 0;
+    const q = saleTaxQuote(h, px);
+    return q.net - (h.loan?.balance ?? 0) - q.tax;
+  };
+  const counterBounds = offer
+    ? (() => {
+        const b = widePriceBounds(offer.price, value);
+        return { ...b, min: Math.max(b.min, offer.price + b.step) };
+      })()
+    : null;
   return (
     <div className="loi">
+      {acceptConfirm && h && (() => {
+        const px = acceptConfirm.bidIndex !== undefined
+          ? liveBids.find((x) => x.i === acceptConfirm.bidIndex)!.b.price
+          : offer!.price;
+        return (
+          <SaleAcceptConfirm
+            address={parcels?.[bbl]?.address ?? bbl}
+            price={px}
+            net={closeNet(px)}
+            exchange={acceptConfirm.exchange}
+            onCancel={() => setAcceptConfirm(null)}
+            onConfirm={() => {
+              if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
+              else acceptOffer(bbl, acceptConfirm.exchange);
+              setAcceptConfirm(null);
+            }}
+          />
+        );
+      })()}
       <button className="loi-addr" onClick={() => go(bbl)}>{useStore.getState().parcels?.[bbl]?.address ?? bbl}</button>
       <div className="loi-line mono">
         ask {usd(ask)}{h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}
@@ -158,7 +193,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             {" "}· {((liveBids[0].b.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
           </div>
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => takeBid(bbl, liveBids[0].i)}>
+            <button className="btn btn-buy" onClick={() => setAcceptConfirm({ bidIndex: liveBids[0].i })}>
               Take {liveBids[0].b.name} · {usd(liveBids[0].b.price)}
             </button>
             <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters and the full list live on the property">
@@ -175,21 +210,22 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           </div>
           {!countering && (
             <div className="btn-row">
-              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept {usd(offer.price)}</button>
+              <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>Accept {usd(offer.price)}</button>
               <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
               {!offer.countered && (
                 <button className="btn" onClick={() => { setCounter(suggested); setCountering(true); }}>Counter…</button>
               )}
             </div>
           )}
-          {countering && !offer.countered && (
+          {countering && !offer.countered && counterBounds && (
             <>
               <Slider
                 label="Counter"
                 value={counter || suggested}
-                min={offer.price + 1000}
-                max={Math.round(Math.max(ask, offer.price * 1.3))}
-                step={Math.max(1000, Math.round(offer.price / 400))}
+                min={counterBounds.min}
+                max={counterBounds.max}
+                step={counterBounds.step}
+                editable
                 onChange={setCounter}
                 format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% on their bid`}
                 marks={[
@@ -197,7 +233,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
                   { at: Math.round(offer.price * 1.08), label: "+8%" },
                   { at: ask, label: "ask" },
                 ]}
-                hint="Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them."
+                hint="Name any price above their bid. Well over appraisal and they may walk."
               />
               <div className="btn-row">
                 <button className="btn btn-buy" onClick={() => { counterSale(bbl, counter || suggested); setCountering(false); }}>

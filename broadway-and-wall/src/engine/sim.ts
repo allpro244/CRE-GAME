@@ -22,6 +22,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
+import { tickFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -442,6 +443,7 @@ function tickMonth(
   // peopleRng only for estate asks — s.rng untouched.
   tickPeople(s, parcels);
   tickPlayerMortality(s, parcels);
+  tickFund(s);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -514,7 +516,10 @@ function tickMonth(
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
-    monthCF += cf;
+    // Vehicle deeds keep their cash in the vehicle — promote needs a
+    // counterparty, and GP liquidity is not LP capital.
+    if (h.fundOwned && s.fund && !s.fund.settled) s.fund.cash += cf;
+    else monthCF += cf;
 
     // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
     // owner watches, stamped at the same moment the month's NOI is booked so

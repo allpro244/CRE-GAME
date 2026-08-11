@@ -359,6 +359,11 @@ export interface Loan {
 export interface Holding {
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
+  /**
+   * Bought with vehicle cash — NOI and sale proceeds route to `s.fund.cash`,
+   * not GP liquidity. See fund.ts / PRINCIPAL_CALLS.md #4.
+   */
+  fundOwned?: boolean;
   bbl: string;
   boughtM: number;
   costBasis: number;
@@ -1743,6 +1748,16 @@ export interface BooksYear {
    * the balance-sheet draws that land in the operating account.
    */
   borrowed?: number;
+  /**
+   * LP capital called into the fund vehicle — equity IN, not income.
+   * See fund.ts; conserve tracks this with `lpDistributed` against
+   * Δ(cash + fund.cash).
+   */
+  lpCalled?: number;
+  /**
+   * Distributions to LPs from the vehicle — equity OUT, not expense.
+   */
+  lpDistributed?: number;
 }
 
 /** Same flow buckets as BooksYear, stamped once per game month for the monthly statement. */
@@ -1759,6 +1774,8 @@ export interface BooksMonth {
   ga: number;
   interest: number;
   borrowed?: number;
+  lpCalled?: number;
+  lpDistributed?: number;
 }
 
 /**
@@ -2099,6 +2116,22 @@ export interface GameState {
   };
   /** Opening age chosen on the start menu (Phase 5). */
   startAge?: number;
+  /**
+   * Player fund vehicle — second cash account. Absent = balance-sheet path
+   * (the default). See fund.ts / PRINCIPAL_CALLS.md.
+   */
+  fund?: import("./fund").PlayerFund | null;
+  /**
+   * When true, new purchases draw equity from the live fund during its
+   * investment period. Opt-in path; balance-sheet remains the default until
+   * a raise flips this on.
+   */
+  fundPay?: boolean;
+  /**
+   * Month the last vehicle failed LPs — the second death. Cleared on
+   * succession with the rest of the phone book.
+   */
+  fundFailedM?: number;
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *
@@ -2497,7 +2530,10 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
   if (!e || e.yr !== yr) {
-    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0 };
+    e = {
+      yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+    };
     s.books.push(e);
   }
   e[key] = ((e[key] as number) ?? 0) + amt;
@@ -2509,7 +2545,7 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   if (!me || me.m !== s.month) {
     me = {
       m: s.month, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
     };
     s.booksMonthly.push(me);
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();

@@ -153,11 +153,22 @@ export function executePurchase(
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
-  if (s.cash < bq.equity) {
-    return { s, err: `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.` };
+  // Vehicle path: fundPay + live investment period draws `fund.cash`.
+  // Otherwise GP cash — the balance-sheet default.
+  const fromFund = !!(s.fundPay && s.fund && !s.fund.settled
+    && s.month <= s.fund.investEndM);
+  const purse = fromFund ? (s.fund?.cash ?? 0) : s.cash;
+  if (purse < bq.equity) {
+    return {
+      s,
+      err: fromFund
+        ? `This deal needs $${(bq.equity / 1e6).toFixed(2)}M from the vehicle — you're short.`
+        : `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.`,
+    };
   }
   const next = clone(s);
-  next.cash -= bq.equity;
+  if (fromFund && next.fund) next.fund.cash -= bq.equity;
+  else next.cash -= bq.equity;
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought).
   const pointsFee = bq.pointsFee ?? 0;
@@ -197,6 +208,8 @@ export function executePurchase(
     svcIdx: SVC_START,
     tenants: [],
     cfHistory: [],
+    // Vehicle deed — NOI and sale proceeds stay in fund.cash.
+    ...(fromFund ? { fundOwned: true } : {}),
     // A landmark stays a landmark when the deed moves.
     ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),
   };
@@ -286,9 +299,18 @@ export function executePurchase(
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the
     // advertisement. Cash in, liability up, no change in net worth.
-    next.cash += depositsOn(holding);
+    // Vehicle deed: deposits sit with the vehicle — same purse as the equity.
+    const dep = depositsOn(holding);
+    if (fromFund && next.fund) next.fund.cash += dep;
+    else next.cash += dep;
   } else {
     genRentRoll(next, rec, holding, wasDistress);
+    // genRentRoll settles deposits onto GP cash; a vehicle deed moves them over.
+    if (fromFund && next.fund) {
+      const dep = depositsOn(holding);
+      next.cash -= dep;
+      next.fund.cash += dep;
+    }
   }
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
@@ -2520,7 +2542,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // want to sell one thing.
   const release = releaseCost(next, parcels, bbl);
   const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
-  next.cash += toSeller;
+  // Vehicle deed: proceeds and tax sit on fund.cash so the promote has a
+  // counterparty. GP cash is untouched on a fund exit.
+  const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
+  if (intoFund && next.fund) next.fund.cash += toSeller;
+  else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //
   // The kicker and the break fee are already deducted from `toSeller` — they
@@ -2555,7 +2581,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
-    next.cash -= tax;
+    if (intoFund && next.fund) next.fund.cash -= tax;
+    else next.cash -= tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + tax;
     logBooks(next, "taxes", tax);
   }
@@ -2576,7 +2603,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
     // is exactly the size of a small building's roll. The parent's deposits
     // were handed over correctly a few lines below; the children's were not.
-    next.cash -= depositsOn(next.holdings[child]);
+    const childDep = depositsOn(next.holdings[child]);
+    if (intoFund && next.fund) next.fund.cash -= childDep;
+    else next.cash -= childDep;
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
@@ -2587,7 +2616,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
-  next.cash -= depositsOn(next.holdings[bbl]);
+  {
+    const dep = depositsOn(next.holdings[bbl]);
+    if (intoFund && next.fund) next.fund.cash -= dep;
+    else next.cash -= dep;
+  }
   // Somebody owns it now, and they will hold it for years — the tape does
   // not get it back next quarter.
   next.lastTradeM = next.lastTradeM ?? {};

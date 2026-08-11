@@ -118,6 +118,8 @@ export function succeedAsHeir(s: GameState, decedent: Person): Person {
   s.lenderRel = {};
   s.street = {};
   s.hireReputation = 0.55;
+  // A failed fund was the dead principal's name. The heir is not that name.
+  delete s.fundFailedM;
   // Bench survives — staff stay on payroll with their own ties.
 
   return heir;

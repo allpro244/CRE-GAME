@@ -273,7 +273,17 @@ export default function TopBar() {
           <div className="topbar-summary">
           <div className="topbar-vital">
             <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
-            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
+            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep
+              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+            {game.fund && !game.fund.settled && (
+              <Stat
+                label="Vehicle"
+                value={usd(game.fund.cash)}
+                w={88}
+                keep
+                title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
+              />
+            )}
             {(() => {
               const drawn = game.loc?.balance ?? 0;
               const label = drawn > 0 ? "Line drawn" : "Line";

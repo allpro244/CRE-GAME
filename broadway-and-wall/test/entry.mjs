@@ -30,6 +30,8 @@ export const MODULES = [
   "people",
   // estate is player mortality, the tax bill, §6166, continue-as-heir.
   "estate",
+  // fund is the player vehicle — second cash account, raise, promote.
+  "fund",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

@@ -50,6 +50,7 @@
     "brokercall": "node test/brokercall.mjs",
     "staff": "node test/staff.mjs",
     "principal": "node test/principal-phase12.mjs && node test/principal-mortality.mjs && node test/principal-estate.mjs",
+    "fund": "node test/fund.mjs",
     "rates": "node test/rate-stress.mjs",
     "audit": "node tools/econaudit.mjs",
     "quality": "node tools/qualitytest.mjs",

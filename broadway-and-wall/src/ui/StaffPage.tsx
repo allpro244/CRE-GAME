@@ -51,7 +51,7 @@ import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import {
-  ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
+  ATTR_LABEL, GENERAL_ATTRS, ROLE_LABEL,
   LEASING_BASE_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
   SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
   deskBacklog, firmShapeLabel, personRoleState, isFloatStaff,
@@ -591,9 +591,10 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
   onUnassign: (bbl: string) => void;
 }) {
   const served = Math.max(0, month - st.hiredM);
-  const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
-  const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month); return a + (r.hi - r.lo); }, 0) / keys.length;
-  const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM); return a + (r.hi - r.lo); }, 0) / keys.length;
+  const keys = [...GENERAL_ATTRS];
+  const rigor = game.principal?.attrs?.diligence ?? 50;
+  const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month, rigor); return a + (r.hi - r.lo); }, 0) / keys.length;
+  const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM, rigor); return a + (r.hi - r.lo); }, 0) / keys.length;
   const assignTargets = st.role === "construction" ? jobBbls : ownedBbls;
   const assigned = st.assignedBbls ?? [];
   const freeBbls = assignTargets.filter((b) => !assigned.includes(b));
@@ -617,7 +618,7 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
             <BandBar
               key={k}
               label={ATTR_LABEL[k] ?? k}
-              r={readAttr(st, k, month)}
+              r={readAttr(st, k, month, rigor)}
               hint="What the results so far suggest. The true figure is never stated — you infer it, the way you would."
             />
           ))}
@@ -625,7 +626,7 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
         <div className="hint">
           {served < 6
             ? "Too early to tell. You bought the interview; the results have not arrived yet."
-            : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Twelve months of results halve the error and five years all but remove it.`}
+            : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Rigor shortens how long that takes — twelve months of results still halve a mid read.`}
         </div>
         <div className="staff-assign">
           <div className="hint">
@@ -704,7 +705,7 @@ function CandidateCard({ c, costIdx, cash, month, onHire }: {
 }) {
   const askToday = c.askSalary * costIdx;
   const firstMonth = Math.round(askToday / 12);
-  const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[c.role]];
+  const keys = [...GENERAL_ATTRS];
   const base = c.role === "pm" ? PM_BASE_SF : c.role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
   // The capacity a person adds is 0.6x-1.5x of the role's base, set by the two
   // attributes in CAPACITY_ATTRS — so the honest preview is that formula run

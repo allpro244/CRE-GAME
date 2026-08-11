@@ -60,8 +60,9 @@ export function PersonCard({
       {showAttrs && person.seat === "you" ? (
         <>
           <div className="hint" style={{ marginTop: 4 }}>
-            You know your own measure. Nobody else's true ability is ever a number on a screen —
-            you narrow a read by dealing with them.
+            Deal sense, Bandwidth, Rigor, Access — temperament, not a skill build.
+            Career (“Knows …”) is what you have actually done. Nobody else's true
+            ability is a number on a screen; you narrow a read by dealing with them.
           </div>
           <div className="grid" style={{ marginTop: 8 }}>
             {GENERAL_PERSON_ATTRS.map((k) => {

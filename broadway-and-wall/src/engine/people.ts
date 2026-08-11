@@ -407,12 +407,33 @@ export function principalTag(s: GameState, firmId: string): string | null {
   return `${p.name}, ${ageYears(p, s.month)}`;
 }
 
+/**
+ * Display names for the four temperament attrs. Storage keys stay forever
+ * (judgment / urgency / diligence / relationships) so saves and harnesses do
+ * not re-roll — see ATTR_CONTRACT.md.
+ */
 export const ATTR_LABEL_PERSON: Record<string, string> = {
-  judgment: "Judgment",
-  urgency: "Sense of urgency",
-  diligence: "Detail orientation",
-  relationships: "Relationships",
+  judgment: "Deal sense",
+  urgency: "Bandwidth",
+  diligence: "Rigor",
+  relationships: "Access",
 };
+
+/** Neutral mid when a principal row is missing (should not happen after ensurePeople). */
+export function neutralTemperament(): Record<string, number> {
+  return { judgment: 50, urgency: 50, diligence: 50, relationships: 50 };
+}
+
+export function principalTemperament(s: GameState): Record<string, number> {
+  const a = s.principal?.attrs;
+  if (!a) return neutralTemperament();
+  return {
+    judgment: a.judgment ?? 50,
+    urgency: a.urgency ?? 50,
+    diligence: a.diligence ?? 50,
+    relationships: a.relationships ?? 50,
+  };
+}
 
 const CAREER_CLASSES: CareerClass[] = ["office", "retail", "multifamily", "industrial"];
 

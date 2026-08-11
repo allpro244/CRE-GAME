@@ -435,6 +435,13 @@ export interface Holding {
   // development climate that governs the city's own starts. Optional, with
   // fallbacks everywhere it is read, so old saves load untouched.
   groundOffer?: { years: number; sinceM: number; review?: GroundReview };
+  /**
+   * Shopping the site for a build-to-suit occupier — a listing, not a signed
+   * commitment. Anchors arrive through tickBuildToSuit the way ground lessees
+   * arrive through tickGroundLeases; the programme on the offer is the shell
+   * you are selling them. See proposeBuildToSuit / BtsCommitment.
+   */
+  btsOffer?: { use: BuiltClass; floors: number; coverage: number; sinceM: number };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
   // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
@@ -2041,7 +2048,7 @@ export interface GameState {
    */
   lowballMs?: number[];
   developments: Record<string, Development>;
-  /** Proposed/accepted build-to-suit tenant terms on owned land. */
+  /** Signed build-to-suit terms waiting for groundbreak on owned land. */
   btsProspects?: Record<string, BtsCommitment>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you

@@ -695,6 +695,9 @@ export function offerGroundLease(
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
   if (s.holdings[bbl].groundOffer) return { s, err: "It is already on offer. A ground lessee comes when one comes." };
+  if (s.holdings[bbl].btsOffer || s.btsProspects?.[bbl]) {
+    return { s, err: "It is being shopped for a build-to-suit. Pull that before you offer a ground lease." };
+  }
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you encumber it." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — lease the whole site or none of it." };

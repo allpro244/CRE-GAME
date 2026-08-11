@@ -482,6 +482,7 @@ export function PortfolioPage() {
                   h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
                   h.program ? "CAPEX" : null,
+                  game.btsProspects?.[h.bbl] ? "BTS TERMS" : h.btsOffer ? "BTS LISTED" : null,
                   game.groundLeases?.[h.bbl] ? "GROUND-LEASED" : h.groundOffer ? "GL OFFERED" : null].filter(Boolean).join(" · ")}
                 {(() => {
                   const g = game.groundLeases?.[h.bbl];

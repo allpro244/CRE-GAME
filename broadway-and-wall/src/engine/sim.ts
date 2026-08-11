@@ -18,7 +18,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locRate } from "./credit";
 import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
-import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
+import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -449,6 +449,7 @@ function tickMonth(
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickGroundLeases(s, parcels);
+  tickBuildToSuit(s, parcels);
   tickSales(s, parcels, adjacency);
   // The dirt reprices off what the dirt has been fetching — after the month's
   // trades have printed, so a quarter's marks read that quarter's sales.

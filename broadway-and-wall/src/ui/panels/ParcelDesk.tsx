@@ -2287,6 +2287,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
+  const btsOffer = game.holdings[bbl]?.btsOffer;
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank);
   // Turn the chosen unit counts into sf-per-space, against the programme that
   // is actually going to be built.
@@ -2331,16 +2332,48 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <Row k="Rent" v={`$${bts.rentPsf.toFixed(2)}/sf · below market for certainty`} />
                 <Row k="Tenant work" v={`$${bts.tiPsf}/sf · ${bts.recovery.toUpperCase()}`} />
               </div>
+              <div className="hint">
+                Terms arrived off the listing. Break ground on their shell, or send them away and go back to spec.
+              </div>
               <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Return to spec</button>
+            </>
+          ) : btsOffer ? (
+            <>
+              <div className="grid">
+                <Row
+                  k="On the BTS book"
+                  v={`${btsOffer.floors} fl of ${btsOffer.use} · since ${monthLabel(btsOffer.sinceM)}${
+                    game.month - btsOffer.sinceM > 0
+                      ? ` · ${game.month - btsOffer.sinceM} month${game.month - btsOffer.sinceM === 1 ? "" : "s"} waiting`
+                      : ""
+                  }`}
+                  strong
+                />
+              </div>
+              <div className="hint">
+                A credit tenant who will commit before groundbreak is scarce — they turn up when demand, the build
+                climate and the size of the shell say so. Change the programme below and re-list to update what you
+                are shopping; pull the listing to go back to pure spec.
+              </div>
+              <div className="btn-row">
+                {(btsOffer.use !== use || btsOffer.floors !== fl || Math.abs(btsOffer.coverage - cov) > 0.001) && (
+                  <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
+                    Update listing · {fl} fl of {use}
+                  </button>
+                )}
+                <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Pull the listing</button>
+              </div>
             </>
           ) : (
             <>
               <div className="hint">
-                Build on spec for market rent and lease-up risk, or find one credit tenant before groundbreak:
-                lower rent and concentration risk in exchange for long term, day-one occupancy and stronger financing.
+                Build on spec for market rent and lease-up risk, or list the shell for a build-to-suit: one credit
+                tenant before groundbreak, lower rent and concentration risk in exchange for long term, day-one
+                occupancy and stronger financing. An anchor arrives when one arrives — this is a listing, not a desk
+                that invents tenants on demand.
               </div>
               <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
-                Find build-to-suit tenant
+                List for build-to-suit
               </button>
             </>
           )}

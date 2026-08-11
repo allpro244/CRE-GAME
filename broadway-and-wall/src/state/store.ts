@@ -612,15 +612,17 @@ export const useStore = create<AppState>((set, get) => ({
     const r = proposeBuildToSuit(game, parcels, bbl, use, floors, coverage);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast(r.msg ?? "Anchor terms received.");
+    toast(r.msg ?? "Listed for build-to-suit.");
     void persist(r.s);
   },
 
   clearBts: (bbl) => {
     const { game } = get();
     if (!game) return;
+    const hadTerms = !!game.btsProspects?.[bbl];
     const next = clearBuildToSuit(game, bbl);
     set({ game: next });
+    toast(hadTerms ? "Back on spec — the commitment is gone." : "BTS listing pulled.");
     void persist(next);
   },
 

@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
-import YearRail from "@/ui/YearRail";
+import InboxRail from "@/ui/InboxRail";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
@@ -105,7 +105,7 @@ export default function GamePanels() {
   // dock from the map-first pass was too small for that work.
   return (
     <>
-      <YearRail />
+      <InboxRail />
       {page === "none" && <ParcelPanel />}
       {page !== "none" && (
         <div

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_LABEL } from "@/data/types";
@@ -224,7 +225,9 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
   );
 }
 
-export function Row({ k, v, strong, bad, title }: { k: string; v: string; strong?: boolean; bad?: boolean; title?: string }) {
+export function Row({ k, v, strong, bad, title }: {
+  k: ReactNode; v: string; strong?: boolean; bad?: boolean; title?: string;
+}) {
   return (
     <>
       <div className="k" title={title}>{k}</div>

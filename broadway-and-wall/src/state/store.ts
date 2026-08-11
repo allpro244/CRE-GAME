@@ -3,7 +3,9 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall } from "@/engine/sim";
+import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { monthLabel } from "@/engine/types";
+import { routeAttention } from "@/ui/attentionRoute";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -35,7 +37,7 @@ import {
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
-import { netWorth } from "@/engine/value";
+import { netWorth, resolveRec } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
@@ -106,6 +108,15 @@ interface AppState {
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
   focus: (bbl: string, closePanel?: boolean) => void;
+  /** Route an attentionItems key to the right desk / parcel. */
+  openAttention: (key: string) => void;
+  /** Prior game snapshot for cycle digest deltas (UI only, not saved). */
+  prevForDigest: GameState | null;
+  /** Non-blocking delivery ceremony payload. */
+  deliveryCeremony: {
+    bbl: string; address: string; use: string; sf: number; value?: number; rival?: boolean;
+  } | null;
+  dismissDeliveryCeremony: () => void;
   setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
   setPage: (p: Page) => void;
@@ -297,6 +308,32 @@ interface AppState {
   refreshSlots: () => Promise<void>;
 }
 
+function queueDeliveryCeremony(
+  prev: GameState,
+  next: GameState,
+  parcels: ParcelTable | null,
+  set: (partial: Partial<AppState>) => void,
+) {
+  const player = deliveriesThisMonth(prev, next);
+  const rival = cityDeliveriesThisMonth(prev, next);
+  const bbl = player[0] ?? rival[0];
+  if (!bbl) return;
+  const rec = parcels ? resolveRec(parcels, next, bbl) : null;
+  const built = next.built?.[bbl];
+  set({
+    deliveryCeremony: {
+      bbl,
+      address: rec?.address ?? bbl,
+      use: built?.class ?? rec?.class ?? "building",
+      sf: built?.bldgArea ?? rec?.bldgArea ?? 0,
+      rival: !player.includes(bbl),
+    },
+  });
+  if (player.includes(bbl)) {
+    toast(`◆ Delivered — ${rec?.address ?? bbl}.`, "ok");
+  }
+}
+
 function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
 }
@@ -393,6 +430,8 @@ export const useStore = create<AppState>((set, get) => ({
   lens: "none",
   page: "none",
   advancing: false,
+  prevForDigest: null,
+  deliveryCeremony: null,
   auctionOpen: false,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
@@ -429,6 +468,19 @@ export const useStore = create<AppState>((set, get) => ({
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
   })),
+  openAttention: (key) => {
+    const game = get().game;
+    const route = routeAttention(key, game);
+    if (route.bbl) {
+      set((st) => ({
+        selectedBBL: route.bbl!,
+        flyTo: { bbl: route.bbl!, n: (st.flyTo?.n ?? 0) + 1 },
+      }));
+    }
+    if (route.auction) set({ auctionOpen: true });
+    if (route.page) startTransition(() => set({ page: route.page! }));
+  },
+  dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   setLens: (lens) => set({ lens }),
   setPage: (page) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
@@ -443,7 +495,8 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels || game.gameOver || advancing) return;
     const cash0 = game.cash;
     const next = advanceMonth(game, parcels, bbls, adjacency);
-    set({ game: next });
+    set({ game: next, prevForDigest: game });
+    queueDeliveryCeremony(game, next, parcels, set);
     // Month-close feedback: the single-month Advance used to be silent, so
     // Yr/Skip felt like the only clock that answered. Stamp the new month,
     // cash movement, and the first thing waiting — short enough to read once.
@@ -475,7 +528,8 @@ export const useStore = create<AppState>((set, get) => ({
           toast("Year advance stopped because you made another decision.");
           return;
         }
-        set({ game: r.s });
+        set({ game: r.s, prevForDigest: game });
+        queueDeliveryCeremony(game, r.s, parcels, set);
         toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
         void persist(r.s);
       } finally {
@@ -496,7 +550,8 @@ export const useStore = create<AppState>((set, get) => ({
           toast("Skip stopped because you made another decision.");
           return;
         }
-        set({ game: r.s });
+        set({ game: r.s, prevForDigest: game });
+        queueDeliveryCeremony(game, r.s, parcels, set);
         toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
         void persist(r.s);
       } finally {

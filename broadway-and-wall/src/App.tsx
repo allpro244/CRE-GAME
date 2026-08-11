@@ -3,6 +3,10 @@ import MapView from "@/map/MapView";
 import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
+import MapHud from "@/ui/MapHud";
+import CycleDigest from "@/ui/CycleDigest";
+import DeliveryCeremony from "@/ui/DeliveryCeremony";
+import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
 
 export default function App() {
@@ -19,7 +23,11 @@ export default function App() {
     <div className="app">
       <MapView />
       {playing && <TopBar />}
+      {playing && <MapHud />}
+      {playing && <CycleDigest />}
       <RightPanel />
+      <DeliveryCeremony />
+      {playing && <PrimerOffer />}
       <Toast />
       {!playing && <StartMenu />}
       {/* The start screen carries its own copy of this, because a city that

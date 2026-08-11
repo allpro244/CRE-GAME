@@ -216,7 +216,6 @@ export default function MapView() {
   const listedRef = useRef<Set<string>>(new Set());
   const threeRef = useRef<ThreeBuildings | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const select = useStore((s) => s.select);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
 
@@ -372,7 +371,13 @@ export default function MapView() {
         map.on("click", (e) => {
           const fs = map.queryRenderedFeatures(e.point, { layers: ["bw-parcel-fill"] });
           const bbl = (fs[0]?.properties?.bbl as string | undefined) ?? null;
-          select(bbl);
+          // Map is the index: select the lot AND put the camera on it. Empty
+          // clicks clear the glance card. Closing firm pages (`page: none`)
+          // keeps the docked parcel card visible for the selection.
+          // Read from the store — this listener outlives the render that mounted it.
+          const st = useStore.getState();
+          if (bbl) st.focus(bbl, true);
+          else st.select(null);
         });
       });
 
@@ -714,10 +719,16 @@ export default function MapView() {
     }
     layer.setOccupancy(occ);
     layer.setRetail(ret);
-    // the courthouse on the door: auction lots and noticed foreclosures
+    // the courthouse on the door: auction lots, noticed foreclosures, and
+    // owned balloons inside eighteen months — cycle risk on the skyline.
     const notices = new Set<string>();
     for (const l of game.auction?.lots ?? []) if (game.month < (game.auction?.m ?? 0)) notices.add(l.bbl);
     for (const f of game.bankFcls ?? []) notices.add(f.bbl);
+    for (const h of Object.values(game.holdings)) {
+      if (!h.loan) continue;
+      const mo = h.loan.maturityM - game.month;
+      if (mo > 0 && mo <= 18) notices.add(h.bbl);
+    }
     layer.setNotices([...notices]);
   }, [paintSig, mapReady, parcels, city]);
 

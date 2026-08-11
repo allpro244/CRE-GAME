@@ -1,6 +1,6 @@
 # Attribute contract — temperament, competence, firm
 
-**Status:** Phase 1–3 landed on `cursor/attr-system-9786`. Phases 4–6 are next.  
+**Status:** Phases 1–7 landed on `cursor/attr-system-9786` (leveling UI is readout-only — no XP bars).  
 **Rule source:** `HANDOFF_PRINCIPAL.md` §5 guardrail + `CLAUDE.md` (no fake multipliers).
 
 Re-measure before trusting any coefficient cited here.
@@ -11,7 +11,7 @@ Re-measure before trusting any coefficient cited here.
 
 Every person (you, staff, rival) has the same four **temperament** attrs;  
 **competence** is career months by class/district;  
-**firm capital** (later) is what survives when a person dies.  
+**firm capital** is institutional standing (hire name, lenders, exits, bench, vehicle, book).  
 No skill may make the market kinder — only capacity, access, information, and time.
 
 ---
@@ -75,9 +75,9 @@ After:
 | **2** | Wire player into capacity / float skill / desk pens | **This PR** |
 | **3** | New hires: four attrs only; role attrs → fallback maps; skillKeys on temperament | **This PR** |
 | **4** | Harness `pnpm attrs` — player float ≠ 42; Bandwidth moves capacity; legacy role attrs still read | **This PR** |
-| **5** | Firm capital v0 (hire reputation + lender standing as maturity readout) | Later |
-| **6** | Leveling UI (career years, firm milestones, temperament polish caps) | Later — after playtest |
-| **7** | Rival temperament on tape (Access/Bandwidth pace) | Later |
+| **5** | Firm capital v0 (`firmCapital.ts` — hire / lender / exits / bench / vehicle / book) | **This PR** |
+| **6** | Leveling readouts — Staff firm-capital panel + career years on PersonCard | **This PR** |
+| **7** | Rival temperament on tape — `rivalTemperamentWeight` in `rivalBuys` | **This PR** |
 
 ---
 

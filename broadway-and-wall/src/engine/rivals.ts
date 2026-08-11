@@ -44,7 +44,7 @@ import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
-import { makeRivalPrincipal, seatFounderAsRival } from "./people";
+import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -3174,6 +3174,19 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
   };
 }
 
+/**
+ * Bandwidth × Access — how hard a principal contests the tape.
+ * Mid temperament (=50/50) reads 1.0 so style appetite stays the centre.
+ * No RNG. Does not change who can close — only who wins among closers.
+ */
+export function rivalTemperamentWeight(s: GameState, r: Rival): number {
+  const p = rivalPrincipalOf(s, r.id);
+  if (!p?.attrs) return 1;
+  const band = 0.75 + 0.5 * ((p.attrs.urgency ?? 50) / 100);       // 0.75..1.25
+  const access = 0.80 + 0.4 * ((p.attrs.relationships ?? 50) / 100); // 0.80..1.20
+  return band * access;
+}
+
 export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number): Rival | null {
   // A listing may already belong to somebody — a firm selling out of a
   // position, or a receiver clearing a failed one. Whoever holds the deed is
@@ -3246,6 +3259,7 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
     const w = st.appetite * Math.max(0.05, cyc)
       * (isDistress ? st.distressBias : 1)
       * yieldFit * locFit
+      * rivalTemperamentWeight(s, r)
       * (0.65 + rng(s, "rivals") * 0.7);
     if (w > bestW) { bestW = w; best = r; }
   }

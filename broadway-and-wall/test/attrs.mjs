@@ -77,4 +77,41 @@ const fast = E.readAttr(st, "judgment", at, 90);
 ok("higher Rigor narrows band faster", (fast.hi - fast.lo) < (slow.hi - slow.lo));
 ok("higher Rigor mid closer to truth", Math.abs(fast.mid - 80) < Math.abs(slow.mid - 80));
 
+// Phase 5 — firm capital
+const fc = E.firmCapital(g);
+ok("firm capital tier in 0..5", fc.tier >= 0 && fc.tier <= 5);
+ok("process mult in [1, 1.08]", fc.processCapacityMult >= 1 && fc.processCapacityMult <= 1.08 + 1e-9);
+ok("six pillars", fc.pillars.length === 6);
+g.principal.attrs.urgency = 50;
+const capBase = E.ownerCapacitySf(g, "pm");
+// Bump firm capital score via fake clean exits + hire rep
+g.hireReputation = 0.9;
+g.exits = Array.from({ length: 8 }, (_, i) => ({
+  bbl: `x${i}`, address: "x", boughtM: 0, soldM: 1, price: 2e6, basis: 1e6, gain: 1e6,
+}));
+const fc2 = E.firmCapital(g);
+const capMature = E.ownerCapacitySf(g, "pm");
+ok("mature firm process raises owner cover", capMature >= capBase);
+ok("more exits raise firm capital score", fc2.score > fc.score);
+
+// Phase 7 — rival temperament weight
+const rival = (g.rivals ?? []).find((r) => r.failedM === undefined);
+ok("have a living rival", !!rival);
+if (rival) {
+  const mid = E.rivalTemperamentWeight(
+    { rivalPrincipals: { [rival.id]: { attrs: { urgency: 50, relationships: 50 } } } },
+    rival,
+  );
+  const hot = E.rivalTemperamentWeight(
+    { rivalPrincipals: { [rival.id]: { attrs: { urgency: 90, relationships: 90 } } } },
+    rival,
+  );
+  const cold = E.rivalTemperamentWeight(
+    { rivalPrincipals: { [rival.id]: { attrs: { urgency: 20, relationships: 20 } } } },
+    rival,
+  );
+  ok("mid temperament weight ≈ 1", Math.abs(mid - 1) < 0.02);
+  ok("hot principal contests harder than cold", hot > cold);
+}
+
 console.log("\nattrs pass");

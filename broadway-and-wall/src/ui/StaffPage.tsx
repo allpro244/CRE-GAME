@@ -60,6 +60,7 @@ import {
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
+import { firmCapital, firmMilestonesHit, nextFirmMilestone } from "@/engine/firmCapital";
 import { PersonCard as PrincipalCard } from "./PersonCard";
 import { sf, usd } from "./format";
 
@@ -71,6 +72,55 @@ const CAPACITY_ATTRS: Record<StaffRole, string[]> = {
   leasing: ["urgency", "relationships"],
   construction: ["urgency", "diligence"],
 };
+
+/**
+ * Firm capital — institutional standing, not XP. Pillars are already-earned
+ * quantities (hire name, lenders, exits, bench, vehicle, book).
+ */
+function FirmCapitalPanel({ game }: { game: GameState }) {
+  const fc = firmCapital(game);
+  const hit = firmMilestonesHit(game);
+  const next = nextFirmMilestone(game);
+  const pct = Math.round(fc.score * 100);
+  return (
+    <div className="page-section">
+      <div className="page-section-head">
+        Firm capital · {fc.label}
+        <span className="dim mono" style={{ marginLeft: 8 }}>tier {fc.tier}/5 · {pct}%</span>
+      </div>
+      <div className="hint">
+        What survives when a principal dies: process, name, record. Not a skill build —
+        hiring standing, lender file, clean exits, bench, vehicle, and book size.
+        Process cover on your float desk: ×{fc.processCapacityMult.toFixed(3)} (max ×1.08).
+      </div>
+      <div className="grid" style={{ margin: "8px 0" }}>
+        {fc.pillars.map((p) => (
+          <div key={p.id} style={{ display: "contents" }}>
+            <div className="k">{p.label}</div>
+            <div className="v mono" title={p.detail}>
+              <span style={{
+                display: "inline-block", width: 100, height: 6,
+                background: "rgba(43,37,26,0.12)", borderRadius: 2, verticalAlign: "middle",
+                marginRight: 8,
+              }}>
+                <span style={{
+                  display: "block", height: "100%", width: `${Math.round(p.score * 100)}%`,
+                  background: "rgba(43,37,26,0.55)", borderRadius: 2,
+                }} />
+              </span>
+              {p.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hint">
+        Milestones {fc.milestonesHit}/{fc.milestonesTotal}
+        {hit.length > 0 ? ` · last: ${hit[hit.length - 1]!.label}` : ""}
+        {next ? ` · next open: ${next.label}` : " · every chapter marked"}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The stat block on every other page is a local component in RightPanel.tsx
@@ -240,6 +290,8 @@ export default function StaffPage() {
           Capacity arithmetic follows the org chart; there is no free dial to force it.
         </div>
       </div>
+
+      <FirmCapitalPanel game={game} />
 
       {game.principal && (
         <PrincipalCard person={game.principal} game={game} showAttrs title="You · the principal" />

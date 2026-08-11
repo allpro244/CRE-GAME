@@ -10,6 +10,7 @@ import {
   ageYears, birthYear, ATTR_LABEL_PERSON, GENERAL_PERSON_ATTRS, topCareerLines,
   type Person,
 } from "@/engine/people";
+import { personProgress } from "@/engine/firmCapital";
 import { elect6166, ESTATE_TAX_RATE } from "@/engine/estate";
 import { useStore } from "@/state/store";
 import { usd } from "./format";
@@ -39,6 +40,7 @@ export function PersonCard({
 }) {
   const age = ageYears(person, game.month);
   const bill = person.seat === "you" ? game.estateDue : undefined;
+  const prog = personProgress(person, game.month);
 
   return (
     <div className="page-section" style={{ marginTop: 8 }}>
@@ -53,8 +55,17 @@ export function PersonCard({
         {person.seat === "rival" && (
           <Row k="Seat" v="Operating principal" />
         )}
+        {prog.careerYears > 0 && (
+          <Row k="Career" v={`${prog.careerYears.toFixed(1)} years operating exposure`} />
+        )}
         {topCareerLines(person.career).length > 0 && (
           <Row k="Knows" v={topCareerLines(person.career).join(" · ")} />
+        )}
+        {person.seat === "you" && prog.deathAge != null && (
+          <Row
+            k="Clock"
+            v={`drawn death age ~${prog.deathAge.toFixed(0)}`}
+          />
         )}
       </div>
       {showAttrs && person.seat === "you" ? (

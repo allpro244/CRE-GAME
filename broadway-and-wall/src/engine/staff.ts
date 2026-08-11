@@ -56,6 +56,7 @@ import {
   careerLoadMult, principalTemperament, queueFounderBid, stampEmployeeLife,
   type Person,
 } from "./people";
+import { firmCapital } from "./firmCapital";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -414,7 +415,9 @@ export function ownerCapacitySf(s: GameState, role: StaffRole): number {
   else if (style === "delegated") cap *= (role === "construction" ? 0.65 : 0.72);
   const urgency = principalTemperament(s).urgency;
   const band = 0.55 + (urgency / 100) * 0.9; // 0.55..1.45; = 1.0 at 50
-  return cap * band;
+  // Institutional process (firm capital tier) — earned, capped ≤ +8%.
+  const process = firmCapital(s).processCapacityMult;
+  return cap * band * process;
 }
 
 function abilityMult(s: GameState, st: Staff, month: number, keys: string[]): number {

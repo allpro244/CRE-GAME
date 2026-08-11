@@ -4399,7 +4399,57 @@ void main() {
   // drawn at two pixels a floor and are correctly dissolved. Below: VALUE —
   // tone, not edges, which is exactly what a facade still has at two pixels a
   // floor, and which now runs after the dissolve so distance cannot erase it.
-  vec3 facadeAvg = mix(wall, mix(glassA, glassB, 0.5), win.x * win.y * 0.8);
+  // WHAT DEPTH IS, AT TWO PIXELS A FLOOR.
+  //
+  // Reveal depth runs 28 mm to 900 mm across these families and it is the
+  // strongest thing separating them — a thin skin hung off a frame against a
+  // thick thing with holes cut in it. All of it lived above this line, in the
+  // parallax and the jamb shading, so at the camera this game actually sits
+  // at every family arrived as a flat mix of its own wall and its own glass
+  // and the whole range collapsed into the palette. Eighty-two families, one
+  // cue, and the cue that did the most work was the one that got dissolved.
+  //
+  // Depth has a consequence that is pure value and survives any distance: a
+  // deep opening HIDES ITS OWN GLASS the moment you are off-axis, because the
+  // jamb is in the way. Look along a brutalist slab and you see concrete;
+  // look along a unitised glass tower at the same angle and you see glass,
+  // because there is nothing standing in front of it. That is why a masonry
+  // street reads as a wall with holes and a glass street reads as a mirror,
+  // from a mile up, with no window grid drawn in either.
+  //
+  // So the glass the average is made of is the opening LESS what the reveal
+  // occludes — depth times the tangent of the view angle, per axis, against
+  // the opening's own size in metres. Which makes it depend on colW and win
+  // as well, so bay proportion reaches the far view too.
+  // Every quantity below is the geometry of one opening — how wide, how tall,
+  // how deep, and where the eye and the sun are relative to it. None of it is
+  // a number chosen to make a picture come out; the one calibrated constant is
+  // named where it appears.
+  float slotW = max(win.x * colW, 0.05);        // the opening, in metres
+  float slotH = max(win.y * fh, 0.05);
+  float hHide = revealM * abs(dot(Vw, T)) / facing;
+  float vHide = revealM * abs(dot(Vw, vec3(0.0, 0.0, 1.0))) / facing;
+  float seen = clamp(1.0 - hHide / slotW, 0.0, 1.0) * clamp(1.0 - vHide / slotH, 0.0, 1.0);
+  // AND WHAT GLASS YOU CAN STILL SEE IS DARKER FOR THE SAME REASON. A recessed
+  // opening sees less sky than a flush one, by the form factor of its own
+  // slot: depth over depth plus the mean of its sides. That is 17% for a
+  // board-formed concrete slot and 1% for a unitised glass lite — the range
+  // this whole cue is made of.
+  float skyLoss = revealM / (revealM + 0.5 * (slotW + slotH));
+  // ...and the jamb throws a shadow across the opening whenever the sun runs
+  // along the wall rather than square into it: depth times that tangent, over
+  // the opening's width, is the fraction of it in shade. 0.55 is the only
+  // calibrated number here — the share of a lit facade's light that is direct
+  // sun rather than sky, which is what that fraction of the opening loses.
+  float sunLoss = clamp(revealM * abs(dot(SUN_DIR, T)) / max(dot(SUN_DIR, n), 0.10) / slotW, 0.0, 1.0);
+  // Smoothstepped rather than stepped: a wall the sun is grazing has a jamb
+  // shadow that fades, and a hard cut there would draw the terminator as a
+  // line across the city.
+  float revShade = 1.0 - skyLoss - 0.55 * sunLoss * smoothstep(0.0, 0.18, dot(n, SUN_DIR));
+  vec3 glassAvg = mix(glassA, glassB, 0.5) * revShade;
+  // The part of the opening the jamb has taken over reads as wall in its own
+  // shadow, because that is what it is.
+  vec3 facadeAvg = mix(wall, mix(wall * revShade, glassAvg, seen), win.x * win.y * 0.8);
   col = mix(col, facadeAvg, lod);
 
   // ---- value: the half of the facade that reads from the air --------------

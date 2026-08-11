@@ -11,7 +11,7 @@ import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
-import { roleState, cmRiskMult } from "./staff";
+import { coverRoleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
@@ -2009,7 +2009,8 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // times whoever is on the payroll, so hiring somebody cannot re-roll the
       // rest of the century. That fault is documented at the top of staff.ts
       // and it cost an acceptance test once already.
-      const cm = cmRiskMult(roleState(s, parcels, "construction"));
+      // Per-job cover: an assigned CM carries this site; otherwise the float desk.
+      const cm = cmRiskMult(coverRoleState(s, parcels, d.bbl, "construction").rs);
       const cmNote = cm > 1.08 ? " The construction desk was underwater and the job went unsupervised." : "";
       if (roll < 0.028 * gmpShield * cm) {
         // change order

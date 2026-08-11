@@ -54,6 +54,7 @@ import {
   ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
   LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
   SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
+  deskBacklog, firmShapeLabel, personRoleState, isFloatStaff,
   leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
   readAttr, roleState, severanceFor,
   type Candidate, type RoleState, type Staff, type StaffRole,
@@ -192,8 +193,14 @@ export default function StaffPage() {
   const ownerCover = ownerCapacitySf(game, "pm");
   // Buildings you operate — leased fees are coupon paper, not a desk assignment.
   const ownedBbls = Object.keys(game.holdings).filter((b) => !game.holdings[b].groundLeased);
+  // Live jobs for construction assignment.
+  const jobBbls = Object.keys(game.developments ?? {}).filter((b) => {
+    const d = game.developments![b];
+    return d && d.deliverM > game.month;
+  });
   const costIdx = game.econ.costIdx ?? 1;
   const rep = game.hireReputation ?? 0.55;
+  const shape = firmShapeLabel(game);
 
   return (
     <div>
@@ -218,19 +225,18 @@ export default function StaffPage() {
 
       <div className="hint">
         {staff.length
-          ? "One person covers a certain amount of property and no more, and you are still one of them. "
-          : "Nobody is managing your buildings but you, and one person covers a certain amount of property and no more. "}
+          ? "Desks own work. Assigned people cover their book; unassigned people cover the rest; uncovered load sits on you. "
+          : "Nobody is on the payroll but you — every desk is yours until you hire and, for leasing, hand them the pen. "}
         Past capacity the roof inspection slips, the renewal conversation happens two months late, and the
-        vendor contract rolls over unexamined. None of that is a penalty applied to you — it is work that did
-        not get done, priced below in the units it costs you.
+        vendor contract rolls over unexamined. That is work that did not get done, priced below in the units it costs you.
         {rep < 0.45 ? " The street remembers messy firings — the next shortlist will read worse." : ""}
       </div>
 
       <div className="page-section">
-        <div className="page-section-head">How this firm is run</div>
+        <div className="page-section-head">Firm shape · {shape}</div>
         <div className="hint">
-          Owner style sets how much cover you keep yourself. Bench style sets whether you hire for stars or a flatter mid-tier.
-          Neither is a skill chip — they change capacity arithmetic.
+          Shape emerges from headcount — a one-person shop is hands-on and boutique; a larger payroll reads as a platform —
+          unless you force it. Neither dial is a skill chip; they change capacity arithmetic.
         </div>
         <div className="btn-row" style={{ marginTop: 8 }}>
           <button
@@ -271,12 +277,15 @@ export default function StaffPage() {
           key={role}
           role={role}
           rs={roleState(game, parcels, role)}
+          backlog={deskBacklog(game, parcels, role, opexBase)}
           opexBase={opexBase}
           staff={staff.filter((x) => x.role === role)}
           pending={pending.filter((p) => p.staff.role === role)}
           month={game.month}
           ownedBbls={ownedBbls}
+          jobBbls={jobBbls}
           parcels={parcels}
+          game={game}
           onFire={(id) => {
             if (armFire !== id) { setArmFire(id); setTimeout(() => setArmFire(null), 5000); return; }
             setArmFire(null);
@@ -367,15 +376,18 @@ export default function StaffPage() {
  * multiplier, so this panel and the operating statement on the property page
  * cannot drift apart.
  */
-function RoleDesk({ role, rs, opexBase, staff, pending, month, ownedBbls, parcels, onFire, onAssign, onUnassign, armed, severance }: {
+function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbls, jobBbls, parcels, game, onFire, onAssign, onUnassign, armed, severance }: {
   role: StaffRole;
   rs: RoleState;
+  backlog: ReturnType<typeof deskBacklog>;
   opexBase: number;
   staff: Staff[];
   pending: { staff: Staff; startM: number }[];
   month: number;
   ownedBbls: string[];
+  jobBbls: string[];
   parcels: ParcelTable;
+  game: GameState;
   onFire: (id: number) => void;
   onAssign: (id: number, bbl: string) => void;
   onUnassign: (id: number, bbl: string) => void;
@@ -384,6 +396,40 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, ownedBbls, parcel
 }) {
   const covered: RoleState = { ...rs, slip: 0 };
   const lines: { text: string; bad: boolean }[] = [];
+  // Work not done — concrete units ahead of the multiplier prose.
+  if (backlog.uncoveredN > 0) {
+    lines.push({
+      bad: true,
+      text: role === "construction"
+        ? `${backlog.uncoveredN} live job${backlog.uncoveredN === 1 ? "" : "s"} (${sf(backlog.uncoveredSf)}) sit on you alone — every construction hire is pinned elsewhere.`
+        : `${backlog.uncoveredN} building${backlog.uncoveredN === 1 ? "" : "s"} (${sf(backlog.uncoveredSf)}) sit on you alone — every ${ROLE_LABEL[role].toLowerCase()} hire is pinned elsewhere.`,
+    });
+  }
+  if (role === "pm" && backlog.opexDragYr > 500) {
+    lines.push({
+      bad: true,
+      text: `Deferred PM work is costing about ${usd(backlog.opexDragYr)} a year in controllable operating expense versus the same desk inside capacity.`,
+    });
+  }
+  if (role === "pm" && backlog.renewalsMissPct > 1) {
+    lines.push({
+      bad: true,
+      text: `Renewal conversations are landing about ${backlog.renewalsMissPct.toFixed(0)}% less often than they would if this desk were keeping up.`,
+    });
+  }
+  if (role === "leasing" && backlog.prospectsMissPct > 1) {
+    lines.push({
+      bad: true,
+      text: `About ${backlog.prospectsMissPct.toFixed(0)}% of prospects this desk would catch inside capacity are touring someone else instead.`,
+    });
+  }
+  if (role === "construction" && backlog.siteRiskExtraPct > 1) {
+    lines.push({
+      bad: true,
+      text: `Site risk is running about ${backlog.siteRiskExtraPct.toFixed(0)}% hotter than the same people would carry inside capacity`
+        + (backlog.unsupervisedJobSf > 0 ? ` — ${sf(backlog.unsupervisedJobSf)} of live work is going unsupervised.` : "."),
+    });
+  }
   // WHO IS ACTUALLY DOING THIS. With nobody hired the seat is you, and the
   // engine floors your competence a little under a professional desk's — so
   // every "worse than ordinary" line below has to name the right person or it
@@ -541,7 +587,9 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, ownedBbls, parcel
           severance={severance(st)}
           armed={armed === st.id}
           ownedBbls={ownedBbls}
+          jobBbls={jobBbls}
           parcels={parcels}
+          game={game}
           onFire={() => onFire(st.id)}
           onAssign={(bbl) => onAssign(st.id, bbl)}
           onUnassign={(bbl) => onUnassign(st.id, bbl)}
@@ -562,9 +610,9 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, ownedBbls, parcel
  * out about a person in life. Nothing here ever prints the true number,
  * because nothing in life does either.
  */
-function PersonCard({ st, month, severance, armed, ownedBbls, parcels, onFire, onAssign, onUnassign }: {
+function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, game, onFire, onAssign, onUnassign }: {
   st: Staff; month: number; severance: number; armed: boolean;
-  ownedBbls: string[]; parcels: ParcelTable;
+  ownedBbls: string[]; jobBbls: string[]; parcels: ParcelTable; game: GameState;
   onFire: () => void;
   onAssign: (bbl: string) => void;
   onUnassign: (bbl: string) => void;
@@ -573,9 +621,11 @@ function PersonCard({ st, month, severance, armed, ownedBbls, parcels, onFire, o
   const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
   const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month); return a + (r.hi - r.lo); }, 0) / keys.length;
   const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM); return a + (r.hi - r.lo); }, 0) / keys.length;
-  const canAssign = st.role === "pm" || st.role === "leasing";
+  const assignTargets = st.role === "construction" ? jobBbls : ownedBbls;
   const assigned = st.assignedBbls ?? [];
-  const freeBbls = ownedBbls.filter((b) => !assigned.includes(b));
+  const freeBbls = assignTargets.filter((b) => !assigned.includes(b));
+  const floating = isFloatStaff(st);
+  const personal = !floating ? personRoleState(game, parcels, st) : null;
   return (
     <div className="staff-row">
       <div className="staff-main">
@@ -583,6 +633,11 @@ function PersonCard({ st, month, severance, armed, ownedBbls, parcels, onFire, o
         <div className="staff-sub">
           {ROLE_LABEL[st.role]} since {monthLabel(st.hiredM)} · {(served / 12).toFixed(1)} years watched ·{" "}
           {usd(st.salary)} / yr in year-2000 dollars
+          {floating
+            ? " · float desk (covers what is not pinned)"
+            : personal
+              ? ` · on the hook for ${sf(personal.covered)} at ${personal.load.toFixed(2)}× their cover`
+              : ""}
         </div>
         <div className="band-grid">
           {keys.map((k) => (
@@ -599,43 +654,52 @@ function PersonCard({ st, month, severance, armed, ownedBbls, parcels, onFire, o
             ? "Too early to tell. You bought the interview; the results have not arrived yet."
             : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Twelve months of results halve the error and five years all but remove it.`}
         </div>
-        {canAssign && (
-          <div className="staff-assign">
-            <div className="hint">
-              Assign them to a building and that asset runs on their skill — the rest of the book still loads the desk.
-            </div>
-            {assigned.length > 0 && (
-              <div className="btn-row" style={{ marginTop: 6 }}>
-                {assigned.map((bbl) => {
-                  const addr = parcels[bbl]?.address ?? bbl;
-                  return (
-                    <button key={bbl} type="button" className="btn btn-on" onClick={() => onUnassign(bbl)} title="Clear this assignment">
-                      {addr} · clear
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {freeBbls.length > 0 && (
-              <label className="staff-assign-pick">
-                <span className="dim">Put on</span>
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v) onAssign(v);
-                    e.target.value = "";
-                  }}
-                >
-                  <option value="">a building…</option>
-                  {freeBbls.map((bbl) => (
-                    <option key={bbl} value={bbl}>{parcels[bbl]?.address ?? bbl}</option>
-                  ))}
-                </select>
-              </label>
-            )}
+        <div className="staff-assign">
+          <div className="hint">
+            {st.role === "construction"
+              ? "Pin them to a live job and that site is their load. Leave them floating and they cover every unassigned job with you."
+              : "Pin them to a building and that asset is their load — skill and slip both. Leave them floating and they cover the unassigned remainder with you."}
           </div>
-        )}
+          {assigned.length > 0 && (
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              {assigned.map((bbl) => {
+                const addr = parcels[bbl]?.address ?? bbl;
+                const label = st.role === "construction" ? `${addr} · job · clear` : `${addr} · clear`;
+                return (
+                  <button key={bbl} type="button" className="btn btn-on" onClick={() => onUnassign(bbl)} title="Clear this assignment">
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {freeBbls.length > 0 && (
+            <label className="staff-assign-pick">
+              <span className="dim">{st.role === "construction" ? "Put on job" : "Put on"}</span>
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) onAssign(v);
+                  e.target.value = "";
+                }}
+              >
+                <option value="">{st.role === "construction" ? "a live job…" : "a building…"}</option>
+                {freeBbls.map((bbl) => (
+                  <option key={bbl} value={bbl}>
+                    {parcels[bbl]?.address ?? bbl}
+                    {st.role === "construction" && game.developments?.[bbl]
+                      ? ` · ${sf(game.developments[bbl].sf)}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {st.role === "construction" && jobBbls.length === 0 && (
+            <div className="hint">Nothing in the ground — there is no job to assign them to.</div>
+          )}
+        </div>
       </div>
       <div className="staff-actions">
         <button className={"btn btn-danger" + (armed ? " btn-on" : "")} onClick={onFire}>

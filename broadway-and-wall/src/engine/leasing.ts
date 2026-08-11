@@ -17,7 +17,7 @@ import { drawLoc, locAvailable } from "./credit";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
-import { deskJudgment, deskNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
+import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -2137,14 +2137,15 @@ type DeskVerdict = "sign" | "counter" | "refer" | "pass";
 
 function deskVerdict(
   s: GameState, loi: LOI, market: number, feeRate: number,
-  opts?: { ignoreTour?: boolean },
+  opts?: { ignoreTour?: boolean; cover?: "agent" | "exclusive" | "staff" | null },
 ): {
   verdict: DeskVerdict; score: number; floor: number; pass: number;
   adjFloor: number; adjPass: number; why?: string;
 } {
   const floor = agentFloor(s);
   const pass = agentPassBelow(s);
-  const judgment = deskJudgment(s, "leasing");
+  // Outside agent/exclusive is mid competence — they do not inherit payroll stars.
+  const judgment = penJudgment(s, opts?.cover ?? "staff");
   const slack = ((judgment - 50) / 100) * 0.06;
   const adjFloor = Math.max(0.5, floor - slack);
   const adjPass = Math.max(0.35, pass - slack * 0.5);
@@ -2242,12 +2243,15 @@ export function agentCounterTerms(
 }
 
 /**
- * Who works this letter when the firm-wide agent toggle is off.
+ * Who holds the pen on this deed.
  *
- * Exclusive brokers always cover their deed. In-house leasing staff cover only
- * when you have handed them the book (`teamLeasing`) — an unassigned hire then
- * works the whole book, an assigned hire only their buildings. Hiring staff
- * alone does not take the pen; that was the bug "Take leasing back" used to hit.
+ * Three covers, one model:
+ *   1. You (null) — default
+ *   2. Staff — only after an explicit handoff (`teamLeasing`); float hires
+ *      cover the unassigned book, pinned hires only their buildings
+ *   3. Outside — firm agent or a building exclusive (vendors, mid competence)
+ *
+ * Hiring staff alone does not take the pen.
  */
 export function deskCoverage(
   s: GameState, bbl: string,
@@ -2260,7 +2264,7 @@ export function deskCoverage(
   const assigned = leasing.some((st) => (st.assignedBbls ?? []).includes(bbl));
   const firmDesk = leasing.some((st) => !(st.assignedBbls?.length));
   if (!assigned && !firmDesk) return null;
-  return { kind: "staff", who: "Your leasing team" };
+  return { kind: "staff", who: "Your leasing desk" };
 }
 
 function deskFee(kind: "agent" | "exclusive" | "staff", loi?: LOI): number {
@@ -2348,6 +2352,7 @@ function agentNegotiateLoi(
   rec: ParcelRecord, h: Holding, market: number,
   feeRate: number, adjFloor: number, adjPass: number,
   who: string,
+  cover?: "agent" | "exclusive" | "staff" | null,
 ): boolean {
   const target = Math.min(1.02, adjFloor + 0.01);
   const terms = agentCounterTerms(loi, market, target);
@@ -2394,7 +2399,7 @@ function agentNegotiateLoi(
   // Final counter-back: take it when negotiation skill says the number clears
   // a softened bar; otherwise leave the improved letter on your desk once.
   const score = loiMandateScore(loi, market);
-  const neg = deskNegotiation(s);
+  const neg = penNegotiation(s, cover ?? "staff");
   const acceptBar = Math.max(adjPass + 0.01, adjFloor - ((neg - 50) / 100) * 0.08);
   if (score >= acceptBar && agentCanFund(s, loi, feeRate)) {
     delete (s as GameState & { _signFailed?: string })._signFailed;
@@ -2480,7 +2485,7 @@ export function runLeasingAgent(
       const rec = resolveRec(parcels, s, loi.bbl);
       if (!h || !rec) return null;
       const market = loiMarket(s, rec, h, loi);
-      const v = deskVerdict(s, loi, market, feeRate, { ignoreTour: true });
+      const v = deskVerdict(s, loi, market, feeRate, { ignoreTour: true, cover: cover.kind });
       return {
         loi, h, rec, market, ...v,
         fundable: v.verdict === "sign" && agentCanFund(s, loi, feeRate),
@@ -2502,7 +2507,7 @@ export function runLeasingAgent(
           if (x.loi.id === w.loi.id) continue;
           if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
           else if (x.verdict === "counter") {
-            agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who);
+            agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who, cover.kind);
           } else {
             agentReferLoi(s, x.loi, x.rec,
               x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
@@ -2546,7 +2551,7 @@ export function runLeasingAgent(
     let tourResolved = false;
     for (const x of soft) {
       if (!s.lois.some((l) => l.id === x.loi.id)) continue;
-      agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who);
+      agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who, cover.kind);
       if (!s.lois.some((l) => l.tourId === tid && !l.referred)) {
         // Signed or walked the last open party — clear stragglers that passed.
         s.lois = s.lois.filter((l) => l.tourId !== tid || l.referred);
@@ -2596,7 +2601,7 @@ export function runLeasingAgent(
     const feeRate = deskFee(cover.kind, loi);
     const market = loiMarket(s, rec, h, loi);
     const { verdict, score, floor, pass, adjFloor, adjPass, why } =
-      deskVerdict(s, loi, market, feeRate);
+      deskVerdict(s, loi, market, feeRate, { cover: cover.kind });
     if (verdict === "pass") {
       agentPassLoi(s, loi, rec, score, market, pass, cover.who);
       continue;
@@ -2608,7 +2613,7 @@ export function runLeasingAgent(
       continue;
     }
     if (verdict === "counter") {
-      agentNegotiateLoi(s, parcels, loi, rec, h, market, feeRate, adjFloor, adjPass, cover.who);
+      agentNegotiateLoi(s, parcels, loi, rec, h, market, feeRate, adjFloor, adjPass, cover.who, cover.kind);
       continue;
     }
     if (!agentCanFund(s, loi, feeRate)) {
@@ -2700,7 +2705,9 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
     const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
-    const { verdict, score, floor, pass, adjFloor, adjPass, why } = deskVerdict(s, loi, market, rate);
+    // Renewal management is outside coverage — mid competence, not your leasing hire.
+    const { verdict, score, floor, pass, adjFloor, adjPass, why } =
+      deskVerdict(s, loi, market, rate, { cover: "exclusive" });
     if (verdict === "pass") {
       bumpDeskMonth(s, "passed");
       s.lois = s.lois.filter((l) => l.id !== loi.id);
@@ -2723,7 +2730,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
       continue;
     }
     if (verdict === "counter") {
-      agentNegotiateLoi(s, parcels, loi, rec, h, market, rate, adjFloor, adjPass, "Management");
+      agentNegotiateLoi(s, parcels, loi, rec, h, market, rate, adjFloor, adjPass, "Management", "exclusive");
       continue;
     }
     // The letter's own commission plus the manager's mandate — see above.

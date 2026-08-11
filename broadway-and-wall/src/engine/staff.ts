@@ -127,7 +127,11 @@ export interface Staff {
   hiredM: number;
   /** How wide the initial read was — narrowed at hire by paying for a search. */
   band0: number;
-  /** Holdings this person is assigned to — pm and leasing only. */
+  /**
+   * Assets this person is on the hook for.
+   * PM/leasing: operated holdings. Construction: live job BBLs (developments).
+   * Empty/undefined = float desk — they cover whatever is not pinned to someone else.
+   */
   assignedBbls?: string[];
 }
 
@@ -299,12 +303,50 @@ export type OwnerStyle = "handsOn" | "delegated";
 export type BenchStyle = "boutique" | "platform";
 
 /**
- * Owner desk capacity before hires. Undefined style keeps the original
+ * FIRM SHAPE EMERGES FROM THE PAYROLL unless you override it.
+ *
+ * A one-person shop is hands-on and boutique whether or not you clicked a
+ * button. Four specialists and a float desk is a platform. The old sliders
+ * remain as an explicit override when you want to force the arithmetic.
+ */
+export function effectiveOwnerStyle(s: GameState): OwnerStyle | null {
+  if (s.ownerStyle) return s.ownerStyle;
+  const n = (s.staff ?? []).length;
+  if (n <= 1) return "handsOn";
+  if (n >= 4) return "delegated";
+  return null; // mid — original OWNER_SF constants
+}
+
+export function effectiveBenchStyle(s: GameState): BenchStyle | null {
+  if (s.benchStyle) return s.benchStyle;
+  const n = (s.staff ?? []).length;
+  if (n <= 2) return "boutique";
+  if (n >= 5) return "platform";
+  return null;
+}
+
+/** Human-readable firm shape for the Staff page. */
+export function firmShapeLabel(s: GameState): string {
+  const n = (s.staff ?? []).length;
+  const owner = effectiveOwnerStyle(s);
+  const bench = effectiveBenchStyle(s);
+  const forced = !!(s.ownerStyle || s.benchStyle);
+  const bits: string[] = [];
+  if (owner === "handsOn") bits.push("hands-on");
+  else if (owner === "delegated") bits.push("delegated");
+  if (bench === "boutique") bits.push("boutique");
+  else if (bench === "platform") bits.push("platform");
+  if (!bits.length) bits.push(n === 0 ? "you alone" : "growing firm");
+  return forced ? `${bits.join(" · ")} (set)` : `${bits.join(" · ")} · ${n} on payroll`;
+}
+
+/**
+ * Owner desk capacity before hires. Null effective style keeps the original
  * OWNER_SF / OWNER_CONSTRUCTION_SF constants so old saves and the payroll
  * harness do not silently move the capacity line.
  */
 export function ownerCapacitySf(s: GameState, role: StaffRole): number {
-  const style = s.ownerStyle;
+  const style = effectiveOwnerStyle(s);
   const base = role === "construction" ? OWNER_CONSTRUCTION_SF : OWNER_SF;
   if (style === "handsOn") return base * (role === "construction" ? 1.25 : 1.35);
   if (style === "delegated") return base * (role === "construction" ? 0.65 : 0.72);
@@ -316,50 +358,61 @@ function abilityMult(s: GameState, st: Staff, month: number, keys: string[]): nu
   // not about what is happening to their buildings.
   void month;
   const mean = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
-  const bench = s.benchStyle;
+  const bench = effectiveBenchStyle(s);
   if (bench === "boutique") return 0.55 + (mean / 100) * 1.05;   // star spread
   if (bench === "platform") return 0.75 + (mean / 100) * 0.65;   // flatter mid
   return 0.6 + (mean / 100) * 0.9;                               // original curve
 }
 
-export function roleCapacitySf(s: GameState, role: StaffRole): number {
-  const base = role === "pm" ? PM_BASE_SF : role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
-  let cap = ownerCapacitySf(s, role);
-  for (const st of s.staff ?? []) {
-    if (st.role !== role) continue;
-    const keys = role === "pm" ? ["urgency", "diligence"]
-      : role === "construction" ? ["urgency", "diligence"]
-      : ["urgency", "relationships"];
-    cap += base * abilityMult(s, st, s.month, keys);
-  }
-  return cap;
+function capacityKeys(role: StaffRole): string[] {
+  return role === "leasing" ? ["urgency", "relationships"] : ["urgency", "diligence"];
 }
 
-/** Square feet each role is on the hook for. */
-export function coveredSf(s: GameState, parcels: ParcelTable, role: StaffRole): number {
-  // WHAT IS IN THE GROUND, not what is standing. See CONSTRUCTION_BASE_SF.
+function skillKeys(role: StaffRole): string[] {
+  return role === "pm" ? ["costControl", "diligence"]
+    : role === "construction" ? ["scheduling", "costControl"]
+      : ["marketKnowledge", "negotiation"];
+}
+
+/** Personal capacity of one hire — what they can carry if that is their whole book. */
+export function personCapacitySf(s: GameState, st: Staff): number {
+  const base = st.role === "pm" ? PM_BASE_SF
+    : st.role === "construction" ? CONSTRUCTION_BASE_SF
+      : LEASING_BASE_SF;
+  return base * abilityMult(s, st, s.month, capacityKeys(st.role));
+}
+
+/**
+ * Work SF one asset puts on a desk.
+ * Construction reads live jobs; PM/leasing read operated holdings.
+ */
+export function workSfAt(s: GameState, parcels: ParcelTable, bbl: string, role: StaffRole): number {
   if (role === "construction") {
-    let live = 0;
-    for (const d of Object.values(s.developments ?? {})) {
-      if (d.deliverM > s.month) live += d.sf ?? 0;
-    }
-    return live;
+    const d = s.developments?.[bbl];
+    if (!d || d.deliverM <= s.month) return 0;
+    return d.sf ?? 0;
   }
-  let sf = 0;
-  for (const h of Object.values(s.holdings)) {
-    // A ground-leased tower is the lessee's operating job, not yours — counting
-    // it here made the staff desk look overloaded while you only collect rent.
-    if (h.groundLeased) continue;
-    const rec: ParcelRecord | null = resolveRec(parcels, s, h.bbl);
-    if (!rec || !rec.bldgArea) continue;
-    const mix = rec.mix;
-    const mfShare = mix ? (mix.multifamily ?? 0) : (rec.class === "multifamily" ? 1 : 0);
-    const mfSf = rec.bldgArea * mfShare;
-    const comSf = rec.bldgArea - mfSf;
-    // Leasing does not work on flats. The engine already says so in setBroker.
-    sf += role === "pm" ? comSf + mfSf * MF_WORK_WEIGHT : comSf;
+  const h = s.holdings[bbl];
+  if (!h || h.groundLeased) return 0;
+  const rec: ParcelRecord | null = resolveRec(parcels, s, bbl);
+  if (!rec || !rec.bldgArea) return 0;
+  const mix = rec.mix;
+  const mfShare = mix ? (mix.multifamily ?? 0) : (rec.class === "multifamily" ? 1 : 0);
+  const mfSf = rec.bldgArea * mfShare;
+  const comSf = rec.bldgArea - mfSf;
+  return role === "pm" ? comSf + mfSf * MF_WORK_WEIGHT : comSf;
+}
+
+/** Every BBL that can load this desk right now. */
+export function deskAssetBbls(s: GameState, parcels: ParcelTable, role: StaffRole): string[] {
+  if (role === "construction") {
+    return Object.keys(s.developments ?? {}).filter((bbl) => workSfAt(s, parcels, bbl, role) > 0);
   }
-  return sf;
+  return Object.keys(s.holdings).filter((bbl) => workSfAt(s, parcels, bbl, role) > 0);
+}
+
+export function isFloatStaff(st: Staff): boolean {
+  return !(st.assignedBbls?.length);
 }
 
 /**
@@ -375,23 +428,201 @@ export function slip(load: number): number {
   return over / (over + 1.4);
 }
 
-export interface RoleState { capacity: number; covered: number; load: number; slip: number; skill: number; }
+export interface RoleState {
+  capacity: number;
+  covered: number;
+  load: number;
+  slip: number;
+  skill: number;
+  /** SF with nobody assigned while every hire in the role is pinned elsewhere. */
+  uncoveredSf?: number;
+  uncoveredN?: number;
+}
 
+function stateOf(capacity: number, covered: number, skill: number): RoleState {
+  const load = capacity > 0 ? covered / capacity : (covered > 0 ? 99 : 0);
+  return { capacity, covered, load, slip: slip(load), skill };
+}
+
+/** Load on one assigned person — only their pinned assets count. */
+export function personRoleState(s: GameState, parcels: ParcelTable, st: Staff): RoleState {
+  const capacity = personCapacitySf(s, st);
+  let covered = 0;
+  for (const bbl of st.assignedBbls ?? []) covered += workSfAt(s, parcels, bbl, st.role);
+  const keys = skillKeys(st.role);
+  const skill = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
+  return stateOf(capacity, covered, skill);
+}
+
+/**
+ * The float desk: owner cover + every unassigned hire, against every asset
+ * that is not pinned to somebody. This is where assignment becomes load-bearing —
+ * pin every leasing hire to Tower A and Tower B sits on you alone.
+ */
+export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRole): RoleState {
+  const hired = (s.staff ?? []).filter((x) => x.role === role);
+  const floaters = hired.filter(isFloatStaff);
+  let capacity = ownerCapacitySf(s, role);
+  for (const st of floaters) capacity += personCapacitySf(s, st);
+
+  const pinned = new Set<string>();
+  for (const st of hired) {
+    if (isFloatStaff(st)) continue;
+    for (const bbl of st.assignedBbls ?? []) pinned.add(bbl);
+  }
+  let covered = 0;
+  let uncoveredSf = 0;
+  let uncoveredN = 0;
+  for (const bbl of deskAssetBbls(s, parcels, role)) {
+    if (pinned.has(bbl)) continue;
+    const w = workSfAt(s, parcels, bbl, role);
+    covered += w;
+    // Uncovered = on the float with ZERO hired float capacity (owner only still counts as cover).
+    if (!floaters.length && hired.length > 0 && hired.every((st) => !isFloatStaff(st))) {
+      uncoveredSf += w;
+      uncoveredN++;
+    }
+  }
+  const keys = skillKeys(role);
+  const skill = floaters.length
+    ? floaters.reduce((a, st) => a + keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length, 0) / floaters.length
+    : 42;
+  const rs = stateOf(capacity, covered, skill);
+  if (uncoveredN > 0) {
+    rs.uncoveredSf = uncoveredSf;
+    rs.uncoveredN = uncoveredN;
+  }
+  return rs;
+}
+
+/** Total capacity still used by UI/harnesses — owner + every hire in the role. */
+export function roleCapacitySf(s: GameState, role: StaffRole): number {
+  let cap = ownerCapacitySf(s, role);
+  for (const st of s.staff ?? []) {
+    if (st.role === role) cap += personCapacitySf(s, st);
+  }
+  return cap;
+}
+
+/** Square feet each role is on the hook for (whole book / all live jobs). */
+export function coveredSf(s: GameState, parcels: ParcelTable, role: StaffRole): number {
+  let total = 0;
+  for (const bbl of deskAssetBbls(s, parcels, role)) total += workSfAt(s, parcels, bbl, role);
+  return total;
+}
+
+/**
+ * Firm-level desk read for UI and firm stamps.
+ *
+ * Slip is SF-weighted across assigned people and the float — pin half the book
+ * to an overloaded specialist and the firm number moves, instead of pretending
+ * assignment is only a skill chip.
+ */
 export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): RoleState {
   const capacity = roleCapacitySf(s, role);
   const covered = coveredSf(s, parcels, role);
-  const load = capacity > 0 ? covered / capacity : 0;
-  const keys = role === "pm" ? ["costControl", "diligence"]
-    : role === "construction" ? ["scheduling", "costControl"]
-    : ["marketKnowledge", "negotiation"];
-  // Skill is the ability-weighted average across the people in the seat,
-  // floored at the owner's own competence. An owner with no staff is not
-  // incompetent, just ordinary and stretched.
   const hired = (s.staff ?? []).filter((x) => x.role === role);
-  const skill = hired.length
-    ? hired.reduce((a, st) => a + keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length, 0) / hired.length
-    : 42;                                                 // you, doing your best
-  return { capacity, covered, load, slip: slip(load), skill };
+  const float = floatRoleState(s, parcels, role);
+  let slipAcc = 0;
+  let slipW = 0;
+  let skillAcc = 0;
+  let skillW = 0;
+  for (const st of hired) {
+    if (isFloatStaff(st)) continue;
+    const pr = personRoleState(s, parcels, st);
+    if (pr.covered <= 0) continue;
+    slipAcc += pr.slip * pr.covered;
+    slipW += pr.covered;
+    skillAcc += pr.skill * pr.covered;
+    skillW += pr.covered;
+  }
+  if (float.covered > 0 || !hired.length) {
+    const w = Math.max(float.covered, hired.length ? 0 : 1);
+    slipAcc += float.slip * w;
+    slipW += w;
+    skillAcc += float.skill * w;
+    skillW += w;
+  }
+  const load = capacity > 0 ? covered / capacity : (covered > 0 ? 99 : 0);
+  const keys = skillKeys(role);
+  const skill = skillW > 0
+    ? skillAcc / skillW
+    : hired.length
+      ? hired.reduce((a, st) => a + keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length, 0) / hired.length
+      : 42;
+  const rs = stateOf(capacity, covered, skill);
+  // Prefer SF-weighted slip when assignment splits the book; else classic load slip.
+  rs.slip = slipW > 0 ? slipAcc / slipW : slip(load);
+  rs.load = load;
+  if (float.uncoveredN) {
+    rs.uncoveredSf = float.uncoveredSf;
+    rs.uncoveredN = float.uncoveredN;
+  }
+  return rs;
+}
+
+/** Who's skill + slip stamps this asset. */
+export function coverRoleState(
+  s: GameState, parcels: ParcelTable, bbl: string, role: StaffRole,
+): { staff?: Staff; rs: RoleState } {
+  const assigned = (s.staff ?? []).find(
+    (st) => st.role === role && st.assignedBbls?.includes(bbl),
+  );
+  if (assigned) return { staff: assigned, rs: personRoleState(s, parcels, assigned) };
+  return { rs: floatRoleState(s, parcels, role) };
+}
+
+/**
+ * Work that did not get done — priced in the units the player already reads.
+ * Staff page shows these instead of only a slip bar.
+ */
+export interface DeskBacklog {
+  role: StaffRole;
+  slip: number;
+  load: number;
+  opexDragYr: number;
+  renewalsMissPct: number;
+  prospectsMissPct: number;
+  siteRiskExtraPct: number;
+  uncoveredSf: number;
+  uncoveredN: number;
+  unsupervisedJobSf: number;
+}
+
+export function deskBacklog(
+  s: GameState, parcels: ParcelTable, role: StaffRole, opexBaseYr = 0,
+): DeskBacklog {
+  const rs = roleState(s, parcels, role);
+  const kept = { ...rs, slip: 0 };
+  const opexDragYr = role === "pm" ? Math.max(0, opexBaseYr * (pmOpexMult(rs) - pmOpexMult(kept))) : 0;
+  const renewalsMissPct = role === "pm"
+    ? Math.max(0, (1 - pmRenewalMult(rs) / Math.max(0.01, pmRenewalMult(kept))) * 100)
+    : 0;
+  const prospectsMissPct = role === "leasing"
+    ? Math.max(0, (1 - leasingOddsMult(rs) / Math.max(0.01, leasingOddsMult(kept))) * 100)
+    : 0;
+  const siteRiskExtraPct = role === "construction"
+    ? Math.max(0, (cmRiskMult(rs) / Math.max(0.01, cmRiskMult(kept)) - 1) * 100)
+    : 0;
+  let unsupervisedJobSf = 0;
+  if (role === "construction" && rs.slip > 0.05) {
+    for (const bbl of deskAssetBbls(s, parcels, "construction")) {
+      const { rs: local } = coverRoleState(s, parcels, bbl, "construction");
+      if (local.slip > 0.05) unsupervisedJobSf += workSfAt(s, parcels, bbl, "construction");
+    }
+  }
+  return {
+    role,
+    slip: rs.slip,
+    load: rs.load,
+    opexDragYr,
+    renewalsMissPct,
+    prospectsMissPct,
+    siteRiskExtraPct,
+    uncoveredSf: rs.uncoveredSf ?? 0,
+    uncoveredN: rs.uncoveredN ?? 0,
+    unsupervisedJobSf,
+  };
 }
 
 /**
@@ -536,14 +767,7 @@ export function refreshPool(s: GameState, force = false) {
  */
 export const HIRING_UI_SHIPPED = true;
 
-function roleSkill(st: Staff, role: StaffRole): number {
-  const keys = role === "pm" ? ["costControl", "diligence"]
-    : role === "construction" ? ["scheduling", "costControl"]
-    : ["marketKnowledge", "negotiation"];
-  return keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length;
-}
-
-function assignedForBbl(s: GameState, bbl: string, role: "pm" | "leasing"): Staff | undefined {
+function assignedForBbl(s: GameState, bbl: string, role: StaffRole): Staff | undefined {
   return (s.staff ?? []).find((st) => st.role === role && st.assignedBbls?.includes(bbl));
 }
 
@@ -560,6 +784,7 @@ export function markStaff(s: GameState, parcels: ParcelTable) {
     delete s.pmDeskSlip;
     return;
   }
+  // Firm tour-odds / renewal defaults still come from the whole desk read.
   s.pmDeskSlip = +pm.slip.toFixed(4);
   s.leasingOddsMult = +leasingOddsMult(lease).toFixed(4);
   s.pmRenewalMult = +pmRenewalMult(pm).toFixed(4);
@@ -572,14 +797,13 @@ export function markStaff(s: GameState, parcels: ParcelTable) {
       delete h.leasingRentMult;
       continue;
     }
-    const assignedPm = assignedForBbl(s, h.bbl, "pm");
-    const pmSkill = assignedPm ? roleSkill(assignedPm, "pm") : pm.skill;
-    const pmRs = { ...pm, skill: pmSkill };
-    h.pmOpexMult = +pmOpexMult(pmRs).toFixed(4);
-    h.pmRenewalMult = +pmRenewalMult(pmRs).toFixed(4);
-    const assignedLease = assignedForBbl(s, h.bbl, "leasing");
-    const leaseSkill = assignedLease ? roleSkill(assignedLease, "leasing") : lease.skill;
-    h.leasingRentMult = +leasingRentMult({ ...lease, skill: leaseSkill }).toFixed(4);
+    // Per-building stamps use the covering pool's slip AND skill — assignment
+    // changes load, not only a quality chip on top of firm-wide overload.
+    const pmCover = coverRoleState(s, parcels, h.bbl, "pm");
+    h.pmOpexMult = +pmOpexMult(pmCover.rs).toFixed(4);
+    h.pmRenewalMult = +pmRenewalMult(pmCover.rs).toFixed(4);
+    const leaseCover = coverRoleState(s, parcels, h.bbl, "leasing");
+    h.leasingRentMult = +leasingRentMult(leaseCover.rs).toFixed(4);
   }
 }
 
@@ -628,10 +852,13 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
     }
   }
   // Burnout under overload; slow improvement when the desk has room.
+  // Assigned people burn out on THEIR book; float hires on the float desk.
   for (const st of s.staff ?? []) {
     const roll = srng(s);
     const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
-    const rs = roleState(s, parcels, st.role);
+    const rs = isFloatStaff(st)
+      ? floatRoleState(s, parcels, st.role)
+      : personRoleState(s, parcels, st);
     if (rs.slip > 0.25 && roll < 0.07) {
       st.attrs.diligence = Math.max(8, (st.attrs.diligence ?? 50) - 1);
       st.attrs.urgency = Math.max(8, (st.attrs.urgency ?? 50) - 1);
@@ -704,6 +931,12 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
   // overhead, so it books where the rest of the office does.
   next.cash -= pay;
   logBooks(next, "ga", pay);
+  // No leasing hire left → they cannot hold the pen. Leaving teamLeasing on
+  // after the last seat emptied made coverage silently drop while the toggle
+  // still said the team had the book.
+  if (st.role === "leasing" && !(next.staff ?? []).some((x) => x.role === "leasing")) {
+    delete next.teamLeasing;
+  }
   const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
   const repHit = tenure < 12 ? 0.12 : 0.04;
   const rep = (next.hireReputation ?? 0.55) - repHit;
@@ -770,10 +1003,16 @@ export function setBenchStyle(s: GameState, style: BenchStyle): { s: GameState }
 export function assignStaff(s: GameState, staffId: number, bbl: string): { s: GameState; err?: string } {
   const st = (s.staff ?? []).find((x) => x.id === staffId);
   if (!st) return { s, err: "Nobody by that name works here." };
-  if (st.role === "construction") return { s, err: "Construction managers are not assigned to buildings yet." };
-  if (!s.holdings[bbl]) return { s, err: "You do not own that building." };
-  if (s.holdings[bbl].groundLeased) {
-    return { s, err: "That fee is ground-leased — the lessee runs the building, not your desk." };
+  if (st.role === "construction") {
+    const job = s.developments?.[bbl];
+    if (!job || job.deliverM <= s.month) {
+      return { s, err: "Assign construction managers to a live job — nothing is in the ground at that address." };
+    }
+  } else {
+    if (!s.holdings[bbl]) return { s, err: "You do not own that building." };
+    if (s.holdings[bbl].groundLeased) {
+      return { s, err: "That fee is ground-leased — the lessee runs the building, not your desk." };
+    }
   }
   const next: GameState = cloneState(s);
   for (const other of next.staff ?? []) {
@@ -789,12 +1028,26 @@ export function assignStaff(s: GameState, staffId: number, bbl: string): { s: Ga
 export function unassignStaff(s: GameState, staffId: number, bbl: string): { s: GameState; err?: string } {
   const st = (s.staff ?? []).find((x) => x.id === staffId);
   if (!st) return { s, err: "Nobody by that name works here." };
-  if (!st.assignedBbls?.includes(bbl)) return { s, err: "They were not assigned to that building." };
+  if (!st.assignedBbls?.includes(bbl)) {
+    return {
+      s,
+      err: st.role === "construction"
+        ? "They were not assigned to that job."
+        : "They were not assigned to that building.",
+    };
+  }
   const next: GameState = cloneState(s);
   const target = (next.staff ?? []).find((x) => x.id === staffId)!;
   target.assignedBbls = target.assignedBbls!.filter((x) => x !== bbl);
   return { s: next };
 }
+
+/**
+ * Outside coverage (firm agent / exclusive) does not inherit your payroll.
+ * Mid competence — they counter and sign, they do not secretly ride a star hire.
+ */
+export const OUTSIDE_DESK_JUDGMENT = 50;
+export const OUTSIDE_DESK_NEGOTIATION = 50;
 
 /** Mean true judgment of hired staff in a role, or 42 if the desk is empty. */
 export function deskJudgment(s: GameState, role: "leasing" | "pm"): number {
@@ -804,10 +1057,21 @@ export function deskJudgment(s: GameState, role: "leasing" | "pm"): number {
 }
 
 /**
+ * Judgment for whoever actually holds the pen on this letter.
+ * Staff path uses your hires; outside agent/exclusive is mid, not your payroll.
+ */
+export function penJudgment(
+  s: GameState,
+  cover: "agent" | "exclusive" | "staff" | null | undefined,
+): number {
+  if (cover === "agent" || cover === "exclusive") return OUTSIDE_DESK_JUDGMENT;
+  return deskJudgment(s, "leasing");
+}
+
+/**
  * Mean negotiation skill on the leasing desk.
- * A toggle-only firm agent (nobody hired) works at mid competence (50) — they
- * counter, but they do not magic a soft letter into a hard close. A strong
- * hire accepts a wider band of tenant counter-backs without waking you.
+ * Empty in-house desk floors at mid (50). Outside coverage never reads this —
+ * see penNegotiation.
  */
 export function deskNegotiation(s: GameState): number {
   const hired = (s.staff ?? []).filter((x) => x.role === "leasing");
@@ -815,16 +1079,28 @@ export function deskNegotiation(s: GameState): number {
   return hired.reduce((a, st) => a + (st.attrs.negotiation ?? 50), 0) / hired.length;
 }
 
-/** Tenant-care multiplier from the PM on this building or the firm desk. */
+export function penNegotiation(
+  s: GameState,
+  cover: "agent" | "exclusive" | "staff" | null | undefined,
+): number {
+  if (cover === "agent" || cover === "exclusive") return OUTSIDE_DESK_NEGOTIATION;
+  return deskNegotiation(s);
+}
+
+/** Tenant-care multiplier from the PM on this building or the float desk. */
 export function pmTenantCareMult(s: GameState, bbl?: string): number {
   let care: number;
+  let localSlip = s.pmDeskSlip ?? 0;
   if (bbl) {
     const assigned = assignedForBbl(s, bbl, "pm");
-    if (assigned) care = assigned.attrs.tenantCare ?? 50;
-    else {
-      const hired = (s.staff ?? []).filter((x) => x.role === "pm");
-      care = hired.length
-        ? hired.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / hired.length
+    if (assigned) {
+      care = assigned.attrs.tenantCare ?? 50;
+      // Approximate: assigned overload hurts care on their buildings.
+      // Full personRoleState needs parcels; slip stamp is firm-level fallback.
+    } else {
+      const floaters = (s.staff ?? []).filter((x) => x.role === "pm" && isFloatStaff(x));
+      care = floaters.length
+        ? floaters.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / floaters.length
         : 42;
     }
   } else {
@@ -833,8 +1109,7 @@ export function pmTenantCareMult(s: GameState, bbl?: string): number {
       ? hired.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / hired.length
       : 42;
   }
-  const slip = s.pmDeskSlip ?? 0;
-  return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22 - slip * 0.12));
+  return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22 - localSlip * 0.12));
 }
 
 export function renewalMultFor(s: GameState, h: Holding): number {

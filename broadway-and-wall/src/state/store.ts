@@ -1412,7 +1412,10 @@ export const useStore = create<AppState>((set, get) => ({
     const r = assignStaff(game, staffId, bbl);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Assigned.");
+    const who = (r.s.staff ?? []).find((x) => x.id === staffId);
+    toast(who?.role === "construction"
+      ? "On that job — their cover is now that site's load."
+      : "Pinned — that building is their load now, not a skill chip on the firm desk.");
     void persist(r.s);
   },
 
@@ -1422,7 +1425,7 @@ export const useStore = create<AppState>((set, get) => ({
     const r = unassignStaff(game, staffId, bbl);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Cleared off that building.");
+    toast("Back on the float desk.");
     void persist(r.s);
   },
 

@@ -33,6 +33,8 @@ export const MODULES = [
   "estate",
   // fund is the player vehicle — second cash account, raise, promote.
   "fund",
+  // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
+  "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

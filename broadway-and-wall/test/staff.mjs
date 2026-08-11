@@ -200,14 +200,16 @@ const report = (name, ok, lines) => {
     renewOk = ri.p < 0.85;
   }
   const jSharp = E.deskJudgment({ staff: [{ role: "leasing", attrs: { judgment: 90 } }] }, "leasing");
+  // Empty desk uses the principal's Deal sense (neutral 50 when no principal row).
   const jEmpty = E.deskJudgment({ staff: [] }, "leasing");
+  const jYours = E.deskJudgment({ staff: [], principal: { attrs: { judgment: 77 } } }, "leasing");
   report("E. HALF-BUILT STAFF WIRES BIND — CM hire, search tier, renewals, judgment",
-    hasCm && bandOk && renewOk && jSharp > 80 && jEmpty === 42,
+    hasCm && bandOk && renewOk && jSharp > 80 && jEmpty === 50 && jYours === 77,
     [
       `construction on shortlist: ${hasCm}`,
       `recruiter sets band 11: ${bandOk}${tier.err ? ` (${tier.err})` : ""}`,
       `weak PM desk cuts renewal intent: ${renewOk}`,
-      `deskJudgment sharp=${jSharp.toFixed(0)} empty=${jEmpty}`,
+      `deskJudgment sharp=${jSharp.toFixed(0)} empty=${jEmpty} yours=${jYours}`,
     ]);
 }
 

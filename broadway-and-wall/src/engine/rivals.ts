@@ -41,10 +41,10 @@ import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
-import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
+import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
-import { makeRivalPrincipal, seatFounderAsRival } from "./people";
+import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -468,6 +468,12 @@ function anonShouldOrphan(s: GameState, j: NonNullable<GameState["cityJobs"]>[nu
   return progress < 0.12 && (s.econ.creditIdx ?? 1) < 0.70;
 }
 
+/** Orphan the frame and stall economic delivery in the same month — stock must not land while the map job dies. */
+function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
+  j.orphaned = true;
+  if (j.bbl) stallSupplyProject(s, j.bbl);
+}
+
 /** Anonymous city jobs draw equity + capital calls from the city pool. */
 function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
   // Legacy unstamped jobs keep the old free path so old saves do not mass-orphan.
@@ -483,7 +489,7 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
   const pool = s.econ.cityBuildCash ?? 0;
   if (pool < cashNeed) {
     if (anonShouldOrphan(s, j)) {
-      j.orphaned = true;
+      orphanCityJob(s, j);
       s.news.unshift({
         q: s.month, kind: "event",
         text: `Merchant builders have stopped work — the city's construction pool could not fund `
@@ -514,7 +520,7 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
       const pay = Math.min(cashInterest, s.econ.cityBuildCash ?? 0);
       s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - pay;
       if (anonShouldOrphan(s, j)) {
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
@@ -544,7 +550,7 @@ export function fundJobs(s: GameState) {
       continue;
     }
     const r = s.rivals.find((x) => x.id === j.firmId);
-    if (!r || r.failedM !== undefined) { j.orphaned = true; continue; }
+    if (!r || r.failedM !== undefined) { orphanCityJob(s, j); continue; }
     const spend = monthJobSpend(j, s.month);
 
     // THEIR BANK FAILED TOO. No draws, so the month's work in place comes out
@@ -557,7 +563,7 @@ export function fundJobs(s: GameState) {
     if (j.repudiatedM !== undefined) {
       const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
       if (r.cash < spend + carry) {
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has stopped work. Their construction lender was seized, nobody would refinance the job, `
@@ -615,7 +621,7 @@ export function fundJobs(s: GameState) {
           if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
           continue;
         }
-        j.orphaned = true;
+        orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has stopped work with the construction facility fully drawn. `
@@ -3174,6 +3180,19 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
   };
 }
 
+/**
+ * Bandwidth × Access — how hard a principal contests the tape.
+ * Mid temperament (=50/50) reads 1.0 so style appetite stays the centre.
+ * No RNG. Does not change who can close — only who wins among closers.
+ */
+export function rivalTemperamentWeight(s: GameState, r: Rival): number {
+  const p = rivalPrincipalOf(s, r.id);
+  if (!p?.attrs) return 1;
+  const band = 0.75 + 0.5 * ((p.attrs.urgency ?? 50) / 100);       // 0.75..1.25
+  const access = 0.80 + 0.4 * ((p.attrs.relationships ?? 50) / 100); // 0.80..1.20
+  return band * access;
+}
+
 export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number): Rival | null {
   // A listing may already belong to somebody — a firm selling out of a
   // position, or a receiver clearing a failed one. Whoever holds the deed is
@@ -3246,6 +3265,7 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
     const w = st.appetite * Math.max(0.05, cyc)
       * (isDistress ? st.distressBias : 1)
       * yieldFit * locFit
+      * rivalTemperamentWeight(s, r)
       * (0.65 + rng(s, "rivals") * 0.7);
     if (w > bestW) { bestW = w; best = r; }
   }

@@ -369,7 +369,12 @@ export function executePurchase(
  */
 const RESERVE_MID = 0.94;      // the median seller's reservation, as a share of their own ask
 const RESERVE_SD = 0.035;      // spread across owners; distress widens it, below
-export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean }, bid: number): number {
+export function bidOdds(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  listing: { ask: number; distress?: boolean }, bid: number,
+): number {
+  const held = holderOf(s, parcels, bbl);
+  if (held && isCold(s, held.id)) return 0;
   const r = bid / Math.max(1, listing.ask);               // 1 at full ask
   // The same three forces as before, moved from the probability onto the
   // seller's NUMBER, which is where they act. A recession does not make a
@@ -381,7 +386,8 @@ export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean
   // that is true depends on who else has money today — which is the whole
   // reason to know what the other firms on the street are doing.
   const room = (marketAppetite(s) - 1) * 0.05;
-  const mid = RESERVE_MID + phase + motivated + room;
+  let mid = RESERVE_MID + phase + motivated + room;
+  if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
   // A forced sale is not just cheaper, it is less predictable: a receiver with
   // a deadline and an estate with a lawyer settle in very different places.
   const sd = listing.distress ? 0.060 : RESERVE_SD;
@@ -393,6 +399,13 @@ export function buyListing(
 ): { s: GameState; err?: string; msg?: string; refused?: boolean } {
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
+  const held = holderOf(s, parcels, bbl);
+  if (held && isCold(s, held.id)) {
+    return {
+      s,
+      err: `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it.`,
+    };
+  }
   const price = Math.round(bid ?? listing.ask);
   // THE AS-IS PATH. This is a real offer — full price, no contingencies, close
   if (price >= listing.ask) {
@@ -405,7 +418,7 @@ export function buyListing(
   if (s.cash < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
 
   const next = clone(s);
-  const p = bidOdds(next, listing, price);
+  const p = bidOdds(next, parcels, bbl, listing, price);
   const roll = rng(next);
   if (roll < p) {
     const done = executePurchase(next, parcels, bbl, price, product, false, lev);
@@ -421,6 +434,7 @@ export function buyListing(
     return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
   // insulted: the listing goes away
+  if (held) offend(next, held.id, 14);
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   next.news.unshift({ q: next.month, kind: "warn", text: `The seller at ${parcels[bbl]?.address} took the listing elsewhere after your offer.` });
   return { s: next, msg: "They walked, and pulled the listing.", refused: true };
@@ -2788,6 +2802,8 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    const pitchHeld = holderOf(s, parcels, bbl);
+    if (pitchHeld && isCold(s, pitchHeld.id)) continue;
     if (wantClass && rec.class !== wantClass && rng(s, "sales") < 0.7) continue;
     const v = assetValue(rec, s.econ, gradeOf(s, rec));
     // THE FLOOR MOVES WITH YOUR BOOK.

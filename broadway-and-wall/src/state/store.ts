@@ -233,6 +233,8 @@ interface AppState {
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
   setAgent: (on: boolean) => void;
+  /** Hand the book to in-house leasing staff (quiet desk at 4%/2%). */
+  setTeamLeasing: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
   /** Auto-sign at or above this share of market (net effective). */
   setAgentFloor: (f: number) => void;
@@ -1239,16 +1241,50 @@ export const useStore = create<AppState>((set, get) => ({
     // stack until the next month tick — so "hand it to the agent" still meant
     // working the whole desk yourself for the rest of the month.
     let next: GameState = { ...game, agent: on };
+    if (on) {
+      // Outside firm takes over — team handoff is redundant while they are on.
+      delete next.teamLeasing;
+      if (parcels) {
+        next = structuredClone(next);
+        workLeasingDesk(next, parcels);
+        const referred = next.lois.filter((l) => l.referred).length;
+        const tally = next.deskMonth?.m === next.month ? next.deskMonth : null;
+        toast(referred
+          ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back; the rest are signed or passed. Routine LOIs no longer interrupt.`
+          : tally
+            ? `Your agent has the book — ${tally.signed} signed, ${tally.passed} passed this month. Routine LOIs no longer interrupt.`
+            : "Your agent has the book. They sign inside your mandate, counter the soft ones, pass the junk — 6% on what they sign. Routine LOIs no longer interrupt.");
+      }
+    } else {
+      toast(next.teamLeasing
+        ? "Firm agent dismissed — your team still has the book."
+        : "You're handling leasing yourself again.");
+    }
+    set({ game: next });
+    void persist(next);
+  },
+
+  setTeamLeasing: (on) => {
+    const { game, parcels } = get();
+    if (!game) return;
+    if (on && !(game.staff ?? []).some((x) => x.role === "leasing")) {
+      toast("Hire a leasing person on Staff first — then hand them the book.", "err");
+      return;
+    }
+    if (on && game.agent) {
+      toast("Dismiss the firm agent first, or leave the book with them.", "err");
+      return;
+    }
+    let next: GameState = { ...game, teamLeasing: on || undefined };
+    if (!on) delete next.teamLeasing;
     if (on && parcels) {
       next = structuredClone(next);
+      next.teamLeasing = true;
       workLeasingDesk(next, parcels);
       const referred = next.lois.filter((l) => l.referred).length;
-      const tally = next.deskMonth?.m === next.month ? next.deskMonth : null;
       toast(referred
-        ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back; the rest are signed or passed. Routine LOIs no longer interrupt.`
-        : tally
-          ? `Your agent has the book — ${tally.signed} signed, ${tally.passed} passed this month. Routine LOIs no longer interrupt.`
-          : "Your agent has the book. They sign inside your mandate, counter the soft ones, pass the junk — 6% on what they sign. Routine LOIs no longer interrupt.");
+        ? `Your team has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back. Routine LOIs no longer interrupt.`
+        : "Your team has the book. They sign inside your mandate at the usual 4%/2% — no LOI popups unless they refer something.");
     } else {
       toast("You're handling leasing yourself again.");
     }

@@ -44,6 +44,7 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     g.econ.rentIdx?.industrial,
     g.econ.cycleDev,
     g.agent ? 1 : 0,
+    g.teamLeasing ? 1 : 0,
     g.loc?.balance ?? 0,
     g.facility?.balance ?? 0,
     // Assemble / neighbour gates — another deed in the book can unlock the desk

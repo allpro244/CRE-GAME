@@ -2338,13 +2338,22 @@ export interface GameState {
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
   /**
+   * YOUR IN-HOUSE LEASING TEAM HAS THE PEN.
+   *
+   * Separate from `agent` (the 6% outside firm). When this is on and you have
+   * at least one leasing hire, they sign/counter/pass inside your mandate at
+   * the ordinary 4%/2% rates and LOIs stop interrupting — same quiet desk as
+   * the firm agent, your people instead of theirs. Off by default so hiring
+   * staff alone does not silently take the book; you hand it over on Leasing.
+   */
+  teamLeasing?: boolean;
+  /**
    * WHAT THE DESK DID THIS MONTH while you were quiet.
    *
-   * When the firm agent or an exclusive holds the pen, letters stop
+   * When the firm agent, your team, or an exclusive holds the pen, letters stop
    * interrupting you — only referrals do. Without a scorecard a quiet month
    * looks identical to a desk that is turning everyone away. Counts roll with
-   * `m`; readers treat a stale month as empty. In-house leasing staff do not
-   * write this card on their own — they do not hold the pen.
+   * `m`; readers treat a stale month as empty.
    */
   deskMonth?: {
     m: number;

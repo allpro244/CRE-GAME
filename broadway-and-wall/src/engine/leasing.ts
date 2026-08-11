@@ -1660,11 +1660,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
-  // Firm agent takes the whole book at 6%. Without them, only an exclusive
-  // broker on a building (or renewal management on renewals) holds the pen —
-  // an in-house leasing hire improves traffic and judgment, they do not sign
-  // your letters for you. "Take leasing back" means the principal owns every
-  // letter that is not on an exclusive or the renewal desk.
+  // Firm agent takes the whole book at 6%. Without them, exclusives and (when
+  // you handed the book over) in-house leasing staff negotiate the buildings
+  // they cover. Renewal management is the narrow middle option for renewals.
+  // "Take leasing back" / teamLeasing off means the principal owns every letter
+  // that is not on an exclusive or the renewal desk.
   if (s.agent) runAgent(s, parcels);
   else {
     runDelegatedLeasing(s, parcels);
@@ -1693,23 +1693,27 @@ export function deskMonthNow(s: GameState): NonNullable<GameState["deskMonth"]> 
   return s.deskMonth;
 }
 
+/** True when at least one leasing hire can cover buildings (firm desk or assigned). */
+export function hasLeasingTeam(s: GameState): boolean {
+  return (s.staff ?? []).some((x) => x.role === "leasing");
+}
+
 /**
  * Somebody else holds the pen on at least part of the book — firm agent,
- * exclusive broker, or renewal management. Drives mandate UI and the
- * quiet-desk scorecard. In-house leasing staff do not count: they raise
- * traffic and judgment; they do not auto-sign.
+ * your team (when handed over), exclusive broker, or renewal management.
+ * Drives mandate UI and the quiet-desk scorecard.
  */
 export function deskHoldsPen(s: GameState): boolean {
   if (s.agent || s.renewalMgmt) return true;
+  if (s.teamLeasing && hasLeasingTeam(s)) return true;
   return Object.values(s.holdings).some((h) => !!h.broker);
 }
 
 /**
  * Does this letter still need the principal — popup, Deals queue, Skip stop?
  *
- * Referred paper always does. Otherwise the firm agent, a covering exclusive,
- * or (for renewals) management already owns the decision. Hired leasing staff
- * never silence a letter on their own.
+ * Referred paper always does. Otherwise the firm agent, a covering exclusive /
+ * team hire, or (for renewals) management already owns the decision.
  */
 export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
   // Fee owner is not the landlord — never interrupt for the lessee's paper.
@@ -2240,21 +2244,27 @@ export function agentCounterTerms(
 /**
  * Who works this letter when the firm-wide agent toggle is off.
  *
- * Only an exclusive broker on the deed. In-house leasing hires used to count
- * too — an unassigned hire covered the whole book — so "Take leasing back"
- * still left every LOI quiet and signed by "your leasing desk". Staff raise
- * tour volume and judgment; they do not hold the pen. Hire the firm agent,
- * sign an exclusive, or hand renewals to management to delegate signing.
+ * Exclusive brokers always cover their deed. In-house leasing staff cover only
+ * when you have handed them the book (`teamLeasing`) — an unassigned hire then
+ * works the whole book, an assigned hire only their buildings. Hiring staff
+ * alone does not take the pen; that was the bug "Take leasing back" used to hit.
  */
 export function deskCoverage(
   s: GameState, bbl: string,
-): { kind: "agent" | "exclusive"; who: string } | null {
+): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
   if (s.agent) return { kind: "agent", who: "Your agent" };
   if (s.holdings[bbl]?.broker) return { kind: "exclusive", who: "Your exclusive" };
-  return null;
+  if (!s.teamLeasing) return null;
+  const leasing = (s.staff ?? []).filter((x) => x.role === "leasing");
+  if (!leasing.length) return null;
+  const assigned = leasing.some((st) => (st.assignedBbls ?? []).includes(bbl));
+  const firmDesk = leasing.some((st) => !(st.assignedBbls?.length));
+  if (!assigned && !firmDesk) return null;
+  return { kind: "staff", who: "Your leasing team" };
 }
 
-function deskFee(_kind: "agent" | "exclusive"): number {
+function deskFee(kind: "agent" | "exclusive" | "staff", loi?: LOI): number {
+  if (kind === "staff") return loi?.kind === "renewal" ? 0.02 : 0.04;
   return AGENT_FEE;
 }
 
@@ -2440,8 +2450,8 @@ function agentReferLoi(
  * clears the open pile immediately — waiting until next month left every
  * existing LOI still popping.
  *
- * `onlyDelegated`: when the firm agent is off, exclusives still counter/sign
- * on the buildings they cover. Staff never enter this path.
+ * `onlyDelegated`: when the firm agent is off, exclusives and (when handed
+ * the book) in-house leasing staff still counter/sign on buildings they cover.
  */
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
@@ -2464,7 +2474,7 @@ export function runLeasingAgent(
     if (party.length <= 1) continue;
     const cover = coverOf(party[0].bbl);
     if (!cover) continue;
-    const feeRate = deskFee(cover.kind);
+    const feeRate = deskFee(cover.kind, party[0]);
     const scored = party.map((loi) => {
       const h = s.holdings[loi.bbl];
       const rec = resolveRec(parcels, s, loi.bbl);
@@ -2583,7 +2593,7 @@ export function runLeasingAgent(
     const h = s.holdings[loi.bbl];
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
-    const feeRate = deskFee(cover.kind);
+    const feeRate = deskFee(cover.kind, loi);
     const market = loiMarket(s, rec, h, loi);
     const { verdict, score, floor, pass, adjFloor, adjPass, why } =
       deskVerdict(s, loi, market, feeRate);

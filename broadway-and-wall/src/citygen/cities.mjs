@@ -325,7 +325,26 @@ function scaleDistricts(ds, k) {
 
 export function scaleCity(cfg, k) {
   if (!isNum(k) || Math.abs(k - 1) < 1e-6) return cfg;
-  const box = (o) => ({ ...o, cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k });
+  // A BOX MAY CARRY A DRAWN RING, AND THE RING IS THE THING THAT GETS DRAWN.
+  //
+  // `...o` spread the park `ring` added by the park work through UNSCALED
+  // while its bounding box moved, so the same park had two positions and two
+  // areas: citygen cuts, aprons and turfs `p.ring ?? rect(cx,cy,w,h)` — the
+  // ring wins on every generated island — while build.mjs sites the amenity
+  // premium off the scaled `cx/cy/w/h`. At Great City that put the premium
+  // ~400 m from the green it was for; at Hamlet the k=1 ring on a shrunken
+  // coastline put 19 of 29 greens partly ON THE WATER, with every invariant
+  // `fitsRing` checked — dry land, clear of a seam, clear of its neighbours —
+  // validated in a coordinate frame the town is not built in.
+  //
+  // Invisible to every harness: the drawn fixtures carry no ring and BASELINE
+  // runs at the default size, where scaleCity early-returns. Every live run at
+  // any other size hit it, and all five sizes are player-selectable.
+  const box = (o) => ({
+    ...o,
+    cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k,
+    ...(o.ring ? { ring: o.ring.map((p) => pt(p, k)) } : {}),
+  });
   return {
     ...cfg,
     coast: cfg.coast.map((p) => pt(p, k)),

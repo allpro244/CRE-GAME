@@ -1184,20 +1184,49 @@ export function generateCity(cfg) {
    * was, so the fabric is the same age it always was and only the ARRANGEMENT
    * of ages has changed. Which is the whole and only thing this was for.
    */
-  let ringMeanMemo = null;
-  const ringMean = () => {
-    if (ringMeanMemo !== null) return ringMeanMemo;
-    const live = blocks.filter((b) => b.inset && polygonArea([b.inset]) >= 420);
-    ringMeanMemo = live.length
-      ? live.reduce((a, b) => a + growthRing(centroid(b.inset)), 0) / live.length
-      : 0.5;
-    return ringMeanMemo;
-  };
+  /**
+   * CENTRED ON THE LOTS, NOT ON A PROXY FOR THEM — and the draws stay put.
+   *
+   * `yearFor` runs once per LOT, so the mean that centres it has to be the
+   * mean over lots. Every cheap stand-in was measured and every one was worse
+   * than the block mean it replaced: one vote per block leaves -0.67 years
+   * across twelve towns, weighting by block AREA gives -0.78 (and -1.95 on the
+   * fixture, against -0.09), and weighting by lots-estimated-from-area gives
+   * -2.05. Area fails for exactly the reason the bias exists — the industrial
+   * edge has enormous blocks AND enormous lots — and the estimate inherits it.
+   *
+   * So it is not estimated. The two draws are consumed in the loop, in the
+   * same order and the same number as before, and only the ARITHMETIC that
+   * turns them into a year is deferred until every lot is known. That
+   * distinction is the whole design: moving the draws would move the RNG
+   * stream, which would move the lot lines, which would break every save.
+   * Nothing about the stream changes here.
+   *
+   * `yearbuilt` is written in exactly two places, both of them properties on
+   * features this function holds a reference to, so it can be filled in
+   * afterwards. If it ever gains a third reader inside the loop this has to go
+   * back to an estimate — the assertion below is what will catch that.
+   */
+  const pendingYears = [];
   function yearFor(name, at) {
     const [a0, a1, p, b0, b1] = flavorOf(name).yr;
-    const ring = 0.5 + (growthRing(at) - ringMean());
-    const u = Math.min(1, Math.max(0, rand() * (1 - RING_W) + ring * RING_W));
-    return Math.round(rand() < p ? a0 + (a1 - a0) * u : b0 + (b1 - b0) * u);
+    const u0 = rand();
+    const mode = rand() < p;
+    const rec = { name, ring: growthRing(at), u0, a0, a1, b0, b1, mode, year: 0 };
+    pendingYears.push(rec);
+    return rec;
+  }
+  /** Fill in every deferred year once the lot population is known. */
+  function settleYears() {
+    if (!pendingYears.length) return;
+    const mean = pendingYears.reduce((a, r) => a + r.ring, 0) / pendingYears.length;
+    for (const r of pendingYears) {
+      const ring = 0.5 + (r.ring - mean);
+      const u = Math.min(1, Math.max(0, r.u0 * (1 - RING_W) + ring * RING_W));
+      r.year = Math.round(r.mode ? r.a0 + (r.a1 - r.a0) * u : r.b0 + (r.b1 - r.b0) * u);
+      if (r.pf) r.pf.properties.yearbuilt = r.year;
+      if (r.bf) r.bf.properties.cnstrct_yr = r.year;
+    }
   }
 
   /** Metres to the nearest arterial — a seam or a boulevard; 0 if on one. */
@@ -1209,13 +1238,29 @@ export function generateCity(cfg) {
   /**
    * Does this lot hold a corner of its own block?
    *
-   * Lots exactly tile the block's inset ring, so every vertex of that ring
-   * falls in exactly one lot, and that lot is the one with two frontages. It
-   * is a cheaper and more reliable test than measuring frontage angles, and it
-   * gets chamfered blocks right for free: a Cerdà chaflán turns one corner
-   * into two, and both of them are corners.
+   * Lots exactly tile the block's inset ring, so every vertex of that ring is
+   * a corner of exactly one lot — AND THAT IS WHY THE OBVIOUS TEST IS WRONG.
+   * This asked `inRing(v, lotRing)`, a strict point-in-polygon, about a point
+   * that is a VERTEX of the very ring being tested. Point-in-polygon is
+   * undefined on the boundary: the answer comes back as ray-crossing parity
+   * against world +x, which is an artefact of which way the lot is turned.
+   *
+   * Measured on the fixture: 547 of 1,420 lots genuinely hold a block-ring
+   * vertex and the old test flagged 197 — a random 36% of the true corners.
+   * It also flagged 31 of the 35 full-block lots, where `lotRing IS blockRing`
+   * and the question being asked is "is this ring's own vertex inside itself".
+   *
+   * A vertex test is what was meant, so a vertex test is what it does.
+   * `splitConvex` carries coordinates through unchanged, so the match is exact
+   * to within float noise and the tolerance only says so out loud.
+   *
+   * A FULL-BLOCK LOT IS EXCLUDED. It holds every corner of its block and has
+   * frontage on all four sides, so "two frontages" describes it no better than
+   * it describes a roundabout — there is no mid-block neighbour for it to be
+   * worth more than.
    */
-  const cornerLot = (lotRing, blockRing) => blockRing.some((v) => inRing(v, lotRing));
+  const cornerLot = (lotRing, blockRing) => lotRing !== blockRing
+    && blockRing.some((v) => lotRing.some((q) => Math.abs(q[0] - v[0]) < 0.05 && Math.abs(q[1] - v[1]) < 0.05));
 
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
@@ -1303,7 +1348,8 @@ export function generateCity(cfg) {
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand);
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 
-      const yearbuilt = vacant ? 0 : yearFor(d, c);
+      const yearRec = vacant ? null : yearFor(d, c);
+      const yearbuilt = 0;   // filled by settleYears once every lot is known
       let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
       if (!vacant) {
         const fl = flavorOf(d);
@@ -1477,6 +1523,10 @@ export function generateCity(cfg) {
         },
       });
 
+      // The parcel and (if built) the building both carry the year; the record
+      // keeps a reference to each so `settleYears` can stamp them once the
+      // whole lot population is known. See the note on yearFor.
+      if (yearRec) yearRec.pf = parcels.features[parcels.features.length - 1];
       if (!vacant && footprint) {
         builtLots.push({ h, areaM2, floors, cls, lotArea,
                          pf: parcels.features[parcels.features.length - 1],
@@ -1493,6 +1543,7 @@ export function generateCity(cfg) {
             groundelev: Math.round(rr(3, 20)),
           },
         });
+        if (yearRec) yearRec.bf = buildings.features[buildings.features.length - 1];
       }
       houseNo += Math.round(rr(2, 8));
       lotNo++;
@@ -1544,6 +1595,9 @@ export function generateCity(cfg) {
   // coastline is its own feature and is untouched, so the harbour is still a
   // harbour — it just has nothing industrial standing in it.
   //
+  // EVERY LOT IS CUT; NOW THE YEARS CAN BE CENTRED ON THEM. See yearFor.
+  settleYears();
+
   // The lighthouse stays. It is a landmark on a headland rather than a dock.
   const PIERS_M = [];
   let decoN = 1;

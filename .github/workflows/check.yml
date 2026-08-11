@@ -1,9 +1,14 @@
 name: check
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
+  push:
+    branches:
+      - claude/realestate-game-claude-code-32bppd
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:

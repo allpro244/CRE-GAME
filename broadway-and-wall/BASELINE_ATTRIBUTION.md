@@ -1,13 +1,27 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/fix-streams-ponds-d634` after mill ponds and creeks stopped triangulating as spikes (`SAVE_VERSION` 37).  
-**Previous ruler:** `5234f8d` (one land price, one development hurdle).
+**Ruler commit:** regenerated on `cursor/smooth-water-d634` after creeks painted as one ribbon (`SAVE_VERSION` 38).  
+**Previous ruler:** `02405c7` (convex capsules, v37).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: convex creeks and round mill ponds (SAVE_VERSION 37)
+## This ruler: painted ribbon, hidden capsules (SAVE_VERSION 38)
+
+v37 drew the lot-cutting capsules on the map, so a mill pond in a park was a stack of rectangles with a triangular tail. The centreline was also allowed to U-turn.
+
+The map now paints one offset ribbon per run and a 64-gon circular pond. Capsules still cut lots but are not features. The path cannot loop. Standing numbers move because the plat moved with the centreline. Not an engine `rng()` re-roll. Conservation stayed green.
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `land.med` / `land.p90` | Different water reservation; lots recut along a smoother path | Spatial |
+| `rentIdx.*` / `vac.*` | Same — different standing mix | Follows the plat |
+| `city.buildings` / `floorAreaM` | Capsule obstacles follow the new centreline | Stock resampled |
+
+---
+
+## Previous ruler: convex creeks and round mill ponds (SAVE_VERSION 37)
 
 Creeks were one self-intersecting offset polygon. MapLibre and the 3D triangulator filled the convex hull — a green spike across the town. The estuary lead-in was a single rectangle up to ~480 m. Ponds were 20-gons.
 

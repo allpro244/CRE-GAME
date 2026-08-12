@@ -103,6 +103,28 @@ function dice(rand) {
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
+/**
+ * A polyline with a width — a creek, not a chain of rectangles. Left and
+ * right offsets at each vertex, then the two sides concatenated. Canals keep
+ * the rectangular segments; brooks use this so they read as water that turns.
+ */
+function strokePath(path, width) {
+  if (!path || path.length < 2) return null;
+  const hw = width / 2;
+  const left = [], right = [];
+  for (let i = 0; i < path.length; i++) {
+    const a = path[Math.max(0, i - 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const L = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / L) * hw, ny = (dx / L) * hw;
+    left.push([path[i][0] + nx, path[i][1] + ny]);
+    right.push([path[i][0] - nx, path[i][1] - ny]);
+  }
+  const ring = [...left, ...right.reverse()];
+  return ring.length >= 3 ? ring.map(([x, y]) => [Math.round(x), Math.round(y)]) : null;
+}
+
 /** Shortest distance from a point to a ring's boundary. */
 function distToRing(p, ring) {
   let best = Infinity;
@@ -205,8 +227,13 @@ const COAST_SLOPE_MAX = 4.6;
  *
  * The four sit at angles drawn with a guaranteed 1.4 rad of clear water
  * between any two, so they never stack into one enormous dent.
+ *
+ * A COAST PROGRAMME decides which of those four actually run, and how hard.
+ * Every seed used to get all four shuffled — forty islands, one silhouette.
+ * The draws below still happen in the same order so the rest of this file's
+ * coast stream does not scramble; the programme only scales what `make` applies.
  */
-function profile(D) {
+function profile(D, prog = "classic") {
   const oct1 = valueRing(D.rand, D.i(5, 8), true);
   const oct2 = valueRing(D.rand, D.i(13, 19), false);
   // THE NOISE IS THE MINOR GEOGRAPHY, NOT THE SHAPE. It ran at 0.115-0.165 of
@@ -250,6 +277,18 @@ function profile(D) {
   const wRiv = Math.max(D.f(0.40, 0.62), (dRiv * Math.PI) / (2 * COAST_SLOPE_MAX * (1 - dRiv - 0.18)));
   const kRiv = sk();
 
+  // Same four draws on every seed. The programme is which of them you can
+  // still see from the water.
+  const sHarb = prog === "river" ? 0.42 : prog === "spit" ? 0.78 : prog === "neck" ? 0.88 : prog === "basin" ? 1.18 : 1;
+  const sCove = prog === "river" ? 0.22 : prog === "basin" ? 0.18 : prog === "spit" ? 0.55 : 1;
+  const sRiv  = prog === "spit" ? 0.14 : prog === "basin" ? 0.22 : prog === "river" ? 1.28 : prog === "neck" ? 0.92 : 1;
+  const sHead = prog === "spit" ? 1.38 : prog === "basin" ? 1.16 : prog === "river" ? 0.72 : 1;
+  // A closed basin wraps the harbour with the headland so the mouth reads as
+  // a gap, not a bite. A neck pinches the opposite shore so the island is
+  // two lobes instead of a disc with four named dents.
+  const wrap = prog === "basin" ? 0.55 : 0;
+  const pinch = prog === "neck" ? 0.28 : 0;
+
   // `soft` scales the FEATURES and leaves the noise alone. Some shapes cannot
   // carry an esplanade at every size the game builds them at — see the ladder
   // in coastline() — and the answer to one of those is not a different random
@@ -258,10 +297,12 @@ function profile(D) {
   // the failure this is trying to avoid.
   const make = (soft) => (t) => 1
     + a1 * oct1(t) + a2 * oct2(t)
-    - soft * dHarb * lobe(t, th.harbour, wHarb * kHarb, wHarb)
-    - soft * dCove * lobe(t, th.cove, wCove, wCove * kCove)
-    - soft * dRiv * lobe(t, th.river, wRiv * kRiv, wRiv)
-    + soft * dHead * lobe(t, th.headland, wHead, wHead * kHead);
+    - soft * dHarb * sHarb * lobe(t, th.harbour, wHarb * kHarb, wHarb)
+    - soft * dCove * sCove * lobe(t, th.cove, wCove, wCove * kCove)
+    - soft * dRiv * sRiv * lobe(t, th.river, wRiv * kRiv, wRiv)
+    + soft * dHead * sHead * lobe(t, th.headland, wHead, wHead * kHead)
+    + soft * wrap * dHead * lobe(t, th.harbour + Math.PI * 0.92, wHead * 0.7, wHead * 0.7)
+    - soft * pinch * dHarb * lobe(t, th.harbour + Math.PI, wHarb * 0.55, wHarb * 0.55);
 
   return { make, th, wHarb, wRiv };
 }
@@ -409,8 +450,8 @@ const SIZE_KS = [0.55, 0.78, 1.0, 1.45, 2.0];
  * go slightly stale — nothing breaks, but the margins are what carry it, so
  * they are kept wide.
  */
-function coastline(seed, D, areaTarget, coastAmp, esplanade, spacing0) {
-  const { make, th, wHarb, wRiv } = profile(D);
+function coastline(seed, D, areaTarget, coastAmp, esplanade, spacing0, prog = "classic") {
+  const { make, th, wHarb, wRiv } = profile(D, prog);
 
   // An island is not round. The affine below stretches one axis and squeezes
   // the other by the reciprocal, so it changes the SHAPE and not the area, and
@@ -640,7 +681,24 @@ export function islandConfig(seed) {
   const spacing = Dc.f(215, 255);
   const coastAmp = Dc.f(15, 26);
   const esplanade = Dc.f(22, 26);
-  const C = coastline(s, Dc, areaTarget, coastAmp, esplanade, spacing);
+  // WHAT KIND OF ISLAND THIS IS, from the water. Own salt so the coast
+  // stream (area, spacing, noise) still draws in the same order; the
+  // programme only scales which lobes `profile` applies. Lots move — the
+  // silhouette is the plat.
+  const Dco = dice(stream(s, 0xc0a5e));
+  const COAST_PROGRAMMES = [
+    { key: "classic", w: 0.28 },
+    { key: "basin",   w: 0.20 },
+    { key: "spit",    w: 0.18 },
+    { key: "river",   w: 0.20 },
+    { key: "neck",    w: 0.14 },
+  ];
+  const coastProg = (() => {
+    let r = Dco.rand() * COAST_PROGRAMMES.reduce((a, p) => a + p.w, 0);
+    for (const p of COAST_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    return COAST_PROGRAMMES[0];
+  })();
+  const C = coastline(s, Dc, areaTarget, coastAmp, esplanade, spacing, coastProg.key);
   const COAST = C.built;
   const inner = offsetInward(COAST, esplanade);
 
@@ -651,6 +709,7 @@ export function islandConfig(seed) {
   })();
   const headlandTip = C.at(C.th.headland);
   const riverHead = C.at(C.th.river);
+  const coveHead = C.at(C.th.cove);
 
   // --- 2. the land, sampled --------------------------------------------------
   // Every placement below asks the ground a question rather than assuming an
@@ -975,12 +1034,60 @@ export function islandConfig(seed) {
     estate:  [620, 1500, 290, 40, 5],   // the block laid out in one hand
     yard:    [850, 2500, 360, 52, 5],   // a working waterfront parcel
   };
+  // WHAT KIND OF PARCEL TOWN THIS IS. The conventions above already exist as
+  // per-district switches; they did not run the town. A grain programme is
+  // the surveyor's habit — burgage old town, villa fringe, yard lots on the
+  // mill creek — so two seeds have different *parcel* character, not only
+  // different street names. Own salt; the Dpl draws inside lotWayFor stay
+  // in the same order, only the interpretation of `r` changes.
+  const Dgn = dice(stream(s, 0x67a10));
+  const GRAIN_PROGRAMMES = [
+    { key: "mixed",   w: 0.34 },
+    { key: "burgage", w: 0.22 },
+    { key: "villa",   w: 0.22 },
+    { key: "yard",    w: 0.22 },
+  ];
+  const grainProg = (() => {
+    let r = Dgn.rand() * GRAIN_PROGRAMMES.reduce((a, p) => a + p.w, 0);
+    for (const p of GRAIN_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    return GRAIN_PROGRAMMES[0];
+  })();
   const lotWayFor = (role, kind) => {
     // A superblock estate was platted as a whole and an organic quarter was
     // never platted at all, so those two answer before the role does.
     if (kind === "superblock") return Dpl.chance(0.75) ? "estate" : null;
-    if (kind === "organic") return Dpl.chance(0.55) ? "burgage" : null;
+    if (kind === "organic") {
+      const hit = Dpl.chance(0.55);
+      if (!hit) return null;
+      if (grainProg.key === "villa") return "villa";
+      if (grainProg.key === "yard" && role === "ind") return "yard";
+      return "burgage";
+    }
     const r = Dpl.rand();
+    if (grainProg.key === "burgage") {
+      switch (role) {
+        case "old":  return r < 0.72 ? "burgage" : r < 0.90 ? "fine" : "row";
+        case "core": return r < 0.48 ? "fine" : r < 0.70 ? "row" : r < 0.82 ? "burgage" : null;
+        case "ind":  return r < 0.70 ? "yard" : null;
+        default:     return r < 0.28 ? "row" : r < 0.50 ? "villa" : r < 0.62 ? "fine" : null;
+      }
+    }
+    if (grainProg.key === "villa") {
+      switch (role) {
+        case "old":  return r < 0.28 ? "burgage" : r < 0.50 ? "fine" : r < 0.68 ? "row" : null;
+        case "core": return r < 0.24 ? "fine" : r < 0.36 ? "row" : null;
+        case "ind":  return r < 0.70 ? "yard" : null;
+        default:     return r < 0.18 ? "row" : r < 0.72 ? "villa" : r < 0.82 ? "fine" : null;
+      }
+    }
+    if (grainProg.key === "yard") {
+      switch (role) {
+        case "old":  return r < 0.30 ? "burgage" : r < 0.52 ? "fine" : r < 0.70 ? "yard" : "row";
+        case "core": return r < 0.26 ? "fine" : r < 0.40 ? "row" : null;
+        case "ind":  return r < 0.88 ? "yard" : null;
+        default:     return r < 0.24 ? "row" : r < 0.52 ? "villa" : r < 0.64 ? "fine" : null;
+      }
+    }
     switch (role) {
       case "old":  return r < 0.34 ? "burgage" : r < 0.66 ? "fine" : r < 0.82 ? "row" : null;
       case "core": return r < 0.30 ? "fine" : r < 0.44 ? "row" : null;
@@ -1649,6 +1756,15 @@ export function islandConfig(seed) {
   };
 
   const Dk = dice(stream(s, 0xc03e5));
+  // Peek the stream programme (same first draws as section 9's Dwat) so a mill
+  // town can seat its yards on the creek. Section 9 still owns the salt.
+  const streamPeek = (() => {
+    const D = dice(stream(s, 0x57ea));
+    const table = [["none", 0.08], ["creek", 0.32], ["mill", 0.18], ["canal", 0.22], ["pair", 0.20]];
+    let r = D.rand() * table.reduce((a, p) => a + p[1], 0);
+    for (const p of table) { r -= p[1]; if (r <= 0) return p[0]; }
+    return "creek";
+  })();
   // The dominant core sits in the Exchange, hard against the old town's edge —
   // which is to say a few hundred metres off the harbour. That is where the
   // counting houses went: close enough to the ships to see them come in, far
@@ -1665,23 +1781,33 @@ export function islandConfig(seed) {
   const seatCore = wants(downtownAt, kCore, 90)
     ?? wants(downtownAt, kCore, 40)
     ?? mid;
-  seats.push({ xy: seatCore, r: Math.round(Dk.f(245, 300)) });
+  seats.push({ xy: seatCore, r: Math.round(Dk.f(245, 300)), role: "core" });
   // Midtown, then the far end.
-  seats.push({ xy: wants(ptAt(quantile(Dk.f(0.55, 0.66))), null, 80) ?? ptAt(quantile(0.6)), r: Math.round(Dk.f(265, 320)) });
-  seats.push({ xy: wants(ptAt(quantile(Dk.f(0.84, 0.92))), null, 60) ?? ptAt(quantile(0.88)), r: Math.round(Dk.f(210, 270)) });
-  // The docks, if there are any.
+  seats.push({ xy: wants(ptAt(quantile(Dk.f(0.55, 0.66))), null, 80) ?? ptAt(quantile(0.6)), r: Math.round(Dk.f(265, 320)), role: "mid" });
+  seats.push({ xy: wants(ptAt(quantile(Dk.f(0.84, 0.92))), null, 60) ?? ptAt(quantile(0.88)), r: Math.round(Dk.f(210, 270)), role: "up" });
+  // The docks, if there are any. A mill or canal town seats them on the
+  // creek, not a random waterfront — that is the second centre you can see.
   if (districtKeys.ind) {
-    seats.push({ xy: wants(dockAt, kInd, 55) ?? dockAt, r: Math.round(Dk.f(160, 205)) });
+    const millAt = (streamPeek === "mill" || streamPeek === "canal")
+      ? (wants(riverHead, kInd, 55) ?? wants(dockAt, kInd, 55) ?? dockAt)
+      : (wants(dockAt, kInd, 55) ?? dockAt);
+    seats.push({ xy: millAt, r: Math.round(Dk.f(160, 205)), role: "ind" });
   }
-  // WEIGHTS FALL OFF FROM THE SEAT, and that is arranged by construction rather
-  // than asserted: rank the sites by how far they are from the dominant one and
-  // hand out the weights in that order, so the second-densest employment
-  // cluster in the town is always the one nearest downtown.
+  // WEIGHTS FALL OFF FROM THE SEAT — except the docks, which are a second
+  // town. Ranking by distance to downtown was the owner's "all the demand
+  // surrounding one specific place": the industrial seat always drew the
+  // leftover weight. It keeps a real employment floor here so millside is
+  // a centre, not a suburb of the Exchange.
   const wLadder = [1.0, +Dk.f(0.46, 0.64).toFixed(2), +Dk.f(0.14, 0.24).toFixed(2), +Dk.f(0.08, 0.13).toFixed(2)];
   const cores = seats
     .map((c, i) => ({ ...c, d0: i === 0 ? -1 : dist(c.xy, seats[0].xy) }))
     .sort((a, b) => a.d0 - b.d0)
-    .map((c, i) => ({ xy: [Math.round(c.xy[0]), Math.round(c.xy[1])], w: wLadder[i], r: c.r }));
+    .map((c, i) => ({
+      xy: [Math.round(c.xy[0]), Math.round(c.xy[1])],
+      w: c.role === "ind" ? Math.max(wLadder[i], 0.58) : wLadder[i],
+      r: c.r,
+      role: c.role,
+    }));
 
   /**
    * A RADIAL PLAN IS AIMED AT SOMETHING, and that is the whole of what makes it
@@ -2009,6 +2135,40 @@ export function islandConfig(seed) {
     placePark(aim, w, w * Dp.f(0.66, 1.0), parkName(i), { shape });
   }
 
+  // PUBLIC GROUND THAT IS NOT "A PARK". Same rings — flavour is dressing,
+  // not a new obstacle. Own salt so names and placements do not shift.
+  // The hall sits on the hottest small square (citygen ranks the same way);
+  // that one is the market. The esplanade or the green nearest the harbour
+  // is the battery. One quiet inland green is the cemetery. The rest stay
+  // parks. Never a cemetery on the civic square or the meeting-house green.
+  {
+    const Dfl = dice(stream(s, 0xf1a70));
+    if (parks.length) {
+      const areaOf = (p) => p.w * p.h;
+      const biggest = parks.reduce((a, p) => (areaOf(p) > areaOf(a) ? p : a));
+      const byHeat = [...parks]
+        .filter((p) => p !== biggest)
+        .sort((a, b) => coreHeat([b.cx, b.cy]) - coreHeat([a.cx, a.cy]));
+      const market = byHeat[0];
+      const meeting = byHeat[1];
+      if (market) market.flavour = "market";
+      const namedShore = parks.find((p) => /Esplanade|Walk/.test(p.name) && p !== market);
+      const battery = namedShore
+        ?? [...parks]
+          .filter((p) => p !== market && p !== biggest)
+          .sort((a, b) => dist([a.cx, a.cy], harbourHead) - dist([b.cx, b.cy], harbourHead))[0];
+      if (battery && battery !== meeting) battery.flavour = "battery";
+      const quiet = [...parks]
+        .filter((p) => !p.flavour && p !== biggest && p !== meeting)
+        .sort((a, b) => dist([b.cx, b.cy], cores[0].xy) - dist([a.cx, a.cy], cores[0].xy))[0];
+      if (quiet && Dfl.chance(0.78)) {
+        quiet.flavour = "cemetery";
+        quiet.name = `${nm.words[2]} ${Dfl.pick(["Cemetery", "Churchyard", "Burying Ground"])}`;
+      }
+      for (const p of parks) if (!p.flavour) p.flavour = "park";
+    }
+  }
+
   // --- 7. the streets that refuse the grid -----------------------------------
   // The seams come first: they are structural, they are where the plan
   // reconciles itself, and they are the ones a city names. Then the
@@ -2157,6 +2317,8 @@ export function islandConfig(seed) {
     const localBridges = [];
     let acc = 0;
     let nextGap = Dwat.f(150, 230);
+    const runs = [];
+    let run = [path[0]];
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i], b = path[i + 1];
       const L = dist(a, b);
@@ -2174,16 +2336,30 @@ export function islandConfig(seed) {
           name: `${name.replace(/\s+(Creek|River|Canal|Race|Brook)$/, "")} Bridge`,
         });
         nextGap += Dwat.f(170, 270);
+        if (run.length >= 2) runs.push(run);
+        run = [b];
         continue;
       }
-      if (!inland && !inRing(a, inner) && !inRing(b, inner)) {
-        // Mouth segment out on the estuary — paint it, do not cut lots from
-        // the esplanade. generateCity still draws any ring we emit.
+      run.push(b);
+    }
+    if (run.length >= 2) runs.push(run);
+    for (const seg of runs) {
+      if (kind === "canal") {
+        for (let i = 0; i < seg.length - 1; i++) {
+          const a = seg[i], b = seg[i + 1];
+          const L = dist(a, b);
+          if (L < 8) continue;
+          const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+          const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
+          rings.push({
+            ring: rect(cx, cy, L + 6, width, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
+            name, kind,
+          });
+        }
+      } else {
+        const stroked = strokePath(seg, width);
+        if (stroked) rings.push({ ring: stroked, name, kind });
       }
-      rings.push({
-        ring: rect(cx, cy, L + 6, width, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
-        name, kind,
-      });
     }
     if ((forcePond || (kind !== "canal" && Dwat.chance(0.42))) && path.length > 5) {
       const end = path[path.length - 1];
@@ -2250,6 +2426,54 @@ export function islandConfig(seed) {
         const piled = newer.some((n) => older.some((o) =>
           dist(centroid(n.ring), centroid(o.ring)) < 140));
         if (piled) streams.length = before;
+      }
+    }
+  }
+
+  // HARBOUR SLIPS AND A FERRY NOTCH. Not pier sheds — cuts in the shore.
+  // Own salt so the creek paths above do not move. These are water obstacles,
+  // so they recut lots; they are why a harbour reads as a port in plan.
+  {
+    const Dsl = dice(stream(s, 0x5115));
+    const nSlip = coastProg.key === "river" ? Dsl.i(0, 2) : Dsl.i(2, 4);
+    const used = [];
+    const quay = land
+      .filter((l) => distToRing(l.p, COAST) < 32 && dist(l.p, harbourHead) < 380)
+      .sort((a, b) => dist(a.p, harbourHead) - dist(b.p, harbourHead));
+    for (const l of quay) {
+      if (used.length >= nSlip) break;
+      if (used.some((q) => dist(q, l.p) < 70)) continue;
+      const inland = [mid[0] - l.p[0], mid[1] - l.p[1]];
+      const L = Math.hypot(inland[0], inland[1]) || 1;
+      const deg = (Math.atan2(inland[1], inland[0]) * R2D + 360) % 360;
+      const cx = l.p[0] + (inland[0] / L) * 16;
+      const cy = l.p[1] + (inland[1] / L) * 16;
+      if (!inRing([cx, cy], inner)) continue;
+      streams.push({
+        ring: rect(cx, cy, Dsl.f(36, 52), Dsl.f(14, 20), deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
+        name: `${nm.words[1]} Slip`,
+        kind: "slip",
+      });
+      used.push(l.p);
+    }
+    // Ferry notch in the cove — a working landing that is not the harbour.
+    if (Dsl.chance(0.72)) {
+      const coveLand = land
+        .filter((l) => distToRing(l.p, COAST) < 32 && dist(l.p, coveHead) < 220)
+        .sort((a, b) => dist(a.p, coveHead) - dist(b.p, coveHead))[0];
+      if (coveLand) {
+        const inland = [mid[0] - coveLand.p[0], mid[1] - coveLand.p[1]];
+        const L = Math.hypot(inland[0], inland[1]) || 1;
+        const deg = (Math.atan2(inland[1], inland[0]) * R2D + 360) % 360;
+        const cx = coveLand.p[0] + (inland[0] / L) * 14;
+        const cy = coveLand.p[1] + (inland[1] / L) * 14;
+        if (inRing([cx, cy], inner)) {
+          streams.push({
+            ring: rect(cx, cy, Dsl.f(28, 40), Dsl.f(16, 24), deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
+            name: `${nm.words[4]} Ferry`,
+            kind: "slip",
+          });
+        }
       }
     }
   }
@@ -2374,6 +2598,18 @@ export function islandConfig(seed) {
    * normalises the transit kernel against its own 95th percentile.
    */
   const Ds = dice(stream(s, 0x57a71));
+  const Drl = dice(stream(s, 0x5a11));
+  const RAIL_PROGRAMMES = [
+    { key: "through",  w: 0.40 },
+    { key: "terminal", w: 0.22 },
+    { key: "belt",     w: 0.22 },
+    { key: "ferry",    w: 0.16 },
+  ];
+  const railProg = (() => {
+    let r = Drl.rand() * RAIL_PROGRAMMES.reduce((a, p) => a + p.w, 0);
+    for (const p of RAIL_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    return RAIL_PROGRAMMES[0];
+  })();
   const stations = [];
   const addStation = (xy, name) => {
     if (!xy) return;
@@ -2432,11 +2668,26 @@ export function islandConfig(seed) {
   if (gr) addStation(wants([gr.cx, gr.cy], null, 30), gr.name);
   addStation(cores[2].xy, districtKeys.resi.length > 1 ? disp.resi2 : "Uptown");
   addStation(wants(ptAt(quantile(0.97)), null, 40), nm.words[2] + " End");
-  if (districtKeys.ind) addStation(cores.find((c) => leafOf(c.xy) === kInd)?.xy ?? dockSide, nm.words[5] + " Wharf");
+  if (districtKeys.ind) addStation(cores.find((c) => c.role === "ind")?.xy ?? dockSide, nm.words[5] + " Wharf");
   // A working railway does not stop only at the landmarks. Fill the gaps along
   // the spine so nowhere in town is more than a few blocks from a platform.
-  for (const q of [0.30, 0.44, 0.72, 0.86]) {
-    addStation(wants(ptAt(quantile(q), Ds.f(-160, 160)), null, 55), nm.words[6] + " " + (q < 0.5 ? "St" : "Rd"));
+  // Terminal towns keep the downtown heavy and skip half the fillers;
+  // a belt line adds the edge; a ferry town lands a stop on the cove.
+  const fillQs = [0.30, 0.44, 0.72, 0.86];
+  for (const q of fillQs) {
+    const jitter = Ds.f(-160, 160);
+    if (railProg.key === "terminal" && (q === 0.44 || q === 0.86)) continue;
+    addStation(wants(ptAt(quantile(q), jitter), null, 55), nm.words[6] + " " + (q < 0.5 ? "St" : "Rd"));
+  }
+  if (railProg.key === "belt") {
+    addStation(wants(ptAt(quantile(0.18)), null, 50), nm.words[0] + " Gate");
+    addStation(wants(ptAt(quantile(0.92)), null, 50), nm.words[7] + " Loop");
+  }
+  if (railProg.key === "ferry") {
+    addStation(wants(coveHead, null, 40) ?? coveHead, `${nm.words[4]} Ferry`);
+  }
+  if (railProg.key === "terminal" && stations[0]) {
+    stations[0].weight = Math.round(stations[0].weight * 1.35);
   }
 
   // --- 10. what the map calls things -----------------------------------------
@@ -2465,6 +2716,14 @@ export function islandConfig(seed) {
   labelDistrict(districtKeys.resi[0], disp.resi);
   if (districtKeys.resi[1]) labelDistrict(districtKeys.resi[1], disp.resi2);
   for (const p of parks) labels.push({ name: p.name, labelKind: "park", xy: [p.cx, p.cy] });
+  for (let i = 0; i < seams.length; i++) {
+    const sm = seams[i];
+    labels.push({
+      name: (i === 0 ? "The Cut" : `${nm.words[1]} Cut`).toUpperCase(),
+      labelKind: "district",
+      xy: [Math.round(sm.cx), Math.round(sm.cy)],
+    });
+  }
   for (const st of stations) labels.push({ name: st.name, labelKind: "station", xy: st.xy });
 
   // Water labels have to be ON the water. Each is pushed out along the ray it
@@ -2547,6 +2806,7 @@ export function islandConfig(seed) {
       harbour: [Math.round(harbourHead[0]), Math.round(harbourHead[1])],
       headland: [Math.round(headlandTip[0]), Math.round(headlandTip[1])],
       river: [Math.round(riverHead[0]), Math.round(riverHead[1])],
+      cove: [Math.round(coveHead[0]), Math.round(coveHead[1])],
       keys: districtKeys,
       display: disp,
       nDistricts,
@@ -2561,10 +2821,22 @@ export function islandConfig(seed) {
       boulevards: diagonals.length - seams.length,
       boulevardKind: grand ? "grand" : "arterial",
       parkProgramme: programme.key,
+      parkFlavours: parks.map((p) => p.flavour ?? "park"),
       streamProgramme: streamProg.key,
-      nStreams: new Set(streams.filter((st) => st.kind !== "pond").map((st) => st.name)).size,
+      nStreams: new Set(streams.filter((st) => st.kind !== "pond" && st.kind !== "slip").map((st) => st.name)).size,
       nPonds: streams.filter((st) => st.kind === "pond").length,
       nBridges: bridges.length,
+      nSlips: streams.filter((st) => st.kind === "slip").length,
+      coastProgramme: coastProg.key,
+      grainProgramme: grainProg.key,
+      railProgramme: railProg.key,
+      landmark: (() => {
+        const Dlm = dice(stream(s, 0x1a0d));
+        const kinds = streamProg.key === "mill"
+          ? ["gasometer", "roundhouse", "college", "church"]
+          : ["gasometer", "roundhouse", "college", "church"];
+        return Dlm.pick(kinds);
+      })(),
       organicTown,
       smoothed: C.smoothed,
       rung: C.rung,

@@ -53,22 +53,22 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 35 as const;
+export const SAVE_VERSION = 36 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
  *
  * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
  * so anything that changes what a seed produces changes the ground under a
- * campaign's deeds. Inland streams (creeks, mill races, canals) are obstacles
- * the block generator differences out, the same way it differences a park, so
- * the lot lines on a procedural island are cut differently from v35 on.
+ * campaign's deeds. v36 recuts the plat: coast programmes (not always the
+ * same four lobes), harbour slips, lot-grain programmes, and creek strokes
+ * that are no longer a chain of rectangles.
  *
- * v34 was the previous ground break (park shapes / esplanade). A save stamped
- * 34 still has the dry plat: opening it under the wet generator would put
- * every surviving BBL on different ground. Refusing it is the honest answer.
+ * v35 was inland streams. A save stamped 35 still has that wet-but-classic
+ * coast: opening it under this generator would put every surviving BBL on
+ * different ground. Refusing it is the honest answer.
  */
-const ISLAND_GROUND_MOVED_AT = 35;
+const ISLAND_GROUND_MOVED_AT = 36;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 

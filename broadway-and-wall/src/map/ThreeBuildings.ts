@@ -6253,7 +6253,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // than no bench and no railing at all
       benches?: Oriented[];
       rails?: Oriented[];
-      parks?: [number, number][][];
+      parks?: { ring: [number, number][]; flavour?: string }[] | [number, number][][];
       ponds?: [number, number][][];
       paths?: [number, number][][];
       /**
@@ -6605,30 +6605,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       const propStart = props.length;
 
-      // ---- vacant lot: gravel pad + low fence ------------------------------
+      // ---- vacant lot: gravel, scrub, or garden — by WHERE it is ------------
       if (v.k) {
         if (v.b) this.lotRings.set(v.b, ring);
-        capRoof(R, ring, 0.06, [S_LOT, rnd, varr, 1, fh]);
+        const ds = v.ds ?? 50;
+        const fringe = ds < 38;
+        const downtown = ds >= 62;
+        // vVar still textures the shader; the DRESSING follows demand so a
+        // downtown hole is a parking lot and a millside hole is scrub.
+        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : 0.40, 1, fh]);
         const fence = insetRing(ring, 0.5);
-        if (fence) extrudeWalls(W, fence, 0, 1.15, [S_LOT, rnd, varr, 1.15, fh]);
-        // WHAT VACANT LAND ACTUALLY DOES. Nearly half this city is unbuilt —
-        // that is the game's whole surface — and all of it read as blank plate
-        // from the air, which is what turned whole districts into pale voids.
-        // Empty ground in a real city is never empty: downtown lots get paved
-        // and parked on, and the ones nobody bothers with go to weeds and
-        // volunteer trees inside five years. The shader already splits gravel
-        // / grass / dirt on vVar; this dresses each to match.
+        if (fence && !fringe) extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
         const m2 = Math.abs(area) / 2;
-        if (varr > 0.62) {
-          // gone to scrub: small self-seeded trees, thicker toward the middle
+        if (fringe) {
           const n = Math.min(48, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd)) {
             this.lotTrees.push({ x: p[0], y: p[1], s: 0.55 + ((p[0] * 7.3 + p[1] * 3.1) % 1) * 0.45, rot: (p[1] * 2.1) % 6.28 });
           }
-        } else if (varr > 0.18 && m2 > 380) {
-          // surface parking, which is what a downtown hole in the ground earns
-          // until somebody builds on it. Rows share one bearing — scattered
-          // cars read as a junkyard, aligned ones read as a lot.
+        } else if (downtown && m2 > 380) {
           let bi = 0, bl = -1;
           for (let i = 0; i < ring.length; i++) {
             const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
@@ -6637,11 +6631,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           }
           const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
           const rot = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) + Math.PI / 2;
-          // a stall plus its share of aisle is about 85 m2; the cap only
-          // bites on the full-block lots, which really do hold that many
           const n = Math.min(90, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd + 0.37)) {
             this.lotCars.push({ x: p[0], y: p[1], s: 1, rot });
+          }
+        } else if (m2 > 220) {
+          const n = Math.min(12, Math.max(1, Math.round(m2 / 220)));
+          for (const p of scatterInRing(ring, n, rnd + 0.11)) {
+            this.lotTrees.push({ x: p[0], y: p[1], s: 0.4 + ((p[0] * 3.1) % 1) * 0.25, rot: (p[1] * 1.7) % 6.28 });
           }
         }
         if (v.b) {
@@ -7554,8 +7551,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     {
       const columns: Item[] = [];
       const fountains: Item[] = [];
-      for (const ring of this.ctxPoints.parks ?? []) {
+      for (const entry of this.ctxPoints.parks ?? []) {
+        const ring = Array.isArray(entry) && typeof entry[0]?.[0] === "number"
+          ? entry as [number, number][]
+          : (entry as { ring: [number, number][] }).ring;
+        const flavour = Array.isArray(entry) && typeof entry[0]?.[0] === "number"
+          ? "park"
+          : (entry as { flavour?: string }).flavour ?? "park";
         if (!ring || ring.length < 3) continue;
+        if (flavour === "cemetery" || flavour === "market" || flavour === "battery") continue;
         const pts = ring.map((q) => this.project(q));
         // area and centroid of the ring, by the shoelace
         let a2 = 0, cx = 0, cy = 0;
@@ -7723,7 +7727,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
     };
 
-    for (const p of parks) fillRing(p, 0.07, S_LAWN, true);
+    for (const p of parks) {
+      const ring = Array.isArray(p) && typeof p[0]?.[0] === "number"
+        ? p as [number, number][]
+        : (p as { ring: [number, number][]; flavour?: string }).ring;
+      const flavour = Array.isArray(p) && typeof p[0]?.[0] === "number"
+        ? "park"
+        : (p as { ring: [number, number][]; flavour?: string }).flavour ?? "park";
+      fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true);
+    }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was
     // drawing on the ground beneath it — which was the pond and every path

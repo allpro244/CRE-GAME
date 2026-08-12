@@ -31,7 +31,7 @@ console.log("\nCONTINUE PATH\n");
   live.cityIsland = "somewhere";
   live.citySize = "standard";
   live.cityDev = "established";
-  live.v = 35;
+  live.v = 36;
   for (let i = 0; i < 18 && !live.gameOver; i++) {
     live = E.advanceMonth(live, parcels, bbls, adjacency);
   }
@@ -42,8 +42,8 @@ console.log("\nCONTINUE PATH\n");
   };
 
   const prepared = E.prepareSaveForResume(snap);
-  check(prepared.ok === true, "v35 campaign prepares for resume after migration");
-  check(prepared.state?.v === 35, "prepare keeps save version at current");
+  check(prepared.ok === true, "v36 campaign prepares for resume after migration");
+  check(prepared.state?.v === 36, "prepare keeps save version at current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -63,7 +63,7 @@ console.log("\nCONTINUE PATH\n");
 
   const gen = structuredClone(base); gen.cityIsland = "somewhere"; gen.v = 31;
   const genOut = E.prepareSaveForResume(gen);
-  check(genOut.ok === false, "a pre-v35 campaign on a GENERATED island is refused");
+  check(genOut.ok === false, "a pre-v36 campaign on a GENERATED island is refused");
   check(/older map generator/.test(genOut.reason ?? ""),
     "...and says the island moved, not just 'older build'");
 
@@ -75,13 +75,13 @@ console.log("\nCONTINUE PATH\n");
   check(E.prepareSaveForResume(other33).ok === false,
     "a v33 campaign on a generated island is refused too — that 33 was the Principal break, not this one");
 
-  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 35;
+  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 36;
   check(E.prepareSaveForResume(now).ok === true,
-    "a v35 campaign on a generated island opens normally");
+    "a v36 campaign on a generated island opens normally");
 
-  const old34 = structuredClone(base); old34.cityIsland = "somewhere"; old34.v = 34;
-  check(E.prepareSaveForResume(old34).ok === false,
-    "a v34 campaign is refused — inland streams recut the lots");
+  const old35 = structuredClone(base); old35.cityIsland = "somewhere"; old35.v = 35;
+  check(E.prepareSaveForResume(old35).ok === false,
+    "a v35 campaign is refused — coast programmes recut the lots");
 }
 
 {

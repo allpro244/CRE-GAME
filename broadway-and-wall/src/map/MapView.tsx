@@ -306,7 +306,12 @@ export default function MapView() {
               // the lawns get a real turf surface laid over the flat park fill,
               // and the pond and walks come up with it — otherwise the turf
               // buries the MapLibre layers that were drawing them
-              parks: ringsOf("park"),
+              parks: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "park" && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  flavour: String(f.properties?.flavour ?? "park"),
+                })),
               ponds: [...ringsOf("pond"), ...ringsOf("stream")],
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")

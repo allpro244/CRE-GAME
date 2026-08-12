@@ -294,11 +294,39 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#6fa2bf" },
       },
       {
+        id: "marsh",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "marsh"],
+        paint: { "fill-color": "#6a8a6e", "fill-opacity": 0.72 },
+      },
+      {
+        id: "rock",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "rock"],
+        paint: { "fill-color": "#8a8680", "fill-opacity": 0.55 },
+      },
+      {
+        id: "beach",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "beach"],
+        paint: { "fill-color": "#d9c9a3", "fill-opacity": 0.7 },
+      },
+      {
         id: "land",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
         paint: { "fill-color": "#e2ddd0" },
+      },
+      {
+        id: "seawall",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "seawall"],
+        paint: { "fill-color": "#9a958c", "fill-opacity": 0.85 },
       },
       {
         // The waterline itself. This was a near-white stroke at 70% with more
@@ -365,11 +393,46 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        id: "breakwater",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "breakwater"],
+        paint: { "fill-color": "#7a756c" },
+      },
+      {
+        id: "breakwater-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "breakwater"],
+        paint: {
+          "line-color": "#4e4a44",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
+        },
+      },
+      {
+        id: "quay",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "quay"],
+        paint: {
+          "line-color": "#6e6a62",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.2, 16.5, 3.4] as never,
+        },
+      },
+      {
         id: "parks",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "fill-color": "#b7d29f" },
+        paint: {
+          "fill-color": [
+            "match", ["coalesce", ["get", "flavour"], "park"],
+            "cemetery", "#8fa37a",
+            "battery", "#c5c4a4",
+            "market", "#cfc6b0",
+            "#b7d29f",
+          ],
+        },
       },
       {
         // Kerbed edge of the painted green. Was a soft tint-on-tint outline
@@ -396,6 +459,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
             "match", ["coalesce", ["get", "water"], "creek"],
             "canal", "#4e7f96",
             "pond", "#3f6e82",
+            "slip", "#3d6a80",
             "#4a7a8e",
           ] as never,
         },
@@ -573,7 +637,16 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         layout: { "line-join": "round", "line-cap": "round" },
       },
       {
-        // center dashes on the shore road at close zoom
+        id: "seam",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
+        paint: {
+          "line-color": "#6a6560",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
         id: "street-dash",
         type: "line",
         source: "bw-context",

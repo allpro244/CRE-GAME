@@ -61,8 +61,10 @@ export const SAVE_VERSION = 38 as const;
  * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
  * so anything that changes what a seed produces changes the ground under a
  * campaign's deeds. v38 recuts the plat: the creek centreline no longer
- * U-turns through a park, and lot-cutting capsules follow that path. The map
- * paints one ribbon per run instead of the capsules themselves.
+ * U-turns through a park, lot-cutting capsules follow that path, and the
+ * park programme is smaller and less frequent (~20% off count and size, more
+ * space between greens). The map paints one ribbon per run instead of the
+ * capsules themselves. Park trees and walks stay off the painted water.
  *
  * v37 was convex capsules painted as water — no spike, but a stack of blocks
  * across the green. A save stamped 37 still has that path: opening it here

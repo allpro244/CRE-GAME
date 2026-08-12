@@ -424,6 +424,10 @@ export function generateCity(cfg) {
     .filter((st) => st.paint === false || st.kind === "pond" || st.kind === "slip")
     .map((st) => st.ring)
     .filter((r) => r && r.length >= 3);
+  // Painted ribbons AND lot-cut capsules. Trees and dashes use this so a
+  // creek through a park is water, not a lawn with willows in it.
+  const WATER_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
+  const inWater = (p) => WATER_M.some((r) => inRing(p, r));
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -1566,11 +1570,37 @@ export function generateCity(cfg) {
     }
   }
 
-  const centerFeatures = blocks.map((b) => ({
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
-    properties: { kind: "centerline", cls: b.u !== undefined ? "grid" : "lane" },
-  }));
+  const centerSeen = new Set();
+  const edgeKey = (p, q) => {
+    const a = `${Math.round(p[0])},${Math.round(p[1])}`;
+    const b = `${Math.round(q[0])},${Math.round(q[1])}`;
+    return a < b ? `${a}|${b}` : `${b}|${a}`;
+  };
+  // One dash per real carriageway. Drawing every block ring as a closed loop
+  // double-paints shared edges and dashes leftover slivers around a canal —
+  // the spiderweb of yellow in the street.
+  const centerFeatures = [];
+  for (const b of blocks) {
+    const r = b.ring;
+    if (!r || r.length < 3) continue;
+    if (Math.abs(ringArea(r)) < 380) continue;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], c = r[(i + 1) % r.length];
+      const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (len < 20) continue;
+      const k = edgeKey(a, c);
+      if (centerSeen.has(k)) continue;
+      centerSeen.add(k);
+      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+      if (inWater(mid)) continue;
+      if (PARKS_M.some((ring) => inRing(mid, ring))) continue;
+      centerFeatures.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [proj.toLL(a), proj.toLL(c)] },
+        properties: { kind: "centerline", cls: b.u !== undefined ? "grid" : "lane" },
+      });
+    }
+  }
   const streetFeatures = drawn.map((b) => ({
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
@@ -1614,6 +1644,22 @@ export function generateCity(cfg) {
   const treeFeatures = [];
   const pathFeatures = [];
   const pondFeatures = [];
+  const plant = (p) => { if (p && !inWater(p)) treeFeatures.push(p); };
+  const drySeg = (a, b) => {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.max(2, Math.ceil(len / 8));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      if (inWater([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])) return false;
+    }
+    return true;
+  };
+  const walkDry = (pts) => {
+    if (!pts || pts.length < 2) return;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (drySeg(pts[i], pts[i + 1])) pathFeatures.push([pts[i], pts[i + 1]]);
+    }
+  };
   let biggestPark = null, biggestA = 0;
   // Design against the painted green (inset by PARK_KERB), not the full
   // reservation — otherwise the promenade trees and corner groves sit on the
@@ -1629,8 +1675,8 @@ export function generateCity(cfg) {
     if (flavour === "cemetery") {
       // Ordered trees, one axial path, a chapel. Quiet. No pond.
       if (walk) {
-        pathFeatures.push([walk[0], c]);
-        pathFeatures.push([c, walk[Math.floor(walk.length / 2)]]);
+        walkDry([walk[0], c]);
+        walkDry([c, walk[Math.floor(walk.length / 2)]]);
       }
       const ang = ((cfg.parks[pi]?.deg ?? 0) * Math.PI) / 180;
       const ux = Math.cos(ang), uy = Math.sin(ang);
@@ -1638,24 +1684,28 @@ export function generateCity(cfg) {
       for (let i = -4; i <= 4; i++) {
         for (let j = -3; j <= 3; j++) {
           const p = [c[0] + ux * i * 14 + vx * j * 11, c[1] + uy * i * 14 + vy * j * 11];
-          if (inRing(p, green) && Math.hypot(p[0] - c[0], p[1] - c[1]) > 16) treeFeatures.push(p);
+          if (inRing(p, green) && Math.hypot(p[0] - c[0], p[1] - c[1]) > 16) plant(p);
         }
       }
-      addDeco(rect(c[0], c[1], 10, 7, cfg.parks[pi]?.deg ?? 0), 7.2, 0, "civic");
-      addDeco(rect(c[0], c[1], 11.2, 8.2, cfg.parks[pi]?.deg ?? 0), 9.4, 7.2, "civicroof");
+      if (!inWater(c)) {
+        addDeco(rect(c[0], c[1], 10, 7, cfg.parks[pi]?.deg ?? 0), 7.2, 0, "civic");
+        addDeco(rect(c[0], c[1], 11.2, 8.2, cfg.parks[pi]?.deg ?? 0), 9.4, 7.2, "civicroof");
+      }
       continue;
     }
     if (flavour === "battery") {
-      if (walk) pathFeatures.push([...walk, walk[0]]);
-      addDeco(rect(c[0], c[1], 2.2, 2.2, 0), 14, 0, "mast");
-      addDeco(rect(c[0], c[1], 4.4, 4.4, 45), 1.2, 0, "banddeck");
+      if (walk) walkDry([...walk, walk[0]]);
+      if (!inWater(c)) {
+        addDeco(rect(c[0], c[1], 2.2, 2.2, 0), 14, 0, "mast");
+        addDeco(rect(c[0], c[1], 4.4, 4.4, 45), 1.2, 0, "banddeck");
+      }
       const [minX, minY, maxX, maxY] = bboxOfRing(green);
       for (let x = minX; x < maxX; x += 18) {
         for (let y = minY; y < maxY; y += 18) {
           const p = [x + rr(-3, 3), y + rr(-3, 3)];
           if (!inRing(p, green)) continue;
           if (Math.hypot(p[0] - c[0], p[1] - c[1]) > Math.min(maxX - minX, maxY - minY) * 0.38 && rand() < 0.18) {
-            treeFeatures.push(p);
+            plant(p);
           }
         }
       }
@@ -1663,14 +1713,14 @@ export function generateCity(cfg) {
     }
     if (flavour === "market") {
       if (walk) {
-        pathFeatures.push([...walk, walk[0]]);
-        pathFeatures.push([walk[0], walk[Math.floor(walk.length / 2)]]);
+        walkDry([...walk, walk[0]]);
+        walkDry([walk[0], walk[Math.floor(walk.length / 2)]]);
       }
       const ang = cfg.parks[pi]?.deg ?? 0;
       for (let k = 0; k < 6; k++) {
         const a = (k / 6) * Math.PI * 2 + 0.2;
         const sx = c[0] + Math.cos(a) * 16, sy = c[1] + Math.sin(a) * 16;
-        if (!inRing([sx, sy], green)) continue;
+        if (!inRing([sx, sy], green) || inWater([sx, sy])) continue;
         addDeco(rect(sx, sy, 6.5, 4.2, ang + k * 30), 3.1, 0, "shed");
         addDeco(rect(sx, sy, 7.4, 5.0, ang + k * 30), 4.4, 3.1, "civicroof");
       }
@@ -1678,11 +1728,9 @@ export function generateCity(cfg) {
     }
     // the perimeter promenade, a walk in from the painted edge
     if (walk) {
-      pathFeatures.push([...walk, walk[0]]);
-      // cross paths corner-to-corner through the middle
+      walkDry([...walk, walk[0]]);
       for (let k = 0; k < Math.min(4, walk.length); k += 1) {
-        const a = walk[k % walk.length];
-        pathFeatures.push([a, c]);
+        walkDry([walk[k % walk.length], c]);
       }
       // the allée: paired trees marching along the promenade
       for (let i = 0; i < walk.length; i++) {
@@ -1694,15 +1742,15 @@ export function generateCity(cfg) {
           const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
           const tIn = [px + nx * 2.5, py + ny * 2.5];
           const tOut = [px - nx * 2.5, py - ny * 2.5];
-          if (inRing(tIn, green)) treeFeatures.push(tIn);
-          if (rand() < 0.6 && inRing(tOut, green)) treeFeatures.push(tOut);
+          if (inRing(tIn, green)) plant(tIn);
+          if (rand() < 0.6 && inRing(tOut, green)) plant(tOut);
         }
       }
     }
     // a pond in anything big enough to hold one, offset from centre
     const [bx0, by0, bx1, by1] = bboxOfRing(green);
     const pw = bx1 - bx0, ph = by1 - by0;
-    if (Math.min(pw, ph) > 130) {
+    if (Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
       const pcx = c[0] + pw * 0.14, pcy = c[1] - ph * 0.1;
       const pond = [];
       const rA = Math.min(pw, ph) * rr(0.16, 0.2), rB = rA * rr(0.6, 0.78), tilt = rr(0, Math.PI);
@@ -1716,7 +1764,7 @@ export function generateCity(cfg) {
       // willows at the water's edge
       for (let k = 0; k < 18; k += 3) {
         const tw = [pond[k][0] + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14];
-        if (inRing(tw, green)) treeFeatures.push(tw);
+        if (inRing(tw, green)) plant(tw);
       }
     }
     // corner groves, an open lawn in the middle
@@ -1730,7 +1778,7 @@ export function generateCity(cfg) {
         const edge = Math.min(maxX - minX, maxY - minY) / 2;
         // dense near the corners and edges, sparse across the lawn
         const pTree = dc > edge * 0.62 ? 0.62 : dc > edge * 0.38 ? 0.26 : 0.05;
-        if (rand() < pTree) treeFeatures.push(p);
+        if (rand() < pTree) plant(p);
       }
     }
   }
@@ -1747,7 +1795,7 @@ export function generateCity(cfg) {
         const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
         const side = drand() < 0.5 ? 1 : -1;
         const p = [px + nx * side * (5 + drand() * 4), py + ny * side * (5 + drand() * 4)];
-        if (inRing(p, innerRing) && !STREAMS_M.some((r) => inRing(p, r))) treeFeatures.push(p);
+        if (inRing(p, innerRing) && !inWater(p)) plant(p);
       }
     }
   }
@@ -1769,6 +1817,7 @@ export function generateCity(cfg) {
     .slice(0, 2);
   civicSquares.forEach((sq, k) => {
     const c = centroid(sq.ring);
+    if (inWater(c)) return;
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
     if (k === 1) {
       // THE MEETING HOUSE. Nave, west tower, and a stepped spire — three
@@ -1819,7 +1868,7 @@ export function generateCity(cfg) {
     const t = 0.32;
     const x = best.c[0] * (1 - t) + s.xy[0] * t;
     const y = best.c[1] * (1 - t) + s.xy[1] * t;
-    if (!inRing([x, y], best.ring)) continue;
+    if (!inRing([x, y], best.ring) || inWater([x, y])) continue;
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
     addDeco(rect(x, y, 16, 10, ang), 6.4, 0, "civic");
     addDeco(rect(x, y, 17.4, 11.2, ang), 8.6, 6.4, "civicroof");
@@ -1966,18 +2015,30 @@ export function generateCity(cfg) {
     }
   }
 
+  // THE PROMENADE. The esplanade was a blank cream band; now a walk runs the
+  // whole waterfront halfway between the shore road and the sea. Pushed onto
+  // pathFeatures before the dry-land split so a creek mouth does not leave a
+  // gravel line across the water.
+  const promenade = innerRing.map((p, i) => {
+    const q = COAST_M[i % COAST_M.length];
+    return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  });
+  pathFeatures.push([...promenade, promenade[0]]);
+
   // NO WALK CROSSES OPEN WATER. The cross paths run corner-to-centre and the
   // pond is deliberately offset from centre, so one of the four always cut
   // straight through it — and now that the walks are laid as real surfaces
   // above the pond rather than as a thin line under it, the result was a
-  // gravel causeway across the middle of the lake.
+  // gravel causeway across the middle of the lake. The same pass used to
+  // skip the creek: a diagonal river through the Common kept its X of
+  // gravel and its trees, because only the decorative pond counted as wet.
   //
   // Split each polyline into the runs that stay on dry land, keeping the
   // original vertices so long straight walks stay long: the bench pass
   // downstream measures segment length, and a path chopped into two-metre
   // samples would never get a bench again.
-  if (pondFeatures.length) {
-    const dry = (p) => !pondFeatures.some((pd) => inRing(p, pd));
+  {
+    const dry = (p) => !inWater(p) && !pondFeatures.some((pd) => inRing(p, pd));
     const out = [];
     for (const line of pathFeatures) {
       let run = [];
@@ -2023,23 +2084,20 @@ export function generateCity(cfg) {
       return out;
     };
     const bx = c[0] + 15, by = c[1];
-    addDeco(ring8(5.4), 0.9, 0, "banddeck");        // the deck, a step up
-    addDeco(ring8(4.1), 3.6, 0.9, "bandpost");      // the open bay between posts
-    addDeco(ring8(6.2), 4.6, 3.6, "bandroof");      // the oversailing roof
-    addDeco(ring8(3.0), 5.6, 4.6, "bandroof");      // and its little cupola
-    addDeco(ring8(0.9), 6.6, 5.6, "bandroof");
+    if (!inWater([bx, by])) {
+      addDeco(ring8(5.4), 0.9, 0, "banddeck");        // the deck, a step up
+      addDeco(ring8(4.1), 3.6, 0.9, "bandpost");      // the open bay between posts
+      addDeco(ring8(6.2), 4.6, 3.6, "bandroof");      // the oversailing roof
+      addDeco(ring8(3.0), 5.6, 4.6, "bandroof");      // and its little cupola
+      addDeco(ring8(0.9), 6.6, 5.6, "bandroof");
+    }
   }
-  // THE PROMENADE. The esplanade was a blank cream band; now a walk runs the
-  // whole waterfront halfway between the shore road and the sea, with trees
-  // on its landward side — the harbor-front everybody actually strolls.
-  const promenade = innerRing.map((p, i) => {
-    const q = COAST_M[i % COAST_M.length];
-    return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
-  });
-  pathFeatures.push([...promenade, promenade[0]]);
+  // Trees on the promenade's landward side — the harbor-front everybody
+  // actually strolls. The walk itself was already laid (and split at creek
+  // mouths) before the dry-land pass above.
   for (let i = 0; i < innerRing.length; i += 2) {
     const p = innerRing[i], q = COAST_M[i % COAST_M.length];
-    if (rand() < 0.62) treeFeatures.push([
+    if (rand() < 0.62) plant([
       p[0] * 0.7 + q[0] * 0.3 + rr(-2, 2),
       p[1] * 0.7 + q[1] * 0.3 + rr(-2, 2),
     ]);
@@ -2056,7 +2114,7 @@ export function generateCity(cfg) {
       for (const side of [-1, 1]) {
         const px = d.cx + ux * u + nx2 * side * (d.h / 2 - 2.2);
         const py = d.cy + uy * u + ny2 * side * (d.h / 2 - 2.2);
-        if (inRing([px, py], innerRing)) treeFeatures.push([px + rr(-1, 1), py + rr(-1, 1)]);
+        if (inRing([px, py], innerRing)) plant([px + rr(-1, 1), py + rr(-1, 1)]);
       }
     }
   }
@@ -2069,7 +2127,8 @@ export function generateCity(cfg) {
   // their say. It used to sit up with the park scatter, which meant it
   // never saw the allee — and the diagonal cuts straight across the Common,
   // so the grandest avenue in town planted two trees in the middle of the
-  // pond and left them standing there.
+  // pond and left them standing there. The creek is the same class of wet
+  // as the pond: a willow in the ribbon is a tree in the river.
   for (let i = treeFeatures.length - 1; i >= 0; i--) {
     const t2 = treeFeatures[i];
     const near = pondFeatures.some((pd) => {
@@ -2078,7 +2137,7 @@ export function generateCity(cfg) {
       // of the water is a tree in the water once it has a canopy
       return inRing([pc[0] + (t2[0] - pc[0]) * 0.93, pc[1] + (t2[1] - pc[1]) * 0.93], pd);
     });
-    if (near) treeFeatures.splice(i, 1);
+    if (near || inWater(t2)) treeFeatures.splice(i, 1);
   }
 
   // BENCHES, last, so the promenade counts as a walk. A bench model faces its
@@ -2096,8 +2155,10 @@ export function generateCity(cfg) {
         const t = d / len;
         const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
         const side = rand() < 0.5 ? 1 : -1;
+        const bp = [px + nx * side * 2.6, py + ny * side * 2.6];
+        if (inWater(bp)) continue;
         benchFeatures.push({
-          p: [px + nx * side * 2.6, py + ny * side * 2.6],
+          p: bp,
           r: ang + (side > 0 ? 180 : 0),
         });
       }

@@ -2108,7 +2108,7 @@ export function islandConfig(seed) {
       return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
     }), [cx, cy]];
     return probes.every((p) => inRing(p, inner) && distToRing(p, inner) > clear)
-      && parks.every((q) => dist([cx, cy], [q.cx, q.cy]) > (Math.max(w, h) + Math.max(q.w, q.h)) * 0.62)
+      && parks.every((q) => dist([cx, cy], [q.cx, q.cy]) > (Math.max(w, h) + Math.max(q.w, q.h)) * 0.75)
       // Nor ON TOP OF a seam street. Both are obstacles the generator
       // differences out of the same cells, so a common laid ACROSS one comes
       // out as a green with a road through the middle of it and no way in.
@@ -2194,11 +2194,14 @@ export function islandConfig(seed) {
   // what makes "one great park" read differently from "a few greens" even when
   // the total green is similar.
   const PARK_PROGRAMMES = [
-    { key: "great", w: 0.20, n: [3, 5], big: [420, 560], rest: [70, 105] },
-    { key: "squares", w: 0.20, n: [8, 14], big: [95, 130], rest: [60, 100] },
-    { key: "commons", w: 0.24, n: [4, 7], big: [210, 265], rest: [130, 190] },
-    { key: "greens", w: 0.24, n: [2, 3], big: [300, 360], rest: [150, 230] },
-    { key: "sparse", w: 0.12, n: [1, 2], big: [110, 170], rest: [70, 95] },
+    // Count and size cut ~20% after towns came out more green than city —
+    // a "great" park was 9–12 blocks, and squares/commons stacked several of
+    // those in one view. Sparse is more common; the programmes still differ.
+    { key: "great", w: 0.16, n: [2, 4], big: [336, 448], rest: [56, 84] },
+    { key: "squares", w: 0.16, n: [6, 11], big: [76, 104], rest: [48, 80] },
+    { key: "commons", w: 0.20, n: [3, 6], big: [168, 212], rest: [104, 152] },
+    { key: "greens", w: 0.22, n: [2, 3], big: [240, 288], rest: [120, 184] },
+    { key: "sparse", w: 0.26, n: [1, 2], big: [88, 136], rest: [56, 76] },
   ];
   // MEASURED AND NOT A PROBLEM. Two things were suspected here and neither
   // held. The programme is drawn without asking whether the island can seat it
@@ -2260,7 +2263,7 @@ export function islandConfig(seed) {
   // Placed early and given its own aim point on the wettest ground available,
   // because a strip that has to dodge three greens already down comes out
   // somewhere inland with no water anywhere near it.
-  if (Dp.rand() < 0.62) {
+  if (Dp.rand() < 0.50) {
     const shore = land.reduce((a, l) => (l.edge < a.edge ? l : a), land[0]);
     const len = bigW * Dp.f(0.75, 1.25);
     placePark(shore.p, len, Dp.f(38, 62), `${nm.words[3]} Esplanade`, {
@@ -2282,7 +2285,7 @@ export function islandConfig(seed) {
   // Long, thin, on the seam's own bearing, and offset clear of the
   // carriageway. `seamPad` drops to the width of the road itself so "beside"
   // is reachable at all, and `placePark` still refuses anything overlapping.
-  if (seams.length && Dp.rand() < 0.5) {
+  if (seams.length && Dp.rand() < 0.40) {
     const sm = seams[Math.floor(Dp.rand() * seams.length) % seams.length];
     const t = (sm.deg * Math.PI) / 180;
     const side = Dp.rand() < 0.5 ? 1 : -1;

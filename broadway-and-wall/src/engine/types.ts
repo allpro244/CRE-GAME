@@ -2356,8 +2356,15 @@ export interface GameState {
   blockE?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
-  /** funded transit. Announced, dug, opened; the ground reprices at each step. */
-  lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number }[];
+  /**
+   * Civic works. A station, a park, a bridge — rumoured first, argued over,
+   * funded, opened; the ground reprices at each step, and buying on the rumour
+   * is the oldest trade in the business. `kind`/`rumorM`/`sigma` are absent on
+   * saves from before the rumour stage existed: those events load as already-
+   * announced stations and behave exactly as they always did.
+   */
+  lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number;
+    kind?: "station" | "park" | "bridge"; rumorM?: number; sigma?: number }[];
   /**
    * THE FORTUNES OF THE NEIGHBOURHOODS.
    *

@@ -247,6 +247,19 @@ export function lenderByName(s: GameState, name: string): Lender | undefined {
   return s.lenders?.find((l) => l.name === name);
 }
 
+/**
+ * WHAT A LENDER ASKS FOR A BUILDING IT DID NOT WANT.
+ *
+ * A flush desk markets at the mark; an impaired one puts the asset out at loan
+ * basis — the carrying value that clears the charge-off. `lenderPressure`
+ * interpolates between the two.
+ */
+export function reoAsk(s: GameState, mark: number, basis: number, lender: string): number {
+  const p = lenderPressure(lenderByName(s, lender));
+  const clears = Math.min(mark, Math.max(0, basis));
+  return Math.max(0, Math.round((mark * (1 - p) + clears * p) / 1000) * 1000);
+}
+
 /** Capital over book — the one number that decides whether a desk is open. */
 /**
  * WHERE YOUR MONEY SITS, AND WHAT HAPPENS WHEN THE DOOR IS PADLOCKED.

@@ -735,6 +735,10 @@ export interface Listing {
   ask: number;
   listedM: number;
   expiresM: number;
+  /** A house broker's first look: until this month, nobody else in town can take it. */
+  earlyUntilM?: number;
+  /** which shop rang you — a brokerRel key, while the window is open */
+  via?: string;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
   reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver";
@@ -2547,6 +2551,13 @@ export interface GameState {
   agentMaxSigningMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
+  /**
+   * THE HOUSE BROKERS' MEMORY. Three named shops per campaign; every closing
+   * pays a fee through the shop that had the seller's ear, and a shop that has
+   * earned enough of your fees starts ringing you before the tape. Looks you
+   * let lapse count against you; going quiet for years fades the score.
+   */
+  brokerRel?: Record<string, { name: string; fees: number; lastFeeM: number; ignores: number }>;
   /**
    * The player does not want the July docket thrown in their face. The auction
    * still happens, on the same day, with the same lots — this only stops the

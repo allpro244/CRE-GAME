@@ -24,6 +24,15 @@ if (!existsSync(ONE)) {
 
 cpSync(ONE, PLAYABLE);
 
+execFileSync("pnpm", ["package"], { cwd: APP, stdio: "inherit" });
+const ZIP = join(APP, "dist-zip", "broadway-and-wall-playable.zip");
+const PLAYABLE_ZIP = join(APP, "playable", "Broadway-and-Wall-playable.zip");
+if (!existsSync(ZIP)) {
+  console.error("Expected dist-zip/broadway-and-wall-playable.zip after pnpm package");
+  process.exit(1);
+}
+cpSync(ZIP, PLAYABLE_ZIP);
+
 const stamp = readFileSync(STAMP, "utf8");
 const m = stamp.match(/commit:\s*"([^"]+)"/);
 const commit = m?.[1] ?? "unknown";

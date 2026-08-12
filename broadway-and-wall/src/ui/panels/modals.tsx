@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Slider, { widePriceBounds } from "@/ui/Slider";
+import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
@@ -800,7 +800,7 @@ function DecisionBody({
   const cashAtClose = proceeds.toSeller - (game.exchange ? 0 : proceeds.tax);
   const value = ownedHoldingValue(game, parcels, h);
   const counterBounds = (() => {
-    const b = widePriceBounds(offer.price, apMid(offerBbl!, value));
+    const b = counterPriceBounds(offer.price, apMid(offerBbl!, value));
     return { ...b, min: Math.max(b.min, offer.price + b.step) };
   })();
   if (saleAcceptConfirm) {
@@ -876,7 +876,7 @@ function DecisionBody({
               min={counterBounds.min}
               max={counterBounds.max}
               step={counterBounds.step}
-              editable
+              editable="price"
               onChange={setScPx}
               format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% on their bid`}
               marks={[

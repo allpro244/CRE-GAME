@@ -541,6 +541,7 @@ export default function MapView() {
     ownedRef.current = nowOwned;
 
     const nowListed = new Set(game.listings.map((l) => l.bbl));
+    for (const h of Object.values(game.holdings)) if (h.sale) nowListed.add(h.bbl);
     for (const bbl of listedRef.current) if (!nowListed.has(bbl)) setState(bbl, { listed: false });
     for (const bbl of nowListed) if (!listedRef.current.has(bbl)) setState(bbl, { listed: true });
     listedRef.current = nowListed;
@@ -1051,6 +1052,28 @@ export default function MapView() {
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
       map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
+      return;
+    }
+    if (lens === "listings" && game) {
+      ghostBuildings(false);
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "case",
+        ["boolean", ["feature-state", "listed"], false], "#c8452f",
+        "#8d8a82",
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", [
+        "case",
+        ["boolean", ["feature-state", "listed"], false], 0.52,
+        0.07,
+      ] as never);
+      map.setPaintProperty("bw-parcel-line", "line-color", [
+        "case",
+        ["boolean", ["feature-state", "listed"], false], "#a83828",
+        "#8a8577",
+      ] as never);
+      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.28 as never);
+      if (map.getLayer("bw-forsale-pts")) map.setLayoutProperty("bw-forsale-pts", "visibility", "visible");
+      if (map.getLayer("bw-forsale-halo")) map.setLayoutProperty("bw-forsale-halo", "visibility", "visible");
       return;
     }
     if (lens === "land" && game && parcels) {

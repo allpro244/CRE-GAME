@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import Slider, { widePriceBounds } from "@/ui/Slider";
+import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
@@ -794,11 +794,11 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                 Close into a 1031
               </button>
               {!bid.countered && (() => {
-                const pb = widePriceBounds(bid.price, q.sumOfParts);
+                const pb = counterPriceBounds(bid.price, q.sumOfParts);
                 const cb = { ...pb, min: Math.max(pb.min, bid.price + pb.step) };
                 return (
                 <>
-                  <Slider min={cb.min} max={cb.max} step={cb.step} editable
+                  <Slider min={cb.min} max={cb.max} step={cb.step} editable="price"
                     value={counter || Math.round(bid.price * 1.05)} onChange={setCounter}
                     label="Counter at" format={(v: number) => usd(v)}
                     hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />

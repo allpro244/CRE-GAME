@@ -1949,7 +1949,8 @@ body {
 
 .cycle-digest {
   position: absolute;
-  right: 14px;
+  left: 14px;
+  right: auto;
   bottom: 16px;
   width: min(340px, calc(100vw - 28px));
   z-index: 22;
@@ -2038,5 +2039,6 @@ body {
 
 @media (max-width: 900px) {
   .map-hud { bottom: auto; top: calc(var(--topbar-h, 91px) + 10px); left: 10px; }
-  .cycle-digest { right: 10px; bottom: 10px; }
+  .cycle-digest { left: 10px; right: auto; bottom: calc(46vh + 18px); }
+  .panel { z-index: 21; }
 }

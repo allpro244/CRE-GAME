@@ -53,11 +53,15 @@ const advance = (g, n) => {
   }
   const earlySeen = new Map(); // bbl -> {listedM, earlyUntilM}
   let stolenInWindow = 0;
+  let lookNewsWithBbl = 0;
   for (let m = 0; m < 60; m++) {
     const before = new Map(g.listings.filter((l) => l.earlyUntilM !== undefined && g.month < l.earlyUntilM).map((l) => [l.bbl, l.earlyUntilM]));
     g = advance(g, 1);
     for (const l of g.listings) {
       if (l.earlyUntilM !== undefined && !earlySeen.has(l.bbl)) earlySeen.set(l.bbl, { listedM: l.listedM, earlyUntilM: l.earlyUntilM });
+    }
+    for (const n of g.news ?? []) {
+      if (n.bbl && /before the tape/.test(n.text)) lookNewsWithBbl++;
     }
     // anything that was inside its window last month must still be on the tape
     // (or the window's over) — never absorbed by somebody else mid-window
@@ -70,6 +74,9 @@ const advance = (g, n) => {
   ok("nobody takes a building during your window", stolenInWindow === 0, `${stolenInWindow} stolen`);
   ok("lapsed looks are counted against you", Object.values(g.brokerRel).reduce((n, r) => n + r.ignores, 0) >= 1,
     `${Object.values(g.brokerRel).reduce((n, r) => n + r.ignores, 0)} ignores recorded`);
+  ok("first-look news can put the camera on the listing", lookNewsWithBbl >= 1, `${lookNewsWithBbl} notices`);
+  ok("early-look attention routes to marketplace",
+    E.routeAttention("early-look:0000010001:0", g).page === "market");
 }
 
 // ---- 3 · a stranger hears nothing ------------------------------------------

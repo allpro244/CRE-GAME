@@ -20,7 +20,13 @@ const ok = (name, cond, detail = "") => {
 // --- Unit surface on one seed (existing gates) ---
 {
   let g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-  const listing = g.listings.find((l) => l.ask > 500_000);
+  // The reservation-curve gates are for a voluntary seller. After citygen
+  // recut the opening tape, the first $500k listing on this seed is already
+  // distressed — 94% of ask is then ~0.84, 70% is not a long shot, and
+  // stamping `distress: true` is a no-op. Pick a voluntary ask so the curve
+  // under test is the one the comment describes. Distress vs voluntary is
+  // measured on the histogram below, not on this one row.
+  const listing = g.listings.find((l) => l.ask > 500_000 && !l.distress);
   ok("tape has a listing", !!listing);
   if (!listing) process.exit(1);
 

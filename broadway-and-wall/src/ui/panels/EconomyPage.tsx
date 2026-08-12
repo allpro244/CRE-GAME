@@ -877,6 +877,27 @@ export function EconomyPage() {
                 return `${ls.length - rumoured - building} open · ${building} building · ${rumoured} rumoured`;
               })()} />
             </div>
+            {(game.lines ?? []).length > 0 && (
+              <div className="mini-list" style={{ marginTop: 8 }}>
+                {(game.lines ?? []).map((l) => {
+                  const stage = l.rumorM !== undefined && game.month < l.annM ? "rumoured"
+                    : game.month < l.openM ? "building" : "open";
+                  const kind = l.kind ?? "station";
+                  return (
+                    <button
+                      key={`${l.id}:${l.annM}`}
+                      className="neighbor"
+                      disabled={!l.bbl}
+                      title={l.bbl ? "Put the camera on the ground around this work" : undefined}
+                      onClick={() => { if (l.bbl) useStore.getState().focus(l.bbl, true); }}
+                    >
+                      <span className="neighbor-addr">{l.name} {kind}</span>
+                      <span className="dim"> · {stage}{l.bbl ? " ✈" : ""}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="hint">
               Demand is redistributive — a block gaining desirability takes it from somewhere else. Construction cranes and
               deliveries nudge blocks before lease-up; occupied stock is what holds the shift.

@@ -625,7 +625,7 @@ export function MarketPage() {
                     <td>
                       {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
                         <span className="chip chip-distress" style={{ marginRight: 6 }}
-                          title={`${game.brokerRel?.[li.via ?? ""]?.name ?? "A house broker"} rang you before the tape — yours alone until then`}>
+                          title={`${game.brokerRel?.[li.via ?? ""]?.name ?? "A house broker"} rang you before the tape — yours alone until ${li.earlyUntilM - game.month} month${li.earlyUntilM - game.month === 1 ? "" : "s"} from now`}>
                           FIRST LOOK
                         </span>
                       )}
@@ -645,6 +645,11 @@ export function MarketPage() {
                         </span>
                       )}
                       {rec.address}
+                      {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
+                        <span className="dim">
+                          {" "}· {game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
+                        </span>
+                      )}
                       <span className="dim"> · Open →</span>
                       {yours && h?.sale?.bids && h.sale.bids.length > 0 && (
                         <span className="dim mono"> · {h.sale.bids.length} bid{h.sale.bids.length === 1 ? "" : "s"} · best {usd(h.sale.bids[0].price)}</span>

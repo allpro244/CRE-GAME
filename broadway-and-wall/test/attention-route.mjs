@@ -46,7 +46,7 @@ ok("every seen key routes", fails === 0, fails ? `${fails} orphan(s)` : `${seen.
 
 // Static prefixes emitted by attentionItems — catch keys the bot never reached.
 const PREFIXES = [
-  "loi", "tenant-ask", "portfolio-bid", "broker", "offer", "sale-bids",
+  "loi", "tenant-ask", "portfolio-bid", "broker", "early-look", "offer", "sale-bids",
   "nonrenew", "lease-roll", "capital-plan", "balloon", "sweep",
   "facility-balloon", "facility-sweep", "capital-call", "workout",
   "contract", "talks", "exchange", "note", "npl", "private-ask", "private-borrow",
@@ -56,7 +56,7 @@ const PREFIXES = [
 for (const p of PREFIXES) {
   const sample = p === "tenant-ask" ? `${p}:1`
     : p === "portfolio-bid" ? `${p}:Acme:1000000`
-    : p === "broker" || p === "offer" || p === "sale-bids" || p === "nonrenew"
+    : p === "broker" || p === "early-look" || p === "offer" || p === "sale-bids" || p === "nonrenew"
       || p === "lease-roll" || p === "capital-plan" || p === "balloon"
       || p === "sweep" || p === "capital-call" || p === "workout"
       || p === "contract" || p === "talks"

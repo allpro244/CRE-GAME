@@ -79,6 +79,7 @@ const BUILD = { station: 72, park: 36, bridge: 60 };
 let g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
 const seen = []; // every distinct work ever observed, by id+rumorM
 const news = new Set();
+let civicNewsWithBbl = 0;
 for (let m = 0; m < 480; m++) {
   if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
   g = E.advanceQuarter(g, parcels, bbls, adjacency);
@@ -86,7 +87,12 @@ for (let m = 0; m < 480; m++) {
     const key = `${l.id}:${l.rumorM}`;
     if (!seen.some((x) => x.key === key)) seen.push({ key, ...l });
   }
-  for (const n of g.news ?? []) news.add(n.text);
+  for (const n of g.news ?? []) {
+    news.add(n.text);
+    if (n.bbl && /station|park|bridge|circulating plans|sketching a new park|surveying at|funded|opened this morning|died in committee/.test(n.text)) {
+      civicNewsWithBbl++;
+    }
+  }
 }
 const shelvedNews = [...news].filter((t) => /died in committee|cut from the budget|voted down/.test(t)).length;
 const rumorNews = [...news].filter((t) => /circulating plans|sketching a new park|surveying at/.test(t)).length;
@@ -96,6 +102,8 @@ ok("every rumour precedes its hearing by two years", seen.every((l) => l.annM - 
 ok("every build time matches its kind", seen.every((l) => l.openM - l.annM === BUILD[l.kind ?? "station"]));
 ok("every rumoured work made the news", rumorNews >= 1, `${rumorNews} notices for ${seen.length} works`);
 ok("shelved plans are removed from the state", (g.lines ?? []).every((l) => seen.some((x) => x.key === `${l.id}:${l.rumorM}`)));
+ok("civic news stamps a parcel so the camera can go there", civicNewsWithBbl >= 1, `${civicNewsWithBbl} notices with a bbl`);
+ok("surviving works carry a host parcel", (g.lines ?? []).every((l) => !!l.bbl));
 
 // ---- 3 · a funded park takes a vacant lot off the tape ---------------------
 const parkHost = blocks.find((b) =>

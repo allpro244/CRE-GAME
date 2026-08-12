@@ -311,10 +311,10 @@ they dominate. Two of the last three fault reports were exactly that.
 | Property desk file split (Acquire / Refi / Develop) | **#86** open |
 | FAR / industrial / insolvency / refi fundable UX | **Grok G3** — balances-only PR (not #85) |
 | Ground-up cost/rent pillar (`e64b048`) | **Parked** — broke `firms` seed 4242; Fable F6 only with harnesses |
-| Distressed buyer idle months (playtest #6) | **Grok G5** |
-| Seller predictability (#33) | Measurement **Grok G4**; engine depth → Fable / Phase 4 |
+| Distressed buyer idle months (playtest #6) | **Shipped** #91 |
+| Seller predictability (#33) | Measurement **Grok G4**; engine depth still open |
 | Diversification loses (playtest #7) | **Deferred** — investigate strategy vs economy |
-| The Station / zoning / tenant / broker | **Fable 5** — see `FABLE5_PLAN.md` |
+| The Station / zoning / tenant / broker / firms | **Shipped** #94 (engine); visibility pass on desks |
 
 **Do not merge #85** as stacked — last commit breaks century firms. Use the
 balances-only PR from `GROK_QUEUE.md` G3 instead.

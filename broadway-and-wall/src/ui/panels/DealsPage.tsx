@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Slider, { widePriceBounds } from "@/ui/Slider";
+import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
@@ -135,7 +135,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
   };
   const counterBounds = offer
     ? (() => {
-        const b = widePriceBounds(offer.price, value);
+        const b = counterPriceBounds(offer.price, value);
         return { ...b, min: Math.max(b.min, offer.price + b.step) };
       })()
     : null;
@@ -225,7 +225,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
                 min={counterBounds.min}
                 max={counterBounds.max}
                 step={counterBounds.step}
-                editable
+                editable="price"
                 onChange={setCounter}
                 format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% on their bid`}
                 marks={[

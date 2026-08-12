@@ -211,6 +211,8 @@ export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: bo
 export function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
+  const lens = useStore((s) => s.lens);
+  const setLens = useStore((s) => s.setLens);
   const focus = useStore((s) => s.focus);
   const setPage = useStore((s) => s.setPage);
   const go = (bbl: string) => { focus(bbl); setPage("property"); };
@@ -237,6 +239,14 @@ export function MarketPage() {
     <div>
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
+        <button
+          className={"btn" + (lens === "listings" ? " btn-on" : "")}
+          style={{ alignSelf: "center" }}
+          title="Highlight every listing on the map — red lots, pins on roofs"
+          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
+        >
+          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
+        </button>
         <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
         <Big label="Books for sale" value={String(streetBooks.length)} bad={streetBooks.length > 0}
           title="Receiver packages and fund wind-downs — one cheque for the whole book" />

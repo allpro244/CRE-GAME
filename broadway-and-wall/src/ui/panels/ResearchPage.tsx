@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
@@ -8,6 +8,8 @@ import { sf, pct } from "@/ui/format";
 import { CompsSheet, TheStreet, Landlords } from "@/ui/panels/DebtPage";
 import { BuildingDatabase } from "@/ui/panels/MarketPage";
 import { creditWord, pendingRTab, clearPendingRTab, Big } from "@/ui/panels/shared";
+import { PersonCard, personAgeLine } from "@/ui/PersonCard";
+import type { Person } from "@/engine/people";
 
 // (The collapsible Fold component lived here. Research moved to sub-tabs —
 // one section on screen at a time instead of a scroll of drawers — and no
@@ -46,7 +48,7 @@ export function ResearchPage() {
   const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
   useEffect(() => { clearPendingRTab(); }, []);
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"],
-    ["street", "The street"], ["landlords", "Landlords"], ["stock", "Properties"], ["comps", "Prints"]];
+    ["people", "People"], ["street", "The street"], ["landlords", "Landlords"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -196,6 +198,7 @@ export function ResearchPage() {
         {rtab === "street" && (<div>
           <TheStreet />
         </div>)}
+        {rtab === "people" && (<PeopleLookup />)}
         {rtab === "landlords" && (<div>
           <Landlords />
         </div>)}
@@ -210,6 +213,77 @@ export function ResearchPage() {
         </div>)}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PeopleLookup() {
+  const game = useStore((s) => s.game)!;
+  const [q, setQ] = useState("");
+  const [openId, setOpenId] = useState<number | null>(null);
+  const rows = useMemo(() => {
+    const out: { person: Person; role: string; firm?: string }[] = [];
+    if (game.principal) out.push({ person: game.principal, role: "You", firm: game.firm?.name });
+    for (const r of game.rivals ?? []) {
+      const p = game.rivalPrincipals?.[r.id];
+      if (p) out.push({ person: p, role: "Operating principal", firm: r.name });
+    }
+    for (const st of game.staff ?? []) {
+      out.push({ person: st as Person, role: st.role ?? "Staff", firm: game.firm?.name });
+    }
+    return out;
+  }, [game]);
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? rows.filter((r) =>
+        r.person.name.toLowerCase().includes(needle)
+        || (r.firm?.toLowerCase().includes(needle) ?? false)
+        || r.role.toLowerCase().includes(needle))
+    : rows;
+  return (
+    <div>
+      <div className="hint" style={{ marginBottom: 8 }}>
+        Principals, your staff, and rival operators — the people behind the firms on the street.
+      </div>
+      <input
+        className="input"
+        placeholder="Search by name, firm or role…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        style={{ width: "100%", marginBottom: 10 }}
+      />
+      {shown.length === 0 ? (
+        <div className="hint dim">No one matches.</div>
+      ) : (
+        <div className="inbox-list">
+          {shown.map(({ person, role, firm }) => (
+            <div key={person.id} className="deal" style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                className="loi-addr"
+                style={{ textAlign: "left", width: "100%" }}
+                onClick={() => setOpenId((id) => (id === person.id ? null : person.id))}
+              >
+                {person.name}
+                <span className="dim" style={{ fontWeight: 400 }}>
+                  {" · "}{role}{firm ? ` · ${firm}` : ""}
+                  {" · "}{personAgeLine(person, game.month)}
+                </span>
+              </button>
+              {openId === person.id && (
+                <div style={{ marginTop: 8 }}>
+                  <PersonCard
+                    person={person}
+                    game={game}
+                    title={role}
+                    showAttrs={person.seat === "you"}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import Slider, { widePriceBounds } from "@/ui/Slider";
+import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
@@ -1234,13 +1234,13 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
     };
     const counterBounds = sale.offer
       ? (() => {
-          const b = widePriceBounds(sale.offer.price, apMid(bbl, value));
+          const b = counterPriceBounds(sale.offer.price, apMid(bbl, value));
           return { ...b, min: Math.max(b.min, sale.offer!.price + b.step) };
         })()
       : null;
     const bidCounterBounds = (i: number) => {
       const p = sale.bids![i].price;
-      const b = widePriceBounds(p, apMid(bbl, value));
+      const b = counterPriceBounds(p, apMid(bbl, value));
       return { ...b, min: Math.max(b.min, p + b.step) };
     };
     return (
@@ -1330,10 +1330,10 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   min={bb.min}
                   max={bb.max}
                   step={bb.step}
-                  editable
+                  editable="price"
                   onChange={setCounterPx}
-                  format={(v: number) => `${usd(v)} · +${((v / sale.bids![counterOn!].price - 1) * 100).toFixed(1)}%`}
-                  hint="Name any number. They may walk if it is far past their bid — that is the risk of the private call."
+                  format={(v: number) => usd(v)}
+                  hint={`Name a counter above ${usd(sale.bids![counterOn!].price)}. Too far past their bid and they walk.`}
                 />
                 <div className="btn-row">
                   <button className="btn" onClick={() => { useStore.getState().counterBid(bbl, counterOn!, counterPx); setCounterOn(null); }}>
@@ -1419,9 +1419,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   min={counterBounds.min}
                   max={counterBounds.max}
                   step={counterBounds.step}
-                  editable
+                  editable="price"
                   onChange={setCounter}
-                  format={(v) => `${usd(v)} · +${(((v / sale.offer!.price) - 1) * 100).toFixed(1)}% on their bid`}
+                  format={(v) => usd(v)}
                   marks={[
                     { at: Math.round(sale.offer.price * 1.03), label: "+3%" },
                     { at: Math.round(sale.offer.price * 1.08), label: "+8%" },
@@ -1802,15 +1802,15 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
         min={bounds.min}
         max={bounds.max}
         step={bounds.step}
-        editable
+        editable="price"
         onChange={setOfferPrice}
-        format={(v) => `${usd(v)} · ${((v / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask`}
+        format={(v) => usd(v)}
         marks={[{ at: Math.round(price * 0.85), label: "−15%" }, { at: Math.round(price * 0.95), label: "−5%" }, { at: price, label: "ask" }]}
         hint={talks
           ? (offerPriceRounded >= talks.theirPrice
             ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
             : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
-          : "Name any price. They will take it, come back with one of their own, or tell you where they are."}
+          : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Name a price; they take it, counter, or walk.`}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a

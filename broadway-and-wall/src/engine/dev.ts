@@ -9,7 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
-import { demandNow, demandModel, nudgeBlockDemand } from "./demand";
+import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
 import { coverRoleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
@@ -1339,6 +1339,7 @@ export function refreshDevelopmentFeasibility(
     const bbl = bbls[x % bbls.length];
     if (!bbl || chosen.has(bbl)) continue;
     if (s.holdings[bbl] || s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    if (isCivicLand(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.lotArea < 1_500 || ownerOf(s, bbl)) continue;
     if (rec.class === "land") {
@@ -3660,6 +3661,7 @@ export function tickCityGrowth(
       const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
       if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
+      if (isCivicLand(s, bbl)) continue;
       // A NAMED FIRM'S DIRT IS NOT THE CITY'S TO BUILD ON. Two owners on one
       // parcel is the invariant this broke: the anonymous picker took any
       // vacant lot, a developer then claimed the job on it, and the deed was

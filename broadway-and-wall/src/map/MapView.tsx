@@ -9,6 +9,7 @@ import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
+import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 
 /**
@@ -36,6 +37,8 @@ function mapPaintSig(g: GameState | null | undefined): string {
     g.auction?.m ?? "",
     (g.bankFcls ?? []).length,
     Object.keys(g.blockD ?? {}).length,
+    (g.lines ?? []).map((l) => `${l.id}:${l.annM}:${l.openM}:${l.siteBbl ?? l.bbl ?? ""}`).join(","),
+    Object.keys(g.civicLand ?? {}).join(","),
   ].join("|");
 }
 
@@ -304,7 +307,7 @@ export default function MapView() {
               // and the pond and walks come up with it — otherwise the turf
               // buries the MapLibre layers that were drawing them
               parks: ringsOf("park"),
-              ponds: ringsOf("pond"),
+              ponds: [...ringsOf("pond"), ...ringsOf("stream")],
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),
@@ -585,7 +588,15 @@ export default function MapView() {
         };
       }),
     });
-  }, [paintSig, parcels, mapReady]);
+
+    const civic = map.getSource("bw-civic") as maplibregl.GeoJSONSource | undefined;
+    civic?.setData(civicCollection(
+      game,
+      parcels,
+      city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
+      city?.context as GeoJSON.FeatureCollection | null,
+    ) as never);
+  }, [paintSig, parcels, mapReady, city]);
 
   const lens = useStore((s) => s.lens);
 
@@ -705,14 +716,44 @@ export default function MapView() {
           el.textContent = f.properties.name;
           markers.push(new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates).addTo(map));
         }
+        const game = useStore.getState().game;
+        const parcels = useStore.getState().parcels;
+        if (game && parcels) {
+          const civic = civicCollection(
+            game, parcels,
+            city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
+            city?.context as GeoJSON.FeatureCollection | null,
+          );
+          for (const f of civic.features) {
+            const name = f.properties?.name as string | undefined;
+            if (!name) continue;
+            let ll: [number, number] | null = null;
+            if (f.geometry.type === "Point") ll = f.geometry.coordinates as [number, number];
+            else if (f.geometry.type === "Polygon") {
+              const ring = f.geometry.coordinates[0] as [number, number][];
+              let cx = 0, cy = 0;
+              for (const p of ring) { cx += p[0]; cy += p[1]; }
+              ll = [cx / ring.length, cy / ring.length];
+            }
+            if (!ll) continue;
+            const el = document.createElement("div");
+            el.className = "map-label map-label-civic";
+            el.textContent = name;
+            markers.push(new maplibregl.Marker({ element: el }).setLngLat(ll).addTo(map));
+          }
+        }
         const fade = () => {
           const z = map.getZoom();
           for (const m of markers) {
             const el = m.getElement();
-            const kind = el.className.includes("district") ? "district" : el.className.includes("park") ? "park" : "water";
+            const kind = el.className.includes("district") ? "district"
+              : el.className.includes("park") ? "park"
+              : el.className.includes("station") || el.className.includes("civic") ? "station"
+              : "water";
             const on =
               kind === "district" ? z >= 12.2 && z <= 15.6 :
               kind === "park" ? z >= 13.2 :
+              kind === "station" ? z >= 13.6 :
               z <= 14.5;
             el.style.opacity = on ? "1" : "0";
           }
@@ -725,7 +766,7 @@ export default function MapView() {
       disposed = true;
       markers.forEach((m) => m.remove());
     };
-  }, [mapReady, city]);
+  }, [mapReady, city, paintSig]);
 
   // mesh tints: gold selection/ownership, teal neighbors, warm hover
   const hoveredBBL = useStore((s) => s.hoveredBBL);
@@ -927,9 +968,20 @@ export default function MapView() {
     }
     // meshes are rebuilt only when the skyline actually changed
     const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "") + (i.fresh ? "f" : "")).join("|");
-    if (sig === dynSigRef.current) return;
-    dynSigRef.current = sig;
-    layer.setPlayerBuildings(items);
+    if (sig !== dynSigRef.current) {
+      dynSigRef.current = sig;
+      layer.setPlayerBuildings(items);
+    }
+    const parcelsNow = useStore.getState().parcels;
+    const cityNow = useStore.getState().city;
+    if (parcelsNow) {
+      layer.setCivicWorks(civicWorks3d(
+        game,
+        parcelsNow,
+        cityNow?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
+        cityNow?.context as GeoJSON.FeatureCollection | null,
+      ));
+    }
   }, [paintSig, mapReady]);
 
   const gameMonth = useStore((s) => s.game?.month ?? 0);

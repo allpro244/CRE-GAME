@@ -32,6 +32,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
+import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import type { DevPlan } from "./dev";
@@ -859,7 +860,7 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
   // fifty years. The land bank is not decoration; it is how they break ground.
   const vacant = bbls.filter((b) => {
     const r = parcels[b];
-    return r && (r.class === "land" || !r.bldgArea) && (r.lotArea ?? 0) >= 2500;
+    return r && (r.class === "land" || !r.bldgArea) && (r.lotArea ?? 0) >= 2500 && !isCivicLand(s, b);
   });
   const taken = new Set<string>();
   rosterFor(s).forEach((f, i) => {

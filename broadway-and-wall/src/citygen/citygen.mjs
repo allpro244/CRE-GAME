@@ -414,12 +414,13 @@ export function generateCity(cfg) {
   // fault. Twelve metres is a modest two-lane frontage the eye can hold, and
   // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
   // kerb rather than turf painted to the reservation line.
-  const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
+  const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2, STREAM_CLEAR = 7;
   const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
   const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
+  const STREAMS_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -433,6 +434,7 @@ export function generateCity(cfg) {
   const OBSTACLES = [
     ...PARKS_M.map((p) => ({ ring: p, faces: insideFaces(p, PARK_CLEAR) })),
     ...DIAG_M.map((p) => ({ ring: p, faces: insideFaces(p, DIAG_CLEAR) })),
+    ...STREAMS_M.map((p) => ({ ring: p, faces: insideFaces(p, STREAM_CLEAR) })),
   ];
 
   // --- the district partition ----------------------------------------------
@@ -1451,6 +1453,9 @@ export function generateCity(cfg) {
       },
     });
   }
+  for (const br of cfg.bridges ?? []) {
+    addDeco(rect(br.cx, br.cy, br.w, br.h, br.deg), 5.4, 3.1, "bridgedeck");
+  }
   // Quay cranes, moored ships and the breakwaters go with the piers — see the
   // note at PIERS_M. `cfg.cranes`, `cfg.ships` and `cfg.breakwaters` are left
   // in the city definitions so the shape of a town is still described in one
@@ -1674,6 +1679,23 @@ export function generateCity(cfg) {
       }
     }
   }
+  // Willows on the creek. Drawn from the decoration stream so a bank of trees
+  // cannot move a tax lot. Skip anything that landed in the water itself.
+  for (const ring of STREAMS_M) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      for (let d = 4; d < len; d += 9 + drand() * 7) {
+        if (drand() > 0.55) continue;
+        const t = d / len;
+        const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+        const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+        const side = drand() < 0.5 ? 1 : -1;
+        const p = [px + nx * side * (5 + drand() * 4), py + ny * side * (5 + drand() * 4)];
+        if (inRing(p, innerRing) && !STREAMS_M.some((r) => inRing(p, r))) treeFeatures.push(p);
+      }
+    }
+  }
   // --- the civic buildings ---------------------------------------------------
   // A town is not only its commerce. The meeting house, the town hall and the
   // market hall are the three buildings everybody in a colonial port could
@@ -1715,6 +1737,39 @@ export function generateCity(cfg) {
       addDeco(rect(c[0], c[1], 1.6, 1.6, ang), 41, 37.5, "civicroof");
     }
   });
+
+  // A mill on the pond, a head-house on the green the railway already stops
+  // at. Decoration stream — these sit on park/pond ground, not on tax lots,
+  // so they cannot move a deed. They are why one town has a mill race and
+  // another has a canal: the water is an obstacle, the building is the thing
+  // you can point at.
+  for (const st of cfg.streams ?? []) {
+    if (st.kind !== "pond" || !st.ring || st.ring.length < 6) continue;
+    const c = centroid(st.ring);
+    const ang = drr(0, 360);
+    const t = (ang * Math.PI) / 180;
+    const mx = c[0] + Math.cos(t) * 8, my = c[1] + Math.sin(t) * 8;
+    if (!inRing([mx, my], st.ring)) continue;
+    addDeco(rect(mx, my, 14, 10, ang), 8.5, 0, "civic");
+    addDeco(rect(mx, my, 15.2, 11.2, ang), 11.2, 8.5, "civicroof");
+  }
+  for (const s of cfg.stations ?? []) {
+    let best = null, bd = Infinity;
+    for (const ring of PARKS_M) {
+      const c = centroid(ring);
+      const d = Math.hypot(c[0] - s.xy[0], c[1] - s.xy[1]);
+      if (d < bd) { bd = d; best = { ring, c }; }
+    }
+    if (!best || bd > 90) continue;
+    const t = 0.32;
+    const x = best.c[0] * (1 - t) + s.xy[0] * t;
+    const y = best.c[1] * (1 - t) + s.xy[1] * t;
+    if (!inRing([x, y], best.ring)) continue;
+    const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
+    addDeco(rect(x, y, 16, 10, ang), 6.4, 0, "civic");
+    addDeco(rect(x, y, 17.4, 11.2, ang), 8.6, 6.4, "civicroof");
+    addDeco(rect(x, y + 7, 18, 4.2, ang), 4.0, 0, "shed");
+  }
 
   // --- THE LANDMARKS ---------------------------------------------------------
   //
@@ -2026,6 +2081,19 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "park" },
       })),
+      ...(cfg.streams ?? []).map((st) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
+        properties: { kind: "stream", water: st.kind ?? "creek", name: st.name },
+      })),
+      ...(cfg.bridges ?? []).map((br) => {
+        const ring = rect(br.cx, br.cy, br.w, br.h, br.deg);
+        return {
+          type: "Feature",
+          geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+          properties: { kind: "bridge", name: br.name },
+        };
+      }),
       // The frontage road around each park and along the boulevard. It gets
       // its own kind because it has to be paved UNDER the park, not over it —
       // drawing it with the rest of the roadway used to paint the green out.
@@ -2124,6 +2192,7 @@ export function generateCity(cfg) {
         const near = buckets.get(key(Math.floor(x / GRID), Math.floor(y / GRID))) ?? [];
         if (near.some((r) => inRing(p, r))) { covered++; continue; }
         if (APRONS.some((r) => inRing(p, r))) { covered++; continue; }
+        if (STREAMS_M.some((r) => inRing(p, r))) { covered++; continue; }
         voids.push(p);
       }
     }

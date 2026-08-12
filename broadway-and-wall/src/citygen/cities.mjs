@@ -98,6 +98,11 @@ export function scaleCity(cfg, k) {
     districts: scaleDistricts(cfg.districts, k),
     parks: (cfg.parks ?? []).map(box),
     diagonals: (cfg.diagonals ?? []).map(box),
+    streams: (cfg.streams ?? []).map((st) => ({
+      ...st,
+      ring: (st.ring ?? []).map((p) => pt(p, k)),
+    })),
+    bridges: (cfg.bridges ?? []).map(box),
     piers: (cfg.piers ?? []).map((ring) => ring.map((p) => pt(p, k))),
     cranes: (cfg.cranes ?? []).map(([x, y, d]) => [x * k, y * k, d]),
     ships: (cfg.ships ?? []).map(([x, y, d]) => [x * k, y * k, d]),

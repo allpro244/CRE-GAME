@@ -80,4 +80,38 @@ for (const seed of [20261, 481923, 550991]) {
   console.log(`\nDISTRICT MASSING seed ${seed}: tallest med ${med(tall)} (n=${tall.length})  shortest med ${med(low)} (n=${low.length})  ${ok ? "OK" : "FAIL"}`);
 }
 if (districtFails) { console.log(`\nFAIL  ${districtFails} seed(s) — exchange should read taller than millside`); process.exit(1); }
-console.log("\nvariety pass (parks + district massing)");
+
+// Inland water — a harbour notch is not a creek in the streets.
+const streams = [];
+for (let i = 0; i < N; i++) {
+  const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
+  let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+  streams.push({
+    seed,
+    prog: cfg.plan?.streamProgramme ?? "?",
+    n: cfg.plan?.nStreams ?? (cfg.streams ?? []).filter((st) => st.kind !== "pond").length,
+    ponds: cfg.plan?.nPonds ?? 0,
+    bridges: cfg.plan?.nBridges ?? (cfg.bridges ?? []).length,
+  });
+}
+const wet = streams.filter((r) => r.n > 0).length;
+const sp = {};
+for (const r of streams) sp[r.prog] = (sp[r.prog] ?? 0) + 1;
+console.log(`\nSTREAMS across ${streams.length} islands: ${wet} have inland water (${(100 * wet / streams.length).toFixed(0)}%)`);
+console.log("stream PROGRAMME:", Object.entries(sp).map(([k, v]) => `${k} x${v}`).join("  "));
+console.log(`bridges: median ${Math.round(q(streams.map((r) => r.bridges), 0.5))}  ponds: median ${Math.round(q(streams.map((r) => r.ponds), 0.5))}`);
+if (wet < Math.floor(streams.length * 0.5)) {
+  console.error(`\nFAIL  inland water on ${wet}/${streams.length} islands — need at least half`);
+  process.exit(1);
+}
+if (Object.keys(sp).length < 2) {
+  console.error(`\nFAIL  stream programme collapsed to ${Object.keys(sp).join(",")}`);
+  process.exit(1);
+}
+const topShare = Math.max(...Object.values(sp)) / streams.length;
+if (topShare > 0.72) {
+  console.error(`\nFAIL  one stream programme is ${(topShare * 100).toFixed(0)}% of towns — the generator stopped generating`);
+  process.exit(1);
+}
+
+console.log("\nvariety pass (parks + district massing + streams)");

@@ -9,10 +9,11 @@
 // by hand, generated from one seed.
 //
 // WHAT THIS EMITS is a config of exactly the shape cities.mjs exports — coast,
-// cores, partition, districts, parks, diagonals, piers, cranes, ships,
-// breakwaters, stations, labels, avenues, streets. Nothing downstream knows
-// the difference: scaleCity scales it, generateCity cuts it, buildCityData
-// tabulates it, the map draws it and the engine plays it, all untouched.
+// cores, partition, districts, parks, diagonals, streams, bridges, piers,
+// cranes, ships, breakwaters, stations, labels, avenues, streets. Nothing
+// downstream knows the difference: scaleCity scales it, generateCity cuts it,
+// buildCityData tabulates it, the map draws it and the engine plays it, all
+// untouched.
 //
 // THE FOUR THINGS THAT ARE ACTUALLY HARD, and how each is settled:
 //
@@ -2081,6 +2082,178 @@ export function islandConfig(seed) {
     diagonals.push(cand);
   }
 
+  // --- 7b. the water that runs THROUGH the town ------------------------------
+  //
+  // The coast already has an estuary — a notch. That is a river MOUTH, and it
+  // is why these towns exist. What it is not is a stream in the streets. A
+  // harbour town without a creek, a mill race or a canal cutting the island
+  // is a disc with a bite out of it, and every seed was that disc. The water
+  // below is an obstacle the block generator differences out, the same way it
+  // differences a park, so the lots stop at the bank and the map has a wet
+  // corridor you can point at.
+  //
+  // Own salt, so adding a creek does not rename the parks or move the railway.
+  // The LOTS will move — that is the point of an obstacle — and a save from
+  // before this existed rebuilds a different plat. The names stay.
+  //
+  // Crossings are GAPS in the water, not decks floating on a continuous canal.
+  // Leave a strip of dry ground every couple of hundred metres and the street
+  // grid fills it; a bridge deco sits on that strip so the crossing reads as
+  // a bridge rather than as a lucky block.
+  const Dwat = dice(stream(s, 0x57ea));
+  const streams = [];
+  const bridges = [];
+  const STREAM_PROGRAMMES = [
+    { key: "none",  w: 0.08 },
+    { key: "creek", w: 0.32 },
+    { key: "mill",  w: 0.18 },
+    { key: "canal", w: 0.22 },
+    { key: "pair",  w: 0.20 },
+  ];
+  const streamProg = (() => {
+    let r = Dwat.rand() * STREAM_PROGRAMMES.reduce((a, p) => a + p.w, 0);
+    for (const p of STREAM_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    return STREAM_PROGRAMMES[0];
+  })();
+
+  const inlandStart = (mouth, minEdge) => {
+    const dir = [mid[0] - mouth[0], mid[1] - mouth[1]];
+    const L = Math.hypot(dir[0], dir[1]) || 1;
+    const u = [dir[0] / L, dir[1] / L];
+    for (let t = 0; t < 480; t += 8) {
+      const p = [mouth[0] + u[0] * t, mouth[1] + u[1] * t];
+      if (inRing(p, inner) && distToRing(p, inner) > minEdge) return { p, u };
+    }
+    return null;
+  };
+
+  const traceWater = (start, u0, minEdge, step, maxLen, wiggle) => {
+    const path = [start];
+    let p = start;
+    let ang = Math.atan2(u0[1], u0[0]);
+    let travelled = 0;
+    while (travelled < maxLen && path.length < 40) {
+      const tryAng = ang + Dwat.f(-wiggle, wiggle);
+      const candidates = [tryAng, ang, Math.atan2(mid[1] - p[1], mid[0] - p[0])];
+      let next = null, nextAng = ang;
+      for (const a of candidates) {
+        const q = [p[0] + Math.cos(a) * step, p[1] + Math.sin(a) * step];
+        if (inRing(q, inner) && distToRing(q, inner) > minEdge) {
+          next = q; nextAng = a; break;
+        }
+      }
+      if (!next) break;
+      path.push(next);
+      travelled += step;
+      p = next;
+      ang = nextAng;
+    }
+    return path;
+  };
+
+  const bufferPath = (path, width, name, kind, mouth, forcePond) => {
+    if (path.length < 3) return;
+    const rings = [];
+    const localBridges = [];
+    let acc = 0;
+    let nextGap = Dwat.f(150, 230);
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const L = dist(a, b);
+      if (L < 8) continue;
+      const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+      const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
+      acc += L;
+      const inland = inRing([cx, cy], inner);
+      if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
+        localBridges.push({
+          cx: Math.round(cx), cy: Math.round(cy),
+          w: Math.round(Math.max(20, L + 6)),
+          h: Math.round(width + 12),
+          deg: +deg.toFixed(1),
+          name: `${name.replace(/\s+(Creek|River|Canal|Race|Brook)$/, "")} Bridge`,
+        });
+        nextGap += Dwat.f(170, 270);
+        continue;
+      }
+      if (!inland && !inRing(a, inner) && !inRing(b, inner)) {
+        // Mouth segment out on the estuary — paint it, do not cut lots from
+        // the esplanade. generateCity still draws any ring we emit.
+      }
+      rings.push({
+        ring: rect(cx, cy, L + 6, width, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
+        name, kind,
+      });
+    }
+    if ((forcePond || (kind !== "canal" && Dwat.chance(0.42))) && path.length > 5) {
+      const end = path[path.length - 1];
+      if (inRing(end, inner) && distToRing(end, inner) > width + 28) {
+        const rx = Dwat.f(width * 1.1, width * 1.8), ry = rx * Dwat.f(0.72, 1.0);
+        const n = 20;
+        rings.push({
+          ring: Array.from({ length: n }, (_, k) => {
+            const t = (k / n) * Math.PI * 2;
+            return [Math.round(end[0] + rx * Math.cos(t)), Math.round(end[1] + ry * Math.sin(t))];
+          }),
+          name: forcePond ? `${nm.words[6]} Mill Pond` : `${nm.words[6]} Pond`, kind: "pond",
+        });
+      }
+    }
+    // Lead-in from the coast so the creek meets the estuary instead of
+    // appearing a street inland of it.
+    if (mouth && path[0]) {
+      const a = mouth, b = path[0];
+      const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+      const L = dist(a, b);
+      if (L > 12) {
+        const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
+        rings.unshift({
+          ring: rect(cx, cy, L + 8, width * 1.15, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
+          name, kind,
+        });
+      }
+    }
+    streams.push(...rings);
+    bridges.push(...localBridges);
+  };
+
+  const layWater = (mouth, kind, forcePond = false) => {
+    const width = kind === "canal" ? Dwat.f(28, 42) : Dwat.f(14, 24);
+    const minEdge = width / 2 + 18;
+    const start = inlandStart(mouth, minEdge);
+    if (!start) return false;
+    const through = Dwat.chance(kind === "canal" ? 0.55 : 0.38);
+    const maxLen = through ? Dwat.f(720, 1280) : Dwat.f(380, 820);
+    const wiggle = kind === "canal" ? 0.12 : 0.38;
+    const path = traceWater(start.p, start.u, minEdge, Dwat.f(42, 58), maxLen, wiggle);
+    if (path.length < 4) return false;
+    const name = kind === "canal"
+      ? `${nm.words[3]} ${Dwat.pick(["Canal", "Cut", "Race"])}`
+      : forcePond
+        ? `${nm.words[3]} ${Dwat.pick(["Race", "Creek", "Brook"])}`
+        : `${nm.words[3]} ${Dwat.pick(["Creek", "Brook", "River"])}`;
+    bufferPath(path, width, name, kind, mouth, forcePond);
+    return true;
+  };
+
+  if (streamProg.key !== "none") {
+    const mainKind = streamProg.key === "canal" ? "canal" : "creek";
+    layWater(riverHead, mainKind, streamProg.key === "mill");
+    if (streamProg.key === "pair") {
+      const before = streams.length;
+      layWater(C.at(C.th.cove), "creek");
+      // Two creeks on top of each other is a lake. Drop the second if it
+      // landed on the first.
+      if (streams.length > before) {
+        const older = streams.slice(0, before);
+        const newer = streams.slice(before);
+        const piled = newer.some((n) => older.some((o) =>
+          dist(centroid(n.ring), centroid(o.ring)) < 140));
+        if (piled) streams.length = before;
+      }
+    }
+  }
+
   // --- 8. the working waterfront ---------------------------------------------
   // A pier is rooted on the quay and reaches into the water, which is why the
   // authored ones straddle the shoreline instead of floating off it. Anchors go
@@ -2292,6 +2465,7 @@ export function islandConfig(seed) {
   labelDistrict(districtKeys.resi[0], disp.resi);
   if (districtKeys.resi[1]) labelDistrict(districtKeys.resi[1], disp.resi2);
   for (const p of parks) labels.push({ name: p.name, labelKind: "park", xy: [p.cx, p.cy] });
+  for (const st of stations) labels.push({ name: st.name, labelKind: "station", xy: st.xy });
 
   // Water labels have to be ON the water. Each is pushed out along the ray it
   // sits on until it clears the coast, and dropped if it never does.
@@ -2311,6 +2485,13 @@ export function islandConfig(seed) {
   waterAt(C.th.river, Dl.f(20, 70), `${nm.words[3]} River`);
   waterAt(C.th.cove, Dl.f(80, 170), `${nm.words[4]} ${Dl.pick(["Cove", "Bight", "Inlet"])}`);
   waterAt(C.th.headland + Math.PI, Dl.f(180, 320), `${nm.words[5]} ${Dl.pick(["Sound", "Channel", "Reach"])}`);
+  const seenWater = new Set();
+  for (const st of streams) {
+    if (seenWater.has(st.name)) continue;
+    seenWater.add(st.name);
+    const c = centroid(st.ring);
+    if (inRing(c, inner)) labels.push({ name: st.name, labelKind: "water", xy: [Math.round(c[0]), Math.round(c[1])] });
+  }
 
   // --- 11. the street names --------------------------------------------------
   const Dst = dice(stream(s, 0x57ee7));
@@ -2348,6 +2529,8 @@ export function islandConfig(seed) {
     districts,
     parks,
     diagonals,
+    streams,
+    bridges,
     piers,
     cranes,
     ships,
@@ -2378,6 +2561,10 @@ export function islandConfig(seed) {
       boulevards: diagonals.length - seams.length,
       boulevardKind: grand ? "grand" : "arterial",
       parkProgramme: programme.key,
+      streamProgramme: streamProg.key,
+      nStreams: new Set(streams.filter((st) => st.kind !== "pond").map((st) => st.name)).size,
+      nPonds: streams.filter((st) => st.kind === "pond").length,
+      nBridges: bridges.length,
       organicTown,
       smoothed: C.smoothed,
       rung: C.rung,

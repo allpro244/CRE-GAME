@@ -352,6 +352,15 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       }
     }
   }
+  for (const bbl of Object.keys(s.civicLand ?? {})) {
+    const at = `civic ${bbl}`;
+    if (!parcels[bbl]) bad("civic", at, "the city took a lot that is not a parcel");
+    if (s.holdings[bbl]) bad("civic", at, "the city took a lot you still own");
+    if (s.listings.some((l) => l.bbl === bbl)) bad("civic", at, "civic land is on the tape");
+    if ((s.rivals ?? []).some((r) => !r.failedM && r.bbls.includes(bbl))) {
+      bad("civic", at, "a living firm still holds civic land");
+    }
+  }
   // The same rule for an owner who was never selling: their number is a premium
   // to appraisal, and a fraction of it means something upstream mispriced them.
   for (const [bbl, a] of Object.entries(s.approaches)) {

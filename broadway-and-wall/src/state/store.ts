@@ -223,7 +223,7 @@ interface AppState {
   placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string, spec?: number) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
   clearBts: (bbl: string) => void;
   convertUse: (bbl: string, target: "multifamily" | "mixed", mix?: UseMix) => void;
@@ -805,10 +805,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, contract, ltcWanted, custom, lender) => {
+  develop: (bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec = 0.5) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");

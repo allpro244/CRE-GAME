@@ -857,6 +857,29 @@ export function EconomyPage() {
       </table>
       </>}
 
+      {(() => {
+        const emergent = Object.values(game.blockE ?? {});
+        if (!emergent.length) return null;
+        const abs = emergent.map((d) => Math.abs(d));
+        const max = Math.max(...abs);
+        const spread = Math.max(...emergent) - Math.min(...emergent);
+        return (
+          <>
+            <div className="page-section">Neighbourhood demand</div>
+            <div className="grid">
+              <Row k="Blocks drifting" v={`${emergent.length} blocks with live drift`} />
+              <Row k="Largest move" v={`±${max.toFixed(0)} pts since 2000`} strong={max >= 8} />
+              <Row k="Winners vs losers" v={`${spread.toFixed(0)} pt spread across the city`} />
+              <Row k="Transit lines" v={`${(game.lines ?? []).length} funded · ${(game.lines ?? []).filter((l) => l.openM > game.month).length} still building`} />
+            </div>
+            <div className="hint">
+              Demand is redistributive — a block gaining desirability takes it from somewhere else. Construction cranes and
+              deliveries nudge blocks before lease-up; occupied stock is what holds the shift.
+            </div>
+          </>
+        );
+      })()}
+
       <div className="page-section">How this works</div>
       <div className="hint">
         Employment decides how much space the city's tenants want; occupancy chases that target slowly, because

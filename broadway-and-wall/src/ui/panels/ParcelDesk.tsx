@@ -6,7 +6,8 @@ import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
 import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee, landRead } from "@/engine/value";
-import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
+import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS, specCostMult } from "@/engine/dev";
+import { blockReport } from "@/engine/demand";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
@@ -2754,6 +2755,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [contract, setContract] = useState<Contract>("gmp");
   const [ltcWant, setLtcWant] = useState(1);   // share of the lender's max you take
   const [bank, setBank] = useState<string>(CONSTRUCTION_LENDER);   // who writes the construction loan
+  const [spec, setSpec] = useState(0.5);
   // THE STACK IS YOURS TO CHOOSE. "Mixed-use" was one canonical 15/45/40
   // building, which is a preset rather than a programme — how much retail the
   // frontage carries and whether the middle is offices or flats is the biggest
@@ -2779,7 +2781,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
   const btsOffer = game.holdings[bbl]?.btsOffer;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank, spec);
   // Turn the chosen unit counts into sf-per-space, against the programme that
   // is actually going to be built.
   const suiteChoice: Partial<Record<BuiltClass, number>> = {};
@@ -2791,7 +2793,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     }
   }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice, bts }, bank);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice, bts }, bank, spec);
+  const nb = blockReport(game, parcels, rec.block);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
   // this design costs you in your own money, all in — and two call sites that
@@ -2877,12 +2880,22 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       {plan && (
         <div className="grid" style={{ margin: "4px 0 2px" }}>
           <Row
-            k="Equity required"
-            v={`${usd(equityRequired)} of ${usd(plan.basisTotal)} all in · $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`}
+            k="Equity at closing"
+            v={`${usd(plan.equityAtClose + plan.pointsCost)} due the day you break ground`}
+            strong
+            bad={plan.equityAtClose + plan.pointsCost > game.cash}
+            title="The bank will not fund until this leaves your account, plus the origination fee."
+          />
+          <Row
+            k="Equity all-in"
+            v={`${usd(equityRequired)} total · ${usd(plan.equity - plan.equityAtClose)} drawn as it rises over ~${plan.months} mo`}
             strong
             bad={!canFund}
-            title="All in is land, construction, contingency, the lease-up and interest reserves and the origination fee. The dirt is already paid for, so it is not part of the equity you still have to write — but it is part of what this building has cost you when it opens."
+            title="The whole sponsor share — closing cheque plus monthly draws during construction. Budget for all-in, not the first cheque alone."
           />
+          {nb && Math.abs(nb.drift) >= 0.5 && (
+            <Row k="Neighbourhood" v={`${nb.drift > 0 ? "+" : ""}${nb.drift.toFixed(0)} demand since 2000 on this block`} />
+          )}
         </div>
       )}
       <Slider
@@ -2914,6 +2927,39 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
         hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint). On a big site you can put up something small and keep the rest of the land.`}
       />
+      <Slider
+        label="Build quality"
+        value={spec}
+        min={0}
+        max={1}
+        step={0.05}
+        onChange={setSpec}
+        format={(v) => v < 0.35 ? "Value" : v < 0.65 ? "Standard" : v < 0.85 ? "Premium" : "Trophy"}
+        marks={[{ at: 0.25, label: "value" }, { at: 0.5, label: "standard" }, { at: 0.75, label: "premium" }, { at: 1, label: "trophy" }]}
+        hint={`Hard cost ×${specCostMult(spec).toFixed(2)} today and a higher condition ceiling forever. Trophy costs more to build but holds rent longer.`}
+      />
+      <div className="page-section" style={{ marginTop: 6 }}>Design preset</div>
+      <div className="btn-row">
+        {([
+          { label: "Box", cov: 0.78, spec: 0.28 },
+          { label: "Standard", cov: 0.6, spec: 0.5 },
+          { label: "Tower", cov: 0.32, spec: 0.55 },
+          { label: "Signature", cov: 0.48, spec: 0.88 },
+        ] as const).map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            className={"btn" + (Math.abs(cov - p.cov) < 0.02 && Math.abs(spec - p.spec) < 0.04 ? " btn-on" : "")}
+            onClick={() => {
+              setCov(p.cov);
+              setSpec(p.spec);
+              setFloors((f) => Math.min(f, maxFloorsFor(rec, p.cov, use)));
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
       {/* THE STACK. Three dials that always add to a hundred, because a
           building is all of itself. Shops want the frontage and cost the most
           per foot; flats are cheapest to build and hardest to make pencil;
@@ -3047,110 +3093,96 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       )}
       {plan ? (
         <>
-          <div className="grid" style={{ marginTop: 8 }}>
-            <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * 3.4).toFixed(0)} m tall`} strong />
-            <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
-            <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
-            <Row k="Soft cost" v={usd(plan.softCost)} />
-            {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
-            <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
-            <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out, commissions and carry until it is full`} />
-            {/* THE ROW LABELLED "ALL IN" WAS NOT ALL IN.
-                It showed costTotal — hard, soft, demolition, contingency and
-                the lease-up reserve — which leaves out the two largest things
-                a developer's all-in number exists to include: the dirt, and
-                the cost of financing it. The yield on cost three rows down was
-                already dividing by basisTotal, which has both. So the panel
-                was showing one number called "all in" and computing the
-                headline metric off a different, bigger one, and a player
-                checking the arithmetic could not make them meet. */}
-            <Row k="Cost to build" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
-            <Row
-              k={`Construction loan (${Math.round(plan.ltc * 100)}% of cost)`}
-              v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)} · ${plan.lender} · ${(plan.points * 100).toFixed(1)} pts (${usd(plan.pointsCost)}) at close` : "none — nobody will fund it"}
-              bad={plan.commitment === 0 && plan.ltcMax > 0 && ltcWant > 0}
-            />
-            <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} — the lender carries it, not you` : "—"} />
-            {/* The dirt is sunk — you already wrote that cheque — but it is the
-                first and least recoverable dollar in the deal and it is why a
-                corner that rents for twice as much does not build for twice
-                the profit. It belongs in the denominator, so it belongs on the
-                page. */}
-            <Row k="Land in the basis" v={`${usd(plan.landBasis)} · $${(plan.landBasis / Math.max(1, plan.sf)).toFixed(0)}/sf of building`} />
-            <Row
-              k="ALL IN"
-              v={`${usd(plan.basisTotal)} · $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`}
-              strong
-              title={"Land, construction, contingency, the lease-up reserve, the interest reserve and the origination fee — everything that has to be spent before this building is worth what it is worth. "
-                + "This is the number the yield on cost below divides by, and the one to hold against what finished buildings on this street actually trade for per square foot: "
-                + `build at $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf into a market that pays less than that and the spread is negative before you start.`}
-            />
-            {/* The two numbers that decide whether this is a development or a
-                donation: what it yields on what it costs, against what the
-                market will pay for it when it is finished. */}
-            <Row
-              k="Yield on cost"
-              v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.requiredYield.toFixed(2)}% required · `
-                + `${plan.exitCap.toFixed(2)}% exit × developer margin · ${(plan.hurdleRatio * 100).toFixed(0)}% of hurdle`}
-              strong
-              bad={plan.hurdleRatio < 1}
-            />
-            {/* WHAT THIS ACTUALLY COSTS YOU, in the order it leaves your
-                account. The total led with "equity at close" and buried the
-                total above it, so a job that wanted $9M of equity looked like
-                a $5M decision and then quietly drew the other $4M over two
-                years. The whole cheque goes first now. */}
-            <Row k="EQUITY REQUIRED, ALL IN" v={usd(equityRequired)} strong bad={!canFund} />
-            <Row k="— of that, at close" v={`${usd(plan.equityAtClose)} — the bank funds nothing until yours is in`} />
-            <Row
-              k="— of that, drawn as it rises"
-              v={`${usd(plan.equity - plan.equityAtClose)} over about ${plan.months} months, before the loan funds a dollar`}
-              bad={plan.equity - plan.equityAtClose > game.cash - plan.equityAtClose}
-            />
-            <Row
-              k="Change-order margin"
-              v={`${usd(plan.contingency)} of contingency${plan.contract === "gmp" ? ", and the GC carries most of what is past it" : " — past it, every dollar is yours under cost-plus"}`}
-              bad={plan.contract === "costplus"}
-            />
-            <Row k="Schedule" v={plan.months + " months, built on spec"} />
-            {(() => {
-              const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
-              const fundable = game.cash + locAvailable(game, parcels);
-              const shortAll = Math.max(0, commitCap - fundable);
-              const dayOne = plan.equityAtClose + plan.pointsCost;
-              const shortClose = Math.max(0, dayOne - game.cash);
-              if (shortAll <= 0 && shortClose <= 0) return null;
-              return (
-                <Row
-                  k="Equity short"
-                  v={shortClose > 0
-                    ? `${usd(shortClose)} at close — cut floors/coverage or raise cash first`
-                    : `${usd(shortAll)} to finish (incl. line + change-order margin)`}
-                  bad
-                  title="No lender closes without evidence you can fund the whole sponsor share. A $2.5M opening cheque rarely finishes a mid-rise — buy income first, or shrink the massing."
-                />
-              );
-            })()}
+          <div className="page-section" style={{ marginTop: 8 }}>
+            <div className="page-section-head">Costs</div>
+            <div className="grid">
+              <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * 3.4).toFixed(0)} m tall`} strong />
+              <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
+              <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+              <Row k="Soft cost" v={usd(plan.softCost)} />
+              {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
+              <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
+              <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out and carry until full`} />
+              <Row k="Cost to build" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+            </div>
+          </div>
+          <div className="page-section" style={{ marginTop: 8 }}>
+            <div className="page-section-head">Financing</div>
+            <div className="grid">
+              <Row
+                k={`Construction loan (${Math.round(plan.ltc * 100)}%)`}
+                v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)} · ${plan.lender}` : "none — nobody will fund it"}
+                bad={plan.commitment === 0 && plan.ltcMax > 0 && ltcWant > 0}
+              />
+              <Row k="Origination" v={plan.pointsCost > 0 ? `${usd(plan.pointsCost)} at close` : "—"} />
+              <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} — lender carries it` : "—"} />
+              <Row k="Land in basis" v={`${usd(plan.landBasis)} · $${(plan.landBasis / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+              <Row
+                k="All in"
+                v={`${usd(plan.basisTotal)} · $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`}
+                strong
+                title="Land, construction, contingency, lease-up and interest reserves, origination — the yield-on-cost denominator."
+              />
+              <Row
+                k="Yield on cost"
+                v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.requiredYield.toFixed(2)}% req · ${plan.exitCap.toFixed(2)}% exit`}
+                strong
+                bad={plan.hurdleRatio < 1}
+              />
+            </div>
+          </div>
+          <div className="page-section" style={{ marginTop: 8 }}>
+            <div className="page-section-head">Equity</div>
+            <div className="grid">
+              <Row k="At closing" v={`${usd(plan.equityAtClose + plan.pointsCost)}`} strong bad={plan.equityAtClose + plan.pointsCost > game.cash} />
+              <Row
+                k="Drawn during build"
+                v={`${usd(plan.equity - plan.equityAtClose)} over ~${plan.months} months`}
+                bad={plan.equity - plan.equityAtClose > game.cash - plan.equityAtClose}
+              />
+              <Row k="All-in equity" v={usd(equityRequired)} strong bad={!canFund} />
+              <Row
+                k="Change-order margin"
+                v={`${usd(plan.contingency)} contingency${plan.contract === "costplus" ? " — past it, yours under cost-plus" : ""}`}
+                bad={plan.contract === "costplus"}
+              />
+              <Row k="Schedule" v={`${plan.months} months`} />
+              {(() => {
+                const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
+                const fundable = game.cash + locAvailable(game, parcels);
+                const shortAll = Math.max(0, commitCap - fundable);
+                const dayOne = plan.equityAtClose + plan.pointsCost;
+                const shortClose = Math.max(0, dayOne - game.cash);
+                if (shortAll <= 0 && shortClose <= 0) return null;
+                return (
+                  <Row
+                    k="Equity short"
+                    v={shortClose > 0
+                      ? `${usd(shortClose)} at close — cut massing or raise cash`
+                      : `${usd(shortAll)} to finish incl. line + change orders`}
+                    bad
+                  />
+                );
+              })()}
+            </div>
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="hint">
-            <b>{usd(plan.equityAtClose)}</b> leaves your account the day you break ground and{" "}
-            <b>{usd(plan.equity - plan.equityAtClose)}</b> more is drawn out of it as the building rises — equity funds
-            first and in full, and the construction loan does not advance a dollar until it is spent. Budget for the
-            whole {usd(equityRequired)}, not the first cheque.
-            {!canFund && " This massing is past what you can finish — that is a refuse, not a soft maybe."}
+            Budget <b>{usd(equityRequired)}</b> all-in — not just the <b>{usd(plan.equityAtClose + plan.pointsCost)}</b> at closing.
+            Delivery lifts nearby demand before lease-up fills the floors.
+            {!canFund && " This massing is past what you can finish."}
           </div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
               disabled={plan.equityAtClose + plan.pointsCost > game.cash || !canFund}
-              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender)}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender, spec)}
               title={!canFund
-                ? `Equity short — needs ${usd(equityRequired)} all-in; you can fund ${usd(game.cash + locAvailable(game, parcels))} including the line.`
-                : `${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
+                ? `Equity short — needs ${usd(equityRequired)} all-in`
+                : `${usd(plan.equityAtClose + plan.pointsCost)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}
             >
               {canFund
-                ? `Break ground · ${usd(equityRequired)} of equity required`
+                ? `Break ground · ${usd(equityRequired)} equity all-in`
                 : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - (game.cash + locAvailable(game, parcels))))}`}
             </button>
           </div>

@@ -2580,6 +2580,8 @@ export interface GameState {
   swanLog?: SwanRecord[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;
+  /** Months with cash below zero this run — never reset by a seizure. */
+  underwaterMs?: number;
   locOverMs?: number;
 }
 

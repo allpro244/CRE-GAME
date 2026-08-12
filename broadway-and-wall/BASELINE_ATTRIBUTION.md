@@ -1,13 +1,27 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/civic-visuals-d634` (`e3eb845`) after inland streams recut the plat.  
-**Previous ruler:** `241aef4` (post-#94 tip). Earlier: `07c3ac2` / `ffb883a`.
+**Ruler commit:** regenerated on `cursor/citygen-better-d634` (`bce4162`) after coast programmes, slips, lot grain and creek strokes recut the plat (`SAVE_VERSION` 36).  
+**Previous ruler:** `e3eb845` (inland streams, v35). Earlier: `241aef4` / `07c3ac2`.
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: inland streams (SAVE_VERSION 35)
+## This ruler: citygen programmes (SAVE_VERSION 36)
+
+The silhouette is a programme now (classic / basin / spit / river / neck), harbour slips cut the quay, lot grain runs the town, and creeks are stroked polylines instead of rectangles. Demand also has a second-station kernel and a dock employment floor — that moves prices, not lot lines, but it is in the same snapshot.
+
+Not an engine `rng()` re-roll. New citygen salts (`0xc0a5e` coast, `0x67a10` grain, `0x5115` slips, `0x5a11` rail, `0xf1a70` park flavour, `0x1a0d` landmark). Conservation stayed green (1,225 months on this pass; full check follows playable).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `city.buildings` / `floorAreaM` / `employed` | Different coast and slip reservations; millside is a real second centre | Stock and jobs resampled |
+| `land.*` / `rentIdx.*` | Second-station kernel in the demand blend; grain changes parcel mix | Spatial, not a rent bug |
+| `vac.*` | Same — different standing mix on a different plat | Follows stock |
+
+---
+
+## Previous ruler: inland streams (SAVE_VERSION 35)
 
 Streams are obstacles. Lots that used to sit on dry ground now stop at the bank, so the standing city is smaller and the remaining dirt is a different sample. Not an RNG re-roll — citygen salt `0x57ea` is its own stream; engine `rng()` draw counts are unchanged. Conservation stayed green (1,880 months).
 

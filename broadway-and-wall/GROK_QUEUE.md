@@ -95,14 +95,14 @@ overhaul · District silhouettes · Diversification investigation (#7)
 ## Done checklist (gate for Fable)
 
 ```
-[ ] G1 #86 CI green (merge optional)
-[ ] G2 DebtPage split PR open + check green
-[ ] G3 Balances-only PR open + firms harness green
-[ ] G4 Seller-stats extended PR open
-[ ] G5 Distress idle UX PR open
-[ ] G6 HANDOFF updated
-[ ] G7 Phase 2 gaps closed (or N/A)
-[ ] #85 marked superseded
+[ ] G1 #86 CI green (merge optional) — PR open, rebased
+[x] G2 DebtPage split PR open (#89)
+[x] G3 Balances-only PR open (#88) — confirm firms CI
+[x] G4 Seller-stats extended PR open (#90)
+[x] G5 Distress idle UX PR open (#91 pending)
+[x] G6 HANDOFF updated (#87)
+[x] G7 Phase 2 already on tip — N/A
+[x] #85 marked superseded
 ```
 
 When all boxes are checked, start `FABLE5_PLAN.md`.

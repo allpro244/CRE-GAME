@@ -239,14 +239,15 @@ function bestPlan(g, parcels, bbl) {
 }
 // The hurdle. A developer takes two to three years of construction risk, cost
 // risk and lease-up risk to earn the difference between what a building yields
-// on what it cost and what the market will pay for the income, and below a
-// couple of hundred basis points of that there is no fee in it for the risk.
-// It is the discipline that separates a merchant from a bot with a crane:
-// measured over 941 land listings in this city, the MEDIAN site on the tape
-// yields 0.76 points BELOW its own exit cap. Most dirt does not pencil, which
-// is exactly why most dirt is still dirt.
-//
-const DEV_HURDLE_PP = 1.5;
+// on what it cost and what the market will pay for the income. That number is
+// DEV_MARGIN on the whole basis — the same identity residualLandPsf and
+// planDevelopment share. A 150bp-of-yield wall on top of that was a second
+// answer: it rejected every site the engine said cleared, so the merchant row
+// bought zero lots in every seed and was read as "speculative development
+// loses money".
+function planClears(b) {
+  return !!b && b.plan.hurdleRatio >= 1;
+}
 
 const STRATS = {
   core: { ltv: 0.55, buyWhen: () => true, want: (r) => r.demandScore >= 55 && r.class !== "land", maxPrice: 1.0, sellAt: null, build: false },
@@ -275,7 +276,7 @@ const STRATS = {
     want: (r, g, parcels) => {
       if (r.class !== "land") return false;
       const b = bestPlan(g, parcels, r.bbl);
-      return !!b && b.spread >= DEV_HURDLE_PP;
+      return planClears(b);
     },
   },
   contrarian: { ltv: 0.60, buyWhen: (e) => e.phase === "recession" || (e.creditIdx ?? 1) < 0.8, want: (r) => r.class !== "land", maxPrice: 0.88, sellAt: null, build: false },
@@ -387,7 +388,7 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
         // moves between contract and closing, and a job that stopped pencilling
         // while the lawyers worked is a job you do not start.
         const b = bestPlan(g, parcels, h.bbl);
-        if (!b || b.spread < DEV_HURDLE_PP) break;
+        if (!planClears(b)) break;
         // A MERCHANT BUILDER BORROWS TO BUILD. THAT IS THE BUSINESS — and this
         // called startDevelopment with no LTC at all, funding construction out
         // of a $2.5M fund when a building costs multiples of it. 65% is not a
@@ -1239,7 +1240,7 @@ if (want(35)) {
       });
       const pencils = g.listings.some((l) => {
         const rec = E.resolveRec(parcels, g, l.bbl);
-        return rec?.class === "land" && (bestPlan(g, parcels, l.bbl)?.spread ?? -9) >= DEV_HURDLE_PP;
+        return rec?.class === "land" && planClears(bestPlan(g, parcels, l.bbl));
       });
       if (hasLoi) lois++;
       if (buyable) buys++;

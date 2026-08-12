@@ -1,13 +1,31 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/citygen-better-d634` (`bce4162`) after coast programmes, slips, lot grain and creek strokes recut the plat (`SAVE_VERSION` 36).  
-**Previous ruler:** `e3eb845` (inland streams, v35). Earlier: `241aef4` / `07c3ac2`.
+**Ruler commit:** regenerated on `cursor/unify-dev-land-ba6d` (`5234f8d`) after land asks, the residual, and city orders were made the same question.  
+**Previous ruler:** `bce4162` (citygen programmes, v36).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: citygen programmes (SAVE_VERSION 36)
+## This ruler: one land price, one development hurdle
+
+Listed dirt that pencilled was asking 2.41× the builder residual (holder option and texture winning the auction on sites that supported a building today). The residual omitted lease-up and construction interest the desk puts in the basis. City class orders kept a `structFloor` so office stock grew while the desk reported zero office sites.
+
+Transacted land that pencils now trades at the residual. Holder/texture price only land that does not support a building today. Residual includes the same carry the desk uses and picks the height a builder would actually build. Class orders go to zero when no sampled site clears.
+
+Not an RNG re-roll. Conservation stayed green (1,779 months). Gate passed.
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `dev.affordableLotShare` (3% → 24%) | Asks on pencilling lots are the residual, not the option bid | Builders can pay |
+| `land.med` (−40%), `land.p90` (−33%) | Same — dirt that pencils is no longer priced at 2.4× residual | Cheaper buildable land |
+| `vac.multifamily` (+99%), `rentIdx.multifamily` (+14%) | More sites clear, more housing gets built | Supply answering |
+| `rail.vac.*.lo` down except industrial | Frictional vacancy floor binds less often when supply can actually land | Rails less load-bearing |
+| `city.floorAreaM` (+9%) | Honest orders on sites that pencil, not a structFloor of unprofitable office | Stock follows the desk |
+
+---
+
+## Previous ruler: citygen programmes (SAVE_VERSION 36)
 
 The silhouette is a programme now (classic / basin / spit / river / neck), harbour slips cut the quay, lot grain runs the town, and creeks are stroked polylines instead of rectangles. Demand also has a second-station kernel and a dock employment floor — that moves prices, not lot lines, but it is in the same snapshot.
 

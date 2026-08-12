@@ -2320,16 +2320,18 @@ export function tickEcon(s: GameState) {
     // that vacancy; the other ordered cranes because a phase label said boom
     // even when the common pro forma said the project destroyed value.
     const credit = clamp(e.creditIdx ?? 1, 0.25, 1.25);
-    // sitePencil is the P97 parcel pro forma. When every sampled greenfield
-    // lot is land-locked (late-century residual blowout) the pencil hits 0 and
-    // zeros the whole class order — even though densify/teardown sites can
-    // still clear on a land basis. Under chronic structural shortage keep a
-    // reduced floor so the book densify fills is not erased.
+    // sitePencil is the P97 parcel pro forma — greenfield AND densify, sampled
+    // separately so worn buildings cannot zero a class that still has dirt.
+    // A zero pencil is a shut class. The old structFloor (0.35 / 0.55 of
+    // appetite when no sampled site cleared) was the city ordering buildings
+    // the desk said did not pencil, which is how office stock grew 0.11%/yr
+    // while `pnpm devyield` reported 0 office sites of 1,291. Densify is in
+    // the sample now; if neither greenfield nor redevelopment clears, the
+    // honest response is that rents have to rise, not that supply appears
+    // anyway. `rawSites === undefined` is the first year before the annual
+    // refresh has run — treat as unconstrained so the book can form.
     const rawSites = e.sitePencil?.[k];
-    const structFloor = k === "industrial" ? 0.55 : 0.35;
-    const sites = rawSites === undefined ? 1
-      : rawSites > 0 ? rawSites
-      : ((e.structTight?.[k] ?? 0) > 0.10 ? structFloor : 0);
+    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites);
     const appetite = devPencils(e, k) * credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`

@@ -37,6 +37,12 @@ function play(seed, verbose) {
   // developer can bootstrap; with capital handed to them it is whether ground
   // -up development is profitable AT ALL once it is not capital-constrained.
   if (GRANT > 0) g = { ...g, cash: g.cash + GRANT };
+  // Capture the opening cheque once. A hard-coded $2.5M reserve equalled
+  // DEFAULT_START_CASH, so `cash > reserve` was false from month one — three
+  // fifty-year runs, three insolvencies, zero sites, while the desk had
+  // dozens of lots that cleared. Same fault conserve's bot hit when the
+  // bankroll became a choice.
+  const openCash = g.cash;
   const log = [];
   const st = { land: 0, built: 0, sold: 0, leases: 0, refis: 0, stalled: 0, noSite: 0, noPencil: 0, loisSeen: 0, countered: 0, passed: 0, emptyMo: 0, vacSf: 0 };
   let peakNW = 0, drawdown = 0;
@@ -161,7 +167,7 @@ function play(seed, verbose) {
     for (const d of Object.values(g.developments)) {
       committed += Math.max(0, d.equityBudget - d.equitySpent);
     }
-    const reserve = 2.5e6 + committed;
+    const reserve = openCash * 0.35 + committed;
     if (!Object.keys(g.talks ?? {}).length && g.cash > reserve) {
       let best = null;
       for (const l of g.listings) {
@@ -178,7 +184,7 @@ function play(seed, verbose) {
           const spread = plan.yieldOnCost - plan.exitCap;
           if (!bestPlan || spread > bestPlan.spread) bestPlan = { plan, spread, use };
         }
-        if (!bestPlan || bestPlan.spread < 0.8) continue;
+        if (!bestPlan || bestPlan.plan.hurdleRatio < 1) continue;
         const score = bestPlan.spread + rec.demandScore / 400;
         if (!best || score > best.score) best = { l, score, rec, ...bestPlan };
       }
@@ -236,7 +242,7 @@ function play(seed, verbose) {
             // affordable mid-rises were starving the cheque while a shorter
             // job would have broken ground.
             const scoreP = plan.hurdleRatio + gap * 2 + spread * 0.05;
-            if (plan.hurdleRatio >= 1 && spread >= 0.7 && (!pick || scoreP > pick.scoreP)) {
+            if (plan.hurdleRatio >= 1 && (!pick || scoreP > pick.scoreP)) {
               pick = { plan, use, fl, scoreP };
             }
           }

@@ -420,7 +420,10 @@ export function generateCity(cfg) {
   // so the apron ring reads as pavement, not as more park.
   const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
-  const STREAMS_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
+  const STREAMS_M = (cfg.streams ?? [])
+    .filter((st) => st.paint === false || st.kind === "pond" || st.kind === "slip")
+    .map((st) => st.ring)
+    .filter((r) => r && r.length >= 3);
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -2237,7 +2240,7 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "park", flavour: cfg.parks[i]?.flavour ?? "park" },
       })),
-      ...(cfg.streams ?? []).map((st) => ({
+      ...(cfg.streams ?? []).filter((st) => st.paint !== false).map((st) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
         properties: { kind: "stream", water: st.kind ?? "creek", name: st.name },

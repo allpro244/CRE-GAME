@@ -128,37 +128,74 @@ if (topShare > 0.72) {
   process.exit(1);
 }
 
-// Geometry the map can actually paint. A folded offset polygon triangulates
-// as a spike across the town; a 20-gon pond reads as a stop-sign.
+// Geometry the map can actually paint. Capsules cut lots but must not be
+// drawn — a stack of them is the blocky mill-pond-in-the-park. Painted
+// ribbons may meander (concave) but must not cross themselves.
 {
-  let folded = 0, coarsePond = 0, huge = 0, nPond = 0, nRing = 0;
+  const crosses = (ring) => {
+    const n = ring.length;
+    const ori = (a, b, c) => {
+      const v = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      return v > 1e-9 ? 1 : v < -1e-9 ? -1 : 0;
+    };
+    const hit = (a, b, c, d) => {
+      const o1 = ori(a, b, c), o2 = ori(a, b, d), o3 = ori(c, d, a), o4 = ori(c, d, b);
+      return o1 && o2 && o3 && o4 && o1 !== o2 && o3 !== o4;
+    };
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        if (hit(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n])) return true;
+      }
+    }
+    return false;
+  };
+  let folded = 0, coarsePond = 0, huge = 0, nPond = 0, nCut = 0, nPaint = 0, spiky = 0, blocky = 0;
   for (let i = 0; i < N; i++) {
     const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
     let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+    let paintedWater = 0;
     for (const st of cfg.streams ?? []) {
       const ring = st.ring;
       if (!ring || ring.length < 3) continue;
-      nRing++;
-      if (!isConvex(ring)) folded++;
-      const [x0, y0, x1, y1] = bboxOfRing(ring);
-      if ((x1 - x0) > 420 || (y1 - y0) > 420) huge++;
+      if (st.paint === false) {
+        nCut++;
+        if (!isConvex(ring)) folded++;
+        const [x0, y0, x1, y1] = bboxOfRing(ring);
+        if ((x1 - x0) > 180 || (y1 - y0) > 180) huge++;
+        continue;
+      }
+      nPaint++;
       if (st.kind === "pond") {
         nPond++;
-        if (ring.length < 32) coarsePond++;
+        if (ring.length < 40) coarsePond++;
+        if (!isConvex(ring)) folded++;
+      } else if (st.kind === "creek" || st.kind === "canal") {
+        paintedWater++;
+        if (crosses(ring)) spiky++;
       }
     }
+    if (paintedWater > 12) blocky++;
   }
-  console.log(`stream GEOMETRY: ${nRing} rings  non-convex ${folded}  oversized ${huge}  ponds ${nPond} coarse ${coarsePond}`);
+  console.log(`stream GEOMETRY: paint ${nPaint}  cut ${nCut}  non-convex-cut ${folded}  oversized-cut ${huge}  ponds ${nPond} coarse ${coarsePond}  crossed ${spiky}  blocky-islands ${blocky}`);
   if (folded) {
-    console.error(`\nFAIL  ${folded} stream rings are not convex — that is the green spike`);
+    console.error(`\nFAIL  ${folded} lot-cut rings are not convex`);
     process.exit(1);
   }
   if (huge) {
-    console.error(`\nFAIL  ${huge} stream rings span >420 m — a lead-in rectangle cutting the town`);
+    console.error(`\nFAIL  ${huge} lot-cut rings span >180 m — a capsule should be one segment`);
     process.exit(1);
   }
   if (nPond && coarsePond) {
-    console.error(`\nFAIL  ${coarsePond}/${nPond} ponds have fewer than 32 vertices — a jagged mill pond`);
+    console.error(`\nFAIL  ${coarsePond}/${nPond} ponds have fewer than 40 vertices — a jagged mill pond`);
+    process.exit(1);
+  }
+  if (spiky) {
+    console.error(`\nFAIL  ${spiky} painted creeks cross themselves — that is the triangular loop`);
+    process.exit(1);
+  }
+  if (blocky) {
+    console.error(`\nFAIL  ${blocky} islands paint more than 12 water pieces — capsules leaked onto the map`);
     process.exit(1);
   }
 }

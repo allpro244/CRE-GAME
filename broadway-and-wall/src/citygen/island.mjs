@@ -53,7 +53,7 @@
 // and nothing touches the generator's own stream. The streams are SPLIT by
 // concern — the names roll from one, the coast from another, the piers from a
 // third — so that adding a pier does not rename the town.
-import { mulberry32, ringArea, centroid, bboxOfRing } from "./geom.mjs";
+import { mulberry32, ringArea, centroid, bboxOfRing, convexHull } from "./geom.mjs";
 import { chaikin, crinkle, inRing, rect, offsetInward } from "./citygen.mjs";
 import { cut } from "./cities.mjs";
 
@@ -104,25 +104,108 @@ function dice(rand) {
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
 /**
- * A polyline with a width — a creek, not a chain of rectangles. Left and
- * right offsets at each vertex, then the two sides concatenated. Canals keep
- * the rectangular segments; brooks use this so they read as water that turns.
+ * Drop duplicate vertices after rounding. A 20-gon mill pond rounded to
+ * metres can collapse adjacent points; leaving them in makes a zero-length
+ * edge, and the triangulator treats that as a license to draw a spike.
  */
-function strokePath(path, width) {
-  if (!path || path.length < 2) return null;
-  const hw = width / 2;
-  const left = [], right = [];
-  for (let i = 0; i < path.length; i++) {
-    const a = path[Math.max(0, i - 1)];
-    const b = path[Math.min(path.length - 1, i + 1)];
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const L = Math.hypot(dx, dy) || 1;
-    const nx = (-dy / L) * hw, ny = (dx / L) * hw;
-    left.push([path[i][0] + nx, path[i][1] + ny]);
-    right.push([path[i][0] - nx, path[i][1] - ny]);
+function snapRing(ring) {
+  const out = [];
+  for (const p of ring) {
+    const q = [Math.round(p[0]), Math.round(p[1])];
+    const last = out[out.length - 1];
+    if (!last || last[0] !== q[0] || last[1] !== q[1]) out.push(q);
   }
-  const ring = [...left, ...right.reverse()];
-  return ring.length >= 3 ? ring.map(([x, y]) => [Math.round(x), Math.round(y)]) : null;
+  if (out.length >= 2
+    && out[0][0] === out[out.length - 1][0]
+    && out[0][1] === out[out.length - 1][1]) out.pop();
+  return out.length >= 3 ? out : null;
+}
+
+function discRing(cx, cy, r, n = 20) {
+  if (r < 2) return null;
+  const ring = [];
+  for (let k = 0; k < n; k++) {
+    const t = (k / n) * Math.PI * 2;
+    ring.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+  }
+  // Rounding a circle to metres dents it; insideFaces then treats a mill pond
+  // as a concave obstacle and the triangulator can invent a spike. Keep the
+  // true ellipse and hull it so lot-cutting still sees a convex ring.
+  const hull = convexHull(ring);
+  return hull.length >= 8 ? hull : ring;
+}
+
+function ellipseRing(cx, cy, rx, ry, n = 48) {
+  const ring = [];
+  for (let k = 0; k < n; k++) {
+    const t = (k / n) * Math.PI * 2;
+    ring.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+  }
+  const hull = convexHull(ring);
+  return hull.length >= 16 ? hull : ring;
+}
+
+/** Chaikin on an OPEN polyline. The closed-ring Chaikin would join the mouth to the pond. */
+function chaikinOpen(path, iterations) {
+  let r = path;
+  for (let it = 0; it < iterations; it++) {
+    if (r.length < 3) break;
+    const out = [r[0]];
+    for (let i = 0; i < r.length - 1; i++) {
+      const a = r[i], b = r[i + 1];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]);
+      out.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    out.push(r[r.length - 1]);
+    r = out;
+  }
+  return r;
+}
+
+function turnDot(path, i) {
+  if (i <= 0 || i >= path.length - 1) return 1;
+  const ax = path[i][0] - path[i - 1][0], ay = path[i][1] - path[i - 1][1];
+  const bx = path[i + 1][0] - path[i][0], by = path[i + 1][1] - path[i][1];
+  const la = Math.hypot(ax, ay) || 1, lb = Math.hypot(bx, by) || 1;
+  return (ax * bx + ay * by) / (la * lb);
+}
+
+/**
+ * A creek as overlapping CONVEX pieces: a stadium per segment, a disc at
+ * each end and at any sharp bend.
+ *
+ * The previous construction offset the whole polyline and concatenated the
+ * left bank with the reversed right bank. At a meander that polygon folds
+ * through itself. MapLibre's fill and the 3D triangulator then paint the
+ * convex hull — a green triangular spike from the mill pond across the town.
+ * Convex capsules cannot fold, so they cannot spike.
+ */
+function bufferAsCapsules(path, width) {
+  if (!path || path.length < 2) return [];
+  const hw = width / 2;
+  const rings = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1];
+    const L = dist(a, b);
+    if (L < 4) continue;
+    const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+    const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
+    const snapped = snapRing(rect(cx, cy, L + width * 0.55, width, deg));
+    if (snapped) {
+      const hull = convexHull(snapped);
+      rings.push(hull.length >= 3 ? hull : snapped);
+    }
+  }
+  const capN = Math.max(14, Math.min(24, Math.round(hw + 8)));
+  const caps = [0, path.length - 1];
+  for (let i = 1; i < path.length - 1; i++) {
+    if (turnDot(path, i) < 0.5) caps.push(i);
+  }
+  for (const i of caps) {
+    const d = discRing(path[i][0], path[i][1], hw, capN);
+    if (d) rings.push(d);
+  }
+  return rings;
 }
 
 /** Shortest distance from a point to a ring's boundary. */
@@ -2311,7 +2394,7 @@ export function islandConfig(seed) {
     return path;
   };
 
-  const bufferPath = (path, width, name, kind, mouth, forcePond) => {
+  const bufferPath = (path, width, name, kind, forcePond) => {
     if (path.length < 3) return;
     const rings = [];
     const localBridges = [];
@@ -2330,7 +2413,7 @@ export function islandConfig(seed) {
       if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
         localBridges.push({
           cx: Math.round(cx), cy: Math.round(cy),
-          w: Math.round(Math.max(20, L + 6)),
+          w: Math.round(Math.max(20, Math.min(L + 6, 56))),
           h: Math.round(width + 12),
           deg: +deg.toFixed(1),
           name: `${name.replace(/\s+(Creek|River|Canal|Race|Brook)$/, "")} Bridge`,
@@ -2344,49 +2427,23 @@ export function islandConfig(seed) {
     }
     if (run.length >= 2) runs.push(run);
     for (const seg of runs) {
-      if (kind === "canal") {
-        for (let i = 0; i < seg.length - 1; i++) {
-          const a = seg[i], b = seg[i + 1];
-          const L = dist(a, b);
-          if (L < 8) continue;
-          const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
-          const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
-          rings.push({
-            ring: rect(cx, cy, L + 6, width, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
-            name, kind,
-          });
-        }
-      } else {
-        const stroked = strokePath(seg, width);
-        if (stroked) rings.push({ ring: stroked, name, kind });
+      for (const ring of bufferAsCapsules(seg, width)) {
+        rings.push({ ring, name, kind });
       }
     }
     if ((forcePond || (kind !== "canal" && Dwat.chance(0.42))) && path.length > 5) {
       const end = path[path.length - 1];
       if (inRing(end, inner) && distToRing(end, inner) > width + 28) {
-        const rx = Dwat.f(width * 1.1, width * 1.8), ry = rx * Dwat.f(0.72, 1.0);
-        const n = 20;
-        rings.push({
-          ring: Array.from({ length: n }, (_, k) => {
-            const t = (k / n) * Math.PI * 2;
-            return [Math.round(end[0] + rx * Math.cos(t)), Math.round(end[1] + ry * Math.sin(t))];
-          }),
-          name: forcePond ? `${nm.words[6]} Mill Pond` : `${nm.words[6]} Pond`, kind: "pond",
-        });
-      }
-    }
-    // Lead-in from the coast so the creek meets the estuary instead of
-    // appearing a street inland of it.
-    if (mouth && path[0]) {
-      const a = mouth, b = path[0];
-      const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
-      const L = dist(a, b);
-      if (L > 12) {
-        const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
-        rings.unshift({
-          ring: rect(cx, cy, L + 8, width * 1.15, deg).map(([x, y]) => [Math.round(x), Math.round(y)]),
-          name, kind,
-        });
+        const rx = Dwat.f(width * 1.5, width * 2.4);
+        const ry = rx * Dwat.f(0.90, 1.0);
+        const pond = ellipseRing(end[0], end[1], rx, ry, 48);
+        if (pond) {
+          rings.push({
+            ring: pond,
+            name: forcePond ? `${nm.words[6]} Mill Pond` : `${nm.words[6]} Pond`,
+            kind: "pond",
+          });
+        }
       }
     }
     streams.push(...rings);
@@ -2401,14 +2458,31 @@ export function islandConfig(seed) {
     const through = Dwat.chance(kind === "canal" ? 0.55 : 0.38);
     const maxLen = through ? Dwat.f(720, 1280) : Dwat.f(380, 820);
     const wiggle = kind === "canal" ? 0.12 : 0.38;
-    const path = traceWater(start.p, start.u, minEdge, Dwat.f(42, 58), maxLen, wiggle);
-    if (path.length < 4) return false;
+    const traced = traceWater(start.p, start.u, minEdge, Dwat.f(28, 40), maxLen, wiggle);
+    if (traced.length < 4) return false;
+    // Walk from the estuary to the inland start in short steps so the creek
+    // meets the harbour. A single rectangle spanning that gap was a ruler
+    // of water cutting the town in half.
+    const approach = [];
+    {
+      const L = dist(mouth, start.p);
+      const n = Math.max(2, Math.ceil(L / 28));
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        approach.push([
+          mouth[0] + (start.p[0] - mouth[0]) * t,
+          mouth[1] + (start.p[1] - mouth[1]) * t,
+        ]);
+      }
+    }
+    const raw = [...approach, ...traced];
+    const path = chaikinOpen(raw, 1);
     const name = kind === "canal"
       ? `${nm.words[3]} ${Dwat.pick(["Canal", "Cut", "Race"])}`
       : forcePond
         ? `${nm.words[3]} ${Dwat.pick(["Race", "Creek", "Brook"])}`
         : `${nm.words[3]} ${Dwat.pick(["Creek", "Brook", "River"])}`;
-    bufferPath(path, width, name, kind, mouth, forcePond);
+    bufferPath(path, width, name, kind, forcePond);
     return true;
   };
 

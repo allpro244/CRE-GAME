@@ -20,6 +20,7 @@
 // ground. If any single row of these distributions goes back to 100%, the
 // generator has stopped generating.
 import { islandConfig } from "../src/citygen/island.mjs";
+import { isConvex, bboxOfRing } from "../src/citygen/geom.mjs";
 const N = Number(process.env.N ?? 40);
 const q=(a,p)=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(p*(b.length-1))];};
 const rows=[];
@@ -125,6 +126,41 @@ const topShare = Math.max(...Object.values(sp)) / streams.length;
 if (topShare > 0.72) {
   console.error(`\nFAIL  one stream programme is ${(topShare * 100).toFixed(0)}% of towns — the generator stopped generating`);
   process.exit(1);
+}
+
+// Geometry the map can actually paint. A folded offset polygon triangulates
+// as a spike across the town; a 20-gon pond reads as a stop-sign.
+{
+  let folded = 0, coarsePond = 0, huge = 0, nPond = 0, nRing = 0;
+  for (let i = 0; i < N; i++) {
+    const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
+    let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+    for (const st of cfg.streams ?? []) {
+      const ring = st.ring;
+      if (!ring || ring.length < 3) continue;
+      nRing++;
+      if (!isConvex(ring)) folded++;
+      const [x0, y0, x1, y1] = bboxOfRing(ring);
+      if ((x1 - x0) > 420 || (y1 - y0) > 420) huge++;
+      if (st.kind === "pond") {
+        nPond++;
+        if (ring.length < 32) coarsePond++;
+      }
+    }
+  }
+  console.log(`stream GEOMETRY: ${nRing} rings  non-convex ${folded}  oversized ${huge}  ponds ${nPond} coarse ${coarsePond}`);
+  if (folded) {
+    console.error(`\nFAIL  ${folded} stream rings are not convex — that is the green spike`);
+    process.exit(1);
+  }
+  if (huge) {
+    console.error(`\nFAIL  ${huge} stream rings span >420 m — a lead-in rectangle cutting the town`);
+    process.exit(1);
+  }
+  if (nPond && coarsePond) {
+    console.error(`\nFAIL  ${coarsePond}/${nPond} ponds have fewer than 32 vertices — a jagged mill pond`);
+    process.exit(1);
+  }
 }
 
 const failMono = (label, dist) => {

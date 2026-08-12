@@ -1,13 +1,28 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/unify-dev-land-ba6d` (`5234f8d`) after land asks, the residual, and city orders were made the same question.  
-**Previous ruler:** `bce4162` (citygen programmes, v36).
+**Ruler commit:** regenerated on `cursor/fix-streams-ponds-d634` after mill ponds and creeks stopped triangulating as spikes (`SAVE_VERSION` 37).  
+**Previous ruler:** `5234f8d` (one land price, one development hurdle).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: one land price, one development hurdle
+## This ruler: convex creeks and round mill ponds (SAVE_VERSION 37)
+
+Creeks were one self-intersecting offset polygon. MapLibre and the 3D triangulator filled the convex hull — a green spike across the town. The estuary lead-in was a single rectangle up to ~480 m. Ponds were 20-gons.
+
+Water is overlapping convex capsules now, ponds are 48-gons, and the lead-in walks from the harbour in short steps. That recuts lots (stream obstacles changed shape), so standing stock and rents resample. Not an engine `rng()` re-roll. Conservation stayed green (2,723 months).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `city.buildings` / `floorAreaM` | Capsule obstacles vs one folded ring; different plat | Stock resampled |
+| `land.*` / `rentIdx.*` / `vac.*` | Same — different standing mix on different dirt | Follows the plat |
+| `dev.affordableLotShare` | Different lots on the new water reservation | Builders see a different tape |
+| `rail.vac.*.lo` | Frictional floor on a recut town | Rails reporting, not a new clamp |
+
+---
+
+## Previous ruler: one land price, one development hurdle
 
 Listed dirt that pencilled was asking 2.41× the builder residual (holder option and texture winning the auction on sites that supported a building today). The residual omitted lease-up and construction interest the desk puts in the basis. City class orders kept a `structFloor` so office stock grew while the desk reported zero office sites.
 

@@ -7723,6 +7723,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { return; }
       for (const t of tris) {
         const q = t.map((i) => ring[i]) as [number, number][];
+        // A folded creek polygon triangulates as one city-sized triangle.
+        // Convex capsules never do this; this is the last line of defence
+        // if a bad ring still arrives.
+        if (style === S_POND) {
+          const area = Math.abs(
+            (q[1][0] - q[0][0]) * (q[2][1] - q[0][1])
+            - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]),
+          ) / 2;
+          if (area > 8000) continue;
+        }
         if (sub) split(q, z, style, 0); else emit(q, z, style);
       }
     };

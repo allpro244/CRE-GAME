@@ -95,11 +95,11 @@ overhaul · District silhouettes · Diversification investigation (#7)
 ## Done checklist (gate for Fable)
 
 ```
-[ ] G1 #86 CI green (merge optional) — PR open, rebased
+[x] G1 #86 CI green (merge optional) — #86 smoke SUCCESS
 [x] G2 DebtPage split PR open (#89)
-[x] G3 Balances-only PR open (#88) — confirm firms CI
+[x] G3 Balances-only PR open (#88) — firms 4242 min=7 locally
 [x] G4 Seller-stats extended PR open (#90)
-[x] G5 Distress idle UX PR open (#91 pending)
+[x] G5 Distress idle UX PR open (#91)
 [x] G6 HANDOFF updated (#87)
 [x] G7 Phase 2 already on tip — N/A
 [x] #85 marked superseded

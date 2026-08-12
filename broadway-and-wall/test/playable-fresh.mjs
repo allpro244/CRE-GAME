@@ -20,6 +20,9 @@ const SOURCE_ANCHORS = [
   join(HERE, "..", "src", "ui", "StartMenu.tsx"),
   join(HERE, "..", "src", "ui", "TopBar.tsx"),
   join(HERE, "..", "src", "ui", "panels", "ParcelDesk.tsx"),
+  join(HERE, "..", "src", "ui", "panels", "DevelopDesk.tsx"),
+  join(HERE, "..", "src", "ui", "panels", "AcquireDesk.tsx"),
+  join(HERE, "..", "src", "ui", "panels", "RefiDesk.tsx"),
 ];
 
 const LEGACY = [

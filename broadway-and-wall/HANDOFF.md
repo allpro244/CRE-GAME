@@ -42,7 +42,9 @@ src/engine/     pure functions over JSON state. No DOM, no store.
                 (advanceQuarter is a deprecated alias — the name always lied).
 src/citygen/    generates the town from a seed. Deterministic.
 src/state/      zustand store. The only mutable thing in the app.
-src/ui/         RightPanel.tsx is ~9,400 lines and holds nearly every page.
+src/ui/         RightPanel.tsx is a thin GamePanels shell (~180 lines). Pages live
+                under src/ui/panels/ (ParcelDesk shell + AcquireDesk / RefiDesk /
+                DevelopDesk for property desks; DebtPage, EconomyPage, etc.).
                 TopBar.tsx has the tab bar. StaffPage/StartMenu/Chart/Slider are separate.
 test/           harnesses. Each is a standalone node script behind a pnpm script.
 tools/          baseline, rails, audits, stress.
@@ -239,17 +241,25 @@ wrong. Harness: `pnpm holder`.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-**Execution plan (no playtest required):** `NO_PLAYTEST_PLAN.md` — phases 2–7
-(CI/audits, rail retirement, #33 sellers, #36 zoning, #48/#49 firms, optional
-graphics). Phase 1 (holder memory) is closed on tip.
+**Active agent queues (Aug 2026):**
+- **Grok / Cursor:** `GROK_QUEUE.md` — UI splits, safe playtest balances, seller
+  measurement, distress idle UX. No playtest. Do this first.
+- **Fable 5:** `FABLE5_PLAN.md` — Station, zoning depth, tenant expansion, broker
+  early look, firm entry/exit. **Do not start until `GROK_QUEUE.md` checklist is
+  complete.**
+
+**Longer execution plan:** `NO_PLAYTEST_PLAN.md` — phases 2–7 (CI/audits, rail
+retirement, #33 sellers, #36 zoning, #48/#49 firms, optional graphics). Phase 1
+(holder memory) and Phase 2 harnesses (`pnpm attention`, `pnpm rng-audit`,
+`pnpm seller-stats`, CI smoke) are on tip.
 
 1. **~~Unify city-supply vs desk delivery~~ — CLOSED (settle moment).**
    See `SKYLINE_CYCLES_PLAN.md` Phase 8.
 2. **~~Holder memory beyond approaches~~ — CLOSED.** `pnpm holder`.
 3. **Retire load-bearing rails** — `NO_PLAYTEST_PLAN.md` Phase 3; measure with
-   `pnpm rails` first.
+   `pnpm rails` first. (3.1–3.2 largely done; see `RAIL_AUDIT.md`.)
 4. **Zoning depth (#36); #33 seller predictability; #48/#49 firm entry and exit**
-   — Phases 4–6 in `NO_PLAYTEST_PLAN.md`.
+   — Phases 4–6; Fable owns the big cuts after Grok queue.
 
 ---
 
@@ -287,3 +297,24 @@ find out whether the strategy is bad or the economy is broken, and say which.
 compound slowly (a 1%/yr drift, a rail that binds a third of the time) matter
 more here than in most games, because he will run them out to the point where
 they dominate. Two of the last three fault reports were exactly that.
+
+---
+
+## 9. PLAYER BACKLOG — Aug 2026 session
+
+| Item | Status |
+|------|--------|
+| Distressed assets (counter / loan-basis) | **Shipped** #82 |
+| Playable download hygiene | **Shipped** #83 |
+| Demand dynamism + Economy drift + delivery zoom | **Shipped** #84 |
+| Build desk declutter + quality/presets | **Shipped** #84; 3-tab flow in #86 |
+| Property desk file split (Acquire / Refi / Develop) | **#86** open |
+| FAR / industrial / insolvency / refi fundable UX | **Grok G3** — balances-only PR (not #85) |
+| Ground-up cost/rent pillar (`e64b048`) | **Parked** — broke `firms` seed 4242; Fable F6 only with harnesses |
+| Distressed buyer idle months (playtest #6) | **Grok G5** |
+| Seller predictability (#33) | Measurement **Grok G4**; engine depth → Fable / Phase 4 |
+| Diversification loses (playtest #7) | **Deferred** — investigate strategy vs economy |
+| The Station / zoning / tenant / broker | **Fable 5** — see `FABLE5_PLAN.md` |
+
+**Do not merge #85** as stacked — last commit breaks century firms. Use the
+balances-only PR from `GROK_QUEUE.md` G3 instead.

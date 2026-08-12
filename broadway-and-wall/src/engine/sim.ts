@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { assetValue, ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
@@ -191,6 +191,7 @@ export function newGame(
     news: [],
     gameOver: null,
     insolventMs: 0,
+    underwaterMs: 0,
   };
   s.econ = initEcon(s, parcels);
   // Player principal BEFORE rivals so start-age draws do not depend on roster
@@ -780,10 +781,16 @@ function tickMonth(
   // nothing left to take.
   if (s.cash < 0) {
     s.insolventMs++;
+    s.underwaterMs = (s.underwaterMs ?? 0) + 1;
     if (s.insolventMs === 6) {
       s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
     }
-    if (s.insolventMs >= 12) {
+    if ((s.underwaterMs ?? 0) >= 96) {
+      s.gameOver = {
+        cause: "Insolvency: seven years underwater and the hole still grows. The run ends here.",
+      };
+      s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
+    } else if (s.insolventMs >= 12) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.
       coverCashShortfall(s, parcels);
@@ -901,7 +908,7 @@ function tickMonth(
               : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
-        s.insolventMs = s.cash < 0 ? 8 : 0;
+        s.insolventMs = s.cash < 0 ? 12 : 0;
       } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
         // Book empty of seizable deeds (everything in workout / development /
         // coupon-current) but liquidity remains — keep the run alive.
@@ -917,6 +924,25 @@ function tickMonth(
     }
   } else {
     s.insolventMs = 0;
+  }
+
+  // Liquidity, not solvency: cash positive but too thin to sign the leases
+  // waiting on empty floors — the trap that kills unlevered buy-and-hold.
+  if (s.cash >= 0 && !s.gameOver) {
+    const liquid = s.cash + locAvailable(s, parcels);
+    let emptySf = 0;
+    for (const h of Object.values(s.holdings)) {
+      if (s.developments[h.bbl]) continue;
+      const rec = resolveRec(parcels, s, h.bbl);
+      if (!rec || rec.class === "land") continue;
+      emptySf += vacantSf(rec, h);
+    }
+    if (emptySf > 8000 && liquid < Math.max(400_000, emptySf * 0.35) && s.month % 6 === 0) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `You have ${(emptySf / 1000).toFixed(0)}k sf waiting on leases and only ${liquid >= 1e6 ? `$${(liquid / 1e6).toFixed(2)}M` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line — signing costs land before rent does.`,
+      });
+    }
   }
 
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
@@ -1273,14 +1299,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // things needing you, and rolling them into one would hide the whole point
   // of being allowed to run four.
   for (const t of Object.values(s.talks ?? {})) {
+    const idleM = Math.max(0, s.month - (t.openedM ?? s.month));
+    const idle =
+      idleM <= 0 ? "opened this month"
+        : idleM === 1 ? "1 month on the table"
+          : `${idleM} months on the table`;
     out.push(t.agreed
       ? {
         key: `contract:${t.bbl}`,
-        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)}`,
+        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
       }
       : {
         key: `talks:${t.bbl}:${t.theirPrice}`,
-        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""}`,
+        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""} · ${idle}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {

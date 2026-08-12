@@ -3448,7 +3448,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   if (surplus < 4000) return;
   // Clearance is lumpy (one building). Own RNG channel — must not steal
   // draws from teardown densify (`dev`).
-  if (rng(s, "indust") > (officeShort ? 0.12 : 0.70)) return;
+  if (rng(s, "indust") > (officeShort ? 0.12 : 0.55)) return;
 
   // Pick the worst empty-ish anon shed: old, worn, low demand, preferably M.
   let worst: { bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; score: number } | null = null;

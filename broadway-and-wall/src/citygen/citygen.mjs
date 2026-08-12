@@ -414,12 +414,13 @@ export function generateCity(cfg) {
   // fault. Twelve metres is a modest two-lane frontage the eye can hold, and
   // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
   // kerb rather than turf painted to the reservation line.
-  const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
+  const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2, STREAM_CLEAR = 7;
   const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
   const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
+  const STREAMS_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -433,6 +434,7 @@ export function generateCity(cfg) {
   const OBSTACLES = [
     ...PARKS_M.map((p) => ({ ring: p, faces: insideFaces(p, PARK_CLEAR) })),
     ...DIAG_M.map((p) => ({ ring: p, faces: insideFaces(p, DIAG_CLEAR) })),
+    ...STREAMS_M.map((p) => ({ ring: p, faces: insideFaces(p, STREAM_CLEAR) })),
   ];
 
   // --- the district partition ----------------------------------------------
@@ -1451,11 +1453,15 @@ export function generateCity(cfg) {
       },
     });
   }
-  // Quay cranes, moored ships and the breakwaters go with the piers — see the
-  // note at PIERS_M. `cfg.cranes`, `cfg.ships` and `cfg.breakwaters` are left
-  // in the city definitions so the shape of a town is still described in one
-  // place; nothing reads them.
-  const BREAKWATERS = [];
+  for (const br of cfg.bridges ?? []) {
+    addDeco(rect(br.cx, br.cy, br.w, br.h, br.deg), 5.4, 3.1, "bridgedeck");
+  }
+  // A breakwater is a wall in the water, not a crane. The owner rejected
+  // dock toys; the harbour still needs something that makes it a harbour.
+  const BREAKWATERS = (cfg.breakwaters ?? []).map(([x, y, w, h, d]) => rect(x, y, w, h, d));
+  for (const ring of BREAKWATERS) {
+    addDeco(ring, 4.2, 0, "bridgedeck");
+  }
 
 
   // --- the lighthouse --------------------------------------------------------
@@ -1615,8 +1621,59 @@ export function generateCity(cfg) {
     const c = centroid(green);
     const areaP = polygonArea([park]);
     if (areaP > biggestA) { biggestA = areaP; biggestPark = park; }
-    // the perimeter promenade, a walk in from the painted edge
+    const flavour = cfg.parks[pi]?.flavour ?? "park";
     const walk = erode(green, 6);
+    if (flavour === "cemetery") {
+      // Ordered trees, one axial path, a chapel. Quiet. No pond.
+      if (walk) {
+        pathFeatures.push([walk[0], c]);
+        pathFeatures.push([c, walk[Math.floor(walk.length / 2)]]);
+      }
+      const ang = ((cfg.parks[pi]?.deg ?? 0) * Math.PI) / 180;
+      const ux = Math.cos(ang), uy = Math.sin(ang);
+      const vx = -uy, vy = ux;
+      for (let i = -4; i <= 4; i++) {
+        for (let j = -3; j <= 3; j++) {
+          const p = [c[0] + ux * i * 14 + vx * j * 11, c[1] + uy * i * 14 + vy * j * 11];
+          if (inRing(p, green) && Math.hypot(p[0] - c[0], p[1] - c[1]) > 16) treeFeatures.push(p);
+        }
+      }
+      addDeco(rect(c[0], c[1], 10, 7, cfg.parks[pi]?.deg ?? 0), 7.2, 0, "civic");
+      addDeco(rect(c[0], c[1], 11.2, 8.2, cfg.parks[pi]?.deg ?? 0), 9.4, 7.2, "civicroof");
+      continue;
+    }
+    if (flavour === "battery") {
+      if (walk) pathFeatures.push([...walk, walk[0]]);
+      addDeco(rect(c[0], c[1], 2.2, 2.2, 0), 14, 0, "mast");
+      addDeco(rect(c[0], c[1], 4.4, 4.4, 45), 1.2, 0, "banddeck");
+      const [minX, minY, maxX, maxY] = bboxOfRing(green);
+      for (let x = minX; x < maxX; x += 18) {
+        for (let y = minY; y < maxY; y += 18) {
+          const p = [x + rr(-3, 3), y + rr(-3, 3)];
+          if (!inRing(p, green)) continue;
+          if (Math.hypot(p[0] - c[0], p[1] - c[1]) > Math.min(maxX - minX, maxY - minY) * 0.38 && rand() < 0.18) {
+            treeFeatures.push(p);
+          }
+        }
+      }
+      continue;
+    }
+    if (flavour === "market") {
+      if (walk) {
+        pathFeatures.push([...walk, walk[0]]);
+        pathFeatures.push([walk[0], walk[Math.floor(walk.length / 2)]]);
+      }
+      const ang = cfg.parks[pi]?.deg ?? 0;
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.2;
+        const sx = c[0] + Math.cos(a) * 16, sy = c[1] + Math.sin(a) * 16;
+        if (!inRing([sx, sy], green)) continue;
+        addDeco(rect(sx, sy, 6.5, 4.2, ang + k * 30), 3.1, 0, "shed");
+        addDeco(rect(sx, sy, 7.4, 5.0, ang + k * 30), 4.4, 3.1, "civicroof");
+      }
+      continue;
+    }
+    // the perimeter promenade, a walk in from the painted edge
     if (walk) {
       pathFeatures.push([...walk, walk[0]]);
       // cross paths corner-to-corner through the middle
@@ -1674,6 +1731,23 @@ export function generateCity(cfg) {
       }
     }
   }
+  // Willows on the creek. Drawn from the decoration stream so a bank of trees
+  // cannot move a tax lot. Skip anything that landed in the water itself.
+  for (const ring of STREAMS_M) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      for (let d = 4; d < len; d += 9 + drand() * 7) {
+        if (drand() > 0.55) continue;
+        const t = d / len;
+        const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+        const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+        const side = drand() < 0.5 ? 1 : -1;
+        const p = [px + nx * side * (5 + drand() * 4), py + ny * side * (5 + drand() * 4)];
+        if (inRing(p, innerRing) && !STREAMS_M.some((r) => inRing(p, r))) treeFeatures.push(p);
+      }
+    }
+  }
   // --- the civic buildings ---------------------------------------------------
   // A town is not only its commerce. The meeting house, the town hall and the
   // market hall are the three buildings everybody in a colonial port could
@@ -1715,6 +1789,88 @@ export function generateCity(cfg) {
       addDeco(rect(c[0], c[1], 1.6, 1.6, ang), 41, 37.5, "civicroof");
     }
   });
+
+  // A mill on the pond, a head-house on the green the railway already stops
+  // at. Decoration stream — these sit on park/pond ground, not on tax lots,
+  // so they cannot move a deed. They are why one town has a mill race and
+  // another has a canal: the water is an obstacle, the building is the thing
+  // you can point at.
+  for (const st of cfg.streams ?? []) {
+    if (st.kind !== "pond" || !st.ring || st.ring.length < 6) continue;
+    const c = centroid(st.ring);
+    const ang = drr(0, 360);
+    const t = (ang * Math.PI) / 180;
+    const mx = c[0] + Math.cos(t) * 8, my = c[1] + Math.sin(t) * 8;
+    if (!inRing([mx, my], st.ring)) continue;
+    addDeco(rect(mx, my, 14, 10, ang), 8.5, 0, "civic");
+    addDeco(rect(mx, my, 15.2, 11.2, ang), 11.2, 8.5, "civicroof");
+  }
+  for (const s of cfg.stations ?? []) {
+    let best = null, bd = Infinity;
+    for (const ring of PARKS_M) {
+      const c = centroid(ring);
+      const d = Math.hypot(c[0] - s.xy[0], c[1] - s.xy[1]);
+      if (d < bd) { bd = d; best = { ring, c }; }
+    }
+    if (!best || bd > 90) continue;
+    const t = 0.32;
+    const x = best.c[0] * (1 - t) + s.xy[0] * t;
+    const y = best.c[1] * (1 - t) + s.xy[1] * t;
+    if (!inRing([x, y], best.ring)) continue;
+    const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
+    addDeco(rect(x, y, 16, 10, ang), 6.4, 0, "civic");
+    addDeco(rect(x, y, 17.4, 11.2, ang), 8.6, 6.4, "civicroof");
+    addDeco(rect(x, y + 7, 18, 4.2, ang), 4.0, 0, "shed");
+  }
+
+  // ONE SIGNATURE LANDMARK PER TOWN — not always hall + spire + light + peak.
+  // Deco only, on park / fringe ground, so lots do not move. Mill towns already
+  // have a mill on the pond; they draw something else.
+  {
+    const kind = cfg.plan?.landmark ?? "church";
+    const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
+    const quietPark = PARKS_M
+      .map((ring, i) => ({ ring, i, flavour: cfg.parks[i]?.flavour ?? "park", a: polygonArea([ring]) }))
+      .filter((x) => x.flavour === "park")
+      .sort((a, b) => a.a - b.a)[0];
+    const indName = Object.keys(cfg.districts).find((k) => /mill|yard|wharf|dock/i.test(k))
+      ?? Object.keys(cfg.districts)[Object.keys(cfg.districts).length - 1];
+    const indBlocks = blocks.filter((b) => b.district === indName && b.inset);
+    if (kind === "gasometer") {
+      const host = indBlocks[0]?.inset ?? quietPark?.ring;
+      if (host) {
+        const c = centroid(host);
+        const oct = (r) => Array.from({ length: 10 }, (_, k) => {
+          const a = (k / 10) * Math.PI * 2;
+          return [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
+        });
+        addDeco(oct(11), 22, 0, "silo");
+        addDeco(oct(12), 24, 22, "siloroof");
+        addDeco(rect(c[0] + 14, c[1], 8, 6, ang), 6, 0, "shed");
+      }
+    } else if (kind === "roundhouse" && (cfg.stations ?? []).length) {
+      const st = cfg.stations[cfg.stations.length - 1];
+      const c = st.xy;
+      const oct = (r) => Array.from({ length: 12 }, (_, k) => {
+        const a = (k / 12) * Math.PI * 2;
+        return [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
+      });
+      addDeco(oct(16), 8.5, 0, "shed");
+      addDeco(oct(17.5), 11, 8.5, "civicroof");
+    } else if (kind === "college" && quietPark) {
+      const c = centroid(quietPark.ring);
+      for (let k = -1; k <= 1; k++) {
+        addDeco(rect(c[0] + k * 22, c[1], 18, 10, ang), 11, 0, "civic");
+        addDeco(rect(c[0] + k * 22, c[1], 19.2, 11.2, ang), 13.4, 11, "civicroof");
+      }
+    } else if (quietPark) {
+      const c = centroid(quietPark.ring);
+      addDeco(rect(c[0], c[1], 16, 9, ang), 9, 0, "civic");
+      addDeco(rect(c[0], c[1], 17.2, 10.2, ang), 11, 9, "civicroof");
+      addDeco(rect(c[0] - 6, c[1], 5, 5, ang), 18, 0, "civic");
+      addDeco(rect(c[0] - 6, c[1], 3.2, 3.2, ang + 45), 24, 18, "civicroof");
+    }
+  }
 
   // --- THE LANDMARKS ---------------------------------------------------------
   //
@@ -1848,8 +2004,9 @@ export function generateCity(cfg) {
     pathFeatures.push(...out);
   }
 
-  // the bandstand on the town's principal green
-  if (biggestPark) {
+  // the bandstand on the town's principal green — not on a cemetery or battery
+  const biggestFlavour = cfg.parks[PARKS_M.findIndex((r) => r === biggestPark)]?.flavour ?? "park";
+  if (biggestPark && biggestFlavour === "park") {
     const c = centroid(biggestPark);
     // deck, a ring of posts read as a narrow drum, then a roof that oversails
     // it — the silhouette everybody recognises. The old version put a cap the
@@ -1964,6 +2121,53 @@ export function generateCity(cfg) {
   // sheet of blue paint.
   const shallowsRing = offsetInward(COAST_M, -34);
 
+  // SHORE THAT IS NOT ONE MATERIAL. Paint, not obstacles: marsh in the cove,
+  // beach on the open side, seawall downtown, rock under the light.
+  const harbourAt = cfg.plan?.harbour ?? [0, 0];
+  const coveAt = cfg.plan?.cove ?? harbourAt;
+  const headAt = cfg.plan?.headland ?? cfg.lighthouse ?? harbourAt;
+  const shoreKindAt = (p) => {
+    const dH = Math.hypot(p[0] - harbourAt[0], p[1] - harbourAt[1]);
+    const dC = Math.hypot(p[0] - coveAt[0], p[1] - coveAt[1]);
+    const dL = Math.hypot(p[0] - headAt[0], p[1] - headAt[1]);
+    if (dH <= dC && dH <= dL && dH < 420) return "seawall";
+    if (dC <= dH && dC <= dL && dC < 380) return "marsh";
+    if (dL <= dH && dL <= dC && dL < 280) return "rock";
+    return "beach";
+  };
+  const shoreBands = [];
+  const quayLine = [];
+  for (let i = 0; i < COAST_M.length; i++) {
+    const a = COAST_M[i], b = COAST_M[(i + 1) % COAST_M.length];
+    const kind = shoreKindAt(a);
+    const midp = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const L = Math.hypot(dx, dy) || 1;
+    let nx = dy / L, ny = -dx / L;
+    const c0 = centroid(COAST_M);
+    if ((midp[0] - c0[0]) * nx + (midp[1] - c0[1]) * ny > 0) { nx = -nx; ny = -ny; }
+    // nx,ny now point seaward
+    const inland = 6, out = kind === "marsh" ? 28 : kind === "rock" ? 14 : 8;
+    const ring = [
+      [a[0] - nx * inland, a[1] - ny * inland],
+      [b[0] - nx * inland, b[1] - ny * inland],
+      [b[0] + nx * out, b[1] + ny * out],
+      [a[0] + nx * out, a[1] + ny * out],
+    ];
+    shoreBands.push({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+      properties: { kind },
+    });
+    if (kind === "seawall") quayLine.push(proj.toLL(a));
+  }
+  if (quayLine.length > 1) quayLine.push(quayLine[0]);
+  const quayFeat = quayLine.length > 2 ? [{
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: quayLine },
+    properties: { kind: "quay" },
+  }] : [];
+
   const stations = {
     type: "FeatureCollection",
     features: cfg.stations.map((s, i) => ({
@@ -2012,20 +2216,40 @@ export function generateCity(cfg) {
         geometry: { type: "LineString", coordinates: [...COAST, COAST[0]] },
         properties: { kind: "coastline" },
       },
+      ...shoreBands,
+      ...quayFeat,
       esplanade,
       paveland,
-      ...[...PIERS_M, ...BREAKWATERS].map((ring) => ({
+      ...PIERS_M.map((ring) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "pier" },
       })),
-      // Painted turf is the kerb-inset green, not the full reservation — see
-      // PARK_KERB above. The 3D lawn reads the same rings via kind:"park".
-      ...PARK_GREEN_M.map((ring) => ({
+      ...BREAKWATERS.map((ring) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
-        properties: { kind: "park" },
+        properties: { kind: "breakwater" },
       })),
+      // Painted turf is the kerb-inset green, not the full reservation — see
+      // PARK_KERB above. The 3D lawn reads the same rings via kind:"park".
+      ...PARK_GREEN_M.map((ring, i) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        properties: { kind: "park", flavour: cfg.parks[i]?.flavour ?? "park" },
+      })),
+      ...(cfg.streams ?? []).map((st) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
+        properties: { kind: "stream", water: st.kind ?? "creek", name: st.name },
+      })),
+      ...(cfg.bridges ?? []).map((br) => {
+        const ring = rect(br.cx, br.cy, br.w, br.h, br.deg);
+        return {
+          type: "Feature",
+          geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+          properties: { kind: "bridge", name: br.name },
+        };
+      }),
       // The frontage road around each park and along the boulevard. It gets
       // its own kind because it has to be paved UNDER the park, not over it —
       // drawing it with the rest of the roadway used to paint the green out.
@@ -2041,7 +2265,7 @@ export function generateCity(cfg) {
         geometry: { type: "LineString", coordinates: [...ring.map(proj.toLL), proj.toLL(ring[0])] },
         properties: { kind: "street", cls: "park" },
       })),
-      ...(cfg.diagonals ?? []).map((d) => ({
+      ...(cfg.diagonals ?? []).map((d, i) => ({
         type: "Feature",
         geometry: {
           type: "LineString",
@@ -2050,7 +2274,7 @@ export function generateCity(cfg) {
             proj.toLL([d.cx + (d.w / 2) * Math.cos((d.deg * Math.PI) / 180), d.cy + (d.w / 2) * Math.sin((d.deg * Math.PI) / 180)]),
           ],
         },
-        properties: { kind: "street", cls: "shore" },
+        properties: { kind: "street", cls: i < (cfg.plan?.seams ?? 0) ? "seam" : "shore" },
       })),
       ...pavementFeatures,
       ...crosswalkFeatures.map((ring) => ({
@@ -2124,6 +2348,7 @@ export function generateCity(cfg) {
         const near = buckets.get(key(Math.floor(x / GRID), Math.floor(y / GRID))) ?? [];
         if (near.some((r) => inRing(p, r))) { covered++; continue; }
         if (APRONS.some((r) => inRing(p, r))) { covered++; continue; }
+        if (STREAMS_M.some((r) => inRing(p, r))) { covered++; continue; }
         voids.push(p);
       }
     }

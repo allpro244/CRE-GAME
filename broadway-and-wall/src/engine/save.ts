@@ -53,34 +53,22 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 34 as const;
+export const SAVE_VERSION = 36 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
  *
  * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
  * so anything that changes what a seed produces changes the ground under a
- * campaign's deeds. Park shapes, the esplanade and the linear park all change
- * which cells the obstacle subtraction removes, so the lot lines on a procedural
- * island are cut differently from v33 on.
+ * campaign's deeds. v36 recuts the plat: coast programmes (not always the
+ * same four lobes), harbour slips, lot-grain programmes, and creek strokes
+ * that are no longer a chain of rectangles.
  *
- * Measured across three seeds, old generator against new: about 30% of deeds
- * vanish outright, and of the ones that survive by BBL, NINETY-NINE PER CENT
- * ARE A DIFFERENT PARCEL — same number, different ground, different size,
- * somewhere else on the island. That is silent corruption and it is much worse
- * than a missing deed: the campaign opens, the portfolio page fills in, and
- * every building the player owns is quietly somewhere they did not buy.
- *
- * THIS IS 34 AND NOT 33 BECAUSE TWO BRANCHES BOTH CLAIMED 33. The Principal
- * break (one Person type, peopleRng, no free style dials) shipped as v33 on
- * one branch while the island generator was being rewritten on another, and
- * they meet here. A save stamped 33 by that branch therefore has people but
- * was still cut by the OLD generator, so its ground moved too and it must be
- * refused on the same terms as a v32. Keying the refusal to 34 rather than 33
- * is what makes that true; the alternative silently opens exactly the
- * campaigns this constant exists to catch.
+ * v35 was inland streams. A save stamped 35 still has that wet-but-classic
+ * coast: opening it under this generator would put every surviving BBL on
+ * different ground. Refusing it is the honest answer.
  */
-const ISLAND_GROUND_MOVED_AT = 34;
+const ISLAND_GROUND_MOVED_AT = 36;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 

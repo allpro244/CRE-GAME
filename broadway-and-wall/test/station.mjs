@@ -97,5 +97,24 @@ ok("every build time matches its kind", seen.every((l) => l.openM - l.annM === B
 ok("every rumoured work made the news", rumorNews >= 1, `${rumorNews} notices for ${seen.length} works`);
 ok("shelved plans are removed from the state", (g.lines ?? []).every((l) => seen.some((x) => x.key === `${l.id}:${l.rumorM}`)));
 
+// ---- 3 · a funded park takes a vacant lot off the tape ---------------------
+const parkHost = blocks.find((b) =>
+  b.baseD < 55 && b.bbls.some((bbl) => parcels[bbl]?.class === "land" && parcels[bbl].lotArea > 1800));
+ok("a mid-demand block has a vacant lot a park can take", !!parkHost, parkHost ? parkHost.id : "none");
+if (parkHost) {
+  const park0 = structuredClone(g0);
+  park0.lines = [...(park0.lines ?? []), {
+    id: parkHost.id, cx: parkHost.cx, cy: parkHost.cy, name: "the injection green", kind: "park",
+    sigma: 280, annM: m0, openM: m0 + 36, pts: 12,
+  }];
+  const parked = run(park0, 1);
+  const work = (parked.lines ?? []).find((l) => l.kind === "park" && l.name === "the injection green");
+  ok("funded park claims a siteBbl", !!work?.siteBbl, work?.siteBbl ?? "none");
+  ok("claimed lot is civic land", !!(work?.siteBbl && parked.civicLand?.[work.siteBbl]), work?.siteBbl ?? "");
+  ok("claimed lot is off the tape", !parked.listings.some((l) => l.bbl === work?.siteBbl));
+  const buy = E.executePurchase(parked, parcels, work?.siteBbl ?? parkHost.bbls[0], 1, "cash", false, 1);
+  ok("player cannot buy civic land", !!buy.err, buy.err ?? "closed");
+}
+
 console.log(fails ? `\n${fails} FAILURE(S)` : "\nall green");
 process.exit(fails ? 1 : 0);

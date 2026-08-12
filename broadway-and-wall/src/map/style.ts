@@ -31,6 +31,7 @@ export function gameSources(city: {
     "bw-buildings": { type: "geojson", data: (city.buildingFeatures ?? EMPTY) as never },
     "bw-forsale": { type: "geojson", data: EMPTY } as never,
     "bw-owned": { type: "geojson", data: EMPTY },
+    "bw-civic": { type: "geojson", data: EMPTY },
   };
 }
 
@@ -198,6 +199,71 @@ export function gameLayers(): LayerSpecification[] {
         "circle-pitch-alignment": "map",
       },
     },
+    {
+      id: "bw-civic-park",
+      type: "fill",
+      source: "bw-civic",
+      filter: ["==", ["get", "kind"], "park"],
+      paint: {
+        "fill-color": [
+          "match", ["get", "stage"],
+          "rumor", "#c5d4b0",
+          "building", "#9cba7a",
+          "#8fb56a",
+        ] as never,
+        "fill-opacity": [
+          "match", ["get", "stage"],
+          "rumor", 0.35,
+          "building", 0.7,
+          0.92,
+        ] as never,
+      },
+    },
+    {
+      id: "bw-civic-park-line",
+      type: "line",
+      source: "bw-civic",
+      filter: ["==", ["get", "kind"], "park"],
+      paint: {
+        "line-color": "#5a6e48",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.2] as never,
+      },
+    },
+    {
+      id: "bw-civic-bridge",
+      type: "fill",
+      source: "bw-civic",
+      filter: ["==", ["get", "kind"], "bridge"],
+      paint: {
+        "fill-color": [
+          "match", ["get", "stage"],
+          "rumor", "#b7b1a4",
+          "building", "#7a6f5c",
+          "#6e6758",
+        ] as never,
+        "fill-opacity": ["match", ["get", "stage"], "rumor", 0.4, 0.9] as never,
+      },
+    },
+    {
+      id: "bw-civic-station",
+      type: "circle",
+      source: "bw-civic",
+      filter: ["==", ["get", "kind"], "station"],
+      minzoom: 12,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 3.2, 16, 6.5] as never,
+        "circle-color": [
+          "match", ["get", "stage"],
+          "rumor", "#8a93a0",
+          "building", "#c4a35a",
+          "#2f4a63",
+        ] as never,
+        "circle-stroke-color": "#f4f3ef",
+        "circle-stroke-width": 1.6,
+        "circle-opacity": ["match", ["get", "stage"], "rumor", 0.55, 1] as never,
+        "circle-pitch-alignment": "map",
+      },
+    },
   ];
 }
 
@@ -228,11 +294,39 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#6fa2bf" },
       },
       {
+        id: "marsh",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "marsh"],
+        paint: { "fill-color": "#6a8a6e", "fill-opacity": 0.72 },
+      },
+      {
+        id: "rock",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "rock"],
+        paint: { "fill-color": "#8a8680", "fill-opacity": 0.55 },
+      },
+      {
+        id: "beach",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "beach"],
+        paint: { "fill-color": "#d9c9a3", "fill-opacity": 0.7 },
+      },
+      {
         id: "land",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
         paint: { "fill-color": "#e2ddd0" },
+      },
+      {
+        id: "seawall",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "seawall"],
+        paint: { "fill-color": "#9a958c", "fill-opacity": 0.85 },
       },
       {
         // The waterline itself. This was a near-white stroke at 70% with more
@@ -299,11 +393,46 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        id: "breakwater",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "breakwater"],
+        paint: { "fill-color": "#7a756c" },
+      },
+      {
+        id: "breakwater-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "breakwater"],
+        paint: {
+          "line-color": "#4e4a44",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
+        },
+      },
+      {
+        id: "quay",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "quay"],
+        paint: {
+          "line-color": "#6e6a62",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.2, 16.5, 3.4] as never,
+        },
+      },
+      {
         id: "parks",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "fill-color": "#b7d29f" },
+        paint: {
+          "fill-color": [
+            "match", ["coalesce", ["get", "flavour"], "park"],
+            "cemetery", "#8fa37a",
+            "battery", "#c5c4a4",
+            "market", "#cfc6b0",
+            "#b7d29f",
+          ],
+        },
       },
       {
         // Kerbed edge of the painted green. Was a soft tint-on-tint outline
@@ -316,6 +445,50 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "line-color": "#6e6b64",
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
+        },
+      },
+      {
+        // Inland water — a creek, a mill race, a canal. Darker and greener
+        // than the harbour, because it is fresh water over silt, not the sea.
+        id: "streams",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "stream"],
+        paint: {
+          "fill-color": [
+            "match", ["coalesce", ["get", "water"], "creek"],
+            "canal", "#4e7f96",
+            "pond", "#3f6e82",
+            "slip", "#3d6a80",
+            "#4a7a8e",
+          ] as never,
+        },
+      },
+      {
+        id: "stream-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "stream"],
+        paint: {
+          "line-color": "#2f5566",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16.5, 2.0] as never,
+        },
+      },
+      {
+        id: "bridges",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bridge"],
+        paint: { "fill-color": "#8a8478" },
+      },
+      {
+        id: "bridge-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bridge"],
+        paint: {
+          "line-color": "#5c574e",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 16.5, 1.8] as never,
         },
       },
       {
@@ -460,6 +633,17 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "line-color": "#9b978f",
           "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        id: "seam",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
+        paint: {
+          "line-color": "#6a6560",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },

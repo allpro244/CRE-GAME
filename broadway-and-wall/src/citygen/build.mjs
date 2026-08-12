@@ -179,6 +179,15 @@ export function buildCityData(src) {
       s.xy[0] > lotsMinX - 1500 && s.xy[0] < lotsMaxX + 1500 &&
       s.xy[1] > lotsMinY - 1500 && s.xy[1] < lotsMaxY + 1500);
 
+  // A SECOND CENTRE THAT IS ACTUALLY A CENTRE. Transit and jobs both piled on
+  // downtown because ridership was a restatement of core heat. The second-best
+  // station that sits more than 400 m from the first is millside, the ferry,
+  // or the belt — a different reason for ground to be good.
+  const rankedSt = [...stationPts].sort((a, b) => b.w - a.w);
+  const topSt = rankedSt[0];
+  const secondSt = rankedSt.find((s) => topSt && Math.hypot(s.xy[0] - topSt.xy[0], s.xy[1] - topSt.xy[1]) > 400)
+    ?? null;
+
   let jobPts;
   if (employment?.features?.length) {
     jobPts = employment.features.map((f) => ({ xy: proj.toXY(f.geometry.coordinates), jobs: num(f.properties.jobs) ?? 0 }));
@@ -269,6 +278,7 @@ export function buildCityData(src) {
     amen: nearParks(l.c, 900, (pk, d) => pk.r * gauss(d, pk.r * 0.75)),
     shore: (l.p?.shoreamen ?? 1) ? Math.exp(-(num(l.p?.shorem) ?? 9999) / 300) : 0,
     corridor: Math.exp(-(num(l.p?.corridorm) ?? 9999) / 90),
+    second: secondSt ? secondSt.w * gauss(Math.hypot(l.c[0] - secondSt.xy[0], l.c[1] - secondSt.xy[1]), 320) : 0,
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
   const t95 = p95(raws.map((r) => r.transit));
@@ -284,6 +294,7 @@ export function buildCityData(src) {
   // instead, which is the only thing they were ever meant to do.
   const s95 = p95(raws.map((r) => r.shore)) || 1;
   const c95 = p95(raws.map((r) => r.corridor)) || 1;
+  const n95 = p95(raws.map((r) => r.second)) || 1;
   // The town's mean premium, so the three multipliers below redistribute
   // instead of inflating — see the note where they are applied.
   const premMean = (() => {
@@ -384,9 +395,10 @@ export function buildCityData(src) {
     // the ground that was best is still best, and the amenity term is given the
     // weight that changes the SHAPE without rewriting the order.
     const blend = Math.min(1,
-      (38 * Math.min(1, dem.transit / t95)
-        + 44 * Math.min(1, dem.emp / e95)
-        + 18 * Math.min(1, dem.amen / a95)) / 100);
+      (36 * Math.min(1, dem.transit / t95)
+        + 34 * Math.min(1, dem.emp / e95)
+        + 14 * Math.min(1, dem.second / n95)
+        + 16 * Math.min(1, dem.amen / a95)) / 100);
     // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
     //
     // Gravity fields cannot produce this and it is most of what a city actually
@@ -1217,7 +1229,7 @@ export function buildCityData(src) {
     if (!rec || rec.class !== "land") continue;
     buildings3d.push({
       b: l.bbl, c: "land", y: 0, t: Number(l.bbl) % 5, f: 0,
-      z0: 0, z1: 0, d: 0, k: 1,
+      z0: 0, z1: 0, d: 0, k: 1, ds: rec.demandScore ?? 50,
       r: l.ring.map((p) => proj.toLL(p).map((v) => +v.toFixed(6))),
     });
   }

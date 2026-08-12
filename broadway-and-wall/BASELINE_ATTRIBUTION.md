@@ -1,9 +1,39 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated from tip after merge of PRs #57–#62 (`07c3ac2` and later).  
-**Previous ruler:** `ffb883a` (pre-Principal, pre-private-credit, pre-wishlist size-scale).
+**Ruler commit:** regenerated on `cursor/citygen-better-d634` (`bce4162`) after coast programmes, slips, lot grain and creek strokes recut the plat (`SAVE_VERSION` 36).  
+**Previous ruler:** `e3eb845` (inland streams, v35). Earlier: `241aef4` / `07c3ac2`.
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
+
+---
+
+## This ruler: citygen programmes (SAVE_VERSION 36)
+
+The silhouette is a programme now (classic / basin / spit / river / neck), harbour slips cut the quay, lot grain runs the town, and creeks are stroked polylines instead of rectangles. Demand also has a second-station kernel and a dock employment floor — that moves prices, not lot lines, but it is in the same snapshot.
+
+Not an engine `rng()` re-roll. New citygen salts (`0xc0a5e` coast, `0x67a10` grain, `0x5115` slips, `0x5a11` rail, `0xf1a70` park flavour, `0x1a0d` landmark). Conservation stayed green (1,225 months on this pass; full check follows playable).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `city.buildings` / `floorAreaM` / `employed` | Different coast and slip reservations; millside is a real second centre | Stock and jobs resampled |
+| `land.*` / `rentIdx.*` | Second-station kernel in the demand blend; grain changes parcel mix | Spatial, not a rent bug |
+| `vac.*` | Same — different standing mix on a different plat | Follows stock |
+
+---
+
+## Previous ruler: inland streams (SAVE_VERSION 35)
+
+Streams are obstacles. Lots that used to sit on dry ground now stop at the bank, so the standing city is smaller and the remaining dirt is a different sample. Not an RNG re-roll — citygen salt `0x57ea` is its own stream; engine `rng()` draw counts are unchanged. Conservation stayed green (1,880 months).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `city.buildings` (−9%), `city.floorAreaM` (−15%) | Creek/canal/pond reservations take cells the generator used to plat | Smaller standing stock |
+| `city.employed` / `population` (−16%) | Same — fewer floors, fewer jobs and residents at month 300 | Follows stock |
+| `land.med` (+31%) | Remaining lots are a different sample; p10/p90 barely moved | Median only |
+| `rentIdx.multifamily` (−25%), `rentIdx.office` (−12%) | Smaller city, different mix; industrial vac collapsed (−71%) because mill/canal towns keep more M-district waterfront working | Sector mix, not a rent bug |
+| `city.demolished` (−40%) | Fewer worn buildings in a smaller plat | Follows stock |
+
+Station harness on the new plat: injection +7.70 pts within 380 m vs control, −3.74 far (redistribution holds). Funded park claimed BBL 1000180003 and `executePurchase` refused it.
 
 ---
 

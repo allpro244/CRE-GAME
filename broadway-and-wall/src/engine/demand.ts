@@ -848,8 +848,83 @@ const WORK_COPY: Record<WorkKind, { rumor: (n: string, yrs: number) => string; f
   },
 };
 
+function deedTaken(s: GameState, bbl: string): boolean {
+  if (s.holdings[bbl] || s.developments?.[bbl] || s.cityGroundLeases?.[bbl] || s.civicLand?.[bbl]) return true;
+  if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) return true;
+  for (const r of s.rivals ?? []) {
+    if (!r.failedM && r.bbls.includes(bbl)) return true;
+  }
+  return false;
+}
+
+/** Vacant lots the city may take for a park or a head-house — not yours, not the street's. */
+function claimCivicLot(
+  s: GameState, model: DemandModel, parcels: ParcelTable,
+  line: { id: string; annM: number },
+  kind: "park" | "station",
+): string | undefined {
+  // A park wants a real green; a station wants a plate for the head-house.
+  const minArea = kind === "park" ? 1800 : 600;
+  const host = model.blocks.get(line.id);
+  const pool: string[] = [];
+  const consider = (bbl: string) => {
+    const rec = parcels[bbl];
+    if (!rec || rec.class !== "land" || !(rec.lotArea > minArea)) return;
+    if (deedTaken(s, bbl)) return;
+    pool.push(bbl);
+  };
+  for (const bbl of host?.bbls ?? []) consider(bbl);
+  if (!pool.length) {
+    for (const n of host?.neighbours ?? []) {
+      const ob = model.blocks.get(n.id);
+      if (ob) for (const bbl of ob.bbls) consider(bbl);
+    }
+  }
+  if (!pool.length) return undefined;
+  const salt = kind === "park" ? "parklot" : "stnlot";
+  const i = Math.min(pool.length - 1, Math.floor(hash01(`${s.seed}:${salt}:${line.id}:${line.annM}`) * pool.length));
+  return pool[i];
+}
+
+export function isCivicLand(s: GameState, bbl: string): boolean {
+  return !!s.civicLand?.[bbl];
+}
+
+function takeCivicLots(s: GameState, model: DemandModel, parcels: ParcelTable) {
+  for (const l of s.lines ?? []) {
+    const kind = l.kind ?? "station";
+    if (kind !== "park" && kind !== "station") continue;
+    if (s.month < l.annM || l.siteBbl) continue;
+    const site = claimCivicLot(s, model, parcels, l, kind);
+    if (!site) continue;
+    l.siteBbl = site;
+    l.bbl = site;
+    s.civicLand = { ...(s.civicLand ?? {}), [site]: { kind, fromM: s.month } };
+    s.listings = (s.listings ?? []).filter((x) => x.bbl !== site);
+    if (s.talks?.[site]) {
+      delete s.talks[site];
+      if (!Object.keys(s.talks).length) delete s.talks;
+    }
+    if (s.approaches?.[site]) delete s.approaches[site];
+    const addr = parcels[site]?.address ?? l.name;
+    s.news.unshift({
+      q: s.month, kind: "event", bbl: site,
+      text: kind === "park"
+        ? `The city has bought the vacant lot at ${addr} for the new park.`
+        : `The transit authority has taken the lot at ${addr} for the new station.`,
+    });
+  }
+}
+
 function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
-  if (s.month < 24 || s.month % 12 !== 0) return;
+  if (s.month < 24) return;
+  // Off the hearing month: take lots for parks that already survived a vote.
+  // On the hearing month the claim waits until after the vote, below — a
+  // shelved plan must not buy dirt.
+  if (s.month % 12 !== 0) {
+    takeCivicLots(s, model, parcels);
+    return;
+  }
 
   // The hearing. A rumoured work reaches its decision date and is either
   // funded — the announcement, where most of the repricing starts — or
@@ -859,12 +934,13 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
     const kind: WorkKind = l.kind ?? "station";
     if (hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS) {
       s.lines = (s.lines ?? []).filter((x) => x !== l);
-      s.news.unshift({ q: s.month, kind: "warn", text: WORK_COPY[kind].shelved(l.name) });
+      s.news.unshift({ q: s.month, kind: "warn", text: WORK_COPY[kind].shelved(l.name), bbl: l.bbl });
     } else {
       s.news.unshift({ q: s.month, kind: "event",
-        text: WORK_COPY[kind].funded(l.name, Math.round((l.openM - s.month) / 12)) });
+        text: WORK_COPY[kind].funded(l.name, Math.round((l.openM - s.month) / 12)), bbl: l.bbl });
     }
   }
+  takeCivicLots(s, model, parcels);
 
   // Hashed off the campaign seed rather than drawn from `s.rng`, deliberately.
   // Drawing here would shift the RNG stream for everything downstream of this
@@ -886,13 +962,14 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   const kr = hash01(`${s.seed}:kind:${yr}`);
   const kind: WorkKind = kr < 0.55 ? "station" : kr < 0.8 ? "park" : "bridge";
   const spec = WORK_KINDS[kind];
+  const host = rec?.bbl ?? b.bbls[0];
   const line = {
-    id: b.id, cx: b.cx, cy: b.cy, name, kind, sigma: spec.sigma,
+    id: b.id, cx: b.cx, cy: b.cy, name, kind, sigma: spec.sigma, bbl: host,
     rumorM: s.month, annM: s.month + RUMOR_M, openM: s.month + RUMOR_M + spec.buildM,
     pts: +(spec.lo + spec.span * hash01(`${s.seed}:size:${yr}`)).toFixed(1),
   };
   s.lines = [...(s.lines ?? []), line];
-  s.news.unshift({ q: s.month, kind: "event", text: WORK_COPY[kind].rumor(name, Math.round(RUMOR_M / 12)) });
+  s.news.unshift({ q: s.month, kind: "event", text: WORK_COPY[kind].rumor(name, Math.round(RUMOR_M / 12)), bbl: host });
 }
 
 /** What the market pays for a civic work: a leak on the rumour, some on the funding vote, more once it is dug, all of it on opening day. */
@@ -1004,7 +1081,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   // A civic work opening is the loudest thing that happens to a map. Say it once.
   for (const l of s.lines ?? []) {
     if (s.month !== l.openM) continue;
-    s.news.unshift({ q: s.month, kind: "event",
+    s.news.unshift({ q: s.month, kind: "event", bbl: l.siteBbl ?? l.bbl,
       text: WORK_COPY[l.kind ?? "station"].opened(l.name, START_YEAR + Math.floor((l.rumorM ?? l.annM) / 12)) });
   }
 }

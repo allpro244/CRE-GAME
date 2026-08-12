@@ -785,6 +785,7 @@ const DECO_TINT: Record<string, [number, number, number]> = {
   banddeck: [0.92, 0.88, 0.78], bandroof: [0.40, 0.52, 0.43], bandpost: [0.30, 0.28, 0.26],
   // whitewashed clapboard and slate — the meeting house and the town hall
   civic: [1.16, 1.15, 1.10], civicroof: [0.44, 0.46, 0.50],
+  bridgedeck: [0.72, 0.68, 0.60],
   // raw concrete and the galvanised headhouse on top of it — grain elevators
   // are the one industrial building taller than the district around them, and
   // they are not painted, they are poured
@@ -6203,6 +6204,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   propsByBBL = new Map<string, { mesh: THREE.InstancedMesh; i: number }[]>();
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
+  private civicGroup = new THREE.Group();
+  private civicSig = "";
   // The pivoting jib assemblies of live construction cranes: render() swings
   // each Group's rotation.z off the shared clock, so the slew costs one
   // property write per crane per frame, and a dynGroup rebuild clears the
@@ -6250,7 +6253,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // than no bench and no railing at all
       benches?: Oriented[];
       rails?: Oriented[];
-      parks?: [number, number][][];
+      parks?: { ring: [number, number][]; flavour?: string }[] | [number, number][][];
       ponds?: [number, number][][];
       paths?: [number, number][][];
       /**
@@ -6602,30 +6605,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       const propStart = props.length;
 
-      // ---- vacant lot: gravel pad + low fence ------------------------------
+      // ---- vacant lot: gravel, scrub, or garden — by WHERE it is ------------
       if (v.k) {
         if (v.b) this.lotRings.set(v.b, ring);
-        capRoof(R, ring, 0.06, [S_LOT, rnd, varr, 1, fh]);
+        const ds = v.ds ?? 50;
+        const fringe = ds < 38;
+        const downtown = ds >= 62;
+        // vVar still textures the shader; the DRESSING follows demand so a
+        // downtown hole is a parking lot and a millside hole is scrub.
+        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : 0.40, 1, fh]);
         const fence = insetRing(ring, 0.5);
-        if (fence) extrudeWalls(W, fence, 0, 1.15, [S_LOT, rnd, varr, 1.15, fh]);
-        // WHAT VACANT LAND ACTUALLY DOES. Nearly half this city is unbuilt —
-        // that is the game's whole surface — and all of it read as blank plate
-        // from the air, which is what turned whole districts into pale voids.
-        // Empty ground in a real city is never empty: downtown lots get paved
-        // and parked on, and the ones nobody bothers with go to weeds and
-        // volunteer trees inside five years. The shader already splits gravel
-        // / grass / dirt on vVar; this dresses each to match.
+        if (fence && !fringe) extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
         const m2 = Math.abs(area) / 2;
-        if (varr > 0.62) {
-          // gone to scrub: small self-seeded trees, thicker toward the middle
+        if (fringe) {
           const n = Math.min(48, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd)) {
             this.lotTrees.push({ x: p[0], y: p[1], s: 0.55 + ((p[0] * 7.3 + p[1] * 3.1) % 1) * 0.45, rot: (p[1] * 2.1) % 6.28 });
           }
-        } else if (varr > 0.18 && m2 > 380) {
-          // surface parking, which is what a downtown hole in the ground earns
-          // until somebody builds on it. Rows share one bearing — scattered
-          // cars read as a junkyard, aligned ones read as a lot.
+        } else if (downtown && m2 > 380) {
           let bi = 0, bl = -1;
           for (let i = 0; i < ring.length; i++) {
             const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
@@ -6634,11 +6631,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           }
           const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
           const rot = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) + Math.PI / 2;
-          // a stall plus its share of aisle is about 85 m2; the cap only
-          // bites on the full-block lots, which really do hold that many
           const n = Math.min(90, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd + 0.37)) {
             this.lotCars.push({ x: p[0], y: p[1], s: 1, rot });
+          }
+        } else if (m2 > 220) {
+          const n = Math.min(12, Math.max(1, Math.round(m2 / 220)));
+          for (const p of scatterInRing(ring, n, rnd + 0.11)) {
+            this.lotTrees.push({ x: p[0], y: p[1], s: 0.4 + ((p[0] * 3.1) % 1) * 0.25, rot: (p[1] * 1.7) % 6.28 });
           }
         }
         if (v.b) {
@@ -7083,6 +7083,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     this.posAttrs = [wallGeom.getAttribute("position") as THREE.BufferAttribute, roofGeom.getAttribute("position") as THREE.BufferAttribute];
     this.scene.add(this.dynGroup);
+    this.scene.add(this.civicGroup);
     for (const { bbl, r } of wallRanges) {
       if (!this.rangesByBBL.has(bbl)) this.rangesByBBL.set(bbl, []);
       this.rangesByBBL.get(bbl)!.push({ attr: 0, r });
@@ -7550,8 +7551,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     {
       const columns: Item[] = [];
       const fountains: Item[] = [];
-      for (const ring of this.ctxPoints.parks ?? []) {
+      for (const entry of this.ctxPoints.parks ?? []) {
+        const ring = Array.isArray(entry) && typeof entry[0]?.[0] === "number"
+          ? entry as [number, number][]
+          : (entry as { ring: [number, number][] }).ring;
+        const flavour = Array.isArray(entry) && typeof entry[0]?.[0] === "number"
+          ? "park"
+          : (entry as { flavour?: string }).flavour ?? "park";
         if (!ring || ring.length < 3) continue;
+        if (flavour === "cemetery" || flavour === "market" || flavour === "battery") continue;
         const pts = ring.map((q) => this.project(q));
         // area and centroid of the ring, by the shoelace
         let a2 = 0, cx = 0, cy = 0;
@@ -7719,7 +7727,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
     };
 
-    for (const p of parks) fillRing(p, 0.07, S_LAWN, true);
+    for (const p of parks) {
+      const ring = Array.isArray(p) && typeof p[0]?.[0] === "number"
+        ? p as [number, number][]
+        : (p as { ring: [number, number][]; flavour?: string }).ring;
+      const flavour = Array.isArray(p) && typeof p[0]?.[0] === "number"
+        ? "park"
+        : (p as { ring: [number, number][]; flavour?: string }).flavour ?? "park";
+      fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true);
+    }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was
     // drawing on the ground beneath it — which was the pond and every path
@@ -8699,6 +8715,101 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
               .translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, 1.1),
             orange));
         }
+      }
+    }
+    this.sunDirty = true;
+    this.map.triggerRepaint();
+  }
+
+  /**
+   * Civic works the city funded after generation: a park on a lot it bought,
+   * a station head-house, a bridge deck. Flattened lots come off the skyline
+   * the same way a demolition does; the turf and the deck sit in a group of
+   * their own so a new park does not rebuild every tower the player put up.
+   */
+  setCivicWorks(works: {
+    parks: [number, number][][];
+    sites: [number, number][][];
+    stations: { ll: [number, number]; open: boolean }[];
+    bridges: { ring: [number, number][]; open: boolean }[];
+    flatten: string[];
+  }) {
+    const sig = [
+      works.flatten.join(","),
+      works.parks.length, works.sites.length,
+      works.stations.map((s) => `${s.ll[0].toFixed(5)}:${s.open ? 1 : 0}`).join(","),
+      works.bridges.length,
+    ].join("|");
+    if (sig === this.civicSig) return;
+    this.civicSig = sig;
+    for (const bbl of works.flatten) {
+      if (!this.flattened.has(bbl)) this.flattenLot(bbl);
+    }
+    this.civicGroup.clear();
+    const lawn = new THREE.MeshLambertMaterial({ color: 0x7e9e5c });
+    const dirt = new THREE.MeshLambertMaterial({ color: 0x8a7a55 });
+    const stone = new THREE.MeshLambertMaterial({ color: 0x6e6758 });
+    const civic = new THREE.MeshLambertMaterial({ color: 0xe8e4d8 });
+    const roof = new THREE.MeshLambertMaterial({ color: 0x5a4a3a });
+    const canopy = new THREE.MeshLambertMaterial({ color: 0x3a4550 });
+    const leaf = new THREE.MeshLambertMaterial({ color: 0x5f7d45 });
+    const fill = (ll: [number, number][], z: number, mat: THREE.Material) => {
+      const ring = ll.map((q) => this.project(q));
+      if (ring.length < 3) return;
+      const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { return; }
+      const g = new THREE.BufferGeometry();
+      const pos: number[] = [];
+      for (const t of tris) {
+        for (const i of t) pos.push(ring[i][0], ring[i][1], z);
+      }
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.computeVertexNormals();
+      this.civicGroup.add(new THREE.Mesh(g, mat));
+      return ring;
+    };
+    const plant = (ring: [number, number][]) => {
+      if (ring.length < 3) return;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of ring) {
+        if (x < minX) minX = x; if (y < minY) minY = y;
+        if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      }
+      const n = 5 + Math.floor(((maxX - minX) * (maxY - minY)) / 900);
+      for (let i = 0; i < n; i++) {
+        const t = ((i * 0.6180339887) % 1);
+        const u = ((i * 0.3819660113) % 1);
+        const x = minX + t * (maxX - minX);
+        const y = minY + u * (maxY - minY);
+        // skip the middle of the lawn — a park is an open green with trees at the edge
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        if (Math.hypot(x - cx, y - cy) < Math.min(maxX - minX, maxY - minY) * 0.28) continue;
+        const h = 4.2 + (i % 3) * 0.7;
+        const tree = new THREE.Mesh(new THREE.ConeGeometry(1.6, h, 5), leaf);
+        tree.position.set(x, y, h / 2 + 0.1);
+        this.civicGroup.add(tree);
+      }
+    };
+    for (const r of works.parks) {
+      const ring = fill(r, 0.08, lawn);
+      if (ring) plant(ring);
+    }
+    for (const r of works.sites) fill(r, 0.08, dirt);
+    for (const b of works.bridges) fill(b.ring, b.open ? 4.2 : 2.4, stone);
+    for (const s of works.stations) {
+      const [x, y] = this.project(s.ll);
+      const h = s.open ? 7.2 : 3.4;
+      const box = new THREE.Mesh(new THREE.BoxGeometry(14, 9, h), civic);
+      box.position.set(x, y, h / 2);
+      this.civicGroup.add(box);
+      if (s.open) {
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(15.4, 10.2, 1.4), roof);
+        cap.position.set(x, y, h + 0.7);
+        this.civicGroup.add(cap);
+        const shed = new THREE.Mesh(new THREE.BoxGeometry(16, 4.2, 3.2), canopy);
+        shed.position.set(x, y + 6.2, 1.6);
+        this.civicGroup.add(shed);
       }
     }
     this.sunDirty = true;

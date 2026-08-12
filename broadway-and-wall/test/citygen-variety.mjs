@@ -30,7 +30,10 @@ for(let i=0;i<N;i++){
   const areas=parks.map(p=>p.w*p.h);
   const shapes=parks.map(p=>p.shape??"square");
   rows.push({seed,nPark:parks.length,areas,shapes,nDiag:dg.length,
-    boul:cfg.plan?.boulevards, kind:cfg.plan?.boulevardKind, prog:cfg.plan?.parkProgramme, seams:dg.length-(cfg.plan?.boulevards??0), dw:dg.map(d=>d.h)});
+    boul:cfg.plan?.boulevards, kind:cfg.plan?.boulevardKind, prog:cfg.plan?.parkProgramme, seams:dg.length-(cfg.plan?.boulevards??0), dw:dg.map(d=>d.h),
+    flavours:parks.map(p=>p.flavour??"park"),
+    coast:cfg.plan?.coastProgramme, grain:cfg.plan?.grainProgramme,
+    rail:cfg.plan?.railProgramme, landmark:cfg.plan?.landmark});
 }
 console.log(`\nPARKS AND BOULEVARDS ACROSS ${rows.length} GENERATED ISLANDS\n`);
 const counts={}; for(const r of rows) counts[r.nPark]=(counts[r.nPark]??0)+1;
@@ -50,6 +53,16 @@ const pc={}; for(const r of rows) pc[r.prog]=(pc[r.prog]??0)+1;
 console.log("park PROGRAMME:", Object.entries(pc).map(([k,v])=>`${k} x${v}`).join("  "));
 const sc={}; for(const r of rows) for(const s of r.shapes??[]) sc[s]=(sc[s]??0)+1;
 console.log("park SHAPES:", Object.entries(sc).sort().map(([k,v])=>`${k} x${v}`).join("  "));
+const fc={}; for(const r of rows) for(const f of r.flavours??[]) fc[f]=(fc[f]??0)+1;
+console.log("park FLAVOUR:", Object.entries(fc).sort().map(([k,v])=>`${k} x${v}`).join("  "));
+const cc={}; for(const r of rows) cc[r.coast??"?"]=(cc[r.coast??"?"]??0)+1;
+console.log("coast PROGRAMME:", Object.entries(cc).map(([k,v])=>`${k} x${v}`).join("  "));
+const gc={}; for(const r of rows) gc[r.grain??"?"]=(gc[r.grain??"?"]??0)+1;
+console.log("grain PROGRAMME:", Object.entries(gc).map(([k,v])=>`${k} x${v}`).join("  "));
+const rc={}; for(const r of rows) rc[r.rail??"?"]=(rc[r.rail??"?"]??0)+1;
+console.log("rail PROGRAMME:", Object.entries(rc).map(([k,v])=>`${k} x${v}`).join("  "));
+const lc={}; for(const r of rows) lc[r.landmark??"?"]=(lc[r.landmark??"?"]??0)+1;
+console.log("LANDMARK:", Object.entries(lc).map(([k,v])=>`${k} x${v}`).join("  "));
 if (!(sc.round >= Math.max(3, Math.floor(rows.length * 0.08)))) {
   console.error(`\nFAIL  too few round parks (${sc.round ?? 0} across ${rows.length} islands — need at least ${Math.max(3, Math.floor(rows.length * 0.08))})`);
   process.exit(1);
@@ -80,4 +93,68 @@ for (const seed of [20261, 481923, 550991]) {
   console.log(`\nDISTRICT MASSING seed ${seed}: tallest med ${med(tall)} (n=${tall.length})  shortest med ${med(low)} (n=${low.length})  ${ok ? "OK" : "FAIL"}`);
 }
 if (districtFails) { console.log(`\nFAIL  ${districtFails} seed(s) — exchange should read taller than millside`); process.exit(1); }
-console.log("\nvariety pass (parks + district massing)");
+
+// Inland water — a harbour notch is not a creek in the streets.
+const streams = [];
+for (let i = 0; i < N; i++) {
+  const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
+  let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+  streams.push({
+    seed,
+    prog: cfg.plan?.streamProgramme ?? "?",
+    n: cfg.plan?.nStreams ?? (cfg.streams ?? []).filter((st) => st.kind !== "pond").length,
+    ponds: cfg.plan?.nPonds ?? 0,
+    bridges: cfg.plan?.nBridges ?? (cfg.bridges ?? []).length,
+  });
+}
+const wet = streams.filter((r) => r.n > 0).length;
+const sp = {};
+for (const r of streams) sp[r.prog] = (sp[r.prog] ?? 0) + 1;
+console.log(`\nSTREAMS across ${streams.length} islands: ${wet} have inland water (${(100 * wet / streams.length).toFixed(0)}%)`);
+console.log("stream PROGRAMME:", Object.entries(sp).map(([k, v]) => `${k} x${v}`).join("  "));
+console.log(`bridges: median ${Math.round(q(streams.map((r) => r.bridges), 0.5))}  ponds: median ${Math.round(q(streams.map((r) => r.ponds), 0.5))}`);
+if (wet < Math.floor(streams.length * 0.5)) {
+  console.error(`\nFAIL  inland water on ${wet}/${streams.length} islands — need at least half`);
+  process.exit(1);
+}
+if (Object.keys(sp).length < 2) {
+  console.error(`\nFAIL  stream programme collapsed to ${Object.keys(sp).join(",")}`);
+  process.exit(1);
+}
+const topShare = Math.max(...Object.values(sp)) / streams.length;
+if (topShare > 0.72) {
+  console.error(`\nFAIL  one stream programme is ${(topShare * 100).toFixed(0)}% of towns — the generator stopped generating`);
+  process.exit(1);
+}
+
+const failMono = (label, dist) => {
+  const keys = Object.keys(dist);
+  if (keys.length < 2) {
+    console.error(`\nFAIL  ${label} collapsed to ${keys.join(",") || "nothing"}`);
+    process.exit(1);
+  }
+  const share = Math.max(...Object.values(dist)) / Object.values(dist).reduce((a, b) => a + b, 0);
+  if (share > 0.78) {
+    console.error(`\nFAIL  ${label} is ${(share * 100).toFixed(0)}% one value — the generator stopped generating`);
+    process.exit(1);
+  }
+};
+failMono("coast programme", cc);
+failMono("grain programme", gc);
+failMono("rail programme", rc);
+failMono("landmark", lc);
+const flavoured = rows.filter((r) => (r.flavours ?? []).some((f) => f !== "park")).length;
+if (flavoured < Math.floor(rows.length * 0.7)) {
+  console.error(`\nFAIL  only ${flavoured}/${rows.length} towns have a cemetery/battery/market`);
+  process.exit(1);
+}
+if ((fc.cemetery ?? 0) < Math.max(2, Math.floor(rows.length * 0.15))) {
+  console.error(`\nFAIL  too few cemeteries (${fc.cemetery ?? 0})`);
+  process.exit(1);
+}
+if ((fc.battery ?? 0) < 2 || (fc.market ?? 0) < 2) {
+  console.error(`\nFAIL  battery ${fc.battery ?? 0} market ${fc.market ?? 0} — public ground collapsed`);
+  process.exit(1);
+}
+
+console.log("\nvariety pass (parks + flavours + coast + grain + rail + landmark + streams)");

@@ -431,6 +431,15 @@ body {
   font-size: 13px; letter-spacing: 1.5px; color: #7d99ad;
   text-shadow: none;
 }
+.map-label-station {
+  font-family: var(--serif);
+  font-size: 11px; letter-spacing: 0.6px; font-weight: 600;
+  color: #4a5560;
+}
+.map-label-civic {
+  font-family: var(--serif); font-style: italic;
+  font-size: 11px; color: #5a6a48;
+}
 
 /* ---- hover tooltip ---- */
 .hover-tip {

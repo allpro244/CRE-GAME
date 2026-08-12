@@ -2055,7 +2055,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 34;
+  v: 36;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -2376,7 +2376,16 @@ export interface GameState {
    * announced stations and behave exactly as they always did.
    */
   lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number;
-    kind?: "station" | "park" | "bridge"; rumorM?: number; sigma?: number }[];
+    kind?: "station" | "park" | "bridge"; rumorM?: number; sigma?: number;
+    /** Host parcel — news and the camera go here. Missing on old saves. */
+    bbl?: string;
+    /** The vacant lot the city bought for a park. Set when the work is funded. */
+    siteBbl?: string }[];
+  /**
+   * Lots the city has taken for civic works. Off the tape, off the skyline,
+   * painted as a park. Keyed by BBL.
+   */
+  civicLand?: Record<string, { kind: "park" | "station"; fromM: number }>;
   /**
    * THE FORTUNES OF THE NEIGHBOURHOODS.
    *

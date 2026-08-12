@@ -16,7 +16,7 @@ import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
-import { demandNow } from "./demand";
+import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
@@ -149,6 +149,9 @@ export function executePurchase(
 ): { s: GameState; err?: string } {
   if (s.cityGroundLeases?.[bbl]) {
     return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
+  }
+  if (isCivicLand(s, bbl)) {
+    return { s, err: "The city took that lot for a civic work. It is not for sale." };
   }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -3173,6 +3176,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
     if (!rec) continue;
+    if (isCivicLand(s, li.bbl)) continue;
     // A building you are under contract on is not on the market. Somebody else
     // buying it out from under a signed contract is not competition, it is a
     // bug — and it was the one thing that could make the funding window

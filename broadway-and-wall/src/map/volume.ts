@@ -15,6 +15,7 @@ export interface BuildingVolume {
   z1: number;  // top meters
   d: number;   // 1 = decorative
   k?: number;  // 1 = vacant lot (dress with gravel + fence)
+  ds?: number; // demand 0-100, vacant-lot character (downtown vs fringe)
   x?: number;  // 1 = this volume is the ROOF of its building, not a setback
                //     terrace under it. Bulkheads, masts and stepped crowns
                //     go here and nowhere else.

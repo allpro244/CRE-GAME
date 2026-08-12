@@ -25,7 +25,7 @@ import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
 import { tickFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
-import { tickDemand } from "./demand";
+import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -140,7 +140,7 @@ export function newGame(
 ): GameState {
   const startAge = age0 ?? lifeForCash(cash0).age;
   const s: GameState = {
-    v: 34,
+    v: 36,
     seed,
     rng: seed,
     streams: initStreams(seed),
@@ -263,7 +263,7 @@ export function newGame(
 function listHolderExit(s: GameState, parcels: ParcelTable) {
   const { bbls, distress, kind } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
   for (const bbl of bbls) {
-    if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl]) continue;
+    if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl] || isCivicLand(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
@@ -359,7 +359,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // A listing you are under contract on does not lapse out from under you. The
   // contract has its own clock; this one stops while it runs.
   s.listings = s.listings.filter((l) =>
-    (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl]);
+    (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "depression" ? 0.32
@@ -371,7 +371,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   let rejects = 0;
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl]) { rejects++; continue; }
+    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
     // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
     //
     // This picked a parcel at random with no memory of what had just traded,

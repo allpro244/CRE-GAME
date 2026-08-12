@@ -2329,6 +2329,8 @@ export interface GameState {
   // hearing on one site, an application waiting on the board, and the
   // buildings nobody is allowed to knock down. See engine/zoning.ts.
   zoneAdj?: Record<string, number>;          // district -> FAR multiplier
+  /** the last rezoning each district saw — month, direction, and where the envelope landed. A value event you can read, not just a news line that scrolled away. */
+  zoneLog?: Record<string, { m: number; dir: 1 | -1; adj: number }>;
   variance?: Record<string, number>;         // bbl -> extra FAR granted
   /**
    * WHAT THE BOARD SAID, and when.

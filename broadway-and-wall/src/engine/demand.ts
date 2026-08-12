@@ -279,14 +279,39 @@ const EMP_CONC = 2.2;
 // around the head-house reprices on the announcement, again when the hoarding
 // goes up, and again on the day it runs. Nobody has to click anything: it is
 // news, a lens on the map, and a number on the panel.
-/** Odds of a line being announced in any given year. */
+/** Odds of a civic work being rumoured in any given year. */
 const LINE_ODDS = 1 / 14;
-/** How long from the announcement to the first train. */
-const LINE_BUILD_M = 72;
 /** How far a station's pull reaches, in metres. */
 const LINE_SIGMA = 380;
 /** What the market prices before it opens: on the news, and once it is dug. */
 const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
+/**
+ * The rumour stage. A plan circulates for two years before anything is funded,
+ * and the market prices almost none of it — LINE_RUMOR is the smart-money
+ * leak, not a consensus. That gap between what the paper says and what the
+ * tape says is the trade: anybody reading the news can buy ahead of the
+ * announcement, and the price they pay for the option is SHELVE_ODDS — a
+ * quarter of these plans die at the hearing and the ground gives the leak
+ * back. An early trade with no way to lose is not an early trade, it is a
+ * coupon.
+ */
+const RUMOR_M = 24;
+const LINE_RUMOR = 0.06;
+const SHELVE_ODDS = 0.25;
+/**
+ * What each kind of work is worth and how far it reaches. Stations reach the
+ * five-minute walk and carry the most; a park is loved closer in; a bridge
+ * reprices a whole quarter because it changes what the quarter is attached to,
+ * takes points from a wider base, and is the slowest to build after the vote.
+ * Points spans are the same order as the old station-only draw (16-26), scaled
+ * by kind rather than retuned.
+ */
+const WORK_KINDS = {
+  station: { lo: 16, span: 10, sigma: 380, buildM: 72 },
+  park:    { lo: 8,  span: 6,  sigma: 300, buildM: 36 },
+  bridge:  { lo: 12, span: 8,  sigma: 520, buildM: 60 },
+} as const;
+type WorkKind = keyof typeof WORK_KINDS;
 
 export interface BlockGeom {
   id: string;
@@ -801,14 +826,55 @@ function tickEmployment(s: GameState, model: DemandModel) {
  * anybody rides it, put where a city actually puts one: ground that is cheap,
  * buildable and badly served, and not on top of the last line.
  */
+/** The copy for each stage of each kind. `name` is the street the work sits on. */
+const WORK_COPY: Record<WorkKind, { rumor: (n: string, yrs: number) => string; funded: (n: string, yrs: number) => string; shelved: (n: string) => string; opened: (n: string, since: number) => string }> = {
+  station: {
+    rumor: (n, y) => `City Hall is circulating plans for a new station near ${n}. Alignments are being argued over and nothing is funded — a decision is ${y} years out, and the ground has not moved yet. It will.`,
+    funded: (n, y) => `The transit authority has funded the new station at ${n}. First trains in ${y} years. Everything within a five-minute walk of that head-house is about to be worth more than it is today — and the people who own it already know.`,
+    shelved: (n) => `The station plan at ${n} died in committee this morning. Whoever bought the rumour owns ordinary dirt again.`,
+    opened: (n, y) => `The ${n} station opened this morning. Years of hoardings, and the ground around it is not the ground it was in ${y}.`,
+  },
+  park: {
+    rumor: (n, y) => `The parks department is sketching a new park at ${n}. It is a drawing, not a budget — the vote is ${y} years out — but the blocks that would face it are worth watching.`,
+    funded: (n, y) => `The city has funded the new park at ${n}. Ground broken this year, gates open in ${y}. A front-row address on a park is a different kind of address.`,
+    shelved: (n) => `The park at ${n} was cut from the budget. The drawing goes in a drawer, and the frontage goes back to being frontage.`,
+    opened: (n, y) => `The park at ${n} opened its gates this morning. The blocks that face it have not been ordinary since ${y}, and now everybody can see why.`,
+  },
+  bridge: {
+    rumor: (n, y) => `Engineers have been seen surveying at ${n} — the bridge is back on the table. Nothing is funded and the argument is ${y} years from a vote, but a crossing changes what a whole quarter is attached to.`,
+    funded: (n, y) => `The bridge at ${n} is funded. ${y} years of falsework, and then a quarter that used to be the far side of the water stops being far.`,
+    shelved: (n) => `The bridge at ${n} was voted down. The far bank stays the far bank, and the rumour money goes home.`,
+    opened: (n, y) => `The ${n} bridge carried its first traffic this morning. The far side has been repricing since ${y}; today it finished.`,
+  },
+};
+
 function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   if (s.month < 24 || s.month % 12 !== 0) return;
+
+  // The hearing. A rumoured work reaches its decision date and is either
+  // funded — the announcement, where most of the repricing starts — or
+  // shelved, removed outright so the corridor is open to a later plan.
+  for (const l of [...(s.lines ?? [])]) {
+    if (l.rumorM === undefined || s.month !== l.annM) continue;
+    const kind: WorkKind = l.kind ?? "station";
+    if (hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS) {
+      s.lines = (s.lines ?? []).filter((x) => x !== l);
+      s.news.unshift({ q: s.month, kind: "warn", text: WORK_COPY[kind].shelved(l.name) });
+    } else {
+      s.news.unshift({ q: s.month, kind: "event",
+        text: WORK_COPY[kind].funded(l.name, Math.round((l.openM - s.month) / 12)) });
+    }
+  }
+
   // Hashed off the campaign seed rather than drawn from `s.rng`, deliberately.
   // Drawing here would shift the RNG stream for everything downstream of this
   // tick — every rival decision, every tenant, every listing — which turns a
   // change about geography into a change about all of it, and makes every
   // seed-pinned number anybody else has measured stop reproducing. It also
-  // means a save-scummer cannot reroll the line.
+  // means a save-scummer cannot reroll the line. Same hash keys as the old
+  // announcement-only mechanic, so every seed keeps the corridor and the year
+  // it always had — what changed is that the year now starts a rumour rather
+  // than a funded work.
   const yr = Math.floor(s.month / 12);
   if (hash01(`${s.seed}:line:${yr}`) >= LINE_ODDS) return;
   const cand = [...model.blocks.values()].filter((b) =>
@@ -817,20 +883,31 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   const b = cand[Math.min(cand.length - 1, Math.floor(hash01(`${s.seed}:where:${yr}`) * cand.length))];
   const rec = parcels[b.bbls[0]];
   const name = rec?.address?.replace(/^\d+\s+/, "") ?? "the north end";
-  const line = { id: b.id, cx: b.cx, cy: b.cy, name, annM: s.month, openM: s.month + LINE_BUILD_M, pts: +(16 + 10 * hash01(`${s.seed}:size:${yr}`)).toFixed(1) };
+  const kr = hash01(`${s.seed}:kind:${yr}`);
+  const kind: WorkKind = kr < 0.55 ? "station" : kr < 0.8 ? "park" : "bridge";
+  const spec = WORK_KINDS[kind];
+  const line = {
+    id: b.id, cx: b.cx, cy: b.cy, name, kind, sigma: spec.sigma,
+    rumorM: s.month, annM: s.month + RUMOR_M, openM: s.month + RUMOR_M + spec.buildM,
+    pts: +(spec.lo + spec.span * hash01(`${s.seed}:size:${yr}`)).toFixed(1),
+  };
   s.lines = [...(s.lines ?? []), line];
-  s.news.unshift({ q: s.month, kind: "event",
-    text: `The transit authority has funded a new station at ${name}. First trains in ${Math.round(LINE_BUILD_M / 12)} years. Everything within a five-minute walk of that head-house is about to be worth more than it is today — and the people who own it already know.` });
+  s.news.unshift({ q: s.month, kind: "event", text: WORK_COPY[kind].rumor(name, Math.round(RUMOR_M / 12)) });
 }
 
-/** What the market is currently paying for a line: some on the news, more once it is dug, all of it on opening day. */
+/** What the market pays for a civic work: a leak on the rumour, some on the funding vote, more once it is dug, all of it on opening day. */
 function transitLift(s: GameState, b: BlockGeom): number {
   let v = 0;
   for (const l of s.lines ?? []) {
-    const priced = s.month >= l.openM ? 1 : s.month >= l.openM - 24 ? LINE_DIGGING : s.month >= l.annM ? LINE_EARLY : 0;
+    const priced = s.month >= l.openM ? 1
+      : s.month >= l.openM - 24 ? LINE_DIGGING
+      : s.month >= l.annM ? LINE_EARLY
+      : l.rumorM !== undefined && s.month >= l.rumorM ? LINE_RUMOR
+      : 0;
     if (!priced) continue;
+    const sig = l.sigma ?? LINE_SIGMA;
     const d = Math.hypot(b.cx - l.cx, b.cy - l.cy);
-    v += l.pts * priced * Math.exp(-(d * d) / (2 * LINE_SIGMA * LINE_SIGMA));
+    v += l.pts * priced * Math.exp(-(d * d) / (2 * sig * sig));
   }
   return v;
 }
@@ -924,11 +1001,11 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     }
   }
 
-  // A line opening is the loudest thing that happens to a map. Say it once.
+  // A civic work opening is the loudest thing that happens to a map. Say it once.
   for (const l of s.lines ?? []) {
     if (s.month !== l.openM) continue;
     s.news.unshift({ q: s.month, kind: "event",
-      text: `The ${l.name} station opened this morning. Six years of hoardings, and the ground around it is not the ground it was in ${START_YEAR + Math.floor(l.annM / 12)}.` });
+      text: WORK_COPY[l.kind ?? "station"].opened(l.name, START_YEAR + Math.floor((l.rumorM ?? l.annM) / 12)) });
   }
 }
 
@@ -1020,9 +1097,10 @@ export function blockReport(s: GameState, parcels: ParcelTable, block: string): 
     line: (() => {
       let best: { name: string; monthsOut: number; pts: number } | null = null;
       for (const l of s.lines ?? []) {
+        const sig = l.sigma ?? LINE_SIGMA;
         const d = Math.hypot(b.cx - l.cx, b.cy - l.cy);
-        if (d > LINE_SIGMA * 1.6) continue;
-        const p = l.pts * Math.exp(-(d * d) / (2 * LINE_SIGMA * LINE_SIGMA));
+        if (d > sig * 1.6) continue;
+        const p = l.pts * Math.exp(-(d * d) / (2 * sig * sig));
         if (!best || p > best.pts) best = { name: l.name, monthsOut: l.openM - s.month, pts: +p.toFixed(1) };
       }
       return best;

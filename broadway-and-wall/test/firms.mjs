@@ -115,7 +115,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 // Living firm count over a century — output, not a hard refill rail (#48/#49).
 {
   const SEEDS = [7777, 4242];
-  let last = null;
+  let allSpinouts = [];
   for (const seed of SEEDS) {
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     const samples = [];
@@ -126,17 +126,24 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
       }
       g = E.advanceQuarter(g, parcels, bbls, adjacency);
     }
-    last = g;
     const min = Math.min(...samples);
     const max = Math.max(...samples);
+    console.log(`  seed ${seed} decade series: ${samples.join(" · ")}`);
     ok(`seed ${seed}: street never empties`, min >= 5, `min=${min}`);
     ok(`seed ${seed}: not hard-capped at 24`, max > 24, `max=${max}`);
     ok(`seed ${seed}: firms survive century`, samples[samples.length - 1] >= 5,
       `end=${samples[samples.length - 1]}`);
+    allSpinouts.push(...(g.rivals ?? []).filter((r) => r.spawnedFrom?.firmName));
+    // NO ZOMBIES: nothing "alive" with no book, no debt, and years of nothing.
+    const zombies = (g.rivals ?? []).filter((r) =>
+      r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && !(r.stressMs) && (r.emptyMs ?? 0) > 26);
+    ok(`seed ${seed}: no zombie firms on the leaderboard`, zombies.length === 0, `${zombies.length}`);
   }
-  const spinouts = (last?.rivals ?? []).filter((r) => r.spawnedFrom?.firmName);
-  ok("spinouts carry genealogy when present", spinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.personName),
-    `${spinouts.length} with lineage`);
+  // The street itself now produces genealogy — a number two leaving a thriving
+  // shop — so this assert can actually fail on an unplayed century.
+  ok("unplayed centuries produce spinouts", allSpinouts.length >= 1, `${allSpinouts.length} across ${SEEDS.length} seeds`);
+  ok("every spinout carries full genealogy", allSpinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.personName),
+    `${allSpinouts.length} with lineage`);
 }
 
 console.log(`\n${fails === 0 ? "firms pass" : `${fails} firms failure(s)`}`);

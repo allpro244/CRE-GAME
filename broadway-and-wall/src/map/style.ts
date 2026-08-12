@@ -647,6 +647,8 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },
+      {
+        // center dashes on the shore road at close zoom
         id: "street-dash",
         type: "line",
         source: "bw-context",

@@ -364,15 +364,28 @@ export function DealsPage() {
                     <div className="deal-head">
                       {a.name}{yrsIn >= 8 ? ` · ${yrsIn} years in the building` : ""} · {rec?.address ?? a.bbl}
                     </div>
-                    <div className="grid">
-                      <Row k="Their ask" v={`$${a.askPsf.toFixed(0)}/sf, down from $${a.currentPsf.toFixed(0)} · adds ${Math.round(a.addM / 12)} yrs of term`} strong />
-                      <Row k="Rent forgone" v={`~${usd(Math.round((a.currentPsf - a.askPsf) * a.sf))} / yr on ${sf(a.sf)}`} />
-                      <Row k="If you decline" v="the paper stands — and a tenant running lean fails at three times the rate" />
-                      <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
-                    </div>
+                    {a.kind === "giveback" ? (
+                      <div className="grid">
+                        <Row k="Their ask" v={`hand back ${sf(a.giveSf ?? 0)} of the ${sf(a.sf)} they hold — the headcount is gone`} strong />
+                        <Row k="Rent given up" v={`~${usd(Math.round(a.currentPsf * (a.giveSf ?? 0)))} / yr, and the space turns to make-ready`} />
+                        <Row k="If you decline" v="the lease stands — a business paying for empty floors fails at three times the rate" />
+                        <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
+                      </div>
+                    ) : (
+                      <div className="grid">
+                        <Row k="Their ask" v={`$${a.askPsf.toFixed(0)}/sf, down from $${a.currentPsf.toFixed(0)} · adds ${Math.round(a.addM / 12)} yrs of term`} strong />
+                        <Row k="Rent forgone" v={`~${usd(Math.round((a.currentPsf - a.askPsf) * a.sf))} / yr on ${sf(a.sf)}`} />
+                        <Row k="If you decline" v="the paper stands — and a tenant running lean fails at three times the rate" />
+                        <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
+                      </div>
+                    )}
                     <div className="modal-actions">
-                      <button className="btn btn-buy" onClick={() => useStore.getState().answerAsk(a.id, "grant")}>Grant relief</button>
-                      <button className="btn" onClick={() => useStore.getState().answerAsk(a.id, "decline")}>Hold the paper</button>
+                      <button className="btn btn-buy" onClick={() => useStore.getState().answerAsk(a.id, "grant")}>
+                        {a.kind === "giveback" ? "Take the space back" : "Grant relief"}
+                      </button>
+                      <button className="btn" onClick={() => useStore.getState().answerAsk(a.id, "decline")}>
+                        {a.kind === "giveback" ? "Hold them to the lease" : "Hold the paper"}
+                      </button>
                       <button className="btn" onClick={() => go(a.bbl)}>The building</button>
                     </div>
                   </div>

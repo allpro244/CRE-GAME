@@ -23,6 +23,20 @@ import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./st
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 /**
+ * A stable 0..1 from a string, same avalanched FNV-1a as demand.ts. Used where
+ * an event must be able to fire without drawing from the RNG — a draw here
+ * would shift the leasing stream for every seed-pinned number downstream.
+ */
+function hashChance(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h ^= h >>> 16; h = Math.imul(h, 2246822507);
+  h ^= h >>> 13; h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
  * What a lease of this class looks like when it is signed. Office in this
  * market is mostly full-service with a base-year stop; retail and industrial
  * are triple-net; a minority of everything is flat gross.
@@ -1199,6 +1213,50 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // three times the default risk for two years, and they remember it at
     // the renewal. At most one ask arrives citywide per month, because the
     // point is that each one is a real letter from a real tenant, not a queue.
+    // THE GIVEBACK. A tenant who has genuinely shrunk does not ask for a rent
+    // cut — they are paying for floors nobody sits on, and before they go dark
+    // they do the other thing real tenants do: offer the space back. Take it
+    // and you have vacancy today plus a tenant who fits what they hold; hold
+    // them to the lease and the face rent survives on a business carrying
+    // empty floors, which is how defaults are made. Same discipline as the
+    // relief letter: one ask citywide per month, a real letter, both answers
+    // priced. Gated on a seed hash rather than the RNG so the leasing stream
+    // is untouched and every seed-pinned number still reproduces.
+    if (!askIssued) {
+      for (let i = 0; i < h.tenants.length; i++) {
+        const t = h.tenants[i];
+        const left = t.endM - q;
+        if (left < 12 || left > 60) continue;
+        if (t.reliefAskedM !== undefined && q - t.reliefAskedM < 48) continue;
+        if ((s.asks ?? []).some((a) => a.bbl === h.bbl && a.name === t.name && a.tenantStartM === t.startM)) continue;
+        const needG = t.sf * (t.staff ?? 1);
+        if (needG >= t.sf * 0.62) continue;                 // not shrunk enough to give a floor back
+        const use = t.use ?? (rec.class as BuiltClass);
+        const newSf = Math.max(minTenancySf(rec, use), toSuites(rec, needG, t.sf, use) || t.sf);
+        const freed = t.sf - newSf;
+        if (freed < t.sf * 0.15) continue;                  // nothing that demises cleanly
+        if (hashChance(`gb:${s.seed}:${h.bbl}:${t.name}:${t.startM}:${q}`) >= 0.05) continue;
+        t.reliefAskedM = q;
+        askIssued = true;
+        if (!s.asks) s.asks = [];
+        const id = s.nextAskId ?? 1;
+        s.nextAskId = id + 1;
+        s.asks.push({
+          id, bbl: h.bbl, name: t.name, tenantStartM: t.startM,
+          sf: t.sf, currentPsf: t.rentPsf, askPsf: t.rentPsf, addM: 0,
+          arrivedM: q, expiresM: q + 3, kind: "giveback", giveSf: freed,
+        });
+        const yrsIn = Math.floor((q - t.startM) / 12);
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
+            + `wants to hand back ${(freed / 1000).toFixed(1)}k sf — the headcount is gone and they are paying for empty floors. `
+            + `Take the space and re-let it, or hold them to the paper and hope the business outlives the lease. `
+            + `The letter is on your desk until ${monthLabel(q + 3)}.`,
+        });
+        break;
+      }
+    }
     if (!askIssued) {
       for (let i = 0; i < h.tenants.length; i++) {
         const t = h.tenants[i];
@@ -1840,6 +1898,46 @@ export function answerAsk(
   const rec = h ? resolveRec(parcels, next, a.bbl) : null;
   const t = h?.tenants.find((x) => x.name === a.name && x.startM === a.tenantStartM);
   if (!h || !rec || !t) return { s: next, msg: "", err: "That tenant is no longer on the roll." };
+  if (a.kind === "giveback") {
+    if (action === "decline") {
+      t.strainedM = next.month;
+      next.news.unshift({
+        q: next.month, kind: "info",
+        text: `You held ${t.name} to the lease at ${rec.address} — all ${(t.sf / 1000).toFixed(1)}k sf of it, `
+          + `to ${monthLabel(t.endM)}. They will keep paying for floors nobody sits on, for as long as the business lasts.`,
+      });
+      return { s: next, msg: "Declined. The lease stands, all of it." };
+    }
+    const freed = Math.min(a.giveSf ?? 0, t.sf - 1);
+    if (freed <= 0) return { s: next, msg: "", err: "There is no space left to take back." };
+    // the lawyer papers the surrender; the space turns like any other giveback
+    const legal = Math.max(8_000, Math.round(t.rentPsf * freed * 0.01));
+    if (next.cash < legal) return { s, msg: "", err: `Papering the surrender costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+    next.cash -= legal;
+    logBooks(next, "leasing", legal);
+    const use = (t.use ?? (rec.class as BuiltClass)) as BuiltClass;
+    h.makeReady = [...(h.makeReady ?? []), { sf: freed, readyM: next.month + 3, use: t.use }];
+    noteTenantSfChange(next, use, freed);
+    const oldSf = t.sf;
+    t.sf -= freed;
+    // they now fit what they hold — the same headcount over less space
+    t.staff = Math.min(1.05, (t.staff ?? 1) * oldSf / t.sf);
+    delete t.strainedM;
+    // and the deposit trues down to the smaller tenancy — cash out, liability down
+    const dep = depositFor(next, t.rentPsf, t.sf, t.credit);
+    if ((t.deposit ?? 0) > dep) {
+      const back = (t.deposit ?? 0) - dep;
+      next.cash -= back;
+      t.deposit = dep;
+    }
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `Surrender signed at ${rec.address}: ${t.name} hands back ${(freed / 1000).toFixed(1)}k sf and keeps `
+        + `${(t.sf / 1000).toFixed(1)}k at $${t.rentPsf.toFixed(0)}/sf. The space turns to make-ready — `
+        + `a smaller covenant that fits beats a bigger one that fails.`,
+    });
+    return { s: next, msg: "Space taken back." };
+  }
   if (action === "decline") {
     t.strainedM = next.month;
     next.news.unshift({

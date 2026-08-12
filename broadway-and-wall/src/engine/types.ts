@@ -156,6 +156,10 @@ export interface TenantAsk {
   addM: number;
   arrivedM: number;
   expiresM: number;
+  /** what kind of letter this is. Absent = "relief" (a rent cut for term, the original ask). */
+  kind?: "relief" | "giveback";
+  /** giveback only: the space they want to surrender, in sf */
+  giveSf?: number;
 }
 
 export interface LOI {

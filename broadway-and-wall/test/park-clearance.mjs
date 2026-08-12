@@ -84,10 +84,33 @@ for (const seed of seeds) {
     }
   }
 
-  const ok = parkHitsLot === 0 && minD >= MIN_PARK_TO_LOT;
+  const streams = city.context.features
+    .filter((f) => f.properties?.kind === "stream")
+    .map(ringOf)
+    .filter(Boolean)
+    .map((r) => r.map(proj.toM));
+  const trees = city.context.features
+    .filter((f) => f.properties?.kind === "tree")
+    .map((f) => proj.toM(f.geometry.coordinates));
+  const wetTrees = trees.filter((p) => streams.some((r) => inRing(p, r) && distToRing(p, r) > 0.4)).length;
+  let wetPath = 0, pathPts = 0;
+  for (const f of city.context.features) {
+    if (f.properties?.kind !== "parkpath") continue;
+    const line = f.geometry?.coordinates ?? [];
+    for (const ll of line) {
+      pathPts++;
+      const p = proj.toM(ll);
+      // Clip vertices sit on the bank to within the 1.5 m sample; only a
+      // walk that actually crosses the channel fails this.
+      if (streams.some((r) => inRing(p, r) && distToRing(p, r) > 1.6)) wetPath++;
+    }
+  }
+
+  const ok = parkHitsLot === 0 && minD >= MIN_PARK_TO_LOT && wetTrees === 0 && wetPath === 0;
   console.log(
     `${ok ? "OK" : "FAIL"} seed ${seed}: min park↔lot ${minD.toFixed(2)} m `
-    + `(want ≥ ${MIN_PARK_TO_LOT}) overlaps=${parkHitsLot}`,
+    + `(want ≥ ${MIN_PARK_TO_LOT}) overlaps=${parkHitsLot} `
+    + `trees-in-water=${wetTrees}/${trees.length} path-in-water=${wetPath}/${pathPts}`,
   );
   if (!ok) failed++;
 }

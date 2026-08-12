@@ -53,24 +53,24 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 37 as const;
+export const SAVE_VERSION = 38 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
  *
  * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
  * so anything that changes what a seed produces changes the ground under a
- * campaign's deeds. v37 recuts the plat: creeks are overlapping convex
- * capsules instead of one self-intersecting offset polygon, mill ponds are
- * 48-gons instead of 20-gons, and the estuary lead-in is no longer a single
- * rectangle across the town.
+ * campaign's deeds. v38 recuts the plat: the creek centreline no longer
+ * U-turns through a park, lot-cutting capsules follow that path, and the
+ * park programme is smaller and less frequent (~20% off count and size, more
+ * space between greens). The map paints one ribbon per run instead of the
+ * capsules themselves. Park trees and walks stay off the painted water.
  *
- * v36 was coast programmes, harbour slips, lot grain, and the folded creek
- * stroke. A save stamped 36 still has that spike-prone water: opening it
- * under this generator would put every surviving BBL on different ground.
- * Refusing it is the honest answer.
+ * v37 was convex capsules painted as water — no spike, but a stack of blocks
+ * across the green. A save stamped 37 still has that path: opening it here
+ * would put every surviving BBL on different ground.
  */
-const ISLAND_GROUND_MOVED_AT = 37;
+const ISLAND_GROUND_MOVED_AT = 38;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 

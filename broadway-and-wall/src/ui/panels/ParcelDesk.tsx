@@ -616,7 +616,12 @@ function ParcelPanelInner({
             <div className="grid">
               {contract
                 ? <Row k="Agreed price" v={usd(contract.agreedPrice ?? contract.theirPrice)} strong />
-                : <Row k="Ask" v={usd(listing.ask)} strong />}
+                : <>
+                    <Row k="Ask" v={usd(listing.ask)} strong />
+                    {listing.loanBasis !== undefined && listing.loanBasis > 0 && (
+                      <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt the lender is clearing — the ask is anchored here, not appraisal." />
+                    )}
+                  </>}
               {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
               {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
               {/* THE NUMBERS YOU BID ON ARE THE NUMBERS YOU CLOSE ON. Priced
@@ -652,7 +657,7 @@ function ParcelPanelInner({
                 <BuyButtons bbl={selectedBBL} price={contract.agreedPrice ?? contract.theirPrice} off={false} />
               </>
             ) : (
-              <OfferDesk bbl={selectedBBL} price={listing.ask} />
+              <OfferDesk bbl={selectedBBL} price={listing.ask} distress={!!listing.distress} loanBasis={listing.loanBasis} />
             )}
           </div>
         );
@@ -1752,12 +1757,13 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
  * you are, how many rounds are left, and what kind of seller you are reading.
  * The capital stack does not appear until there is something to fund.
  */
-export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
+export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; price: number; distress?: boolean; loanBasis?: number }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const mid = apMid(bbl, price);
   const bounds = widePriceBounds(price, mid);
-  const [offerPrice, setOfferPrice] = useState(Math.round(price * 0.94));
+  const defaultOffer = distress ? 0.88 : 0.94;
+  const [offerPrice, setOfferPrice] = useState(Math.round(price * defaultOffer));
   // BEST AND FINAL is an instrument, not a bluff. Certainty of a done deal is
   // worth about three and a half per cent to a seller who has been retraded
   // before — and every seller has been — so a credible final closes under
@@ -1810,7 +1816,9 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
           ? (offerPriceRounded >= talks.theirPrice
             ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
             : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
-          : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Name a price; they take it, counter, or walk.`}
+          : distress
+            ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` The desk is clearing ${usd(loanBasis)} of debt` : " Motivated seller"} — counter below the ask; they move more readily than a voluntary seller.`
+            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Name a price; they take it, counter, or walk.`}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a
@@ -1859,6 +1867,15 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
         >
           {talks ? `Counter at ${usd(offerPriceRounded)}` : `Offer ${usd(offerPriceRounded)}`}{isFinal ? " — final" : ""}
         </button>
+        {!talks && (
+          <button
+            className="btn"
+            title="Pay the posted ask — skips negotiation"
+            onClick={() => useStore.getState().offer(bbl, price, false)}
+          >
+            Pay ask · {usd(price)}
+          </button>
+        )}
         {talks && (
           <>
             <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter(bbl)}

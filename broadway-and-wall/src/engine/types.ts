@@ -156,6 +156,10 @@ export interface TenantAsk {
   addM: number;
   arrivedM: number;
   expiresM: number;
+  /** what kind of letter this is. Absent = "relief" (a rent cut for term, the original ask). */
+  kind?: "relief" | "giveback";
+  /** giveback only: the space they want to surrender, in sf */
+  giveSf?: number;
 }
 
 export interface LOI {
@@ -731,6 +735,10 @@ export interface Listing {
   ask: number;
   listedM: number;
   expiresM: number;
+  /** A house broker's first look: until this month, nobody else in town can take it. */
+  earlyUntilM?: number;
+  /** which shop rang you — a brokerRel key, while the window is open */
+  via?: string;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
   reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver";
@@ -1980,6 +1988,8 @@ export interface FounderBid {
   role: "pm" | "leasing" | "construction";
   fromFirmId: string;
   fromFirmName: string;
+  /** Months the street was open for a raise while this bid was ready (not calendar wait). */
+  openMs?: number;
 }
 
 /**
@@ -2329,6 +2339,8 @@ export interface GameState {
   // hearing on one site, an application waiting on the board, and the
   // buildings nobody is allowed to knock down. See engine/zoning.ts.
   zoneAdj?: Record<string, number>;          // district -> FAR multiplier
+  /** the last rezoning each district saw — month, direction, and where the envelope landed. A value event you can read, not just a news line that scrolled away. */
+  zoneLog?: Record<string, { m: number; dir: 1 | -1; adj: number }>;
   variance?: Record<string, number>;         // bbl -> extra FAR granted
   /**
    * WHAT THE BOARD SAID, and when.
@@ -2356,8 +2368,15 @@ export interface GameState {
   blockE?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
-  /** funded transit. Announced, dug, opened; the ground reprices at each step. */
-  lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number }[];
+  /**
+   * Civic works. A station, a park, a bridge — rumoured first, argued over,
+   * funded, opened; the ground reprices at each step, and buying on the rumour
+   * is the oldest trade in the business. `kind`/`rumorM`/`sigma` are absent on
+   * saves from before the rumour stage existed: those events load as already-
+   * announced stations and behave exactly as they always did.
+   */
+  lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number;
+    kind?: "station" | "park" | "bridge"; rumorM?: number; sigma?: number }[];
   /**
    * THE FORTUNES OF THE NEIGHBOURHOODS.
    *
@@ -2534,6 +2553,13 @@ export interface GameState {
   agentMaxSigningMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
+  /**
+   * THE HOUSE BROKERS' MEMORY. Three named shops per campaign; every closing
+   * pays a fee through the shop that had the seller's ear, and a shop that has
+   * earned enough of your fees starts ringing you before the tape. Looks you
+   * let lapse count against you; going quiet for years fades the score.
+   */
+  brokerRel?: Record<string, { name: string; fees: number; lastFeeM: number; ignores: number }>;
   /**
    * The player does not want the July docket thrown in their face. The auction
    * still happens, on the same day, with the same lots — this only stops the

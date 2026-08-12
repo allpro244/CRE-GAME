@@ -5,6 +5,7 @@ import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
 import { recentLowballs, sellerOf, strikeDeal } from "./acquire";
+import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
@@ -173,6 +174,8 @@ export function executePurchase(
   // refinance and the facility use (debtSvc vs borrowed/bought).
   const pointsFee = bq.pointsFee ?? 0;
   logBooks(next, "bought", bq.equity - pointsFee);
+  // the fee found its way to a named shop, and the shop will remember
+  creditBrokerFee(next, bbl);
   if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
@@ -3163,6 +3166,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
 // Monthly: other buyers work the same tape you do. Fairly-priced listings get
 // taken out from under you — dawdle and the deal is gone.
 export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
+  // settle any private windows that closed with nothing to show for them
+  tickEarlyLooks(s);
   const base = s.econ.phase === "expansion" ? 0.10 : s.econ.phase === "peak" ? 0.07 : s.econ.phase === "recovery" ? 0.05 : 0.02;
   const survivors: typeof s.listings = [];
   for (const li of s.listings) {
@@ -3174,6 +3179,8 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // unwinnable through no fault of the player.
     const talk = s.talks?.[li.bbl];
     if (talk?.agreed) { survivors.push(li); continue; }
+    // A first look is yours alone: nobody else in town has heard the address yet.
+    if (li.earlyUntilM !== undefined && s.month < li.earlyUntilM) { survivors.push(li); continue; }
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
     const ratio = li.ask / Math.max(1, value);
     const priceFactor = Math.max(0.3, Math.min(1.8, 1.9 - ratio)); // bargains go first

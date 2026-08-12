@@ -870,7 +870,12 @@ export function EconomyPage() {
               <Row k="Blocks drifting" v={`${emergent.length} blocks with live drift`} />
               <Row k="Largest move" v={`±${max.toFixed(0)} pts since 2000`} strong={max >= 8} />
               <Row k="Winners vs losers" v={`${spread.toFixed(0)} pt spread across the city`} />
-              <Row k="Transit lines" v={`${(game.lines ?? []).length} funded · ${(game.lines ?? []).filter((l) => l.openM > game.month).length} still building`} />
+              <Row k="Civic works" v={(() => {
+                const ls = game.lines ?? [];
+                const rumoured = ls.filter((l) => l.rumorM !== undefined && game.month < l.annM).length;
+                const building = ls.filter((l) => game.month >= l.annM && game.month < l.openM).length;
+                return `${ls.length - rumoured - building} open · ${building} building · ${rumoured} rumoured`;
+              })()} />
             </div>
             <div className="hint">
               Demand is redistributive — a block gaining desirability takes it from somewhere else. Construction cranes and

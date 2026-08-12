@@ -157,6 +157,8 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);
   if (Math.abs(next - cur) < 0.02) return;
   s.zoneAdj[dist] = +next.toFixed(3);
+  if (!s.zoneLog) s.zoneLog = {};
+  s.zoneLog[dist] = { m: s.month, dir: isUp ? 1 : -1, adj: s.zoneAdj[dist] };
 
   // Land reprices the day it passes, because the envelope IS the land value.
   for (const bbl of bbls) {

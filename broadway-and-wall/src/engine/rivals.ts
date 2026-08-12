@@ -1463,23 +1463,85 @@ function firmNameFromFounder(s: GameState, personName: string, used: Set<string>
   return `${last} Capital ${s.month}`;
 }
 
+/**
+ * THE NUMBER TWO WHO LEAVES. Spinouts were genealogy the street could only
+ * get from the player's own staff walking out — an unplayed century produced
+ * zero, which made "spinouts carry genealogy" a test that could not fail. But
+ * the commonest spinout in this business has nothing to do with you: the
+ * acquisitions head of a shop that has done well for a decade decides the
+ * next fund should have their own name on it. About one such departure per
+ * thriving firm per twenty years; the raise still has to clear firmEntryPitch
+ * and the product term, so a crowded street refuses them like anybody else.
+ *
+ * Seed-hashed, no rivals-stream draws — the rivals and people streams are
+ * untouched and every seed-pinned number reproduces.
+ */
+function spinHash(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h ^= h >>> 16; h = Math.imul(h, 2246822507);
+  h ^= h >>> 13; h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+const SPIN_FIRSTS = ["Nora", "Elias", "Ruth", "Victor", "Ada", "Miles", "Iris", "Hugh", "Celia", "Amos"];
+const SPIN_LASTS = ["Fenn", "Aldous", "Marek", "Trask", "Odell", "Bryce", "Hollis", "Ingram", "Wexler", "Danforth"];
+
+function tickRivalSpinouts(s: GameState) {
+  if (s.month % 12 !== 0 || s.month < 120) return;
+  const yr = Math.floor(s.month / 12);
+  for (const r of s.rivals ?? []) {
+    if (r.failedM !== undefined || r.stressMs) continue;
+    if (s.month - (r.bornM ?? 0) < 120 || r.bbls.length < 4) continue;
+    if ((s.founderBids ?? []).some((b) => b.fromFirmId === r.id)) continue;
+    const k = `spin:${s.seed}:${r.id}:${yr}`;
+    if (spinHash(k) >= 0.05) continue;
+    const nm = `${SPIN_FIRSTS[Math.floor(spinHash(k + ":f") * SPIN_FIRSTS.length)]} ${SPIN_LASTS[Math.floor(spinHash(k + ":l") * SPIN_LASTS.length)]}`;
+    const tal = (o: string, lo: number, hi: number) => Math.round(lo + (hi - lo) * spinHash(k + o));
+    const attrs = { judgment: tal(":j", 58, 84), urgency: tal(":u", 55, 82), diligence: tal(":d", 58, 84), relationships: tal(":r", 60, 86) };
+    (s.founderBids ??= []).push({
+      readyM: s.month + 3 + Math.floor(spinHash(k + ":w") * 7),
+      name: nm,
+      bornM: s.month - (12 * (34 + Math.floor(spinHash(k + ":a") * 14))),
+      diesM: s.month + 12 * (30 + Math.floor(spinHash(k + ":m") * 20)),
+      attrs,
+      obs: { judgment: attrs.judgment - 8, urgency: attrs.urgency - 6, diligence: attrs.diligence - 7, relationships: attrs.relationships - 6 },
+      band0: 16,
+      role: "pm",
+      fromFirmId: r.id,
+      fromFirmName: r.name,
+    });
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${nm} is leaving ${r.name} after ${(Math.round((s.month - (r.bornM ?? 0)) / 12))} years to raise their own vehicle. `
+        + `Whether the street clears a first close is another question.`,
+    });
+  }
+}
+
 function maybeNewFirm(s: GameState) {
   const { leverage, product, pitch } = firmEntryPitch(s);
-  if (leverage <= 0 || product <= 0) return;
+  const streetOpen = leverage > 0 && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
   // slot — anonymous capital only enters when nobody is waiting to spin out.
   const bids = s.founderBids ?? [];
   const readyIdx = bids.findIndex((b) => b.readyM <= s.month);
   const founder = readyIdx >= 0 ? bids[readyIdx] : null;
-  /** Months a ready founder keeps pitching before the street closes on them. */
+  /** Open-market months a ready founder keeps pitching before the street closes. */
   const FOUNDER_WINDOW_M = 18;
+
+  // The window counts months the street would take a raise, not calendar months
+  // queued through a credit crunch — otherwise every spinout dies the first
+  // month leverage turns positive.
+  if (founder && streetOpen) founder.openMs = (founder.openMs ?? 0) + 1;
+
+  if (!streetOpen) return;
 
   if (rng(s, "rivals") > pitch / RAISE_M) {
     // Not this month. Founders keep the slot and try again — a single roll
-    // must not erase a career. Only the window expiring (or a barren street
-    // for the whole window) sends them elsewhere.
-    if (founder && s.month - founder.readyM >= FOUNDER_WINDOW_M) {
+    // must not erase a career. Only the window expiring sends them elsewhere.
+    if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {
       s.founderBids = bids.filter((_, i) => i !== readyIdx);
       s.news.unshift({
         q: s.month, kind: "info",
@@ -1520,7 +1582,7 @@ function maybeNewFirm(s: GameState) {
   // raise, not by how rich the people who started forty years earlier have
   // become. They compound their way up like everybody else.
   // Same band as before, then × island area — a Great City first close is not
-  // a Hamlet first close. No extra rng() calls. `style` is set for both
+  // a Hamlet first close. No extra rivals-stream draws. `style` is set for both
   // genealogy spinouts and anonymous raises.
   const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s));
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
@@ -2584,6 +2646,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const rate = s.econ.indexRate + RATE_SPREAD;
+  tickRivalSpinouts(s);
   maybeNewFirm(s);
   // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
   // so schedule slips and orphans are visible to the space market. Cash draws

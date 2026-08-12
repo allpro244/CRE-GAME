@@ -39,6 +39,7 @@ import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { tickTaxAppeals } from "./tax";
+import { maybeEarlyLook } from "./broker";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -444,6 +445,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     }
     s.listings.push(listing);
     listed.add(bbl);
+    // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
+    maybeEarlyLook(s, listing, rec.address);
     if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
       s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at $${(ask / 1e6).toFixed(2)}M — well under appraisal. It won't last.` });
     }

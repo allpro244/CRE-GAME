@@ -9,7 +9,7 @@ import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVa
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
 import { pct } from "@/ui/format";
-import { TheBanks } from "@/ui/panels/DebtPage";
+import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
 import { creditWord, real, Big, Row } from "@/ui/panels/shared";
 

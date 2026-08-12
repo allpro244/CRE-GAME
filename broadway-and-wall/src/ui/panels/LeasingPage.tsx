@@ -14,7 +14,7 @@ import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
-import { HousePolicy } from "@/ui/panels/DebtPage";
+import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
 import { useLabel, physicalOcc, Big } from "@/ui/panels/shared";
 import type { Credit } from "@/engine/types";
 

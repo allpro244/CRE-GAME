@@ -275,7 +275,7 @@ export const CONTINGENCY = 0.06;  // held against change orders; unspent is your
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
  */
-export const DEV_MARGIN = 0.15;
+export const DEV_MARGIN = 0.17;
 
 /** One mathematical hurdle for class orders, parcel plans and land residuals. */
 export function developmentHurdle(yieldOnCost: number, exitCap: number): {

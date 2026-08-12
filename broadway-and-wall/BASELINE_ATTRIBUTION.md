@@ -1,13 +1,25 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/smooth-water-d634` after creeks painted as one ribbon (`SAVE_VERSION` 38).  
-**Previous ruler:** `02405c7` (convex capsules, v37).
+**Ruler commit:** regenerated on `cursor/smooth-water-d634` after smaller parks and trees off the creek (`SAVE_VERSION` 38).  
+**Previous ruler:** `4bc6809` (painted ribbon creeks, v38).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: painted ribbon, hidden capsules (SAVE_VERSION 38)
+## This ruler: smaller parks, dry park props (SAVE_VERSION 38)
+
+Park programmes dropped ~20% on count and size, sparse is the common draw, and greens keep more space between them. That recuts lots (park obstacles moved). Trees, walks, and street dashes are paint — they do not move the plat by themselves, but the park rings do. Not an engine `rng()` re-roll. Conservation stayed green (1,119 months).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `land.med` / `land.p90` | Smaller greens; different dirt is reserved | Spatial |
+| `dev.affordableLotShare` | More lots where a great park used to sit | Builders see a different tape |
+| `rentIdx.*` / `vac.*` / `city.*` | Same — different standing mix on different dirt | Follows the plat |
+
+---
+
+## Previous ruler: painted ribbon, hidden capsules (SAVE_VERSION 38)
 
 v37 drew the lot-cutting capsules on the map, so a mill pond in a park was a stack of rectangles with a triangular tail. The centreline was also allowed to U-turn.
 

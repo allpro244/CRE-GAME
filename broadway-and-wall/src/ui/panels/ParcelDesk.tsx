@@ -2317,7 +2317,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const vacantDirt = !!holding && !!refiRec && isVacantLandLoanCollateral(game, holding, refiRec);
   const [product, setProduct] = useState<string>(vacantDirt ? "land" : "savings");
   const [lev, setLev] = useState(1);
+  const [showAllQuotes, setShowAllQuotes] = useState(false);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
+  const fundableQuotes = quotes.filter((x) => x.available && x.maxProceeds > 0);
+  const deskQuotes = showAllQuotes ? quotes : fundableQuotes;
   const cur = game.holdings[bbl]?.loan;
   const existing = cur ? prepayPenalty(cur, game.month) : 0;
   if (!quotes.length && !privateQuotes.length) {
@@ -2392,6 +2395,17 @@ export function RefiSection({ bbl }: { bbl: string }) {
   return (
     <div className="refi">
       <div className="deal-head">Refinance</div>
+      {quotes.length > fundableQuotes.length && (
+        <div className="hint" style={{ marginBottom: 6 }}>
+          {fundableQuotes.length} of {quotes.length} desks will quote this building.
+          {!showAllQuotes && (
+            <> <button type="button" className="btn-mini" onClick={() => setShowAllQuotes(true)}>Show all</button></>
+          )}
+          {showAllQuotes && (
+            <> <button type="button" className="btn-mini" onClick={() => setShowAllQuotes(false)}>Fundable only</button></>
+          )}
+        </div>
+      )}
       <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off.</div>
       {existing > 0 && (
         <div className="hint">
@@ -2444,7 +2458,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
         </div>
       )}
       <div className="btn-row">
-        {quotes.map((x) => (
+        {deskQuotes.map((x) => (
           <button
             key={x.id}
             className={"btn" + (picked === x.id ? " btn-on" : "")}
@@ -2476,7 +2490,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
             <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
           </thead>
           <tbody>
-            {[...quotes]
+            {[...deskQuotes]
               .map((x) => {
                 const px = Math.round(x.maxProceeds);
                 const cap = x.floating ? Math.round(px * 0.0125) : 0;

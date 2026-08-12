@@ -236,7 +236,7 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
   office: 295,        // RSMeans single-storey office $313; secondary low-rise $240-350
   multifamily: 300,   // low-rise base under the $310 mid-rise national average
   retail: 245,        // RSMeans retail store $214, above it for two-storey urban shell
-  industrial: 125,    // modern warehouse/flex $90-150
+  industrial: 100,    // modern warehouse/flex $90-150 — was 125; class never cleared hurdle
 };
 
 /**
@@ -275,7 +275,7 @@ export const CONTINGENCY = 0.06;  // held against change orders; unspent is your
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
  */
-export const DEV_MARGIN = 0.17;
+export const DEV_MARGIN = 0.15;
 
 /** One mathematical hurdle for class orders, parcel plans and land residuals. */
 export function developmentHurdle(yieldOnCost: number, exitCap: number): {

@@ -178,7 +178,7 @@ function play(seed, verbose) {
           const spread = plan.yieldOnCost - plan.exitCap;
           if (!bestPlan || spread > bestPlan.spread) bestPlan = { plan, spread, use };
         }
-        if (!bestPlan || bestPlan.spread < 0.8) continue;
+        if (!bestPlan || bestPlan.plan.hurdleRatio < 1) continue;
         const score = bestPlan.spread + rec.demandScore / 400;
         if (!best || score > best.score) best = { l, score, rec, ...bestPlan };
       }
@@ -236,7 +236,7 @@ function play(seed, verbose) {
             // affordable mid-rises were starving the cheque while a shorter
             // job would have broken ground.
             const scoreP = plan.hurdleRatio + gap * 2 + spread * 0.05;
-            if (plan.hurdleRatio >= 1 && spread >= 0.7 && (!pick || scoreP > pick.scoreP)) {
+            if (plan.hurdleRatio >= 1 && (!pick || scoreP > pick.scoreP)) {
               pick = { plan, use, fl, scoreP };
             }
           }

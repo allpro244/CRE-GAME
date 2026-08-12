@@ -374,6 +374,45 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  */
 const TI_PSF: Record<BuiltClass, number> = { office: 32, retail: 22, industrial: 5, multifamily: 7 };
 
+/** Same absorption mean planDevelopment uses: 0.2 + 0.8·t^0.75 over the span. */
+const LEASEUP_FILL = 0.657;
+const CONSTRUCTION_LTC = 0.65;
+
+/**
+ * Opex carry during lease-up, $/sf of RENTABLE. Mirrors planDevelopment's
+ * `openSf * opex * (1-fillOcc) * (carryMonths/12)` so the residual and the
+ * desk subtract the same empty-building cost. Vacancy scales the duration
+ * through the same logistic; a glut makes dirt cheaper because fill takes
+ * longer, which is the cycle reaching land through a cost rather than a
+ * coefficient.
+ */
+function residualLeaseUpCarryPsf(
+  use: BuiltClass, econ: Econ, opex: number, occ: number,
+): number {
+  const baseCarryMonths = use === "multifamily" ? 19 : 38;
+  const stock = Math.max(1, econ.stock?.[use] ?? 1);
+  const availability = (econ.cityVac?.[use] ?? NATURAL_VAC[use])
+    + (econ.sublet?.[use] ?? 0) / stock;
+  const leaseRaw = availability / Math.max(0.001, NATURAL_VAC[use])
+    - (econ.structTight?.[use] ?? 0) * 2.2;
+  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
+  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
+  const fillOcc = occ * LEASEUP_FILL;
+  return opex * (1 - fillOcc) * (carryMonths / 12);
+}
+
+/**
+ * Capitalised construction interest, $/sf of GROSS. Typical 65% LTC at the
+ * construction coupon (index + 2.1), half the job outstanding — the same pot
+ * planDevelopment sizes as `interestReserve`. Not a second discount on the
+ * land; BUILD_DISCOUNT is that.
+ */
+function residualConstructionInterestPsf(costPsf: number, econ: Econ): number {
+  const rate = ((econ.indexRate ?? 5.4) + 2.1) / 100;
+  const buildYears = 2.5;
+  return costPsf * CONSTRUCTION_LTC * rate * (buildYears * 0.5);
+}
+
 /**
  * THE WINNING SCHEME AND THE NUMBER IT PRODUCES, WHICH ARE THE SAME CALCULATION.
  *
@@ -526,6 +565,25 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // costIdx a second time (same identity as leaseUpValue / planDevelopment).
     const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
     const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
+    // THE DESK AND THE DIRT HAVE TO PRICE THE SAME JOB.
+    //
+    // Interest reserve and lease-up used to stay on the parcel desk only,
+    // because folding them into the residual collapsed builder-clearing lots
+    // under the texture floor — a floor that was winning the auction on sites
+    // that actually pencilled. That was one quantity with two answers: the
+    // residual said the dirt was worth $X, planDevelopment loaded carry into
+    // the basis and said the same dirt did not pencil at $X. Carry belongs in
+    // both, and the auction below no longer lets texture/holder outbid a
+    // builder who can actually break ground, so the old reason for leaving it
+    // out is gone.
+    //
+    // Same absorption curve and opex-carry identity planDevelopment uses
+    // (mean occupancy 0.657 of stabilised across 0.2+0.8·t^0.75). Construction
+    // interest is the typical 65% LTC pot at index+2.1, half the job outstanding
+    // — the same capitalised reserve, not a second wait on the land (that is
+    // BUILD_DISCOUNT).
+    const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ);
+    const interestPsf = residualConstructionInterestPsf(costPsf, econ);
 
     // THE MARGIN IS EARNED ON ALL THE MONEY, INCLUDING THE LAND.
     //
@@ -541,17 +599,13 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // hurdle, and 0 of 32 sites in the top demand decile pencilled at all.
     // This form guarantees a positive spread wherever the residual is
     // positive, because the margin is taken out before the land is priced.
-    //
-    // (Interest reserve + lease-up deficit stay on the parcel desk only —
-    // folding a full carry into the residual collapsed builder-clearing lots
-    // under the texture floor. Tight-street LTC and shorter lease-up in
-    // planDevelopment are the levers that open the second path without that.)
-    const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - (costPsf + fitPsf * eff);
+    const allInCost = costPsf + (fitPsf + carryPsf) * eff + interestPsf;
+    const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - allInCost;
     const psf = surplus * usable * BUILD_DISCOUNT;
     all.push({ use, psf });
     if (surplus <= 0) continue;
     if (!best || psf > best.psf) {
-      best = { psf, use, valuePsf: valuePsf * eff, costPsf: costPsf + fitPsf * eff, usable, floors: fl, all };
+      best = { psf, use, valuePsf: valuePsf * eff, costPsf: allInCost, usable, floors: fl, all };
     }
   }
   return best && { ...best, all };
@@ -717,45 +771,45 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // tested against sales and multiplies this texture downstream via resolveRec.
   const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec);
 
-  // THE PRICE IS THE WINNING BID. That is what an auction is.
+  // HIGHEST AND BEST USE, NOT THE MAX OF THREE APPRAISALS.
   //
-  // Two earlier forms both priced dirt STRICTLY ABOVE the builder's residual
-  // on every lot that pencilled, by construction:
+  // Two earlier forms priced dirt STRICTLY ABOVE the builder's residual on
+  // every lot that pencilled, by construction (a texture blend, then a cycle
+  // multiplier on a residual that already underwrites through-cycle). The
+  // auction `max(builder, holder, textureFloor)` fixed that arithmetic and
+  // then lost the same fight a different way: the holder bid is the residual
+  // at a *certain* 25% peak, discounted five years, and on a thin-margin site
+  // that number is two to three times today's builder residual. Measured at
+  // year thirty: builder won 1.3% of vacant lots, holder 39.6%, texture 59.1%;
+  // among lots with a positive residual the ask sat at 2.41× what the builder
+  // could pay. The desk and the land market were two worlds, and a $2.5M
+  // developer bought zero sites in three fifty-year runs.
   //
-  //   1. max(income, floor) + 14% of full texture — a "minority comp weight"
-  //      that was in fact a permanent premium over the winning bid whenever
-  //      texture exceeded the residual (the common case on a good corner).
-  //   2. Then × (1 + 0.22 · demandBeta · cycleDev) on top — while the residual
-  //      itself already underwrites through-cycle rentExp / capExp. Measured
-  //      at year thirty with cycleDev pinned at its rail: every builder-won
-  //      lot asked 1.09–1.11× what the builder could pay. Mid-cycle
-  //      affordableLotShare sat at ~1–2% against an honest 8–12%.
-  //
-  // The residual IS the price at which a builder earns exactly DEV_MARGIN. When
-  // the builder is the high bidder, the ask has to be that number or the desk
-  // and the land market are two different worlds. Holder and texture can still
-  // win — and when they do, today's builder correctly cannot pay — but they
-  // win by bidding more, not by a coefficient applied after the auction.
-  //
-  // Cycle reaches land through rentExp (builder) and PEAK_RENT_MULT (holder),
-  // which is where a through-cycle underwriter actually puts it. Location still
-  // enters the texture floor through `level` above.
+  // That holder formula is not an option value. An option to wait is the
+  // value of land that does NOT support a building today. If a builder can
+  // put a building on this dirt this year and earn the margin, that is the
+  // use, and that is the price. Speculators who want to sit on a working
+  // site until the next peak are not a second bidder who outranks the person
+  // who would actually break ground — they are the current owner choosing
+  // not to list. Unlisted land can sit at option value; transacted land that
+  // pencils trades at the residual. Holder and texture still set the price
+  // when today's residual is zero, which is most of the city, which is why
+  // most dirt is still dirt.
   const floor = texture * 0.30;
-  // COMPS ON BUILDER-CLEARING SITES. landAdj already lifts texture (via
-  // resolveRec). When the builder wins, the ask must stay at residual or the
-  // desk and the land market are two worlds (DEV_MARGIN is earned exactly at
-  // residual). Relative district heat still matters on the WEAK side: a
-  // district clearing below the town median lets the ask sit a little under
-  // residual — that is the comps sheet talking down fringe dirt. Hot districts
-  // raise the texture/holder bids (and landAdj), so they win the auction when
-  // the street is ahead of the residual, which is the right order.
   const heat = econ.districtHeat?.[rec.district ?? "—"] ?? 1;
   const softDiscount = heat < 1 ? clamp((heat - 1) * 0.5, -0.06, 0) : 0;
-  let base = Math.max(builder, holder, floor);
-  const winner: LandRead["winner"] = builder >= holder && builder >= floor ? "builder"
-    : holder >= floor ? "holder" : "texture";
-  if (winner === "builder" && builder > 0 && softDiscount < 0) {
-    base = builder * (1 + softDiscount);
+  let base: number;
+  let winner: LandRead["winner"];
+  if (builder > 0) {
+    base = builder;
+    winner = "builder";
+    if (softDiscount < 0) base = builder * (1 + softDiscount);
+  } else if (holder >= floor) {
+    base = holder;
+    winner = "holder";
+  } else {
+    base = floor;
+    winner = "texture";
   }
   return {
     psf: base,

@@ -287,3 +287,52 @@ find out whether the strategy is bad or the economy is broken, and say which.
 compound slowly (a 1%/yr drift, a rail that binds a third of the time) matter
 more here than in most games, because he will run them out to the point where
 they dominate. Two of the last three fault reports were exactly that.
+
+---
+
+## 9. PLAYER BACKLOG — queued, do not ship mid-playthrough
+
+Brian's open requests from the Aug 2026 session. **No implementation while an
+active playthrough is running** unless he says go. Pick these up in one pass
+after the save ends.
+
+### Distressed assets (PR #82 — merged)
+- Counter below ask on motivated/receiver listings; lenders price at loan basis.
+- *(Shipped in #82; verify playable bundle via #83 if download still feels stale.)*
+
+### Build desk — pro forma clutter
+- The development financing grid is too dense: inline essays on every row,
+  leverage hint competing with the numbers.
+- **Revamp:** one primary number per row; group Costs / Financing / Equity;
+  move flavor to tooltips or expanders; leverage essay only on Financing tab.
+
+### Development control revamp
+- Player should set **build quality** (value → trophy) affecting cost, schedule,
+  and long-term `buildSpec` / condition ceiling. Engine has `spec` + `specCostMult`
+  — wire UI first; add schedule multiplier second.
+- Player should choose **design**: massing (coverage already), character presets
+  (box / standard / masonry / signature) with cost/time/rent consequences; optional
+  map shader differentiation. Not a full floor-plan editor.
+- Three-tab Build flow: Programme · Design · Financing + always-visible summary strip.
+- See agent plan in chat (Phases 1–6); start with quality slider + declutter.
+
+### Neighborhood demand from construction
+- Building *does* lift nearby demand via `tickDemand` / `blockD`, but only after
+  delivery and mostly when **occupied** — construction phase is invisible.
+- Consider: tiny temporary construction bump; clearer delivery-day nudge; pro forma
+  line showing projected neighborhood impact; surface `blockReport()` in UI.
+- Keep demand **redistributive** (no city-wide inflation).
+
+### Delivery popup — View building
+- **Current:** `DeliveryCeremony.tsx` — "View building" calls `focus(bbl, true)`
+  + `setPage("property")`; "Map only" is focus without page change.
+- **Wanted:** "View building" should **zoom to the tower on the map only** — no
+  property panel. Likely make `viewBuilding` match `viewOnMap` (or retitle buttons:
+  "View building" = cinematic zoom; separate "Open file" if panel access needed).
+- File: `src/ui/DeliveryCeremony.tsx`; uses store `focus(bbl, true)` → `MapView` flyTo.
+
+### Playable download hygiene
+- After merges, run `pnpm package:playable` and commit **both** html + zip.
+- Footer check: `build procedural-only · office base $35.5`, no island picker.
+- PR #83 addresses post-#82 stale single-file html.
+

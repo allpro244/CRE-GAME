@@ -66,6 +66,10 @@ const advance = (g, n) => {
   ok("growing tenant writes an expansion letter", !!offer,
     offer ? `month ${g.month}, ${(offer.sf / 1000).toFixed(1)}k sf coterminous` : "none in 48 months");
   if (offer) {
+    ok("expansion is labelled as expansion in the inbox",
+      E.attentionItems(g).some((a) => a.key === `loi:${offer.id}` && /expand/.test(a.label)));
+    ok("expansion news can put the camera on the building",
+      (g.news ?? []).some((n) => n.bbl === site && /grown into their space/.test(n.text)));
     const h = g.holdings[site];
     const before = h.tenants[0].sf;
     const rec = E.resolveRec(parcels, g, site);
@@ -86,6 +90,10 @@ const advance = (g, n) => {
   ok("shrunk tenant offers a surrender", !!ask,
     ask ? `month ${g.month}, ${((ask.giveSf ?? 0) / 1000).toFixed(1)}k sf back` : "none in 72 months");
   if (ask) {
+    ok("giveback is labelled as a surrender in the inbox",
+      E.attentionItems(g).some((a) => a.key === `tenant-ask:${ask.id}` && /hand space back/.test(a.label)));
+    ok("giveback news can put the camera on the building",
+      (g.news ?? []).some((n) => n.bbl === site && /hand back/.test(n.text)));
     // decline first, on a fork: the lease stands and the tenant runs strained
     const declined = E.answerAsk(structuredClone(g), parcels, ask.id, "decline");
     const tD = declined.s.holdings[site].tenants[0];

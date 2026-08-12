@@ -1248,7 +1248,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         });
         const yrsIn = Math.floor((q - t.startM) / 12);
         s.news.unshift({
-          q, kind: "warn",
+          q, kind: "warn", bbl: h.bbl,
           text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
             + `wants to hand back ${(freed / 1000).toFixed(1)}k sf — the headcount is gone and they are paying for empty floors. `
             + `Take the space and re-let it, or hold them to the paper and hope the business outlives the lease. `
@@ -1381,7 +1381,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         expiresM: q + 3, tenantIdx: i,
       });
       s.news.unshift({
-        q, kind: "deal",
+        q, kind: "deal", bbl: h.bbl,
         text: `${t.name} has grown into their space at ${rec.address} and wants the ${(wantSf / 1000).toFixed(1)}k sf next door, coterminous with the lease they are on.`,
       });
     }

@@ -40,10 +40,17 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       <div className="loi-line">
         <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
         {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
+        {loi.kind === "expansion" && <span className="chip chip-expansion">EXPANSION</span>}
         {loi.referred && <span className="chip" title="Your agent or renewal desk sent this back — it missed the auto-sign mandate.">REFERRED</span>}
         {rivalsOnTour > 0 && <span className="chip" title="Competing for the same square feet — you can take only one, and countering one makes the others impatient.">{rivalsOnTour + 1} FOR THE SAME SPACE</span>}
         {final && <span className="chip">FINAL</span>}
       </div>
+      {loi.kind === "expansion" && (
+        <div className="hint">
+          Sitting tenant, coterminous with the lease they hold. Take the certain covenant, or hold the
+          space for a full-term tenant and risk them leaving at the roll.
+        </div>
+      )}
       <div className="loi-line mono">
         ${loi.rentPsf.toFixed(2)}/sf {loi.net ? "NNN" : "gross"} · {bump.toFixed(2)}%/yr
         {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}

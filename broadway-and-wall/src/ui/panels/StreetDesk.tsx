@@ -186,6 +186,10 @@ export function TheStreet() {
                           is why modest equity is not the same as a bad century */}
                       <Row k="Taken out to date" v={usd(r.distributed ?? 0)} />
                       <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
+                      {r.spawnedFrom && (
+                        <Row k="Raised out of"
+                          v={`${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}`} />
+                      )}
                     </div>
                     {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are the
                         part of its balance sheet that is pure risk: money spent,

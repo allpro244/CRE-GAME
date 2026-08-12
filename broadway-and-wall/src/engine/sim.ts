@@ -1164,7 +1164,12 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // why Year/Skip kept stopping for paper somebody else was hired to handle.
   for (const l of s.lois) {
     if (!loiNeedsPrincipal(s, l)) continue;
-    out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+    const label = l.kind === "expansion"
+      ? `${l.name} wants to expand — answer by ${monthLabel(l.expiresM)}`
+      : l.kind === "renewal"
+        ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM)}`
+        : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}`;
+    out.push({ key: `loi:${l.id}`, label });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
   // They lived on Deals but not in the attention list, so Year/Skip could run
@@ -1172,7 +1177,10 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // for. Each letter gets its own key because several tenants can ask together.
   for (const a of s.asks ?? []) {
     if (s.holdings[a.bbl]?.groundLeased) continue;
-    out.push({ key: `tenant-ask:${a.id}`, label: `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}` });
+    const label = a.kind === "giveback"
+      ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM)}`
+      : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
+    out.push({ key: `tenant-ask:${a.id}`, label });
   }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
@@ -1192,6 +1200,21 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         });
       }
     }
+  }
+  // A first look is a private window on a listing. Marketplace already shows
+  // the chip; stop Skip only when the window is about to lapse — same rule as
+  // an off-market broker file sitting on the phone.
+  for (const li of s.listings) {
+    if (li.earlyUntilM === undefined || s.month >= li.earlyUntilM) continue;
+    const left = li.earlyUntilM - s.month;
+    if (left > 2) continue;
+    const shop = s.brokerRel?.[li.via ?? ""]?.name ?? "A house broker";
+    out.push({
+      key: `early-look:${li.bbl}:${li.listedM}`,
+      label: left <= 1
+        ? `${shop}'s first look lapses this month`
+        : `${shop}'s first look lapses in ${left} months`,
+    });
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });

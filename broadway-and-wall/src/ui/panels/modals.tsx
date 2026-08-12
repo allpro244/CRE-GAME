@@ -733,7 +733,9 @@ function DecisionBody({
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">
             {loi.referred ? "Referred by your desk · " : ""}
-            {loi.kind === "renewal" ? "Renewal on the table" : "Letter of intent"}
+            {loi.kind === "renewal" ? "Renewal on the table"
+              : loi.kind === "expansion" ? "Incumbent expansion"
+                : "Letter of intent"}
             {isFinal ? " · their final answer" : ""}
           </div>
           <div className="modal-title">{loi.name}</div>

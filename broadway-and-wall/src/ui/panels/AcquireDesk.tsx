@@ -802,8 +802,19 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
   const noi = ip?.noi ?? 0;
   const goingInPct = offerPriceRounded > 0 && noi > 0 ? (noi / offerPriceRounded) * 100 : null;
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPriceRounded) : 0;
+  const early = game.listings.find((l) => l.bbl === bbl);
+  const earlyLeft = early && early.earlyUntilM !== undefined && game.month < early.earlyUntilM
+    ? early.earlyUntilM - game.month : 0;
+  const earlyShop = early?.via ? game.brokerRel?.[early.via]?.name : undefined;
   return (
     <>
+      {earlyLeft > 0 && (
+        <div className="hint" style={{ marginTop: 6 }}>
+          <strong>First look.</strong> {earlyShop ?? "A house broker"} rang you before the tape.
+          Nobody else in town can take this building for {earlyLeft} more month{earlyLeft === 1 ? "" : "s"}.
+          Let the window lapse and the shop notices.
+        </div>
+      )}
       <Slider
         label="Your offer"
         value={offerPriceRounded}

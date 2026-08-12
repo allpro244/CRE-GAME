@@ -1107,7 +1107,7 @@ export function blockReport(s: GameState, parcels: ParcelTable, block: string): 
   /** the three trades most of the work around here is in */
   trades: { k: Sector; label: string; share: number }[];
   /** a funded line inside the walk, and how many months until it runs */
-  line: { name: string; monthsOut: number; pts: number } | null;
+  line: { name: string; monthsOut: number; pts: number; kind?: "station" | "park" | "bridge" } | null;
   /** each leg against what counts as a full measure of it in this city, 0..1+ */
   mix: { jobs: number; residents: number; amenity: number };
   /** the programme that would lift this block most per square foot */
@@ -1172,13 +1172,13 @@ export function blockReport(s: GameState, parcels: ParcelTable, block: string): 
       .map((k) => ({ k, label: INDUSTRY_LABEL[k], share: model.trades.get(block)?.[k] ?? 0 }))
       .sort((x, y) => y.share - x.share).slice(0, 3),
     line: (() => {
-      let best: { name: string; monthsOut: number; pts: number } | null = null;
+      let best: { name: string; monthsOut: number; pts: number; kind?: "station" | "park" | "bridge" } | null = null;
       for (const l of s.lines ?? []) {
         const sig = l.sigma ?? LINE_SIGMA;
         const d = Math.hypot(b.cx - l.cx, b.cy - l.cy);
         if (d > sig * 1.6) continue;
         const p = l.pts * Math.exp(-(d * d) / (2 * sig * sig));
-        if (!best || p > best.pts) best = { name: l.name, monthsOut: l.openM - s.month, pts: +p.toFixed(1) };
+        if (!best || p > best.pts) best = { name: l.name, monthsOut: l.openM - s.month, pts: +p.toFixed(1), kind: l.kind ?? "station" };
       }
       return best;
     })(),

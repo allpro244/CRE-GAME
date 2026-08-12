@@ -28,7 +28,7 @@ export function NewsPage() {
     <div>
       <div className="hint">
         The last {(game.news ?? []).length} items off the wire, newest first. Anything with a ✈ is about a
-        specific building — click it and the camera goes there.
+        specific place — a building, or a civic work. Click it and the camera goes there.
       </div>
       <div className="btn-row" style={{ marginBottom: 8, flexWrap: "wrap" }}>
         {NEWS_KINDS.map((t) => (

@@ -210,8 +210,8 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
           <Row
             k="Transit"
             v={r.line.monthsOut > 0
-              ? `${r.line.name} station, ${Math.max(1, Math.round(r.line.monthsOut / 12))} yrs out`
-              : `${r.line.name} station, open`}
+              ? `${r.line.name} ${r.line.kind ?? "station"}, ${Math.max(1, Math.round(r.line.monthsOut / 12))} yrs out`
+              : `${r.line.name} ${r.line.kind ?? "station"}, open`}
             strong
           />
         ) : null}

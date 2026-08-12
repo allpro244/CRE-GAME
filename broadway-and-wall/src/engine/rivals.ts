@@ -36,7 +36,7 @@ import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STO
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
-import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
+import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
@@ -2327,16 +2327,9 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
  * the whole street is failing. That is the shape a buying opportunity should
  * have: it is not a bonus, it is somebody's bank in trouble.
  */
-function reoAsk(s: GameState, mark: number, basis: number, lender: string): number {
-  const p = lenderPressure(lenderByName(s, lender));
-  const clears = Math.min(mark, Math.max(0, basis));
-  return Math.max(0, Math.round((mark * (1 - p) + clears * p) / 1000) * 1000);
-}
 
 /** How long a desk gives it. A bank with capital markets it properly; one with
- *  the examiners in the building wants it off the books this quarter. Six to
- *  twelve months at full pressure, a year and a half when there is none — the
- *  span of a real REO marketing period at each end. */
+ *  the examiners in the building wants it off the books this quarter. */
 function reoWindow(s: GameState, lender: string): number {
   const p = lenderPressure(lenderByName(s, lender));
   return Math.round(rrange(s, 6, 12, "rivals") + (1 - p) * 6);
@@ -2391,9 +2384,11 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   // bank with capital markets it and wants the mark; one with a regulator in
   // the building wants the loan off the books at whatever it is carried at.
   const ask = reoAsk(s, worst.v, owed, desk);
+  const loanBasis = Math.min(worst.v, Math.max(0, owed));
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
+    loanBasis,
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask));
   const off = Math.max(0, 1 - ask / Math.max(1, worst.v));
@@ -2640,11 +2635,13 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // in this business has always come from.
         const desk = deskFor(s, r, bbl);
         const basis = book > 0 ? Math.round(r.debt * (v / book)) : r.debt;
+        const loanBasis = Math.min(v, Math.max(0, basis));
         s.listings.push({
           bbl, ask: reoAsk(s, v, basis, desk),
           listedM: s.month, expiresM: s.month + reoWindow(s, desk), distress: true,
           sellerId: r.id, receiverFor: r.name,
           reason: "receiver",
+          loanBasis,
         });
       }
       continue;

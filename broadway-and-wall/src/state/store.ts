@@ -42,7 +42,7 @@ import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveFo
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
-export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
@@ -331,6 +331,24 @@ interface AppState {
   refreshSlots: () => Promise<void>;
 }
 
+/** Top 2% of standing stock by building area — only those get the delivery ceremony. */
+function deliveryWorthCeremony(game: GameState, parcels: ParcelTable, bbl: string): boolean {
+  const built = game.built?.[bbl];
+  const rec = resolveRec(parcels, game, bbl);
+  const sf = built?.bldgArea ?? rec?.bldgArea ?? 0;
+  if (sf <= 0) return false;
+  const areas: number[] = [];
+  for (const id of Object.keys(game.built ?? {})) {
+    const r = resolveRec(parcels, game, id);
+    const a = game.built![id]?.bldgArea ?? r?.bldgArea ?? 0;
+    if (a > 0) areas.push(a);
+  }
+  if (areas.length < 2) return sf > 0;
+  areas.sort((a, b) => b - a);
+  const cutoff = areas[Math.max(0, Math.ceil(areas.length * 0.02) - 1)] ?? 0;
+  return sf >= cutoff;
+}
+
 function queueDeliveryCeremony(
   prev: GameState,
   next: GameState,
@@ -339,7 +357,8 @@ function queueDeliveryCeremony(
 ) {
   const player = deliveriesThisMonth(prev, next);
   const rival = cityDeliveriesThisMonth(prev, next);
-  const bbl = player[0] ?? rival[0];
+  const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
+  const bbl = candidates[0];
   if (!bbl) return;
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;
   const built = next.built?.[bbl];

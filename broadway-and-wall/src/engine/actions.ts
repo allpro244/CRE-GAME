@@ -371,7 +371,7 @@ const RESERVE_MID = 0.94;      // the median seller's reservation, as a share of
 const RESERVE_SD = 0.035;      // spread across owners; distress widens it, below
 export function bidOdds(
   s: GameState, parcels: ParcelTable, bbl: string,
-  listing: { ask: number; distress?: boolean }, bid: number,
+  listing: { ask: number; distress?: boolean; reason?: string; receiverFor?: string; loanBasis?: number }, bid: number,
 ): number {
   const held = holderOf(s, parcels, bbl);
   if (held && isCold(s, held.id)) return 0;
@@ -381,7 +381,8 @@ export function bidOdds(
   // seller likelier to accept a given discount by some fixed amount of luck —
   // it lowers what they will settle for.
   const phase = s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
-  const motivated = listing.distress ? -0.055 : 0;
+  const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
+  const motivated = listing.distress ? (lenderSale ? -0.10 : -0.075) : 0;
   // A seller refuses a lowball because somebody else will pay more. How much
   // that is true depends on who else has money today — which is the whole
   // reason to know what the other firms on the street are doing.
@@ -390,7 +391,7 @@ export function bidOdds(
   if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
   // A forced sale is not just cheaper, it is less predictable: a receiver with
   // a deadline and an estate with a lawyer settle in very different places.
-  const sd = listing.distress ? 0.060 : RESERVE_SD;
+  const sd = listing.distress ? (lenderSale ? 0.075 : 0.060) : RESERVE_SD;
   return Math.max(0, Math.min(0.98, 1 / (1 + Math.exp(-(r - mid) / sd))));
 }
 

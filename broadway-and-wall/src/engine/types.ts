@@ -778,6 +778,8 @@ export interface Listing {
   sellerId?: string;
   /** Set when a receiver is clearing a failed firm's book, so it still reads. */
   receiverFor?: string;
+  /** Outstanding loan the desk is clearing — the ask is anchored here, not appraisal. */
+  loanBasis?: number;
 }
 
 /**

@@ -9,10 +9,9 @@ import { useSf } from "@/engine/mix";
 import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
-import { real } from "@/ui/panels/shared";
 import { liveBrokerCalls } from "./RightPanel";
 
-type JobId = "acquire" | "assets" | "capital" | "world";
+type JobId = "acquire" | "assets" | "capital" | "world" | "economy";
 
 const JOBS: {
   id: JobId;
@@ -49,9 +48,15 @@ const JOBS: {
     id: "world",
     label: "World",
     pages: [
-      { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
       { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
       { id: "news", label: "News", note: "What the city wrote this month" },
+    ],
+  },
+  {
+    id: "economy",
+    label: "Economy",
+    pages: [
+      { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
     ],
   },
 ];
@@ -83,7 +88,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, nwReal: 0, cf: 0, occSf: 0, occLeased: 0, vacDpp: null as number | null,
+        nw: 0, cf: 0, occSf: 0, occLeased: 0, vacDpp: null as number | null,
         line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
@@ -91,7 +96,6 @@ export default function TopBar() {
     }
     const parcels = useStore.getState().parcels;
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
-    const nwReal = real(nw, deferredGame.econ.cpi);
     const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
     // Office vacancy vs twelve months ago — the tell that predicts real rent
@@ -168,13 +172,13 @@ export default function TopBar() {
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
-      nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+      nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
   }, [deferredGame]);
-  const { nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  const { nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -374,14 +378,7 @@ export default function TopBar() {
             value={usd(nw)}
             drop={2}
             w={96}
-            title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). In today's dollars (÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}): ${usd(nwReal)}.`}
-          />
-          <Stat
-            label="Real NW"
-            value={usd(nwReal)}
-            drop={2}
-            w={88}
-            title={`Net worth in opening-year dollars — nominal ${usd(nw)} ÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}. Read this on long runs.`}
+            title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate).`}
           />
           {/* NW rides drop 2. Market phase and vacant-lot counts are drop 3. */}
           <Stat
@@ -441,13 +438,21 @@ export default function TopBar() {
                   aria-haspopup="menu"
                   aria-expanded={jobOpen === job.id}
                   title={title}
-                  onClick={() => setJobOpen((v) => (v === job.id ? null : job.id))}
+                  onClick={() => {
+                    if (job.pages.length === 1) {
+                      setJobOpen(null);
+                      const pid = job.pages[0].id;
+                      setPage(page === pid ? "none" : pid);
+                    } else {
+                      setJobOpen((v) => (v === job.id ? null : job.id));
+                    }
+                  }}
                 >
                   {job.label}
                   {job.id === "acquire" ? <Badge n={badge} /> : null}
                   {job.id === "capital" && debtSwept ? " · ⚠" : job.id === "capital" && debtHot ? " · !" : ""}
                   {job.id === "world" ? <Badge n={unread} /> : null}
-                  <span className="nav-caret" aria-hidden="true">▾</span>
+                  {job.pages.length > 1 ? <span className="nav-caret" aria-hidden="true">▾</span> : null}
                 </button>
                 {jobOpen === job.id && (
                   <div className="nav-menu nav-job-menu" role="menu">
@@ -474,6 +479,13 @@ export default function TopBar() {
           </nav>
           <div className="nav-cluster nav-cluster-map" role="group" aria-label="Map lenses">
           <span className="topbar-sep" />
+          <button
+            className={"lens-btn" + (lens === "listings" ? " lens-on" : "")}
+            onClick={() => setLens(lens === "listings" ? "none" : "listings")}
+            title="Market lens — highlight everything for sale on the map"
+          >
+            ◉ Market
+          </button>
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
             onClick={() => setLens(lens === "land" ? "none" : "land")}

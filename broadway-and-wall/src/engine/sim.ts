@@ -18,6 +18,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
 import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
+import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
@@ -402,7 +403,20 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       : s.econ.phase === "depression" ? rrange(s, 1.06, 1.20)
       : s.econ.phase === "recovery" ? rrange(s, 1.02, 1.14)
       : rrange(s, 0.94, 1.10);
-    const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
+    // A lender clearing troubled paper prices at loan basis, not appraisal.
+    const cl = distress ? s.cityLoans?.[bbl] : undefined;
+    let ask: number;
+    let loanBasis: number | undefined;
+    let receiverFor: string | undefined;
+    let reason: Listing["reason"] | undefined;
+    if (cl && (cl.status === "watch" || cl.status === "workout")) {
+      loanBasis = Math.min(value, Math.max(0, cl.balance));
+      ask = reoAsk(s, value, cl.balance, cl.lender);
+      receiverFor = cl.lender;
+      reason = "receiver";
+    } else {
+      ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
+    }
     // THE ROLL IS WRITTEN WHEN IT COMES TO MARKET, NOT AT THE CLOSING.
     // See Listing.roll. A scratch holding is used purely as a vessel for
     // genRentRoll to fill; nothing but the roll and the residential occupancy
@@ -414,6 +428,9 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
+      reason,
+      receiverFor,
+      loanBasis,
       // Anonymous tape inventory is not a named firm's voluntary trim —
       // `reason: "voluntary"` is reserved for rival mandate/trim exits that
       // carry a sellerId. Leaving reason unset keeps the two markets distinct.

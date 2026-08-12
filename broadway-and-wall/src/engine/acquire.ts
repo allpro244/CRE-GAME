@@ -266,18 +266,16 @@ function reservationOf(
   // A soft market drags the floor down; a hot one lets them hold out. Distress
   // is the seller's problem and your opportunity.
   const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
-  // THE MOTIVATION IS ALREADY IN THE ASK. A distress listing hits the tape at
-  // 72-90% of appraisal (refreshListings) and this term then cut another six
-  // points off the floor UNDER that ask — the same urgency priced twice, which
-  // is how receivers were routinely negotiated to half of appraisal on assets
-  // that (before the distress-impairment fix) were not even impaired.
-  const distress = 0;
-  // AND WHAT YOU DID LAST TIME. A seller who has already had one insult out of
-  // you prices you specifically — the floor for THIS buyer goes up and stays
-  // up. It is the difference between finding out where the floor is and paying
-  // for having kicked it.
+  // THE MOTIVATION IS ALREADY IN THE ASK for voluntary sellers — the tape price
+  // carries their urgency. Lender/receiver sales are different: the ask is loan
+  // basis, and servicers still negotiate below it to clear the book.
+  const lenderSale = !!li?.distress && (sellerKind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
   const soured = s.approaches[bbl]?.soured ?? 0;
-  const floor = Math.max(0.6, prof.floor + phase + distress + soured);
+  let floor = Math.max(0.6, prof.floor + phase + soured);
+  if (li?.distress) {
+    if (lenderSale) floor = Math.min(floor, 0.68 + phase);
+    else floor = Math.min(floor, prof.floor - 0.04 + phase);
+  }
   // A clean, unconditional close is worth real money to somebody who has been
   // retraded before, and every seller has been. With no diligence to offer,
   // every deal here IS that close — so the discount they will take for it is
@@ -295,6 +293,12 @@ function reservationOf(
   if (!li?.distress && rec && rec.class !== "land") {
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
     reservation = Math.max(reservation, Math.min(Math.round(ask * 0.96), Math.round(value * 0.84)));
+  }
+  // Lenders price at loan basis but will take a haircut below the ask to move REO.
+  if (lenderSale && li?.loanBasis !== undefined && li.loanBasis > 0) {
+    reservation = Math.min(reservation, Math.round(Math.min(ask, li.loanBasis) * 0.88));
+  } else if (lenderSale) {
+    reservation = Math.min(reservation, Math.round(ask * 0.88));
   }
   return { reservation, ask };
 }
@@ -357,6 +361,7 @@ export function negotiate(
   }
   const px = Math.round(price);
   if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
+  const li = s.listings.find((l) => l.bbl === bbl);
 
   // TAKE IT OR LEAVE IT MEANS EXACTLY THAT. They named a last number; coming
   // back underneath it is leaving it. The talks end — theirs was the one
@@ -463,7 +468,12 @@ export function negotiate(
   // The penalty existed and had never once fired. Anchoring it on the ask
   // makes it reachable, legible and graduated: a proud seller takes offence
   // sooner than a distressed one, because their number is nearer their floor.
-  const insultAt = Math.max(ask * 0.68, reservation * 0.80);
+  const lenderSale = !!li?.distress && (seller.kind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
+  const insultAt = lenderSale
+    ? Math.max(ask * 0.58, reservation * 0.82)
+    : li?.distress
+      ? Math.max(ask * 0.62, reservation * 0.84)
+      : Math.max(ask * 0.68, reservation * 0.80);
   if (px < insultAt) {
     delete next.talks[bbl];
     // The door shuts for a year or so, and their floor for YOU goes up for
@@ -577,7 +587,8 @@ export function negotiate(
   // Early rounds used to concede ~40% of the gap on a median seller — too
   // soft for a first answer. Real talks move in smaller steps; impatience and
   // later rounds still accelerate, just from a tighter base.
-  const give = 0.18 + prof.patience * 0.20 + Math.max(0, round - stalls * 1.5) * 0.055;
+  const distressBoost = li?.distress ? (lenderSale ? 0.10 : 0.06) : 0;
+  const give = 0.18 + prof.patience * 0.20 + Math.max(0, round - stalls * 1.5) * 0.055 + distressBoost;
   const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.80, give)));
   const roundsLeft = maxRounds - round;
   next.talks[bbl] = {

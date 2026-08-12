@@ -12,6 +12,7 @@ import { BuildingDatabase } from "@/ui/panels/MarketPage";
 import { creditWord, pendingRTab, clearPendingRTab, Big } from "@/ui/panels/shared";
 import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import type { Person } from "@/engine/people";
+import { monthLabel } from "@/engine/types";
 
 // (The collapsible Fold component lived here. Research moved to sub-tabs —
 // one section on screen at a time instead of a scroll of drawers — and no
@@ -49,7 +50,7 @@ export function ResearchPage() {
   // the clear are separate.
   const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
   useEffect(() => { clearPendingRTab(); }, []);
-  const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"],
+  const RTABS: [string, string][] = [["sectors", "Sectors"], ["districts", "Districts"], ["trades", "Trades"],
     ["people", "People"], ["street", "The street"], ["landlords", "Landlords"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
@@ -152,6 +153,38 @@ export function ResearchPage() {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>)}
+        {rtab === "districts" && (<div>
+          <div className="hint">
+            A rezoning is the largest single value event that can happen to a piece of dirt, and it lands on a
+            whole district at once. This is the record: where each district's envelope sits against what it was
+            generated with, and the last time the board moved it. You do not control it — you read it, and you
+            own the dirt before it lands or you do not.
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr><th>District</th><th className="num">Envelope vs start</th><th>Last rezoning</th><th>Direction</th></tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const dists = [...new Set(Object.values(parcels).map((p) => p.district).filter(Boolean))].sort();
+                return dists.map((d) => {
+                  const adj = game.zoneAdj?.[d] ?? 1;
+                  const log = game.zoneLog?.[d];
+                  return (
+                    <tr key={d}>
+                      <td>{d}</td>
+                      <td className={"num" + (adj < 1 ? " neg" : "")}>{(adj * 100).toFixed(0)}%</td>
+                      <td className="dim">{log ? monthLabel(log.m) : "never"}</td>
+                      <td className={log?.dir === -1 ? "neg" : "dim"}>
+                        {log ? (log.dir === 1 ? "upzoned" : "downzoned") : "—"}
+                      </td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>)}

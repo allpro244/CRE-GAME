@@ -372,7 +372,11 @@ export default function MapView() {
           map.getCanvas().style.cursor = "";
         });
         map.on("click", (e) => {
-          const fs = map.queryRenderedFeatures(e.point, { layers: ["bw-parcel-fill"] });
+          const box: [[number, number], [number, number]] = [
+            [e.point.x - 8, e.point.y - 8],
+            [e.point.x + 8, e.point.y + 8],
+          ];
+          const fs = map.queryRenderedFeatures(box, { layers: ["bw-parcel-fill"] });
           const bbl = (fs[0]?.properties?.bbl as string | undefined) ?? null;
           // Map is the index: select the lot AND put the camera on it. Empty
           // clicks clear the glance card. Closing firm pages (`page: none`)

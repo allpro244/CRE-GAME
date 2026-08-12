@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import Slider from "@/ui/Slider";
+import Slider, { widePriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
@@ -19,6 +19,7 @@ import { ownerOf, gradeOf } from "@/engine/rivals";
 import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
+import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
 import type { GroundReview } from "@/engine/types";
 import { Gloss } from "@/ui/Glossary";
@@ -110,6 +111,9 @@ function ParcelPanelInner({
         <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>
         <span className="chip chip-zone mono">{rec.zoneDist}</span>
         {holding && <span className="chip chip-owned">OWNED</span>}
+        {holding?.groundLeased && game.groundLeases?.[selectedBBL] && (game.built?.[selectedBBL]?.bldgArea || game.groundLeases[selectedBBL].builtM !== undefined) && (
+          <span className="chip">LESSEE BUILT</span>
+        )}
         {dev && <span className="chip chip-reno">UNDER CONSTRUCTION</span>}
         {listing && !holding && <span className="chip chip-listed">FOR SALE</span>}
         {listing?.distress && !holding && <span className="chip chip-distress">MOTIVATED SELLER</span>}
@@ -387,6 +391,33 @@ function ParcelPanelInner({
       })()}
 
       {on("summary") && <Neighbourhood bbl={rec.bbl} block={rec.block} />}
+
+      {on("summary") && holding?.groundLeased && game.groundLeases?.[selectedBBL] && (() => {
+        const gl = game.groundLeases[selectedBBL]!;
+        const built = game.built?.[selectedBBL];
+        const job = (game.cityJobs ?? []).find((j) => j.bbl === selectedBBL && j.groundLease);
+        if (!built?.bldgArea && !job && gl.builtM === undefined) return null;
+        return (
+          <div className="deal">
+            <div className="deal-head">Lessee&apos;s building on your land</div>
+            <div className="grid">
+              <Row k="Tenant" v={gl.tenant} />
+              {job && !gl.builtM && (
+                <Row k="Under construction" v={`${job.floors} fl · ${job.use} · ${sf(job.sf)} · opens ${monthLabel(job.deliverM)}`} strong />
+              )}
+              {(built?.bldgArea || gl.builtM !== undefined) && (
+                <>
+                  <Row k="Standing" v={`${gl.floors ?? built?.floors ?? "?"} fl · ${useLabel(rec)} · ${sf(built?.bldgArea ?? gl.sf ?? 0)}`} strong />
+                  {gl.builtM !== undefined && <Row k="Delivered" v={monthLabel(gl.builtM)} />}
+                </>
+              )}
+              <Row k="Your ground rent" v={`${usd(gl.rentYr)} / yr`} />
+              <Row k="Term ends" v={monthLabel(gl.endM)} />
+            </div>
+            <div className="hint">You own the dirt and the coupon — they let, operate and insure the improvement.</div>
+          </div>
+        );
+      })()}
 
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
@@ -1192,12 +1223,47 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   // which bidder you are going back to privately, and at what number
   const [counterOn, setCounterOn] = useState<number | null>(null);
   const [counterPx, setCounterPx] = useState(0);
+  const [acceptConfirm, setAcceptConfirm] = useState<null | { exchange?: boolean; bidIndex?: number }>(null);
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
     const tq = sale.offer ? saleTaxQuote(holding, sale.offer.price) : null;
+    const closeNet = (px: number) => {
+      const q = saleTaxQuote(holding, px);
+      return q.net - (holding.loan?.balance ?? 0) - q.tax;
+    };
+    const counterBounds = sale.offer
+      ? (() => {
+          const b = widePriceBounds(sale.offer.price, apMid(bbl, value));
+          return { ...b, min: Math.max(b.min, sale.offer!.price + b.step) };
+        })()
+      : null;
+    const bidCounterBounds = (i: number) => {
+      const p = sale.bids![i].price;
+      const b = widePriceBounds(p, apMid(bbl, value));
+      return { ...b, min: Math.max(b.min, p + b.step) };
+    };
     return (
       <div className="deal">
+        {acceptConfirm && (() => {
+          const px = acceptConfirm.bidIndex !== undefined
+            ? sale.bids![acceptConfirm.bidIndex].price
+            : sale.offer!.price;
+          return (
+            <SaleAcceptConfirm
+              address={parcels[bbl]?.address ?? bbl}
+              price={px}
+              net={closeNet(px)}
+              exchange={acceptConfirm.exchange}
+              onCancel={() => setAcceptConfirm(null)}
+              onConfirm={() => {
+                if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
+                else acceptOffer(bbl, acceptConfirm.exchange);
+                setAcceptConfirm(null);
+              }}
+            />
+          );
+        })()}
         <div className="deal-head">For sale · listed {monthLabel(sale.listedM)}</div>
         <div className="grid">
           <Row k={sale.mode === "marketed" ? "Whisper price" : "Your ask"} v={usd(sale.ask)} strong />
@@ -1229,7 +1295,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                     <td>
                       {!b.dropped && (
                         <div className="btn-row" style={{ gap: 4, margin: 0 }}>
-                          <button className="btn-mini" onClick={() => takeBid(bbl, i)}>take it</button>
+                          <button className="btn-mini" onClick={() => setAcceptConfirm({ bidIndex: i })}>take it</button>
                           {/* GOING BACK TO ONE BIDDER. Best-and-final puts the
                               whole list back in the room; this is the other
                               move — the private call to the one number you
@@ -1254,21 +1320,20 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                 deciding for you. How hard you push is the entire decision:
                 every point you ask for is a point of risk that the one bidder
                 who was there walks and the process is over. */}
-            {counterOn !== null && sale.bids?.[counterOn] && !sale.bids[counterOn].dropped && (
+            {counterOn !== null && sale.bids?.[counterOn] && !sale.bids[counterOn].dropped && (() => {
+              const bb = bidCounterBounds(counterOn);
+              return (
               <div className="page-section" style={{ marginTop: 6 }}>
                 <Slider
                   label={`Back to ${sale.bids![counterOn].name} at`}
                   value={counterPx}
-                  min={sale.bids![counterOn].price}
-                  max={Math.round(sale.bids![counterOn].price * 1.25)}
-                  step={25_000}
+                  min={bb.min}
+                  max={bb.max}
+                  step={bb.step}
+                  editable
                   onChange={setCounterPx}
                   format={(v: number) => `${usd(v)} · +${((v / sale.bids![counterOn!].price - 1) * 100).toFixed(1)}%`}
-                  hint={counterPx > sale.bids![counterOn].price * 1.12
-                    ? "That is a long way past their number. A bidder who has already shown you their best walks at this."
-                    : counterPx > sale.bids![counterOn].price * 1.05
-                      ? "A real ask. They will think about it, and some of them will not come back."
-                      : "Close enough to their number that they will probably just pay it."}
+                  hint="Name any number. They may walk if it is far past their bid — that is the risk of the private call."
                 />
                 <div className="btn-row">
                   <button className="btn" onClick={() => { useStore.getState().counterBid(bbl, counterOn!, counterPx); setCounterOn(null); }}>
@@ -1277,7 +1342,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   <button className="btn" onClick={() => setCounterOn(null)}>Leave it</button>
                 </div>
               </div>
-            )}
+              );
+            })()}
             <div className="hint">
               Taking a bid is not a closing. The weaker the covenant behind a number, the likelier they come back
               with a reason it should be lower once they have been through the building.
@@ -1331,31 +1397,29 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               );
             })()}
             <div className="btn-row">
-              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>
+              <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>
                 Accept · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
               </button>
               {tq.tax > 0 && !exchangeBusy && (
                 <button
                   className="btn btn-buy"
                   title={`Roll the gain into your next purchase: defer ${usd(tq.tax)} of tax, but you must buy for ≥ 80% of this price within 6 months`}
-                  onClick={() => acceptOffer(bbl, true)}
+                  onClick={() => setAcceptConfirm({ exchange: true })}
                 >
                   1031 · defer {usd(tq.tax)}
                 </button>
               )}
               <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
             </div>
-            {/* COUNTERING. Declining a bid you would have taken five per cent
-                higher just throws the buyer away; every seller alive picks up
-                the phone instead. One round — grinding is not a mechanic. */}
-            {!sale.offer.countered && (
+            {!sale.offer.countered && counterBounds && (
               <>
                 <Slider
                   label="Counter"
                   value={counter || Math.round(sale.offer.price * 1.06)}
-                  min={sale.offer.price + 1000}
-                  max={Math.round(Math.max(sale.ask, sale.offer.price * 1.3))}
-                  step={Math.max(1000, Math.round(sale.offer.price / 400))}
+                  min={counterBounds.min}
+                  max={counterBounds.max}
+                  step={counterBounds.step}
+                  editable
                   onChange={setCounter}
                   format={(v) => `${usd(v)} · +${(((v / sale.offer!.price) - 1) * 100).toFixed(1)}% on their bid`}
                   marks={[
@@ -1363,7 +1427,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                     { at: Math.round(sale.offer.price * 1.08), label: "+8%" },
                     { at: sale.ask, label: "ask" },
                   ]}
-                  hint="Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them."
+                  hint="Name any price above their bid. Well over appraisal and they may walk — that is the negotiation."
                 />
                 <div className="btn-row">
                   <button className="btn" onClick={() => counterSale(bbl, counter || Math.round(sale.offer!.price * 1.06))}>
@@ -1691,10 +1755,9 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
 export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
-  // The dial runs on a fraction of the ask, not on dollars: a dollar-valued
-  // range with a rounded step can leave the top end unreachable, which meant
-  // you could not simply pay the asking price.
-  const [bidFrac, setBidFrac] = useState(0.94);
+  const mid = apMid(bbl, price);
+  const bounds = widePriceBounds(price, mid);
+  const [offerPrice, setOfferPrice] = useState(Math.round(price * 0.94));
   // BEST AND FINAL is an instrument, not a bluff. Certainty of a done deal is
   // worth about three and a half per cent to a seller who has been retraded
   // before — and every seller has been — so a credible final closes under
@@ -1715,7 +1778,7 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
       </div>
     );
   }
-  const offerPrice = Math.round(price * Math.min(1, bidFrac));
+  const offerPriceRounded = Math.round(offerPrice);
   const seller = sellerOf(game, parcels, bbl);
   const talks = game.talks?.[bbl] ?? null;
   // Everything else you have on the table. Not a blocker any more — a list,
@@ -1727,26 +1790,27 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   // tower reads as the dirt it used to be, which is the same fault buyQuote
   // fixed on the lender's side and left standing here.
   const rec = resolveRec(parcels, game, bbl);
-  const ip = rec ? inPlace(rec, game, bbl, offerPrice) : null;
+  const ip = rec ? inPlace(rec, game, bbl, offerPriceRounded) : null;
   const noi = ip?.noi ?? 0;
-  const goingInPct = offerPrice > 0 && noi > 0 ? (noi / offerPrice) * 100 : null;
-  const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
+  const goingInPct = offerPriceRounded > 0 && noi > 0 ? (noi / offerPriceRounded) * 100 : null;
+  const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPriceRounded) : 0;
   return (
     <>
       <Slider
         label="Your offer"
-        value={bidFrac}
-        min={0.6}
-        max={1}
-        step={0.005}
-        onChange={setBidFrac}
-        format={() => `${usd(offerPrice)}${bidFrac < 1 ? ` · ${((bidFrac - 1) * 100).toFixed(1)}%` : " · full ask"}`}
-        marks={[{ at: 0.85, label: "−15%" }, { at: 0.95, label: "−5%" }, { at: 1, label: "ask" }]}
+        value={offerPriceRounded}
+        min={bounds.min}
+        max={bounds.max}
+        step={bounds.step}
+        editable
+        onChange={setOfferPrice}
+        format={(v) => `${usd(v)} · ${((v / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask`}
+        marks={[{ at: Math.round(price * 0.85), label: "−15%" }, { at: Math.round(price * 0.95), label: "−5%" }, { at: price, label: "ask" }]}
         hint={talks
-          ? (offerPrice >= talks.theirPrice
+          ? (offerPriceRounded >= talks.theirPrice
             ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
-            : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPrice)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
-          : "Open with a number. They will take it, come back with one of their own, or tell you where they are."}
+            : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
+          : "Name any price. They will take it, come back with one of their own, or tell you where they are."}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a
@@ -1790,10 +1854,10 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
       <div className="btn-row">
         <button
           className="btn btn-buy"
-          disabled={atLimit || (!!talks && talks.final && offerPrice < talks.theirPrice)}
-          onClick={() => { useStore.getState().offer(bbl, offerPrice, isFinal); setIsFinal(false); }}
+          disabled={atLimit || (!!talks && talks.final && offerPriceRounded < talks.theirPrice)}
+          onClick={() => { useStore.getState().offer(bbl, offerPriceRounded, isFinal); setIsFinal(false); }}
         >
-          {talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`}{isFinal ? " — final" : ""}
+          {talks ? `Counter at ${usd(offerPriceRounded)}` : `Offer ${usd(offerPriceRounded)}`}{isFinal ? " — final" : ""}
         </button>
         {talks && (
           <>
@@ -1805,11 +1869,11 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
           </>
         )}
       </div>
-      {talks?.final && offerPrice < talks.theirPrice && (
+      {talks?.final && offerPriceRounded < talks.theirPrice && (
         <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
       )}
       <div className="hint dim">
-        Agreeing a price puts you under contract and {usd(Math.round(offerPrice * DEPOSIT_PCT))} of earnest money
+        Agreeing a price puts you under contract and {usd(Math.round(offerPriceRounded * DEPOSIT_PCT))} of earnest money
         goes hard the same day. The lender, the leverage and the cheque come after that, and you get three months
         to arrange them — miss it and the deposit is theirs.
       </div>

@@ -588,7 +588,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
         set({ game: r.s, prevForDigest: game });
         queueDeliveryCeremony(game, r.s, parcels, set);
-        toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
+        toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along.");
         void persist(r.s);
       } finally {
         set({ advancing: false });

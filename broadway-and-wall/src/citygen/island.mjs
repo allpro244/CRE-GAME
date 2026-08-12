@@ -1762,6 +1762,18 @@ export function islandConfig(seed) {
         [w / 2, h / 2 - c], [w / 2 - c, h / 2], [-w / 2 + c, h / 2], [-w / 2, h / 2 - c],
       ]);
     }
+    if (kind === "round") {
+      // THE ROUND GREEN — a rotunda, a traffic circle planted, a reservoir
+      // capped. Convex by construction, which is why it belongs here and an L
+      // does not.
+      const rx = w / 2;
+      const ry = (h / 2) * (0.88 + 0.12 * k);
+      const n = 28 + Math.floor(k * 8);
+      return put(Array.from({ length: n }, (_, i) => {
+        const a = (i / n) * Math.PI * 2;
+        return [rx * Math.cos(a), ry * Math.sin(a)];
+      }));
+    }
     return rect(cx, cy, w, h, deg);
   };
 
@@ -1923,9 +1935,12 @@ export function islandConfig(seed) {
   // decision about where the seat of government stands.
   const midCore = [(cores[0].xy[0] + cores[1].xy[0]) / 2, (cores[0].xy[1] + cores[1].xy[1]) / 2];
   const bigW = Dp.f(programme.big[0], programme.big[1]);
-  // The great one keeps its formal shape. A reservation that big was set aside
-  // by a plan, and a plan draws rectangles.
-  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: "square" });
+  // The great one keeps its formal shape — except in a city of squares, where
+  // the dominant green is often round (Columbus Circle, the Place des Vosges).
+  const bigShape = programme.key === "squares" && Dp.rand() < 0.55 ? "round"
+    : programme.key === "commons" && Dp.rand() < 0.35 ? "round"
+      : "square";
+  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: bigShape });
 
   // THE ESPLANADE, which a harbour town has and this one could not.
   //
@@ -1982,7 +1997,7 @@ export function islandConfig(seed) {
   // everything else is usually the shape of the ground that was left, so the
   // small ones lean to the wedge and the cut corner and the great one above
   // does not.
-  const SHAPES = ["square", "clipped", "wedge", "lozenge", "square", "wedge"];
+  const SHAPES = ["square", "clipped", "wedge", "lozenge", "round", "square", "wedge", "round"];
   for (let i = 1; i < nPark; i++) {
     const target = cores[i % cores.length].xy;
     const w = Dp.f(programme.rest[0], programme.rest[1]);

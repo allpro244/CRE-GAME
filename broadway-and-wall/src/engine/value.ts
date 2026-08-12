@@ -332,6 +332,25 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
   industrial: INDUSTRIAL_FLOORS_MAX,
 };
 
+function residualFloorChoices(use: BuiltClass, far: number): { floors: number; usable: number }[] {
+  const cap = USE_FLOORS_MAX[use];
+  const envelopeFl = Math.max(1, Math.round(far / 0.7));
+  const maxFl = cap !== undefined ? Math.min(cap, envelopeFl) : envelopeFl;
+  const floors = cap !== undefined
+    ? [maxFl]
+    // A builder picks the height that maximises residual, not the zoning
+    // maximum. Pricing every office/multifamily lot as a tower made
+    // heightPremium sink those uses while the desk (capped at 14, coverage
+    // 0.6) said they pencilled — one quantity, two answers. Low-rise (no
+    // premium), mid-rise, and the envelope are the three rungs the cost
+    // ladder actually has.
+    : [...new Set([Math.min(8, maxFl), Math.min(14, maxFl), maxFl])];
+  return floors.map((fl) => ({
+    floors: fl,
+    usable: cap !== undefined ? Math.min(far, cap * 0.85) : Math.min(far, fl * 0.7),
+  })).filter((c) => c.usable > 0);
+}
+
 /**
  * THE RESIDUAL: WHAT A FOOT OF THIS DIRT IS WORTH TO THE ONLY PERSON WHO CAN
  * USE IT.
@@ -474,14 +493,8 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
   let best: ResidualScheme | null = null;
   const all: { use: BuiltClass; psf: number }[] = [];
   for (const use of RESIDUAL_USES) {
-    // WHAT THIS USE CAN ACTUALLY BUILD HERE. Shops and sheds are two floor
-    // plates, so on a high-FAR lot they leave most of the envelope on the
-    // table and cannot bid for it — which is exactly why a tall zone gets a
-    // tower and not a very expensive supermarket. At 0.85 site coverage, two
-    // floors is 1.7 FAR of usable envelope and no more.
-    const maxFl = USE_FLOORS_MAX[use];
-    const usable = maxFl === undefined ? far : Math.min(far, maxFl * 0.85);
-    if (!(usable > 0)) continue;
+    const choices = residualFloorChoices(use, far);
+    if (!choices.length) continue;
 
     // Stabilised income per square foot of BUILDING, at the same occupancies
     // planDevelopment underwrites to, so the desk and the dirt agree.
@@ -553,60 +566,24 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // floor. Leaving this out was worth 10-30% of overstated income on every
     // lot in the city, and it fell straight through into the land price.
     const eff = plateEfficiency(rec.lotArea * 0.7);
-    // HEIGHT COSTS MONEY. The same square foot on floor forty needs more
-    // structure, more lift and more time than it does on floor two — so a
-    // tall envelope is not simply more of a short one, and pricing it as if
-    // it were is how a 34-FAR lot gets valued as thirty-four cheap floors.
-    // Same ladder replacementCostPsf and planDevelopment use.
-    const fl = Math.max(1, Math.round(usable / 0.7));
-    const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
-    // ...AND FILLING IT COSTS MONEY TOO. Fit-out tracks construction cost;
-    // commissions are already a cut of today's rent and must not be scaled by
-    // costIdx a second time (same identity as leaseUpValue / planDevelopment).
     const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
     const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
-    // THE DESK AND THE DIRT HAVE TO PRICE THE SAME JOB.
-    //
-    // Interest reserve and lease-up used to stay on the parcel desk only,
-    // because folding them into the residual collapsed builder-clearing lots
-    // under the texture floor — a floor that was winning the auction on sites
-    // that actually pencilled. That was one quantity with two answers: the
-    // residual said the dirt was worth $X, planDevelopment loaded carry into
-    // the basis and said the same dirt did not pencil at $X. Carry belongs in
-    // both, and the auction below no longer lets texture/holder outbid a
-    // builder who can actually break ground, so the old reason for leaving it
-    // out is gone.
-    //
-    // Same absorption curve and opex-carry identity planDevelopment uses
-    // (mean occupancy 0.657 of stabilised across 0.2+0.8·t^0.75). Construction
-    // interest is the typical 65% LTC pot at index+2.1, half the job outstanding
-    // — the same capitalised reserve, not a second wait on the land (that is
-    // BUILD_DISCOUNT).
     const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ);
-    const interestPsf = residualConstructionInterestPsf(costPsf, econ);
 
-    // THE MARGIN IS EARNED ON ALL THE MONEY, INCLUDING THE LAND.
-    //
-    // The first cut of this took the margin on construction only —
-    //     land = value − cost·(1+m)
-    // — which is the generous form and is not what anybody underwrites. A
-    // developer's hurdle is a return on the WHOLE basis; the dirt is capital
-    // too, and it is at risk from the day it is bought. So:
-    //     value = (cost + land)·(1+m)   =>   land = value/(1+m) − cost
-    // which is the standard residual, and it is strictly tighter. The
-    // difference is not academic: the generous form let the land seller
-    // capture enough of the surplus that a job could not clear its own
-    // hurdle, and 0 of 32 sites in the top demand decile pencilled at all.
-    // This form guarantees a positive spread wherever the residual is
-    // positive, because the margin is taken out before the land is priced.
-    const allInCost = costPsf + (fitPsf + carryPsf) * eff + interestPsf;
-    const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - allInCost;
-    const psf = surplus * usable * BUILD_DISCOUNT;
-    all.push({ use, psf });
-    if (surplus <= 0) continue;
-    if (!best || psf > best.psf) {
-      best = { psf, use, valuePsf: valuePsf * eff, costPsf: allInCost, usable, floors: fl, all };
+    let bestForUse = -Infinity;
+    for (const { floors: fl, usable } of choices) {
+      const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
+      const interestPsf = residualConstructionInterestPsf(costPsf, econ);
+      const allInCost = costPsf + (fitPsf + carryPsf) * eff + interestPsf;
+      const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - allInCost;
+      const psf = surplus * usable * BUILD_DISCOUNT;
+      if (psf > bestForUse) bestForUse = psf;
+      if (surplus <= 0) continue;
+      if (!best || psf > best.psf) {
+        best = { psf, use, valuePsf: valuePsf * eff, costPsf: allInCost, usable, floors: fl, all };
+      }
     }
+    all.push({ use, psf: Number.isFinite(bestForUse) ? bestForUse : 0 });
   }
   return best && { ...best, all };
 }

@@ -1846,9 +1846,36 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             <Row k="Apart" v={usd(Math.max(0, talks.theirPrice - talks.yourPrice))}
               bad={talks.theirPrice - talks.yourPrice > talks.yourPrice * 0.08} />
             <Row k="Rounds" v={talks.final ? "their final word" : `${talks.round} of ${talks.maxRounds}`} bad={talks.final} />
+            <Row
+              k="Waiting"
+              v={(() => {
+                const idleM = Math.max(0, game.month - talks.openedM);
+                if (talks.agreed && talks.closeByM !== undefined) {
+                  const left = talks.closeByM - game.month;
+                  return left <= 0
+                    ? "closing window — fund now"
+                    : `${left} month${left === 1 ? "" : "s"} left to fund · open ${idleM} mo`;
+                }
+                if (idleM <= 0) return "opened this month — Advance for their next move";
+                if (idleM === 1) return "1 month on the table — Advance when you want their answer";
+                return `${idleM} months on the table — nothing moves until you Advance`;
+              })()}
+              strong={!!talks.agreed}
+              bad={!!talks.agreed && (talks.closeByM ?? game.month) - game.month <= 1}
+            />
           </div>
           <div className="hint">{talks.note}</div>
+          {distress && !talks.agreed && (
+            <div className="hint">
+              Motivated sellers move on Advance, not on a clock you can sit out — a counter sits until you step the month.
+            </div>
+          )}
         </>
+      )}
+      {distress && !talks && (
+        <div className="hint" style={{ marginTop: 4 }}>
+          Distressed ask — send a number below ask; their answer lands when you Advance, not while you wait on this card.
+        </div>
       )}
       {others.length > 0 && (
         <div className="hint">

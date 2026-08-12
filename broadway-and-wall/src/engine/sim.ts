@@ -1273,14 +1273,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // things needing you, and rolling them into one would hide the whole point
   // of being allowed to run four.
   for (const t of Object.values(s.talks ?? {})) {
+    const idleM = Math.max(0, s.month - (t.openedM ?? s.month));
+    const idle =
+      idleM <= 0 ? "opened this month"
+        : idleM === 1 ? "1 month on the table"
+          : `${idleM} months on the table`;
     out.push(t.agreed
       ? {
         key: `contract:${t.bbl}`,
-        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)}`,
+        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
       }
       : {
         key: `talks:${t.bbl}:${t.theirPrice}`,
-        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""}`,
+        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""} · ${idle}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {

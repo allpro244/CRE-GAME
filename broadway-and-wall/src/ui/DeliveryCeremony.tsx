@@ -2,24 +2,18 @@ import { useStore } from "@/state/store";
 import { usd, sf } from "@/ui/format";
 
 /**
- * Non-blocking delivery moment — offers to fly to the building and open it.
+ * Non-blocking delivery moment — offers to fly to the building on the map.
  * Does not stop Advance; dismiss if you are not interested.
  */
 export default function DeliveryCeremony() {
   const ceremony = useStore((s) => s.deliveryCeremony);
+  const popupsOff = useStore((s) => s.popupsOff);
   const dismiss = useStore((s) => s.dismissDeliveryCeremony);
   const focus = useStore((s) => s.focus);
-  const setPage = useStore((s) => s.setPage);
 
-  if (!ceremony) return null;
+  if (!ceremony || popupsOff) return null;
 
   const viewBuilding = () => {
-    focus(ceremony.bbl, true);
-    setPage("property");
-    dismiss();
-  };
-
-  const viewOnMap = () => {
     focus(ceremony.bbl, true);
     dismiss();
   };
@@ -44,9 +38,6 @@ export default function DeliveryCeremony() {
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-primary" onClick={viewBuilding}>
             View building
-          </button>
-          <button type="button" className="btn" onClick={viewOnMap}>
-            Map only
           </button>
           <button type="button" className="btn" onClick={() => dismiss()}>
             Not now

@@ -9,7 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
-import { demandNow } from "./demand";
+import { demandNow, demandModel, nudgeBlockDemand } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
 import { coverRoleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
@@ -2217,6 +2217,8 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
   s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
+  const dBlock = demandModel(parcels).ofBbl.get(d.bbl);
+  if (dBlock) nudgeBlockDemand(s, dBlock, Math.min(4, 1 + d.sf / 150_000));
   recordPropertyEvent(s, d.bbl, {
     kind: "delivered",
     use: dominantOf(dmix),
@@ -3549,6 +3551,8 @@ export function tickCityGrowth(
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: START_YEAR + Math.floor(s.month / 12),
     };
+    const cBlock = demandModel(parcels).ofBbl.get(j.bbl);
+    if (cBlock) nudgeBlockDemand(s, cBlock, Math.min(3, 0.8 + j.sf / 180_000));
     recordPropertyEvent(s, j.bbl, {
       kind: "delivered",
       use: dominantOf(cmix),

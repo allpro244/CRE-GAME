@@ -88,7 +88,9 @@ const LOG_CAP = 0.62;
 /** A leg that is missing entirely is thin, not infinite. */
 const LEG_FLOOR = 0.06;
 /** How fast a block's desirability moves toward its target each month. */
-const MOMENTUM = 0.055;
+const MOMENTUM = 0.07;
+/** Active construction nearby — a fraction of eventual occupied pull, ramping with progress. */
+const CONSTRUCTION_PTS_PER_100K = 3.2;
 /** A neighbourhood can remake itself, but it cannot become somewhere else. */
 const DRIFT_CAP = 34;
 /** Anchor plus drift, kept inside what the invariant sweep will allow. */
@@ -183,6 +185,45 @@ function findPoles(s: GameState, model: DemandModel): NonNullable<GameState["pol
     });
   }
   return out;
+}
+
+/** One-time bump when a tower tops out — the street feels it before lease-up. */
+export function nudgeBlockDemand(s: GameState, block: string, pts: number) {
+  s.blockE = s.blockE ?? {};
+  s.blockD = s.blockD ?? {};
+  const e = +clamp((s.blockE[block] ?? 0) + pts, -DRIFT_CAP, DRIFT_CAP).toFixed(2);
+  if (e === 0) delete s.blockE[block];
+  else s.blockE[block] = e;
+  const anchor = s.blockA?.[block] ?? 0;
+  const next = +clamp(anchor + e, -TOTAL_CAP, TOTAL_CAP).toFixed(2);
+  if (next === 0) delete s.blockD[block];
+  else s.blockD[block] = next;
+}
+
+/** Cranes and hoardings pull before the certificate of occupancy. */
+function constructionLift(s: GameState, model: DemandModel, b: BlockGeom): number {
+  let lift = 0;
+  const add = (bbl: string | undefined, sf: number, startM: number, deliverM: number) => {
+    if (!bbl || sf <= 0 || s.month >= deliverM) return;
+    const id = model.ofBbl.get(bbl);
+    if (!id) return;
+    const g = model.blocks.get(id);
+    if (!g) return;
+    const dist = Math.hypot(b.cx - g.cx, b.cy - g.cy);
+    if (dist > REACH_M) return;
+    const span = Math.max(1, deliverM - startM);
+    const prog = clamp((s.month - startM) / span, 0, 1);
+    const w = clamp(1 - dist / REACH_M, 0, 1) * (0.25 + 0.75 * prog);
+    lift += w * Math.min(CONSTRUCTION_PTS_PER_100K, (sf / 100_000) * CONSTRUCTION_PTS_PER_100K);
+  };
+  for (const d of Object.values(s.developments ?? {})) {
+    add(d.bbl, d.sf, d.startM, d.deliverM);
+  }
+  for (const j of s.cityJobs ?? []) {
+    if (j.orphaned) continue;
+    add(j.bbl, j.sf, j.startM, j.deliverM);
+  }
+  return lift;
 }
 
 /** Walk every centre one month. Called from tickDemand before the targets. */
@@ -834,7 +875,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     const acres = b.nbLandArea / 43_560;
     const mix = intensityOf((j / acres) / model.refJobs, (r / acres) / model.refPop, (a / acres) / model.refAmen);
     const lr = clamp(Math.log(mix / Math.max(1e-6, model.mix0.get(b.id) ?? mix)), -LOG_CAP, LOG_CAP);
-    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + transitLift(s, b) + poleLift(s, b));
+    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + transitLift(s, b) + poleLift(s, b) + constructionLift(s, model, b));
   }
 
   // ---- DEMAND IS REDISTRIBUTIVE, NOT ADDITIVE -----------------------------

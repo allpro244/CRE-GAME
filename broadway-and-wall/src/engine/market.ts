@@ -279,8 +279,8 @@ const AFFORD_BAND: [number, number] = [0.76, 1.12];
  * it the index drifts toward zero over a long century and the class vanishes
  * as a modelling artefact rather than as a city that still needs warehouses.
  */
-const INDUST_COMP_MONTH = Math.pow(0.5, 1 / (40 * 12));
-const INDUST_COMP_FLOOR = 0.35;
+const INDUST_COMP_MONTH = Math.pow(0.5, 1 / (50 * 12));
+const INDUST_COMP_FLOOR = 0.50;
 
 /**
  * HOW HARD EACH TRADE SWINGS.
@@ -2326,9 +2326,10 @@ export function tickEcon(s: GameState) {
     // still clear on a land basis. Under chronic structural shortage keep a
     // reduced floor so the book densify fills is not erased.
     const rawSites = e.sitePencil?.[k];
+    const structFloor = k === "industrial" ? 0.55 : 0.35;
     const sites = rawSites === undefined ? 1
       : rawSites > 0 ? rawSites
-      : ((e.structTight?.[k] ?? 0) > 0.10 ? 0.35 : 0);
+      : ((e.structTight?.[k] ?? 0) > 0.10 ? structFloor : 0);
     const appetite = devPencils(e, k) * credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`

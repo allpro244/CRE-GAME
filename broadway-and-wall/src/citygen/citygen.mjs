@@ -1055,14 +1055,10 @@ export function generateCity(cfg) {
     // Coverage of an ordinary building; towers cover less and are the reason
     // the core needs headroom rather than a bigger typical.
     const typFar = Math.max(0.7, typFloors * 0.68);
-    // 1.5x at the fringe — a shop can add a floor — rising to ~4.7x downtown,
-    // which is what lets a tower be legal on a corner currently holding a
-    // four-storey walk-up. This is the whole redevelopment gradient.
-    const headroom = 1.5 + 3.2 * heat * heat;
-    // A civic ceiling, not a preset one: `peakCap` describes the town you are
-    // handed, and using it here would mean a Landing city could never grow a
-    // skyline, which is the opposite of the point.
-    return Math.round(Math.max(1.5, Math.min(34, typFar * headroom)) * 10) / 10;
+    // 2× at the fringe — room for a mid-rise without variance — rising to ~6×
+    // downtown so a tower can be legal where a walk-up stands today.
+    const headroom = 2.0 + 4.5 * heat * heat;
+    return Math.round(Math.max(2.0, Math.min(38, typFar * headroom)) * 10) / 10;
   };
 
   function zoningFor(name, heat) {

@@ -36,7 +36,8 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // taking whole neighbourhoods to 57% of their original envelope, which is not
 // planning, it is demolition by paperwork.
 const FAR_FLOOR = 0.72;
-const FAR_CEIL = 2.6;
+/** District envelope can reach ~gen cap as the city densifies — was 2.6× (~year 50 plateau). */
+const FAR_CEIL = 3.8;
 /**
  * The probability at which the rezoning walk neither grows nor shrinks the
  * city's envelope, derived from the two step sizes rather than chosen:

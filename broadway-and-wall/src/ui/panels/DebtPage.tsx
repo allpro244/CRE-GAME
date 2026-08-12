@@ -22,7 +22,7 @@ import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE } from "@/engine/fu
 import { compFlows, compStats } from "@/engine/comps";
 import { usd, sf, pct } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
-import { RefiSection } from "@/ui/panels/ParcelDesk";
+import { RefiSection } from "@/ui/panels/RefiDesk";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
 
 export function TheBanks() {

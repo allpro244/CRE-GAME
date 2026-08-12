@@ -42,7 +42,9 @@ src/engine/     pure functions over JSON state. No DOM, no store.
                 (advanceQuarter is a deprecated alias — the name always lied).
 src/citygen/    generates the town from a seed. Deterministic.
 src/state/      zustand store. The only mutable thing in the app.
-src/ui/         RightPanel.tsx is ~9,400 lines and holds nearly every page.
+src/ui/         RightPanel.tsx is a thin GamePanels shell (~180 lines). Pages live
+                under src/ui/panels/ (ParcelDesk shell + AcquireDesk / RefiDesk /
+                DevelopDesk for property desks; DebtPage, EconomyPage, etc.).
                 TopBar.tsx has the tab bar. StaffPage/StartMenu/Chart/Slider are separate.
 test/           harnesses. Each is a standalone node script behind a pnpm script.
 tools/          baseline, rails, audits, stress.

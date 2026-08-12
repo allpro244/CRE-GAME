@@ -2055,7 +2055,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 36;
+  v: 37;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.

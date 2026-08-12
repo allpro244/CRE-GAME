@@ -77,6 +77,7 @@ const advance = (g, n) => {
   ok("first-look news can put the camera on the listing", lookNewsWithBbl >= 1, `${lookNewsWithBbl} notices`);
   ok("early-look attention routes to marketplace",
     E.routeAttention("early-look:0000010001:0", g).page === "market");
+}
 
 // ---- 3 · a stranger hears nothing ------------------------------------------
 {

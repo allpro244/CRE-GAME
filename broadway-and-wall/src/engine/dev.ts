@@ -20,7 +20,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, depositsOn, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf, toSuites } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { mixOf, useSf } from "./mix";
@@ -2190,16 +2190,30 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     const p = clamp(0.055 * pre.rate * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
     if (rng(s, "dev") >= p) continue;
 
+    // THE PROGRAMME IS THE DEMISE, even while the lot is still dirt.
+    // `rec` is the vacant parcel; without the job's mix and suite cut, a
+    // one-space 26,000 ft office pre-let as a 2,000 ft bite of the 32%
+    // spec-office ceiling — 1/1 spaces at 8% occupancy on opening day.
+    const mix = d.mix ?? devMix(d.use);
+    const asBuilt = {
+      ...rec,
+      class: dominantOf(mix),
+      bldgArea: d.sf,
+      floors: d.floors,
+      mix,
+      suites: d.suites,
+    };
     const want = Math.round(openSf * rrange(s, 0.16, 0.5, "dev"));
-    if (want < floor) continue;
+    const sfLet = toSuites(asBuilt, want, openSf, lead);
+    if (!sfLet) continue;
     // The delivery-risk discount: steep when the building is a frame and a
     // promise, nearly gone by the time the scaffolding comes down.
     const discount = clamp(1 - (0.16 * (months / Math.max(1, span))), 0.86, 0.99);
-    d.signed.push({ sf: want, use: lead, discount, name: "" });
+    d.signed.push({ sf: sfLet, use: lead, discount, name: "" });
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `Let before it opens: ${(want / 1000).toFixed(0)}k sf at ${rec.address}, ${((1 - discount) * 100).toFixed(0)}% under market for taking delivery risk. `
-        + `${(((takenSf + want) / Math.max(1, leasable)) * 100).toFixed(0)}% of the building is spoken for.`,
+      text: `Let before it opens: ${(sfLet / 1000).toFixed(0)}k sf at ${rec.address}, ${((1 - discount) * 100).toFixed(0)}% under market for taking delivery risk. `
+        + `${(((takenSf + sfLet) / Math.max(1, leasable)) * 100).toFixed(0)}% of the building is spoken for.`,
     });
   }
 }

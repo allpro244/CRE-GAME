@@ -623,6 +623,12 @@ export function MarketPage() {
                       : `Open the property file for ${rec.address}`}
                     className={yours ? "row-mine" : notToYou ? "row-cold" : undefined}>
                     <td>
+                      {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
+                        <span className="chip chip-distress" style={{ marginRight: 6 }}
+                          title={`${game.brokerRel?.[li.via ?? ""]?.name ?? "A house broker"} rang you before the tape — yours alone until then`}>
+                          FIRST LOOK
+                        </span>
+                      )}
                       {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
                       {li.reason && (
                         <span className="chip" style={{ marginRight: 6 }}>

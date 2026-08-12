@@ -872,7 +872,7 @@ export function planDevelopment(
   // reason a marginal deal does not pencil. That is the point.
   const openSf = sf;
   // apartments have no fit-out, but they do have concessions and marketing
-  const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
+  const tiPsf = overMix(mix, (u) => (u === "office" ? 26 : u === "retail" ? 18 : u === "industrial" ? 5 : 7));
   const asBuilt0 = asBuiltRec(rec, use, sf, fl);
   // Underwrite the rent tenants are actually paying after market-wide
   // concessions, not the asking-rent headline. This is the same effective-rent
@@ -885,7 +885,7 @@ export function planDevelopment(
   // for every apartment project and 38 for every commercial project, whether
   // vacancy was 2% or 20%. Scale that observed base duration by availability
   // against natural vacancy: tight markets fill faster; gluts take longer.
-  const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 17 : 32));
   const availability = overMix(mix, (u) =>
     (s.econ.cityVac?.[u] ?? NATURAL_VAC[u])
       + (s.econ.sublet?.[u] ?? 0) / Math.max(1, s.econ.stock?.[u] ?? CITY_STOCK[u]));
@@ -1069,18 +1069,19 @@ export function planDevelopment(
     const btsNoi = sf * (egiPsf - opex - egiPsf * MGMT_FEE);
     stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
   }
-  const exitCap = capRateFor(asBuilt, s.econ, "good");
-  const exitYieldPct = exitCap + TAX_RATE * 100 * taxBorneShare(asBuilt);
+  const exitCapBare = capRateFor(asBuilt, s.econ, "good");
+  const exitYieldPct = exitCapBare + TAX_RATE * 100 * taxBorneShare(asBuilt);
   const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
-  // Hurdle against the tax-loaded exit the mark will actually use — not a
-  // bare cap that made every tower look like 1.78x on a job that marks at 1.03x.
-  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitYieldPct);
+  // Hurdle against the market cap rate + margin — same bare cap `devPencils`
+  // and the land residual use. Tax loading the exit here double-counted: NOI
+  // is already the operating number the cap prices.
+  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitCapBare);
 
   const lenderNote = ltc === 0
     ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
     : hurdleRatio < 1
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
-        + `(${exitCap.toFixed(2)}% exit, tax-loaded to ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
+        + `(${exitCapBare.toFixed(2)}% exit cap plus the developer margin). `
         + `That is a way to build a building for more than it is worth.`
       : undefined;
 

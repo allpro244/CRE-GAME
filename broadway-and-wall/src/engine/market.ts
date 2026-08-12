@@ -646,7 +646,7 @@ export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "
  * Multifamily at $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 —
  * close enough that moving it would be tuning, not correcting.
  */
-export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
+export const RENT_BASE = { office: 44.50, retail: 29.50, multifamily: 31.50, industrial: 11.25 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.

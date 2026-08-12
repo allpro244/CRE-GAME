@@ -233,10 +233,10 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
  *                already right, which is exactly why it broke everything else.
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 295,        // RSMeans single-storey office $313; secondary low-rise $240-350
-  multifamily: 300,   // low-rise base under the $310 mid-rise national average
-  retail: 245,        // RSMeans retail store $214, above it for two-storey urban shell
-  industrial: 100,    // modern warehouse/flex $90-150 — was 125; class never cleared hurdle
+  office: 238,        // tuned so p90 corners clear at mid-cycle rents
+  multifamily: 258,   // low-rise base; was 300 and choked mf supply
+  retail: 205,        // strip / urban shell
+  industrial: 78,     // warehouse flex — must pencil on M-zones
 };
 
 /**
@@ -267,15 +267,15 @@ export function heightPremium(floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl > 30 ? 1.85 : fl > 18 ? 1.48 : fl > 8 ? 1.16 : 1;
 }
-export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
-export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
+export const SOFT_COST = 0.14;    // design, legal, permits, insurance, financing fees
+export const CONTINGENCY = 0.05;  // held against change orders; unspent is yours
 
 /**
  * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
- * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
- * to and a developer will not go below; below it, nobody breaks ground.
+ * share of cost. Real sponsors underwrite 15-20%; the desk uses a slightly
+ * lower hurdle so ground-up on owned dirt is a pillar, not a museum piece.
  */
-export const DEV_MARGIN = 0.15;
+export const DEV_MARGIN = 0.10;
 
 /** One mathematical hurdle for class orders, parcel plans and land residuals. */
 export function developmentHurdle(yieldOnCost: number, exitCap: number): {

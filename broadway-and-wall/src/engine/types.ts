@@ -1988,6 +1988,8 @@ export interface FounderBid {
   role: "pm" | "leasing" | "construction";
   fromFirmId: string;
   fromFirmName: string;
+  /** Months the street was open for a raise while this bid was ready (not calendar wait). */
+  openMs?: number;
 }
 
 /**

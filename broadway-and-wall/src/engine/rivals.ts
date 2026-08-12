@@ -1473,8 +1473,8 @@ function firmNameFromFounder(s: GameState, personName: string, used: Set<string>
  * thriving firm per twenty years; the raise still has to clear firmEntryPitch
  * and the product term, so a crowded street refuses them like anybody else.
  *
- * Seed-hashed, no rng() draws — the rivals and people streams are untouched
- * and every seed-pinned number reproduces.
+ * Seed-hashed, no rivals-stream draws — the rivals and people streams are
+ * untouched and every seed-pinned number reproduces.
  */
 function spinHash(str: string): number {
   let h = 2166136261;
@@ -1521,21 +1521,27 @@ function tickRivalSpinouts(s: GameState) {
 
 function maybeNewFirm(s: GameState) {
   const { leverage, product, pitch } = firmEntryPitch(s);
-  if (leverage <= 0 || product <= 0) return;
+  const streetOpen = leverage > 0 && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
   // slot — anonymous capital only enters when nobody is waiting to spin out.
   const bids = s.founderBids ?? [];
   const readyIdx = bids.findIndex((b) => b.readyM <= s.month);
   const founder = readyIdx >= 0 ? bids[readyIdx] : null;
-  /** Months a ready founder keeps pitching before the street closes on them. */
+  /** Open-market months a ready founder keeps pitching before the street closes. */
   const FOUNDER_WINDOW_M = 18;
+
+  // The window counts months the street would take a raise, not calendar months
+  // queued through a credit crunch — otherwise every spinout dies the first
+  // month leverage turns positive.
+  if (founder && streetOpen) founder.openMs = (founder.openMs ?? 0) + 1;
+
+  if (!streetOpen) return;
 
   if (rng(s, "rivals") > pitch / RAISE_M) {
     // Not this month. Founders keep the slot and try again — a single roll
-    // must not erase a career. Only the window expiring (or a barren street
-    // for the whole window) sends them elsewhere.
-    if (founder && s.month - founder.readyM >= FOUNDER_WINDOW_M) {
+    // must not erase a career. Only the window expiring sends them elsewhere.
+    if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {
       s.founderBids = bids.filter((_, i) => i !== readyIdx);
       s.news.unshift({
         q: s.month, kind: "info",
@@ -1576,7 +1582,7 @@ function maybeNewFirm(s: GameState) {
   // raise, not by how rich the people who started forty years earlier have
   // become. They compound their way up like everybody else.
   // Same band as before, then × island area — a Great City first close is not
-  // a Hamlet first close. No extra rng() calls. `style` is set for both
+  // a Hamlet first close. No extra rivals-stream draws. `style` is set for both
   // genealogy spinouts and anonymous raises.
   const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s));
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");

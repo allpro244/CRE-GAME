@@ -245,7 +245,7 @@ function bestPlan(g, parcels, bbl) {
 // answer: it rejected every site the engine said cleared, so the merchant row
 // bought zero lots in every seed and was read as "speculative development
 // loses money".
-function planClears(b: { plan: { hurdleRatio: number }; spread: number } | null): boolean {
+function planClears(b) {
   return !!b && b.plan.hurdleRatio >= 1;
 }
 

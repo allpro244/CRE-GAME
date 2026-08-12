@@ -1,13 +1,27 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/fix-streams-ponds-d634` after mill ponds and creeks stopped triangulating as spikes (`SAVE_VERSION` 37).  
-**Previous ruler:** `5234f8d` (one land price, one development hurdle).
+**Ruler commit:** regenerated on `cursor/suite-occ-d634` after one-space offices stop pre-letting a bite of the floor (`SAVE_VERSION` 37 on this base).  
+**Previous ruler:** `02405c7` (convex creeks, v37).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: convex creeks and round mill ponds (SAVE_VERSION 37)
+## This ruler: whole-suite construction pre-lets
+
+Spec construction letters used to take 16–50% of the class ceiling as raw square feet, so a one-space office (or a two-space shed) could open with a 2,000 ft tenant in a 26,000 ft demise. Occupancy is leased feet; spaces counted any tenant as filling the suite.
+
+Letters now demise in the programmed (or class-default) suites. A remnant under 65% of a suite is not a tenancy. City deliveries that used to open a few percent pre-let now more often open empty and fill after C of O, which is what spec product does. Not an engine `rng()` re-roll. Conservation stayed green (3,195 months).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `vac.industrial` / `rentIdx.industrial` | Sheds no longer open with a fractional pre-let | Spec industrial emptier at delivery |
+| `roll.deadLegShare` / `roll.commercialOcc` | Same — fewer leftover bites on the inherited roll | Follows the demise |
+| `land.*` / `dev.affordableLotShare` | Different opening occupancy on new stock, different tape | Follows the plat |
+
+---
+
+## Previous ruler: convex creeks and round mill ponds (SAVE_VERSION 37)
 
 Creeks were one self-intersecting offset polygon. MapLibre and the 3D triangulator filled the convex hull — a green spike across the town. The estuary lead-in was a single rectangle up to ~480 m. Ponds were 20-gons.
 

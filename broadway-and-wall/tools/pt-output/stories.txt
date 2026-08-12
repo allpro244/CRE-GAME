@@ -1,0 +1,99 @@
+
+=== STORY MINE (162 runs) ===
+
+--- THE BIGGEST FORTUNES (real terminal, CPI-deflated) ---
+   $718.6M real ($10.61B nominal, CPI 14.8x)  concentrated/seed 1013 Melvford Sound
+      100 bought / 0 built / 32 sold, 393 leases, peak $10.62B, worst drawdown 61%, finished #1 of 11
+   $666.2M real ($15.96B nominal, CPI 24.0x)  aggressive/seed 1006 Langwich
+      234 bought / 0 built / 28 sold, 338 leases, peak $15.96B, worst drawdown 24%, finished #1 of 11
+   $558.1M real ($12.67B nominal, CPI 22.7x)  levered/seed 1013 Melvford Sound
+      209 bought / 0 built / 28 sold, 341 leases, peak $13.76B, worst drawdown 49%, finished #1 of 8
+   $302.1M real ($8.73B nominal, CPI 28.9x)  concentrated/seed 1015 Randport
+      77 bought / 0 built / 22 sold, 252 leases, peak $8.92B, worst drawdown 23%, finished #1 of 11
+   $297.6M real ($5.35B nominal, CPI 18.0x)  diversified/seed 1006 Langwich
+      199 bought / 0 built / 32 sold, 232 leases, peak $5.38B, worst drawdown 29%, finished #1 of 10
+   $286.2M real ($5.27B nominal, CPI 18.4x)  diversified/seed 1013 Melvford Sound
+      133 bought / 0 built / 35 sold, 156 leases, peak $5.32B, worst drawdown 37%, finished #1 of 10
+
+--- BURIED, THEN BACK (deep drawdown, strong finish) ---
+  aggressive/seed 1018 Ayldale Landing: down 84% (peak 2099 -> trough 2049), finished $85.0M real
+  concentrated/seed 1002 Wendwold Point: down 77% (peak 2072 -> trough 2091), finished $67.4M real
+  levered/seed 1011 Caldmere Landing: down 77% (peak 2100 -> trough 2012), finished $99.2M real
+  aggressive/seed 1004 New Tarrstone: down 75% (peak 2100 -> trough 2051), finished $34.7M real
+  diversified/seed 1014 New Mercombe: down 74% (peak 2099 -> trough 2055), finished $141.6M real
+
+--- LOOKED DEAD FOR DECADES, THEN PAID (NW at year 60 vs year 100) ---
+  diversified/seed 1013 Melvford Sound: $17.5M real at 2060 -> $286.2M at 2100 (16.4x in the last 40 years)
+  diversified/seed 1003 Merwold Neck: $3.8M real at 2060 -> $41.9M at 2100 (11.1x in the last 40 years)
+  aggressive/seed 1013 Melvford Sound: $13.8M real at 2060 -> $150.1M at 2100 (10.9x in the last 40 years)
+  aggressive/seed 1018 Ayldale Landing: $10.2M real at 2060 -> $85.0M at 2100 (8.3x in the last 40 years)
+  diversified/seed 1018 Ayldale Landing: $16.5M real at 2060 -> $104.3M at 2100 (6.3x in the last 40 years)
+
+--- SINGLE BUILDINGS THAT RAN (recorded sales above 2.5x basis) ---
+  2098  Sold 56 E 6th St for $18.8M — 163.6x basis after 7y.
+        (distress/seed 1009 Port Cedridge)
+  2078  Sold 45 Tannery Rd for $67.6M — 101.3x basis after 25y.
+        (levered/seed 1017 Chadgate Roads)
+  2098  Sold 66 Vesey St for $43.7M — 47.8x basis after 49y.
+        (aggressive/seed 1012 Port Wendcott)
+  2073  Sold 48 Coenties Slip for $0.4M — 33.4x basis after 39y.
+        (diversified/seed 1014 New Mercombe)
+  2084  Sold 134 Fenwick St for $32.1M — 22.8x basis after 10y.
+        (distress/seed 1015 Randport)
+  2096  Sold 213 Milk St for $116.2M — 22.7x basis after 70y.
+        (aggressive/seed 1016 Kirkwich)
+  2018  Sold 264 Bowery Ave for $2.7M — 21.5x basis after 16y.
+        (aggressive/seed 1009 Port Cedridge)
+  2095  Sold 86 Sloop Alley for $19.6M — 21.4x basis after 56y.
+        (concentrated/seed 1006 Langwich)
+
+--- RIVAL MORTALITY (pooled) ---
+  3701 rival failures across 162 runs
+    family          581 failures   median year 2055   earliest 2004
+    opportunistic   516 failures   median year 2030   earliest 2002
+    developer       479 failures   median year 2033   earliest 2006
+    core            401 failures   median year 2048   earliest 2004
+    pe              358 failures   median year 2039   earliest 2001
+    merchant        343 failures   median year 2034   earliest 2004
+    reit            271 failures   median year 2057   earliest 2006
+    vulture         249 failures   median year 2038   earliest 2002
+    slumlord        221 failures   median year 2041   earliest 2008
+    owneruser       152 failures   median year 2057   earliest 2006
+    foreign         130 failures   median year 2037   earliest 2008
+
+--- EARLIEST NAMED RIVAL COLLAPSES ---
+  2001  Tallow Lane Partners (pe) failed in Randport — aggressive/seed 1015 Randport
+  2001  Tallow Lane Partners (pe) failed in Randport — concentrated/seed 1015 Randport
+  2001  Tallow Lane Partners (pe) failed in Randport — developer/seed 1015 Randport
+  2001  Tallow Lane Partners (pe) failed in Randport — distress/seed 1015 Randport
+  2001  Tallow Lane Partners (pe) failed in Randport — diversified/seed 1015 Randport
+  2001  Tallow Lane Partners (pe) failed in Randport — holdUnlevered/seed 1015 Randport
+
+--- THE WIPEOUTS ---
+  73 of 162 runs ended in bankruptcy
+  2008  developer/seed 1012 Port Wendcott — peak $6.1M, ended -$25k with 0 buildings left
+  2008  merchant/seed 1012 Port Wendcott — peak $6.1M, ended -$25k with 0 buildings left
+  2008  developer/seed 1018 Ayldale Landing — peak $6.6M, ended $534k with 2 buildings left
+  2008  merchant/seed 1018 Ayldale Landing — peak $6.6M, ended $534k with 2 buildings left
+  2014  developer/seed 1003 Merwold Neck — peak $5.8M, ended -$5.7M with 1 buildings left
+  2014  merchant/seed 1003 Merwold Neck — peak $5.8M, ended -$5.7M with 1 buildings left
+
+--- THE CITIES THEMSELVES (median real outcome across all strategies on that seed) ---
+  seed 1013 Melvford Sound       median  $146.9M across 9 strategies, 2 bankrupt, 1234 lots
+  seed 1006 Langwich             median  $105.4M across 9 strategies, 2 bankrupt, 1242 lots
+  seed 1008 Hartstead Landing    median   $74.8M across 9 strategies, 2 bankrupt, 1279 lots
+  seed 1018 Ayldale Landing      median   $40.8M across 9 strategies, 2 bankrupt, 1103 lots
+  seed 1016 Kirkwich             median   $36.0M across 9 strategies, 0 bankrupt, 982 lots
+  seed 1011 Caldmere Landing     median   $32.6M across 9 strategies, 3 bankrupt, 1168 lots
+  seed 1017 Chadgate Roads       median   $27.2M across 9 strategies, 4 bankrupt, 1245 lots
+  seed 1012 Port Wendcott        median   $16.8M across 9 strategies, 4 bankrupt, 1284 lots
+  seed 1003 Merwold Neck         median   $12.9M across 9 strategies, 3 bankrupt, 1081 lots
+  seed 1010 Port Nordon          median    $3.4M across 9 strategies, 4 bankrupt, 1293 lots
+  seed 1001 Radham Bight         median      $0k across 9 strategies, 5 bankrupt, 1133 lots
+  seed 1002 Wendwold Point       median      $0k across 9 strategies, 5 bankrupt, 1090 lots
+  seed 1004 New Tarrstone        median      $0k across 9 strategies, 6 bankrupt, 1352 lots
+  seed 1005 Whitbourne Point     median      $0k across 9 strategies, 8 bankrupt, 1275 lots
+  seed 1007 New Rookton          median      $0k across 9 strategies, 6 bankrupt, 1352 lots
+  seed 1009 Port Cedridge        median      $0k across 9 strategies, 7 bankrupt, 1244 lots
+  seed 1014 New Mercombe         median      $0k across 9 strategies, 5 bankrupt, 1287 lots
+  seed 1015 Randport             median      $0k across 9 strategies, 5 bankrupt, 1081 lots

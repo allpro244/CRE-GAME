@@ -1,0 +1,138 @@
+
+=== STRATEGY TOURNAMENT ===
+runs=162  strategies=9  seeds=18  horizon=1200m  start=$5M  size=city
+
+--- TERMINAL WEALTH, REAL (CPI-deflated, $5M start) ---
+  strategy        n   died   p10       p25       MEDIAN    p75       p90       mean      real CAGR(med)
+  aggressive     18   8/18        $0        $0      $35M     $109M     $193M      $85M  1.96%
+  concentrated   18   3/18        $0      $18M     $158M     $248M     $302M     $160M  3.52%
+  developer      18  17/18        $0        $0        $0        $0        $0       $2M  n/a
+  distress       18   2/18        $0      $16M      $46M      $87M     $147M      $59M  2.24%
+  diversified    18   7/18        $0        $0      $58M     $144M     $286M      $94M  2.49%
+  holdUnlevered  18   8/18        $0        $0      $23M      $75M     $124M      $42M  1.53%
+  levered        18   8/18        $0        $0      $18M      $67M     $168M      $30M  1.29%
+  merchant       18  17/18        $0        $0        $0        $0        $0       $2M  n/a
+  rentier        18   3/18        $0       $3M      $12M      $19M      $27M      $12M  0.87%
+
+--- RISK ---
+  strategy        bankrupt%  medDD  p90DD  wentNegative%  medDeathYr  survivorMedian(real)
+  aggressive         44%    84%   100%           44%        2064       $109M
+  concentrated       17%    53%   100%           17%        2064       $169M
+  developer          94%   100%   100%           83%        2043        $36M
+  distress           11%    45%   100%           11%        2092        $62M
+  diversified        39%    71%   100%           39%        2074       $142M
+  holdUnlevered      44%    67%   100%           44%        2078        $75M
+  levered            44%   100%   100%           50%        2065        $67M
+  merchant           94%   100%   100%           83%        2043        $36M
+  rentier            17%    39%   100%           17%        2082        $15M
+
+--- ENDGAME LENGTH (runs that died) ---
+  strategy        n   yrs cash<0 before death (p50/p90)   final NW at death   peak NW before it
+  aggressive      8       8 /  39 yrs                    -$161M           $135M
+  concentrated    3       2 /  14 yrs                     -$30M            $51M
+  developer      17       0 /   0 yrs                     -$28k             $6M
+  distress        2       3 /   3 yrs                     -$69k            $78M
+  diversified     7       5 /  24 yrs                    -$364M            $82M
+  holdUnlevered   8      11 /  20 yrs                    -$318M           $149M
+  levered         8       7 /  12 yrs                     -$66M           $123M
+  merchant       17       0 /   0 yrs                     -$28k             $6M
+  rentier         3       1 /   4 yrs                     -$16k            $20M
+
+--- RISK-ADJUSTED (a strategy that 10x's sometimes and dies usually is not "best") ---
+  strategy        median/start  p10/start   worst run    ratio med:p10   survival-weighted median
+  aggressive            6.9x      0.00x         $0           inf         $19M
+  concentrated         31.6x      0.00x         $0           inf        $132M
+  developer             0.0x      0.00x         $0           inf           $0
+  distress              9.1x      0.00x         $0           inf         $41M
+  diversified          11.7x      0.00x         $0           inf         $36M
+  holdUnlevered         4.6x      0.00x         $0           inf         $13M
+  levered               3.6x      0.00x     -$593M           inf         $10M
+  merchant              0.0x      0.00x         $0           inf           $0
+  rentier               2.4x      0.00x         $0           inf         $10M
+
+--- SKILL vs LUCK (two-way ANOVA on log10 real terminal wealth) ---
+  total variance explained by STRATEGY (skill): 32.1%
+  total variance explained by CITY SEED (luck): 20.1%
+  interaction + within (right strategy for THAT city): 47.8%
+  (n=162 cells, 9 strategies x 18 seeds, bankrupt floored at $50k)
+
+--- WHO WON EACH CITY (real terminal wealth) ---
+  seed 1001 Radham Bight       winner concentrated       $35M   runner-up holdUnlevered      $34M
+  seed 1002 Wendwold Point     winner holdUnlevered      $78M   runner-up concentrated       $67M
+  seed 1003 Merwold Neck       winner distress          $107M   runner-up diversified        $42M
+  seed 1004 New Tarrstone      winner aggressive         $35M   runner-up concentrated       $18M
+  seed 1005 Whitbourne Point   winner distress           $16M   runner-up aggressive           $0
+  seed 1006 Langwich           winner aggressive        $666M   runner-up diversified       $298M
+  seed 1007 New Rookton        winner diversified        $48M   runner-up holdUnlevered      $23M
+  seed 1008 Hartstead Landing  winner aggressive        $193M   runner-up levered           $168M
+  seed 1009 Port Cedridge      winner concentrated      $248M   runner-up distress           $87M
+  seed 1010 Port Nordon        winner concentrated      $158M   runner-up distress          $126M
+  seed 1011 Caldmere Landing   winner diversified       $206M   runner-up aggressive        $134M
+  seed 1012 Port Wendcott      winner diversified       $246M   runner-up distress          $200M
+  seed 1013 Melvford Sound     winner concentrated      $719M   runner-up levered           $558M
+  seed 1014 New Mercombe       winner concentrated      $272M   runner-up diversified       $142M
+  seed 1015 Randport           winner concentrated      $302M   runner-up distress           $64M
+  seed 1016 Kirkwich           winner concentrated      $196M   runner-up diversified       $144M
+  seed 1017 Chadgate Roads     winner concentrated      $184M   runner-up levered            $67M
+  seed 1018 Ayldale Landing    winner concentrated      $264M   runner-up diversified       $104M
+
+  WIN COUNT: concentrated=9  aggressive=3  diversified=3  distress=2  holdUnlevered=1
+
+--- DOMINANCE (CLAUDE.md treats a trivialising strategy as a defect to report) ---
+  best median concentrated $158M vs 2nd diversified $58M  =>  2.71x
+  concentrated wins 9/18 individual cities
+
+--- ACTIVITY (medians) ---
+  strategy        bought  sold  built  leases  refis  refiFail  balloonInBad/total  idleMo  nothingToDoMo
+  aggressive         82    30      0     149    267       325        33/  192     171         7
+  concentrated       72    27      0     252    242       136        39/  256     582         4
+  developer           2     1      0       0      8         0         1/    8     131       204
+  distress           71    57      0      78     34        18         8/   35     874         5
+  diversified        99    32      0     125    243       372        50/  263     253         4
+  holdUnlevered      41     3      0      98      0         0         0/    0     182         4
+  levered            79    30      0     181    239       306        40/  256     191         3
+  merchant            2     1      0       0      8         0         1/    8     131       204
+  rentier             3     0      0      16      0         0         0/    0       4         2
+
+--- FRICTION: the obvious move that failed (pooled over all 162 runs) ---
+  count   runs  rate    message
+  126861    87  60%     refinance :: No lender will size a loan against this income.
+   28187    90  13%     refinance :: Land money is for dirt. This one has a building on it.
+   23394    94  11%     refinance :: Mezzanine sits behind a senior — use Place mezz, do not replace the first lien.
+    2252    18  54%     refinance.cashout :: Land money is for dirt. This one has a building on it.
+    2119    20  1%      refinance :: First Harbor Bank · 5 yr, 25-yr am won't quote you — untouchable. Bridge money will still talk.
+    2119    20  1%      refinance :: Alden Savings & Trust · 7 yr, 30-yr am won't quote you — untouchable. Bridge money will still talk.
+    2119    20  1%      refinance :: Alden Savings & Trust · 7 yr, 25-yr am · −25bps won't quote you — untouchable. Bridge money will still talk.
+    2119    20  1%      refinance :: Pelican Life Insurance · 15 yr, 30-yr am won't quote you — untouchable. Bridge money will still talk.
+    2119    20  1%      refinance :: Meridian Street conduit · 10 yr, 5 yr IO won't quote you — untouchable. Bridge money will still talk.
+     943    26  0%      refinance :: Proceeds don't cover the payoff — you're underwater on this refi.
+     598    18  14%     refinance.cashout :: No lender will size a loan against this income.
+     552    10  0%      refinance :: No income to underwrite — a vacant site only gets a land loan.
+     493    21  0%      refinance :: First Harbor Bank · 5 yr, 25-yr am won't quote you — shut out of institutional money. Bridge money will still talk.
+     493    21  0%      refinance :: Alden Savings & Trust · 7 yr, 30-yr am won't quote you — shut out of institutional money. Bridge money will still talk.
+     493    21  0%      refinance :: Alden Savings & Trust · 7 yr, 25-yr am · −25bps won't quote you — shut out of institutional money. Bridge money will sti
+     493    21  0%      refinance :: Pelican Life Insurance · 15 yr, 30-yr am won't quote you — shut out of institutional money. Bridge money will still talk
+     493    21  0%      refinance :: Meridian Street conduit · 10 yr, 5 yr IO won't quote you — shut out of institutional money. Bridge money will still talk
+      43    13  2%      listForSale :: That one is inside the portfolio you have in the market. Pull it out of the bundle first.
+       6     5  0%      refinance.cashout :: Mezzanine sits behind a senior — use Place mezz, do not replace the first lien.
+       3     3  0%      respondLOI.accept :: Brightwater Systems lost the expansion space — the other letter signed first, and the 0 sf left will not demise.
+       3     3  0%      respondLOI.accept :: Calder Marsh lost the expansion space — the other letter signed first, and the 0 sf left will not demise.
+       3     3  0%      respondLOI.counter :: Calder Marsh lost the expansion space — the other letter signed first, and the 0 sf left will not demise.
+
+--- CALL SUCCESS RATES ---
+  refinance                   210651 attempts  8.4% succeeded
+  counterSale                  32051 attempts  100.0% succeeded
+  setBroker.on                 18831 attempts  100.0% succeeded
+  respondLOI.accept            14951 attempts  96.8% succeeded
+  negotiate.open               13488 attempts  100.0% succeeded
+  closeDeal.debt                7626 attempts  99.3% succeeded
+  respondLOI.counter            6147 attempts  91.8% succeeded
+  refinance.cashout             4159 attempts  31.3% succeeded
+  acceptCounter                 3465 attempts  100.0% succeeded
+  acceptSaleOffer               3050 attempts  100.0% succeeded
+  setBroker.off                 3008 attempts  100.0% succeeded
+  respondLOI.accept2            2898 attempts  78.4% succeeded
+  listForSale                   2291 attempts  98.1% succeeded
+  closeDeal.cash                1122 attempts  94.0% succeeded
+  respondLOI.pass                738 attempts  100.0% succeeded
+  listForSale.survival           283 attempts  100.0% succeeded

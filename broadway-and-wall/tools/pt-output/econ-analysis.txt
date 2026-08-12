@@ -1,0 +1,309 @@
+
+=== ECONOMY OBSERVER ===
+runs=36  city:20 giant:4 hamlet:4 metro:4 town:4
+horizon=1200m  resurrections total=131
+
+--- SIZE = city (headline) (n=20 seeds) ---
+
+  REAL RENT (CPI-deflated, indexed to month 12 = 100), across seeds:
+    office        end p10/p50/p90 = 65/204/300   peak-trough swing median 145 pts   worst trough 49
+    retail        end p10/p50/p90 = 82/199/285   peak-trough swing median 129 pts   worst trough 26
+    multifamily   end p10/p50/p90 = 47/126/247   peak-trough swing median 101 pts   worst trough 22
+    industrial    end p10/p50/p90 = 16/121/202   peak-trough swing median 99 pts   worst trough 9
+
+  CYCLE: downturns per century p10/p50/p90 = 15/18/20
+    downturn length months p50=8 p90=22   (n=347 downturns)
+    vacancy recovery months p50=46 p90=155  (n=84 episodes)
+    time in down/flat/up = 17% / 3% / 80%
+
+  CLASS CO-MOVEMENT (corr of 12m real rent change, pooled over seeds):
+    offi~reta  r=0.35
+    offi~mult  r=0.16
+    offi~indu  r=0.21
+    reta~mult  r=0.18
+    reta~indu  r=0.25
+    mult~indu  r=0.23
+
+  VACANCY, decade means (median across seeds):
+    office        9.4  3.8  3.7  4.4  5.0  6.3  7.2  6.5  6.4  4.8
+    retail        6.7  3.0  3.0  3.0  3.2  3.4  3.0  3.1  3.0  3.2
+    multifamily   3.4  2.5  3.1  3.3  5.3  4.9  5.3  4.5  3.9  4.5
+    industrial    8.3  6.5  9.6  11.4  10.5  10.7  9.2  2.2  1.5  1.5
+
+  CAP RATE %, decade means (median across seeds):
+    office        8.60  8.08  7.97  7.99  8.10  7.93  7.96  8.07  8.15  8.15
+    retail        7.12  6.78  6.57  6.43  6.55  6.47  6.53  6.52  6.59  6.76
+    multifamily   5.73  5.78  5.60  5.61  5.61  5.31  5.59  5.49  5.66  5.78
+    industrial    7.30  7.35  7.19  7.26  7.50  7.21  7.30  6.62  6.62  6.75
+
+  POLICY / INDEX RATE %: overall p10/p50/p90 = 2.30/5.32/7.81  min 1.63 max 17.38
+    decade medians: 5.48  5.86  5.41  5.29  5.50  5.06  5.39  5.10  5.53  5.68
+
+  CONSTRUCTION COST INDEX (nominal costIdx): end p10/p50/p90 = 7.82/18.11/41.76
+  CPI at year 100: p10/p50/p90 = 9.1x / 14.3x / 26.1x  (=> 2.70%/yr median)
+
+  LAND $/sf ON A FIXED COHORT (real, CPI-deflated; median across seeds):
+    year   p10     p50     p90     p99     p90/p10
+       5    15.8    77.5  1178.3  1944.7    66.6x
+      15    13.6    71.5  1354.5  2338.6    81.8x
+      25     9.2    63.3   926.5  2172.3   118.1x
+      35     6.3    35.4  1062.9  2368.5   139.2x
+      45     4.5    22.0  1241.9  2609.4   259.4x
+      55     3.5    23.2  1451.1  3457.5   347.8x
+      65     2.8    25.4  1172.5  2717.9   488.1x
+      75     1.9     9.6  1477.0  3207.5   810.1x
+      85     1.4    43.7  1758.2  3608.2  1106.5x
+      95     1.0    69.4  1770.0  3988.0  1489.0x
+
+  ABSORPTION vs COMPLETIONS (median seed, mean sf/12mo window):
+    office        absorb     4,722   complete     3,041
+    retail        absorb     1,729   complete       904
+    multifamily   absorb     3,002   complete     2,676
+    industrial    absorb        -5   complete         0
+
+  RIVALS: started 30, failures per century p10/p50/p90 = 22/28/36, alive at 100y median 8
+  DEMOLITIONS per century median 129   city-built median n/a
+
+--- SIZE = hamlet (n=4 seeds) ---
+
+  REAL RENT (CPI-deflated, indexed to month 12 = 100), across seeds:
+    office        end p10/p50/p90 = 39/145/190   peak-trough swing median 120 pts   worst trough 37
+    retail        end p10/p50/p90 = 45/105/150   peak-trough swing median 105 pts   worst trough 28
+    multifamily   end p10/p50/p90 = 42/129/163   peak-trough swing median 143 pts   worst trough 33
+    industrial    end p10/p50/p90 = 9/115/239   peak-trough swing median 94 pts   worst trough 9
+
+  CYCLE: downturns per century p10/p50/p90 = 16/18/18
+    downturn length months p50=11 p90=28   (n=67 downturns)
+    vacancy recovery months p50=44 p90=200  (n=13 episodes)
+    time in down/flat/up = 25% / 3% / 72%
+
+  CLASS CO-MOVEMENT (corr of 12m real rent change, pooled over seeds):
+    offi~reta  r=0.18
+    offi~mult  r=0.14
+    offi~indu  r=0.35
+    reta~mult  r=0.34
+    reta~indu  r=0.16
+    mult~indu  r=0.22
+
+  VACANCY, decade means (median across seeds):
+    office        14.2  6.9  4.9  5.4  8.2  7.8  10.5  15.0  5.3  12.8
+    retail        8.7  5.1  5.7  5.3  8.1  7.3  6.1  7.8  11.6  8.4
+    multifamily   3.1  4.0  6.9  3.4  5.4  3.3  3.3  5.9  9.0  5.7
+    industrial    12.2  13.3  12.5  11.3  15.1  14.1  13.4  2.1  1.5  1.5
+
+  CAP RATE %, decade means (median across seeds):
+    office        9.39  9.18  8.26  8.66  8.46  9.94  8.29  8.20  9.34  7.76
+    retail        8.15  7.69  6.99  7.99  7.09  7.61  6.75  6.32  8.70  6.95
+    multifamily   6.70  6.58  6.06  6.79  5.85  6.34  5.85  5.29  7.48  5.17
+    industrial    8.52  8.66  6.57  7.88  8.05  8.69  7.45  6.33  8.07  6.18
+
+  POLICY / INDEX RATE %: overall p10/p50/p90 = 2.23/5.30/9.59  min 1.66 max 18.81
+    decade medians: 6.86  7.15  4.90  7.08  6.29  6.28  5.28  4.60  7.40  4.64
+
+  CONSTRUCTION COST INDEX (nominal costIdx): end p10/p50/p90 = 3.71/22.07/26.45
+  CPI at year 100: p10/p50/p90 = 8.5x / 20.4x / 25.7x  (=> 3.06%/yr median)
+
+  LAND $/sf ON A FIXED COHORT (real, CPI-deflated; median across seeds):
+    year   p10     p50     p90     p99     p90/p10
+       5    15.1    54.1   573.2  1115.0    31.7x
+      15    16.9    83.9   549.7  1040.3    30.0x
+      25    18.7   115.2   708.2  1406.4    50.3x
+      35     9.2   125.6   430.8   819.4    39.6x
+      45    10.1   151.6   552.5   989.0    63.0x
+      55     6.6   117.5   657.0   995.9    57.4x
+      65     4.8   137.2   785.7  1381.3   187.5x
+      75     4.6   452.5  2624.9  4033.7   777.2x
+      85     2.1   142.7  1206.8  2056.9   566.3x
+      95     2.0   301.2  1200.1  1940.0   630.0x
+
+  ABSORPTION vs COMPLETIONS (median seed, mean sf/12mo window):
+    office        absorb       824   complete       747
+    retail        absorb       453   complete       292
+    multifamily   absorb     1,153   complete     1,110
+    industrial    absorb        67   complete         0
+
+  RIVALS: started 30, failures per century p10/p50/p90 = 21/25/27, alive at 100y median 10
+  DEMOLITIONS per century median 50   city-built median n/a
+
+--- SIZE = town (n=4 seeds) ---
+
+  REAL RENT (CPI-deflated, indexed to month 12 = 100), across seeds:
+    office        end p10/p50/p90 = 78/186/211   peak-trough swing median 119 pts   worst trough 55
+    retail        end p10/p50/p90 = 106/200/208   peak-trough swing median 132 pts   worst trough 68
+    multifamily   end p10/p50/p90 = 141/152/201   peak-trough swing median 112 pts   worst trough 50
+    industrial    end p10/p50/p90 = 40/76/172   peak-trough swing median 90 pts   worst trough 13
+
+  CYCLE: downturns per century p10/p50/p90 = 18/19/21
+    downturn length months p50=8 p90=20   (n=77 downturns)
+    vacancy recovery months p50=26 p90=236  (n=17 episodes)
+    time in down/flat/up = 16% / 3% / 81%
+
+  CLASS CO-MOVEMENT (corr of 12m real rent change, pooled over seeds):
+    offi~reta  r=0.36
+    offi~mult  r=0.24
+    offi~indu  r=0.24
+    reta~mult  r=0.35
+    reta~indu  r=0.18
+    mult~indu  r=0.26
+
+  VACANCY, decade means (median across seeds):
+    office        16.3  4.5  3.7  4.3  5.1  5.8  9.6  6.2  4.9  4.1
+    retail        8.5  4.4  3.3  3.2  2.9  4.7  5.4  5.7  5.5  4.8
+    multifamily   2.6  4.4  3.4  4.9  1.9  4.2  2.7  2.8  3.0  4.9
+    industrial    12.1  11.6  11.8  13.4  12.1  12.2  12.9  6.0  2.2  1.5
+
+  CAP RATE %, decade means (median across seeds):
+    office        9.95  8.17  8.46  7.63  8.97  8.66  8.57  9.02  8.17  8.46
+    retail        8.74  6.42  7.24  6.44  7.84  7.06  7.12  7.35  7.27  6.79
+    multifamily   7.30  5.21  6.14  5.58  6.72  6.05  5.91  6.04  5.66  5.90
+    industrial    9.03  7.04  7.94  7.22  8.39  7.93  7.93  7.48  7.00  6.91
+
+  POLICY / INDEX RATE %: overall p10/p50/p90 = 2.33/5.52/9.17  min 1.69 max 20.20
+    decade medians: 7.76  3.51  6.79  4.94  7.13  6.52  6.11  6.19  5.80  5.73
+
+  CONSTRUCTION COST INDEX (nominal costIdx): end p10/p50/p90 = 14.12/17.38/27.47
+  CPI at year 100: p10/p50/p90 = 13.3x / 15.9x / 24.3x  (=> 2.81%/yr median)
+
+  LAND $/sf ON A FIXED COHORT (real, CPI-deflated; median across seeds):
+    year   p10     p50     p90     p99     p90/p10
+       5    13.0    32.5   548.5  1229.6    28.1x
+      15    13.0   223.4  1398.9  2527.1   127.5x
+      25    10.6    57.0   707.4  1545.9    71.6x
+      35    11.5   118.5   997.9  2148.5    85.3x
+      45     8.3    47.6   510.9   887.0    61.8x
+      55     5.8    37.6   662.5  1552.5   112.3x
+      65     3.7    17.7  1117.8  2466.0   310.4x
+      75     3.1    21.4  1198.5  3087.0   438.9x
+      85     2.5   128.5  1967.0  4203.6   841.9x
+      95     1.1    28.7  1719.4  3545.0  1010.9x
+
+  ABSORPTION vs COMPLETIONS (median seed, mean sf/12mo window):
+    office        absorb     2,777   complete     1,377
+    retail        absorb     1,123   complete       588
+    multifamily   absorb     2,414   complete     2,092
+    industrial    absorb        -2   complete         0
+
+  RIVALS: started 30, failures per century p10/p50/p90 = 22/26/27, alive at 100y median 8
+  DEMOLITIONS per century median 96   city-built median n/a
+
+--- SIZE = metro (n=4 seeds) ---
+
+  REAL RENT (CPI-deflated, indexed to month 12 = 100), across seeds:
+    office        end p10/p50/p90 = 36/252/257   peak-trough swing median 214 pts   worst trough 36
+    retail        end p10/p50/p90 = 42/211/260   peak-trough swing median 152 pts   worst trough 42
+    multifamily   end p10/p50/p90 = 20/221/281   peak-trough swing median 152 pts   worst trough 20
+    industrial    end p10/p50/p90 = 9/148/270   peak-trough swing median 130 pts   worst trough 9
+
+  CYCLE: downturns per century p10/p50/p90 = 14/17/18
+    downturn length months p50=9 p90=23   (n=62 downturns)
+    vacancy recovery months p50=41 p90=199  (n=10 episodes)
+    time in down/flat/up = 25% / 3% / 72%
+
+  CLASS CO-MOVEMENT (corr of 12m real rent change, pooled over seeds):
+    offi~reta  r=0.60
+    offi~mult  r=0.38
+    offi~indu  r=0.31
+    reta~mult  r=0.47
+    reta~indu  r=0.28
+    mult~indu  r=0.37
+
+  VACANCY, decade means (median across seeds):
+    office        15.0  4.0  3.7  4.2  4.5  7.5  6.6  6.8  13.8  20.8
+    retail        8.6  3.1  3.2  3.2  3.8  3.2  3.4  2.9  5.9  13.0
+    multifamily   2.5  2.0  4.6  3.9  4.5  3.9  13.0  15.1  17.9  23.1
+    industrial    11.2  9.7  10.3  13.3  12.2  10.6  7.7  1.7  2.1  7.5
+
+  CAP RATE %, decade means (median across seeds):
+    office        9.82  9.48  8.47  7.88  9.15  8.04  7.99  8.40  9.33  10.31
+    retail        8.44  8.17  7.15  6.43  8.00  6.97  6.06  6.85  7.84  8.79
+    multifamily   7.00  7.03  6.07  6.10  6.86  5.97  5.64  6.71  5.83  6.64
+    industrial    8.81  8.91  7.83  7.70  8.90  7.86  6.64  7.41  7.05  6.67
+
+  POLICY / INDEX RATE %: overall p10/p50/p90 = 2.07/5.32/10.69  min 1.62 max 17.38
+    decade medians: 7.26  8.36  6.35  5.78  7.56  5.61  4.65  5.97  6.14  3.98
+
+  CONSTRUCTION COST INDEX (nominal costIdx): end p10/p50/p90 = 0.62/37.30/43.49
+  CPI at year 100: p10/p50/p90 = 3.2x / 19.2x / 23.9x  (=> 3.00%/yr median)
+
+  LAND $/sf ON A FIXED COHORT (real, CPI-deflated; median across seeds):
+    year   p10     p50     p90     p99     p90/p10
+       5    11.9    28.2   940.8  1850.9    57.4x
+      15    11.5    35.1  1098.8  2104.3   110.4x
+      25     9.3    25.1  1925.2  3574.9   206.2x
+      35     6.6    23.1  1550.0  2602.2   254.0x
+      45     5.3    12.7  1749.9  4183.2   341.4x
+      55     4.3     8.2  1791.5  4607.7   334.8x
+      65     3.0    10.4  3141.4  6314.2  1209.6x
+      75     2.8     9.2  1518.3  3661.1   540.0x
+      85     1.9     5.2  2657.7  5850.7  1074.9x
+      95     1.7    20.3  2040.1  4960.8  1498.7x
+
+  ABSORPTION vs COMPLETIONS (median seed, mean sf/12mo window):
+    office        absorb     7,695   complete     4,566
+    retail        absorb     3,263   complete     1,688
+    multifamily   absorb     6,492   complete     8,499
+    industrial    absorb      -105   complete         0
+
+  RIVALS: started 30, failures per century p10/p50/p90 = 23/40/46, alive at 100y median 10
+  DEMOLITIONS per century median 195   city-built median n/a
+
+--- SIZE = giant (n=4 seeds) ---
+
+  REAL RENT (CPI-deflated, indexed to month 12 = 100), across seeds:
+    office        end p10/p50/p90 = 174/240/286   peak-trough swing median 162 pts   worst trough 58
+    retail        end p10/p50/p90 = 177/205/232   peak-trough swing median 135 pts   worst trough 65
+    multifamily   end p10/p50/p90 = 122/169/265   peak-trough swing median 100 pts   worst trough 62
+    industrial    end p10/p50/p90 = 17/145/180   peak-trough swing median 123 pts   worst trough 10
+
+  CYCLE: downturns per century p10/p50/p90 = 17/17/18
+    downturn length months p50=7 p90=19   (n=69 downturns)
+    vacancy recovery months p50=72 p90=145  (n=10 episodes)
+    time in down/flat/up = 14% / 3% / 83%
+
+  CLASS CO-MOVEMENT (corr of 12m real rent change, pooled over seeds):
+    offi~reta  r=0.45
+    offi~mult  r=0.17
+    offi~indu  r=0.18
+    reta~mult  r=0.30
+    reta~indu  r=0.24
+    mult~indu  r=0.18
+
+  VACANCY, decade means (median across seeds):
+    office        14.6  4.0  3.7  3.7  4.2  5.7  5.7  4.9  4.0  5.4
+    retail        9.7  3.4  2.7  2.8  3.0  3.2  2.8  2.7  2.7  2.7
+    multifamily   2.5  2.6  2.0  3.9  5.1  4.2  8.6  6.6  3.6  1.8
+    industrial    11.4  7.6  14.0  16.1  16.2  16.1  8.6  5.8  1.6  1.5
+
+  CAP RATE %, decade means (median across seeds):
+    office        10.03  8.29  8.58  8.98  8.85  7.80  8.34  8.22  8.21  8.92
+    retail        8.39  6.80  7.35  7.53  7.66  6.53  6.60  6.56  6.94  7.57
+    multifamily   6.93  5.87  6.15  6.59  6.77  5.43  5.89  5.78  5.94  6.58
+    industrial    8.25  7.23  8.29  8.41  8.59  7.45  7.45  7.45  7.48  7.71
+
+  POLICY / INDEX RATE %: overall p10/p50/p90 = 2.26/5.66/9.08  min 1.66 max 17.38
+    decade medians: 7.50  5.97  6.63  7.51  6.31  5.12  5.66  5.37  6.11  7.85
+
+  CONSTRUCTION COST INDEX (nominal costIdx): end p10/p50/p90 = 9.87/16.85/41.54
+  CPI at year 100: p10/p50/p90 = 5.7x / 15.6x / 25.9x  (=> 2.79%/yr median)
+
+  LAND $/sf ON A FIXED COHORT (real, CPI-deflated; median across seeds):
+    year   p10     p50     p90     p99     p90/p10
+       5    10.2    26.9   980.5  1796.1   104.3x
+      15    11.2    43.5  1454.4  2868.2   121.5x
+      25     8.7    24.0  1419.2  2678.3   163.7x
+      35     6.8    16.3  2148.9  4318.4   338.3x
+      45     4.8    11.3  2119.2  3611.3   502.7x
+      55     6.5    13.8  2872.6  5155.1   655.2x
+      65     5.3     9.9  2612.1  4179.6   871.6x
+      75     4.6     8.9  2465.8  5641.9   583.7x
+      85     2.7     5.1  2646.2  6217.2   820.8x
+      95     2.1     4.1  2814.7  6875.4  1223.8x
+
+  ABSORPTION vs COMPLETIONS (median seed, mean sf/12mo window):
+    office        absorb    17,312   complete     7,034
+    retail        absorb     7,231   complete     2,441
+    multifamily   absorb    15,488   complete    11,786
+    industrial    absorb        62   complete         0
+
+  RIVALS: started 30, failures per century p10/p50/p90 = 27/36/39, alive at 100y median 8
+  DEMOLITIONS per century median 269   city-built median n/a

@@ -279,7 +279,9 @@ export default function MapView() {
           .then(([volumes, ctx]: readonly [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
             const curbs: [number, number][][] = (ctx?.features ?? [])
-              .filter((f) => f.properties?.kind === "street" && f.geometry.type === "LineString")
+              .filter((f) => f.properties?.kind === "street"
+                && (f.properties?.cls === "grid" || f.properties?.cls === "lane")
+                && f.geometry.type === "LineString")
               .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
             // park & esplanade trees and pier piles come along as 3D dressing
             const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])

@@ -28,6 +28,14 @@ export const LOC_SPREAD = 4.0;    // prime + 400bps
  */
 export const LOC_CASH_RESERVE = 250_000;
 
+/** Line amounts in news — never "$0.00M" for a $4k cheque. */
+function locMoney(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1_000) return `$${Math.round(n / 1e3)}k`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
 export function locRate(s: GameState): number {
   return +(s.econ.indexRate + LOC_SPREAD).toFixed(2);
 }
@@ -54,9 +62,9 @@ export function sweepLocIdleCash(
   if (opts?.announce && sweep >= 25_000) {
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `Idle cash paid $${(sweep / 1e6).toFixed(2)}M down on the line`
+      text: `Idle cash paid ${locMoney(sweep)} down on the line`
         + (s.loc.balance > 0
-          ? `. Balance $${(s.loc.balance / 1e6).toFixed(2)}M.`
+          ? `. Balance ${locMoney(s.loc.balance)}.`
           : " — clear."),
     });
   }
@@ -180,7 +188,7 @@ export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
   // spam "Short $0.01M" every month and drown the news while the firm died of
   // a thousand LOC cuts. Announce only when the cheque is big enough to read.
   if (need >= 25_000) {
-    const fmt = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1e3)}k`);
+    const fmt = locMoney;
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `Short ${fmt(need)} — the line covered ${fmt(draw)} at ${locRate(s).toFixed(2)}%.`,
@@ -199,7 +207,7 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
     const st = sponsorStanding(next);
     return {
       s,
-      err: `The line only has $${(avail / 1e6).toFixed(2)}M left.`
+      err: `The line only has ${locMoney(avail)} left.`
         + (st.mark > 0.3 ? ` The bank cut your advance rate — ${st.label}.` : " That's the bank's advance rate against your net worth."),
     };
   }
@@ -208,7 +216,7 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
   next.cash += amt;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Drew $${(amt / 1e6).toFixed(2)}M on the line at ${locRate(next).toFixed(2)}%. Balance $${(next.loc.balance / 1e6).toFixed(2)}M.`,
+    text: `Drew ${locMoney(amt)} on the line at ${locRate(next).toFixed(2)}%. Balance ${locMoney(next.loc.balance)}.`,
   });
   return { s: next };
 }
@@ -222,7 +230,7 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
   next.cash -= amt;
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Paid $${(amt / 1e6).toFixed(2)}M down on the line. Balance $${(next.loc.balance / 1e6).toFixed(2)}M.`,
+    text: `Paid ${locMoney(amt)} down on the line. Balance ${locMoney(next.loc.balance)}.`,
   });
   return { s: next };
 }
@@ -264,8 +272,8 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: s.locOverMs >= 3
-          ? `The line has been over-advanced for ${s.locOverMs} months. The bank wants $${(stillOver / 1e6).toFixed(2)}M back and has stopped asking politely.`
-          : `The line is over-advanced — the bank wants $${(stillOver / 1e6).toFixed(2)}M back.`,
+          ? `The line has been over-advanced for ${s.locOverMs} months. The bank wants ${locMoney(stillOver)} back and has stopped asking politely.`
+          : `The line is over-advanced — the bank wants ${locMoney(stillOver)} back.`,
       });
       // After a quarter the shortfall is treated as cash owed — earlier than
       // the old six-month grace, because playthroughs showed firms dying on

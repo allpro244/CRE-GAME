@@ -260,7 +260,7 @@ export function PortfolioPage() {
         {(() => {
           const cost = rows.reduce((a, r) => a + r.h.costBasis, 0);
           const g = totV - cost;
-          return <Big label="Unrealised gain" value={`${g >= 0 ? "+" : "−"}${usd(Math.abs(g))} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
+          return <Big label="Unrealised gain" value={`${g > 0 ? "+" : ""}${usd(g)} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
         })()}
         <Big label="Buildings" value={String(holdings.length)} />
         {/* THE ONE THING YOU CANNOT AFFORD TO MISS. */}
@@ -479,7 +479,7 @@ export function PortfolioPage() {
                 // flats have no named roll: quote what the building achieves
                 return <td className="num dim">${managedRentPsfYr(rec, game.econ, h).toFixed(2)}</td>;
               })()}
-              <td className="num">{usd(noi)}</td>
+              <td className={"num" + (noi < 0 ? " neg" : "")}>{usd(noi)}</td>
               <td className="num">{usd(v)}</td>
               {/* WHAT IT HAS DONE FOR YOU. Appraisal against what you actually
                   paid — the number every owner carries in their head and the
@@ -494,7 +494,7 @@ export function PortfolioPage() {
                 const pctG = h.costBasis > 0 ? (g / h.costBasis) * 100 : 0;
                 return (
                   <td className={"num" + (g < 0 ? " neg" : "")} title={`${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
-                    {g >= 0 ? "+" : "−"}{usd(Math.abs(g))} · {g >= 0 ? "+" : ""}{pctG.toFixed(0)}%
+                    {g > 0 ? "+" : ""}{usd(g)} · {g > 0 ? "+" : ""}{pctG.toFixed(0)}%
                   </td>
                 );
               })()}
@@ -506,7 +506,7 @@ export function PortfolioPage() {
                   "—" that means no debt at all. Parenthesised the way an
                   accountant writes a negative, which cannot wrap apart. */}
               <td className="num nowrap">{h.loan ? `(${usd(h.loan.monthlyPmt)})` : "—"}</td>
-              <td className={"num" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
+              <td className={"num nowrap" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
               {/* A BUILDING IN DEFAULT WAS INVISIBLE FROM HERE. The workout desk
                   lives on the property record, so the only way to find out a
                   lender had filed was to open that one building. On a

@@ -12,7 +12,10 @@ import { useId } from "react";
 export interface Series { label: string; color: string; pts: number[]; dashed?: boolean }
 export interface RefBand { at: number; label?: string; color?: string }
 
-const fmtNum = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : v.toFixed(0));
+const fmtNum = (v: number) => {
+  if (!Number.isFinite(v)) return "—";
+  return Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : v.toFixed(0);
+};
 
 /** Pick round gridline values that bracket the data. */
 function ticks(lo: number, hi: number, want = 4): number[] {
@@ -45,15 +48,27 @@ export function LineChart({
   const PAD_L = 52, PAD_R = 10, PAD_T = 10, PAD_B = xLabels ? 20 : 8;
   const W = 480; // real pixels across; uniform scaling keeps text undistorted
   let lo = Infinity, hi = -Infinity;
-  for (const s of series) for (const v of s.pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  for (const b of bands) { if (b.at < lo) lo = b.at; if (b.at > hi) hi = b.at; }
-  if (zeroBase) lo = Math.min(lo, 0);
+  for (const s of series) for (const v of s.pts) {
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v; if (v > hi) hi = v;
+  }
+  for (const b of bands) {
+    if (!Number.isFinite(b.at)) continue;
+    if (b.at < lo) lo = b.at; if (b.at > hi) hi = b.at;
+  }
+  if (zeroBase && Number.isFinite(lo)) lo = Math.min(lo, 0);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    return <div className="hint">Not enough history yet — advance a few quarters.</div>;
+  }
   if (!(hi > lo)) { hi = lo + 1; }
   const pad = (hi - lo) * 0.08;
   lo -= pad; hi += pad;
   const ys = ticks(lo, hi, 4);
   const px = (i: number, len: number) => PAD_L + ((W - PAD_L - PAD_R) * i) / Math.max(1, len - 1);
-  const py = (v: number) => PAD_T + (height - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
+  const py = (v: number) => {
+    const y = Number.isFinite(v) ? v : lo;
+    return PAD_T + (height - PAD_T - PAD_B) * (1 - (y - lo) / (hi - lo));
+  };
 
   return (
     <>
@@ -179,12 +194,21 @@ export function BarChart({ groups, height = 120, yFmt = fmtNum }: { groups: BarG
   const PAD_L = 52, PAD_R = 8, PAD_T = 8, PAD_B = 20;
   const W = 480;
   let lo = 0, hi = 0;
-  for (const g of groups) for (const b of g.bars) { if (b.v < lo) lo = b.v; if (b.v > hi) hi = b.v; }
+  let any = false;
+  for (const g of groups) for (const b of g.bars) {
+    if (!Number.isFinite(b.v)) continue;
+    any = true;
+    if (b.v < lo) lo = b.v; if (b.v > hi) hi = b.v;
+  }
+  if (!any) return <div className="hint">Nothing to show yet.</div>;
   if (hi === lo) hi = lo + 1;
   const pad = (hi - lo) * 0.1;
   hi += pad; lo -= lo < 0 ? pad : 0;
   const ys = ticks(lo, hi, 3);
-  const py = (v: number) => PAD_T + (height - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
+  const py = (v: number) => {
+    const y = Number.isFinite(v) ? v : 0;
+    return PAD_T + (height - PAD_T - PAD_B) * (1 - (y - lo) / (hi - lo));
+  };
   const gw = (W - PAD_L - PAD_R) / groups.length;
   const nb = Math.max(1, groups[0].bars.length);
   const bw = (gw * 0.72) / nb;

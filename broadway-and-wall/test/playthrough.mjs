@@ -251,12 +251,22 @@ catch (e) { fail(`opening attention: ${e.message}`); }
     const lim = E.locLimit(g, parcels);
     if (!Number.isFinite(lim)) fail(`locLimit ${lim}`);
     if (lim > 50_000) {
+      const micro = E.drawLoc(g, parcels, 4_000);
+      if (!micro.err) {
+        const t = micro.s.news[0]?.text ?? "";
+        if (/\$0\.00M/.test(t)) fail(`drawLoc printed $0.00M for $4k: ${t}`);
+        g = micro.s;
+      }
       const d = E.drawLoc(g, parcels, Math.min(50_000, Math.floor(lim / 4)));
       if (d.err) note(`drawLoc: ${d.err}`);
       else {
         g = d.s;
         const p = E.repayLoc(g, 10_000);
-        if (!p.err) g = p.s;
+        if (!p.err) {
+          const t = p.s.news[0]?.text ?? "";
+          if (/\$0\.00M/.test(t)) fail(`repayLoc printed $0.00M for $10k: ${t}`);
+          g = p.s;
+        }
         pass("line draw/repay");
       }
     }

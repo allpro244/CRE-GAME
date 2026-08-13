@@ -289,7 +289,10 @@ catch (e) { fail(`opening attention: ${e.message}`); }
     } catch (e) { fail(`refi threw: ${e.message}`); }
 
     try {
-      const listed = E.listForSale(g, parcels, bbl);
+      const rec = E.resolveRec(parcels, g, bbl);
+      const h = g.holdings[bbl];
+      const ask = rec && h ? E.holdingValue(rec, g.econ, h, g.month) : 0;
+      const listed = E.listForSale(g, parcels, bbl, ask);
       if (listed.err) note(`list: ${listed.err}`);
       else {
         g = listed.s;

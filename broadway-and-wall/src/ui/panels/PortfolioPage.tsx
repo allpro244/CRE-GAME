@@ -83,7 +83,13 @@ export function PortfolioPage() {
     // row was already being drawn.
     const leasedSf = fee ? 0 : h.tenants.reduce((a, t) => a + t.sf, 0);
     const rollYr = fee ? 0 : h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
-    const rentPsf = fee || !rec || rec.class === "land"
+    // CONTRACT RENT, OR NOTHING. Vacant commercial used to fall through to
+    // `managedRentPsfYr` — the asking number — so a dark office printed
+    // $25.45/sf in the rent column with 0/1 spaces and 0% occupancy. That
+    // column is "average contract rent across the rent roll". No tenant,
+    // no contract, no rent. Occupied flats have no named roll and still
+    // collect, so they keep the achieved figure.
+    const rentPsf = fee || !rec || rec.class === "land" || (leasedSf <= 0 && occ <= 0)
       ? 0
       : (leasedSf > 0 ? rollYr / leasedSf : managedRentPsfYr(rec, game.econ, h));
     const u = !fee && rec && rec.bldgArea ? unitStatus(rec, h, game.month) : null;
@@ -476,8 +482,12 @@ export function PortfolioPage() {
                     </td>
                   );
                 }
-                // flats have no named roll: quote what the building achieves
-                return <td className="num dim">${managedRentPsfYr(rec, game.econ, h).toFixed(2)}</td>;
+                // Occupied flats have no named roll: quote what they collect.
+                // A vacant building has no contract rent — do not print the ask.
+                if (occ > 0) {
+                  return <td className="num dim">${managedRentPsfYr(rec, game.econ, h).toFixed(2)}</td>;
+                }
+                return <td className="num dim">—</td>;
               })()}
               <td className="num">{usd(noi)}</td>
               <td className="num">{usd(v)}</td>

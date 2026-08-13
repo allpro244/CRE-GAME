@@ -8,10 +8,11 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
+import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
+import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
@@ -851,7 +852,7 @@ function ParcelPanelInner({
               <Row
                 key={u}
                 k={leasableUses(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
-                v={"$" + managedRentPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
+                v={"$" + currentAskPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
               />
             ))}
           </div>

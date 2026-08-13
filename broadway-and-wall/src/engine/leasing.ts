@@ -16,7 +16,7 @@ import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 import { recordPropertyEvent } from "./history";
 
-import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
+import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
@@ -1580,7 +1580,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // 8.4k sf left was minting 10k letters, which is the ceiling losing by
         // a suite every time it was tested. A demised ask may overshoot the
         // pool only by a sliver, never by the better part of a suite.
-        if (sf > poolSf + useSuiteSf(rec, use) * 0.15) continue;
+        //
+        // THE LAST SUITE IS NOT A SLIVER. A building cut as one tenancy is
+        // empty or let — there is no 15% vacancy inside a space that will not
+        // demise. The ceiling is about not jumping a multi-suite fringe
+        // building from 67% to 92% in one signing. Applied to a 12,600 ft
+        // single-tenant office it compared the whole building against ~85% of
+        // itself and refused every tour, for ever. A player who programmed
+        // one suite and waited a decade was hitting this, not a soft market.
+        const suite = useSuiteSf(rec, use);
+        const lastSuite = sf >= legVac - suite * 0.15;
+        if (!lastSuite && sf > poolSf + suite * 0.15) continue;
         // A TOUR, NOT A LETTER.
         //
         // Measured over 945 arriving letters across four fifty-year runs:
@@ -2220,17 +2230,23 @@ export function loiMandateScore(loi: LOI, market: number): number {
 /**
  * THE MARKET A LETTER IS ACTUALLY MEASURED AGAINST.
  *
- * Both desks read `managedRentPsfYr(rec, econ, h)` with NO use, which is the
- * area-weighted blend of every market in the building. A letter is always for
- * ONE leg. In a tower with shops underneath, the blend is mostly office, so a
- * perfectly fair shop letter at the shop market read 30-40% "under the market"
- * and the agent binned it with a note saying so — which is exactly the
- * complaint that retail signs miles below market, seen from the other side.
- * The tenant was never the problem: one quantity had two answers, and the desk
- * was reading the wrong one.
+ * Both desks used to read `managedRentPsfYr(rec, econ, h)` with NO use, which
+ * is the area-weighted blend of every market in the building. A letter is
+ * always for ONE leg. In a tower with shops underneath, the blend is mostly
+ * office, so a perfectly fair shop letter at the shop market read 30-40%
+ * "under the market" and the agent binned it with a note saying so — which
+ * is exactly the complaint that retail signs miles below market, seen from
+ * the other side. The tenant was never the problem: one quantity had two
+ * answers, and the desk was reading the wrong one.
+ *
+ * The other half of the same fault: score against the CURRENT ask, which
+ * includes the markdown on space that has been sitting. Letters are generated
+ * at `managedRentPsfYr * staleDiscount`. Scoring them against the unmarked
+ * number is how a hired desk passed every prospect on a building empty for
+ * years — the same ratchet `leasepolicy.mjs` already named for the bots.
  */
 function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
-  return managedRentPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]);
+  return currentAskPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]);
 }
 
 type DeskVerdict = "sign" | "counter" | "refer" | "pass";

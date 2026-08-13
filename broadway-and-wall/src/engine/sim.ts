@@ -1157,8 +1157,35 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
 
 // ---- attention: what needs the player right now ----------------------------
 // Auto-advance stops when a NEW item appears on this list.
-export function attentionItems(s: GameState): { key: string; label: string }[] {
+/**
+ * Address for a player-facing sentence. Inbox / Skip-stop copy used to print
+ * the parcel id (`0000010001`) on bids, workouts, capital calls and lease
+ * notices — a file number, not a building. Keys still carry the bbl; only the
+ * label the principal reads goes through here. `parcels` is optional so a
+ * harness that only cares about keys can keep calling with state alone.
+ */
+function parcelAddr(s: GameState, bbl: string, parcels?: ParcelTable | null): string {
+  if (parcels) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (rec?.address) return rec.address;
+  }
+  return bbl;
+}
+
+/**
+ * Cash movement on the Advance toast. The printed grain is $0.01M; a $1k
+ * cutoff still rounded to "−$0.00M" for any quiet month that moved $1k–$5k.
+ */
+export function monthCashBit(dCash: number): string {
+  if (!Number.isFinite(dCash)) return "";
+  const absM = Math.abs(dCash) / 1e6;
+  if (absM < 0.01) return "";
+  return dCash > 0 ? ` · +$${absM.toFixed(2)}M` : ` · −$${absM.toFixed(2)}M`;
+}
+
+export function attentionItems(s: GameState, parcels?: ParcelTable | null): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
+  const addr = (bbl: string) => parcelAddr(s, bbl, parcels);
   // Only letters the principal still owns — firm agent, exclusive, staff desk
   // or renewal management already worked the rest. Counting every LOI here is
   // why Year/Skip kept stopping for paper somebody else was hired to handle.
@@ -1225,7 +1252,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       const top = h.sale.bids[0];
       out.push({
         key: `sale-bids:${h.bbl}:${top.name}:${top.price}:${h.sale.bids.length}`,
-        label: `${h.sale.bids.length} bid${h.sale.bids.length === 1 ? "" : "s"} on ${h.bbl} — best ${top.name}`,
+        label: `${h.sale.bids.length} bid${h.sale.bids.length === 1 ? "" : "s"} on ${addr(h.bbl)} — best ${top.name}`,
       });
     }
     // Lease rolls, renewals and capital-plan alarms are landlord business —
@@ -1236,7 +1263,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         if (t.nonRenewM === s.month) {
           out.push({
             key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
-            label: `${t.name} will leave ${h.bbl} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
+            label: `${t.name} will leave ${addr(h.bbl)} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
           });
         }
         // Near-term rolls without a live LOI or non-renewal notice still need a
@@ -1256,7 +1283,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       if (h.planCutM === s.month) {
         out.push({
           key: `capital-plan:${h.bbl}:${h.planCutM}`,
-          label: `${h.bbl} capital plan could not be funded from cash — condition will deteriorate`,
+          label: `${addr(h.bbl)} capital plan could not be funded from cash — condition will deteriorate`,
         });
       }
     }
@@ -1299,7 +1326,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       const n = d.lastCapitalCall ?? 0;
       out.push({
         key: `capital-call:${d.bbl}:${d.lastCapitalCallM}`,
-        label: `${d.bbl} construction capital call — ${n >= 1_000_000
+        label: `${addr(d.bbl)} construction capital call — ${n >= 1_000_000
           ? `$${(n / 1_000_000).toFixed(2)}M`
           : `$${Math.round(n / 1000)}K`} funded from cash`,
       });
@@ -1313,10 +1340,10 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     out.push({
       key: `workout:${w.bbl}:${w.stage}${w.servicing ? ":paying" : ""}`,
       label: w.stage === "foreclosure"
-        ? `${w.lender} has filed on ${w.bbl} — auction in ${left} months`
+        ? `${w.lender} has filed on ${addr(w.bbl)} — auction in ${left} months`
         : w.servicing
-        ? `${w.bbl}: keeping it current, ${w.servicedMs ?? 0} months paid`
-        : `${w.lender} wants ${Math.round(w.cure / 1000)}K on ${w.bbl} — ${left} months to decide`,
+        ? `${addr(w.bbl)}: keeping it current, ${w.servicedMs ?? 0} months paid`
+        : `${w.lender} wants ${Math.round(w.cure / 1000)}K on ${addr(w.bbl)} — ${left} months to decide`,
     });
   }
   // A counter on the table is the definition of something needing you — and an
@@ -1460,11 +1487,11 @@ export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
 ): { s: GameState; months: number; reason: string | null } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const before = new Set(attentionItems(s).map((a) => a.key));
+  const before = new Set(attentionItems(s, parcels).map((a) => a.key));
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
-    const now = attentionItems(cur);
+    const now = attentionItems(cur, parcels);
     const fresh = now.find((a) => !before.has(a.key));
     if (fresh) return { s: cur, months: i, reason: fresh.label };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
@@ -1482,11 +1509,11 @@ export async function advanceUntilAttentionAsync(
   yieldEvery = 1,
 ): Promise<{ s: GameState; months: number; reason: string | null }> {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const before = new Set(attentionItems(s).map((a) => a.key));
+  const before = new Set(attentionItems(s, parcels).map((a) => a.key));
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
-    const now = attentionItems(cur);
+    const now = attentionItems(cur, parcels);
     const fresh = now.find((a) => !before.has(a.key));
     if (fresh) return { s: cur, months: i, reason: fresh.label };
     if (cur.gameOver) return { s: cur, months: i, reason: null };

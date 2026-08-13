@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { monthLabel } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
@@ -556,12 +556,8 @@ export const useStore = create<AppState>((set, get) => ({
     // Yr/Skip felt like the only clock that answered. Stamp the new month,
     // cash movement, and the first thing waiting — short enough to read once.
     const dCash = next.cash - cash0;
-    const attn = attentionItems(next)[0];
-    // Ignore sub-$1k noise so a quiet month does not stamp "−$0.00M".
-    const cashBit = Math.abs(dCash) < 1000 ? ""
-      : dCash > 0 ? ` · +$${(dCash / 1e6).toFixed(2)}M`
-      : ` · −$${(Math.abs(dCash) / 1e6).toFixed(2)}M`;
-    toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`);
+    const attn = attentionItems(next, parcels)[0];
+    toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
     void persist(next);
   },
 
@@ -1049,9 +1045,9 @@ export const useStore = create<AppState>((set, get) => ({
   // Elect to carry a defaulted loan out of the rest of the book. See
   // engine/workout.ts — the money is charged in tickWorkouts, not here.
   serviceWorkout: (bbl, on) => {
-    const { game } = get();
+    const { game, parcels } = get();
     if (!game) return;
-    const r = serviceWorkout(game, bbl, on);
+    const r = serviceWorkout(game, bbl, on, parcels ?? undefined);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Done.");

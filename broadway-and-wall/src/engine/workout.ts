@@ -213,7 +213,7 @@ export function openWorkout(
  * other income. Free to switch on — the cost is the payment, every month, and
  * it is charged in tickWorkouts where every other payment is charged.
  */
-export function serviceWorkout(s: GameState, bbl: string, on: boolean): { s: GameState; err?: string; msg?: string } {
+export function serviceWorkout(s: GameState, bbl: string, on: boolean, parcels?: ParcelTable): { s: GameState; err?: string; msg?: string } {
   const w = s.workouts?.[bbl];
   const h = s.holdings[bbl];
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
@@ -224,12 +224,13 @@ export function serviceWorkout(s: GameState, bbl: string, on: boolean): { s: Gam
   const nw = next.workouts![bbl];
   nw.servicing = on;
   if (on) nw.decideM = Math.max(nw.decideM, next.month + 1);
+  const where = (parcels && resolveRec(parcels, s, bbl)?.address) || bbl;
   next.news.unshift({
     q: next.month, kind: on ? "deal" : "warn",
     text: on
-      ? `You will keep ${bbl} current out of the rest of the book — ${money(Math.round(h.loan.monthlyPmt * 1.15))} a month `
+      ? `You will keep ${where} current out of the rest of the book — ${money(Math.round(h.loan.monthlyPmt * 1.15))} a month `
         + `at the default rate. The clock stops while the cheques clear.`
-      : `You have stopped paying on ${bbl}. ${w.lender}'s clock is running again.`,
+      : `You have stopped paying on ${where}. ${w.lender}'s clock is running again.`,
   });
   return { s: next, msg: on ? "The lender will wait while you pay." : "Stopped." };
 }

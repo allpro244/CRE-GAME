@@ -20,7 +20,7 @@ export type MapHudSnapshot = {
 };
 
 export function mapHudSnapshot(game: GameState, parcels: ParcelTable | null): MapHudSnapshot {
-  const attn = attentionItems(game);
+  const attn = attentionItems(game, parcels);
   const deliveries: HudDelivery[] = [];
   for (const d of Object.values(game.developments ?? {})) {
     const rec = parcels ? resolveRec(parcels, game, d.bbl) : null;

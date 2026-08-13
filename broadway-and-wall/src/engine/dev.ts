@@ -3861,10 +3861,17 @@ export const SUITE_BOUNDS: Record<BuiltClass, { min: number; max: number; typica
 export function unitRange(useSfArea: number, use: BuiltClass): { min: number; max: number; typical: number } {
   const b = SUITE_BOUNDS[use];
   const sfArea = Math.max(0, useSfArea);
+  if (sfArea <= 0) return { min: 1, max: 1, typical: 1 };
+  // Class floors (5,000 ft industrial, 2,000 ft office) are a programming
+  // preference, not a physical constant. A 4,000 ft shed is one space the
+  // size of the shed — floor(4000/5000) used to say zero, then max(1,0)
+  // invented a 5,000 ft suite the building does not have.
+  const minSuite = Math.min(b.min, sfArea);
+  const maxSuite = Math.min(b.max, sfArea);
   return {
-    min: Math.max(1, Math.floor(sfArea / b.max)),
-    max: Math.max(1, Math.floor(sfArea / b.min)),
-    typical: Math.max(1, Math.round(sfArea / b.typical)),
+    min: Math.max(1, Math.floor(sfArea / maxSuite)),
+    max: Math.max(1, Math.floor(sfArea / minSuite)),
+    typical: Math.max(1, Math.round(sfArea / Math.min(b.typical, sfArea))),
   };
 }
 
@@ -3876,5 +3883,8 @@ export function suiteSfForUnits(useSfArea: number, use: BuiltClass, units: numbe
   const b = SUITE_BOUNDS[use];
   const r = unitRange(useSfArea, use);
   const n = Math.max(r.min, Math.min(r.max, Math.round(units)));
-  return Math.max(b.min, Math.min(b.max, Math.round(useSfArea / Math.max(1, n))));
+  const per = Math.round(useSfArea / Math.max(1, n));
+  const minSuite = Math.min(b.min, useSfArea);
+  const maxSuite = Math.min(b.max, useSfArea);
+  return Math.max(minSuite, Math.min(maxSuite, per));
 }

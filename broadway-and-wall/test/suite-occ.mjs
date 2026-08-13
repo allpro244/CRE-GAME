@@ -120,6 +120,58 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
   }
 }
 
+// A warehouse smaller than the class's typical bay is one space the size of
+// the shed — not a 12,000 ft suite in a 9,371 ft building.
+{
+  const shed = 9_371;
+  const ware = {
+    ...base,
+    class: "industrial",
+    bldgArea: shed,
+    floors: 1,
+    mix: { industrial: 1 },
+    suites: undefined,
+  };
+  const sfPer = E.useSuiteSf(ware, "industrial");
+  if (sfPer > shed) fail(`industrial suite ${sfPer} exceeds the ${shed} ft shed`);
+  else if (sfPer !== shed) fail(`9,371 ft shed should be one ${shed} ft bay (got ${sfPer})`);
+  else console.log(`ok  ${shed} ft warehouse is one ${sfPer} ft bay, not 12,000`);
+  const u = E.unitStatus(ware, { tenants: [{ sf: shed, use: "industrial" }], occ: 0 }, 0);
+  if (u.total !== 1 || u.leased !== 1) fail(`full shed should be 1/1 (got ${u.leased}/${u.total})`);
+  else console.log("ok  full 9,371 ft shed is 1/1");
+  const sliver = E.unitStatus(ware, { tenants: [{ sf: 400, use: "industrial" }], occ: 0 }, 0);
+  if (sliver.leased !== 0) fail(`400 ft of a 9,371 ft bay is not 1/1 (leased=${sliver.leased})`);
+  else console.log("ok  400 ft remnant in a one-bay shed is 0/1");
+  const cut = E.suiteSfForUnits(shed, "industrial", 1);
+  if (cut > shed) fail(`suiteSfForUnits invented a ${cut} ft bay in a ${shed} ft shed`);
+  else console.log(`ok  suiteSfForUnits caps the bay at ${cut}`);
+}
+
+{
+  const small = 4_000;
+  const cut = E.suiteSfForUnits(small, "industrial", 1);
+  if (cut !== small) fail(`4,000 ft shed programmed as one space must be ${small} ft (got ${cut})`);
+  else console.log("ok  4,000 ft industrial programmes as one 4,000 ft space");
+  const r = E.unitRange(small, "industrial");
+  if (r.min !== 1 || r.max !== 1) fail(`4,000 ft shed unitRange ${r.min}–${r.max}, want 1–1`);
+  else console.log("ok  4,000 ft shed is one space, not zero-then-clamped");
+}
+
+{
+  let over = 0;
+  let nInd = 0;
+  for (const bbl of bbls) {
+    const p = parcels[bbl];
+    if (!p || p.class !== "industrial" || !p.bldgArea) continue;
+    nInd++;
+    const per = E.useSuiteSf(p, "industrial");
+    const leg = E.useSf(p, "industrial") || p.bldgArea;
+    if (per > leg + 1) over++;
+  }
+  if (over) fail(`${over}/${nInd} industrial buildings have a suite larger than the leg`);
+  else console.log(`ok  ${nInd} industrial buildings: no suite larger than the shed`);
+}
+
 if (failed) {
   console.error(`\nsuite-occ: ${failed} check(s) failed`);
   process.exit(1);

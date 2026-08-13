@@ -135,16 +135,24 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 export const COMMERCIAL_SUITE_MIN = 2_000;
 
 export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
-  // A building you programmed yourself is cut the way you cut it.
-  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
-  if (chosen && chosen > 0) return chosen;
   // Sized off the COMPONENT, not the building. Ground-floor retail under a
   // tower demises into shops, not into floors — sizing it off the tower gave
   // a 400,000 sf building 30,000 sf "shops", which is a department store.
   const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
+  // A building you programmed yourself is cut the way you cut it — but never
+  // into a suite larger than the leg. A 9,371 ft warehouse programmed (or
+  // defaulted) as a 12,000 ft bay is a number the building does not contain.
+  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
+  if (chosen && chosen > 0) return Math.min(a, chosen);
+  let raw: number;
   switch (use) {
-    case "multifamily": return 900;                                    // an apartment
-    case "industrial":  return Math.max(12_000, Math.min(90_000, a / 2.2));
+    case "multifamily": raw = 900; break;                              // an apartment
+    // A warehouse bay is large — twelve thousand feet is a typical single
+    // tenancy — but a 9,000 ft shed is one bay the size of the shed, not a
+    // 12,000 ft suite in a building that does not have 12,000 feet. Playtest
+    // on 54 Packet St: 9,371 sf industrial, 1/1 spaces, ParcelDesk "12,000 sf
+    // each". Same class of lie as the 26,100 ft office that read 1/1 at 8%.
+    case "industrial":  raw = Math.max(12_000, Math.min(90_000, a / 2.2)); break;
     // TWO THOUSAND FEET IS THE FLOOR FOR A COMMERCIAL TENANCY.
     //
     // Shops were demising to 1,400 and offices to 2,500, which produced towers
@@ -152,7 +160,7 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // Below about two thousand feet a commercial tenancy is not an asset —
     // it is a serviced office or a kiosk, and neither is what this game is
     // about. Flats keep their own floor, because a flat is a flat.
-    case "retail":      return Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(14_000, a / 6));
+    case "retail":      raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(14_000, a / 6)); break;
     // ...AND TWENTY-EIGHT THOUSAND WAS THE WRONG CEILING AT THE OTHER END.
     //
     // The cap binds on everything sizeable: any office building over about
@@ -164,8 +172,9 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // anchor floor: the same tower now needs the better part of thirty deals
     // and three to four years, which is what leasing a tower actually costs
     // and most of why merchant development is supposed to be frightening.
-    default:            return Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12));  // office
+    default:            raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12)); break;  // office
   }
+  return Math.min(a, Math.max(1, raw));
 }
 
 /**

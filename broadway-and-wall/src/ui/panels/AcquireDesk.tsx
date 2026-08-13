@@ -973,7 +973,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     ? max.equity
     : offerPrice - principal + Math.round(offerPrice * 0.02)
       + (max.capPremium ? Math.round(max.capPremium * lev) : 0)
-      + Math.round((max.pointsFee ?? 0) * lev);
+      + Math.round((max.pointsFee ?? 0) * lev)
+      - (max.deposits ?? 0);
   // THE RESOLVED RECORD, for the same reason buyQuote uses one: the static
   // table is the lot at generation, not what is standing on it today.
   const rec = resolveRec(parcels, game, bbl);

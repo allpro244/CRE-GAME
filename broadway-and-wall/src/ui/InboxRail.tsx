@@ -16,7 +16,7 @@ export default function InboxRail() {
 
   const rail = useMemo(() => {
     if (!game || !parcels || game.gameOver) return null;
-    const blockers = attentionItems(game).slice(0, 4);
+    const blockers = attentionItems(game, parcels).slice(0, 4);
     const yearOne = game.month < 12;
     if (!yearOne && blockers.length === 0) return null;
     const nw = netWorth(game, parcels);

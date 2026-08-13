@@ -15,7 +15,7 @@ export default function YearRail() {
     const nw = netWorth(game, parcels);
     const next = MILESTONES.find((m) =>
       ["deed1", "lease1", "tower1", "exit1", "nw25"].includes(m.id) && !m.test(game, nw));
-    const blockers = attentionItems(game).slice(0, 2);
+    const blockers = attentionItems(game, parcels).slice(0, 2);
     const left = 12 - game.month;
     return { next, blockers, left };
   }, [game, parcels]);

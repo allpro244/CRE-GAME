@@ -46,7 +46,7 @@ import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -99,6 +99,16 @@ interface AppState {
   setMapFilter: (f: MapFilter) => void;
   page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
+  /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
+  paletteOpen: boolean;
+  setPaletteOpen: (v: boolean) => void;
+  /**
+   * Docket items the player pushed to later, keyed by item key → game month
+   * they come back. Session-scoped view state: a snooze is "not this sitting",
+   * not a fact about the campaign, so it does not persist.
+   */
+  docketSnooze: Record<string, number>;
+  snoozeDocket: (key: string, untilMonth: number) => void;
   /**
    * The July docket, opened deliberately rather than thrown at you. Purely a
    * view flag — it is not part of the save, because whether a panel happens to
@@ -456,6 +466,8 @@ export const useStore = create<AppState>((set, get) => ({
   mapFilter: "all",
   lens: "none",
   page: "none",
+  paletteOpen: false,
+  docketSnooze: {},
   advancing: false,
   prevForDigest: null,
   deliveryCeremony: null,
@@ -492,6 +504,10 @@ export const useStore = create<AppState>((set, get) => ({
   // list of addresses in a panel is not a place. Every row that names a
   // property can put the camera on it.
   setAuctionOpen: (v) => set({ auctionOpen: v }),
+  setPaletteOpen: (v) => set({ paletteOpen: v }),
+  snoozeDocket: (key, untilMonth) => set((st) => ({
+    docketSnooze: { ...st.docketSnooze, [key]: untilMonth },
+  })),
   focus: (bbl, closePanel = false) => set((st) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },

@@ -4,7 +4,9 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
-import InboxRail from "@/ui/InboxRail";
+import Docket from "@/ui/docket/Docket";
+import Palette from "@/ui/Palette";
+import FirmTimeline from "@/ui/FirmTimeline";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
@@ -34,6 +36,14 @@ export default function GamePanels() {
   const setPage = useStore((s) => s.setPage);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The palette toggle fires even from inside an input — that is how every
+      // palette closes, and its own search box is an input.
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
+        e.preventDefault();
+        const st0 = useStore.getState();
+        st0.setPaletteOpen(!st0.paletteOpen);
+        return;
+      }
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") {
@@ -91,10 +101,11 @@ export default function GamePanels() {
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
     : page === "staff" ? "The Desk"
+    : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
     : "The Marketplace";
-  const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" ? "Assets"
+  const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" || page === "firm" ? "Assets"
     : page === "deals" || page === "market" || page === "notes" ? "Acquire"
     : page === "debt" || page === "books" ? "Capital"
     : page === "economy" ? "Economy"
@@ -115,6 +126,7 @@ export default function GamePanels() {
     : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
     : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
+    : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
     : "On-market listings, off-market calls and motivated sellers.";
@@ -123,7 +135,8 @@ export default function GamePanels() {
   // dock from the map-first pass was too small for that work.
   return (
     <>
-      <InboxRail />
+      <Docket />
+      <Palette />
       {page === "none" && <ParcelPanel />}
       {page !== "none" && !mapOnly && (
         <div
@@ -154,6 +167,7 @@ export default function GamePanels() {
             {page === "debt" && <DebtPage />}
             {page === "property" && <PropertyPage />}
             {page === "staff" && <StaffPage />}
+            {page === "firm" && <FirmTimeline />}
             {page === "settings" && <SettingsPage />}
             {page === "primer" && <PrimerPage />}
           </div>

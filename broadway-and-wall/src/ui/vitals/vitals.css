@@ -1,0 +1,38 @@
+/* Shared vitals primitives — delta chips and sparklines. Feature CSS lives
+   with its feature; only what several surfaces share belongs here. */
+
+.spark {
+  display: inline-block;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+.delta-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.delta-sign { font-weight: 700; }
+.delta-good {
+  color: var(--success);
+  background: rgba(58, 125, 70, 0.10);
+  border-color: rgba(58, 125, 70, 0.25);
+}
+.delta-bad {
+  color: var(--danger);
+  background: rgba(168, 64, 46, 0.10);
+  border-color: rgba(168, 64, 46, 0.25);
+}
+.delta-flat {
+  color: var(--ink-dim);
+  background: rgba(122, 114, 96, 0.08);
+  border-color: rgba(122, 114, 96, 0.2);
+}

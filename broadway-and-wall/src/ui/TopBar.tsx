@@ -35,6 +35,7 @@ const JOBS: {
       { id: "portfolio", label: "Portfolio", note: "Holdings, income and concentration" },
       { id: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
       { id: "staff", label: "Staff", note: "People, capacity and judgment" },
+      { id: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },
   {

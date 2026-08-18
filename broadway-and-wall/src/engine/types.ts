@@ -1214,6 +1214,8 @@ export interface EconHistoryPoint {
   creditIdx?: number;
   employIdx?: number;
   vac?: Record<BuiltClass, number>;
+  /** Direct vacancy plus sublet/stock — what rent and the Economy tape read. */
+  avail?: Record<BuiltClass, number>;
   rent?: Record<BuiltClass, number>;
   /** effective rent — asking net of concessions; the gap to `rent` is the market */
   effRent?: Record<BuiltClass, number>;

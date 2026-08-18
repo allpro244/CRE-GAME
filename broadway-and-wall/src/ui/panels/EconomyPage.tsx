@@ -5,7 +5,7 @@ import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
 import { marketRequirement } from "@/engine/absorption";
-import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply } from "@/engine/space";
+import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
 import { pct } from "@/ui/format";
@@ -239,7 +239,14 @@ export function EconomyPage() {
   };
 
   const bal = marketBalance(e, focus);
-  const vacNow = e.cityVac?.[focus] ?? NATURAL_VAC[focus];
+  // Availability is the vacancy the rest of this page already uses for
+  // balance, months-of-supply and the projection. Direct cityVac is the
+  // landlord empty-floor rate and sits on its frictional clamp for years
+  // in a shortage — plotting that is how each class looked like a ruler
+  // for twenty years while the market (sublet + empty) was the one that
+  // moved, or failed to.
+  const directNow = e.cityVac?.[focus] ?? NATURAL_VAC[focus];
+  const vacNow = availability(e, focus);
   const stock = e.stock?.[focus] ?? CITY_STOCK[focus];
   const mos = monthsOfSupply(e, focus);
   const sched = deliverySchedule(e, game.month, 4)[focus];
@@ -307,7 +314,8 @@ export function EconomyPage() {
   const xFrom = `${START_YEAR + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
   const xTo = `${START_YEAR + Math.floor(game.month / 12)}`;
   const spanYrs = Math.max(1, Math.round(((tail[tail.length - 1]?.q ?? game.month) - (tail[0]?.q ?? game.month)) / 12));
-  const vacSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
+  const vacSeries = tail.map((h) => (h.avail?.[focus] ?? h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
+  const directSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
   // pre-v30 history has no effective series; fall back to asking so the two
   // lines simply overlap until the concession machinery has lived a month
@@ -429,7 +437,7 @@ export function EconomyPage() {
         </button>
         {CLASSES.map((k) => {
           const b = marketBalance(e, k);
-          const v = e.cityVac?.[k] ?? NATURAL_VAC[k];
+          const v = availability(e, k);
           const history = e.history ?? [];
           const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;
           const realEffNow = (e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(0.01, e.cpi ?? 1);
@@ -567,11 +575,20 @@ export function EconomyPage() {
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf standing`} />
-        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        {Math.abs(vacNow - directNow) > 0.003 && (
+          <Row
+            k="Direct vacancy"
+            v={`${(directNow * 100).toFixed(1)}% empty landlord floors · ${(frictionFloor(focus) * 100).toFixed(1)}% frictional floor`}
+            strong={directNow <= frictionFloor(focus) + 1e-6}
+          />
+        )}
         {(() => {
           // Same YoY tell as the top bar — for the focused class on this page.
           if (hist.length <= 12) return null;
-          const then = hist[hist.length - 13]?.vac?.[focus] ?? vacNow;
+          const then = hist[hist.length - 13]?.avail?.[focus]
+            ?? hist[hist.length - 13]?.vac?.[focus]
+            ?? vacNow;
           const dpp = (vacNow - then) * 100;
           return (
             <Row
@@ -586,7 +603,7 @@ export function EconomyPage() {
             book, not from empty floors. Occupied + looking pool + this month's
             requirement are the same quantities leasingOdds reads on the desk. */}
         {(() => {
-          const occ = e.occupied?.[focus] ?? stock * (1 - vacNow);
+          const occ = e.occupied?.[focus] ?? stock * (1 - directNow);
           const pool = e.pool?.[focus] ?? occ;
           const housable = stock * (1 - frictionFloor(focus));
           const req = marketRequirement(e, focus);
@@ -669,16 +686,27 @@ export function EconomyPage() {
               than `game.month - 240`, which only agreed with the data while
               the window was exactly 240 long. */}
           <LineChart
-            series={[{ label: "vacancy", color: COLOR[focus], pts: vacWithProj }]}
+            series={[
+              { label: "availability", color: COLOR[focus], pts: vacWithProj },
+              ...(vacSeries.some((v, i) => Math.abs(v - directSeries[i]) > 0.35)
+                ? [{
+                    label: "direct vacancy",
+                    color: "#8b8370",
+                    dashed: true as const,
+                    pts: [...directSeries, ...Array.from({ length: proj.length }, () => directSeries[directSeries.length - 1] ?? 0)],
+                  }]
+                : []),
+            ]}
             bands={[{ at: NATURAL_VAC[focus] * 100, label: "natural rate" }]}
             yFmt={pctFmt}
             split={vacSeries.length}
             xLabels={[xFrom, `${START_YEAR + Math.floor((game.month + 36) / 12)}`]}
           />
           <div className="chart-note">
-            Left of the dotted line is what happened. Right of it is where vacancy goes if NOBODY starts another
-            building — pipeline delivering into today's pace of absorption. Anything above the natural rate is
-            space the market has to eat before rents move.
+            Left of the dotted line is what happened. Right of it is where availability goes if NOBODY starts another
+            building — pipeline delivering into today's pace of absorption. Availability is empty floors plus
+            space already on the sublet market; that is what a tenant can take and what rents price off. Direct
+            vacancy is the landlord empty-floor rate and will sit on its frictional floor through a shortage.
           </div>
         </div>
         <div className="chart-cell">

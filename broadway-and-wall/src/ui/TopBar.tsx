@@ -4,6 +4,7 @@ import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
+import { availability } from "@/engine/space";
 import { isLeasedFee, netWorth, resolveRec } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
@@ -98,13 +99,16 @@ export default function TopBar() {
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
     const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
-    // Office vacancy vs twelve months ago — the tell that predicts real rent
-    // falls (~93% in century windows). Economy history already stamps vac.
+    // Office availability vs twelve months ago — the tell that predicts real
+    // rent falls (~93% in century windows). Direct cityVac sits on its
+    // frictional floor for years in a shortage and would print 0.0 forever.
     const hist = deferredGame.econ.history ?? [];
     let vacDpp: number | null = null;
     if (hist.length > 12) {
-      const now = deferredGame.econ.cityVac?.office ?? 0;
-      const then = hist[hist.length - 13]?.vac?.office ?? now;
+      const now = availability(deferredGame.econ, "office");
+      const then = hist[hist.length - 13]?.avail?.office
+        ?? hist[hist.length - 13]?.vac?.office
+        ?? now;
       vacDpp = (now - then) * 100;
     }
     // Same book Leasing totals: operated deeds only (not coupon-only ground

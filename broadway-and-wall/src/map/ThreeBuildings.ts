@@ -353,7 +353,7 @@ export interface RoofKitIn {
   year: number;                        // the year it was finished
   hgt: number;                         // the BUILDING's height, not the roof's altitude
   fh: number;                          // floor to floor
-  area: number;                        // signed plan area
+  area: number;                        // signed raw shoelace sum — TWICE the plan area in m²
   hasMechDeck: boolean;                // the crown already built a penthouse
   seed: number;                        // integer off the deed, for the jitter
   rnd: (k: number) => number;          // the deck's own hash stream
@@ -425,6 +425,16 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   const hgt = o.hgt;
   const bear = o.rnd(41) * Math.PI * 2;
   const floors = Math.max(1, Math.round(hgt / Math.max(2.6, o.fh)));
+  // The plate, because a roof's population scales with the floor plate it
+  // serves, not just with the building's stature. The list below was sized
+  // against the ORDINARY stock — the 291 m² median roof — and it is right
+  // there; what it under-served was the other tail: the full-block slab,
+  // whose acre of deck got the same one-of-each a corner store did and read
+  // as an aircraft carrier. The area-gated entries below are that tail's.
+  // o.area arrives as the raw shoelace sum — TWICE the plan area — which is
+  // the convention plateM below was calibrated under; both callers now feed
+  // it. The /2 makes every threshold in this function honest square metres.
+  const plate = Math.abs(o.area) / 2;
   const wants: RoofWant[] = [];
   // A mast IS the silhouette of a tall tower, so it is exempt from the
   // budget — but it still has to stand inside the parapet like
@@ -438,6 +448,11 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   // stair and the lift, and a bulkhead standing beside it on its own
   // roof is the same object drawn twice.
   if (hgt >= 9 && !o.hasMechDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * o.rnd(3), rot: bear });
+  // TWO WAYS OUT. Egress on a big plate is two stairs remote from each other
+  // — code for as long as this stock has stood — so past ~900 m² a second
+  // bulkhead queues right behind the first. The fitter's clash rule and its
+  // scattered tries keep the pair apart, which is what "remote" looks like.
+  if (hgt >= 9 && plate > 900) wants.push({ kind: 13, s: 0.85 + 0.3 * o.rnd(43), rot: bear + 2.2 });
   // A lift overrun exists where there is a lift, which is six floors
   // and up before the war and four floors and up after it.
   if (floors >= (o.year >= 1955 ? 4 : 6) && hgt >= 16 && !o.hasMechDeck) wants.push({ kind: 14, s: 0.9 + 0.25 * o.rnd(5), rot: bear + 0.4 });
@@ -449,9 +464,16 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   // and makes it stand inside the parapet like everything else.
   if (o.style === S_MILL && hgt < 15) wants.push({ kind: 6, s: 0.85 + 0.3 * o.rnd(25), rot: bear });
   if (hgt >= 20) wants.push({ kind: 2, s: 1 + (hgt > 60 ? 0.6 : 0), rot: o.jit(3, 3) });
+  // A second run of plant housing on a plate past ~1,600 m²: one penthouse
+  // fan room does not serve an acre of floor — the ductwork alone says so.
+  if (hgt >= 20 && plate > 1600) wants.push({ kind: 2, s: 0.9 + 0.25 * o.rnd(47), rot: o.jit(4, 3) });
   // The timber tank on a pre-war roof, and the steel one that replaced
   // it after the war — the two never share a roof.
   if (o.year < 1968 && hgt >= 22) wants.push({ kind: 0, s: 1, rot: 0 });
+  // A gravity tank serves one riser zone; the full-block pre-war loft
+  // carried a rank of them, one per zone, and they are the skyline of every
+  // photograph of one.
+  if (o.year < 1968 && hgt >= 22 && plate > 1500) wants.push({ kind: 0, s: 0.9 + 0.2 * o.rnd(45), rot: 0 });
   // Chilled water needs somewhere to reject the heat. Post-war, and
   // only on a building big enough to have a central plant.
   if (o.year >= 1948 && hgt >= 34 && o.rnd(7) < 0.72) wants.push({ kind: 15, s: 0.85 + 0.55 * o.rnd(9), rot: bear + 1.1 });
@@ -461,6 +483,9 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   if (o.year >= 1972 && hgt >= 48 && o.rnd(15) < 0.5) wants.push({ kind: 17, s: 1, rot: bear + 2.3 });
   // Daylight into the top floor: a loft conversion or a studio.
   if (hgt >= 12 && hgt <= 34 && o.rnd(17) < 0.30) wants.push({ kind: 18, s: 0.8 + 0.5 * o.rnd(19), rot: bear + 1.57 });
+  // A big plate at loft height wants a second ribbon of it — one skylight in
+  // the middle of an acre lights a corridor, not a floor.
+  if (hgt >= 12 && hgt <= 34 && plate > 1200 && o.rnd(51) < 0.5) wants.push({ kind: 18, s: 0.8 + 0.5 * o.rnd(52), rot: bear - 1.57 });
   // Nobody put panels on a roof before somebody was selling them.
   if (o.year >= 1996 && hgt >= 10 && o.rnd(21) < 0.34) wants.push({ kind: 19, s: 0.9 + 0.4 * o.rnd(23), rot: bear });
   // ---- THE REST OF THE ROOFSCAPE -------------------------------------
@@ -478,6 +503,13 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   // A shed ventilates through its roof because it has no other way to.
   if ((o.style === S_METALPAN || o.style === S_MILL) && hgt < 18 && o.rnd(70) < 0.45) {
     wants.push({ kind: 32, s: 0.9 + 0.3 * o.rnd(71), rot: bear });
+  }
+  // And so does any big low deck, whatever it is called — a plate past
+  // ~1,400 m² under thirty metres is a store floor or a works floor, and the
+  // exhaust ventilators stand on the roof because that is the only outdoors
+  // the middle of that floor has.
+  if (plate > 1400 && hgt < 30 && o.rnd(49) < 0.60) {
+    wants.push({ kind: 32, s: 0.9 + 0.3 * o.rnd(50), rot: bear + 0.7 });
   }
   // A mast on a roof somebody rents to a carrier — post-war and up.
   if (o.year >= 1958 && hgt >= 28 && o.rnd(72) < 0.30) wants.push({ kind: 34, s: 0.8 + 0.5 * o.rnd(73), rot: bear });
@@ -505,8 +537,12 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
     wants.push({ kind: 33, s: 0.85 + 0.3 * o.rnd(88), rot: 0 });
   }
   // Condensers are the filler — they go on last, and only where a big
-  // deck has room left over after the plant that matters.
-  const nAc = hgt > 40 ? 3 : 1;
+  // deck has room left over after the plant that matters. Their count runs
+  // off the plate as well as the stature: packaged units serve on the order
+  // of six hundred square metres of top floor each, so the full-block deck
+  // fills in with a scatter of them the way every aerial of one shows,
+  // capped at six before the scatter becomes a texture.
+  const nAc = Math.min(6, Math.max(hgt > 40 ? 3 : 1, Math.round(plate / 620)));
   for (let k = 0; k < nAc; k++) wants.push({ kind: 1, s: 0.8 + 0.4 * ((o.seed >> k) % 2), rot: o.jit(12 + k, 3) });
   return wants;
 }
@@ -831,13 +867,16 @@ void main() {
 // light from below, and a real shadow between them. Everything lands in a
 // filmic curve so highlights roll off instead of clipping to paper white.
 const LIGHT_GLSL = /* glsl */ `
-// THE SUN SITS LOW. It used to stand at forty-eight degrees — near noon, the
-// one hour no architectural photographer would ever shoot in. Twenty-eight
-// degrees is late afternoon: shadows run nearly twice the height of what casts
-// them, every west face lights up, every east face falls into shade, and the
-// massing of the city finally has something to read against. The sun is warmer
-// to match, and the sky fill is lifted so the long shadows stay blue and
-// legible instead of going black.
+// THE SUN SITS LOW, AND THE YEAR SWINGS IT. It used to stand at forty-eight
+// degrees — near noon, the one hour no architectural photographer would ever
+// shoot in — and then at a flat twenty-eight that never moved more than six.
+// Now the arc is real: a thirty-one degree June afternoon down to a twelve
+// degree December, which is genuine golden hour — shadows run four times the
+// height of what casts them, the west faces catch fire, and the low-sun
+// machinery that was lying dormant (the dusk-lit windows, the long raking
+// light) finally has a season to run in. The sun is warmer to match, and the
+// sky fill is lifted so the long shadows stay blue and legible instead of
+// going black.
 uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 uniform vec2 uWeather; // rain, overcast
@@ -853,7 +892,12 @@ uniform vec2 uWeather; // rain, overcast
 // sunlight, not a quarter of one. Pulling the dome down and pushing the sun up
 // keeps the same exposure on the lit planes and buys back the contrast between
 // a wall in the light and a wall in the shade.
-const vec3 SKY_COL = vec3(0.408, 0.502, 0.688);
+// Pulled a further eight per cent for the establishing shot: at three
+// kilometres the baked shadows are subpixel and the SSAO is near-field, so the
+// shade-face-to-lit-face ratio is the only massing cue that survives the
+// distance — it has to carry the modelling on its own out there, and at 0.408
+// it was not quite deep enough to.
+const vec3 SKY_COL = vec3(0.376, 0.464, 0.640);
 const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
 
 vec3 hemiLight(vec3 n, float ao) {
@@ -1007,7 +1051,7 @@ const HAZE_GLSL = /* glsl */ `
 // one loses the single strongest cue that the city is sitting in atmosphere
 // rather than in front of a backdrop.
 const vec3 HAZE_COOL = vec3(0.742, 0.818, 0.900);   // the sky, scattered back
-const vec3 HAZE_WARM = vec3(0.952, 0.906, 0.826);   // the sun, scattered forward
+const vec3 HAZE_WARM = vec3(0.964, 0.906, 0.812);   // the sun, scattered forward
 const vec3 HAZE_COL  = vec3(0.790, 0.845, 0.902);   // the average, for anything that wants one
 
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
@@ -1031,7 +1075,11 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
     toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
   }
-  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.4));
+  // The forward lobe opened from 2.4: with the sun riding lower through the
+  // year there is more air along its bearing in every frame, and the warm
+  // glow down-sun is the half of aerial perspective that says LATE LIGHT
+  // rather than just distance.
+  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
   haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
 
   // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
@@ -1059,7 +1107,18 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // for — but it also cancels itself at altitude, so the establishing shot,
   // three kilometres up over the whole island, was getting almost no
   // atmosphere at all. Real aerial photography from that height has a lot.
-  float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.20 * (1.0 - exp(-d / 1200.0));
+  // The 0.20 cap was an admission, not a calibration: it left the widest shot
+  // with the LEAST atmosphere of any view and the far half of the island
+  // pasted flat against the near half. Raised until a real depth gradient
+  // runs across the island at the strategic camera, and the distance falloff
+  // pushed out to 1600 m so the near shore keeps its contrast while the far
+  // one recedes — the gradient is the point, not the wash.
+  float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.34 * (1.0 - exp(-d / 1600.0));
+  // Above the establishing band the distance term saturates for the whole
+  // island at once and the gradient this floor exists to buy collapses into a
+  // uniform veil — a fog sheet, not depth. Ease it back off toward the
+  // map-of-the-world zooms, where the frame should read as a chart again.
+  alt *= mix(1.0, 0.5, smoothstep(8000.0, 20000.0, cam.z));
 
   return mix(c, haze, clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0));
 }`;
@@ -1225,7 +1284,12 @@ float unpackDepth(vec4 c) {
 // their buildings in one city and nowhere else.
 uniform float uShadowSpan;
 const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
-const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
+// ~one texel, along the surface normal. The frustum fit stretches with the
+// season — a twelve-degree December sun shears the light-space footprint of
+// the same city wider than a thirty-one degree June one, so the texel grows
+// toward ~1.9 m at the winter solstice. Sized against that worst month, not
+// the summer one.
+const float SHADOW_NORMAL_M = 1.35;
 
 // A SHADOW IS NOT ONE BLUR WIDE ALONG ITS WHOLE LENGTH.
 //
@@ -1246,7 +1310,13 @@ const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
 // what would be sixteen visible banding rings into noise the eye reads as
 // grain.
 const float SHADOW_TEXEL = 1.0 / 3072.0;
-const float PENUMBRA_OPEN = 0.085;    // texels of blur per metre of blocker gap
+// Texels of blur per metre of blocker gap. 0.085 was calibrated under a
+// twenty-two degree winter sun; at twelve degrees the same parapet's gap runs
+// nearly twice as long along the light ray AND the winter texels themselves
+// are larger, so the old rate turned every December shadow tip to smear. The
+// lower rate keeps the same VISUAL softness across the new arc: penumbrae
+// still open with distance from the caster, they just no longer open twice.
+const float PENUMBRA_OPEN = 0.050;
 const float PENUMBRA_MAX = 9.0;       // and it stops opening here
 
 float shadowHash(vec2 v) {
@@ -4343,6 +4413,29 @@ void main() {
     }
   }
 
+  // ---- occupancy, read once ------------------------------------------------
+  // One decision, two readers. The value half shades whole three-floor bands
+  // by whether they are let, and the interior mapping below lights its rooms
+  // by the same fact — so the floor that glows at dusk from the pavement is
+  // the identical floor that reads warm from three kilometres up. The hashes
+  // are the value half's own, moved earlier, NOT a second stream: re-rolling
+  // the bands here would light one set of floors and darken another.
+  // duskK is the switch. The sun rig only drops SUN_DIR.z under 0.42 from
+  // roughly October to February, so a summer noon pays nothing and the
+  // lit-window read is a winter-afternoon fact — which is when the lights in
+  // a working building would actually be on.
+  float duskK = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
+  float letBand = -1.0;
+  if (vLit >= 0.0) {
+    float bandH = fh * 3.0;
+    float band = floor(vZ / bandH + hash(vec2(vRand * 91.0, 7.0)) * 5.0);
+    float roll = hash(vec2(band, vRand * 47.0 + 3.0));
+    // the bottom of a building lets first and stays let longest — ground-floor
+    // retail and the anchor above it are the last space to go dark
+    float low = 1.0 - smoothstep(0.0, vTop * 0.55, vZ);
+    letBand = smoothstep(roll - 0.14, roll + 0.14, clamp(vLit + low * 0.22, 0.0, 1.0));
+  }
+
   // ---- glass: per-window life + sky reflection ----------------------------
   float wid = hash(vec2(floor(u) + vRand * 61.0, floor(v)));
   vec3 glass = mix(glassA, glassB, clamp(vZ / max(vTop, 1.0), 0.0, 1.0));
@@ -4404,6 +4497,18 @@ void main() {
     room *= mix(1.0, 0.40, clamp(t / roomD, 0.0, 1.0));
     // and one room is not another — blinds down, lights on, empty shell
     room *= 0.62 + 0.62 * hash(vec2(floor(u) * 1.7 + 5.0, floor(v) * 2.3));
+
+    // AND AT DUSK THE LET ONES ARE LIT FROM INSIDE. In the low months the
+    // room stops taking its brightness from the hole in the wall — warm off
+    // the ceiling instead of grey off the daylight — but only on floors the
+    // rent roll says are occupied, so a vacant shell stays a dark box at the
+    // exact hour its neighbours light up. wid is the per-window life stream
+    // that already decides which windows read bright: the office that is
+    // alive IS the office with the light on — one decision, not two.
+    if (letBand > 0.0) {
+      room = mix(room, vec3(0.94, 0.76, 0.46) * (0.70 + 0.45 * wid),
+                 letBand * duskK * step(0.30, wid) * 0.85);
+    }
 
     glass = mix(glass, room, 0.74 * near);
   }
@@ -4679,6 +4784,48 @@ void main() {
 
   // ---- value: the half of the facade that reads from the air --------------
 
+  // THE TWO-HUNDRED-METRE WALL. A handful of plates in the stock — the customs
+  // slab class of building — run a single wall past two hundred metres, and a
+  // wall that long drawn as one continuous material reads as a hull, because
+  // nothing real is built that way: a long elevation is poured and clad in
+  // BAYS, a few structural bays to a joint, and no two runs of panel or brick
+  // ever leave the yard the same batch. Asked by trait, not by style — the
+  // trait is the wall's own measured length off vSeg — and drawn as TONE, on
+  // this side of the dissolve, because bay cadence at the game's camera is a
+  // value rhythm, not an edge. Everything is anchored to the wall's own corner
+  // and hashed off the deed, so the cadence holds still across reloads.
+  float segW = vSeg.y - vSeg.x;
+  if (segW > 42.0 && win.x > 0.01 && vTop > 7.0) {
+    float wu = vU - vSeg.x;                       // metres along this wall, from its corner
+    float wallH = hash(vec2(vSeg.x * 0.037, vRand * 23.0));
+    // a super-bay is three to five structural bays, sized off the family's own
+    // window bay so the cadence lands ON the grid rather than beating against it
+    float superW = max(colW, 1.8) * (3.0 + floor(wallH * 3.0));
+    float sb = wu / superW;
+    float sbf = fract(sb);
+    float px2 = fwidth(wu) + 1e-4;
+    // 1) the panel run: each super-bay is its own batch, a few per cent apart —
+    //    2.2% on glass (a curtain wall's lites vary less than brick does),
+    //    4.2% on masonry, both inside the 1-3%-per-course noise the eye reads
+    //    as material rather than as stripes. Fades once a run is subpixel.
+    float runK = 1.0 - smoothstep(superW * 0.35, superW * 0.9, px2);
+    col *= 1.0 + (hash(vec2(floor(sb) + 11.0, vRand * 53.0)) - 0.5) * (glassy ? 0.022 : 0.042) * runK;
+    // 2) the pier line at each joint: a shallow pilaster's own shade, drawn
+    //    energy-conserving — the line widens to a pixel and a half and pays
+    //    for it in depth, so at distance it dims out instead of shimmering.
+    float lw = max(0.30, px2 * 1.5);
+    float pil = (1.0 - smoothstep(0.0, lw / superW, min(sbf, 1.0 - sbf))) * (0.30 / lw);
+    col *= 1.0 - pil * (glassy ? 0.06 : 0.115);
+    // 3) and the parapet's shadow line under the coping, which a wall this
+    //    long otherwise has nowhere along its whole top edge: the eave AO
+    //    above only reaches the ambient term, so a sun-struck slab ran flat
+    //    into the sky. Half a metre of shade says the roof is a slab with
+    //    thickness, at any distance.
+    float dTop = vTop - vZ;
+    float para = (1.0 - smoothstep(0.35, 1.30, dTop)) * smoothstep(0.05, 0.22, dTop);
+    col *= 1.0 - para * 0.10;
+  }
+
   // A GROUND FLOOR. Eighty-five lines of shopfront sit above, behind a
   // near > 0.25 gate that only 7.1% of wall pixels clear at the default
   // camera. What a shopfront is at that distance is not a transom bar, it is
@@ -4686,16 +4833,31 @@ void main() {
   // building. So: one smoothstep, and a plinth line where the base stops —
   // crossfaded against lod so it carries the ground floor when the detailed
   // version cannot be drawn, and steps aside when it can.
+  // Window light, accumulated here and emitted after the lighting multiply —
+  // an interior is its own source, not more albedo for the sun to find.
+  float glowK = 0.0;
   if (trade && vZ < gfTop && vTop > fh * 1.7) {
     float gfk = 1.0 - smoothstep(gfTop * 0.72, gfTop, vZ);
-    // ...and at distance the truth survives as TONE: a let frontage is a dark
-    // glass band, a dead one is a pale papered one. The two-pixel version of
-    // the same fact the shopfront bays draw up close.
+    // ...and at distance the truth survives as TONE. A trading frontage is
+    // glass with a lit fit-out behind it — the same warmth the near shopfront
+    // paints — and a dead one is kraft behind unlit glass: duller, cooler and
+    // darker, because the paper sits in the shade of its own reveal and
+    // nothing behind it puts out light. The raw kraft the near bays draw is
+    // sunlit paper at arm's length; from a block away what survives is the
+    // gap in the street's rhythm, and a gap is dark.
     float deadK = vRet >= 0.0 ? 1.0 - clamp(vRet, 0.0, 1.0) : 0.0;
-    vec3 bandCol = mix(mix(col * 0.70, mix(glassA, glassB, 0.35), 0.42), vec3(0.58, 0.53, 0.44), deadK * 0.8);
+    vec3 letCol  = mix(mix(col * 0.70, mix(glassA, glassB, 0.35), 0.42), vec3(0.66, 0.55, 0.38), 0.30);
+    vec3 deadCol = vec3(0.375, 0.362, 0.338);
+    vec3 bandCol = mix(letCol, deadCol, deadK * 0.9);
     col = mix(col, bandCol, gfk * 0.66 * lod);
     float plinth = smoothstep(0.55, 0.75, vZ / gfTop) * (1.0 - smoothstep(0.75, 0.95, vZ / gfTop));
     col *= 1.0 - plinth * 0.22 * lod;
+    // and at dusk the trading share of the strip turns its lights on while
+    // the papered share goes dark with the rest of the street — vacancy you
+    // can scan from a block away at the hour the city is at its best. A
+    // frontage the simulation is not tracking glows at half strength rather
+    // than flickering between states it was never given.
+    glowK += duskK * gfk * (vRet >= 0.0 ? clamp(vRet, 0.0, 1.0) : 0.55) * 0.16;
   }
 
   // OCCUPANCY YOU CAN SEE FROM THE AIR.
@@ -4720,20 +4882,25 @@ void main() {
   // pixels tall at the camera this game sits at and correctly dissolved a few
   // lines above — this has to survive the distance, so it is built out of
   // value at a frequency that can.
-  if (vLit >= 0.0) {
-    float bandH = fh * 3.0;
-    float band = floor(vZ / bandH + hash(vec2(vRand * 91.0, 7.0)) * 5.0);
-    float roll = hash(vec2(band, vRand * 47.0 + 3.0));
-    // the bottom of a building lets first and stays let longest — ground-floor
-    // retail and the anchor above it are the last space to go dark
-    float low = 1.0 - smoothstep(0.0, vTop * 0.55, vZ);
-    float let_ = smoothstep(roll - 0.14, roll + 0.14, clamp(vLit + low * 0.22, 0.0, 1.0));
-    float dark = 1.0 - let_;
+  // The bands themselves were rolled once, above the glass block, so the
+  // rooms and the floors agree about who is home — see letBand.
+  if (letBand >= 0.0) {
+    float dark = 1.0 - letBand;
     // flatter, cooler, dimmer where nobody is
     col = mix(col, vec3(dot(col, vec3(0.34, 0.38, 0.28))) * vec3(0.90, 0.96, 1.10) * 0.68, dark * 0.90);
-    // and warm behind the glass where somebody is, hardest when the sun is low
-    float dusk = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
-    col += vec3(0.085, 0.058, 0.022) * let_ * dusk * (0.35 + 0.65 * winMask);
+    // and warm behind the glass where somebody is, hardest when the sun is
+    // low. The old warm add went into the ALBEDO — multiplied down by the
+    // very dusk light it was gated on, two per cent by the time it reached
+    // the screen — and it was per-window only, which is subpixel from the
+    // strategic camera. Split by distance instead: up close the glow sits in
+    // the windows (per-window life off wid, the same stream that lights the
+    // rooms), and as the grid dissolves it collapses into a facade-average
+    // lift proportional to the building's own occupancy and its glass share —
+    // so at three kilometres a let tower reads warm against a vacant one
+    // that reads cold, which is the game's subject on its own skyline.
+    float perWin = letBand * (0.22 + 0.78 * winMask * (0.45 + 0.55 * wid));
+    float faceAvg = clamp(vLit, 0.0, 1.0) * (0.30 + 0.70 * win.x * win.y);
+    glowK += duskK * mix(perWin, faceAvg, lod) * 0.30;
   }
 
   // A CENTURY LEAVES A MARK.
@@ -4749,7 +4916,16 @@ void main() {
     // age^1.5 rather than age^2: the median building sits at age 0.43, and a
     // square law put only four per cent of darkening on it, which is nothing.
     float soot = pow(age, 1.5) * 0.42;
-    col = mix(col, col * vec3(0.80, 0.78, 0.74), soot);
+    // It collects hardest where the rain never rinses: the sheltered courses
+    // in the cornice's lee carry half again what the open field does, which
+    // is the dark crown every pre-war photograph of a pre-war street shows.
+    soot = min(soot * (1.0 + 0.55 * (1.0 - smoothstep(0.4, 3.6, vTop - vZ))), 0.62);
+    // And the tone lost a step of warmth when the winter sun gained one:
+    // carbon is neutral-dark, and the old warm-hued darkening under the new
+    // honey light was reading as more late sun rather than as a century of
+    // it. Checked against the warmest month too — a neutral darkening reads
+    // as dirt under any colour of light; a warm one only did in summer.
+    col = mix(col, col * vec3(0.775, 0.770, 0.755), soot);
     // washed where the weather gets at it, dirty where it does not
     vec2 wp = vec2(vU * 0.09, vZ * 0.055);
     vec2 wi = floor(wp), wf = fract(wp);
@@ -4774,6 +4950,16 @@ void main() {
   }
   col *= light * edgeLift;
   col *= vTint;
+
+  // WINDOW LIGHT IS ITS OWN SOURCE. Emitted after the light multiply — an
+  // interior does not need the sun's permission to be bright, and adding it
+  // to the albedo meant the dusk it was gated on dimmed it back out — and
+  // after the tint, so the owners lens cannot recolour a lit room. Tungsten
+  // through glass at 3000K. Worst case (a let shopfront window at the
+  // December dusk peak) lands near 0.29 before grading, which the filmic
+  // curve keeps at the edge of the 0.86 bloom bright-pass: the very
+  // brightest frontages may just kiss the bloom, and that is the photograph.
+  col += vec3(1.00, 0.72, 0.35) * glowK;
 
   // GRAZING SKY, WHICH IS WHAT SEPARATES A BUILDING FROM THE ONE BEHIND IT.
   //
@@ -5243,7 +5429,27 @@ const CATCHER_FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vPos;
 uniform vec4 uSeason;
+uniform vec2 uWeather; // rain, overcast
 ` + SHADOW_GLSL + /* glsl */ `
+// THE TABLE HAS A GRAIN. Two octaves of world-anchored value noise — this is
+// the drafting-table half of the ground fix: the MapLibre fills are flat
+// hexes, so at the establishing zoom the island interior read as one
+// continuous parking lot. A few per cent of value mottle, composited under
+// the shadows, breaks that the way chipboard breaks under a model — and
+// because the cells are anchored in WORLD space the texture belongs to the
+// ground rather than swimming when the camera moves.
+float tableHash(vec2 v) {
+  return fract(sin(dot(v, vec2(41.3897, 289.131))) * 26737.2917);
+}
+float tableNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = tableHash(i);
+  float b = tableHash(i + vec2(1.0, 0.0));
+  float c = tableHash(i + vec2(0.0, 1.0));
+  float d = tableHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 void main() {
   // The ground is flat and faces straight up; its own normal is the offset.
   float vis = sunVis(vPos, vec3(0.0, 0.0, 1.0));
@@ -5253,12 +5459,41 @@ void main() {
   // place. The bias is metres now and the shadows land where the buildings
   // are, so they are allowed to read: deeper, and cooler, because a shadow
   // outdoors is lit by the sky and the sky is blue.
+  // 0.74 was set under a sun that never dropped below twenty-two degrees;
+  // at the twelve-degree December sun the shadows run four building-heights
+  // and cover half the street grid, and at 0.74 that half went to tar.
+  // Eased to where a whole shadowed block still reads as pavement in shade.
   float sa = uSeason.x * 0.42;
-  float a  = (1.0 - vis) * 0.74;
+  float a  = (1.0 - vis) * 0.68;
   vec3  sc = vec3(0.800, 0.828, 0.880);
   vec3  hc = mix(vec3(0.128, 0.158, 0.272), vec3(0.42, 0.49, 0.66), uSeason.x);
-  float outA = sa + a * (1.0 - sa);
-  vec3  outC = outA > 0.0001 ? (sc * sa * (1.0 - a) + hc * a) / outA : sc;
+
+  // The grain itself: coarse octave ~43 m (block-interior tone), fine ~13 m
+  // (patched asphalt). Faded IN as metres-per-pixel grows — at street zoom it
+  // sits below the dither floor, because down there the material story is the
+  // AO and the shadows, not a value wash — and the fine octave alone fades
+  // back OUT once a pixel spans several of its cells and it could only alias.
+  // Snow buries it, the same way it buries the ground sheen.
+  float mPerPx = max(max(fwidth(vPos.x), fwidth(vPos.y)), 1e-4);
+  float wide = smoothstep(0.45, 1.6, mPerPx);
+  float g = (tableNoise(vPos.xy / 43.0) - 0.5)
+          + (tableNoise(vPos.xy / 13.0) - 0.5) * 0.6 * (1.0 - smoothstep(5.0, 13.0, mPerPx));
+  float ga = abs(g) * 0.08 * wide * (1.0 - uSeason.x * 0.85);
+  vec3 gcol = g > 0.0 ? vec3(0.930, 0.915, 0.885) : vec3(0.085, 0.090, 0.105);
+
+  // RAIN READS FROM THE AIR AS DARK STREETS. Wet asphalt drops a third of its
+  // albedo in life; a tenth here, because the MapLibre fills under this quad
+  // are already mid-grey and the sheen quad supplies the glisten half of wet.
+  float wa = uWeather.x * 0.12;
+  vec3  wc = vec3(0.075, 0.082, 0.096);
+
+  // Composite, top layer first: shadow over snow over wet over grain.
+  float outA = 1.0 - (1.0 - a) * (1.0 - sa) * (1.0 - wa) * (1.0 - ga);
+  vec3  outCA = hc * a
+              + sc * sa * (1.0 - a)
+              + wc * wa * (1.0 - a) * (1.0 - sa)
+              + gcol * ga * (1.0 - a) * (1.0 - sa) * (1.0 - wa);
+  vec3  outC = outA > 0.0001 ? outCA / outA : sc;
   gl_FragColor = vec4(outC, outA);
 }`;
 
@@ -5309,7 +5544,14 @@ void main() {
     // alignment with the half-vector and whatever gain this carries is applied
     // to all of it simultaneously. It has to be a sheen you notice on the
     // second look, not a light source.
-    float sheen = pow(sd, 18.0) * 0.05 + pow(sd, 90.0) * 0.13;
+    // RAIN IS THE ONE WEATHER THAT MAKES ASPHALT INTERESTING. A wet street is
+    // a bad mirror — the film of water tightens and strengthens the specular
+    // far more than it broadens it, which is why the tight lobe takes most of
+    // the boost. Paired with the catcher's wet darkening: dark street, bright
+    // line of sun down it, which is the whole photograph of a city in rain.
+    float wet = RAIN;
+    float sheen = pow(sd, 18.0) * 0.05 * (1.0 + wet * 1.1)
+                + pow(sd, 90.0) * 0.13 * (1.0 + wet * 2.2);
     // Snow is diffuse and kills a specular stone dead — what snow does instead
     // is glitter, and that is handled per-crystal on the surfaces this layer
     // actually draws.
@@ -5632,6 +5874,7 @@ uniform float uShaftAmt;
 uniform sampler2D uAoTex;
 uniform sampler2D uIrr;
 uniform float uBounce;
+uniform float uAtmos;
 // still needed here, though the occlusion moved out: the glare has to know
 // whether a building is standing between the camera and the sun
 uniform sampler2D uDepth;
@@ -5826,6 +6069,15 @@ void main() {
     c.rgb += uSunTint * (1.0 - smoothstep(0.007, 0.015, r)) * uGlare * 7.0 * blocked;
   }
 
+  // THE TOP OF THE FRAME IS THE FAR END OF THE AIR. At the establishing
+  // camera the picture runs near-shore at the bottom to kilometres of harbour
+  // at the top, and a photograph from that height carries a vertical
+  // atmosphere gradient to match — the world does not stay one density to the
+  // edge of the frame. A gentle cool lift keyed up the frame, fed only at
+  // altitude and low pitch (uAtmos is zero everywhere else), scaled by our
+  // own alpha so the premultiplied composite over MapLibre stays honest.
+  c.rgb = mix(c.rgb, vec3(0.782, 0.848, 0.902) * c.a, uAtmos * smoothstep(0.48, 1.0, vUv.y));
+
   // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth
   // gradients — bloom, defocus, aerial haze — and smooth gradients on an 8-bit
   // buffer band. A dither below the level anybody can consciously see costs
@@ -5877,7 +6129,33 @@ void main() {
   float dy = (wave(p + vec2(0.0, 0.9), vec2(0.92, 0.39), 26.0, 1.05, t) * 0.55
             + wave(p + vec2(0.0, 0.9), vec2(-0.44, 0.90), 13.0, 1.55, t) * 0.30
             + wave(p + vec2(0.0, 0.9), vec2(0.68, -0.73), 6.2, 2.35, t) * 0.15) - h;
-  vec3 n = normalize(vec3(-dx * 0.66, -dy * 0.66, 1.0));
+
+  // THE WIND WRITES IN LANES. Real open water is never uniformly rough: gusts
+  // rake it in long streaks downwind — calm slicks and cat's-paws laid side by
+  // side, tens of metres across and hundreds long. Before this the wide shot
+  // had mottle anyway, but it was an ACCIDENT — the 26 m swell aliasing
+  // against the pixel grid, patches with no axis and no story. This is the
+  // same variation drawn on purpose: high frequency ACROSS the wind, almost
+  // none along it, anchored in world space off the primary swell's own
+  // bearing. Deterministic — position only, no clock needed; the lanes hold
+  // still while the chop inside them runs.
+  vec2 windD = vec2(0.92, 0.39);
+  float across = dot(p, vec2(-windD.y, windD.x));
+  float along  = dot(p, windD);
+  float streak = 0.72 + 0.28 * sin(across * 0.0093 + sin(along * 0.0016) * 2.3)
+                       * sin(across * 0.0031 - along * 0.00042);
+
+  // UNRESOLVED CHOP IS ROUGHNESS, NOT NOISE. Past a few hundred metres a
+  // pixel spans several whole waves, and evaluating the trains there returns
+  // whichever phase the pixel centre happened to land on — which is exactly
+  // the algae-mottle the establishing shot suffered from. The honest answer
+  // is the mip-chain one: flatten the normal toward true up as the waves drop
+  // below the pixel, and hand the lost variance to the specular lobes, which
+  // widen with camera height below.
+  float dCam = length(vec3(p, 0.0) - uCam);
+  float farFlat = smoothstep(260.0, 2400.0, dCam);
+  float slope = streak * (1.0 - farFlat * 0.85);
+  vec3 n = normalize(vec3(-dx * 0.66 * slope, -dy * 0.66 * slope, 1.0));
 
   vec3 V = normalize(uCam - vec3(p, 0.0));
   float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
@@ -5927,10 +6205,18 @@ void main() {
   // island rather than a pale shape on a pale field.
   // A HARBOUR HAS A BOTTOM, but a bottom is not a halo. The shoal band reads
   // over a shorter run than the sea's own colour change, or the island wears a
-  // bright ring that reads as glow rather than as shallow water.
-  float shoal = 1.0 - smoothstep(0.0, 120.0, vDepth);
-  vec3 deep    = vec3(0.096, 0.245, 0.372);
-  vec3 shallow = vec3(0.310, 0.534, 0.632);
+  // bright ring that reads as glow rather than as shallow water. At 120 m the
+  // ring was still the one unmistakably videogame element in every wide shot —
+  // a model on a table has a hard waterline, not an outer glow — so the run is
+  // halved and the shallow tone itself sits closer to the body of the sea:
+  // visibly a bottom at the dive camera, no longer a rim light at altitude.
+  float shoal = 1.0 - smoothstep(0.0, 65.0, vDepth);
+  // Deepened a step further: the aerial haze takes its cut of everything, and
+  // the old deep arrived at the strategic camera pre-paled — the island read
+  // as a sticker on blue paper. Richer going in means still teal-dark coming
+  // out the far side of the air.
+  vec3 deep    = vec3(0.078, 0.220, 0.352);
+  vec3 shallow = vec3(0.262, 0.472, 0.568);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
 
   // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
@@ -5959,12 +6245,25 @@ void main() {
   col = mix(col, reflCol, reflA * (0.09 + 0.72 * fres) * (1.0 - shoal * 0.45));
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
-  // faces that happen to be pointing at it
+  // faces that happen to be pointing at it.
+  // THE ROAD HAS TO SURVIVE THE STRATEGIC CAMERA. These exponents were tuned
+  // at street height, where a pixel sees one wave face and a pow-800 glint is
+  // a real sparkle. Three kilometres up, a pixel averages a whole field of
+  // facets, and the physically honest description of that average is a WIDER
+  // lobe, not a subpixel one — the same roughness the far-field flattening
+  // above took out of the normal, handed back as spread. So the exponents
+  // relax and the gains rebalance with camera height: at altitude the glitter
+  // stops carrying the road and the sheen does, which is exactly what a broad
+  // sun lane on open water is. At street height nothing here changes.
   vec3 H = normalize(normalize(SUN_DIR) + V);
-  float spec = pow(max(dot(n, H), 0.0), 220.0);
-  float sheen = pow(max(dot(n, H), 0.0), 24.0);
-  float glit = pow(max(dot(n, H), 0.0), 800.0);   // the hard points in the road
-  col += SUN_COL * (spec * 2.3 + sheen * 0.26 + glit * 3.4);
+  float aloft = smoothstep(500.0, 3000.0, uCam.z);
+  float road = max(dot(n, H), 0.0);
+  float spec  = pow(road, mix(220.0, 64.0, aloft));
+  float sheen = pow(road, mix(24.0, 9.0, aloft));
+  float glit  = pow(road, mix(800.0, 190.0, aloft));   // the hard points in the road
+  col += SUN_COL * (spec * mix(2.3, 1.35, aloft)
+                  + sheen * mix(0.26, 0.34, aloft)
+                  + glit * mix(3.4, 1.2, aloft) * (0.5 + 0.9 * streak));
 
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
@@ -5988,9 +6287,13 @@ void main() {
   float edge = vDepth - (3.4 + 2.0 * swell);
   float wash = 1.0 - smoothstep(0.0, 4.8, abs(edge));
   // Thickest right at the top of its run, the way a spent wave is, and gone
-  // under ice — a rimed harbour has no surf.
-  col = mix(col, vec3(0.880, 0.910, 0.932),
-            wash * 0.52 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
+  // under ice — a rimed harbour has no surf. Toned down from 0.52 near-white:
+  // a whole island ringed in bright foam is half of the coastal halo the wide
+  // shot suffered from. This is a WET EDGE — the darker of the two lines where
+  // water meets sand — not a painted surf stroke, so it reads at the dive
+  // camera and disappears into the coastline at altitude.
+  col = mix(col, vec3(0.845, 0.882, 0.910),
+            wash * 0.38 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
   // all winter — but the still water inside the shoal line skins over and
@@ -6017,8 +6320,30 @@ void main() {
   // finish on the sky's own horizon colour rather than the haze grey, so the
   // sea meets the sky instead of meeting a slightly different sky.
   vec3 outc = aerial(grade(col), vec3(vXY, 0.0), uCam);
-  float dist = length(vec3(vXY, 0.0) - uCam);
-  outc = mix(outc, vec3(0.874, 0.914, 0.933), smoothstep(1400.0, 3900.0, dist));
+  // MEASURED ALONG THE GROUND, NOT ALONG THE SIGHT LINE. This fade ran on 3D
+  // distance, which contains the camera's own altitude — so from the high
+  // strategic cameras EVERY fragment of sea cleared the band at once and the
+  // whole harbour arrived as one sheet of horizon colour: the island floating
+  // on milk. The horizon is a DIRECTION, not a radius; what should decide
+  // whether water has let go into sky is how far away it is across the
+  // surface, so the sea directly below a high camera keeps its body and only
+  // the genuinely far water meets the sky. The band still saturates by 3900 m
+  // — inside the 6000 m sheet by enough that the mesh edge stays hidden from
+  // every camera the game can reach.
+  //
+  // And it is finished on a horizon that knows where the sun is: the far
+  // water brightens and warms along the sun's bearing the way every open-water
+  // horizon in late light does, and stays the sky's own pale blue away from
+  // it. The cool base is MapLibre's horizon-color, so sea and sky still meet
+  // on the same line.
+  float hSun = 0.5;
+  vec2 hd = vXY - uCam.xy;
+  if (dot(hd, hd) > 1e-6) {
+    hSun = clamp(dot(normalize(hd), normalize(SUN_DIR.xy)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  vec3 horizonC = mix(vec3(0.874, 0.914, 0.933), vec3(0.958, 0.918, 0.856), pow(hSun, 3.0) * 0.65);
+  float dist = length(hd);
+  outc = mix(outc, horizonC, smoothstep(1400.0, 3900.0, dist));
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -6082,12 +6407,27 @@ function smoothstep(e0: number, e1: number, x: number): number {
 }
 
 const SUN_LEN = 1.05799;
-const SUN_EL_MID = 27.96, SUN_EL_AMP = 6.0;
-const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 12;
+// THE YEAR HAS AN ARC IN IT NOW. The old mid/amp (27.96 ± 6) kept December at
+// twenty-two degrees — high enough that SUN_DIR.z never dropped below ~0.40,
+// which held the facade shader's dusk term (it opens below z 0.42) at two per
+// cent all year: the entire occupancy-lit-window system was built and never
+// once ran. 21.5 ± 9.5 puts December and January at twelve degrees — real
+// golden hour, dusk ~0.65, windows warm where the offices are let — and June
+// at thirty-one, within a couple of degrees of the summer light the city was
+// calibrated under. The azimuth swing widens with it so the winter sun also
+// RAKES, coming further round toward the west the way a low sun actually does.
+const SUN_EL_MID = 21.5, SUN_EL_AMP = 9.5;
+const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 17;
 // Lifted with the sky dome's drop, so a sunlit wall keeps the exposure it had
 // and only the shaded one moves. The ratio between them is the whole point.
 const SUN_COL_SUMMER: readonly [number, number, number] = [1.462, 1.258, 0.936];
-const SUN_COL_WINTER: readonly [number, number, number] = [1.686, 0.886, 0.272];
+// HONEY, NOT ORANGE SODA. The ember red below was set when the winter sun
+// stood at twenty-two degrees and coloured an hour's worth of light; at twelve
+// degrees the same hue is on every lit surface in the frame at once and the
+// whole city went amber. December light through a lot of air is gold with the
+// red worn off it — the blue still drains, but the green survives better than
+// an ember implies.
+const SUN_COL_WINTER: readonly [number, number, number] = [1.620, 0.958, 0.408];
 const SUN_WARMTH = 0.55;
 
 const SEASON_TABLE: readonly (readonly [number, number, number, number])[] = [
@@ -6212,6 +6552,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // property write per crane per frame, and a dynGroup rebuild clears the
   // list wholesale alongside the meshes it points into.
   private cranes: { g: THREE.Group; bear: number; w: number; phase: number }[] = [];
+  // The last occupancy and retail maps the game handed over. Kept because
+  // setPlayerBuildings rebuilds the dynamic group wholesale, and by the time
+  // it does, this month's occupancy pass has already run — MapView's
+  // occupancy effect is declared before its skyline effect, and both key on
+  // the same paint signature — so a tower rebuilt this tick would sit
+  // dataless (no dusk warmth, no papered bays) until the NEXT month moved
+  // the signature again. The rebuild re-applies these instead.
+  private lastOcc = new Map<string, number>();
+  private lastRet = new Map<string, number>();
   private shadowTex: THREE.Texture | null = null;
   private water: THREE.Mesh | null = null;
   // dressing for the unbuilt half of the city, collected while the volumes are
@@ -6328,6 +6677,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // town into a light source and the whole frame fogs. It has to sit
         // above the brightest thing that is merely WELL LIT, and catch only
         // what is actually specular: glints off water and glass.
+        // Re-checked when the December sun dropped to twelve degrees: a flat
+        // snow roof's direct term fell with SUN_DIR.z (0.40 → 0.22), so
+        // graded snow now tops out near 0.80 — FURTHER under this threshold
+        // than the January it was calibrated against, not closer.
         uniforms: { uTex: { value: null }, uThresh: { value: 0.86 }, uKnee: { value: 0.16 } },
       });
       this.blurMat = new THREE.ShaderMaterial({
@@ -6402,10 +6755,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uGrain: { value: 0.006 },
           uSunScreen: { value: new THREE.Vector3() },
           uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
-          uGlare: { value: 0.30 },
-          uShaft: { value: null }, uShaftAmt: { value: 0.42 },
+          // Trimmed from 0.30/0.42 when the sun's yearly arc dropped to twelve
+          // degrees in December: a near-horizon sun is on screen at far more
+          // camera bearings than a 22-degree one, so the veil and the shafts
+          // went from an occasional reward to a standing fixture. Quieter per
+          // appearance, now that they appear more.
+          uGlare: { value: 0.26 },
+          uShaft: { value: null }, uShaftAmt: { value: 0.36 },
           uAoTex: { value: null }, uDepth: { value: null },
           uIrr: { value: null }, uBounce: { value: 0.40 },
+          // vertical atmosphere gradient — fed per-frame from camera altitude
+          // and pitch; zero at every gameplay camera below the wide fit
+          uAtmos: { value: 0 },
           uInvProj: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
         },
       });
@@ -6878,7 +7239,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         else if (hgt >= 11 && !has(T_MODERN, style) && has(T_TRADE, style) && L(15) < 0.16) put(37, 0.7 + 0.5 * L(16), bearOf());
       }
 
-      if (v.b && hgt >= 12 && !gable && !hip) {
+      // Twelve metres of stature buys a machine deck — OR an acre of plate
+      // does. The stature gate is right about cottages and wrong about the
+      // one-storey big box: a 3,000 m² shed at ten metres has RTUs, exhaust
+      // ventilators and a stair to its own roof precisely BECAUSE nothing but
+      // the roof serves the middle of that floor. Without this, the largest
+      // flat surfaces in the city — the ones that read as aircraft carriers
+      // from the strategic camera — were the only roofs guaranteed bare.
+      if (v.b && (hgt >= 12 || (hgt >= 7 && Math.abs(area) / 2 > 1400)) && !gable && !hip) {
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
         // Deck-mounted plant needs a deck. A mansard's roof is a slope with a
@@ -8066,6 +8434,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // world coordinates suggest. Corners are taken at ground level and at
       // the height of the tallest thing the generator builds, because a tower
       // must be inside the box to cast at all.
+      //
+      // Re-checked for the twelve-degree December sun: the fit holds at ANY
+      // elevation by construction, because a caster and every point its
+      // shadow lands on share the same light-space X and Y — so the km-long
+      // solstice shadows cannot clip. What the winter shear DOES cost is
+      // texel size (the light-space box stretches toward ~1.9 m/texel), which
+      // is why SHADOW_NORMAL_M and PENUMBRA_OPEN are sized against December.
       const land = this.ctxPoints.land;
       if (land && land.length > 2) {
         let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -8227,6 +8602,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
+    // THE MESHES JUST CLEARED GIVE BACK THEIR STATE SLOTS. The two static
+    // sheets own attribute slots 0 (wall) and 1 (roof); every slot above
+    // belongs to a dynamic mesh, registered in mk() below, and after clear()
+    // those attributes point at geometry that is no longer in the scene.
+    // Ranges are pruned too, or setOccupancy would index attribute arrays
+    // that were truncated out from under it.
+    if (this.litAttrs.length > 2) {
+      this.tintAttrs.length = 2; this.baseTints.length = 2;
+      this.litAttrs.length = 2; this.retAttrs.length = 2;
+      for (const [bbl, list] of this.rangesByBBL) {
+        const keep = list.filter((e) => e.attr < 2);
+        if (keep.length === list.length) continue;
+        if (keep.length) this.rangesByBBL.set(bbl, keep);
+        else this.rangesByBBL.delete(bbl);
+      }
+    }
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -8569,9 +8960,44 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aEra", new THREE.Float32BufferAttribute(D.era, 1));
         g.setAttribute("aSeg", new THREE.Float32BufferAttribute(D.seg, 2));
         g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
-        g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
-        g.setAttribute("aLit", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
-        g.setAttribute("aRet", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
+        // STATE REACHES THE PLAYER'S HALF OF THE CITY. These three attributes
+        // used to be constants — tint 1, lit -1, ret -1 — baked at build and
+        // never registered anywhere, so setTints, setOccupancy and setRetail
+        // walked rangesByBBL straight past every building the player or a
+        // rival put up. Twenty years into a campaign that is most of downtown
+        // sitting out the vacancy treatment: no dusk warmth on a let tower,
+        // no kraft paper on a dead frontage, no highlight when you clicked
+        // your own building. Registered now as extra slots in the SAME
+        // attr-indexed arrays the static sheets use, so the setters serve
+        // both populations through one code path. Construction shells stay
+        // unregistered: a site has no rent roll and no shopfront, and its
+        // default -1 (no data) is exactly what the static path shows for a
+        // fact the game is not asserting.
+        const verts = D.pos.length / 3;
+        const tintA = new THREE.Float32BufferAttribute(new Float32Array(verts * 3).fill(1), 3);
+        const litA = new THREE.Float32BufferAttribute(new Float32Array(verts).fill(-1), 1);
+        const retA = new THREE.Float32BufferAttribute(new Float32Array(verts).fill(-1), 1);
+        if (!item.construction) {
+          // dynamic usage, like the static sheets: monthly rewrites in place,
+          // no realloc
+          tintA.setUsage(THREE.DynamicDrawUsage);
+          litA.setUsage(THREE.DynamicDrawUsage);
+          retA.setUsage(THREE.DynamicDrawUsage);
+          const slot = this.litAttrs.length;
+          this.tintAttrs.push(tintA);
+          this.baseTints.push(new Float32Array(verts * 3).fill(1));
+          this.litAttrs.push(litA);
+          this.retAttrs.push(retA);
+          // posAttrs deliberately does NOT grow: flattenLot is the generator
+          // stock's wrecking crew, and it already skips slots it has no
+          // positions for — a dynamic building comes down by rebuild, not by
+          // clamping its own z.
+          if (!this.rangesByBBL.has(item.bbl)) this.rangesByBBL.set(item.bbl, []);
+          this.rangesByBBL.get(item.bbl)!.push({ attr: slot, r: { start: 0, count: verts } });
+        }
+        g.setAttribute("aTint", tintA);
+        g.setAttribute("aLit", litA);
+        g.setAttribute("aRet", retA);
         return g;
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
@@ -8639,8 +9065,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const a2 = deckRing[i], b2 = deckRing[(i + 1) % deckRing.length];
           karea += a2[0] * b2[1] - b2[0] * a2[1];
         }
+        // NOT halved: roofKitWants reads the raw shoelace sum, the generator
+        // path's convention — its plateM = sqrt(|area|/2) is the side of the
+        // equivalent square, and every plate gate in it was measured against
+        // stock fed that way. Passing true area here made the player's
+        // buildings read as half their plate: a tower podium wide enough for
+        // a helipad was failing the width gate by root two.
         const wants = roofKitWants({
-          style, year: yearBuilt, hgt: h, fh: fh2, area: karea / 2,
+          style, year: yearBuilt, hgt: h, fh: fh2, area: karea,
           hasMechDeck: !!crownDeck, seed: kseed,
           rnd: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed),
           jit: (n, amp) => (((kseed * (n + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp,
@@ -8801,6 +9233,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
       }
     }
+    // Re-dress the fresh meshes from the last maps the game sent (see
+    // lastOcc/lastRet at their declaration for why waiting on the feed's own
+    // cadence is a month too late). Idempotent on the static sheets, and a
+    // building delivered THIS tick gets its value here too, because the
+    // occupancy pass that just ran computed it against a registry the bbl
+    // already stood in.
+    if (this.lastOcc.size) this.setOccupancy(this.lastOcc);
+    if (this.lastRet.size) this.setRetail(this.lastRet);
     this.sunDirty = true;
     this.map.triggerRepaint();
   }
@@ -8958,11 +9398,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /**
    * WHICH FLOORS ARE LET. -1 means "not yours to know" and switches the whole
    * treatment off for that building; 0..1 is the leased share. Uses the same
-   * per-BBL vertex ranges the ownership tints already walk, so it costs one
-   * pass over the buildings you actually have a number for.
+   * per-BBL vertex ranges the ownership tints already walk — generator stock
+   * and player-built alike, since the dynamic meshes register into the same
+   * registry — so it costs one pass over the buildings you actually have a
+   * number for.
    */
   setOccupancy(occ: Map<string, number>) {
     if (!this.litAttrs.length) return;
+    this.lastOcc = occ; // kept for the dynamic-group rebuild to re-apply
     for (const a of this.litAttrs) (a.array as Float32Array).fill(-1);
     for (const [bbl, v] of occ) {
       const ranges = this.rangesByBBL.get(bbl);
@@ -9032,6 +9475,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   setRetail(ret: Map<string, number>) {
     if (!this.retAttrs.length) return;
+    this.lastRet = ret; // kept for the dynamic-group rebuild to re-apply
     for (const a of this.retAttrs) (a.array as Float32Array).fill(-1);
     for (const [bbl, f] of ret) {
       const ranges = this.rangesByBBL.get(bbl);
@@ -9351,6 +9795,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         ? 0
         : 2.25 + (0.42 - 2.25) * smoothstep(14.6, 15.3, zoom);
       this.compMat.uniforms.uDefocus.value = model * (1 - smoothstep(16.4, 18.2, zoom));
+      // The vertical atmosphere gradient is an establishing-shot effect: it
+      // needs the camera high (the same altitude band the haze floor uses)
+      // and the frame tilted enough that its top is genuinely kilometres away
+      // — the pitched-up wide fit, not the near-nadir dive. Both gates fade
+      // rather than switch, and at every street camera this is exactly zero.
+      this.compMat.uniforms.uAtmos.value =
+        smoothstep(1100, 4200, this.camUni.value.z)
+        * (1 - smoothstep(40, 54, this.map.getPitch()))
+        * 0.16;
     }
 
     // Where the sun sits on screen. Projected on the CPU because it is one
@@ -9403,7 +9856,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.blit(this.shaftMat, this.shaftRT);
       this.compMat.uniforms.uShaft.value = this.shaftRT.texture;
     }
-    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras ? 0.42 : 0.0;
+    // must match the resting value in initPost — this is the same knob,
+    // re-asserted every frame so stale shafts cannot linger after a skip
+    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras ? 0.36 : 0.0;
 
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);
@@ -9712,13 +10167,22 @@ function fitRoofKit(
   // 25 x 100 lot and 47% of the stock. Two to 560 m². The full machine deck
   // only past 1,000 m², which in this town means a department store, a
   // warehouse or a tower's podium — 3.4% of roofs, and they can carry it.
+  // Past 2,800 m² the ladder keeps climbing instead of parking: plant scales
+  // with the floor area it serves, and the acre-deck slab wearing a tower's
+  // six-part kit was the last building in town that still read as a model of
+  // itself — a fifth of one per cent of plant coverage where a real one runs
+  // several. Nine parts on 4,200 m² is still sparser per square metre than
+  // the six the 2,800 m² deck carries.
   const areaCap = area < 130 ? 0 : area < 280 ? 1 : area < 560 ? 2
-    : area < 1000 ? 3 : area < 1800 ? 4 : area < 2800 ? 5 : 6;
+    : area < 1000 ? 3 : area < 1800 ? 4 : area < 2800 ? 5 : area < 4200 ? 7 : 9;
   // Stature is the other half of it, because the plate is not the only thing
   // that decides: a four-storey walk-up has no central plant however wide its
   // roof is — what stands on one is the way out and a condenser — while the
   // same plate under forty metres of building is somebody's machine deck.
-  const statureCap = hgt < 16 ? 2 : hgt < 26 ? 3 : hgt < 45 ? 4 : 6;
+  // A plate past 1,800 m² relaxes the stature line by two: that reasoning was
+  // written for the walk-up's plate, and a full-block store or works floor
+  // has RTUs, vents and a second stair however few storeys stand under it.
+  const statureCap = (hgt < 16 ? 2 : hgt < 26 ? 3 : hgt < 45 ? 4 : 6) + (area > 1800 ? 2 : 0);
   const budget = Math.min(areaCap, statureCap);
   // And the SIZE, which is the half that actually reads wrong: a catalogue
   // cooling tower is 4.4 m across, and on a 25-foot roof that is more than

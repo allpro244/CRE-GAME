@@ -284,14 +284,23 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       // sheet of blue paint
       // The Three.js layer paints the living sea over the top of this; the
       // background and the shallows band remain as the still-water fallback
-      // for anyone whose WebGL context never comes up.
-      { id: "bg", type: "background", paint: { "background-color": "#2d5f86" } },
+      // for anyone whose WebGL context never comes up. Both are matched by eye
+      // against what WATER_FRAG actually puts on screen at the gameplay camera
+      // (its deep runs ~#3386b7 near, hazing lighter with distance), so the
+      // loading frame and the living sea are the same harbour — the old slate
+      // #2d5f86 was a different, duller ocean for the first second of every
+      // session. The background also shows raw past the sea mesh at extreme
+      // pitch, where a mismatch reads as a hard band across the world's edge.
+      { id: "bg", type: "background", paint: { "background-color": "#33719c" } },
       {
         id: "shallows",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "shallows"],
-        paint: { "fill-color": "#6fa2bf" },
+        // deeper and greener than it was: the shoal is a bottom seen through
+        // water, not a pale ring — kept between the open-water tone above and
+        // WATER_FRAG's own shallow (~#4f88a1) so neither renderer's coast glows
+        paint: { "fill-color": "#5d99ad" },
       },
       {
         id: "marsh",
@@ -312,7 +321,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "beach"],
-        paint: { "fill-color": "#d9c9a3", "fill-opacity": 0.7 },
+        // wet sand, not dry: measured on the wide shot the old pale band at
+        // 0.7 was one third of the white ring hugging the island. Darker and
+        // more transparent, it reads as the tide line a model-maker paints.
+        paint: { "fill-color": "#cdbb92", "fill-opacity": 0.55 },
       },
       {
         id: "land",
@@ -326,7 +338,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "seawall"],
-        paint: { "fill-color": "#9a958c", "fill-opacity": 0.85 },
+        // the masonry lip where the town meets the tide — darkened until it
+        // reads as the hard waterline of a scale model, the one line on the
+        // coast that is allowed to be emphatic
+        paint: { "fill-color": "#837e75", "fill-opacity": 0.9 },
       },
       {
         // The waterline itself. This was a near-white stroke at 70% with more
@@ -334,15 +349,19 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         // against a sea that now has a real value became a lit halo ringing
         // the whole island. A waterline is a wet edge, not a light source:
         // narrower than its blur radius, cooler, and much further down.
+        // Taken further down again: sampled on the strategic shot the coast
+        // still ringed the island in near-white, and this stroke plus the pale
+        // esplanade were the land half of it. A wet edge belongs a step BELOW
+        // the sand it darkens, so the colour drops toward the shoal.
         id: "coast-foam",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "coastline"],
         paint: {
-          "line-color": "#cfe0e6",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.6, 16, 2.0] as never,
-          "line-opacity": 0.42,
-          "line-blur": 0.6,
+          "line-color": "#b7cdd4",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 1.4] as never,
+          "line-opacity": 0.3,
+          "line-blur": 0.4,
         },
       },
       {
@@ -350,7 +369,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "esplanade"],
-        paint: { "fill-color": "#dcded2" },
+        // the promenade ring was within a couple of points of the block fills,
+        // which made it the widest single piece of the coastal halo. A worn
+        // paving tone, clearly below the blocks and above the roadway.
+        paint: { "fill-color": "#cdd1c1" },
       },
       {
         // THE PAVED CITY. Everything inside the shoreline, laid down before a
@@ -363,15 +385,20 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "paveland"],
-        paint: { "fill-color": "#cbc7bb" },
+        // sits with the sidewalks in the pedestrian family — a step below the
+        // block fills, well above the asphalt — so an open lot reads as ground
+        // between buildings rather than as more street
+        paint: { "fill-color": "#bab5a6" },
       },
       {
-        // the carriageway that rings a park — under the green, not over it
+        // the carriageway that rings a park — under the green, not over it.
+        // Between the sidewalk band and the roadway in value: a frontage ring,
+        // its own worn surface, matching neither.
         id: "apron",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "apron"],
-        paint: { "fill-color": "#918e88" },
+        paint: { "fill-color": "#86817a" },
       },
       {
         // timber decking, with a shadowed edge so the pier stands proud of
@@ -432,19 +459,21 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         // the colonial quarter is paved in setts, not fresh asphalt — a
         // warmer, browner surface that marks the old town at a glance.
         //
-        // Both are a good deal darker than they were. The whole ground plane
-        // sat within about fifteen points of value — asphalt, sidewalk, block
-        // and vacant lot all pale — so from the air the city was one sheet
-        // with buildings on it and no street grid at all. A carriageway is the
-        // darkest thing on the ground in any real city, and once it is, the
-        // grid draws itself and the crossings and centrelines finally read.
+        // Darker again. The last pass took the asphalt down and it was still
+        // not enough: at the strategic camera the whole interior read as one
+        // mid-grey sheet, streets included. The calibration is a scale model —
+        // chipboard blocks on basswood streets — where the carriageway is a
+        // full material step below everything that is not a kerb line, and the
+        // hierarchy this ladder is tuned against runs (dark to light) curb →
+        // seam → asphalt → apron → sidewalk/paveland → esplanade → block. The
+        // per-district tints keep their leanings; only the value moved.
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#746b60",
+            ["==", ["get", "org"], 1], "#5f574c",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#797875", 1, "#747774", 2, "#7d776e", 3, "#757a76", 4, "#7c726f",
-              "#797875"],
+              0, "#636260", 1, "#5f6360", 2, "#67615a", 3, "#616662", 4, "#665e5b",
+              "#636260"],
           ] as never,
         },
       },
@@ -462,7 +491,11 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       },
       {
         // the block itself — warm paper, a clear step off the asphalt; the
-        // old town runs a shade warmer still
+        // old town runs a shade warmer still. Lifted only slightly: the block
+        // is the palest ground surface and the top of the ladder, but the
+        // bloom bright-pass (threshold set against January snow roofs) is
+        // waiting just above these values, so the street-to-block contrast is
+        // bought with dark asphalt, not with whiter paper.
         id: "blocks",
         type: "fill",
         source: "bw-context",
@@ -470,10 +503,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#e5dcc6",
+            ["==", ["get", "org"], 1], "#eae1c9",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#e3ded2", 1, "#dedfd8", 2, "#e5ddcc", 3, "#dde1d7", 4, "#e4d8d1",
-              "#e3ded2"],
+              0, "#e8e3d5", 1, "#e3e4db", 2, "#eae2cf", 3, "#e2e6da", 4, "#e9ddd4",
+              "#e8e3d5"],
           ] as never,
         },
       },
@@ -490,12 +523,16 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
           ["match", ["get", "cls"], "grid", true, "lane", true, false],
         ],
         paint: {
+          // a clear MIDDLE value — the old band sat within a few points of the
+          // block fills, so kerb-to-kerb and lot-line-to-lot-line were one
+          // surface. Dropped a step, warm/cool district tints kept, so the
+          // walking band reads between the dark asphalt and the pale block.
           "line-color": [
             "case",
-            ["==", ["get", "org"], 1], "#d3c8b6",
+            ["==", ["get", "org"], 1], "#c5b9a4",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#d3d0c6", 1, "#cdd2cf", 2, "#d6cfc1", 3, "#ced4cb", 4, "#d5cbc6",
-              "#d3d0c6"],
+              0, "#c5c2b5", 1, "#bfc4c0", 2, "#c8c0af", 3, "#c0c6bd", 4, "#c7bcb6",
+              "#c5c2b5"],
           ] as never,
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
         },
@@ -512,7 +549,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         ],
         minzoom: 14,
         paint: {
-          "line-color": "#66645f",
+          // still the darkest line on the ground: the asphalt came down to
+          // ~#636260, which had swallowed the old #66645f entirely — a kerb
+          // that matches its own roadway is no kerb at all
+          "line-color": "#454340",
           "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
           "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
         },
@@ -538,24 +578,27 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         layout: { "line-join": "round", "line-cap": "round" },
       },
       {
-        // the shore road still gets its own stroke
+        // the shore road still gets its own stroke — sun-bleached concrete, a
+        // shade off the darker grid asphalt but nowhere near the pale coast rim
         id: "streets",
         type: "line",
         source: "bw-context",
         filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
         paint: {
-          "line-color": "#9b978f",
+          "line-color": "#8d8a82",
           "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },
       {
+        // the boundary avenues: a heavier, older surface, kept a step below
+        // the grid asphalt so the district seams still draw themselves
         id: "seam",
         type: "line",
         source: "bw-context",
         filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
         paint: {
-          "line-color": "#6a6560",
+          "line-color": "#55504b",
           "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
@@ -681,11 +724,13 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "line-color": "#2c5160", "line-width": 1.2 },
       },
       {
+        // deck matches the roadway it carries — the asphalt darkened, so the
+        // bridges follow, or every crossing arrives as a pale patch mid-stream
         id: "bridges",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "bridge"],
-        paint: { "fill-color": "#797875" },
+        paint: { "fill-color": "#67665f" },
       },
       {
         id: "bridge-edge",
@@ -753,11 +798,14 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        // the drawn edge of the landmass: darker than the water beside it, so
+        // the island ends on a line the way a model ends at its baseboard —
+        // the old pale #a3b8c6 stroke was one more layer of coastal glow
         id: "shore",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
-        paint: { "line-color": "#a3b8c6", "line-width": 1 },
+        paint: { "line-color": "#7f9dad", "line-width": 1.2 },
       },
       {
         // transit stations — the anchors of the demand map
@@ -794,6 +842,63 @@ export async function resolveBaseStyle(context?: unknown): Promise<StyleSpecific
   }
 }
 
+// weather mixing shared by the sky and light specs below
+const mixRgb = (a: [number, number, number], b: [number, number, number], t: number) => {
+  const k = Math.max(0, Math.min(1, t));
+  const c = a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+};
+
+/**
+ * THE SKY, ONCE. These constants used to live twice — here for the style, and
+ * cloned into MapView's weather effect — and the first overcast tick silently
+ * reverted whatever the style said. One function, taken by both callers, with
+ * the overcast mix folded in: 0 is the clear-day sky the style opens on.
+ *
+ * THE HORIZON. Without one the world ends at a hard blue edge and the city
+ * sits in a void. A graded sky, a pale band where it meets the sea, and a
+ * whisper of ground fog in the last of the distance — which is the same
+ * aerial perspective the building shader applies, so the 3D and the map
+ * agree about how far away far is.
+ * A SKY WITH A TOP TO IT. Every number here was pulling the same way: a
+ * pale zenith, a horizon blend of 0.76 that dragged that pale band most of
+ * the way up the dome, and an atmosphere blend of 0.9 that washed whatever
+ * survived. The result was a flat cream field above a flat blue field —
+ * no gradient, no altitude, and nothing for the skyline to be drawn
+ * against. Deeper at the zenith, warmer where it meets the water, and the
+ * blend pulled back so the transition happens near the horizon where a
+ * real one does.
+ * Retuned as a set: the zenith a step deeper (late afternoon has a top to
+ * it), the horizon band pulled warm off the cool axis (the sea's own far
+ * fade stays cool below it, which is the right way round for a low sun),
+ * and the fog set to the exact HAZE_COOL the building shader scatters —
+ * vec3(0.742, 0.818, 0.900) is #bdd1e6 — so the far city dissolves into
+ * the same air the sky is made of instead of a slightly different one.
+ */
+export function skySpec(cloud: number): NonNullable<StyleSpecification["sky"]> {
+  return {
+    "sky-color": mixRgb([66, 133, 197], [112, 132, 145], cloud),
+    "sky-horizon-blend": 0.52,
+    "horizon-color": mixRgb([228, 231, 219], [197, 199, 189], cloud),
+    "horizon-fog-blend": 0.72,
+    "fog-color": mixRgb([189, 209, 230], [164, 177, 184], cloud),
+    "fog-ground-blend": 0.80,
+    "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.72, 15.5, 0.52, 18, 0.32] as never,
+  };
+}
+
+// a low sun off the port side gives extrusion faces the model-photo
+// contrast; anchored to the map so shading stays put as you orbit. Overcast
+// flattens it — same single-source rule as the sky.
+export function lightSpec(cloud: number): NonNullable<StyleSpecification["light"]> {
+  return {
+    anchor: "map",
+    color: mixRgb([255, 255, 255], [205, 211, 214], cloud),
+    intensity: 0.42 - cloud * 0.12,
+    position: [1.15, 135, 55],
+  };
+}
+
 export function composeStyle(base: StyleSpecification, city?: {
   parcelFeatures?: unknown; buildingFeatures?: unknown;
 }): StyleSpecification {
@@ -803,31 +908,8 @@ export function composeStyle(base: StyleSpecification, city?: {
   const baseLayers = (base.layers ?? []).filter((l) => keepLabels || l.type !== "symbol");
   return {
     ...base,
-    // a low sun off the port side gives extrusion faces the model-photo
-    // contrast; anchored to the map so shading stays put as you orbit
-    light: { anchor: "map", color: "#ffffff", intensity: 0.42, position: [1.15, 135, 55] },
-    // THE HORIZON. Without one the world ends at a hard blue edge and the city
-    // sits in a void. A graded sky, a pale band where it meets the sea, and a
-    // whisper of ground fog in the last of the distance — which is the same
-    // aerial perspective the building shader applies, so the 3D and the map
-    // agree about how far away far is.
-    // A SKY WITH A TOP TO IT. Every number here was pulling the same way: a
-    // pale zenith, a horizon blend of 0.76 that dragged that pale band most of
-    // the way up the dome, and an atmosphere blend of 0.9 that washed whatever
-    // survived. The result was a flat cream field above a flat blue field —
-    // no gradient, no altitude, and nothing for the skyline to be drawn
-    // against. Deeper at the zenith, warmer where it meets the water, and the
-    // blend pulled back so the transition happens near the horizon where a
-    // real one does.
-    sky: {
-      "sky-color": "#4f93cf",
-      "sky-horizon-blend": 0.52,
-      "horizon-color": "#dfe9ee",
-      "horizon-fog-blend": 0.72,
-      "fog-color": "#c3d8e6",
-      "fog-ground-blend": 0.80,
-      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.72, 15.5, 0.52, 18, 0.32],
-    },
+    light: lightSpec(0),
+    sky: skySpec(0),
     sources: { ...base.sources, ...gameSources(city) },
     layers: [...baseLayers, ...gameLayers()],
   };

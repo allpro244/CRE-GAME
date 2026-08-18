@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
@@ -14,6 +14,7 @@ import { PortfolioCap } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiTermsGrid, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
+import { auctionRead, leasingDeskName, loiRead, saleOfferRead, workoutRead } from "@/ui/advisor";
 
 /**
  * THE JULY AUCTION — one card, once a year.
@@ -134,6 +135,14 @@ function DefaultNoticeBody({
                 you can carry it while you find a buyer.`
             : ""}
         </div>
+        {(() => {
+          const read = workoutRead(game, parcels, open, h);
+          return read ? (
+            <div className="advisor-line">
+              {read} <span className="advisor-desk">— The workout desk</span>
+            </div>
+          ) : null;
+        })()}
         <div className="btn-row" style={{ marginTop: 12, flexWrap: "wrap" }}>
           {!filed && !open.servicing && (
             <button className="btn btn-primary" onClick={() => { serviceWorkout(open.bbl, true); dismiss(); }}>
@@ -281,8 +290,13 @@ function AuctionBody({
               <th className="num">Debt / floor</th><th className="num">Flyer est.</th><th className="num">Your bid ($M)</th></tr>
           </thead>
           <tbody>
-            {a.lots.map((l) => (
-              <tr key={l.id}>
+            {a.lots.map((l) => {
+              // The broker's one line on the lot, under the lot — floor
+              // against flyer, from the numbers already in the row.
+              const read = auctionRead(game, l);
+              return (
+              <Fragment key={l.id}>
+              <tr>
                 <td style={{ cursor: "pointer" }} onClick={() => focus(l.bbl, true)}>{l.address}</td>
                 <td className={l.kind === "yours" ? "neg" : "dim"}>
                   {kindWord(l.kind)} · {l.holder}{l.borrower && l.kind !== "yours" ? ` v. ${l.borrower}` : ""}
@@ -329,7 +343,18 @@ function AuctionBody({
                         onChange={(e) => setBids({ ...bids, [l.id]: e.target.value })} />}
                 </td>
               </tr>
-            ))}
+              {read && (
+                <tr className="advisor-row">
+                  <td colSpan={7}>
+                    <div className="advisor-line">
+                      {read} <span className="advisor-desk">— Your broker</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
         <div className="dim" style={{ marginTop: 6 }}>
@@ -743,6 +768,16 @@ function DecisionBody({
             {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
           </div>
           <LoiTermsGrid loi={loi} game={game} market={market} feeRate={fee} />
+          {(() => {
+            // The desk's one line on the letter — same helpers as the grid
+            // above, signed by whoever covers the building.
+            const read = loiRead(game, parcels, loi);
+            return read ? (
+              <div className="advisor-line">
+                {read} <span className="advisor-desk">— {leasingDeskName(game, loi.bbl)}</span>
+              </div>
+            ) : null;
+          })()}
           {!modalCounter && (
             <div className="modal-actions">
               <button
@@ -848,6 +883,16 @@ function DecisionBody({
           {proceeds.tax > 0 && <Row k="Capital-gains tax" v={usd(proceeds.tax)} bad />}
           <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />
         </div>
+        {(() => {
+          // The broker's one line: price against the mark and the basis, tax
+          // from the same waterfall the buttons run.
+          const read = saleOfferRead(game, parcels, h, offer);
+          return read ? (
+            <div className="advisor-line">
+              {read} <span className="advisor-desk">— Your broker</span>
+            </div>
+          ) : null;
+        })()}
         <div className="modal-actions">
           <button className="btn btn-buy" onClick={() => setSaleAcceptConfirm({})}>
             Accept · net {usd(cashAtClose)}

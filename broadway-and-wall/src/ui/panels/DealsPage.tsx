@@ -14,6 +14,8 @@ import { liveBrokerCalls } from "@/ui/panels/broker";
 import { Row, apMid } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
+import { Gloss } from "@/ui/Glossary";
+import { leasingDeskName, loiRead, saleOfferRead } from "@/ui/advisor";
 
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
@@ -24,6 +26,11 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const h = game.holdings[loi.bbl];
   const market = loiMarketPsf(game, parcels, loi);
   const fee = exclusiveFeeRate(h);
+  const cost = loiSigningCost(loi, fee);
+  // Whether signing draws the line — the same cash test the interrupt modal
+  // passes to respondLoi. `fund: true` unconditionally was drawing the
+  // revolver for players whose cash already covered the letter.
+  const short = cost > game.cash;
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const final = loi.stage === "countered";
   const theirNe = openingNe(loi);
@@ -47,7 +54,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       </div>
       {loi.kind === "expansion" && (
         <div className="hint">
-          Sitting tenant, coterminous with the lease they hold. Take the certain covenant, or hold the
+          Sitting tenant, <Gloss term="coterminous">coterminous</Gloss> with the lease they hold. Take the certain covenant, or hold the
           space for a full-term tenant and risk them leaving at the roll.
         </div>
       )}
@@ -86,21 +93,31 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        signing costs {usd(loiSigningCost(loi, fee))}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
+        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
       </div>
+      {(() => {
+        // The desk's one line on the letter — same helpers as the lines
+        // above, signed by whoever covers the building.
+        const read = loiRead(game, parcels, loi);
+        return read ? (
+          <div className="advisor-line">
+            {read} <span className="advisor-desk">— {leasingDeskName(game, loi.bbl)}</span>
+          </div>
+        ) : null;
+      })()}
       {countering && !final && !loi.countered && (
         <LoiCounterDraft
           loi={loi}
           market={market}
           feeRate={fee}
-          fundShort={loiSigningCost(loi, fee) > game.cash}
-          onSend={(c) => { respondLoi(loi.id, "counter", true, c); setCountering(false); }}
+          fundShort={short}
+          onSend={(c) => { respondLoi(loi.id, "counter", short, c); setCountering(false); }}
           onBack={() => setCountering(false)}
         />
       )}
       {!countering && (
         <div className="btn-row">
-          <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept", true)}>
+          <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept", short)}>
             {final ? "Take their final" : "Accept"}
           </button>
           {!loi.countered && !final && (
@@ -215,6 +232,16 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · good until {monthLabel(offer.expiresM)}
             {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your ask
           </div>
+          {h && parcels && (() => {
+            // The broker's one line: price against the mark and the basis,
+            // tax from the same waterfall Accept runs.
+            const read = saleOfferRead(game, parcels, h, offer);
+            return read ? (
+              <div className="advisor-line">
+                {read} <span className="advisor-desk">— Your broker</span>
+              </div>
+            ) : null;
+          })()}
           {!countering && (
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>Accept {usd(offer.price)}</button>

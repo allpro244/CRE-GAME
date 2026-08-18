@@ -1,0 +1,33 @@
+/* THE DESK SPEAKS — one line of read under the numbers on a decision card,
+   set apart from the card's own voice: italic serif, dimmed, and signed by
+   the desk that owns it. The desk describes; the principal decides — so
+   nothing in this style may read as a control. */
+.advisor-line {
+  grid-column: 1 / -1;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(146, 110, 40, 0.18);
+}
+.advisor-desk {
+  font-style: normal;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+/* Inside the auction table the read rides under its lot's row. The rule
+   between lots already separates them, so the line carries none of its own —
+   and it is prose, not a lot, so it takes no pointer and no hover wash. */
+tr.advisor-row { cursor: default; }
+.tbl tbody tr.advisor-row:hover td { background: transparent; }
+tr.advisor-row td { padding-top: 0; }
+tr.advisor-row .advisor-line {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}

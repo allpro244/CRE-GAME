@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
-import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
+import { composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
@@ -11,6 +11,7 @@ import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
+import Badges from "./Badges";
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -43,12 +44,6 @@ function mapPaintSig(g: GameState | null | undefined): string {
 }
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
-
-const mixRgb = (a: [number, number, number], b: [number, number, number], t: number) => {
-  const k = Math.max(0, Math.min(1, t));
-  const c = a.map((v, i) => Math.round(v + (b[i] - v) * k));
-  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-};
 
 // One colour per firm, in the order the street was founded, so a rival's book
 // reads as a shape on the map under the Owners lens. Muted on purpose — these
@@ -711,11 +706,15 @@ export default function MapView() {
     leaseRef.current = next;
   }, [paintSig, parcels, mapReady, lens]);
 
-  // name labels: districts, parks, water — DOM markers, no glyph server needed
+  // name labels: districts, parks, water — DOM markers, no glyph server needed.
+  // Photo frame silences them with the rest of the chrome: a model photograph
+  // has no captions. They come back with the effect re-run on exit.
+  const photoFrame = useStore((s) => s.photoFrame);
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady) return;
+    if (!map || !mapReady || photoFrame) return;
     const markers: maplibregl.Marker[] = [];
+    let onZoom: (() => void) | null = null;
     let disposed = false;
     Promise.resolve(city?.context as { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] } | null)
       .then((fc) => {
@@ -769,15 +768,19 @@ export default function MapView() {
             el.style.opacity = on ? "1" : "0";
           }
         };
+        onZoom = fade;
         map.on("zoom", fade);
         fade();
       })
       .catch(() => { /* labels are decoration — never block the map */ });
     return () => {
       disposed = true;
+      // the zoom listener used to outlive its markers — every paintSig tick
+      // left one more orphaned fade() walking a dead marker list
+      if (onZoom) map.off("zoom", onZoom);
       markers.forEach((m) => m.remove());
     };
-  }, [mapReady, city, paintSig]);
+  }, [mapReady, city, paintSig, photoFrame]);
 
   // mesh tints: gold selection/ownership, teal neighbors, warm hover
   const hoveredBBL = useStore((s) => s.hoveredBBL);
@@ -1025,22 +1028,11 @@ export default function MapView() {
     );
     const map = mapRef.current;
     if (map) {
+      // one sky, one light — the constants live in style.ts beside the style
+      // that opens on them, so a weather tick can never revert a sky retune
       const cloud = cityVisual.overcast;
-      map.setSky({
-        "sky-color": mixRgb([79, 147, 207], [112, 132, 145], cloud),
-        "sky-horizon-blend": 0.52,
-        "horizon-color": mixRgb([223, 233, 238], [190, 202, 207], cloud),
-        "horizon-fog-blend": 0.72,
-        "fog-color": mixRgb([195, 216, 230], [164, 177, 184], cloud),
-        "fog-ground-blend": 0.8,
-        "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.72, 15.5, 0.52, 18, 0.32],
-      });
-      map.setLight({
-        anchor: "map",
-        color: mixRgb([255, 255, 255], [205, 211, 214], cloud),
-        intensity: 0.42 - cloud * 0.12,
-        position: [1.15, 135, 55],
-      });
+      map.setSky(skySpec(cloud) as never);
+      map.setLight(lightSpec(cloud) as never);
     }
   }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, mapReady]);
 
@@ -1171,12 +1163,18 @@ export default function MapView() {
     }
   }, [lens, paintSig, parcels, mapReady]);
 
-  // hover tooltip: address before you commit to a click
+  // hover tooltip: address before you commit to a click. Photo frame drops it
+  // with the labels — the effect re-runs on toggle, so it detaches cleanly and
+  // a tip left showing at the moment of the switch is wiped.
   const tipRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const map = mapRef.current;
     const tip = tipRef.current;
     if (!map || !mapReady || !tip) return;
+    if (photoFrame) {
+      tip.style.display = "none";
+      return;
+    }
     const container = map.getContainer();
     const onMove = (e: MouseEvent) => {
       const { hoveredBBL, parcels: table, selectedBBL, game: g } = useStore.getState();
@@ -1211,12 +1209,15 @@ export default function MapView() {
       container.removeEventListener("mousemove", onMove);
       container.removeEventListener("mouseleave", onLeave);
     };
-  }, [mapReady]);
+  }, [mapReady, photoFrame]);
 
   return (
     <>
       <div ref={el} className="map-root" />
       <div ref={tipRef} className="hover-tip" style={{ display: "none" }} />
+      {/* buildings that need the principal, pinned to their parcels —
+          subscribes to its own signature, never to game identity */}
+      <Badges mapRef={mapRef} mapReady={mapReady} />
     </>
   );
 }

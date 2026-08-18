@@ -1,0 +1,165 @@
+/* THE COMMAND PALETTE. A parchment card in the top third of the screen,
+   above every interruption (modals sit at 80-84) and below only the start
+   screen at 90. Deliberately NOT .modal-backdrop: the clock keys in
+   GamePanels check for that class before advancing, and a search box is not
+   a card that must be answered. */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: rgba(43, 37, 26, 0.18);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: calc(var(--topbar-h, 91px) + 34px) 16px 16px;
+}
+
+.palette {
+  width: min(600px, 100%);
+  max-height: min(62vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-top), var(--lift-3);
+  padding: 13px 15px 9px;
+  animation: palette-arrive 0.16s var(--ease);
+}
+@keyframes palette-arrive {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .palette { animation: none; }
+}
+
+.palette-kicker {
+  font-family: var(--serif);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 7px;
+}
+
+.palette-input {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: rgba(255, 252, 244, 0.72);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-md);
+  padding: 8px 11px;
+  outline: none;
+}
+.palette-input:focus { border-color: var(--gold); }
+.palette-input::placeholder { color: var(--ink-dim); opacity: 0.8; }
+
+.palette-list {
+  margin-top: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.palette-group-kicker {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--ink-dim);
+  margin: 8px 3px 2px;
+}
+.palette-group:first-child .palette-group-kicker { margin-top: 4px; }
+
+/* The selected row carries a gold left rule AND a wash — never the rule
+   alone, so selection survives on the color-blind and the low-contrast. */
+.palette-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 5px 8px 5px 8px;
+  cursor: pointer;
+}
+.palette-row-on {
+  border-left-color: var(--gold);
+  background: var(--gold-soft);
+}
+.palette-row-off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.palette-row-label {
+  font-size: 13.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 330px;
+}
+.palette-row-sub {
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tag text is the category; color is only ever the second voice. */
+.palette-tag {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 1px 4px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.palette-tag-deed { color: var(--gold); border-color: rgba(176, 127, 30, 0.45); }
+.palette-tag-tenant { color: var(--teal); }
+.palette-tag-firm { color: var(--ink); }
+
+.palette-empty { padding: 10px 4px 4px; }
+
+.palette-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 7px 3px 2px;
+  border-top: 1px solid rgba(146, 110, 40, 0.18);
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.palette-foot kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  background: rgba(255, 252, 244, 0.6);
+  color: var(--ink-dim);
+}
+.palette-count { font-size: 11px; }
+
+@media (max-width: 640px) {
+  .palette-backdrop { padding-left: 8px; padding-right: 8px; }
+  .palette-row-label { max-width: 52vw; }
+}

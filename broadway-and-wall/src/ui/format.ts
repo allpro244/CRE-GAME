@@ -23,3 +23,38 @@ export function termLeft(endM: number, now: number): string {
   if (mo < 24) return `${mo} mo left`;
   return `${(mo / 12).toFixed(1)} yrs left`;
 }
+
+/** A CHANGE in dollars, signed both ways. Delegates to usd() so a delta can
+ *  never disagree with the level it was computed from — same breakpoints,
+ *  same rounding, same word joiner holding the sign to the figure. The plus
+ *  gets the joiner too: "+" orphaned on its own line reads as a footnote
+ *  mark, not a gain. Zero prints signless — no movement is not a small win. */
+export const usdSigned = (n: number): string => {
+  if (!Number.isFinite(n)) return "—";
+  return n > 0 ? "+\u2060" + usd(n) : usd(n);
+};
+
+/** A MOVE in a rate, in percentage points. A cap rate going 5.0% to 5.6%
+ *  moved 0.6 pp; calling that 12% is how a spread widening gets mistaken for
+ *  rent growth. One decimal, and the sign rides the ROUNDED figure so a hair
+ *  under zero cannot print as "−0.0 pp". Real minus, same as usd(). */
+export const pp = (n: number): string => {
+  if (!Number.isFinite(n)) return "—";
+  const r = Math.round(n * 10) / 10;
+  const sign = r > 0 ? "+" : r < 0 ? "−" : "";
+  return sign + Math.abs(r).toFixed(1) + " pp";
+};
+
+/** A duration in months, in the unit a person plans in. Under two years it
+ *  stays in months — the same threshold termLeft() uses, for the same
+ *  misreading — and past that it goes to whole years and months, dropping a
+ *  zero remainder ("3 yr", never "3 yr 0 mo"). */
+export function monthsWord(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  const mo = Math.round(Math.abs(n));
+  const sign = n < 0 && mo > 0 ? "−" : "";
+  if (mo < 24) return `${sign}${mo} mo`;
+  const yr = Math.floor(mo / 12);
+  const rem = mo % 12;
+  return rem === 0 ? `${sign}${yr} yr` : `${sign}${yr} yr ${rem} mo`;
+}

@@ -11,6 +11,9 @@ import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
+import DeltaChip from "@/ui/vitals/DeltaChip";
+import Spark from "@/ui/vitals/Spark";
+import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 
 type JobId = "acquire" | "assets" | "capital" | "world" | "economy";
 
@@ -35,6 +38,7 @@ const JOBS: {
       { id: "portfolio", label: "Portfolio", note: "Holdings, income and concentration" },
       { id: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
       { id: "staff", label: "Staff", note: "People, capacity and judgment" },
+      { id: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },
   {
@@ -74,6 +78,10 @@ export default function TopBar() {
   // Cash/date stay on the live game; portfolio walks (NW/CF/line) lag one
   // paint so a counter click is not blocked on walking the whole book.
   const deferredGame = useDeferredValue(game);
+  // The pre-advance snapshot, deferred in step with the game it belongs to —
+  // both are written by the same set(), so they settle on the same paint.
+  const prevGame = useStore((s) => s.prevForDigest);
+  const deferredPrev = useDeferredValue(prevGame);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
   const mapOnly = useStore((s) => s.mapOnly);
@@ -93,6 +101,9 @@ export default function TopBar() {
         line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
+        dNw: null as number | null, nwSpark: [] as number[],
+        dCf: null as number | null, dCfSince: null as number | null,
+        dRateBp: null as number | null,
       };
     }
     const parcels = useStore.getState().parcels;
@@ -175,14 +186,33 @@ export default function TopBar() {
       debtBal += deferredGame.facility.balance;
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
+    // WHICH WAY, AND SINCE WHEN. ΔNW is the last two entries of the same tape
+    // the Books chart draws; ΔCF walks the pre-advance snapshot with the same
+    // portfolioMonthlyCF the readout uses — one quantity, one function, so the
+    // chip cannot disagree with the number it sits beside. Δbp reads the rate
+    // twelve months back off the tape. All of it lives in this one memo so an
+    // advance still costs exactly one walk of each book.
+    const nh = deferredGame.nwHistory ?? [];
+    const dNw = nh.length >= 2 ? nh[nh.length - 1] - nh[nh.length - 2] : null;
+    const nwSpark = nh.length >= 2 ? nh.slice(-24) : [];
+    const prevOk = usablePrev(deferredGame, deferredPrev);
+    const dCf = prevOk && parcels ? cf - portfolioMonthlyCF(prevOk, parcels) : null;
+    const dCfSince = prevOk ? prevOk.month : null;
+    const rateThen = hist.length > 12 ? hist[hist.length - 13]?.indexRate : undefined;
+    const dRateBp = rateThen === undefined ? null
+      : Math.round((deferredGame.econ.indexRate - rateThen) * 100);
     return {
       nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
+      dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
-  }, [deferredGame]);
-  const { nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  }, [deferredGame, deferredPrev]);
+  const {
+    nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp,
+  } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -232,6 +262,44 @@ export default function TopBar() {
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [jobOpen]);
+
+  // THE NET-WORTH POPOVER. Plain local state, same dismissal contract as the
+  // job menus plus Escape — a glance card, not a mode. The card itself is
+  // position:fixed (the stats box clips its children), so its left edge is
+  // measured from the readout at open time and clamped to the window.
+  const [nwOpen, setNwOpen] = useState(false);
+  const [nwPopLeft, setNwPopLeft] = useState(12);
+  const nwRef = useRef<HTMLDivElement>(null);
+  const toggleNwPop = () => {
+    if (nwOpen) { setNwOpen(false); return; }
+    const r = nwRef.current?.getBoundingClientRect();
+    const w = Math.min(420, window.innerWidth - 24);
+    setNwPopLeft(Math.max(12, Math.min(r?.left ?? 12, window.innerWidth - w - 12)));
+    setNwOpen(true);
+  };
+  useEffect(() => {
+    if (!nwOpen) return;
+    const down = (e: MouseEvent) => {
+      if (nwRef.current && !nwRef.current.contains(e.target as Node)) setNwOpen(false);
+    };
+    // Capture + stopImmediatePropagation: the Escape that dismisses this card
+    // must not ALSO reach GamePanels' handler, which would close the open desk
+    // (or toast about a modal) in the same keypress.
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setNwOpen(false);
+    };
+    window.addEventListener("mousedown", down);
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("keydown", key, true);
+    };
+  }, [nwOpen]);
+  // A tick with the card open would walk the book twice per paint — close it
+  // when the clock starts; the player is watching months, not a glance card.
+  useEffect(() => { if (advancing) setNwOpen(false); }, [advancing]);
 
   return (
     <div className="topbar" ref={barRef}>
@@ -337,14 +405,26 @@ export default function TopBar() {
                 1680px — and the whole stats box hides under 760px — so the
                 occupancy readout the player asked for never appeared on a
                 normal screen. Vitals stay up. */}
-            <Stat
-              label="CF / yr"
-              value={usd(cf * 12)}
-              bad={cf < 0}
-              keep
-              w={88}
-              title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
-            />
+            <span className="vital-pair">
+              <Stat
+                label="CF / yr"
+                value={usd(cf * 12)}
+                bad={cf < 0}
+                keep
+                w={88}
+                title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
+              />
+              {dCf !== null && (
+                <span className="vital-extra">
+                  <DeltaChip
+                    value={dCf}
+                    fmt={(n) => usd(n) + " /mo"}
+                    epsilon={1_000}
+                    title={`Monthly cash flow vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"} — the same walk as the readout, run on the pre-advance book.`}
+                  />
+                </span>
+              )}
+            </span>
             <Stat
               label="Occupancy"
               value={occSf ? ((100 * occLeased) / occSf).toFixed(1) + "%" : "—"}
@@ -355,13 +435,25 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
-            <Stat
-              label="Base rate"
-              value={pct(game.econ.indexRate)}
-              keep
-              w={72}
-              title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
-            />
+            <span className="vital-pair">
+              <Stat
+                label="Base rate"
+                value={pct(game.econ.indexRate)}
+                keep
+                w={72}
+                title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
+              />
+              {dRateBp !== null && (
+                <span className="vital-extra">
+                  <DeltaChip
+                    value={dRateBp}
+                    fmt={(n) => `${Math.round(n)} bp`}
+                    goodWhenUp={false}
+                    title="Base rate vs twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
+                  />
+                </span>
+              )}
+            </span>
             {/* Vacancy change, not level — the single highest-EV cycle tell. */}
             <Stat
               label="Vac Δ / yr"
@@ -377,13 +469,46 @@ export default function TopBar() {
             />
           </div>
           <div className="topbar-stats">
-          <Stat
-            label="Net worth"
-            value={usd(nw)}
-            drop={2}
-            w={96}
-            title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate).`}
-          />
+          {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
+              reasons spread across four pages; the chip says which way, the
+              spark says which way it has BEEN going, and the click opens the
+              waterfall — the same ledger buckets and the same appraisal the
+              Books page reads, so the popover cannot disagree with the desk.
+              The pair shares the droppable readouts' width gate (.nw-pair). */}
+          <div className="nw-pair" ref={nwRef}>
+            <Stat
+              label="Net worth"
+              value={usd(nw)}
+              w={96}
+              title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
+              onClick={toggleNwPop}
+              expanded={nwOpen}
+            />
+            {dNw !== null && (
+              <DeltaChip
+                value={dNw}
+                fmt={usd}
+                epsilon={10_000}
+                title="Net worth vs a month ago. Click the readout for the full waterfall."
+              />
+            )}
+            {nwSpark.length >= 2 && (
+              <Spark values={nwSpark} title="Net worth, the last 24 months" />
+            )}
+            {nwOpen && (
+              <div
+                className="nw-pop"
+                role="dialog"
+                aria-label="Net worth, attributed"
+                style={{ left: nwPopLeft }}
+              >
+                <button type="button" className="nw-pop-close" aria-label="Close" onClick={() => setNwOpen(false)}>
+                  ✕
+                </button>
+                <Waterfall compact />
+              </div>
+            )}
+          </div>
           {/* NW rides drop 2. Market phase and vacant-lot counts are drop 3. */}
           <Stat
             label="Market"
@@ -485,6 +610,7 @@ export default function TopBar() {
           <span className="topbar-sep" />
           <button
             className={"lens-btn" + (lens === "listings" ? " lens-on" : "")}
+            aria-pressed={lens === "listings"}
             onClick={() => setLens(lens === "listings" ? "none" : "listings")}
             title="Market lens — highlight everything for sale on the map"
           >
@@ -492,6 +618,7 @@ export default function TopBar() {
           </button>
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
+            aria-pressed={lens === "land"}
             onClick={() => setLens(lens === "land" ? "none" : "land")}
             title="Land value lens — shade every lot by current land $/sf"
           >
@@ -499,6 +626,7 @@ export default function TopBar() {
           </button>
           <button
             className={"lens-btn" + (lens === "demand" ? " lens-on lens-on-teal" : "")}
+            aria-pressed={lens === "demand"}
             onClick={() => setLens(lens === "demand" ? "none" : "demand")}
             title="Demand lens — transit + employment gravity, the why behind the rents"
           >
@@ -506,6 +634,7 @@ export default function TopBar() {
           </button>
           <button
             className={"lens-btn" + (lens === "zoning" ? " lens-on" : "")}
+            aria-pressed={lens === "zoning"}
             onClick={() => setLens(lens === "zoning" ? "none" : "zoning")}
             title="Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black."
           >
@@ -513,6 +642,7 @@ export default function TopBar() {
           </button>
           <button
             className={"lens-btn" + (lens === "owners" ? " lens-on lens-on-teal" : "")}
+            aria-pressed={lens === "owners"}
             onClick={() => setLens(lens === "owners" ? "none" : "owners")}
             title="Owners lens — every building the other firms hold, one colour per firm. Yours stay gold."
           >
@@ -520,6 +650,7 @@ export default function TopBar() {
           </button>
           <button
             className={"lens-btn" + (lens === "leases" ? " lens-on" : "")}
+            aria-pressed={lens === "leases"}
             onClick={() => setLens(lens === "leases" ? "none" : "leases")}
             title="Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT."
           >
@@ -649,17 +780,37 @@ function Badge({ n }: { n: number }) {
  * that reservation in pixels — wide enough for the longest month name, the
  * longest phase word, and a negative nine-figure number with a suffix.
  */
-function Stat({ label, value, bad, wide, title, drop, w, keep }: {
+function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded }: {
   label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number; keep?: boolean;
+  /** With onClick the readout renders as a real button — the number is the control. */
+  onClick?: () => void; expanded?: boolean;
 }) {
-  return (
-    <div
-      className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "") + (keep ? " tstat-keep" : "")}
-      title={title}
-      style={w ? { minWidth: w, maxWidth: keep ? undefined : w } : undefined}
-    >
+  const className = "tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "") + (keep ? " tstat-keep" : "");
+  const style = w ? { minWidth: w, maxWidth: keep ? undefined : w } : undefined;
+  const body = (
+    <>
       <span className="tstat-label">{label}</span>
       {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={className + " tstat-btn"}
+        title={title}
+        style={style}
+        onClick={onClick}
+        aria-expanded={expanded}
+        aria-haspopup="dialog"
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className={className} title={title} style={style}>
+      {body}
     </div>
   );
 }

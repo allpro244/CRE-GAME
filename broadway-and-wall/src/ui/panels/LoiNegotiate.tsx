@@ -11,6 +11,7 @@ import { managedRentPsfYr, resolveRec } from "@/engine/value";
 import { bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf } from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
 import { Row } from "@/ui/panels/shared";
+import { Gloss } from "@/ui/Glossary";
 
 export function loiMarketPsf(
   game: GameState, parcels: ParcelTable, loi: LOI,
@@ -215,6 +216,9 @@ export function LoiTermsGrid({
         <LoiHero loi={loi} />
         <div className="loi-hero-sub mono dim">
           through {monthLabel(game.month + loi.termM)} · {usd(annual)} a year face rent
+          {loi.kind === "expansion" && (
+            <> · <Gloss term="coterminous">coterminous</Gloss> with their sitting lease</>
+          )}
         </div>
       </div>
       {prevRent !== undefined && (

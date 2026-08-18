@@ -4,6 +4,7 @@ import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
+import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
@@ -329,24 +330,6 @@ interface AppState {
   dropSave: (slot: string) => Promise<void>;
   slots: SaveMeta[];
   refreshSlots: () => Promise<void>;
-}
-
-/** Top 2% of standing stock by building area — only those get the delivery ceremony. */
-function deliveryWorthCeremony(game: GameState, parcels: ParcelTable, bbl: string): boolean {
-  const built = game.built?.[bbl];
-  const rec = resolveRec(parcels, game, bbl);
-  const sf = built?.bldgArea ?? rec?.bldgArea ?? 0;
-  if (sf <= 0) return false;
-  const areas: number[] = [];
-  for (const id of Object.keys(game.built ?? {})) {
-    const r = resolveRec(parcels, game, id);
-    const a = game.built![id]?.bldgArea ?? r?.bldgArea ?? 0;
-    if (a > 0) areas.push(a);
-  }
-  if (areas.length < 2) return sf > 0;
-  areas.sort((a, b) => b - a);
-  const cutoff = areas[Math.max(0, Math.ceil(areas.length * 0.02) - 1)] ?? 0;
-  return sf >= cutoff;
 }
 
 function queueDeliveryCeremony(

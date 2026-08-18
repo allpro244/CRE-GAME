@@ -4,6 +4,7 @@ import { usd, sf } from "@/ui/format";
 /**
  * Non-blocking delivery moment — offers to fly to the building on the map.
  * Does not stop Advance; dismiss if you are not interested.
+ * Only the top 1% of the city by floor area queues this (see deliveryNotice).
  */
 export default function DeliveryCeremony() {
   const ceremony = useStore((s) => s.deliveryCeremony);

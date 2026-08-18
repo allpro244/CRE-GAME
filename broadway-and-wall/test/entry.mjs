@@ -55,6 +55,8 @@ export const MODULES = [
   "save",
   // attentionRoute — inbox key → desk routing (attention-route harness).
   "attentionRoute",
+  // deliveryNotice — which openings interrupt the player (top 1% by area).
+  "deliveryNotice",
 ];
 
 export function writeEntry(path) {

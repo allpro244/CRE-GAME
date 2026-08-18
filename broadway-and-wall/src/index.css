@@ -473,7 +473,13 @@ body {
   color: var(--ink);
 }
 .loi-hero-sep { margin: 0 0.35em; color: var(--ink-dim); font-weight: 400; }
-.loi-hero-block { margin: 4px 0 8px; }
+/* THE BANNER IS A ROW, NOT A CELL. `.grid` pairs children into label/value
+   columns, and this block is a single child sitting inside one — so it ate
+   the first cell and shifted every Row after it by one: the rent landed in
+   the label column and read as though "Annual bump" were its name, which is
+   how a letter came to say "$48.00/sf Annual bump". Spanning both columns
+   puts the pairs back on their own labels. */
+.loi-hero-block { margin: 4px 0 8px; grid-column: 1 / -1; }
 .loi-hero-sub { margin-top: 2px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
 .modal .loi-hero { margin-top: 4px; margin-bottom: 2px; }
 .loi-line { margin-top: 3px; line-height: 1.4; }

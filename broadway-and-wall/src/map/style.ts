@@ -598,12 +598,14 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         id: "streams",
         type: "fill",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "stream"],
+        filter: ["all",
+          ["==", ["get", "kind"], "stream"],
+          ["!=", ["get", "water"], "pond"],
+        ],
         paint: {
           "fill-color": [
             "match", ["coalesce", ["get", "water"], "creek"],
             "canal", "#4e7f96",
-            "pond", "#3f6e82",
             "slip", "#3d6a80",
             "#4a7a8e",
           ] as never,
@@ -613,18 +615,37 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         id: "stream-edge",
         type: "line",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "stream"],
+        filter: ["all",
+          ["==", ["get", "kind"], "stream"],
+          ["!=", ["get", "water"], "pond"],
+        ],
         paint: {
           "line-color": "#2f5566",
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16.5, 2.0] as never,
         },
       },
       {
+        // Mill pond ON TOP of the ribbon so the race's straight bank does
+        // not draw a chord through the water it already empties into.
+        id: "stream-ponds",
+        type: "fill",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "stream"], ["==", ["get", "water"], "pond"]],
+        paint: { "fill-color": "#3f6e82" },
+      },
+      {
+        id: "stream-pond-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "stream"], ["==", ["get", "water"], "pond"]],
+        paint: { "line-color": "#2c5160", "line-width": 1.2 },
+      },
+      {
         id: "bridges",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "bridge"],
-        paint: { "fill-color": "#8a8478" },
+        paint: { "fill-color": "#797875" },
       },
       {
         id: "bridge-edge",
@@ -632,8 +653,8 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "bridge"],
         paint: {
-          "line-color": "#5c574e",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 16.5, 1.8] as never,
+          "line-color": "#4a4844",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 16.5, 2.6] as never,
         },
       },
       {

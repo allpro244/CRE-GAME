@@ -310,10 +310,14 @@ export default function MapView() {
               // buries the MapLibre layers that were drawing them
               parks: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "park" && f.geometry.type === "Polygon")
-                .map((f) => ({
-                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
-                  flavour: String(f.properties?.flavour ?? "park"),
-                })),
+                .map((f) => {
+                  const coords = (f.geometry as GeoJSON.Polygon).coordinates;
+                  return {
+                    ring: (coords[0] as [number, number][]).slice(0, -1),
+                    holes: coords.slice(1).map((h) => (h as [number, number][]).slice(0, -1)),
+                    flavour: String(f.properties?.flavour ?? "park"),
+                  };
+                }),
               ponds: [...ringsOf("pond"), ...ringsOf("stream")],
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")

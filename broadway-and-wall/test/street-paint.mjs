@@ -57,6 +57,11 @@ for (const seed of seeds) {
     .map(ringOf)
     .filter(Boolean)
     .map((r) => r.map(proj.toM));
+  const channels = feats
+    .filter((f) => f.properties?.kind === "stream" && f.properties?.water !== "pond")
+    .map(ringOf)
+    .filter(Boolean)
+    .map((r) => r.map(proj.toM));
 
   const streets = feats.filter((f) => f.properties?.kind === "street" && f.geometry.type === "LineString");
   const parkStreet = streets.filter((f) => f.properties?.cls === "park").length;
@@ -94,12 +99,62 @@ for (const seed of seeds) {
   const nPaintedWater = feats.filter((f) => f.properties?.kind === "stream").length;
   const missingHoles = nPaintedWater > 0 && nHoles < 1;
 
+  const parks = feats.filter((f) => f.properties?.kind === "park" && f.geometry?.type === "Polygon");
+  let parkNeedsHole = 0, parkHasHole = 0;
+  for (const f of parks) {
+    const outer = (f.geometry.coordinates[0] ?? []).slice(0, -1).map(proj.toM);
+    const wet = channels.some((s) => s.some((p) => inRing(p, outer)) || outer.some((p) => channels.some((c) => inRing(p, c))));
+    if (!wet) continue;
+    parkNeedsHole++;
+    if ((f.geometry.coordinates?.length ?? 0) > 1) parkHasHole++;
+  }
+  const aprons = feats.filter((f) => f.properties?.kind === "apron" && f.geometry?.type === "Polygon");
+  let apronNeedsHole = 0, apronHasHole = 0;
+  for (const f of aprons) {
+    const outer = (f.geometry.coordinates[0] ?? []).slice(0, -1).map(proj.toM);
+    const wet = channels.some((s) => outer.some((p) => inRing(p, s)));
+    if (!wet) continue;
+    apronNeedsHole++;
+    if ((f.geometry.coordinates?.length ?? 0) > 1) apronHasHole++;
+  }
+
+  let wetKerb = 0;
+  for (const f of feats.filter((x) => x.properties?.kind === "parkkerb" && x.geometry?.type === "LineString")) {
+    const r = ringOf(f)?.map(proj.toM);
+    if (!r || r.length < 2) continue;
+    for (let i = 0; i < r.length - 1; i++) {
+      const a = r[i], b = r[i + 1];
+      const len = segLen(a, b);
+      if (len < 12) continue;
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (streams.some((s) => inRing(mid, s))) wetKerb++;
+    }
+  }
+
+  let fatBridge = 0;
+  for (const f of feats.filter((x) => x.properties?.kind === "bridge" && x.geometry?.type === "Polygon")) {
+    const r = ringOf(f)?.map(proj.toM);
+    if (!r || r.length < 4) continue;
+    const edges = [];
+    for (let i = 0; i < r.length; i++) edges.push(segLen(r[i], r[(i + 1) % r.length]));
+    edges.sort((a, b) => a - b);
+    if (edges[0] > 16) fatBridge++;
+  }
+
   const problems = [];
   if (parkStreet) problems.push(`park rings tagged street (${parkStreet})`);
   if (fakeShore.length) problems.push(`${fakeShore.length} kilometre-chord(s) tagged shore`);
   if (wetDash) problems.push(`${wetDash} centreline(s) run through water`);
   if (wetSidewalk) problems.push(`${wetSidewalk} sidewalk(s) run through water`);
   if (missingHoles) problems.push(`paveland has no water holes (${nHoles} holes, ${nPaintedWater} streams)`);
+  if (parkNeedsHole && parkHasHole < parkNeedsHole) {
+    problems.push(`park over water missing holes (${parkHasHole}/${parkNeedsHole})`);
+  }
+  if (apronNeedsHole && apronHasHole < apronNeedsHole) {
+    problems.push(`apron over water missing holes (${apronHasHole}/${apronNeedsHole})`);
+  }
+  if (wetKerb) problems.push(`${wetKerb} park kerb(s) run through water`);
+  if (fatBridge) problems.push(`${fatBridge} bridge(s) thicker than a street`);
 
   const ok = problems.length === 0;
   console.log(

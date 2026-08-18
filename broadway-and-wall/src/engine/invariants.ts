@@ -246,7 +246,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     // of yours are category errors, not soft bugs.
     if (h.groundLeased) {
       if (h.tenants.length) bad("ground", at, "fee owner has a rent roll on a ground-leased fee");
-      if (h.broker) bad("ground", at, "leasing exclusive on a ground-leased fee");
+      if (h.broker) bad("ground", at, "leasing broker on a ground-leased fee");
       if (s.lois.some((l) => l.bbl === bbl)) bad("ground", at, "live LOI on a ground-leased fee");
       if ((s.asks ?? []).some((a) => a.bbl === bbl)) bad("ground", at, "tenant relief ask on a ground-leased fee");
     }

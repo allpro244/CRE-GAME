@@ -72,29 +72,27 @@ export function HousePolicy() {
           {off > 0 ? `Apply to all ${built.length} buildings` : "Applied"}
         </button>
       </div>
-      {/* WHO WORKS THE PHONES, ALSO ONCE. Same argument as the three above: an
-          exclusive is a standing decision about how the book is run, and it was
-          twenty clicks for one policy. Flats are skipped rather than refused —
-          a mixed book is the normal case and the engine already says a broker
-          does not work multifamily. */}
+      {/* WHO WORKS THE PHONES, ALSO ONCE. Hiring an outside leasing broker is
+          a listing, not a handoff — they source tenants, you still decide
+          every lease. Flats are skipped: brokers do not work multifamily. */}
       <div className="grid" style={{ marginTop: 8 }}>
-        <Row k="Leasing exclusive" v={`${onHouse} of ${commercialN} commercial building${commercialN === 1 ? "" : "s"} with the house`} />
+        <Row k="Leasing brokers" v={`${onHouse} of ${commercialN} commercial building${commercialN === 1 ? "" : "s"} with an outside broker`} />
       </div>
       <div className="btn-row">
         <button className="btn" disabled={commercialN === 0 || onHouse === commercialN}
           onClick={() => useStore.getState().brokerAll(true)}>
-          Put the whole book on the house
+          Hire a leasing broker on every building
         </button>
         <button className="btn" disabled={onHouse === 0}
           onClick={() => useStore.getState().brokerAll(false)}>
-          End every exclusive
+          Dismiss every leasing broker
         </button>
       </div>
       <div className="hint">
-        No retainer and nothing while the space sits — they are paid 6% of the base rent over the term of
-        everything they sign, at the signing, against the 4% on a new lease and 2% on a renewal your own people
-        cost. Cheap to hold, expensive when it works, and the right answer changes with how much of the book is
-        empty.
+        An outside leasing broker works the phones — about 45% more tenant traffic, no retainer while the
+        space sits. You still decide every lease. They are paid 6% of the base rent over the term at signing,
+        instead of the 4% on a new lease and 2% on a renewal your own people cost. Hand the desk to staff
+        if you want someone else signing.
       </div>
       <div className="hint">
         {off === 0

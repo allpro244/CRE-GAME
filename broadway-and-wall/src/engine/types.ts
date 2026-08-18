@@ -460,10 +460,10 @@ export interface Holding {
   pmRenewalMult?: number;
   /** Stamped by markStaff — assigned leasing skill on rent at this building. */
   leasingRentMult?: number;
-  // A leasing exclusive. The house works the phones for nothing and is paid
-  // 6% of the base rent over the term of every lease signed while they hold
-  // the file, in place of the 4%/2% you pay doing it yourself — see
-  // exclusiveFeeRate in leasing.ts. It lapses when the building fills.
+  // Outside leasing broker on the file. They work the phones (~45% more
+  // tenant traffic) and take 6% of the base rent over the term when YOU
+  // sign — they do not hold the pen. See exclusiveFeeRate in leasing.ts.
+  // Lapses when the building fills.
   broker?: boolean;
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
@@ -2506,7 +2506,7 @@ export interface GameState {
   /**
    * WHAT THE DESK DID THIS MONTH while you were quiet.
    *
-   * When the firm agent, your team, or an exclusive holds the pen, letters stop
+   * When the firm agent or your team holds the pen, letters stop
    * interrupting you — only referrals do. Without a scorecard a quiet month
    * looks identical to a desk that is turning everyone away. Counts roll with
    * `m`; readers treat a stale month as empty.

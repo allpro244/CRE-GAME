@@ -444,7 +444,7 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
       mult: +(0.88 + 0.24 * svc).toFixed(3),
     });
   }
-  if (h.broker) out.push({ label: "Leasing exclusive", detail: "a house working the phones for 6% of what they sign", mult: 1.45 });
+  if (h.broker) out.push({ label: "Leasing broker", detail: "an outside broker working the phones — 6% of the leases you sign", mult: 1.45 });
   const spec = h.specSuites;
   if (spec && spec.use === use && s.month >= spec.readyM) {
     out.push({ label: "Turnkey suites", detail: `${(spec.sf / 1000).toFixed(0)}k sf fitted and standing`, mult: 1.50 });

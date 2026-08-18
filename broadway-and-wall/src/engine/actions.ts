@@ -3342,7 +3342,8 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
   s.listings = survivors;
 }
 
-// Toggle a leasing broker exclusive on an owned commercial building.
+// Hire or dismiss an outside leasing broker on an owned commercial building.
+// They source tenants. They do not take lease decisions off your desk.
 export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: boolean): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
@@ -3355,19 +3356,18 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed at ${rec.address} — the house works the phones for nothing and takes 6% of the base rent over the term of everything it signs, at the signing.`
-      : `Broker dismissed at ${rec.address} — what you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
+      ? `Leasing broker hired at ${rec.address} — they work the phones, you still decide every lease, and they take 6% of the base rent over the term at signing.`
+      : `Leasing broker dismissed at ${rec.address} — what you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
   });
   return { s: next };
 }
 
 /**
- * THE EXCLUSIVE, ACROSS THE WHOLE BOOK.
+ * HIRE A LEASING BROKER ACROSS THE WHOLE BOOK.
  *
- * The same argument as `setOpsPolicy`: whether the house works your phones is a
- * standing decision about how you run buildings, and a principal with twenty
- * deeds takes it once. Doing it per building meant twenty clicks for one policy,
- * and it is the same fee on every one of them.
+ * Same argument as `setOpsPolicy`: whether an outside broker works your
+ * phones is a standing decision, and a principal with twenty deeds takes
+ * it once. They source tenants. They do not hold the pen.
  *
  * Multifamily is skipped rather than refused, because a mixed book is the normal
  * case and an error on the one apartment block should not stop the other
@@ -3386,15 +3386,15 @@ export function setBrokerAll(s: GameState, parcels: ParcelTable, on: boolean): {
     if (on) h.broker = true; else delete h.broker;
     n++;
   }
-  if (!n) return { s, err: on ? "Every commercial building already has the house on it." : "Nobody is on an exclusive." };
+  if (!n) return { s, err: on ? "Every commercial building already has a leasing broker." : "No leasing brokers on the book." };
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed across the book — ${n} building${n === 1 ? "" : "s"} to the house, no retainer, 6% of the base rent over the term of everything they sign.`
+      ? `Leasing brokers hired across the book — ${n} building${n === 1 ? "" : "s"}. They source tenants; you still decide the leases. No retainer, 6% of the base rent over the term at signing.`
         + (skipped ? ` The ${skipped} residential building${skipped === 1 ? "" : "s"} ${skipped === 1 ? "is" : "are"} not on it: flats let themselves.` : "")
-      : `Exclusives ended on ${n} building${n === 1 ? "" : "s"}. What you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
+      : `Leasing brokers dismissed on ${n} building${n === 1 ? "" : "s"}. What you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
   });
-  return { s: next, msg: on ? `${n} building${n === 1 ? "" : "s"} on the house.` : `${n} exclusive${n === 1 ? "" : "s"} ended.` };
+  return { s: next, msg: on ? `${n} building${n === 1 ? "" : "s"} with a leasing broker.` : `${n} leasing broker${n === 1 ? "" : "s"} dismissed.` };
 }
 
 export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {

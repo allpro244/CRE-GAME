@@ -124,10 +124,10 @@ export function LeasingPage() {
         ? "Your leasing desk holds the pen."
         : "You hold the pen.";
     const sub = game.agent
-      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They sign inside your mandate, counter soft letters, pick clear tour winners, and refer expansions, dead heats and capital calls. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      ? `An outside shop holds the pen at 6% — they sign inside your mandate. Different from a leasing broker, who only works the phones. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
       : teamOn
         ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
-        : "Default. Every letter lands on you unless a building has an exclusive, or you hand renewals to management below. Hire leasing on Staff, then hand them the book — or hire outside coverage at 6%.";
+        : "Default. Every letter lands on you. Hire a leasing broker on a building and they source tenants — you still decide the leases. Hand the desk to staff if you want them signing. Outside coverage at 6% is the other way to give someone else the pen. Management can take renewals only, below.";
     return (
       <div className="agent-bar">
         <div>
@@ -151,8 +151,9 @@ export function LeasingPage() {
               >
                 Hand desk to staff
               </button>
-              <button className="btn" onClick={() => setAgent(true)}>
-                Outside coverage · 6%
+              <button className="btn" onClick={() => setAgent(true)}
+                title="An outside shop signs inside your mandate at 6%. Different from hiring a leasing broker, who only works the phones.">
+                Give outside shop the pen · 6%
               </button>
             </>
           )}

@@ -1757,11 +1757,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
-  // Firm agent takes the whole book at 6%. Without them, exclusives and (when
-  // you handed the book over) in-house leasing staff negotiate the buildings
-  // they cover. Renewal management is the narrow middle option for renewals.
-  // "Take leasing back" / teamLeasing off means the principal owns every letter
-  // that is not on an exclusive or the renewal desk.
+  // Firm agent takes the whole book at 6% and holds the pen. Without them,
+  // only staff (after you hand the book over) negotiate. A leasing broker
+  // (h.broker) works the phones and takes 6% when YOU sign — they do not
+  // decide the lease. Renewal management is the narrow middle option for
+  // renewals. "Take leasing back" / teamLeasing off means the principal owns
+  // every letter that is not on the renewal desk.
   if (s.agent) runAgent(s, parcels);
   else {
     runDelegatedLeasing(s, parcels);
@@ -1797,20 +1798,23 @@ export function hasLeasingTeam(s: GameState): boolean {
 
 /**
  * Somebody else holds the pen on at least part of the book — firm agent,
- * your team (when handed over), exclusive broker, or renewal management.
- * Drives mandate UI and the quiet-desk scorecard.
+ * your team (when handed over), or renewal management.
+ *
+ * A leasing broker (`h.broker`) does NOT hold the pen. They source tenants.
+ * You still decide every lease unless you handed the desk to staff, hired
+ * outside coverage with signing authority, or handed renewals to management.
  */
 export function deskHoldsPen(s: GameState): boolean {
   if (s.agent || s.renewalMgmt) return true;
-  if (s.teamLeasing && hasLeasingTeam(s)) return true;
-  return Object.values(s.holdings).some((h) => !!h.broker);
+  return !!(s.teamLeasing && hasLeasingTeam(s));
 }
 
 /**
  * Does this letter still need the principal — popup, Deals queue, Skip stop?
  *
- * Referred paper always does. Otherwise the firm agent, a covering exclusive /
- * team hire, or (for renewals) management already owns the decision.
+ * Referred paper always does. Otherwise the firm agent, a covering team hire,
+ * or (for renewals) management already owns the decision. A leasing broker
+ * on the building does not take the letter off your desk.
  */
 export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
   // Fee owner is not the landlord — never interrupt for the lessee's paper.
@@ -1828,22 +1832,16 @@ export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
 export const AGENT_FEE = 0.06;
 
 /**
- * WHAT A LEASING EXCLUSIVE COSTS, AND WHEN.
+ * WHAT A LEASING BROKER COSTS, AND WHEN.
  *
- * A house that takes a building on exclusively is paid the same way the
- * firm-wide agent is paid, because it is the same job done by the same
- * people: six percent of the base rent over the whole term — rentPsf × sf ×
- * termM/12 — handed over at the signing alongside the fit-out, and nothing
- * whatsoever in the months when the space does not move.
+ * Hiring an outside leasing broker is a listing, not a handoff. They work
+ * the phones — the 45% lift in tenant traffic absorption.ts pays for — and
+ * they are paid six percent of the base rent over the whole term when YOU
+ * sign the lease they brought. They do not hold the pen. Handing the desk
+ * to staff is the decision that stops letters landing on you.
  *
- * It REPLACES the in-house rate rather than stacking on top of it. Signing a
- * letter yourself has always paid a commission inside loiSigningCost — 4% on
- * a new lease, 2% on a renewal — so an exclusive that added six on top would
- * be charging you twice for one transaction. The two or four extra points are
- * the entire price of the exclusive, and what they buy is the 45% lift in
- * tenant traffic that absorption.ts pays for it. Cheap to hold on a dead
- * building, expensive precisely when it works, which is the deal a landlord
- * actually signs.
+ * The six percent REPLACES the in-house 4%/2% rather than stacking on top.
+ * Cheap to hold on a dead building, expensive precisely when it works.
  */
 export function exclusiveFeeRate(h: Holding | undefined): number | undefined {
   return h?.broker ? AGENT_FEE : undefined;
@@ -2388,19 +2386,17 @@ export function agentCounterTerms(
 /**
  * Who holds the pen on this deed.
  *
- * Three covers, one model:
- *   1. You (null) — default
- *   2. Staff — only after an explicit handoff (`teamLeasing`); float hires
- *      cover the unassigned book, pinned hires only their buildings
- *   3. Outside — firm agent or a building exclusive (vendors, mid competence)
+ *   1. You (null) — default, including when a leasing broker is on the file
+ *   2. Staff — only after an explicit handoff (`teamLeasing`)
+ *   3. Outside agent — firm-wide coverage with signing authority (`s.agent`)
  *
- * Hiring staff alone does not take the pen.
+ * A leasing broker (`h.broker`) is not a cover. Hiring staff alone does
+ * not take the pen.
  */
 export function deskCoverage(
   s: GameState, bbl: string,
 ): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
   if (s.agent) return { kind: "agent", who: "Your agent" };
-  if (s.holdings[bbl]?.broker) return { kind: "exclusive", who: "Your exclusive" };
   if (!s.teamLeasing) return null;
   const leasing = (s.staff ?? []).filter((x) => x.role === "leasing");
   if (!leasing.length) return null;
@@ -2598,8 +2594,9 @@ function agentReferLoi(
  * clears the open pile immediately — waiting until next month left every
  * existing LOI still popping.
  *
- * `onlyDelegated`: when the firm agent is off, exclusives and (when handed
- * the book) in-house leasing staff still counter/sign on buildings they cover.
+ * `onlyDelegated`: when the firm agent is off, in-house leasing staff
+ * (after you handed them the book) still counter/sign on buildings they cover.
+ * A leasing broker is not a delegate.
  */
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
@@ -2792,9 +2789,10 @@ function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
 
 /**
  * Clear live letters under whoever currently holds the pen — hire path.
- * Same logic as the end of tickLeasing, so flipping agent / exclusive /
+ * Same logic as the end of tickLeasing, so flipping agent / team handoff /
  * renewal management does not leave a month of popups on the open pile.
- * Hiring leasing staff alone does not clear the pile.
+ * Hiring a leasing broker, or hiring staff without handing them the book,
+ * does not clear the pile.
  */
 export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
   if (s.agent) runLeasingAgent(s, parcels);
@@ -2841,7 +2839,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
   for (const loi of [...s.lois]) {
     if (loi.kind !== "renewal") continue;
     if (loi.referred) continue;
-    // Firm agent / exclusive / leasing staff already worked this letter.
+    // Firm agent / leasing staff already worked this letter.
     if (deskCoverage(s, loi.bbl)) continue;
     const h = s.holdings[loi.bbl];
     const rec = resolveRec(parcels, s, loi.bbl);

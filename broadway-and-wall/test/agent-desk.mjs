@@ -133,9 +133,11 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     "soft letter did not sit untouched on the open pile");
 }
 
-// Exclusive broker covers a building without the firm-wide agent toggle.
+// A leasing broker sources tenants. They do not hold the pen.
 {
   g.agent = false;
+  g.teamLeasing = false;
+  g.renewalMgmt = false;
   g.holdings[boughtBbl].broker = true;
   g.holdings[boughtBbl].tenants = [];
   g.lois = [{
@@ -143,18 +145,20 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 0.84).toFixed(2),
     termM: 84, tiPsf: 8, freeM: 2, net: true, expiresM: g.month + 3, arrivedM: g.month,
   }];
-  // Covered paper must not interrupt — exclusive holds the pen without agent toggle.
-  check(!E.loiNeedsPrincipal(g, g.lois[0]),
-    "loiNeedsPrincipal is false while an exclusive covers the building");
-  check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
-    "exclusive-covered unreferred LOI does not stop Skip");
+  check(E.loiNeedsPrincipal(g, g.lois[0]),
+    "loiNeedsPrincipal is true while a leasing broker is on the building");
+  check(!E.deskCoverage(g, boughtBbl),
+    "deskCoverage is null — a broker is not a cover");
+  check(!E.deskHoldsPen(g),
+    "deskHoldsPen is false when only a leasing broker is hired");
+  check(E.exclusiveFeeRate(g.holdings[boughtBbl]) === E.AGENT_FEE,
+    "broker still takes 6% when you sign");
+  const before = g.lois.length;
   E.runLeasingAgent(g, parcels, { onlyDelegated: true });
-  const still = g.lois.find((l) => l.id === 401);
-  const news = (g.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
-  check(
-    !still || still.referred || still.countered || /exclusive|countered|walked/i.test(news),
-    "exclusive broker works soft paper without the firm agent toggle",
-  );
+  check(g.lois.length === before && !g.lois[0].referred && !g.lois[0].countered,
+    "leasing broker does not auto-work paper — you still decide");
+  check(g.holdings[boughtBbl].tenants.length === 0,
+    "leasing broker did not auto-sign");
   delete g.holdings[boughtBbl].broker;
 }
 

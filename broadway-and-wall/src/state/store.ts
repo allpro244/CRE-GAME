@@ -902,15 +902,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = setBrokerAll(game, parcels, on);
     if (r.err) { toast(r.err, "err"); return; }
-    let next = r.s;
-    if (on && !next.agent) {
-      next = structuredClone(next);
-      workLeasingDesk(next, parcels);
-    }
-    set({ game: next });
+    set({ game: r.s });
     if (r.msg) toast(r.msg);
-    else toast(on ? "Exclusives across the book." : "Exclusives ended.");
-    void persist(next);
+    else toast(on ? "Leasing brokers hired across the book — you still decide the leases." : "Leasing brokers dismissed.");
+    void persist(r.s);
   },
 
   opsPolicy: (v) => {
@@ -1296,16 +1291,11 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = setBroker(game, parcels, bbl, on);
     if (r.err) { toast(r.err, "err"); return; }
-    let next = r.s;
-    // Hiring clears live letters the same month — otherwise the exclusive is
-    // on the building and the popups still fire until the next tick.
-    if (on && !next.agent) {
-      next = structuredClone(next);
-      workLeasingDesk(next, parcels);
-    }
-    set({ game: next });
-    toast(on ? "Exclusive signed — they work that building quietly inside your mandate." : "Broker dismissed.");
-    void persist(next);
+    set({ game: r.s });
+    toast(on
+      ? "Leasing broker hired — they work the phones, you still decide the leases."
+      : "Leasing broker dismissed.");
+    void persist(r.s);
   },
 
   rateCap: (bbl) => {

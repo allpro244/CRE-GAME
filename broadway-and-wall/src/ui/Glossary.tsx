@@ -42,6 +42,21 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
   FAR: {
     def: "Floor area ratio — max buildable floor space as a multiple of lot area.",
   },
+  variance: {
+    def: "Permission to build past the zoning envelope on one lot, argued at a hearing months after you file. The fee is sunk either way; the extra FAR is yours only if they grant it.",
+  },
+  upzoning: {
+    def: "The city raising a district's allowed density — every lot under the new envelope reprices at once. A downzoning is the same walk in reverse, taken out of land you may already own.",
+  },
+  "first look": {
+    def: "A broker showing you a mandate weeks before it reaches the open tape, earned by closing their deals. Let enough of these windows lapse and the shop stops calling.",
+  },
+  coterminous: {
+    def: "A lease written to end the same month as one the tenant already holds. Expansions are signed this way — one covenant, one roll date, one negotiation at the end.",
+  },
+  spinout: {
+    def: "A senior hire leaving an established shop to raise their own vehicle. The new firm starts small and knows its old employer's book — sometimes yours too.",
+  },
 };
 
 export function Gloss({

@@ -11,7 +11,7 @@ import type { BarGroup } from "@/ui/Chart";
 import { pct } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
-import { creditWord, real, Big, Row } from "@/ui/panels/shared";
+import { creditWord, real, workStage, Big, Row } from "@/ui/panels/shared";
 
 /**
  * THE CITY, SIX CHARTS WIDE — the "general" card's detail view.
@@ -899,32 +899,53 @@ export function EconomyPage() {
               <Row k="Largest move" v={`±${max.toFixed(0)} pts since 2000`} strong={max >= 8} />
               <Row k="Winners vs losers" v={`${spread.toFixed(0)} pt spread across the city`} />
               <Row k="Civic works" v={(() => {
-                const ls = game.lines ?? [];
-                const rumoured = ls.filter((l) => l.rumorM !== undefined && game.month < l.annM).length;
-                const building = ls.filter((l) => game.month >= l.annM && game.month < l.openM).length;
-                return `${ls.length - rumoured - building} open · ${building} building · ${rumoured} rumoured`;
+                const n = { open: 0, digging: 0, funded: 0, rumoured: 0 };
+                for (const l of game.lines ?? []) n[workStage(game.month, l).word]++;
+                return `${n.open} open · ${n.digging} digging · ${n.funded} funded · ${n.rumoured} rumoured`;
               })()} />
             </div>
             {(game.lines ?? []).length > 0 && (
-              <div className="mini-list" style={{ marginTop: 8 }}>
-                {(game.lines ?? []).map((l) => {
-                  const stage = l.rumorM !== undefined && game.month < l.annM ? "rumoured"
-                    : game.month < l.openM ? "building" : "open";
-                  const kind = l.kind ?? "station";
-                  return (
-                    <button
-                      key={`${l.id}:${l.annM}`}
-                      className="neighbor"
-                      disabled={!l.bbl}
-                      title={l.bbl ? "Put the camera on the ground around this work" : undefined}
-                      onClick={() => { if (l.bbl) useStore.getState().focus(l.bbl, true); }}
-                    >
-                      <span className="neighbor-addr">{l.name} {kind}</span>
-                      <span className="dim"> · {stage}{l.bbl ? " ✈" : ""}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="mini-list" style={{ marginTop: 8 }}>
+                  {/* EVERY WORK, WITH ITS STAGE AND ITS PRICE. "Rumoured" alone
+                      was the whole readout, and the trade lives in the rest of
+                      the sentence: what the work is worth to the ground under
+                      it, which date moves it to the next stage, and how much of
+                      the lift the market has already paid itself. */}
+                  {(game.lines ?? []).map((l) => {
+                    const kind = l.kind ?? "station";
+                    const st = workStage(game.month, l);
+                    const when = st.word === "open" ? `opened ${monthLabel(l.openM)}`
+                      : st.word === "digging" ? `opens ${monthLabel(l.openM)}`
+                      : st.word === "funded" ? `funded ${monthLabel(l.annM)} · opens ${monthLabel(l.openM)}`
+                      : `${l.rumorM !== undefined ? `since ${monthLabel(l.rumorM)} · ` : ""}hearing ${monthLabel(l.annM)}`;
+                    return (
+                      <button
+                        key={`${l.id}:${l.annM}`}
+                        className="neighbor"
+                        disabled={!l.bbl}
+                        title={l.bbl ? "Put the camera on the ground around this work" : undefined}
+                        onClick={() => { if (l.bbl) useStore.getState().focus(l.bbl, true); }}
+                      >
+                        <span className="neighbor-addr">{l.name} {kind}{l.bbl ? " ✈" : ""}</span>
+                        <span className="neighbor-meta mono">
+                          {st.word} · {when} · {l.pts} pts
+                          {" "}· {st.priced >= 1 ? "fully priced" : `${Math.round(st.priced * 100)}% priced in`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="hint">
+                  The ground prices a work in steps — a leak on the rumour, some at the funding vote, most over
+                  the last two years of digging, all of it on opening day — so the trade is owning the dirt
+                  before the next step, and the pts figure is what the work is worth to the blocks under it at
+                  full price. A rumour is not a promise: about one in four dies at its hearing, and the rumour
+                  money goes home.
+                  {/* "one in four" mirrors SHELVE_ODDS in engine/demand.ts, which
+                      is not exported — if the hearing gets kinder, so must this. */}
+                </div>
+              </>
             )}
             <div className="hint">
               Demand is redistributive — a block gaining desirability takes it from somewhere else. Construction cranes and

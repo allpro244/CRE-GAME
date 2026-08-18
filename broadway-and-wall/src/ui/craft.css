@@ -1,0 +1,42 @@
+/* Craft rules for every surface at once, loaded after index.css so they win
+   ties. Three concerns live here and nothing else does: stillness for readers
+   who asked for it, a keyboard you can see, and selection in the house gold. */
+
+/* STILLNESS ON REQUEST. prefers-reduced-motion is a vestibular setting, not a
+   taste — slides, scales, and pulses cost some readers real discomfort.
+   Durations collapse to a millisecond instead of `none` so every animation
+   still LANDS at its final frame: a sheet that arrives by fading from zero
+   would otherwise be killed at zero and never appear. The infinite advance
+   glow runs exactly once and stops. State still changes — pages open, toasts
+   show, opacity settles — it just changes at once, without the journey. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* A KEYBOARD YOU CAN SEE. Most of the chrome signals interactivity by hover
+   colour alone, which a tab key never triggers. One gold ring, offset two
+   pixels so it never fuses with a control's own border, on everything a
+   keyboard can land on. :focus-visible keeps the ring off mouse clicks —
+   pointer users already have the hover state. */
+.btn:focus-visible,
+.nav-btn:focus-visible,
+.lens-btn:focus-visible,
+.advance-btn:focus-visible,
+.year-rail-go:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Selected text takes the soft house gold — enough to read as part of the
+   ink-and-gold system, never enough to fight the words under it. */
+::selection {
+  background: var(--gold-soft);
+}

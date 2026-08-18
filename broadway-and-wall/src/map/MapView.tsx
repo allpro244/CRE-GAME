@@ -11,6 +11,7 @@ import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
+import Badges from "./Badges";
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -1217,6 +1218,9 @@ export default function MapView() {
     <>
       <div ref={el} className="map-root" />
       <div ref={tipRef} className="hover-tip" style={{ display: "none" }} />
+      {/* buildings that need the principal, pinned to their parcels —
+          subscribes to its own signature, never to game identity */}
+      <Badges mapRef={mapRef} mapReady={mapReady} />
     </>
   );
 }

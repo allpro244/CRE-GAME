@@ -9,7 +9,8 @@ import { CompsSheet } from "@/ui/panels/CompsSheet";
 import { TheStreet } from "@/ui/panels/StreetDesk";
 import { Landlords } from "@/ui/panels/LandlordsDesk";
 import { BuildingDatabase } from "@/ui/panels/MarketPage";
-import { creditWord, pendingRTab, clearPendingRTab, Big } from "@/ui/panels/shared";
+import { creditWord, pendingRTab, clearPendingRTab, Big, Row } from "@/ui/panels/shared";
+import { resolveRec } from "@/engine/value";
 import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import type { Person } from "@/engine/people";
 import { monthLabel } from "@/engine/types";
@@ -163,6 +164,70 @@ export function ResearchPage() {
             generated with, and the last time the board moved it. You do not control it — you read it, and you
             own the dirt before it lands or you do not.
           </div>
+          {/* YOUR OWN PAPER IN FRONT OF THE BOARD. The parcel card shows one
+              application on one lot; a firm with three filings pending had no
+              page that listed them, and a hearing date you cannot see is a
+              hearing you find out about from the news. */}
+          {(() => {
+            const apps = Object.values(game.varianceApps ?? {});
+            // The legacy singular field survives on a save loaded mid-session;
+            // the migration folds it in on the next tick, so read both here.
+            if (game.varianceApp && !apps.some((a) => a.bbl === game.varianceApp!.bbl)) apps.push(game.varianceApp);
+            if (!apps.length) return null;
+            // The board's own odds, in the words a lawyer would use. The filed
+            // percentage sits in the tooltip — the band is the honest read of a
+            // one-shot hearing, not a number with a decimal on it.
+            const oddsWord = (o: number) => o >= 0.7 ? "they usually say yes to this"
+              : o >= 0.55 ? "better than even"
+              : o >= 0.45 ? "a coin toss"
+              : o >= 0.25 ? "an uphill hearing"
+              : "a long shot";
+            return (
+              <>
+                <div className="page-section">Hearings pending · {apps.length}</div>
+                <div className="mini-list" style={{ marginBottom: 10 }}>
+                  {[...apps].sort((a, b) => a.decideM - b.decideM).map((a) => (
+                    <button
+                      key={a.bbl}
+                      className="neighbor"
+                      title={`Filed ${monthLabel(a.filedM)} at ${Math.round(a.odds * 100)}% odds — put the camera on the site`}
+                      onClick={() => useStore.getState().focus(a.bbl, true)}
+                    >
+                      <span className="neighbor-addr">{resolveRec(parcels, game, a.bbl)?.address ?? a.bbl}</span>
+                      <span className="neighbor-meta mono">
+                        +{a.grant.toFixed(1)} FAR asked · board sits {monthLabel(a.decideM)} · {oddsWord(a.odds)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+          {/* WHICH WAY THE BOARD IS LEANING. The walk is scarcity-driven — a
+              city short of room gets its envelopes let out, a glutted one gets
+              them pulled in — and the recent record is the only forward read
+              a landowner gets. zoneLog keeps one entry per district (its last
+              move), so this counts districts moved, not motions heard. */}
+          {(() => {
+            const moved = Object.values(game.zoneLog ?? {}).filter((v) => game.month - v.m <= 60);
+            const up = moved.filter((v) => v.dir === 1).length;
+            const down = moved.length - up;
+            return (
+              <div className="grid" style={{ marginBottom: 8 }}>
+                <Row
+                  k="The board's climate"
+                  v={moved.length === 0
+                    ? "no district has moved inside five years — the map is what it was"
+                    : `${up} district${up === 1 ? "" : "s"} up, ${down} down inside five years — `
+                      + (up > down ? "the city is short of room and the board is letting envelopes out"
+                        : down > up ? "the board is pulling envelopes in"
+                        : "no direction to speak of")}
+                  strong={up > down}
+                  bad={down > up}
+                />
+              </div>
+            );
+          })()}
           <table className="tbl">
             <thead>
               <tr><th>District</th><th className="num">Envelope vs start</th><th>Last rezoning</th><th>Direction</th></tr>

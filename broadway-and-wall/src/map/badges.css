@@ -1,0 +1,52 @@
+/* ---- map badges: the skyline's tickler file ----
+   Parchment chips pinned to parcels by maplibregl.Marker. MapLibre positions
+   each marker with an inline transform on the element itself, so nothing in
+   here may set transform — a hover lift would fight the marker's own
+   placement every frame. Elevation changes carry the hover instead. */
+
+.map-badge {
+  appearance: none;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 2px;
+  background: var(--card);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--edge-top), var(--lift-1);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  /* opacity is the zoom fade, written inline like the name labels */
+  transition: opacity 0.35s var(--ease), box-shadow 0.15s var(--ease), border-color 0.15s var(--ease);
+  z-index: 2; /* above the name labels inside the map container, under all app chrome */
+}
+.map-badge:hover { border-color: var(--gold); box-shadow: var(--edge-top), var(--lift-2); }
+.map-badge:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+
+.map-badge-glyph { font-size: 12px; line-height: 1; color: var(--ink-dim); }
+.map-badge-n { font-size: 10px; color: var(--ink-dim); }
+
+/* Severity tints pair with the glyph, never replace it — the tiers stay
+   legible in monochrome. */
+.badge-danger { border-color: var(--danger); }
+.badge-danger .map-badge-glyph { color: var(--danger); }
+.badge-warn { border-color: var(--warning); }
+.badge-warn .map-badge-glyph { color: var(--warning); }
+.badge-accent { border-color: var(--gold); }
+.badge-accent .map-badge-glyph { color: var(--gold); }
+
+/* The negotiation callout on the selected parcel — one line, slightly
+   larger, and exempt from the zoom fade because the player asked for it. */
+.map-badge-callout {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-color: var(--gold);
+  box-shadow: var(--edge-top), var(--lift-2);
+  z-index: 3;
+}

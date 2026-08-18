@@ -16,7 +16,10 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
   const sale = h?.sale;
   const bids = sale?.bids?.map((b) =>
     `${b.name}:${b.price}:${b.countered ? 1 : 0}:${b.dropped ? 1 : 0}`).join(";") ?? "";
-  const tenants = h?.tenants?.map((t) => `${t.sf}:${t.rentPsf}:${t.endM}:${t.credit}`).join(";") ?? "";
+  // staff is on the fragment because the roll now prints the headroom ratio;
+  // it only drifts on the monthly tick today, but a row that quotes a number
+  // must be subscribed to that number, not to the clock that happens to move it.
+  const tenants = h?.tenants?.map((t) => `${t.sf}:${t.rentPsf}:${t.endM}:${t.credit}:${t.staff ?? 1}`).join(";") ?? "";
   const makeReady = h?.makeReady?.map((m) => `${m.sf}:${m.readyM}:${m.use}`).join(";") ?? "";
   const lois = g.lois
     .filter((l) => l.bbl === bbl)

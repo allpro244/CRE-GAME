@@ -13,6 +13,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
 import { NWChart, Big } from "@/ui/panels/shared";
+import Waterfall from "@/ui/vitals/Waterfall";
 
 type BooksTab = "balance" | "income";
 
@@ -41,6 +42,9 @@ export function BooksPage() {
   const goProperty = (bbl: string) => { select(bbl); focus(bbl); setPage("property"); };
   return (
     <div>
+      {/* The page opens with the month attributed — where the move came from,
+          before the totals that only say how big it was. */}
+      <Waterfall />
       <div className="stat-strip">
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />

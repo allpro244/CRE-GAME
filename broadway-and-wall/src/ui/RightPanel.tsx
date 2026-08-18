@@ -41,7 +41,7 @@ export default function GamePanels() {
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
         const st0 = useStore.getState();
-        st0.setPaletteOpen(!st0.paletteOpen);
+        if (st0.game) st0.setPaletteOpen(!st0.paletteOpen);
         return;
       }
       const tag = (e.target as HTMLElement)?.tagName;

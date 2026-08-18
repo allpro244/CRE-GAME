@@ -1,0 +1,92 @@
+/* ------------------------------------------------------------------ rollups
+   The book's risk record: the maturity wall, the lease rollover, the
+   concentration bars and the realized exits. Every bar here is plain flex —
+   a share is a width, and a width needs no chart library. Colors come off
+   the token sheet and are never the only carrier of meaning: each bar prints
+   its figure beside it, and each segment prints its own. */
+
+.wall-rows,
+.roll-rows { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+
+.wall-row,
+.roll-row { display: grid; grid-template-columns: 46px minmax(120px, 1fr) auto; gap: 10px; align-items: center; }
+
+.wall-year,
+.roll-year {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--ink-dim); text-align: right;
+}
+
+/* The empty track stays visible on purpose: a year with nothing due is
+   information — it is the runway between the walls. */
+.wall-track,
+.roll-track {
+  height: 18px; border-radius: var(--r-sm);
+  background: rgba(43, 37, 26, 0.05); overflow: hidden;
+}
+
+/* min-width: fit-content — a year with little due still prints its coverage
+   figures; the mono total on the right carries the exact quantity, the bar
+   only carries the shape. */
+.wall-bar { display: flex; gap: 1px; height: 100%; min-width: fit-content; }
+
+/* One segment per loan. The minimum width exists so the coverage figure
+   always fits — a sliver you cannot read is a number you do not have. */
+.wall-seg {
+  appearance: none; border: 0; margin: 0; padding: 0 3px;
+  min-width: 36px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; color: var(--paper);
+  overflow: hidden; white-space: nowrap;
+  transition: filter 0.15s var(--ease);
+}
+.wall-seg:hover { filter: brightness(1.12); }
+.wall-ok    { background: var(--success); }
+.wall-thin  { background: var(--warning); }
+.wall-under { background: var(--danger); }
+/* Interest-only or untested paper: the figure prints, the verdict does not —
+   there is no covenant to be on the wrong side of yet. */
+.wall-mute  { background: var(--ink-dim); }
+
+.wall-amt,
+.roll-amt {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--ink); white-space: nowrap;
+}
+.wall-flag { color: var(--danger); font-family: var(--serif); font-style: italic; }
+.roll-flag { color: var(--warning); font-family: var(--serif); font-style: italic; }
+
+/* A rollover year is one button: the whole row goes to the leasing desk. */
+.roll-row {
+  appearance: none; background: none; border: 0; margin: 0; padding: 0;
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+}
+.roll-row:hover .roll-track { background: rgba(43, 37, 26, 0.1); }
+.roll-fill { height: 100%; border-radius: var(--r-sm); background: var(--teal); }
+.roll-fill.roll-cluster { background: var(--warning); }
+
+/* ---- concentration ---- */
+.conc-block { margin-top: 12px; }
+.conc-block:first-of-type { margin-top: 0; }
+.conc-label {
+  font-size: 10px; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 5px;
+}
+.conc-bar { display: flex; gap: 1px; height: 16px; border-radius: var(--r-sm); overflow: hidden; }
+.conc-seg { min-width: 2px; }
+.conc-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 5px; font-size: 12px; color: var(--ink); }
+.conc-key { display: inline-flex; align-items: center; gap: 5px; }
+.conc-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.conc-pct { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+
+/* ---- the realized record ---- */
+/* These rows are a record, not a menu — .tbl assumes every row opens
+   something, and a sold building opens nothing. */
+.exits-tbl tbody tr { cursor: default; }
+.exits-foot {
+  display: flex; flex-wrap: wrap; gap: 4px 22px;
+  margin-top: 8px; font-size: 12px; color: var(--ink-dim);
+}
+.exits-foot .mono { color: var(--ink); }
+.exit-pos { color: var(--success); }

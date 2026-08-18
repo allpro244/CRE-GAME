@@ -1,0 +1,130 @@
+/* ------------------------------------------------------------------ record
+   THE RECORD — the firm's campaign on one strip. A year-in-review lede up
+   top, the net-worth curve under it, and then every entry the state still
+   holds, grouped by year, newest first. Everything money-shaped is .mono;
+   meaning is carried by words and glyph shape, never by color alone. */
+
+.tl-lede {
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.55;
+  max-width: 78ch;
+  margin-bottom: 12px;
+}
+
+/* ---- the stat row under the lede ---- */
+.tl-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 30px;
+}
+.tl-stat { min-width: 0; }
+.tl-stat-label {
+  font-size: 10px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 3px;
+}
+.tl-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.tl-stat-value .neg { color: var(--danger); }
+
+/* ---- the curve ---- */
+.tl-chart { margin-top: 4px; }
+.tl-chart-key {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+}
+
+/* ---- the strip ---- */
+.tl-year {
+  font-family: var(--serif);
+  font-size: 21px;
+  color: var(--ink);
+  margin: 20px 0 7px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--card-line);
+}
+.tl-yeargroup:first-of-type .tl-year { margin-top: 8px; }
+.tl-rows { display: grid; gap: 2px; }
+
+/* A row is a grid so a century of entries lines up like a ledger: glyph,
+   date, the line itself, and the figure hard right. Text may wrap — swan
+   headlines are sentences — so alignment is to the first baseline. */
+.tl-row {
+  display: grid;
+  grid-template-columns: 18px 74px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+}
+button.tl-row {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+button.tl-row:hover,
+button.tl-row:focus-visible { background: rgba(43, 37, 26, 0.06); }
+
+.tl-glyph { text-align: center; }
+.tl-when {
+  font-size: 11px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.tl-text { min-width: 0; }
+.tl-amt {
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+.tl-amt.neg { color: var(--danger); }
+/* The plane is the same affordance the news page uses: this row is about a
+   place, and clicking it flies the camera there. */
+.tl-fly { color: var(--ink-dim); font-size: 11px; }
+
+/* Tones. Each tone also says its meaning in words on the row — "Taken
+   back", "Milestone", a dimmed city item — so the color is redundant. */
+.tl-gold .tl-glyph { color: var(--gold); }
+.tl-gold .tl-text { font-weight: 600; }
+.tl-danger .tl-glyph,
+.tl-danger .tl-text { color: var(--danger); }
+.tl-dim { color: var(--ink-dim); font-size: 12.5px; }
+.tl-dim .tl-text,
+.tl-dim .tl-when { color: var(--ink-dim); }
+
+/* The street's words about you read like a quotation, because they are one. */
+.tl-cat-epithet .tl-text {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.tl-more { margin-top: 12px; }
+
+/* ---- the young firm ---- */
+.tl-empty { padding: 8px 0 4px; }
+.tl-founding {
+  font-family: var(--serif);
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.tl-founding .tl-glyph-inline { color: var(--gold); margin-right: 6px; }
+.tl-empty .btn { margin-top: 10px; }

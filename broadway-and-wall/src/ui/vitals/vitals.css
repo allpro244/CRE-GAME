@@ -36,3 +36,162 @@
   background: rgba(122, 114, 96, 0.08);
   border-color: rgba(122, 114, 96, 0.2);
 }
+
+/* ---- causality vitals: chips beside the readouts, the NW popover, and the
+   waterfall the popover and the Books page share ---------------------------- */
+
+/* A readout with its movement chip attached. The pair travels as one flex
+   item so the bar's 12px gap separates PAIRS, not a number from its chip. */
+.vital-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* Chips ride the same width gate as the droppable readouts (.tstat-d2 in
+   index.css): below 1680px the bar has no slack and the vital row must never
+   wrap — a bar that wraps buries the Advance button, which is the one bug
+   this bar's whole layout history exists to prevent. */
+.vital-extra { display: none; }
+@media (min-width: 1680px) {
+  .vital-extra { display: inline-flex; align-items: center; gap: 6px; }
+}
+/* The net-worth pair lives in the droppable stats box and shares its gate.
+   Own class rather than .tstat-d2, because this file loads after index.css
+   and a bare display override would win at every width. */
+.nw-pair {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+@media (min-width: 1680px) {
+  .nw-pair { display: inline-flex; }
+}
+
+/* A readout that answers a click. Same tstat anatomy, button semantics; the
+   dotted underline on hover is the whole affordance — the number IS the
+   control, and a border would make it shout like a button. */
+.tstat-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.tstat-btn:hover .tstat-value,
+.tstat-btn:focus-visible .tstat-value {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* The net-worth popover. Fixed so the stats box's overflow clip cannot cut
+   it, hung below the measured bar like every other below-bar surface.
+   z-index 61: above the bar's plane (60) and the page overlay (50), below
+   every modal (80+) — a glance card must never outrank a decision. */
+.nw-pop {
+  position: fixed;
+  top: calc(var(--topbar-h, 91px) + 8px);
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - var(--topbar-h, 91px) - 40px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-md);
+  background: linear-gradient(to bottom, rgba(250, 247, 238, 0.99), rgba(242, 235, 217, 0.98));
+  box-shadow: var(--edge-top), var(--lift-2);
+  z-index: 61;
+  pointer-events: auto;
+  cursor: default;
+  text-align: left;
+}
+.nw-pop-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.nw-pop-close:hover { color: var(--ink); }
+
+/* ---- the waterfall ---- */
+.wf-compact-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-right: 18px; /* room for the close button */
+  margin-bottom: 2px;
+}
+.wf-kicker {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 10px 0 4px;
+}
+.wf-kicker-title { color: var(--gold); margin: 0; }
+.wf-window { font-size: 11px; color: var(--ink-dim); }
+.wf-rows { display: grid; gap: 3px; }
+.wf-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 90px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.wf-compact .wf-row {
+  grid-template-columns: minmax(0, 1fr) 56px 84px;
+  font-size: 12px;
+}
+.wf-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-note { color: var(--ink-dim); font-size: 11px; }
+/* Proportional bars — the sign is carried by the printed number and repeated
+   by the fill; the bar alone is never the message. */
+.wf-track {
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(122, 114, 96, 0.14);
+  overflow: hidden;
+}
+.wf-fill { display: block; height: 100%; border-radius: 2px; }
+.wf-fill-in { background: var(--success); }
+.wf-fill-out { background: var(--danger); }
+.wf-amt { text-align: right; font-size: 12px; white-space: nowrap; }
+.wf-amt-neg { color: var(--danger); }
+.wf-total {
+  border-top: 1px solid var(--card-line);
+  margin-top: 3px;
+  padding-top: 4px;
+  font-weight: 600;
+}
+.wf-foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-line);
+}
+.wf-dnw {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}

@@ -1711,7 +1711,9 @@ export const useStore = create<AppState>((set, get) => ({
         && saved.listings.every((l) => parcels[l.bbl]);
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
     }
-    set({ game: saved, selectedBBL: null, page: "none" });
+    // The digest snapshot belongs to the campaign that was live before the
+    // load — a waterfall diffed across two campaigns would be fiction.
+    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null });
     toast(`Loaded “${slot}”.`);
   },
 

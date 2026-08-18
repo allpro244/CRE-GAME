@@ -19,6 +19,10 @@ import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
 import { siteDeeds } from "@/engine/actions";
 import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
+import { MaturityWall } from "@/ui/rollups/MaturityWall";
+import { Rollover } from "@/ui/rollups/Rollover";
+import { Concentration } from "@/ui/rollups/Concentration";
+import { ExitsRecord } from "@/ui/rollups/ExitsRecord";
 
 export function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -55,10 +59,16 @@ export function PortfolioPage() {
   const [bundle, setBundle] = useState<string[]>([]);
   if (!holdings.length && !Object.keys(game.developments).length) {
     return (
-      <div className="deal">
-        <div className="deal-head">Your book is empty</div>
-        <div className="hint">Start with the public tape: compare real rent rolls, agree a price, then choose the debt only after the seller says yes.</div>
-        <button className="btn btn-buy" onClick={() => setPage("market")}>Browse properties in Marketplace →</button>
+      <div>
+        <div className="deal">
+          <div className="deal-head">Your book is empty</div>
+          <div className="hint">Start with the public tape: compare real rent rolls, agree a price, then choose the debt only after the seller says yes.</div>
+          <button className="btn btn-buy" onClick={() => setPage("market")}>Browse properties in Marketplace →</button>
+        </div>
+        {/* An empty book is not an empty history — a firm that has sold out
+            of everything still has its record, and this page is where the
+            record lives. */}
+        <ExitsRecord />
       </div>
     );
   }
@@ -344,6 +354,13 @@ export function PortfolioPage() {
           </div>
         </>
       )}
+      {/* The century view: the exposure grid above gives one line each to the
+          wall, the roll and the top exposures; these are the same quantities
+          with their shape put back — which YEAR the debt lands, which year
+          the leases roll, and where the eggs actually sit. */}
+      <MaturityWall />
+      <Rollover />
+      <Concentration />
       <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
       <div className="btn-row" style={{ marginTop: 10 }}>
         {/* Shortcuts, not modes. Every column sorts from its own header now;
@@ -683,6 +700,9 @@ export function PortfolioPage() {
         </tbody>
       </table>
       </div>
+      {/* History reads under the living book: what left, when, and what
+          leaving returned. */}
+      <ExitsRecord />
     </div>
   );
 }

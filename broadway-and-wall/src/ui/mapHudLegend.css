@@ -1,0 +1,43 @@
+/* Key for the Owners lens. The map answers "who holds what" in colour and,
+   until this block, named the colours nowhere. Rows live inside .map-hud and
+   inherit its parchment card; firm rows are buttons and fly to the firm's
+   book, the fixed rows (you, the market, everybody else) are just labels. */
+.map-hud-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 2px 0;
+  border-radius: var(--r-sm);
+}
+button.map-hud-legend-row { cursor: pointer; }
+button.map-hud-legend-row:hover { color: var(--gold-ink, #6b4e16); }
+/* The swatch is a paint chip, not a badge — small, square-ish, and edged in
+   ink so the pale tints survive on the parchment behind them. Its colour is
+   set inline because it is computed from the same triples the mesh uses. */
+.map-hud-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--ink) 32%, transparent);
+}
+.map-hud-legend-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-hud-legend-extra {
+  flex: none;
+  color: var(--ink-dim);
+  font-size: 10.5px;
+  font-style: italic;
+}

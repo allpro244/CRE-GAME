@@ -2,7 +2,7 @@ import { useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { assetValue, initialCondition, resolveRec, netWorth } from "@/engine/value";
-import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight } from "@/engine/rivals";
+import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firmEntryPitch } from "@/engine/rivals";
 import { rivalPrincipalOf } from "@/engine/people";
 import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
@@ -48,6 +48,42 @@ export function TheStreet() {
         that bid is you. The principal column is who runs the shop and how old they are — equity alone cannot
         tell you the next thirty years. Click any firm for its balance sheet and what it owns.
       </div>
+      {/* THE DOOR TO THE STREET. How many firms this town carries is an output
+          of two terms — whether buildings yield over the debt against them,
+          and whether there are trades to go round the firms already here —
+          and both were invisible, so a new name on the tape read as spawned
+          rather than raised. firmEntryPitch is the engine's own raise gate,
+          pure, the same call `pnpm firms` audits. */}
+      {(() => {
+        const ep = firmEntryPitch(game);
+        const streetOpen = ep.leverage > 0 && ep.product > 0 && ep.pitch > 0;
+        const line = !streetOpen
+          ? ep.leverage <= 0
+            ? "Nobody is raising a new fund into this street today: buildings yield less than the debt against them, and no allocator pays fees for negative leverage."
+            : "Nobody is raising a new fund into this street today: nothing has traded in a year, so there is no product to pitch a first close on."
+          : `The street is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
+            + `${ep.thin > 1.15 ? ", with few bidders contesting them" : ""}. On these terms somebody will eventually clear a first close.`;
+        const bids = game.founderBids ?? [];
+        return (
+          <>
+            <div className="hint">{line}</div>
+            {bids.length > 0 && (
+              <div className="grid" style={{ marginBottom: 10 }}>
+                {bids.map((b) => (
+                  <Row
+                    key={`${b.name}:${b.readyM}`}
+                    k="Raising now"
+                    v={`${b.name}, raising out of ${b.fromFirmName}`
+                      + (b.readyM > game.month
+                        ? ` · on the street from ${monthLabel(b.readyM)}`
+                        : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} open month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to clear a first close`)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
           number is against theirs. */}
@@ -258,6 +294,13 @@ export function TheStreet() {
     </>
   );
 }
+
+// Open-market months a ready founder keeps pitching before the street closes
+// on them — mirrored from FOUNDER_WINDOW_M inside maybeNewFirm in
+// engine/rivals.ts, which is not exported. The window counts months the
+// street would actually take a raise, not calendar months queued through a
+// credit crunch; if the engine's window moves, this must move with it.
+const FOUNDER_WINDOW_M = 18;
 
 // where each style stops borrowing — mirrored from the engine so the sheet can
 // say what their own covenant is, not just where they are against it

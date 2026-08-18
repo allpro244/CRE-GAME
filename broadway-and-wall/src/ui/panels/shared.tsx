@@ -4,6 +4,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_LABEL } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { GameState, Holding } from "@/engine/types";
+import { monthLabel } from "@/engine/types";
 import { resolveRec, appraise, physicalOcc as physicalOccupancy, inPlace } from "@/engine/value";
 import { blockReport } from "@/engine/demand";
 import { isMixedUse, uses as usesOf } from "@/engine/mix";
@@ -120,6 +121,32 @@ export function creditWord(ci: number): string {
 export const real = (nom: number | undefined, cpi: number | undefined) => (nom ?? 1) / (cpi || 1);
 
 /**
+ * WHERE A CIVIC WORK STANDS, and how much of it the ground already believes.
+ *
+ * The lifecycle has four stops — rumoured, funded at the hearing, the last two
+ * years of digging, open — and the market prices each one: a leak on the
+ * rumour, some at the funding vote, most while the hoardings are up, all of it
+ * on opening day. The fractions mirror `transitLift` in engine/demand.ts,
+ * which is not exported; they are restated here the way STYLE_MAX restates
+ * the rivals' covenants on the street desk. If the engine's schedule moves,
+ * this must move with it, or the panel quotes a pricing the demand model does
+ * not run. (The map has its own three-state `civicStage` for paint — this is
+ * the pricing readout, not a second opinion on what to draw.)
+ */
+export function workStage(
+  month: number,
+  l: { annM: number; openM: number; rumorM?: number },
+): { word: "rumoured" | "funded" | "digging" | "open"; priced: number } {
+  if (month >= l.openM) return { word: "open", priced: 1 };
+  if (month >= l.openM - 24) return { word: "digging", priced: 0.45 };
+  if (month >= l.annM) return { word: "funded", priced: 0.18 };
+  // Pre-rumour saves carry works with no rumorM; they load as announced and
+  // never render here before their annM, so priced 0 is a dead branch kept
+  // for honesty rather than a state a player can see.
+  return { word: "rumoured", priced: l.rumorM !== undefined && month >= l.rumorM ? 0.06 : 0 };
+}
+
+/**
  * WHICH RESEARCH TAB A LINK FROM SOMEWHERE ELSE WANTED.
  *
  * `rtab` is state inside `ResearchPage`, and `ResearchPage` does not exist
@@ -206,15 +233,25 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
           bad={r.hiring < -0.5}
         />
         <Row k="The work here" v={r.trades.map((t) => `${Math.round(t.share * 100)}% ${t.label.toLowerCase()}`).join(", ")} />
-        {r.line ? (
-          <Row
-            k="Transit"
-            v={r.line.monthsOut > 0
-              ? `${r.line.name} ${r.line.kind ?? "station"}, ${Math.max(1, Math.round(r.line.monthsOut / 12))} yrs out`
-              : `${r.line.name} ${r.line.kind ?? "station"}, open`}
-            strong
-          />
-        ) : null}
+        {r.line ? (() => {
+          // The report names the strongest work near this block and what it is
+          // worth here at full price; the stage and the priced-in fraction
+          // live on the work itself, so find it — name plus opening month is
+          // identity enough, since no two works share a corridor.
+          const line = r.line;
+          const kind = line.kind ?? "station";
+          const lw = (game.lines ?? []).find((x) => x.name === line.name && x.openM - game.month === line.monthsOut);
+          const st = lw ? workStage(game.month, lw) : null;
+          const v = !st || !lw
+            ? (line.monthsOut > 0
+              ? `${line.name} ${kind}, ${Math.max(1, Math.round(line.monthsOut / 12))} yrs out`
+              : `${line.name} ${kind}, open`)
+            : st.word === "open"
+              ? `${line.name} ${kind} · open · +${line.pts} demand here`
+              : `${line.name} ${kind} · ${st.word} · ${st.word === "rumoured" ? `hearing ${monthLabel(lw.annM)}` : `opens ${monthLabel(lw.openM)}`}`
+                + ` · worth +${line.pts} here at full price · ${Math.round(st.priced * 100)}% priced in`;
+          return <Row k="Transit" v={v} strong />;
+        })() : null}
       </div>
       <div className="deal-note">
         {r.balanced

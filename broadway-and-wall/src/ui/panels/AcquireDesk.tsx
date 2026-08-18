@@ -21,7 +21,7 @@ import { PRODUCTS } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { mixOf, uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row } from "@/ui/panels/shared";
 
@@ -169,15 +169,15 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
       {roll.length > 0 && (
         <div className="roll">
           {roll.map((t, i) => {
-            const yrsLeft = (t.endM - game.month) / 12;
+            const moLeft = t.endM - game.month;
             return (
               <div key={i} className="roll-row">
                 <span className="roll-name">
                   {t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
                 </span>
                 <span className="roll-meta mono">
-                  {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
-                  {yrsLeft < 2 && <> · <span className="warn">{yrsLeft <= 0 ? "holding over" : `${yrsLeft.toFixed(1)} yrs left`}</span></>}
+                  {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
+                  {moLeft < 24 && <> · <span className="warn">{termLeft(t.endM, game.month)}</span></>}
                 </span>
               </div>
             );
@@ -186,7 +186,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
             <div className="roll-row roll-vacant">
               <span className="roll-name">Vacant</span>
               <span className="roll-meta mono">
-                {(vacant / 1000).toFixed(1)}k sf · ${useRentPsfYr(rec, game.econ, h.condition, (usesOf(rec).find((u) => u !== "multifamily") ?? "office") as BuiltClass).toFixed(0)}/sf market here
+                {sf(vacant)} · ${useRentPsfYr(rec, game.econ, h.condition, (usesOf(rec).find((u) => u !== "multifamily") ?? "office") as BuiltClass).toFixed(0)}/sf market here
               </span>
             </div>
           )}
@@ -973,7 +973,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     ? max.equity
     : offerPrice - principal + Math.round(offerPrice * 0.02)
       + (max.capPremium ? Math.round(max.capPremium * lev) : 0)
-      + Math.round((max.pointsFee ?? 0) * lev);
+      + Math.round((max.pointsFee ?? 0) * lev)
+      - (max.deposits ?? 0);
   // THE RESOLVED RECORD, for the same reason buyQuote uses one: the static
   // table is the lot at generation, not what is standing on it today.
   const rec = resolveRec(parcels, game, bbl);

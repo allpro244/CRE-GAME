@@ -1,13 +1,29 @@
 # Baseline attribution — post #63 merge
 
-**Ruler commit:** regenerated on `cursor/smooth-water-d634` after smaller parks and trees off the creek (`SAVE_VERSION` 38).  
-**Previous ruler:** `4bc6809` (painted ribbon creeks, v38).
+**Ruler commit:** regenerated on `cursor/consolidate-open-prs-2de8` after folding #102/#104/#105/#106 (`SAVE_VERSION` 38).  
+**Previous ruler:** `664711a` (smaller parks, dry park props, v38).
 
 `pnpm baseline:check` compares six seeds × 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: smaller parks, dry park props (SAVE_VERSION 38)
+## This ruler: whole-suite pre-lets + last-suite tours (SAVE_VERSION 38)
+
+#102 stops spec construction from opening with a fractional bite of a programmed suite, and caps every suite at the actual leg. #105 lets the last suite tour and scores letters against today's marked-down ask. #104 is paint (lots do not move). #106 is quote/UI (city standing stock does not move).
+
+Spec industrial that used to open a few percent pre-let now more often opens empty. Small sheds that could not demise (bay 12,000 ft, building under that) can let as themselves. One-suite offices that compared the whole floor to ~85% of itself now draw tours. Not an engine `rng()` re-roll. Conservation stayed green (1,221 months).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `vac.industrial` (1.71% → 2.75%) | Sheds no longer open with a fractional pre-let | Spec industrial emptier at delivery |
+| `rail.vac.industrial.lo` (−71%) | Same — frictional floor binds less once the last bay can let | Rails less load-bearing |
+| `roll.deadLegShare` / `roll.commercialOcc` | Fewer leftover bites; last suite can tour | Follows the demise |
+| `land.p90` (−26%) / `rentIdx.multifamily` (−14%) | Different opening occupancy on new stock, different tape | Follows the plat |
+| `city.employed` / `population` | Same — different standing mix | Follows stock |
+
+---
+
+## Previous ruler: smaller parks, dry park props (SAVE_VERSION 38)
 
 Park programmes dropped ~20% on count and size, sparse is the common draw, and greens keep more space between them. That recuts lots (park obstacles moved). Trees, walks, and street dashes are paint — they do not move the plat by themselves, but the park rings do. Not an engine `rng()` re-roll. Conservation stayed green (1,119 months).
 

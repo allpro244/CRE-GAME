@@ -538,6 +538,22 @@ export function staleDiscount(darkMs: number | undefined): number {
   return 1 - 0.25 * (1 - Math.pow(0.5, (yrs - 1) / 2));
 }
 
+/**
+ * THE ASK A NEW LEASE ACTUALLY SIGNS AGAINST.
+ *
+ * `managedRentPsfYr` is the undamaged number — stance, lobby, landmark.
+ * Letters arrive at that times `staleDiscount`, because a floor that has
+ * been dark for years does not let at last year's ask. The desk, the
+ * parcel card and the letting panel all have to quote this one, or a
+ * hired agent scores a marked-down letter against an unmarked ask and
+ * passes every prospect on a building that has been empty for years.
+ */
+export function currentAskPsfYr(
+  rec: ParcelRecord, econ: Econ, h: Holding, use?: BuiltClass,
+): number {
+  return managedRentPsfYr(rec, econ, h, use) * staleDiscount(h.darkMs);
+}
+
 export function leasingOdds(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, use: BuiltClass,
 ): LeasingOdds | null {
@@ -588,7 +604,7 @@ export function leasingOdds(
     use, availSf, marketedSf, competingSf: compete,
     cityVac: lm.cityVac, localVac: lm.localVac,
     requirementSf, shareOfMarket, captureSf, monthsToLet, loiOdds, typicalDealSf,
-    askPsf: managedRentPsfYr(rec, s.econ, h, use),
+    askPsf: currentAskPsfYr(rec, s.econ, h, use),
     marketPsf: useRentPsfYr(rec, s.econ, "standard", use),
     weight, factors,
   };

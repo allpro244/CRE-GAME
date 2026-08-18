@@ -214,7 +214,7 @@ export function LoiTermsGrid({
       <div className="loi-hero-block">
         <LoiHero loi={loi} />
         <div className="loi-hero-sub mono dim">
-          to {monthLabel(game.month + loi.termM)} · {usd(annual)}/yr face
+          through {monthLabel(game.month + loi.termM)} · {usd(annual)} a year face rent
         </div>
       </div>
       {prevRent !== undefined && (

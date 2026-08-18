@@ -8,10 +8,11 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
+import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
+import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
@@ -19,7 +20,7 @@ import { fundableNow } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerOf } from "@/engine/rivals";
 import { taxAppealQuote } from "@/engine/tax";
-import { usd, sf, pct } from "@/ui/format";
+import { usd, sf, pct, termLeft } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
@@ -325,7 +326,7 @@ function ParcelPanelInner({
           />
         )}
         {holding && isBuilt && commercial && (
-          <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs"} />
+          <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs avg remaining"} />
         )}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
@@ -465,7 +466,8 @@ function ParcelPanelInner({
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
-                      {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {" "}· {termLeft(t.endM, game.month)}
                       {fit && <> · {fit}</>}
                       {strained && <> · <span className="warn">strained</span></>}
                       {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renews</span> — {ri.why[0]}</>}
@@ -487,14 +489,14 @@ function ParcelPanelInner({
               <div className="roll-row roll-vacant">
                 <span className="roll-name">In make-ready</span>
                 <span className="roll-meta mono">
-                  {(notReadySf(holding, game.month) / 1000).toFixed(1)}k sf · showable {monthLabel(Math.max(...(holding.makeReady ?? []).map((m) => m.readyM)))}
+                  {sf(notReadySf(holding, game.month))} · showable {monthLabel(Math.max(...(holding.makeReady ?? []).map((m) => m.readyM)))}
                 </span>
               </div>
             )}
             {vacantSf(rec, holding) - notReadySf(holding, game.month) > 500 && (
               <div className="roll-row roll-vacant">
                 <span className="roll-name">Vacant</span>
-                <span className="roll-meta mono">{((vacantSf(rec, holding) - notReadySf(holding, game.month)) / 1000).toFixed(1)}k sf</span>
+                <span className="roll-meta mono">{sf(vacantSf(rec, holding) - notReadySf(holding, game.month))}</span>
               </div>
             )}
           </div>
@@ -851,7 +853,7 @@ function ParcelPanelInner({
               <Row
                 key={u}
                 k={leasableUses(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
-                v={"$" + managedRentPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
+                v={"$" + currentAskPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
               />
             ))}
           </div>

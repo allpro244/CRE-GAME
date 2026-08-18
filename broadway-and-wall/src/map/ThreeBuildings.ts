@@ -7217,7 +7217,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const a = ring[i], b = ring[i + 1];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const len = Math.hypot(dx, dy);
-        if (len < 2) continue;
+        if (len < 2 || len > 400) continue;
         // step along the frontage, planting into the pavement side
         for (let d = carry; d < len; d += 17 + rnd() * 9) {
           const t = d / len;
@@ -7721,6 +7721,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { return; }
+      let ringA = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const p = ring[i], q = ring[(i + 1) % ring.length];
+        ringA += p[0] * q[1] - q[0] * p[1];
+      }
+      ringA = Math.abs(ringA) / 2;
       for (const t of tris) {
         const q = t.map((i) => ring[i]) as [number, number][];
         // A folded creek polygon triangulates as one city-sized triangle.
@@ -7731,7 +7737,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             (q[1][0] - q[0][0]) * (q[2][1] - q[0][1])
             - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]),
           ) / 2;
-          if (area > 8000) continue;
+          if (area > 8000 || (ringA > 1 && area > ringA * 0.45)) continue;
         }
         if (sub) split(q, z, style, 0); else emit(q, z, style);
       }

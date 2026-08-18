@@ -95,7 +95,7 @@ export function PropertyPage() {
           return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;
         })()}
         {built && h && h.tenants.length > 0 && (
-          <Big label="WALT" value={`${walt(h, game.month).toFixed(1)} yrs`} bad={walt(h, game.month) < 3} />
+          <Big label="WALT" value={`${walt(h, game.month).toFixed(1)} yrs avg`} bad={walt(h, game.month) < 3} />
         )}
         {built && h && (
           <Big

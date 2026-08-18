@@ -41,6 +41,24 @@ const OUT_OF_TOWN = [
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
+
+/**
+ * In-place deposits that settle onto the buyer at this closing — the same
+ * paper `executePurchase` will take over. They are cash in / liability up,
+ * so they shrink the cheque without shrinking the basis. Leaving them off
+ * `buyQuote.equity` printed a number ~$4–5k above what actually left the
+ * account on every occupied close.
+ */
+function incomingDeposits(s: GameState, bbl: string): number {
+  const listing = s.listings.find((l) => l.bbl === bbl);
+  const ap = s.approaches[bbl];
+  const paper = listing && (listing.roll !== undefined || listing.occ !== undefined) ? listing
+    : ap && !ap.refused && (ap.roll !== undefined || ap.occ !== undefined) ? ap
+    : null;
+  if (!paper?.roll?.length) return 0;
+  return paper.roll.reduce((a, t) => a + (t.deposit ?? 0), 0);
+}
+
 export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
 export const RECAPTURE_RATE = 0.25;   // §1250: depreciation comes back at 25%
 export const SALE_BROKERAGE = 0.015;  // the sell-side fee
@@ -60,14 +78,15 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // static one underwrote a delivered tower as the vacant lot it used to be.
   const rec = resolveRec(parcels, s, bbl);
   const closing = Math.round(price * CLOSING_PCT);
+  const deposits = incomingDeposits(s, bbl);
   if (product === "cash" || !rec) {
-    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0 };
   }
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
   if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
-    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0 };
   }
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
@@ -127,7 +146,9 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // used to leave 0.6–2% of principal uncharged at the table.
   const pointsFee = Math.round(principal * prod2.points);
   return {
-    principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium + pointsFee, capPremium, pointsFee,
+    principal, ratePct: q.ratePct,
+    equity: price - principal + closing + capPremium + pointsFee - deposits,
+    deposits, capPremium, pointsFee,
     // APPRAISAL OUTRANKS THE THREE UNDERWRITING TESTS when it is what bound,
     // because it is not a fact about the building — it is a fact about what
     // you agreed to pay. Telling somebody "advance rate" when the truth is
@@ -174,9 +195,10 @@ export function executePurchase(
   if (fromFund && next.fund) next.fund.cash -= bq.equity;
   else next.cash -= bq.equity;
   // Points are a financing cost, not purchase consideration — same split
-  // refinance and the facility use (debtSvc vs borrowed/bought).
+  // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
+  // netted out of the cheque are a liability transfer, not a cheaper building.
   const pointsFee = bq.pointsFee ?? 0;
-  logBooks(next, "bought", bq.equity - pointsFee);
+  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee);
   // the fee found its way to a named shop, and the shop will remember
   creditBrokerFee(next, bbl);
   if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee);
@@ -306,9 +328,11 @@ export function executePurchase(
     // passes settle=false, so the money moves at the deed rather than at the
     // advertisement. Cash in, liability up, no change in net worth.
     // Vehicle deed: deposits sit with the vehicle — same purse as the equity.
-    const dep = depositsOn(holding);
-    if (fromFund && next.fund) next.fund.cash += dep;
-    else next.cash += dep;
+    // buyQuote already netted the disclosed roll out of the cheque — only the
+    // remainder (a preview that grew, or a quote that missed the paper) moves.
+    const extra = depositsOn(holding) - (bq.deposits ?? 0);
+    if (fromFund && next.fund) next.fund.cash += extra;
+    else next.cash += extra;
   } else {
     genRentRoll(next, rec, holding, wasDistress);
     // genRentRoll settles deposits onto GP cash; a vehicle deed moves them over.

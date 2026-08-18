@@ -21,14 +21,30 @@ check(typeof E.runLeasingAgent === "function", "runLeasingAgent is exported");
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 let g = E.firstListings(E.newGame(9001, parcels, 80_000_000), parcels, bbls);
-// Buy a commercial building with vacancy potential.
-let boughtBbl = null;
-for (const L of g.listings ?? []) {
-  const rec = E.resolveRec(parcels, g, L.bbl);
-  if (!rec || rec.class === "land" || rec.class === "multifamily" || !rec.bldgArea || L.ask > g.cash) continue;
-  const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
-  if (!r.err) { g = r.s; boughtBbl = L.bbl; break; }
+
+// (ti/rent + years × 6% fee) × 12 ≤ the 12-month default signing cap.
+// Cheap industrial on this tape is a valid buy; planted TI has to fit
+// that building's rent or every "should sign" letter refers instead.
+function tiUnderCap(rentPsf, termMo, wantTi, cap = 12) {
+  const slack = cap / 12 - (termMo / 12) * 0.06;
+  const maxTi = Math.max(0.25, slack * rentPsf * 0.9);
+  return +Math.min(wantTi, maxTi).toFixed(2);
 }
+
+// Buy a commercial building with vacancy potential. Prefer enough floor
+// to demise a 2k suite; fall back to whatever commercial is on the tape.
+let boughtBbl = null;
+function tryBuy(minSf) {
+  for (const L of g.listings ?? []) {
+    const rec = E.resolveRec(parcels, g, L.bbl);
+    if (!rec || rec.class === "land" || rec.class === "multifamily" || L.ask > g.cash) continue;
+    if (!(rec.bldgArea >= minSf)) continue;
+    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+    if (!r.err) { g = r.s; boughtBbl = L.bbl; return true; }
+  }
+  return false;
+}
+if (!tryBuy(8_000)) tryBuy(1);
 if (!boughtBbl) throw new Error("no commercial building");
 
 const rec = E.resolveRec(parcels, g, boughtBbl);
@@ -36,7 +52,10 @@ const use = rec.class === "retail" ? "retail" : rec.class === "industrial" ? "in
 // Empty the roll so the tour has space to demise into.
 g.holdings[boughtBbl].tenants = [];
 const market = E.managedRentPsfYr(rec, g.econ, g.holdings[boughtBbl], use) || 40;
-const suite = Math.min(4000, Math.max(2000, Math.round(rec.bldgArea * 0.25)));
+const suite = Math.min(
+  Math.round(rec.bldgArea * 0.85),
+  Math.min(4000, Math.max(2000, Math.round(rec.bldgArea * 0.25))),
+);
 g.lois = [
   {
     id: 101, bbl: boughtBbl, kind: "new", use, tourId: 7, name: "Lowball LLC",
@@ -46,7 +65,7 @@ g.lois = [
   {
     id: 102, bbl: boughtBbl, kind: "new", use, tourId: 7, name: "Mandate Clear Co",
     sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 1.02).toFixed(2),
-    termM: 96, tiPsf: 4, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+    termM: 96, tiPsf: tiUnderCap(market * 1.02, 96, 4), freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
   },
   {
     id: 103, bbl: boughtBbl, kind: "new", use, tourId: 7, name: "Soft Middle Inc",
@@ -79,7 +98,7 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
   }, {
     id: 202, bbl: boughtBbl, kind: "new", use, name: "Good Ask",
     sector: "finance", credit: 2, sf: suite, rentPsf: +(market * 1.05).toFixed(2),
-    termM: 120, tiPsf: 2, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+    termM: 120, tiPsf: tiUnderCap(market * 1.05, 120, 2), freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
   }];
   g.agent = true;
   E.runLeasingAgent(g, parcels);
@@ -155,7 +174,7 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
   g.lois = [{
     id: 451, bbl: boughtBbl, kind: "new", use, name: "Principal Owns This",
     sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 1.0).toFixed(2),
-    termM: 84, tiPsf: 4, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+    termM: 84, tiPsf: tiUnderCap(market, 84, 4), freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
   }];
   check(E.loiNeedsPrincipal(g, g.lois[0]),
     "loiNeedsPrincipal is true with leasing staff until you hand over the book");
@@ -202,7 +221,7 @@ console.log("\nQUIET DESK SCORECARD\n");
     {
       id: 502, bbl: boughtBbl, kind: "new", use, name: "Clear Sign Co",
       sector: "finance", credit: 2, sf: suite, rentPsf: +(market * 1.05).toFixed(2),
-      termM: 120, tiPsf: 2, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+      termM: 120, tiPsf: tiUnderCap(market * 1.05, 120, 2), freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
     },
   ];
   g.cash = Math.max(g.cash, 20_000_000);

@@ -604,7 +604,10 @@ body {
   color: var(--ink-dim); font-weight: 600; padding: 6px 10px 6px 0;
   border-bottom: 1px solid rgba(146,110,40,0.35);
 }
-.tbl th.num, .tbl td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tbl th.num, .tbl td.num {
+  text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 /* A sortable heading reads as a control: it is clickable, it highlights under
    the cursor, and the column currently ordering the table stays lit with its
    arrow so you can always see what you are looking at. */
@@ -773,6 +776,20 @@ body {
   backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
   padding: 28px;
+}
+/* Optional primer — a card, not a trap. Must not use .modal-backdrop or
+   Space/Year are swallowed as "answer the card first". */
+.primer-offer {
+  position: absolute; left: 18px; bottom: 18px; z-index: 45;
+  width: min(340px, calc(100vw - 36px));
+  background: var(--card);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-md);
+  box-shadow: var(--lift-2);
+  padding: 14px 16px 12px;
+}
+.primer-offer-title {
+  font-family: var(--serif); font-size: 17px; color: var(--ink); line-height: 1.2;
 }
 /* One deterministic interruption stack. Several economic events can land in
    the same month; priority must not depend on component render order. */

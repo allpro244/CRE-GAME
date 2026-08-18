@@ -453,6 +453,7 @@ export function generateCity(cfg) {
   // creek through a park is water, not a lawn with willows in it.
   const WATER_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
   const inWater = (p) => WATER_M.some((r) => inRing(p, r));
+  const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -1554,9 +1555,18 @@ export function generateCity(cfg) {
     return (h >>> 0) % 5;
   };
   const drawn = blocks.filter((b) => b.inset);
+  // Punch the reservation out of every cell fill. Pavement sits above the
+  // park layer; a leftover sliver that still overlaps the green is the road
+  // pasted across the Common. Holes keep the asphalt on the frontage.
   const pavementFeatures = blocks.map((b) => ({
     type: "Feature",
-    geometry: { type: "Polygon", coordinates: [[...b.ring.map(proj.toLL), proj.toLL(b.ring[0])]] },
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])],
+        ...waterHolesLL(b.ring, PARKS_M, proj.toLL),
+      ],
+    },
     properties: {
       kind: "pavement", solo: b.inset ? 0 : 1, d: b.district,
       dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
@@ -1594,12 +1604,14 @@ export function generateCity(cfg) {
         const t = end === 0 ? 4.2 : len - 4.2;
         const px = a[0] + ux * t, py = a[1] + uy * t;
         const halfW = 1.9;                             // half the stripe band
-        crosswalkFeatures.push([
+        const bar = [
           [px - ux * halfW, py - uy * halfW],
           [px + ux * halfW, py + uy * halfW],
           [px + ux * halfW + nx * road, py + uy * halfW + ny * road],
           [px - ux * halfW + nx * road, py - uy * halfW + ny * road],
-        ]);
+        ];
+        if (inPark(centroid(bar))) continue;
+        crosswalkFeatures.push(bar);
       }
     }
   }
@@ -1612,14 +1624,16 @@ export function generateCity(cfg) {
   };
   // One dash per real carriageway. Drawing every block ring as a closed loop
   // double-paints shared edges and dashes leftover slivers around a canal —
-  // the spiderweb of yellow in the street. A midpoint-only water test still
-  // dashed a chord that merely nicked the creek; walk the edge.
-  const edgeDry = (a, c) => {
+  // the spiderweb of yellow in the street. A midpoint-only water *or park*
+  // test still dashed a chord that merely nicked the creek or the Common;
+  // walk the edge.
+  const edgeClear = (a, c) => {
     const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
     const steps = Math.max(2, Math.ceil(len / 8));
     for (let k = 0; k <= steps; k++) {
       const t = k / steps;
-      if (inWater([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t])) return false;
+      const p = [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t];
+      if (inWater(p) || inPark(p)) return false;
     }
     return true;
   };
@@ -1635,9 +1649,7 @@ export function generateCity(cfg) {
       const k = edgeKey(a, c);
       if (centerSeen.has(k)) continue;
       centerSeen.add(k);
-      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
-      if (!edgeDry(a, c)) continue;
-      if (PARKS_M.some((ring) => inRing(mid, ring))) continue;
+      if (!edgeClear(a, c)) continue;
       centerFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [proj.toLL(a), proj.toLL(c)] },
@@ -1645,8 +1657,9 @@ export function generateCity(cfg) {
       });
     }
   }
-  // Sidewalks hug the block. Omit any edge that runs through the creek so a
-  // waterfront inset cannot throw a pale line across the water.
+  // Sidewalks hug the block. Omit any edge that runs through the creek or
+  // the green so a waterfront inset cannot throw a pale line across the
+  // water, and a cell that still chords a park cannot plant a kerb on the lawn.
   const streetFeatures = [];
   for (const b of drawn) {
     const r = b.inset;
@@ -1668,7 +1681,7 @@ export function generateCity(cfg) {
     };
     for (let i = 0; i < r.length; i++) {
       const a = r[i], c = r[(i + 1) % r.length];
-      if (!edgeDry(a, c)) { flush(); continue; }
+      if (!edgeClear(a, c)) { flush(); continue; }
       if (!run.length) run.push(proj.toLL(a));
       run.push(proj.toLL(c));
     }
@@ -2456,17 +2469,38 @@ export function generateCity(cfg) {
           properties: { kind: "parkkerb" },
         }));
       }),
-      ...(cfg.diagonals ?? []).map((d, i) => ({
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            proj.toLL([d.cx - (d.w / 2) * Math.cos((d.deg * Math.PI) / 180), d.cy - (d.w / 2) * Math.sin((d.deg * Math.PI) / 180)]),
-            proj.toLL([d.cx + (d.w / 2) * Math.cos((d.deg * Math.PI) / 180), d.cy + (d.w / 2) * Math.sin((d.deg * Math.PI) / 180)]),
-          ],
-        },
-        properties: { kind: "street", cls: i < (cfg.plan?.seams ?? 0) ? "seam" : "boulevard" },
-      })),
+      // A seam or boulevard is one long chord. `fits` keeps most greens off
+      // those reservations; the ones that still land on one used to paint a
+      // carriageway through the Common. Break the line at the turf — do not
+      // recut the lots, just stop drawing asphalt on the lawn.
+      ...(cfg.diagonals ?? []).flatMap((d, i) => {
+        const t = (d.deg * Math.PI) / 180;
+        const a = [d.cx - (d.w / 2) * Math.cos(t), d.cy - (d.w / 2) * Math.sin(t)];
+        const b = [d.cx + (d.w / 2) * Math.cos(t), d.cy + (d.w / 2) * Math.sin(t)];
+        const cls = i < (cfg.plan?.seams ?? 0) ? "seam" : "boulevard";
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const steps = Math.max(2, Math.ceil(len / 8));
+        const segs = [];
+        let cur = [];
+        for (let k = 0; k <= steps; k++) {
+          const u = k / steps;
+          const p = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+          if (!inPark(p)) {
+            cur.push(p);
+          } else if (cur.length >= 2) {
+            segs.push(cur);
+            cur = [];
+          } else {
+            cur = [];
+          }
+        }
+        if (cur.length >= 2) segs.push(cur);
+        return segs.map((pts) => ({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: pts.map(proj.toLL) },
+          properties: { kind: "street", cls },
+        }));
+      }),
       ...pavementFeatures,
       ...crosswalkFeatures.map((ring) => ({
         type: "Feature",

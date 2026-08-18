@@ -27,7 +27,7 @@
 import {
   mulberry32, makeProjection, polygonArea, ringArea, centroid,
   insetRing, insetRingPerp, clipRingHalfPlane, bboxOfRing,
-  isConvex, cleanRing, splitConvex,
+  isConvex, cleanRing, splitConvex, convexHull, sharedBoundaryLength,
   longestEdgeAngle, extentAlong, pointAt,
 } from "./geom.mjs";
 
@@ -280,40 +280,73 @@ export const FLAVOR = {
 // offices an eighth, industry a tenth. The office core is still a core — it is
 // concentrated in the districts whose flavour is `core` and `modern` rather
 // than smeared across the whole map.
-function classFor(flavor, heat, rand) {
+//
+// AND WITHIN A DISTRICT, THE SHOPS GO WHERE THE PEOPLE WALK PAST. This used
+// to draw a class per lot i.i.d., so a district's retail landed salt-and-
+// pepper: a shop in the middle of a block interior, flats holding down the
+// boulevard corner. Real retail is a FRONTAGE phenomenon — it concentrates on
+// the corridors and the corners, one lot deep, because a shop with no passing
+// trade is a storeroom. So each lot's single draw is read against a ladder
+// whose retail rung widens with frontage and whose office rung widens with
+// heat, and the quiet mid-block absorbs the difference in housing — which is
+// what actually fills the middle of a real block.
+//
+// `site.corrM` is the lot's distance to the nearest seam or boulevard
+// reservation; the 45 m decay is a lot-and-a-half of Manhattan depth (100 ft
+// lot = 30 m), because avenue retail is one lot deep and dead by the second.
+// The corner bonus and the centering constants are calibrated on the 12-seed
+// sweep so the CITYWIDE mix barely moves (resolved: retail 11.7% -> 12.6%,
+// office 15.7% -> 17.0%, multifamily 30.4% -> 28.3%) while the corridor lots
+// go from the citywide mix to 23.7% retail — the same shops, gathered onto
+// the streets that can carry them.
+function classFor(flavor, heat, rand, site) {
+  // ONE draw, always. The ladder reweights this single uniform per lot;
+  // adding a second draw here would reroll the whole downstream town.
   const r = rand();
+  const front = site
+    ? Math.exp(-(site.corrM ?? 9999) / 45) + (site.corner ? 0.35 : 0)
+    : 0.33; // the sweep's mean frontage score, so a siteless call is neutral
+  const mK = Math.min(2.8, 0.30 + 2.10 * front);
+  const mO = 0.70 + 0.60 * heat;
+  // Widths below multipliers are exactly the old thresholds. "O*" resolves by
+  // heat: a hot office lot is a newer, bigger building.
+  const ladder = (entries) => {
+    let boosted = 0, plain = 0;
+    const scaled = entries.map(([cls, w]) => {
+      const m = cls === "K2" ? mK : cls[0] === "O" ? mO : 1;
+      const w2 = w * m;
+      if (m === 1) plain += w2; else boosted += w2;
+      return w2;
+    });
+    // Housing and sheds yield the ground the shops and offices claim, and
+    // reclaim it where the multipliers fall under 1 — total mass stays 1
+    // unless the boosted rungs alone exceed it, and then everything scales.
+    const fill = plain > 0 ? Math.max(0, 1 - boosted) / plain : 1;
+    const total = boosted + plain * fill;
+    let acc = 0;
+    const resolve = (cls) => (cls === "O*" ? (heat > 0.5 ? "O4" : "O3") : cls);
+    for (let i = 0; i < entries.length; i++) {
+      const cls = entries[i][0];
+      const isB = cls === "K2" || cls[0] === "O";
+      acc += (isB ? scaled[i] : scaled[i] * fill) / total;
+      if (r < acc) return resolve(cls);
+    }
+    return resolve(entries[entries.length - 1][0]);
+  };
   switch (flavor) {
     case "industrial":
       // A port district is sheds and yards. It was 56% sheds and then mostly
       // vacant, so almost none of them ever got built.
-      if (r < 0.06) return "G1";
-      if (r < 0.80) return "E9";
-      if (r < 0.88) return "K2";
-      if (r < 0.96) return "D0";
-      return "S1";
+      return ladder([["G1", 0.06], ["E9", 0.74], ["K2", 0.08], ["D0", 0.08], ["S1", 0.04]]);
     case "modern":
-      if (r < 0.05) return "G1";
-      if (r < 0.34) return "O4";
-      if (r < 0.46) return "K2";
-      if (r < 0.74) return "D0";
-      return "RM";
+      return ladder([["G1", 0.05], ["O4", 0.29], ["K2", 0.12], ["D0", 0.28], ["RM", 0.26]]);
     case "old":
-      if (r < 0.22) return "O3";
-      if (r < 0.48) return "K2";
-      if (r < 0.76) return "S1";
-      return "D0";
+      return ladder([["O3", 0.22], ["K2", 0.26], ["S1", 0.28], ["D0", 0.24]]);
     case "resi":
-      if (r < 0.64) return "D0";
-      if (r < 0.82) return "S1";
-      if (r < 0.92) return "K2";
-      return "RM";
+      return ladder([["D0", 0.64], ["S1", 0.18], ["K2", 0.10], ["RM", 0.08]]);
     default:
       // the Exchange: this is where the offices actually are
-      if (r < 0.04) return "G1";
-      if (r < 0.52) return heat > 0.5 ? "O4" : "O3";
-      if (r < 0.70) return "RM";
-      if (r < 0.86) return "K2";
-      return "D0";
+      return ladder([["G1", 0.04], ["O*", 0.48], ["RM", 0.18], ["K2", 0.16], ["D0", 0.14]]);
   }
 }
 
@@ -424,6 +457,20 @@ export function generateCity(cfg) {
     for (const c of cfg.cores) h += c.w * Math.exp(-(dist(p, c.xy) ** 2) / (2 * c.r * c.r));
     return Math.min(1, h);
   };
+  // THE GRADIENT WAS STATISTICALLY TRUE AND VISUALLY FALSE. The only heat in
+  // an ordinary building's height was the mat term, which tops out around two
+  // floors at the default preset, while the heat-blind base term swings one
+  // and a half floors either way on noise — so the inner-quarter/outer-quarter
+  // floor ratio measured 1.8 and the eye saw one carpet from core to shore.
+  // The density-ladder note above (Ahlfeldt–Pietrostefani) is the calibration
+  // authority here: a real city's floor-area gradient falls roughly
+  // exponentially with land value off the CBD, in the ORDINARY fabric, not
+  // just in the towers. So dear ground now scales the base term too. The
+  // coefficients are centred on the 12-seed sweep: citywide mean floors held
+  // at 3.04 -> 3.08 (built floor area +1.3%, so the density ladder's read of
+  // the town barely moves) while inner/outer went 1.82 -> 2.49 (median) —
+  // the read of a town with a downtown rather than a carpet with flagpoles.
+  const baseLift = (h) => 0.72 + 0.65 * h;
 
   // --- obstacles ------------------------------------------------------------
   // PARK FRONTAGE IS A STREET, NOT A KERB STRIP.
@@ -469,6 +516,78 @@ export function generateCity(cfg) {
     ...DIAG_M.map((p) => ({ ring: p, faces: insideFaces(p, DIAG_CLEAR) })),
     ...STREAMS_M.map((p) => ({ ring: p, faces: insideFaces(p, STREAM_CLEAR) })),
   ];
+
+  // THE DOUBLE CHARGE, PAID ONCE. A cell that meets a diagonal is clipped at
+  // the reservation's clearance line, DIAG_CLEAR outside the roadway — and
+  // then pushBlock eroded it by streetW/2 on that edge as well, as if the
+  // reservation were not already a street. Measured on the ground
+  // (island.mjs:1800-1845, 21 streets over 8 islands): a seam declared at
+  // 15.1 m delivered 35.6 m between building lines, a boulevard declared at
+  // 25.5 m delivered 51.4 m, and paying the setback once is worth ~35 lots an
+  // island (1297 -> 1332 over the 24-island sample). So an edge that lies ON a
+  // diagonal's clearance line pays the DIAG_CLEAR kerb for its sidewalk and
+  // nothing else — the street it fronts is the reservation itself.
+  //
+  // The same detection records WHERE the frontage is: [t0,t1] runs along each
+  // diagonal's axis. The gaps between runs are the cross streets, and they are
+  // where the apron paint is cut into roadway segments further down.
+  const DIAG_AX = DIAG_M.map((ring, k) => {
+    const d = cfg.diagonals[k];
+    const t = (d.deg * Math.PI) / 180;
+    const [bx0, by0, bx1, by1] = bboxOfRing(ring);
+    return {
+      cx: d.cx, cy: d.cy, ux: Math.cos(t), uy: Math.sin(t),
+      halfU: d.w / 2 + DIAG_CLEAR, halfV: d.h / 2 + DIAG_CLEAR,
+      bx0: bx0 - DIAG_CLEAR - 1, by0: by0 - DIAG_CLEAR - 1,
+      bx1: bx1 + DIAG_CLEAR + 1, by1: by1 + DIAG_CLEAR + 1,
+    };
+  });
+  const diagFrontage = DIAG_AX.map(() => []);
+  // Which edges of this cell lie on a diagonal's clearance line? Exact within
+  // float noise: the edge came out of clipRingHalfPlane against that very
+  // line, so both endpoints satisfy it to ~1e-9 and 0.08 m is generous.
+  const diagEdgesOf = (cell) => {
+    let hit = null;
+    for (let k = 0; k < DIAG_AX.length; k++) {
+      const D = DIAG_AX[k];
+      let near = false;
+      for (const p of cell) {
+        if (p[0] >= D.bx0 && p[0] <= D.bx1 && p[1] >= D.by0 && p[1] <= D.by1) { near = true; break; }
+      }
+      if (!near) continue;
+      for (let e = 0; e < cell.length; e++) {
+        const a = cell[e], b = cell[(e + 1) % cell.length];
+        const va = (a[0] - D.cx) * -D.uy + (a[1] - D.cy) * D.ux;
+        const vb = (b[0] - D.cx) * -D.uy + (b[1] - D.cy) * D.ux;
+        // both endpoints on the same LONG clearance face; the short end faces
+        // stay at full setback — a building closing a boulevard's vista fronts
+        // an ordinary street, not the reservation.
+        if (Math.abs(Math.abs(va) - D.halfV) > 0.08 || Math.abs(Math.abs(vb) - D.halfV) > 0.08) continue;
+        if (va > 0 !== vb > 0) continue;
+        const ua = (a[0] - D.cx) * D.ux + (a[1] - D.cy) * D.uy;
+        const ub = (b[0] - D.cx) * D.ux + (b[1] - D.cy) * D.uy;
+        if (Math.min(ua, ub) > D.halfU + 0.1 || Math.max(ua, ub) < -D.halfU - 0.1) continue;
+        (hit ??= new Array(cell.length).fill(false))[e] = true;
+        // kept per SIDE: a seam joins two grids whose cross streets almost
+        // never align, so a break on one side is a T-junction — a real,
+        // crosswalked crossing — even while the far side runs unbroken.
+        diagFrontage[k].push([Math.min(ua, ub), Math.max(ua, ub), va > 0 ? 1 : 0]);
+      }
+    }
+    return hit;
+  };
+  // THE MEDIAN. A reservation wide enough to spare ground beyond two working
+  // carriageways carries a planted mall between them — Commonwealth Avenue,
+  // Ocean Parkway, the whole boulevard tradition is two roadways round a
+  // green spine, not one sheet of asphalt. The carriageway is 9 m (Ocean
+  // Parkway's own side roadway: two moving lanes and parking) and the mall
+  // takes the remainder whenever that leaves at least 4 m (Park Avenue's
+  // planted median is 6). Seams never qualify — a seam is a street.
+  const CARRIAGE_W = 9, MEDIAN_MIN = 4;
+  const DIAG_MED = DIAG_AX.map((D) => {
+    const med = 2 * D.halfV - 2 * CARRIAGE_W;
+    return med >= MEDIAN_MIN ? med : 0;
+  });
 
   // --- the district partition ----------------------------------------------
   // Walk the BSP tree; every leaf carries the half-planes of the path that
@@ -597,9 +716,13 @@ export function generateCity(cfg) {
    * took two-fifths of its ground and left it at a parcel and a half per block.
    */
   function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0, ways = null) {
+    // An edge on a diagonal's clearance line fronts that street already and
+    // pays only the DIAG_CLEAR kerb — see THE DOUBLE CHARGE above.
+    const diagE = diagEdgesOf(cell);
+    const dEdge = (e, dflt) => (diagE && diagE[e] ? DIAG_CLEAR : dflt);
     let inset = (ways
-      ? erode(cell, (_a, e) => (ways.onRim(e) ? streetW / 2 : ways.innerW / 2))
-      : erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2)))
+      ? erode(cell, (_a, e) => dEdge(e, ways.onRim(e) ? streetW / 2 : ways.innerW / 2))
+      : erode(cell, (_a, e) => dEdge(e, full && e % 2 === 1 ? aveW / 2 : streetW / 2)))
       ?? erode(cell, streetW / 2)
       ?? erode(cell, streetW / 3);
     // THE CHAFLÁN. Cerdà cut twenty metres off all four corners of every 113 m
@@ -707,6 +830,7 @@ export function generateCity(cfg) {
             numbered: opt.numbered ? opt.numbered(i, j) : undefined,
             u: opt.uOf ? opt.uOf(i, j) : undefined,
             uFifth: opt.uMid,
+            circus: opt.circus ? 1 : undefined,
           }, opt.chamferAll ?? 0, ways);
         }
       }
@@ -889,7 +1013,10 @@ export function generateCity(cfg) {
       const a = th0 + (j / M) * TAU_;
       island.push([F[0] + plinth * Math.cos(a), F[1] + plinth * Math.sin(a)]);
     }
-    emitCell(island, name, d, mine, { uOf: () => plinth / 2, uMid: (plinth + R[N]) / 2 }, 0, 0);
+    // `circus: true` — the monument island carries the monument, not tax lots.
+    // The parcel loop skips it and the context pass turfs it; see THE CIRCUS
+    // IS GREEN below.
+    emitCell(island, name, d, mine, { uOf: () => plinth / 2, uMid: (plinth + R[N]) / 2, circus: true }, 0, 0);
   }
 
   // --- organic districts ----------------------------------------------------
@@ -944,6 +1071,59 @@ export function generateCity(cfg) {
     else latticeDistrict(name, d);
   }
 
+  // ------------------------------------------------------------ THE WEDGE RULE
+  //
+  // Where a diagonal or a BSP cut crosses a lattice, the straddling cells come
+  // out as triangles and thin trapezoids. splitLots shreds one of those into
+  // confetti, and the vacancy roll then leaves half the shreds as grass on the
+  // most conspicuous corner in town. Real cities do the opposite: the wedge is
+  // ONE building, built to its lines — the Flatiron, the Gooderham, every
+  // "little iron" in every gridded city is exactly this remnant, and it is
+  // iconic precisely because it is built rather than parcelled.
+  //
+  // Classified by geometry alone, before any draw, so the rule is a fact of
+  // the plat and not of rand state:
+  //   thin   — under 14 m across: two lots of the 25 ft standard (7.6 m) plus
+  //            a party wall cannot stand back to back, so the block is one
+  //            building deep whatever the subdivider wants;
+  //   acute  — sharpest corner under 25 deg, the Flatiron's own apex angle;
+  //   both capped at 150 m along the block — the Flatiron's block runs 87 m,
+  //   and past ~150 m a thin block is a terrace that subdivides crosswise
+  //   into perfectly ordinary lots, not one building;
+  //   triangle — a lattice makes quads, so a small triangle IS the signature
+  //            of an obstacle crossing, whatever its angles.
+  //
+  // A wedge nobody could STAKE does not get a building forced onto it. The
+  // stake test is the surveyor's own (the thresholds the plat instrument is
+  // calibrated to, from the 25 ft standard): a corner sharper than 22 deg,
+  // a face under 8 m, or an aspect past 6.5. A wedge that fails it becomes a
+  // GORE — the paved remnant every grid city leaves at its diagonal
+  // crossings as a traffic island or a pocket plaza. Even the Flatiron's own
+  // apex is 25 deg; nothing was ever built on a sharper point.
+  const FLATIRON_W = 14, FLATIRON_DEG = 25, FLATIRON_LEN = 150;
+  for (const b of blocks) {
+    if (!b.inset) continue;
+    const r = b.inset;
+    const ax = longestEdgeAngle(r);
+    const s1 = extentAlong(r, ax).span, s2 = extentAlong(r, ax + Math.PI / 2).span;
+    const wid = Math.min(s1, s2), len = Math.max(s1, s2);
+    let minAng = Math.PI;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[(i - 1 + r.length) % r.length], v = r[i], c = r[(i + 1) % r.length];
+      const l1 = Math.hypot(a[0] - v[0], a[1] - v[1]), l2 = Math.hypot(c[0] - v[0], c[1] - v[1]);
+      if (l1 < 1e-9 || l2 < 1e-9) continue;
+      const cos = ((a[0] - v[0]) * (c[0] - v[0]) + (a[1] - v[1]) * (c[1] - v[1])) / (l1 * l2);
+      const angV = Math.acos(Math.max(-1, Math.min(1, cos)));
+      if (angV < minAng) minAng = angV;
+    }
+    const wedge = ((wid < FLATIRON_W || minAng < (FLATIRON_DEG * Math.PI) / 180) && len <= FLATIRON_LEN)
+      || (r.length === 3 && polygonArea([r]) <= 900);
+    if (!wedge) continue;
+    const stakeable = wid >= 8 && minAng >= (22 * Math.PI) / 180 && len <= wid * 6.5;
+    if (stakeable) b.flatiron = 1;
+    else b.gore = 1;
+  }
+
   // --- parcels & buildings --------------------------------------------------
   function splitLots(ring, opt, out, depth = 0) {
     const area = polygonArea([ring]);
@@ -961,9 +1141,70 @@ export function generateCity(cfg) {
       p = pointAt(ring, axis, rr(0.36, 0.64));
     }
     const [a, b] = splitConvex(ring, p, dir);
-    if (!a || !b || polygonArea([a]) < opt.min || polygonArea([b]) < opt.min) { out.push(ring); return; }
+    // A CUT MAY NOT MANUFACTURE A SLIVER. The guard here was area-only, and a
+    // legal cut could still leave a child four metres wide — a strip no
+    // surveyor would stake. The floor is the convention the whole block maths
+    // is calibrated on: the Manhattan 25 ft lot is 7.6 m of frontage at aspect
+    // 4, so no child under 8 m across and none past aspect 6.5. When the cut
+    // cannot satisfy that, the parent is emitted whole — a fat lot is a site,
+    // a sliver is debris.
+    const sliverChild = (r2) => {
+      if (!r2 || polygonArea([r2]) < opt.min) return true;
+      const ax2 = longestEdgeAngle(r2);
+      const sA = extentAlong(r2, ax2).span, sB = extentAlong(r2, ax2 + Math.PI / 2).span;
+      const w2 = Math.min(sA, sB);
+      return w2 < 8 || Math.max(sA, sB) > w2 * 6.5;
+    };
+    if (sliverChild(a) || sliverChild(b)) { out.push(ring); return; }
     splitLots(a, opt, out, depth + 1);
     splitLots(b, opt, out, depth + 1);
+  }
+
+  // WHAT THE 70 m2 SKIP WAS LEAKING. A shred that fell under the parcel
+  // loop's floor did not disappear — it stayed inside the block ring as bare
+  // ground under the block fill. In life a piece like that is never left on
+  // the plat at all: it is folded into the deed next door before the map is
+  // filed. So any piece under 120 m2 (the confetti grain — a real burgage lot
+  // bottoms out near 190 m2 at 7.6 x 25 m) or under 8 m across merges into
+  // the neighbour it shares its longest boundary with. Children of splitConvex
+  // share exact vertices, so adjacency is exact; a merge is taken only when
+  // the union is convex — the hull of the pair adds no ground — so a merged
+  // lot can never lap a third lot's land.
+  function absorbSlivers(lots) {
+    const widOf = (r) => {
+      const ax2 = longestEdgeAngle(r);
+      return Math.min(extentAlong(r, ax2).span, extentAlong(r, ax2 + Math.PI / 2).span);
+    };
+    const stuck = new Set();
+    for (let pass = 0; pass < 24 && lots.length > 1; pass++) {
+      let i = -1;
+      for (let k = 0; k < lots.length; k++) {
+        if (stuck.has(lots[k])) continue;
+        if (polygonArea([lots[k]]) < 120 || widOf(lots[k]) < 8) { i = k; break; }
+      }
+      if (i < 0) return;
+      const r = lots[i];
+      const aR = polygonArea([r]);
+      const cands = [];
+      for (let j = 0; j < lots.length; j++) {
+        if (j === i) continue;
+        const L = sharedBoundaryLength(r, lots[j], 0.05);
+        if (L > 1.5) cands.push([L, j]);
+      }
+      cands.sort((x, y) => y[0] - x[0]);
+      let done = false;
+      for (const [, j] of cands) {
+        const u = cleanRing(convexHull([...r, ...lots[j]]));
+        if (!u) continue;
+        const aJ = polygonArea([lots[j]]);
+        if (Math.abs(polygonArea([u]) - (aR + aJ)) > Math.max(1.5, 0.01 * (aR + aJ))) continue;
+        lots[j] = u;
+        lots.splice(i, 1);
+        done = true;
+        break;
+      }
+      if (!done) stuck.add(r);
+    }
   }
 
   const flavorOf = (name) => FLAVOR[cfg.districts[name].flavor] ?? FLAVOR.core;
@@ -1169,14 +1410,75 @@ export function generateCity(cfg) {
   const builtLots = [];   // the landmark pass picks its sites out of this
   let blockNo = 1, binNo = 1000001;
 
+  // ------------------------------------------------------ THE STREET DIRECTORY
+  //
+  // ONE NAME PER BLOCK WAS NOT ONE BLOCK PER NAME. Each block drew a street
+  // from a 6-13 name district pool with no memory, so a district of forty
+  // blocks reused every name several times over and the tax roll carried
+  // ~190 colliding addresses per island — two "23 Water St" deeds in the same
+  // district. Both halves of the fix are pure functions of block order and
+  // the draw the block already made, so the stream sees nothing new.
+  //
+  // Names: the block's pick stands if the name is unfiled; otherwise the pool
+  // is walked from the picked entry for the first unused name, and when the
+  // pool is spent the surveyor does what surveyors did — extends it
+  // ("North Water St", "Upper Bank St"). Numbers: every block face gets its
+  // own century on its street — the American hundred-block convention — so a
+  // number can never repeat even when a name does.
+  const usedStreetNames = new Map();  // district -> Set of names already filed
+  const nextNoOnStreet = new Map();   // street -> first house number not yet used
+  const NAME_EXT = ["North", "South", "East", "West", "Upper", "Lower", "New", "Old"];
+  const dedupStreetName = (d2, picked, pool) => {
+    let used = usedStreetNames.get(d2);
+    if (!used) { used = new Set(); usedStreetNames.set(d2, used); }
+    let name = picked;
+    if (used.has(name)) {
+      const i0 = Math.max(0, pool.indexOf(picked));
+      for (let j = 1; j < pool.length && used.has(name); j++) name = pool[(i0 + j) % pool.length];
+      for (let e = 0; used.has(name) && e < NAME_EXT.length * pool.length; e++) {
+        name = `${NAME_EXT[e % NAME_EXT.length]} ${pool[(i0 + Math.floor(e / NAME_EXT.length)) % pool.length]}`;
+      }
+      // Past 8x the pool the name repeats and the hundred-block numbering
+      // below still keeps every address unique.
+    }
+    used.add(name);
+    return name;
+  };
+
   for (const block of blocks) {
     const street = block.inset;
-    if (!street || polygonArea([street]) < 420) continue;
+    // The circus plinth is monument ground and a gore is a traffic island —
+    // neither is a tax lot; see THE WEDGE RULE and THE CIRCUS IS GREEN. A
+    // flatiron block passes at the 150 m2 inset floor rather than 420: the
+    // whole point of the wedge rule is that the remnant carries a building
+    // instead of standing as unprogrammed pavement.
+    if (block.circus || block.gore) continue;
+    if (!street || polygonArea([street]) < (block.flatiron ? 150 : 420)) continue;
     const bc = centroid(street);
     const d = block.district;
     const heat = coreHeat(bc);
     let houseNo = Math.round(rr(1, 60));
-    const namedStreet = pick(cfg.streets[d] ?? cfg.streets.default);
+    const streetPool = cfg.streets[d] ?? cfg.streets.default;
+    const namedStreet = dedupStreetName(d, pick(streetPool), streetPool);
+    // This block's base number on each street it addresses onto, allocated at
+    // first use from the street's running maximum, rounded up to the next
+    // hundred. Within a block `houseNo` (and the avenue sequence) only climb,
+    // so (street, number) is unique on the whole plat.
+    const numberBase = new Map();
+    const aveSeq = new Map();
+    const numberOn = (streetName, n, wantBase) => {
+      let base = numberBase.get(streetName);
+      if (base === undefined) {
+        const next = nextNoOnStreet.get(streetName) ?? 0;
+        // `wantBase` lets an avenue ask for the century its cross street
+        // earns it; the running maximum still wins, so no number repeats.
+        base = Math.max(wantBase ?? 0, next === 0 ? 0 : Math.ceil(next / 100) * 100);
+        numberBase.set(streetName, base);
+      }
+      const no = base + n;
+      if (no >= (nextNoOnStreet.get(streetName) ?? 0)) nextNoOnStreet.set(streetName, no + 1);
+      return no;
+    };
     // ------------------------------------------------------ THE CORNICE LINE
     //
     // Measured on the generated city: the mean spread of building heights
@@ -1200,20 +1502,31 @@ export function generateCity(cfg) {
     // and it is what makes the fabric read as having a HISTORY rather than as a
     // smooth function of distance from downtown.
     const blkFl = flavorOf(d);
-    const ambition = rr(0.58, 1.62);
+    // AMBITION IS A DOWNTOWN LUXURY. The draw is kept (one rr, same stream
+    // position) but its spread is damped where the ground is cheap: a syndicate
+    // overbuilds a corner it believes in, nobody overbuilds the fringe, and at
+    // full spread the fringe noise (±47% of a 2-4.6 floor base) was drowning
+    // the whole core-to-fringe gradient. The damping is centred on the draw's
+    // own mean (1.10) so the fringe keeps its height and loses its jumble.
+    const ambition = 1.10 + (rr(0.58, 1.62) - 1.10) * (0.55 + 0.45 * heat);
     // `DZ.base` scales the pre-premium storey count — see the note on DENSITY.
     // Without it this term was a constant, and it is 80% of what an ordinary
-    // building ends up being, so no preset could make a town low.
+    // building ends up being, so no preset could make a town low. `baseLift`
+    // then bends that storey count toward the core — see its note.
     const bz = DZ.base ?? 1;
     const blockDatum = Math.max(1, Math.round(
-      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6)) * bz
+      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6)) * bz * baseLift(heat)
        + heat * heat * 7.5 * (blkFl.matGain ?? 1) * DZ.mat * rr(0.45, 1.05)) * ambition,
     ));
 
     const lots = [];
     const fullBlockP = cfg.districts[d].fullBlockP ?? 0.05;
-    if (rand() < fullBlockP) lots.push(street);
-    else splitLots(street, lotOptOf(d, heat), lots);
+    // A flatiron takes the full-block branch WITHOUT a roll — the geometry
+    // decided it in the wedge pass, before any draw, so the outcome is a fact
+    // of the plat rather than of rand state.
+    if (block.flatiron) lots.push(street);
+    else if (rand() < fullBlockP) lots.push(street);
+    else { splitLots(street, lotOptOf(d, heat), lots); absorbSlivers(lots); }
 
     let lotNo = 1;
     const blockCorners = street;
@@ -1224,8 +1537,15 @@ export function generateCity(cfg) {
       const c = centroid(lotRing);
       const h = coreHeat(c);
       const zone = zoningFor(d, h);
-      const vacant = rand() < vacancyP(d, h);
-      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand);
+      // Frontage facts, computed once: the class ladder reads the same corner
+      // flag and corridor distance the tax record files further down.
+      const corrM = Math.round(corridorDist(c));
+      const corner = cornerLot(lotRing, blockCorners);
+      // A flatiron never rolls vacancy — the wedge is iconic exactly because
+      // it is built, and a triangular grass lot on the sharpest corner in
+      // town is the confetti this rule exists to retire.
+      const vacant = block.flatiron ? false : rand() < vacancyP(d, h);
+      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 
       const yearRec = vacant ? null : yearFor(d, c);
@@ -1272,11 +1592,11 @@ export function generateCity(cfg) {
           floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
-          floors = Math.round(rr(3, 6) * (DZ.base ?? 1) + mat * rr(0.55, 1.25));
+          floors = Math.round(rr(3, 6) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7) * hSpread));
           coverage = rr(0.55, 0.72);
         } else {
-          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) + mat * rr(0.22, 0.78));
+          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.22, 0.78));
           floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6) * hSpread));
           coverage = rr(0.6, 0.78);
         }
@@ -1369,13 +1689,23 @@ export function generateCity(cfg) {
 
       let address;
       if (block.numbered !== undefined && rand() < 0.25) {
-        address = `${houseNo * 10 + Math.round(rr(0, 9))} ${cfg.avenues[Math.abs(Math.round((block.u - block.uFifth) / 215)) % cfg.avenues.length]}`;
+        const ave = cfg.avenues[Math.abs(Math.round((block.u - block.uFifth) / 215)) % cfg.avenues.length];
+        // An avenue number is keyed to its CROSS STREET: the block of Fifth
+        // between 11th and 12th is the 1100s, on every real numbered grid.
+        // The old form (houseNo*10+digit) burned ~700 numbers a block and
+        // compounded to a 38,626 on a 1.3 km island; a per-block sequence
+        // holds each block to one century. The digit draw keeps its stream
+        // slot as the side-of-the-avenue parity.
+        const seq = (aveSeq.get(ave) ?? 0) + 1;
+        aveSeq.set(ave, seq);
+        address = `${numberOn(ave, seq * 2 + (Math.round(rr(0, 9)) % 2), 100 * block.numbered)} ${ave}`;
       } else if (block.numbered !== undefined) {
         const n = block.numbered;
         const suf = n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th";
-        address = `${houseNo} ${block.u < block.uFifth ? "W" : "E"} ${n}${suf} St`;
+        const gridSt = `${block.u < block.uFifth ? "W" : "E"} ${n}${suf} St`;
+        address = `${numberOn(gridSt, houseNo)} ${gridSt}`;
       } else {
-        address = `${houseNo} ${namedStreet}`;
+        address = `${numberOn(namedStreet, houseNo)} ${namedStreet}`;
       }
 
       parcels.features.push({
@@ -1393,8 +1723,8 @@ export function generateCity(cfg) {
           cd: cfg.district, district: d,
           shorem: Math.round(distToRing(c, innerRing)),
           shoreamen: blkFl === FLAVOR.industrial ? 0 : 1,
-          corridorm: Math.round(corridorDist(c)),
-          corner: cornerLot(lotRing, blockCorners) ? 1 : 0,
+          corridorm: corrM,
+          corner: corner ? 1 : 0,
         },
       });
 
@@ -2207,20 +2537,23 @@ export function generateCity(cfg) {
   }
 
   // AN ALLÉE DOWN THE BOULEVARD. The diagonal was the widest, barest strip in
-  // town. Paired street trees down both edges make it read as the grand
-  // avenue it is supposed to be.
-  for (const d of cfg.diagonals ?? []) {
+  // town. Where the reservation carries a median (see THE MEDIAN above) the
+  // two rows stand on the mall, which is where a boulevard's trees actually
+  // grow; on a plain seam street they stay the paired rows down its edges.
+  (cfg.diagonals ?? []).forEach((d, k) => {
     const t2 = (d.deg * Math.PI) / 180;
     const ux = Math.cos(t2), uy = Math.sin(t2);
     const nx2 = -uy, ny2 = ux;
+    const med = DIAG_MED[k];
+    const off = med ? Math.max(0.9, med / 2 - 1.8) : d.h / 2 - 2.2;
     for (let u = -d.w / 2 + 8; u < d.w / 2 - 8; u += rr(13, 18)) {
       for (const side of [-1, 1]) {
-        const px = d.cx + ux * u + nx2 * side * (d.h / 2 - 2.2);
-        const py = d.cy + uy * u + ny2 * side * (d.h / 2 - 2.2);
+        const px = d.cx + ux * u + nx2 * side * off;
+        const py = d.cy + uy * u + ny2 * side * off;
         if (inRing([px, py], innerRing)) plant([px + rr(-1, 1), py + rr(-1, 1)]);
       }
     }
-  }
+  });
 
   // Nothing planted may end up standing in open water. The scatter pass
   // checked, the willow pass pushed outward and trusted the arithmetic, and
@@ -2369,6 +2702,127 @@ export function generateCity(cfg) {
     })),
   };
 
+  // --------------------------------------------------- THE APRON IS A FRAME
+  //
+  // The apron features used to be the raw reservation polygons: every park's
+  // full +PARK_CLEAR dilation — asphalt painted under the whole lawn, which is
+  // how a 380 m park measured as a 112,000 m2 field of it — and every
+  // diagonal's full rectangle, one bare band from coast to coast. The ground
+  // the eye actually sees is the FRAME: the 12 m frontage road round the
+  // green, and the roadway between its own cross streets. So that is what is
+  // painted, piece by piece. The reservation geometry itself (APRONS,
+  // OBSTACLES) is untouched — it still backs the obstacle subtraction and the
+  // coverage metric, so no lot moves on account of the paint.
+  const apronPaintM = [];
+  for (const ring of PARKS_M) {
+    const ccw = ringArea(ring) > 0;
+    const n = ring.length;
+    const outN = [];
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const L = Math.hypot(ex, ey) || 1;
+      outN.push(ccw ? [ey / L, -ex / L] : [-ey / L, ex / L]);
+    }
+    // reach just past the kerb line so the frame meets the painted green with
+    // no bare seam between them
+    const IN = PARK_KERB + 0.3;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const [ox, oy] = outN[i];
+      apronPaintM.push([
+        [a[0] - ox * IN, a[1] - oy * IN], [b[0] - ox * IN, b[1] - oy * IN],
+        [b[0] + ox * PARK_CLEAR, b[1] + oy * PARK_CLEAR], [a[0] + ox * PARK_CLEAR, a[1] + oy * PARK_CLEAR],
+      ]);
+      // the corner return: a miter quad filling the wedge between this edge's
+      // strip and the next one's, out to the miter point (capped on the
+      // sharpest park corners — the sliver past the cap is paveland anyway)
+      const [ox2, oy2] = outN[(i + 1) % n];
+      const mx = ox + ox2, my = oy + oy2;
+      const mL = Math.hypot(mx, my);
+      if (mL < 1e-6 || ox * ox2 + oy * oy2 > 0.9994) continue;
+      const miter = Math.min(PARK_CLEAR * 3, (PARK_CLEAR * 2) / mL);
+      apronPaintM.push([
+        [b[0] - (mx / mL) * IN, b[1] - (my / mL) * IN],
+        [b[0] + ox * PARK_CLEAR, b[1] + oy * PARK_CLEAR],
+        [b[0] + (mx / mL) * miter, b[1] + (my / mL) * miter],
+        [b[0] + ox2 * PARK_CLEAR, b[1] + oy2 * PARK_CLEAR],
+      ]);
+    }
+  }
+  // Roadway paint per diagonal, cut at its own crossings. The frontage runs
+  // recorded in pushBlock say where cells actually face the reservation; a
+  // break in them of 6 m or more is a cross street (the narrowest district
+  // street is 9 m, organic 6.3), and past 30 m it is not a crossing but a
+  // park, a creek or open ground — the stretch there stands as its own
+  // segment. Each segment ends at a marked crossing: the flanking blocks'
+  // own crosswalk bars reach across the carriageway at exactly these breaks.
+  const medianFeaturesM = [];
+  DIAG_AX.forEach((D, k) => {
+    const nx2 = -D.uy, ny2 = D.ux;
+    const at = (u, v) => [D.cx + D.ux * u + nx2 * v, D.cy + D.uy * u + ny2 * v];
+    const cutsFrom = (ivs) => {
+      const runs = [];
+      for (const iv of ivs.slice().sort((p, q) => p[0] - q[0])) {
+        const last = runs[runs.length - 1];
+        if (last && iv[0] <= last[1] + 4) last[1] = Math.max(last[1], iv[1]);
+        else runs.push([iv[0], iv[1]]);
+      }
+      const out = [];
+      let prev = -D.halfU;
+      for (const [r0, r1] of runs) {
+        const gap = r0 - prev;
+        if (gap >= 30) out.push(prev + 3, r0 - 3);
+        else if (gap >= 6) out.push((prev + r0) / 2);
+        prev = Math.max(prev, r1);
+      }
+      if (D.halfU - prev >= 30) out.push(prev + 3);
+      return out;
+    };
+    const dedupe = (raw) => {
+      raw.sort((p, q) => p - q);
+      const cuts = [-D.halfU];
+      for (const c of raw) if (c - cuts[cuts.length - 1] >= 2 && D.halfU - c >= 2) cuts.push(c);
+      cuts.push(D.halfU);
+      return cuts;
+    };
+    // Carriageways break at every junction, T or crossing; the mall breaks
+    // only where a street actually crosses it — where BOTH sides gap at once.
+    const sideCuts = dedupe([
+      ...cutsFrom(diagFrontage[k].filter((x) => x[2] === 0)),
+      ...cutsFrom(diagFrontage[k].filter((x) => x[2] === 1)),
+    ]);
+    const med = DIAG_MED[k];
+    const bands = med ? [[med / 2, D.halfV], [-D.halfV, -med / 2]] : [[-D.halfV, D.halfV]];
+    for (let c = 0; c + 1 < sideCuts.length; c++) {
+      const u0 = sideCuts[c], u1 = sideCuts[c + 1];
+      if (u1 - u0 < 2) continue;
+      for (const [v0, v1] of bands) {
+        apronPaintM.push([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)]);
+      }
+    }
+    if (med) {
+      const mallCuts = dedupe(cutsFrom(diagFrontage[k]));
+      for (let c = 0; c + 1 < mallCuts.length; c++) {
+        const u0 = mallCuts[c], u1 = mallCuts[c + 1];
+        if (u1 - u0 < 6) continue;
+        medianFeaturesM.push([at(u0, -med / 2), at(u1, -med / 2), at(u1, med / 2), at(u0, med / 2)]);
+      }
+    }
+  });
+  // THE CIRCUS IS GREEN. The radial plan's monument island was a grey disc of
+  // block pavement. It is the one piece of ground the whole district is aimed
+  // at, and in every built example it is planted — the Étoile, the Schloss
+  // garden, every Victorian circus. Turfed with the park discipline: the
+  // green stands PARK_CLEAR + PARK_KERB inside the plinth ring, so the
+  // circus carriageway stays asphalt and no lot comes within the same
+  // clearance a park keeps. Paint and context only — the plinth cell and the
+  // obstacle set are untouched.
+  const CIRCUS_GREEN_M = blocks
+    .filter((b) => b.circus)
+    .map((b) => erode(b.ring, PARK_CLEAR + PARK_KERB))
+    .filter((g) => g && polygonArea([g]) > 30);
+
   const context = {
     type: "FeatureCollection",
     features: [
@@ -2425,12 +2879,11 @@ export function generateCity(cfg) {
           properties: { kind: "bridge", name: br.name },
         };
       }),
-      // The frontage road around each park and along the boulevard. It gets
-      // its own kind because it has to be paved UNDER the park, not over it —
-      // drawing it with the rest of the roadway used to paint the green out.
-      // Punch the race so the dilated park rectangle does not leave a paved
+      // The frontage road around each park and the roadway of each diagonal,
+      // painted as frames and segments rather than as whole reservations —
+      // see THE APRON IS A FRAME. Punch the race so no piece leaves a paved
       // triangle spanning the channel.
-      ...APRONS.map((ring) => ({
+      ...apronPaintM.map((ring) => ({
         type: "Feature",
         geometry: {
           type: "Polygon",
@@ -2441,12 +2894,39 @@ export function generateCity(cfg) {
         },
         properties: { kind: "apron" },
       })),
+      // The boulevard mall between the carriageways, with the allée standing
+      // on it. Its own kind: it is planted ground inside a roadway, neither
+      // apron asphalt nor a park (a park keeps PARK_CLEAR from lots; a mall
+      // is nine metres from them by design).
+      ...medianFeaturesM.map((ring) => ({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [...ring.map(proj.toLL), proj.toLL(ring[0])],
+            ...waterHolesLL(ring, CHANNEL_M, proj.toLL),
+          ],
+        },
+        properties: { kind: "median" },
+      })),
+      // THE CIRCUS IS GREEN — the radial hub's monument island, turfed.
+      ...CIRCUS_GREEN_M.map((ring) => ({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [...ring.map(proj.toLL), proj.toLL(ring[0])],
+            ...waterHolesLL(ring, CHANNEL_M, proj.toLL),
+          ],
+        },
+        properties: { kind: "park", flavour: "circus" },
+      })),
       // Kerb line on the painted green's outer edge. Own kind: tagging these
       // `street` put a sidewalk, a curb, dashes and a row of parked cars around
       // every park — and a kilometre-long boulevard tagged `shore` got the
       // shore-road stroke across the town. Skip the stretch that runs through
       // the race; a kerb across water is the same smear as a sidewalk.
-      ...PARK_GREEN_M.flatMap((ring) => {
+      ...[...PARK_GREEN_M, ...CIRCUS_GREEN_M].flatMap((ring) => {
         const segs = [];
         let cur = [];
         const n = ring.length;

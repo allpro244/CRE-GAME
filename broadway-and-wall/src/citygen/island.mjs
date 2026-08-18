@@ -239,12 +239,29 @@ function strokeRibbon(path, width) {
     let dAng = a1 - a0;
     while (dAng > Math.PI) dAng -= TAU;
     while (dAng < -Math.PI) dAng += TAU;
+    // The round join belongs on the OUTER bank only. Sweeping the same arc
+    // on both banks mirrored it onto the inner bank RETROGRADE — a bowtie
+    // of ~hw·dAng (sub-metre) at every vertex of a curved centreline — so
+    // ringSelfIntersects rejected the ribbon and only a dead-straight
+    // stream could ever paint, while its unpainted capsules went on cutting
+    // lots. The inner bank takes the offset-line intersection instead:
+    // hw/cos(dAng/2) down the bisector, capped at 2·hw for a hairpin the
+    // trace's maxTurn cannot produce anyway.
     const steps = Math.max(1, Math.round(Math.abs(dAng) / (Math.PI / 12)));
-    for (let s = 0; s <= steps; s++) {
-      const a = a0 + dAng * (s / steps);
-      const n = [Math.cos(a), Math.sin(a)];
-      left.push(vadd(p, vscale(n, hw)));
-      right.push(vadd(p, vscale(n, -hw)));
+    const nb = vnorm(vadd(nIn, nOut));
+    const miter = Math.min(hw / Math.max(0.5, Math.cos(dAng / 2)), hw * 2);
+    if (dAng >= 0) {
+      left.push(vadd(p, vscale(nb, miter)));
+      for (let s = 0; s <= steps; s++) {
+        const a = a0 + dAng * (s / steps);
+        right.push(vadd(p, vscale([Math.cos(a), Math.sin(a)], -hw)));
+      }
+    } else {
+      for (let s = 0; s <= steps; s++) {
+        const a = a0 + dAng * (s / steps);
+        left.push(vadd(p, vscale([Math.cos(a), Math.sin(a)], hw)));
+      }
+      right.push(vadd(p, vscale(nb, -miter)));
     }
   }
   const cap = (center, tangent, fromRight) => {
@@ -2469,7 +2486,7 @@ export function islandConfig(seed) {
     return null;
   };
 
-  const traceWater = (start, u0, minEdge, step, maxLen, wiggle) => {
+  const traceWater = (start, u0, mouth, minEdge, step, maxLen, wiggle, bendAt) => {
     const path = [start];
     let p = start;
     let ang = Math.atan2(u0[1], u0[0]);
@@ -2478,17 +2495,44 @@ export function islandConfig(seed) {
     // loop through the park. Cap the heading change and refuse a step that
     // walks back toward ground already wet.
     const maxTurn = Math.min(0.42, wiggle + 0.18);
+    // The counting houses do not sit IN the water. A step is refused if it
+    // moves deeper into the inner half of the Exchange seat (r/2, 122-150 m
+    // — two blocks at the 52-95 m survey pitches; heat there is still 0.88
+    // of peak, so the banks parcel hot). Deeper-only, so a path that starts
+    // near the core or grazes the rim slides around it instead of dying —
+    // seed 550991's river ran 12 m from the seat, a canal through the
+    // trading floor. The ind seat is exempt on purpose: a mill town seats
+    // its yards ON the creek (streamPeek, section 5).
+    const coreSeat = cores.find((c) => c.role === "core");
+    const skirt = coreSeat.r * 0.5;
+    // Past the island's midpoint the far bank goes out of bounds by a block
+    // (95 m, the widest survey pitch): a stream that runs shore to shore is
+    // a straightedge across the map, and the strip it would leave against
+    // the far coast parcels as slivers. Stopping a block short reads as a
+    // stream rising inland — the pond machinery already caps such heads. A
+    // river coast keeps its estuary: through is that programme's whole point.
+    const farBank = coastProg.key === "river" ? 0 : 95;
+    const halfSpan = dist(mouth, mid);
     while (travelled < maxLen && path.length < 48) {
+      ang += bendAt(travelled);
       const tryAng = ang + Dwat.f(-wiggle, wiggle);
       const towardMid = Math.atan2(mid[1] - p[1], mid[0] - p[0]);
       const wrap = (a) => Math.atan2(Math.sin(a - ang), Math.cos(a - ang));
+      // The drawn heading is the plan; straight-ahead and toward-the-middle
+      // are recoveries for a step that would ground. Sorting these by
+      // smallest turn handed every step to straight-ahead (turn 0) and threw
+      // the wiggle draw away — twelve seeds measured meander 0.022-0.061,
+      // every creek a ruler.
       const candidates = [tryAng, ang, towardMid]
-        .filter((a) => Math.abs(wrap(a)) <= maxTurn)
-        .sort((a, b) => Math.abs(wrap(a)) - Math.abs(wrap(b)));
+        .filter((a) => Math.abs(wrap(a)) <= maxTurn);
       let next = null, nextAng = ang;
       for (const a of candidates) {
         const q = [p[0] + Math.cos(a) * step, p[1] + Math.sin(a) * step];
         if (!inRing(q, inner) || distToRing(q, inner) <= minEdge) continue;
+        if (farBank && dist(q, mouth) > halfSpan
+          && distToRing(q, inner) <= minEdge + farBank) continue;
+        if (dist(q, coreSeat.xy) < skirt
+          && dist(q, coreSeat.xy) < dist(p, coreSeat.xy)) continue;
         let back = false;
         for (let k = 0; k < path.length - 1; k++) {
           if (dist(q, path[k]) < step * 0.85) { back = true; break; }
@@ -2572,7 +2616,34 @@ export function islandConfig(seed) {
     const through = Dwat.chance(kind === "canal" ? 0.55 : 0.38);
     const maxLen = through ? Dwat.f(720, 1280) : Dwat.f(380, 820);
     const wiggle = kind === "canal" ? 0.08 : 0.22;
-    const traced = traceWater(start.p, start.u, minEdge, Dwat.f(32, 44), maxLen, wiggle);
+    const step = Dwat.f(32, 44);
+    // The planned heading under the noise. A canal is engineered — the 0.08
+    // wander is texture — but a dead-straight cut is a CAD line, not a work:
+    // it gets ONE drawn sweep, constant curvature at 900-2400 m radius with
+    // the sign drawn once so it reads as a single decision. Over a 700-1200 m
+    // run that is a 17-76 degree bow — under ~15 degrees a bend does not read
+    // at map scale, past ~90 the cut reads as a meander, which no engineer
+    // ever dug. A creek's plan is the Langbein-Leopold sine-generated curve
+    // (theta varies sinusoidally along arclength — the measured shape of
+    // free meanders): amplitude 0.35-0.6 rad is sinuosity 1.03-1.10
+    // (1/J0(w)), a lowland brook rather than an oxbow train. The wavelength
+    // rule for a 12-18 m channel (Leopold-Wolman, ~10.9x width) would be
+    // ~160 m, which a 32-44 m step cannot resolve; 300-480 m is the finest
+    // train the trace can draw, stated as a resolution floor, not nature.
+    // White-noise wiggle alone left a third of creeks under 0.05 meander —
+    // an unbiased walk is allowed to cancel itself; a phase-drawn sine is not.
+    let bendAt;
+    if (kind === "canal") {
+      const sweep = (Dwat.sign() * step) / Dwat.f(900, 2400);
+      bendAt = () => sweep;
+    } else {
+      const amp = Dwat.f(0.35, 0.6);
+      const wave = Dwat.f(300, 480);
+      const phase = Dwat.f(0, TAU);
+      bendAt = (t) => amp * (Math.sin((TAU * (t + step)) / wave + phase)
+        - Math.sin((TAU * t) / wave + phase));
+    }
+    const traced = traceWater(start.p, start.u, mouth, minEdge, step, maxLen, wiggle, bendAt);
     if (traced.length < 4) return false;
     const approach = [];
     {

@@ -6922,13 +6922,49 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // over every fifth lot. That stripe is what a street actually looks
       // like from above, and it is why the city read as wallpaper.
       //
-      // Two independent hashes now, mixed with the city seed, so a reroll is a
-      // genuinely different town and neighbours are uncorrelated.
+      // Two independent hashes, mixed with the city seed, so a reroll is a
+      // genuinely different town. But fully i.i.d. per building was the
+      // OPPOSITE failure — the candy quilt: every wall tone, glass tint and
+      // roof pick rolled alone, so no two neighbours shared anything and a
+      // block read as confetti at exactly the zoom the game is played at.
+      // Real fabric is hierarchical. A block went up in one era out of two or
+      // three builders' shared brick stock; a district is a palette; only the
+      // building's own deviation is individual. So the scalar a facade draws
+      // from is layered — district centre (v.t, the district tone family the
+      // ground's dt already uses), a block-and-era offset (±0.4), then the
+      // building's own deviation — summed mod 1, so the result stays uniform
+      // on [0,1) and every vVar threshold downstream keeps its calibrated
+      // rate; the correlation moves WITHIN blocks, never the marginals.
+      //
+      // The within-block share is the era's: a pre-1930 block is one
+      // builder's speculative row, so 30% of the variance stays individual
+      // (spread 0.55); a post-1990 block filled in parcel by parcel keeps 45%
+      // (spread 0.67). Between the two it slides linearly — the calibration
+      // is the construction history, not a tuned look.
       // 0 = 1870, 1 = 2030. Every triangle this volume emits carries it.
       mst.era = Math.max(0, Math.min(1, ((v.y || 1950) - 1870) / 160));
       const key = keyOf(v.b) ^ Math.imul(v.t + 1, 0x9e3779b1);
-      const rnd = hash01(key, this.citySeed);
-      const varr = hash01(key ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
+      // bbl = 1e9 + block·1e4 + lot, exact in a double — the block number is
+      // recoverable with no schema field. Deco volumes (b = "") fall to block
+      // 0, which only makes the harbour furniture one family, as it was.
+      const bblN = v.b ? Number(v.b) : 0;
+      const blockNo = bblN >= 1e9 ? Math.floor((bblN - 1e9) / 1e4) : 0;
+      // 15-year bands: two buildings on one block share a material family
+      // only if they also share a construction generation (M2).
+      const bKey = (Math.imul(blockNo + 1, 0x9e3779b1)
+        ^ Math.imul(Math.floor((v.y || 1950) / 15) + 1, 0x85ebca6b)) >>> 0;
+      const dKey = Math.imul(v.t + 1, 0xc2b2ae35) >>> 0;
+      const seed2 = Math.imul(this.citySeed, 3) + 1;
+      const wB = 0.55 + 0.12 * Math.min(1, Math.max(0, ((v.y || 1950) - 1930) / 60));
+      /** district centre + block offset + building deviation, wrapped to [0,1). */
+      const layer = (d: number, b: number, i: number) => {
+        const x = d + (b - 0.5) * 0.8 + (i - 0.5) * wB;
+        return x - Math.floor(x);
+      };
+      const rnd = layer(hash01(dKey, this.citySeed), hash01(bKey, this.citySeed),
+        hash01(key, this.citySeed));
+      const varr = layer(hash01(dKey ^ 0x5bf03635, seed2), hash01(bKey ^ 0x5bf03635, seed2),
+        hash01(key ^ 0x5bf03635, seed2));
       const fh = v.f > 0 && v.z1 > 0 ? Math.max(2.6, v.z1 / Math.max(v.f, 1)) : 3.55;
       let ring = v.r.map((p) => this.project(p));
       let area = 0;
@@ -6939,8 +6975,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (area < 0) ring = ring.slice().reverse();
 
       {
-        mst.deck = roofDeck(style, v.y || 1950, v.f, v.z1,
-          hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f));
+        // One roofer covered the row: the deck roll rides the block-and-era
+        // key with only the building's own deviation on top, so a block of
+        // one generation re-covers in one material and a lone infill differs.
+        const deckRoll = (() => {
+          const x = hash01(bKey ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f)
+            + (hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) - 0.5) * wB;
+          return x - Math.floor(x);
+        })();
+        mst.deck = roofDeck(style, v.y || 1950, v.f, v.z1, deckRoll);
         if (v.d) mst.deck = 8;
         mst.wear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
         let bi = 0, bl = -1;
@@ -6971,13 +7014,45 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (v.k) {
         if (v.b) this.lotRings.set(v.b, ring);
         const ds = v.ds ?? 50;
-        const fringe = ds < 38;
         const downtown = ds >= 62;
-        // vVar still textures the shader; the DRESSING follows demand so a
-        // downtown hole is a parking lot and a millside hole is scrub.
-        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : 0.40, 1, fh]);
+        // R-zoned land reads as a kept lawn behind a hedge, not a fenced
+        // yard — a residential hole is mown by the street that fronts it,
+        // and nobody chain-links it. zn rides the vacant record (build.mjs,
+        // the zoning code's first letter — the same letter dev.ts builds
+        // by), and it OUTRANKS the generic scrub band: measured over five
+        // seeds, R-vacant demand runs median 7-16 with p90 15-33, so a
+        // demand gate alone (the old 38) left this dress firing on 0-12
+        // lots per city. The ds ≥ 12 floor is the deep edge where the grid
+        // peters out and nobody is left to mow — it keeps 24-77% of each
+        // island's R-vacants mown and both states alive on every seed
+        // measured.
+        const resi = !downtown && ds >= 12 && ((v as BuildingVolume & { zn?: number }).zn ?? 0) === 1;
+        const fringe = !resi && ds < 38;
+        // vVar still textures the shader; the DRESSING follows demand and
+        // zoning so a downtown hole is a parking lot, a millside hole is
+        // scrub, and a residential one is grass (>0.62 is the turf band).
+        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : resi ? 0.70 : 0.40, 1, fh]);
         const fence = insetRing(ring, 0.5);
-        if (fence && !fringe) extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
+        if (fence && resi) {
+          // The hedge: a privet annulus in the ROOF buffer, so it shades as
+          // planting (S_GREEN clump noise + seasonGreen) rather than as wall
+          // — and it goes dormant with the trees rather than with the lawns.
+          const inner = insetRing(fence, 0.8);
+          if (inner) {
+            const hh = 0.9 + 0.3 * varr;   // privet holds 0.9-1.2 m, kept
+            const hMeta = [S_GREEN, rnd, varr, hh, fh];
+            extrudeWalls(R, fence, 0, hh, hMeta);
+            extrudeWalls(R, inner.slice().reverse(), 0, hh, hMeta);
+            for (let i = 0; i < fence.length; i++) {
+              const a = fence[i], b = fence[(i + 1) % fence.length];
+              const c = inner[(i + 1) % inner.length], d2 = inner[i];
+              pushWallTri(R, [a[0], a[1], hh], [b[0], b[1], hh], [c[0], c[1], hh], [0, 0, 1], [3, 3, 3], hMeta);
+              pushWallTri(R, [a[0], a[1], hh], [c[0], c[1], hh], [d2[0], d2[1], hh], [0, 0, 1], [3, 3, 3], hMeta);
+            }
+          }
+        } else if (fence && !fringe) {
+          extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
+        }
         const m2 = Math.abs(area) / 2;
         if (fringe) {
           const n = Math.min(48, Math.max(3, Math.round(m2 / 85)));
@@ -7088,9 +7163,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // Decorrelate the slate colour from the roof-type gate. S_GABLE picks
         // its shingle out of vVar, and both gates below are vVar thresholds —
         // so every mansard in the city came out the same copper green and no
-        // hip was ever brown. Re-hash it and the three slates spread evenly
-        // across both.
-        const slate = (varr * 3.71 + rnd * 1.93) % 1;
+        // hip was ever brown. Its own hash stream keeps the slates spread
+        // across both — but layered like the walls (block full-width, the
+        // building's deviation on top), because the multiply-and-wrap it
+        // replaced amplified the within-block spread ×3.71 and quietly undid
+        // the block clustering for exactly the surface this camera sees most.
+        const slate = (() => {
+          const x = hash01(bKey ^ 0x51a7e3, this.citySeed ^ 0x0f00f)
+            + (hash01(key ^ 0x51a7e3, this.citySeed ^ 0x0f00f) - 0.5) * wB;
+          return x - Math.floor(x);
+        })();
         const rMeta = [S_GABLE, rnd, slate, v.z1 + 4, fh];
         const span = Math.sqrt(Math.abs(area) / 2);
         const rise = mansard ? Math.min(4.2, Math.max(2.6, span * 0.30)) : Math.min(3.4, Math.max(1.9, span * 0.34));

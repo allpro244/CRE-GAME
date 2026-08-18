@@ -567,6 +567,20 @@ export function buildCityData(src) {
     x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
     return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
   };
+  /**
+   * District tone 0-4 — FNV over the district key, the SAME derivation the
+   * ground features use for their `dt` (citygen districtTone), so a volume's
+   * palette family and the pavement tint under it agree about which district
+   * they are in. This replaced `Number(bbl) % 5`: 1e9 and 1e4 are both
+   * ≡ 0 (mod 5), so that tone was lotNo % 5 — a hard 1,2,3,4,0 stripe down
+   * every block face, correlated with nothing on the ground.
+   */
+  const toneOf = (district) => {
+    const t = String(district ?? "");
+    let h = 2166136261;
+    for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0) % 5;
+  };
 
   /**
    * Shrink a ring toward a target fraction of its area, backing off toward the
@@ -1145,8 +1159,10 @@ export function buildCityData(src) {
       bbl: bbl || "",
       class: rec?.class ?? "office",
       year,
-      // stable per-building tone jitter for the facade palette
-      tone: bbl ? Number(bbl) % 5 : 0,
+      // the district's tone family — the renderer's material key reads it as
+      // the palette centre a block deviates from (per-building jitter lives in
+      // the deed hash there, not here)
+      tone: rec ? toneOf(rec.district) : 0,
       // decorative kind (hull, crane, light...) — the renderer paints by it
       ...(f.properties.deco ? { deco: f.properties.deco } : {}),
     };
@@ -1223,13 +1239,18 @@ export function buildCityData(src) {
       r: ring,
     });
   }
-  // vacant lots go out flat, so the renderer can dress them (gravel and fence)
+  // vacant lots go out flat, so the renderer can dress them by place: demand
+  // separates downtown gravel from fringe scrub, and `zn` (the zoning code's
+  // first letter — the same letter dev.ts builds by) marks the residential
+  // lots that go to grass behind a hedge rather than to a fenced yard
   for (const l of lots) {
     const rec = table[l.bbl];
     if (!rec || rec.class !== "land") continue;
+    const zl = String(rec.zoneDist ?? "")[0];
     buildings3d.push({
-      b: l.bbl, c: "land", y: 0, t: Number(l.bbl) % 5, f: 0,
+      b: l.bbl, c: "land", y: 0, t: toneOf(rec.district), f: 0,
       z0: 0, z1: 0, d: 0, k: 1, ds: rec.demandScore ?? 50,
+      zn: zl === "R" ? 1 : zl === "M" ? 2 : 0,
       r: l.ring.map((p) => proj.toLL(p).map((v) => +v.toFixed(6))),
     });
   }

@@ -420,65 +420,11 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
-        id: "parks",
-        type: "fill",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "park"],
-        paint: {
-          "fill-color": [
-            "match", ["coalesce", ["get", "flavour"], "park"],
-            "cemetery", "#8fa37a",
-            "battery", "#c5c4a4",
-            "market", "#cfc6b0",
-            "#b7d29f",
-          ],
-        },
-      },
-      {
-        // Kerbed edge of the painted green. Was a soft tint-on-tint outline
-        // that disappeared against the lawn; without a hard stop the turf and
-        // the flanking lots read as one field across the frontage road.
-        id: "park-outline",
-        type: "line",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "park"],
-        paint: {
-          "line-color": "#6e6b64",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
-        },
-      },
-      {
-        // the walks: crushed-gravel paths through the green
-        id: "park-paths",
-        type: "line",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "parkpath"],
-        minzoom: 13,
-        paint: {
-          "line-color": "#e3dbbe",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13.5, 1, 16.5, 4.5] as never,
-        },
-        layout: { "line-join": "round", "line-cap": "round" },
-      },
-      {
-        id: "park-pond",
-        type: "fill",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "pond"],
-        paint: { "fill-color": "#a9cadf" },
-      },
-      {
-        id: "park-pond-edge",
-        type: "line",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "pond"],
-        paint: { "line-color": "#8fb3c9", "line-width": 1.4 },
-      },
-      {
         // ROADWAY. The cells tile the land, so painting them asphalt and then
         // painting the blocks back on top leaves exactly the street corridor
         // between two curbs. This is the surface; the layers below it are the
-        // markings on it.
+        // markings on it. The green is painted AFTER this, so a leftover
+        // sliver that still overlaps a park cannot paste a road on the lawn.
         id: "pavement",
         type: "fill",
         source: "bw-context",
@@ -592,6 +538,100 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         layout: { "line-join": "round", "line-cap": "round" },
       },
       {
+        // the shore road still gets its own stroke
+        id: "streets",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
+        paint: {
+          "line-color": "#9b978f",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        id: "seam",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
+        paint: {
+          "line-color": "#6a6560",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        // center dashes on the shore road at close zoom
+        id: "street-dash",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
+        minzoom: 14.5,
+        paint: {
+          "line-color": "#c8c4b6",
+          "line-width": 0.9,
+          "line-dasharray": [3, 3],
+        },
+      },
+      {
+        // TURF ABOVE THE ROADWAY. Apron stays underneath so the frontage
+        // ring still reads; pavement, dashes, sidewalks and seams used to
+        // sit on top of the green and that is the road through the Common.
+        id: "parks",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "park"],
+        paint: {
+          "fill-color": [
+            "match", ["coalesce", ["get", "flavour"], "park"],
+            "cemetery", "#8fa37a",
+            "battery", "#c5c4a4",
+            "market", "#cfc6b0",
+            "#b7d29f",
+          ],
+        },
+      },
+      {
+        // Kerbed edge of the painted green. Was a soft tint-on-tint outline
+        // that disappeared against the lawn; without a hard stop the turf and
+        // the flanking lots read as one field across the frontage road.
+        id: "park-outline",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "park"],
+        paint: {
+          "line-color": "#6e6b64",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
+        },
+      },
+      {
+        // the walks: crushed-gravel paths through the green
+        id: "park-paths",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "parkpath"],
+        minzoom: 13,
+        paint: {
+          "line-color": "#e3dbbe",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13.5, 1, 16.5, 4.5] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        id: "park-pond",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pond"],
+        paint: { "fill-color": "#a9cadf" },
+      },
+      {
+        id: "park-pond-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pond"],
+        paint: { "line-color": "#8fb3c9", "line-width": 1.4 },
+      },
+      {
         // Inland water, ABOVE the roadway. Pavement used to paint over the
         // creek wherever a cell still overlapped the ribbon, which read as
         // asphalt triangles stretching to the bank.
@@ -655,42 +695,6 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "line-color": "#4a4844",
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 16.5, 2.6] as never,
-        },
-      },
-      {
-        // the shore road still gets its own stroke
-        id: "streets",
-        type: "line",
-        source: "bw-context",
-        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
-        paint: {
-          "line-color": "#9b978f",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
-        },
-        layout: { "line-join": "round", "line-cap": "round" },
-      },
-      {
-        id: "seam",
-        type: "line",
-        source: "bw-context",
-        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
-        paint: {
-          "line-color": "#6a6560",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
-        },
-        layout: { "line-join": "round", "line-cap": "round" },
-      },
-      {
-        // center dashes on the shore road at close zoom
-        id: "street-dash",
-        type: "line",
-        source: "bw-context",
-        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
-        minzoom: 14.5,
-        paint: {
-          "line-color": "#c8c4b6",
-          "line-width": 0.9,
-          "line-dasharray": [3, 3],
         },
       },
       {

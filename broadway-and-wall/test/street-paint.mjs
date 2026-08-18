@@ -1,10 +1,13 @@
 /**
- * Street paint must not smear toward the creek.
+ * Street paint must not smear toward the creek, or across a park.
  *
  * A boulevard tagged `cls: "shore"` got the shore-road stroke, sidewalk,
  * dashes and a row of parked cars along a kilometre chord. Park rings tagged
  * `kind: "street"` did the same around every green. Paveland as one island
  * polygon triangulated across the river wherever a bank cell was missing.
+ * A seam that still landed on a common painted a carriageway through the
+ * lawn; leftover pavement sits above the park fill unless the green is a
+ * hole and the dashes walk the edge the way water already does.
  *
  *   pnpm streetpaint
  */
@@ -41,11 +44,20 @@ function segLen(a, b) {
   return Math.hypot(b[0] - a[0], b[1] - a[1]);
 }
 
-const seeds = [1, 42, 3178393255, 3533229586, 3252];
+const cases = [
+  { seed: 1, size: "harbour" },
+  { seed: 42, size: "harbour" },
+  { seed: 3178393255, size: "harbour" },
+  { seed: 3533229586, size: "harbour" },
+  { seed: 3252, size: "harbour" },
+  // Default play size: seams can still land on a green after `fits`.
+  { seed: 3252, size: "city" },
+  { seed: 4604, size: "city" },
+];
 let failed = 0;
 
-for (const seed of seeds) {
-  const city = makeCity(PROCEDURAL, seed, { size: "harbour" });
+for (const { seed, size } of cases) {
+  const city = makeCity(PROCEDURAL, seed, { size });
   const core = city.manifest?.core ?? city.manifest?.bbox;
   const lon0 = Array.isArray(core) && core.length === 2 ? core[0] : (city.manifest.bbox[0] + city.manifest.bbox[2]) / 2;
   const lat0 = Array.isArray(core) && core.length === 2 ? core[1] : (city.manifest.bbox[1] + city.manifest.bbox[3]) / 2;
@@ -72,7 +84,13 @@ for (const seed of seeds) {
     return segLen(r[0], r[1]) > 200;
   });
 
-  let wetDash = 0, wetSidewalk = 0;
+  const parksPaint = feats
+    .filter((f) => f.properties?.kind === "park" && f.geometry?.type === "Polygon")
+    .map(ringOf)
+    .filter(Boolean)
+    .map((r) => r.map(proj.toM));
+
+  let wetDash = 0, wetSidewalk = 0, parkDash = 0, parkSidewalk = 0, parkSeam = 0;
   for (const f of feats) {
     if (f.geometry?.type !== "LineString") continue;
     const r = ringOf(f)?.map(proj.toM);
@@ -82,16 +100,63 @@ for (const seed of seeds) {
       const len = segLen(a, b);
       if (len < 12) continue;
       const steps = Math.max(2, Math.ceil(len / 8));
-      let wet = 0;
+      let wet = 0, inGreen = 0;
       for (let k = 0; k <= steps; k++) {
         const t = k / steps;
         const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
         if (streams.some((s) => inRing(p, s))) wet++;
+        if (parksPaint.some((pk) => inRing(p, pk))) inGreen++;
       }
-      if (wet <= steps * 0.35) continue;
-      if (f.properties?.kind === "centerline") wetDash++;
-      if (f.properties?.kind === "street" && (f.properties?.cls === "grid" || f.properties?.cls === "lane")) wetSidewalk++;
+      if (wet > steps * 0.35) {
+        if (f.properties?.kind === "centerline") wetDash++;
+        if (f.properties?.kind === "street" && (f.properties?.cls === "grid" || f.properties?.cls === "lane")) wetSidewalk++;
+      }
+      if (inGreen > steps * 0.35) {
+        if (f.properties?.kind === "centerline") parkDash++;
+        if (f.properties?.kind === "street" && (f.properties?.cls === "grid" || f.properties?.cls === "lane")) parkSidewalk++;
+        if (f.properties?.kind === "street" && (f.properties?.cls === "seam" || f.properties?.cls === "boulevard")) parkSeam++;
+      }
     }
+  }
+
+  let paveInPark = 0;
+  for (const f of feats.filter((x) => x.properties?.kind === "pavement" && x.geometry?.type === "Polygon")) {
+    const coords = f.geometry.coordinates ?? [];
+    const outer = (coords[0] ?? []).slice(0, -1).map(proj.toM);
+    if (outer.length < 3) continue;
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const p of outer) {
+      minx = Math.min(minx, p[0]); miny = Math.min(miny, p[1]);
+      maxx = Math.max(maxx, p[0]); maxy = Math.max(maxy, p[1]);
+    }
+    let deep = 0;
+    for (let x = minx + 6; x < maxx; x += 16) {
+      for (let y = miny + 6; y < maxy; y += 16) {
+        const p = [x, y];
+        if (!inRing(p, outer)) continue;
+        let inHole = false;
+        for (let h = 1; h < coords.length; h++) {
+          if (inRing(p, coords[h].slice(0, -1).map(proj.toM))) { inHole = true; break; }
+        }
+        if (inHole) continue;
+        if (parksPaint.some((pk) => inRing(p, pk))) {
+          // ignore the kerb-width fringe; the fault is asphalt in the lawn
+          let edge = Infinity;
+          for (const pk of parksPaint) {
+            for (let i = 0; i < pk.length; i++) {
+              const a = pk[i], b = pk[(i + 1) % pk.length];
+              const dx = b[0] - a[0], dy = b[1] - a[1];
+              const l2 = dx * dx + dy * dy;
+              let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+              t = Math.max(0, Math.min(1, t));
+              edge = Math.min(edge, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
+            }
+          }
+          if (edge >= 8) deep++;
+        }
+      }
+    }
+    if (deep > 2) paveInPark++;
   }
 
   const paveland = feats.find((f) => f.properties?.kind === "paveland");
@@ -146,6 +211,10 @@ for (const seed of seeds) {
   if (fakeShore.length) problems.push(`${fakeShore.length} kilometre-chord(s) tagged shore`);
   if (wetDash) problems.push(`${wetDash} centreline(s) run through water`);
   if (wetSidewalk) problems.push(`${wetSidewalk} sidewalk(s) run through water`);
+  if (parkDash) problems.push(`${parkDash} centreline(s) run through a park`);
+  if (parkSidewalk) problems.push(`${parkSidewalk} sidewalk(s) run through a park`);
+  if (parkSeam) problems.push(`${parkSeam} seam/boulevard(s) run through a park`);
+  if (paveInPark) problems.push(`${paveInPark} pavement fill(s) cover a park`);
   if (missingHoles) problems.push(`paveland has no water holes (${nHoles} holes, ${nPaintedWater} streams)`);
   if (parkNeedsHole && parkHasHole < parkNeedsHole) {
     problems.push(`park over water missing holes (${parkHasHole}/${parkNeedsHole})`);
@@ -158,7 +227,7 @@ for (const seed of seeds) {
 
   const ok = problems.length === 0;
   console.log(
-    `${ok ? "OK" : "FAIL"} seed ${seed}: shore-lines ${shore.length} `
+    `${ok ? "OK" : "FAIL"} seed ${seed} ${size}: shore-lines ${shore.length} `
     + `paveland-holes ${nHoles}/${nPaintedWater} `
     + (ok ? "" : problems.join("; ")),
   );

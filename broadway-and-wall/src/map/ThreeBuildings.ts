@@ -7207,6 +7207,26 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       return n ? sum / n : 32;
     };
 
+    const parkM = (this.ctxPoints.parks ?? []).map((entry) => {
+      const ring = Array.isArray(entry) && typeof entry[0]?.[0] === "number"
+        ? entry as [number, number][]
+        : (entry as { ring: [number, number][] }).ring;
+      return (ring ?? []).map((q) => this.project(q));
+    });
+    const inParkXY = (x: number, y: number) => {
+      const p: [number, number] = [x, y];
+      return parkM.some((r) => {
+        if (r.length < 3) return false;
+        let inside = false;
+        for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+          const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1];
+          if ((yi > p[1]) !== (yj > p[1])
+            && p[0] < ((xj - xi) * (p[1] - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+        }
+        return inside;
+      });
+    };
+
     for (const curb of this.curbs) {
       const ring = curb.map((p) => this.project(p));
       if (ring.length < 3) continue;
@@ -7219,6 +7239,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const len = Math.hypot(dx, dy);
         if (len < 2 || len > 400) continue;
+        // A sidewalk that still chords the green would plant people and
+        // lamps on the lawn. Citygen drops those edges; this is the last
+        // line if one still arrives.
+        if (inParkXY((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) continue;
         // step along the frontage, planting into the pavement side
         for (let d = carry; d < len; d += 17 + rnd() * 9) {
           const t = d / len;
@@ -7227,6 +7251,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }  // point outward
           const off = 2.1 + rnd() * 0.7;
           const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28, ctx: 0 };
+          if (inParkXY(item.x, item.y)) continue;
           if (rnd() < 0.76) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
         }
@@ -7248,7 +7273,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
           const off = 0.9 + rnd() * 1.1;             // on the pavement, not the road
-          people.push({ x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.2, rot: rnd() * 6.28 });
+          const pxp = px + nx * off, pyp = py + ny * off;
+          if (inParkXY(pxp, pyp)) continue;
+          people.push({ x: pxp, y: pyp, s: 0.92 + rnd() * 0.2, rot: rnd() * 6.28 });
         }
         // CARS AT THE KERB. Nothing gives a street its scale like the row of
         // parked cars along it — a building is abstract until there is
@@ -7260,9 +7287,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const cxp = px + nx * (4.4 + rnd() * 0.4), cyp = py + ny * (4.4 + rnd() * 0.4);
+          if (inParkXY(cxp, cyp)) continue;
           cars.push({
-            x: px + nx * (4.4 + rnd() * 0.4),
-            y: py + ny * (4.4 + rnd() * 0.4),
+            x: cxp,
+            y: cyp,
             s: 0.94 + rnd() * 0.16,
             rot: Math.atan2(dy, dx) + (rnd() - 0.5) * 0.06,
           });
@@ -7283,8 +7312,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           for (let d = rnd() * walkStep; d < len; d += walkStep * (0.7 + rnd() * 0.6)) {
             const off = 0.8 + rnd() * 1.3;
             const flip = rnd() < 0.5 ? 1 : -1;   // both directions on a pavement
+            const wx = a[0] + ux * len * 0.5 + nx * off, wy = a[1] + uy * len * 0.5 + ny * off;
+            if (inParkXY(wx, wy)) continue;
             walkers.push({
-              x: a[0] + ux * len * 0.5 + nx * off, y: a[1] + uy * len * 0.5 + ny * off,
+              x: wx, y: wy,
               s: 0.9 + rnd() * 0.22, rot,
               dx: ux * flip, dy: uy * flip, len: Math.max(10, len - 3),
               spd: 0.8 + rnd() * 0.9, ph: rnd(),
@@ -7295,9 +7326,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // other way), thicker downtown, always sparser than the parked lane
           const laneStep = 26 + (1 - dn) * 60;
           for (let d = rnd() * laneStep; d < len; d += laneStep * (0.7 + rnd() * 0.7)) {
+            const mx = a[0] + ux * len * 0.5 + nx * (7.2 + rnd() * 0.5);
+            const my = a[1] + uy * len * 0.5 + ny * (7.2 + rnd() * 0.5);
+            if (inParkXY(mx, my)) continue;
             movers.push({
-              x: a[0] + ux * len * 0.5 + nx * (7.2 + rnd() * 0.5),
-              y: a[1] + uy * len * 0.5 + ny * (7.2 + rnd() * 0.5),
+              x: mx,
+              y: my,
               s: 0.94 + rnd() * 0.14, rot,
               dx: ux, dy: uy, len: Math.max(16, len - 2),
               spd: 4.5 + rnd() * 3.5, ph: rnd(),

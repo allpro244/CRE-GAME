@@ -22,3 +22,4 @@ dbg*.mjs
 check*.mjs
 .audit/
 .audit-rails/
+dist-gallery/

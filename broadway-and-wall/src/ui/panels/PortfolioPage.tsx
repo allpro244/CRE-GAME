@@ -131,6 +131,8 @@ export function PortfolioPage() {
   const shown = rows;
   const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
+  // Property … buttons. Extra lead cells when ranking or bundling.
+  const bookCols = 17 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
     const rec = resolveRec(parcels, game, h.bbl);
@@ -367,6 +369,7 @@ export function PortfolioPage() {
           </button>
         )}
       </div>
+      <div className="scroll-x">
       <table className="tbl">
         <thead>
           <tr>
@@ -419,7 +422,7 @@ export function PortfolioPage() {
                 </td>
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
-              <td>{rec?.address ?? h.bbl}</td>
+              <td className="nowrap">{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
               <td className="num" title={h.groundLeased
                 ? "Lessee improvement — not your building sf"
@@ -619,28 +622,28 @@ export function PortfolioPage() {
             </tr>
             {refiRow === h.bbl && (
               <tr>
-                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <RefiSection bbl={h.bbl} />
                 </td>
               </tr>
             )}
             {listRow === h.bbl && (
               <tr>
-                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
                 </td>
               </tr>
             )}
             {glRow === h.bbl && canGround && (
               <tr>
-                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <GroundLeaseSection bbl={h.bbl} onDone={() => setGlRow(null)} />
                 </td>
               </tr>
             )}
             {assembleRow === h.bbl && (
               <tr>
-                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <AssembleSection bbl={h.bbl} onDone={() => setAssembleRow(null)} />
                 </td>
               </tr>
@@ -649,14 +652,14 @@ export function PortfolioPage() {
             );
           })}
           {Object.values(game.developments).map((dv) => (
-            /* SIXTEEN CELLS, NOT FIFTEEN. This row was one short of the header
-               and every value from the seventh column rightwards sat under the
-               wrong heading — a job's construction loan balance was printing
-               under "Gain". A misaligned number is worse than a missing one. */
+            /* SEVENTEEN CELLS, same order as the header. Basis / psf and the
+               action column were added after a sixteen-cell patch; the loan
+               then sat under Gain, equity under Debt, and BUILDING under
+               CF / mo. A misaligned number is worse than a missing one. */
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               {bundling && <td className="dim">·</td>}
               {ranked && <td className="num dim">—</td>}
-              <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
+              <td className="nowrap">{parcels[dv.bbl]?.address ?? dv.bbl}</td>
               <td>{devUseLabel(dv.use)}</td>
               <td className="num dim">{sf(dv.sf)}</td>
               <td className="num dim">—</td>
@@ -666,9 +669,10 @@ export function PortfolioPage() {
               <td className="num dim">—</td>
               <td className="num" title="The budget as it stands, escalation included">{usd(dv.costTotal)}</td>
               <td className="num dim">—</td>
+              <td className="num dim">—</td>
               <td className="num">{usd(dv.loanBalance)}</td>
               <td className="num" title="What you have actually put in so far">{usd(dv.equitySpent)}</td>
-              <td className="num neg" title="Construction interest accruing into the loan, not paid in cash">
+              <td className="num nowrap neg" title="Construction interest accruing into the loan, not paid in cash">
                 {usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}
               </td>
               <td className="num dim">—</td>
@@ -678,6 +682,7 @@ export function PortfolioPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

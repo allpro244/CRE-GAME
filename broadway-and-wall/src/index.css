@@ -976,6 +976,7 @@ body {
 /* A wide table inside a narrow docked panel scrolls itself rather than
    pushing the whole page sideways. */
 .scroll-x { overflow-x: auto; max-width: 100%; }
+.page-portfolio .scroll-x { margin-top: 8px; }
 
 /* THREE SCALES, ONE COLUMN. Occupancy, rent and NOI cannot share a y-axis —
    a per-cent, a $/sf and a $/yr on one scale is a flat line and a spike. So

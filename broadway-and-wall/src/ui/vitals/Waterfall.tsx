@@ -7,12 +7,12 @@
 // account (the same BooksMonth buckets the income statement reads) and the
 // marks (the same ownedHoldingValue every balance sheet and lender reads).
 // Nothing here is re-derived — one quantity, one function, everywhere.
-import { useMemo } from "react";
+import { useDeferredValue, useMemo } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BooksMonth, GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
-import { ownedHoldingValue, resolveRec } from "@/engine/value";
+import { netWorth, ownedHoldingValue, resolveRec } from "@/engine/value";
 import { depositsHeld } from "@/engine/leasing";
 import { usd } from "@/ui/format";
 import "./vitals.css";
@@ -128,11 +128,19 @@ function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelT
   const revals: WfValueLine[] = [];
   let valueNet = 0;
   if (prev && parcels) {
+    // Exits scanned first: a deed sold and bought BACK inside one window is
+    // two events, not a revaluation — the exit row removes the old mark, so
+    // the deed on the book now must enter as a new one or its old value is
+    // subtracted twice.
+    const exitedInWindow = new Set<string>();
+    for (const e of game.exits ?? []) {
+      if (e.soldM > prev.month && e.soldM <= game.month) exitedInWindow.add(e.bbl);
+    }
     for (const h of Object.values(game.holdings)) {
       const ph = prev.holdings[h.bbl];
       const nv = ownedHoldingValue(game, parcels, h);
       const label = resolveRec(parcels, game, h.bbl)?.address ?? h.bbl;
-      if (ph) {
+      if (ph && !exitedInWindow.has(h.bbl)) {
         const d = nv - ownedHoldingValue(prev, parcels, ph);
         if (d) { valueNet += d; revals.push({ key: h.bbl, label, amount: d }); }
       } else if (nv) {
@@ -162,13 +170,20 @@ function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelT
     revals.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   }
 
-  // ΔNW from the same tape the chart draws — nwHistory index i is month i.
-  const nh = game.nwHistory ?? [];
-  const endM = prev ? game.month : (span.length ? span[span.length - 1].m : game.month);
-  const startM = prev ? prev.month : endM - 1;
-  const nwNow = nh[endM];
-  const nwThen = startM >= 0 ? nh[startM] : undefined;
-  const dNw = nwNow !== undefined && nwThen !== undefined ? nwNow - nwThen : null;
+  // ΔNW live, from the same appraisal everything else reads. nwHistory is
+  // only written on the tick, so a sale accepted mid-month would move the
+  // cash and value rows while a taped headline sat still — the same quantity
+  // with two answers. With no snapshot the tape is all there is.
+  let dNw: number | null = null;
+  if (prev && parcels) {
+    dNw = netWorth(game, parcels) - netWorth(prev, parcels);
+  } else {
+    const nh = game.nwHistory ?? [];
+    const endM = span.length ? span[span.length - 1].m : game.month;
+    const nwNow = nh[endM];
+    const nwThen = endM - 1 >= 0 ? nh[endM - 1] : undefined;
+    dNw = nwNow !== undefined && nwThen !== undefined ? nwNow - nwThen : null;
+  }
   // Only reconcile when both sides were actually computed; against a
   // cash-only fallback the residual would just be the missing value section.
   const resid = hasPrev && dNw !== null ? dNw - (cashNet + valueNet) : null;
@@ -220,8 +235,13 @@ function WfTotal({ label, amount }: { label: string; amount: number }) {
  * valuation function the rest of the game already trusts.
  */
 export default function Waterfall({ compact }: { compact?: boolean }) {
-  const game = useStore((s) => s.game);
-  const prev = useStore((s) => s.prevForDigest);
+  // Deferred like the top bar's own vitals: an advance with this card
+  // mounted repaints the clock first and re-walks the book a paint later,
+  // instead of putting two full appraisals on the keypress.
+  const gameLive = useStore((s) => s.game);
+  const prevLive = useStore((s) => s.prevForDigest);
+  const game = useDeferredValue(gameLive);
+  const prev = useDeferredValue(prevLive);
   const parcels = useStore((s) => s.parcels);
 
   // Two appraisals of the whole book. Keyed on the state references — an

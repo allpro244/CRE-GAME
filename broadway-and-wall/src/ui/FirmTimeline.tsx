@@ -518,7 +518,12 @@ export default function FirmTimeline() {
     || Object.values(game.propertyLog ?? {}).some((l) => l.length >= PROPERTY_HISTORY_CAP);
 
   const grewWord = review.dNW >= 0 ? "more" : "less";
-  const windowWord = game.month < 12 ? `Since founding` : `Twelve months to ${monthLabel(review.m)}`;
+  const yearOne = game.month < 12;
+  const windowWord = yearOne ? `Since founding` : `Twelve months to ${monthLabel(review.m)}`;
+  // Same window in every sentence: a first-year firm's delta runs from
+  // founding, and saying "a year ago" against a five-month-old number is
+  // the two-answers fault in prose.
+  const againstWord = yearOne ? "than at founding" : "than it was a year ago";
 
   return (
     <div>
@@ -529,15 +534,15 @@ export default function FirmTimeline() {
           {review.soldN} off{review.forcedN > 0 ? ` — ${review.forcedN} of them taken, not sold` : ""},{" "}
           {review.sfDelivered > 0 ? `${fmtSf(review.sfDelivered)} delivered` : "nothing delivered"}.{" "}
           {review.biggest ? <>The largest single mark was {review.biggest}. </> : null}
-          The firm is worth {usd(Math.abs(review.dNW))} {grewWord} than it was a year ago.
+          The firm is worth {usd(Math.abs(review.dNW))} {grewWord} {againstWord}.
         </div>
         <div className="tl-stats">
           <div className="tl-stat">
             <div className="tl-stat-label">Net worth</div>
             <div className="tl-stat-value">
               {usd(review.nwNow)}
-              <DeltaChip value={review.dNW} fmt={usd} title="Against twelve months ago" />
-              <Spark values={review.spark} title="Net worth, last twelve months" />
+              <DeltaChip value={review.dNW} fmt={usd} title={yearOne ? "Against founding" : "Against twelve months ago"} />
+              <Spark values={review.spark} title={yearOne ? "Net worth since founding" : "Net worth, last twelve months"} />
             </div>
           </div>
           <div className="tl-stat">

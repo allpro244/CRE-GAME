@@ -13,7 +13,8 @@ import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf } from "@/engine/leasing";
+import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { fundableNow } from "@/engine/credit";
@@ -454,18 +455,21 @@ function ParcelPanelInner({
                 ...inUse.map(({ t, i }) => {
                   const near = t.endM - game.month <= 24;
                   const ri = near ? renewalIntent(game, rec, holding, t) : null;
-                  // HEADROOM, MEASURED. "growing" was a bare word; the desk
-                  // that writes the expansion letter works off need = sf ×
-                  // staff against what stands vacant in this leg, so the row
-                  // now says the numbers it acts on. A leg that cannot house
-                  // the need means no letter ever arrives — the tenant tours
-                  // instead, and the renewal quietly pays for it — which is
-                  // why that warning belongs on the roll, not in the news.
+                  // HEADROOM, MEASURED. "growing" was a bare word; the row now
+                  // says the numbers the desk acts on. "No room" is the SAME
+                  // gate the engine's expansion letter tests (leasing.ts
+                  // tickLeasing): room = vacant − what supportableOcc says
+                  // this address cannot fill, and a letter only arrives when
+                  // room clears the smallest lettable suite. The first cut
+                  // asked a different question (full shortfall vacant) and
+                  // called moves the engine was still going to letter.
                   const staff = t.staff ?? 1;
                   const outgrown = staff > 1.30;
                   const shrinking = staff < 0.78;
-                  const noRoom = outgrown
-                    && useVacantSf(rec, holding, u, game.month) < t.sf * (staff - 1);
+                  const expRoom = Math.max(0,
+                    useVacantSf(rec, holding, u, game.month)
+                    - (1 - supportableOcc(game.econ, rec, u)) * useSf(rec, u));
+                  const noRoom = outgrown && expRoom < minTenancySf(rec, u);
                   // TENURE ON THE ROW. The roll knows exactly how long every
                   // tenant has been here and never said so — and "since 2004"
                   // is what turns a row into a relationship.

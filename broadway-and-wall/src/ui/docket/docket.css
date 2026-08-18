@@ -2,8 +2,21 @@
    perch below the top bar, same parchment blur, same z 25. Everything here
    is text rows: the docket is a reading surface, not a dashboard. */
 
-.docket {
+/* Two classes, deliberately: component stylesheets bundle BEFORE index.css,
+   so a bare .docket would lose the width tie to .year-rail's 340px. */
+.year-rail.docket {
   width: min(380px, calc(100vw - 28px));
+}
+
+/* Under 900px the map HUD moves to the docket's top-left perch (index.css).
+   The docket yields the corner and takes the right edge — two rails stacked
+   on one anchor buried the HUD's filters and lens key entirely. */
+@media (max-width: 900px) {
+  .year-rail.docket {
+    left: auto;
+    right: 10px;
+    width: min(320px, calc(100vw - 20px));
+  }
 }
 
 .docket-head {

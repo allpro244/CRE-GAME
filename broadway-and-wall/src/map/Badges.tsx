@@ -93,15 +93,17 @@ export function badgesFor(g: GameState, parcels: ParcelTable): Badge[] {
       const mo = h.loan.maturityM - m;
       // Eighteen months is when a refinancing conversation starts; six is when
       // it stops being a conversation. Same window the mesh notice boards use.
+      // The months-left count rides the chip so the tier survives monochrome —
+      // the glyph alone was two identical clocks told apart only by colour.
       if (mo <= 6) {
         put({
           bbl: h.bbl, glyph: "◷", cls: "danger", route: "debt", rank: RANK_BALLOON_NEAR,
-          label: "balloon " + monthLabel(h.loan.maturityM),
+          count: mo, label: "balloon " + monthLabel(h.loan.maturityM),
         });
       } else if (mo <= 18) {
         put({
           bbl: h.bbl, glyph: "◷", cls: "warn", route: "debt", rank: RANK_BALLOON_FAR,
-          label: "balloon " + monthLabel(h.loan.maturityM),
+          count: mo, label: "balloon " + monthLabel(h.loan.maturityM),
         });
       }
     }
@@ -170,7 +172,9 @@ function calloutFor(g: GameState, bbl: string | null, parcels: ParcelTable): Cal
   if (a && !a.refused && !g.holdings[bbl] && a.ask !== undefined) {
     return { bbl, text: `owner would take ${usd(a.ask)}` };
   }
-  const onIt = (g.lois ?? []).filter((l) => l.bbl === bbl);
+  // Same filter as the chip layer and the Deals queue — the agent's paper
+  // does not summon the principal from the map either.
+  const onIt = (g.lois ?? []).filter((l) => l.bbl === bbl && loiNeedsPrincipal(g, l));
   if (onIt.length) {
     const first = onIt.reduce((p, c) => (c.expiresM < p.expiresM ? c : p));
     return {
@@ -203,7 +207,7 @@ function cachedBadges(g: GameState, parcels: ParcelTable): Badge[] {
 // dynSigRef pattern. It encodes everything the DOM shows, so a stable
 // signature is a proof the chips are already right.
 const badgeSig = (badges: Badge[], co: Callout | null) =>
-  badges.map((b) => `${b.bbl}·${b.glyph}·${b.cls}·${b.label}`).join("|")
+  badges.map((b) => `${b.bbl}·${b.glyph}·${b.cls}·${b.count ?? ""}·${b.label}`).join("|")
   + (co ? `§${co.bbl}·${co.text}` : "");
 
 function routeTo(b: Badge) {

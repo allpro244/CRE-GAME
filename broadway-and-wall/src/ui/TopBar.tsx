@@ -282,14 +282,24 @@ export default function TopBar() {
     const down = (e: MouseEvent) => {
       if (nwRef.current && !nwRef.current.contains(e.target as Node)) setNwOpen(false);
     };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setNwOpen(false); };
+    // Capture + stopImmediatePropagation: the Escape that dismisses this card
+    // must not ALSO reach GamePanels' handler, which would close the open desk
+    // (or toast about a modal) in the same keypress.
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setNwOpen(false);
+    };
     window.addEventListener("mousedown", down);
-    window.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     return () => {
       window.removeEventListener("mousedown", down);
-      window.removeEventListener("keydown", key);
+      window.removeEventListener("keydown", key, true);
     };
   }, [nwOpen]);
+  // A tick with the card open would walk the book twice per paint — close it
+  // when the clock starts; the player is watching months, not a glance card.
+  useEffect(() => { if (advancing) setNwOpen(false); }, [advancing]);
 
   return (
     <div className="topbar" ref={barRef}>

@@ -36,9 +36,7 @@ const LISTED_TEAL = "#3f8f87";
 export default function MapHud() {
   const game = useStore((s) => s.game);
   const parcels = useStore((s) => s.parcels);
-  const openAttention = useStore((s) => s.openAttention);
   const focus = useStore((s) => s.focus);
-  const setPage = useStore((s) => s.setPage);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
   const mapFilter = useStore((s) => s.mapFilter);
@@ -59,15 +57,27 @@ export default function MapHud() {
   // mesh picks a colour (MapView: indexOf % 8) — filter first and every
   // swatch shifts off its building by the number of the failed. Past eight
   // living firms the palette wraps, so firms sharing a slot share a row.
+  // A FAILED firm still holding deeds stays in the key: the receiver sells
+  // for years and the mesh keeps painting that book in the firm's tint the
+  // whole time — a legend that omits it is naming someone else's colour.
   const legendRows = useMemo(() => {
     if (lens !== "owners" || !game) return null;
-    const bySlot = new Map<number, { name: string; bbl: string | null; extra: number }>();
+    const bySlot = new Map<number, { name: string; dead: boolean; bbl: string | null; extra: number }>();
     (game.rivals ?? []).forEach((r, i) => {
-      if (r.failedM != null || r.bbls.length === 0) return;
+      if (r.bbls.length === 0) return;
       const slot = i % FIRM_TINT.length;
       const cur = bySlot.get(slot);
-      if (cur) cur.extra += 1;
-      else bySlot.set(slot, { name: r.name, bbl: r.bbls[0] ?? null, extra: 0 });
+      if (cur) {
+        cur.extra += 1;
+        // A living firm's name outranks a dead one on a shared slot.
+        if (cur.dead && r.failedM == null) {
+          cur.name = r.name; cur.dead = false; cur.bbl = r.bbls[0] ?? null;
+        }
+      } else {
+        bySlot.set(slot, {
+          name: r.name, dead: r.failedM != null, bbl: r.bbls[0] ?? null, extra: 0,
+        });
+      }
     });
     return [...bySlot.entries()].map(([slot, v]) => ({
       slot,
@@ -81,20 +91,10 @@ export default function MapHud() {
   return (
     <aside className="map-hud" aria-label="City status">
       <div className="map-hud-kicker">City</div>
-
-      {snap.attentionN > 0 && snap.firstAttention && (
-        <button
-          type="button"
-          className="map-hud-row map-hud-attn"
-          onClick={() => openAttention(snap.firstAttention!.key)}
-          title={snap.firstAttention.label}
-        >
-          <span className="map-hud-label">Desk</span>
-          <span className="map-hud-text">
-            {snap.attentionN} waiting · {snap.firstAttention.label}
-          </span>
-        </button>
-      )}
+      {/* The Desk row and the balloon block moved to the docket rail — the one
+          stream for everything that wants the principal. Two counters over the
+          same map disagreed by construction; this side keeps what is about the
+          CITY: cranes, sites, the lens key, and the emphasis filters. */}
 
       {legendRows && (
         <div className="map-hud-block" role="group" aria-label="Owners lens key">
@@ -120,7 +120,10 @@ export default function MapHud() {
                 style={{ background: r.color }}
                 aria-hidden="true"
               />
-              <span className="map-hud-legend-name">{r.name}</span>
+              <span className="map-hud-legend-name">
+                {r.name}
+                {r.dead && <span className="dim"> · receivership</span>}
+              </span>
               {r.extra > 0 && (
                 <span className="map-hud-legend-extra">
                   {r.extra === 1
@@ -161,23 +164,6 @@ export default function MapHud() {
               title={d.label}
             >
               {d.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {snap.balloons.length > 0 && (
-        <div className="map-hud-block">
-          <div className="map-hud-label">Balloons · 18 mo</div>
-          {snap.balloons.map((b) => (
-            <button
-              key={b.bbl}
-              type="button"
-              className={"map-hud-row" + (b.months <= 6 ? " map-hud-urgent" : "")}
-              onClick={() => { focus(b.bbl, false); setPage("debt"); }}
-              title={b.label}
-            >
-              {b.label}
             </button>
           ))}
         </div>

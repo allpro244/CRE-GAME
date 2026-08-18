@@ -1712,8 +1712,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
     }
     // The digest snapshot belongs to the campaign that was live before the
-    // load — a waterfall diffed across two campaigns would be fiction.
-    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null });
+    // load — a waterfall diffed across two campaigns would be fiction. The
+    // docket snoozes go with it: they are absolute months, and a snooze set
+    // at month 100 would sit on a loaded month-50 save for four game years.
+    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {} });
     toast(`Loaded “${slot}”.`);
   },
 

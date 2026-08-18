@@ -343,6 +343,20 @@ function PaletteBody() {
         if (!en || (en.needsIdleClock && advRef.current)) return;
         useStore.getState().setPaletteOpen(false);
         en.run();
+        return;
+      }
+      // The clock and chrome hotkeys stay benched while the palette is up,
+      // WHEREVER focus sits — a click on the card's padding blurs the input,
+      // and a Space that then advanced a month behind an open palette would
+      // be the exact surprise the capture listener exists to prevent. Typing
+      // in the input is untouched: these only fire when focus has left it.
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA"
+        && (e.code === "Space" || e.code === "KeyY" || e.code === "KeyN"
+          || e.code === "KeyM" || e.code === "KeyP")
+        && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); e.stopPropagation();
+        inputRef.current?.focus();
       }
     };
     window.addEventListener("keydown", onKey, true);

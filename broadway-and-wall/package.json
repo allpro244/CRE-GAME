@@ -91,6 +91,7 @@
     "plate": "node test/plate.mjs",
     "baseline": "node tools/baseline.mjs",
     "baseline:check": "node tools/baseline.mjs --check",
+    "vactape": "node test/vac-tape.mjs",
     "tape": "node test/tape.mjs",
     "liquidity": "node test/liquidity.mjs"
   },

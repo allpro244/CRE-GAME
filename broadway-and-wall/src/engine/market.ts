@@ -3152,10 +3152,38 @@ export function tickEcon(s: GameState) {
     // after pin-only mute: "firm" months at vac∈(friction, friction+2pp) still
     // printed +4–5%/yr real and were the late-century hockey stick.
     const railBound = vacNow <= friction + 0.012;
+    // SUPPLY SHUT ≠ SATURATED AVAILABILITY. Muting vacTerm on the pin is
+    // right when the city can still break ground — frictional tightness, the
+    // desk is open, asking should not mint a permanent shortage tax. It is
+    // wrong when the pin is a supply failure: sitePencil has examined the
+    // town and found ZERO lots that clear the same pro forma the crane will
+    // be judged on, while jobs still want more floors than housable.
+    //
+    // Measured, seed 550991, years 7–30: office vacancy welded to 3.68%
+    // every month, pipeline 0, startOwed 0, sitePencil.office 0, 1,230
+    // office pro formas run at year 30 and the best hurdle was 0.86. Jobs
+    // +37%, office stock −3% (teardowns converting the short class to
+    // housing, the one use that still penciled). The Economy tape is a
+    // ruler because nothing delivered.
+    //
+    // Asking has to walk toward the clearing hurdle or the mute is
+    // load-bearing. The walk TURNS OFF the moment a site clears
+    // (sitePencil > 0) — self-limiting, not a new rail. First-year
+    // `undefined` is unconstrained (refresh has not run); that is not shut.
+    const siteP = e.sitePencil?.[k];
+    const supplyShut = pinned
+      && (e.structTight?.[k] ?? 0) > 0.06
+      && siteP !== undefined
+      && siteP <= 0;
     const vacTerm = gap <= 0
-      ? (pinned ? 0 : (() => {
+      ? (pinned && !supplyShut ? 0 : (() => {
           const depth = -gap;
-          return clamp(depth * 0.045 * railSat, 0, 0.0045);
+          // Shut: a thinner coefficient than the off-rail shortage term.
+          // Enough to close a ~14% hurdle gap over a few years of CPI-plus;
+          // not the old constant tax (that was 0.045 * full depth, uncapped
+          // by sat, every month of a fifty-year pin).
+          const sat = supplyShut ? 0.40 : railSat;
+          return clamp(depth * 0.045 * sat, 0, supplyShut ? 0.0030 : 0.0045);
         })())
       : -(gap <= FIT_MAX
         ? glut(gap)
@@ -3201,7 +3229,10 @@ export function tickEcon(s: GameState) {
     // the lag EMA cannot keep paying real rent after availability has
     // saturated. Soft-side (negative) press is left to the ordinary tau chase
     // so gluts still clear through the quote sheet.
-    if (railBound && (e.rentPress[k] ?? 0) > 0) {
+    // Bleed stored shortage press on a saturated rail — unless the rail is
+    // a supply failure. Bleeding then is how asking never reaches the
+    // hurdle that would reopen the desk (550991: 23 years, pencil 0).
+    if (railBound && !supplyShut && (e.rentPress[k] ?? 0) > 0) {
       e.rentPress[k] *= 0.90;
     }
     // Hard rail on the EMA itself — see the press clamp at the drift line.
@@ -3290,9 +3321,10 @@ export function tickEcon(s: GameState) {
     // Below the floor: track the price level (and a bit more) so the floor is
     // reachable against rising wages; once restored, the mute returns.
     const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
-    const railEscal = railBound
-      ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
-      : 1;
+    const railEscal = supplyShut ? 1
+      : railBound
+        ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
+        : 1;
     const escalGate = Math.max(firmW, cheapFloor) * railEscal;
     const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
@@ -3679,6 +3711,18 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     vac: e.cityVac ? {
       office: +e.cityVac.office.toFixed(4), retail: +e.cityVac.retail.toFixed(4),
       multifamily: +e.cityVac.multifamily.toFixed(4), industrial: +e.cityVac.industrial.toFixed(4),
+    } : undefined,
+    // Availability is what a broker quotes and what rent tightness reads —
+    // direct vacancy plus sublet/stock. Direct `vac` sits on its frictional
+    // floor for years in a shortage (the clamp is a statement about empty
+    // landlord floors, not about space a tenant can take). The Economy tape
+    // has to record the quantity that actually moves, or twenty years of a
+    // tight office market prints as a ruler at 3.68%.
+    avail: e.cityVac ? {
+      office: +((e.cityVac.office ?? 0) + (e.sublet?.office ?? 0) / Math.max(1, e.stock?.office ?? 1)).toFixed(4),
+      retail: +((e.cityVac.retail ?? 0) + (e.sublet?.retail ?? 0) / Math.max(1, e.stock?.retail ?? 1)).toFixed(4),
+      multifamily: +((e.cityVac.multifamily ?? 0) + (e.sublet?.multifamily ?? 0) / Math.max(1, e.stock?.multifamily ?? 1)).toFixed(4),
+      industrial: +((e.cityVac.industrial ?? 0) + (e.sublet?.industrial ?? 0) / Math.max(1, e.stock?.industrial ?? 1)).toFixed(4),
     } : undefined,
     rent: {
       office: +e.rentIdx.office.toFixed(2), retail: +e.rentIdx.retail.toFixed(2),

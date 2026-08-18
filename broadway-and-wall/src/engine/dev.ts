@@ -3083,14 +3083,23 @@ function tickCrews(s: GameState, bbls: string[]) {
 const TYPICAL_SF = 26_000;
 
 /**
- * Frictional rail binding AND the order book still wants floor of this class.
- * `structTight` alone missed seeds where vacancy sat on the rail with a full
- * startOwed book but employment-gap stayed under the old 0.06 gate — densify
- * cleared underwriting and still never broke ground.
+ * The market still wants floor of this class, on the frictional rail.
+ *
+ * `startOwed` alone missed the catch-22: sitePencil is 0 when nothing
+ * clears the parcel pro forma, so the monthly order is zero, so the book
+ * is empty, so densify (which required a live book) never broke ground —
+ * while `structTight` said jobs wanted 40% more floors than housable.
+ * Measured seed 550991: 23 years of office vacancy at 3.68%, pipeline 0,
+ * startOwed 0, office stock falling as teardowns converted it to housing
+ * (the one class that still penciled).
+ *
+ * `structTight` alone missed the other seeds: vacancy on the rail with a
+ * full book but employment-gap under 0.06. Either instrument is enough.
  */
 function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
-  return vac <= frictionFloor(k) + slack && (e.startOwed?.[k] ?? 0) > 0;
+  if (vac > frictionFloor(k) + slack) return false;
+  return (e.startOwed?.[k] ?? 0) > 0 || (e.structTight?.[k] ?? 0) > 0.06;
 }
 
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
@@ -3206,24 +3215,25 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // raw class for the stock-removal path below. Candidates above already skip
   // vacant lots; the `!== "land"` check also narrows AssetClass → BuiltClass.
   const cls = rec.class;
-  // When the standing class is pinned with unpaid orders, densify IN KIND.
+  // When the standing class is pinned and still wanted, densify IN KIND.
   // useForZone's programme mix was converting short office into multifamily
-  // while the office book stayed full — supply answering the wrong demand.
-  // Gate on the rail + startOwed, not only structTight: moderate employment
-  // gaps still leave vacancy on the frictional floor with a live order book.
+  // — supply answering the wrong demand, and (once the office book went
+  // empty because nothing penciled) dismantling the class the city was
+  // short of. classPinnedOwed now fires on the book OR on structTight.
   if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
     const standing = cls;
     const stStand = e.structTight?.[standing] ?? 0;
     if (classPinnedOwed(e, standing)) {
-      if (rng(s, "dev") < Math.min(0.85, 0.50 + stStand * 1.5)) {
+      if (rng(s, "dev") < Math.min(0.92, 0.70 + stStand * 1.2)) {
         nextUse = standing;
         lead = standing;
       }
     }
   }
   // A replacement is still supply. It may satisfy an existing order, but it
-  // cannot create a class of space the market has not ordered at all.
-  if ((e.startOwed?.[lead] ?? 0) <= 0) return;
+  // cannot create a class of space the market has not ordered at all —
+  // "ordered" includes a pinned structural short, not only startOwed.
+  if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead)) return;
   const leadShort = classPinnedOwed(e, lead)
     || ((e.structTight?.[lead] ?? 0) > 0.06
       && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);

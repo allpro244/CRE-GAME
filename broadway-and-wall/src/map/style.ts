@@ -448,50 +448,6 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
-        // Inland water — a creek, a mill race, a canal. Darker and greener
-        // than the harbour, because it is fresh water over silt, not the sea.
-        id: "streams",
-        type: "fill",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "stream"],
-        paint: {
-          "fill-color": [
-            "match", ["coalesce", ["get", "water"], "creek"],
-            "canal", "#4e7f96",
-            "pond", "#3f6e82",
-            "slip", "#3d6a80",
-            "#4a7a8e",
-          ] as never,
-        },
-      },
-      {
-        id: "stream-edge",
-        type: "line",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "stream"],
-        paint: {
-          "line-color": "#2f5566",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16.5, 2.0] as never,
-        },
-      },
-      {
-        id: "bridges",
-        type: "fill",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "bridge"],
-        paint: { "fill-color": "#8a8478" },
-      },
-      {
-        id: "bridge-edge",
-        type: "line",
-        source: "bw-context",
-        filter: ["==", ["get", "kind"], "bridge"],
-        paint: {
-          "line-color": "#5c574e",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 16.5, 1.8] as never,
-        },
-      },
-      {
         // the walks: crushed-gravel paths through the green
         id: "park-paths",
         type: "line",
@@ -576,11 +532,17 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
-        // SIDEWALK: a pale band hugging the block, inside the curb line
+        // SIDEWALK: a pale band hugging the block, inside the curb line.
+        // Grid and lane only — park rings, seams and the shore road used to
+        // wear this stroke too, which is how a boulevard tagged `shore` got
+        // a kilometre of sidewalk smeared across the town.
         id: "sidewalk",
         type: "line",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "street"],
+        filter: ["all",
+          ["==", ["get", "kind"], "street"],
+          ["match", ["get", "cls"], "grid", true, "lane", true, false],
+        ],
         paint: {
           "line-color": [
             "case",
@@ -591,20 +553,24 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
           ] as never,
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
         },
-        layout: { "line-join": "round" },
+        layout: { "line-join": "round", "line-cap": "round" },
       },
       {
         // CURB: the hard edge where pavement meets block
         id: "curb",
         type: "line",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "street"],
+        filter: ["all",
+          ["==", ["get", "kind"], "street"],
+          ["match", ["get", "cls"], "grid", true, "lane", true, false],
+        ],
         minzoom: 14,
         paint: {
           "line-color": "#66645f",
           "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
           "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
         },
+        layout: { "line-join": "round", "line-miter-limit": 1 },
       },
       {
         // LANE DIVIDER. Two neighbouring cells share their boundary, so the
@@ -622,6 +588,52 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
           "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 16, 0.9, 18, 1.8] as never,
           "line-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.3, 16, 0.75, 18, 0.9] as never,
           "line-dasharray": [5, 7],
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        // Inland water, ABOVE the roadway. Pavement used to paint over the
+        // creek wherever a cell still overlapped the ribbon, which read as
+        // asphalt triangles stretching to the bank.
+        id: "streams",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "stream"],
+        paint: {
+          "fill-color": [
+            "match", ["coalesce", ["get", "water"], "creek"],
+            "canal", "#4e7f96",
+            "pond", "#3f6e82",
+            "slip", "#3d6a80",
+            "#4a7a8e",
+          ] as never,
+        },
+      },
+      {
+        id: "stream-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "stream"],
+        paint: {
+          "line-color": "#2f5566",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16.5, 2.0] as never,
+        },
+      },
+      {
+        id: "bridges",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bridge"],
+        paint: { "fill-color": "#8a8478" },
+      },
+      {
+        id: "bridge-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bridge"],
+        paint: {
+          "line-color": "#5c574e",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 16.5, 1.8] as never,
         },
       },
       {

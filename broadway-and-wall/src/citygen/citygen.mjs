@@ -1578,7 +1578,17 @@ export function generateCity(cfg) {
   };
   // One dash per real carriageway. Drawing every block ring as a closed loop
   // double-paints shared edges and dashes leftover slivers around a canal —
-  // the spiderweb of yellow in the street.
+  // the spiderweb of yellow in the street. A midpoint-only water test still
+  // dashed a chord that merely nicked the creek; walk the edge.
+  const edgeDry = (a, c) => {
+    const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    const steps = Math.max(2, Math.ceil(len / 8));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      if (inWater([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t])) return false;
+    }
+    return true;
+  };
   const centerFeatures = [];
   for (const b of blocks) {
     const r = b.ring;
@@ -1592,7 +1602,7 @@ export function generateCity(cfg) {
       if (centerSeen.has(k)) continue;
       centerSeen.add(k);
       const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
-      if (inWater(mid)) continue;
+      if (!edgeDry(a, c)) continue;
       if (PARKS_M.some((ring) => inRing(mid, ring))) continue;
       centerFeatures.push({
         type: "Feature",
@@ -1601,14 +1611,35 @@ export function generateCity(cfg) {
       });
     }
   }
-  const streetFeatures = drawn.map((b) => ({
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
-    properties: {
+  // Sidewalks hug the block. Omit any edge that runs through the creek so a
+  // waterfront inset cannot throw a pale line across the water.
+  const streetFeatures = [];
+  for (const b of drawn) {
+    const r = b.inset;
+    if (!r || r.length < 3) continue;
+    const props = {
       kind: "street", cls: b.u !== undefined ? "grid" : "lane", d: b.district,
       dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
-    },
-  }));
+    };
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        streetFeatures.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: run },
+          properties: { ...props },
+        });
+      }
+      run = [];
+    };
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], c = r[(i + 1) % r.length];
+      if (!edgeDry(a, c)) { flush(); continue; }
+      if (!run.length) run.push(proj.toLL(a));
+      run.push(proj.toLL(c));
+    }
+    flush();
+  }
   const shoreRoad = {
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...innerRing.map(proj.toLL), proj.toLL(innerRing[0])] },
@@ -1629,9 +1660,27 @@ export function generateCity(cfg) {
   // block is drawn on top of it. If some sliver still escapes the partition it
   // shows up as asphalt between two blocks — which is what a street looks like
   // — instead of as a patch of bare ground.
+  //
+  // Punch the painted water as holes. Paveland is one island-sized polygon;
+  // earcut of a ring with a river-shaped notch (or a coverage gap on the bank)
+  // throws a triangle across the creek — the gray fan from Midtown to the
+  // water. Holes keep those triangles from spanning the wet corridor.
+  const pavelandHoles = (cfg.streams ?? [])
+    .filter((st) => st.paint !== false && st.ring && st.ring.length >= 3)
+    .map((st) => {
+      const ring = st.ring;
+      const hole = (ringArea(ring) > 0) === SHORE_CCW ? ring.slice().reverse() : ring;
+      return [...hole.map(proj.toLL), proj.toLL(hole[0])];
+    });
   const paveland = {
     type: "Feature",
-    geometry: { type: "Polygon", coordinates: [[...innerRing.map(proj.toLL), proj.toLL(innerRing[0])]] },
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [...innerRing.map(proj.toLL), proj.toLL(innerRing[0])],
+        ...pavelandHoles,
+      ],
+    },
     properties: { kind: "paveland" },
   };
 
@@ -2322,12 +2371,14 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "apron" },
       })),
-      // Kerb line on the painted green's outer edge — same role as the block
-      // street lines, so the park stops reading as turf that runs into the lots.
+      // Kerb line on the painted green's outer edge. Own kind: tagging these
+      // `street` put a sidewalk, a curb, dashes and a row of parked cars around
+      // every park — and a kilometre-long boulevard tagged `shore` got the
+      // shore-road stroke across the town.
       ...PARK_GREEN_M.map((ring) => ({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [...ring.map(proj.toLL), proj.toLL(ring[0])] },
-        properties: { kind: "street", cls: "park" },
+        properties: { kind: "parkkerb" },
       })),
       ...(cfg.diagonals ?? []).map((d, i) => ({
         type: "Feature",
@@ -2338,7 +2389,7 @@ export function generateCity(cfg) {
             proj.toLL([d.cx + (d.w / 2) * Math.cos((d.deg * Math.PI) / 180), d.cy + (d.w / 2) * Math.sin((d.deg * Math.PI) / 180)]),
           ],
         },
-        properties: { kind: "street", cls: i < (cfg.plan?.seams ?? 0) ? "seam" : "shore" },
+        properties: { kind: "street", cls: i < (cfg.plan?.seams ?? 0) ? "seam" : "boulevard" },
       })),
       ...pavementFeatures,
       ...crosswalkFeatures.map((ring) => ({

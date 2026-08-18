@@ -422,7 +422,7 @@ export function PortfolioPage() {
                 </td>
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
-              <td>{rec?.address ?? h.bbl}</td>
+              <td className="nowrap">{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
               <td className="num" title={h.groundLeased
                 ? "Lessee improvement — not your building sf"
@@ -659,7 +659,7 @@ export function PortfolioPage() {
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               {bundling && <td className="dim">·</td>}
               {ranked && <td className="num dim">—</td>}
-              <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
+              <td className="nowrap">{parcels[dv.bbl]?.address ?? dv.bbl}</td>
               <td>{devUseLabel(dv.use)}</td>
               <td className="num dim">{sf(dv.sf)}</td>
               <td className="num dim">—</td>

@@ -2524,8 +2524,10 @@ export function islandConfig(seed) {
       if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
         localBridges.push({
           cx: Math.round(cx), cy: Math.round(cy),
-          w: Math.round(Math.max(20, Math.min(L + 6, 56))),
-          h: Math.round(width + 12),
+          // Street-width strip in the dry gap — not canal-width + 12. That
+          // extra was the brown box sitting on both banks.
+          w: Math.round(Math.max(14, Math.min(L, 22))),
+          h: 11,
           deg: +deg.toFixed(1),
           name: `${name.replace(/\s+(Creek|River|Canal|Race|Brook)$/, "")} Bridge`,
         });

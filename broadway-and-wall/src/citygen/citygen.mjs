@@ -83,6 +83,31 @@ export function inRing(p, ring) {
   return inside;
 }
 
+/** True when two rings share a point or one sits inside the other. */
+function ringsOverlap(a, b) {
+  if (!a || !b || a.length < 3 || b.length < 3) return false;
+  const [ax0, ay0, ax1, ay1] = bboxOfRing(a);
+  const [bx0, by0, bx1, by1] = bboxOfRing(b);
+  if (ax1 < bx0 || bx1 < ax0 || ay1 < by0 || by1 < ay0) return false;
+  if (inRing(centroid(a), b) || inRing(centroid(b), a)) return true;
+  for (const p of a) if (inRing(p, b)) return true;
+  for (const p of b) if (inRing(p, a)) return true;
+  return false;
+}
+
+/** Water rings as GeoJSON holes of `outer`, opposite winding so earcut cannot span the wet. */
+function waterHolesLL(outer, waters, toLL) {
+  if (!outer || outer.length < 3) return [];
+  const outerCcw = ringArea(outer) > 0;
+  const holes = [];
+  for (const w of waters) {
+    if (!ringsOverlap(outer, w)) continue;
+    const hole = (ringArea(w) > 0) === outerCcw ? w.slice().reverse() : w;
+    holes.push([...hole.map(toLL), toLL(hole[0])]);
+  }
+  return holes;
+}
+
 // Exported for island.mjs, which has to ask "is this core / park / station on
 // dry ground" against THE SAME inset ring the generator builds its blocks from.
 // Answering it with a private copy of this would be a second opinion, and two
@@ -1461,7 +1486,16 @@ export function generateCity(cfg) {
     });
   }
   for (const br of cfg.bridges ?? []) {
-    addDeco(rect(br.cx, br.cy, br.w, br.h, br.deg), 5.4, 3.1, "bridgedeck");
+    // Crossings are dry gaps the grid already paves. A 5.4 m slab from 3.1 m
+    // up, sized `canal + 12`, was a floating planter the width of the race —
+    // that is the brown box in the screenshot. Two parapets on the water
+    // cuts are what a street crossing actually shows.
+    const t = ((br.deg ?? 0) * Math.PI) / 180;
+    const ux = Math.cos(t), uy = Math.sin(t);
+    const along = Math.max(2, (br.w ?? 16) / 2 - 0.35);
+    const h = br.h ?? 11;
+    addDeco(rect(br.cx + ux * along, br.cy + uy * along, 0.5, h, br.deg), 1.05, 0, "bridgerail");
+    addDeco(rect(br.cx - ux * along, br.cy - uy * along, 0.5, h, br.deg), 1.05, 0, "bridgerail");
   }
   // A breakwater is a wall in the water, not a crane. The owner rejected
   // dock toys; the harbour still needs something that makes it a harbour.
@@ -1665,13 +1699,16 @@ export function generateCity(cfg) {
   // earcut of a ring with a river-shaped notch (or a coverage gap on the bank)
   // throws a triangle across the creek — the gray fan from Midtown to the
   // water. Holes keep those triangles from spanning the wet corridor.
-  const pavelandHoles = (cfg.streams ?? [])
+  const PAINTED_WATER_M = (cfg.streams ?? [])
     .filter((st) => st.paint !== false && st.ring && st.ring.length >= 3)
-    .map((st) => {
-      const ring = st.ring;
-      const hole = (ringArea(ring) > 0) === SHORE_CCW ? ring.slice().reverse() : ring;
-      return [...hole.map(proj.toLL), proj.toLL(hole[0])];
-    });
+    .map((st) => st.ring);
+  // Channels only — a mill pond overlapping the ribbon as a second hole
+  // makes earcut fold the lawn. The pond is its own surface; 3D skips turf
+  // whose centroid is already wet.
+  const CHANNEL_M = (cfg.streams ?? [])
+    .filter((st) => st.paint !== false && st.kind !== "pond" && st.ring && st.ring.length >= 3)
+    .map((st) => st.ring);
+  const pavelandHoles = waterHolesLL(innerRing, PAINTED_WATER_M, proj.toLL);
   const paveland = {
     type: "Feature",
     geometry: {
@@ -1809,11 +1846,15 @@ export function generateCity(cfg) {
         const ex = rA * Math.cos(a2) * wob, ey = rB * Math.sin(a2) * wob;
         pond.push([pcx + ex * Math.cos(tilt) - ey * Math.sin(tilt), pcy + ex * Math.sin(tilt) + ey * Math.cos(tilt)]);
       }
-      pondFeatures.push(pond);
+      // Same rr() count either way. A pond that the race already occupies is
+      // the mill pond with a triangular bite taken out of it — do not paint
+      // a second water body on top of the channel.
+      const onRace = pond.some((p) => inWater(p)) || WATER_M.some((w) => ringsOverlap(pond, w));
+      if (!onRace) pondFeatures.push(pond);
       // willows at the water's edge
       for (let k = 0; k < 18; k += 3) {
         const tw = [pond[k][0] + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14];
-        if (inRing(tw, green)) plant(tw);
+        if (!onRace && inRing(tw, green)) plant(tw);
       }
     }
     // corner groves, an open lawn in the middle
@@ -2344,10 +2385,18 @@ export function generateCity(cfg) {
         properties: { kind: "breakwater" },
       })),
       // Painted turf is the kerb-inset green, not the full reservation — see
-      // PARK_KERB above. The 3D lawn reads the same rings via kind:"park".
+      // PARK_KERB above. Water is a hole so the 3D lawn cannot triangulate
+      // across the race (a solid plate over the channel is the "canal walls"
+      // in the park).
       ...PARK_GREEN_M.map((ring, i) => ({
         type: "Feature",
-        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [...ring.map(proj.toLL), proj.toLL(ring[0])],
+            ...waterHolesLL(ring, CHANNEL_M, proj.toLL),
+          ],
+        },
         properties: { kind: "park", flavour: cfg.parks[i]?.flavour ?? "park" },
       })),
       ...(cfg.streams ?? []).filter((st) => st.paint !== false).map((st) => ({
@@ -2366,20 +2415,47 @@ export function generateCity(cfg) {
       // The frontage road around each park and along the boulevard. It gets
       // its own kind because it has to be paved UNDER the park, not over it —
       // drawing it with the rest of the roadway used to paint the green out.
+      // Punch the race so the dilated park rectangle does not leave a paved
+      // triangle spanning the channel.
       ...APRONS.map((ring) => ({
         type: "Feature",
-        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [...ring.map(proj.toLL), proj.toLL(ring[0])],
+            ...waterHolesLL(ring, CHANNEL_M, proj.toLL),
+          ],
+        },
         properties: { kind: "apron" },
       })),
       // Kerb line on the painted green's outer edge. Own kind: tagging these
       // `street` put a sidewalk, a curb, dashes and a row of parked cars around
       // every park — and a kilometre-long boulevard tagged `shore` got the
-      // shore-road stroke across the town.
-      ...PARK_GREEN_M.map((ring) => ({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [...ring.map(proj.toLL), proj.toLL(ring[0])] },
-        properties: { kind: "parkkerb" },
-      })),
+      // shore-road stroke across the town. Skip the stretch that runs through
+      // the race; a kerb across water is the same smear as a sidewalk.
+      ...PARK_GREEN_M.flatMap((ring) => {
+        const segs = [];
+        let cur = [];
+        const n = ring.length;
+        for (let i = 0; i < n; i++) {
+          const a = ring[i], b = ring[(i + 1) % n];
+          if (drySeg(a, b)) {
+            if (!cur.length) cur.push(a);
+            cur.push(b);
+          } else if (cur.length >= 2) {
+            segs.push(cur);
+            cur = [];
+          } else {
+            cur = [];
+          }
+        }
+        if (cur.length >= 2) segs.push(cur);
+        return segs.map((pts) => ({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: pts.map(proj.toLL) },
+          properties: { kind: "parkkerb" },
+        }));
+      }),
       ...(cfg.diagonals ?? []).map((d, i) => ({
         type: "Feature",
         geometry: {

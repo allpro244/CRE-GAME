@@ -786,6 +786,7 @@ const DECO_TINT: Record<string, [number, number, number]> = {
   // whitewashed clapboard and slate — the meeting house and the town hall
   civic: [1.16, 1.15, 1.10], civicroof: [0.44, 0.46, 0.50],
   bridgedeck: [0.72, 0.68, 0.60],
+  bridgerail: [0.42, 0.40, 0.38],
   // raw concrete and the galvanised headhouse on top of it — grain elevators
   // are the one industrial building taller than the district around them, and
   // they are not painted, they are poured
@@ -6253,7 +6254,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // than no bench and no railing at all
       benches?: Oriented[];
       rails?: Oriented[];
-      parks?: { ring: [number, number][]; flavour?: string }[] | [number, number][][];
+      parks?: { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }[] | [number, number][][];
       ponds?: [number, number][][];
       paths?: [number, number][][];
       /**
@@ -7715,12 +7716,32 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       split([q[0], m01, m20], z, style, depth + 1); split([m01, q[1], m12], z, style, depth + 1);
       split([m20, m12, q[2]], z, style, depth + 1); split([m01, m12, m20], z, style, depth + 1);
     };
-    const fillRing = (ll: [number, number][], z: number, style: number, sub: boolean) => {
+    const inPoly = (v: [number, number], poly: [number, number][]) => {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+        if ((yi > v[1]) !== (yj > v[1])
+          && v[0] < ((xj - xi) * (v[1] - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    const wetM = (this.ctxPoints.ponds ?? []).map((p) => p.map((q) => this.project(q)));
+    const inWet = (v: [number, number]) => wetM.some((r) => r.length >= 3 && inPoly(v, r));
+
+    const fillRing = (
+      ll: [number, number][], z: number, style: number, sub: boolean,
+      holesLL: [number, number][][] = [],
+    ) => {
       const ring = ll.map((q) => this.project(q));
       if (ring.length < 3) return;
+      const holeM = holesLL
+        .filter((h) => h.length >= 3)
+        .map((h) => h.map((q) => this.project(q)));
       const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
+      const holePts = holeM.map((h) => h.map(([x, y]) => new THREE.Vector2(x, y)));
+      const all = [...ring, ...holeM.flat()] as [number, number][];
       let tris: number[][] = [];
-      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { return; }
+      try { tris = THREE.ShapeUtils.triangulateShape(pts, holePts); } catch { return; }
       let ringA = 0;
       for (let i = 0; i < ring.length; i++) {
         const p = ring[i], q = ring[(i + 1) % ring.length];
@@ -7728,7 +7749,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       ringA = Math.abs(ringA) / 2;
       for (const t of tris) {
-        const q = t.map((i) => ring[i]) as [number, number][];
+        const q = t.map((i) => all[i] ?? ring[i]) as [number, number][];
+        if (!q[0] || !q[1] || !q[2]) continue;
         // A folded creek polygon triangulates as one city-sized triangle.
         // Convex capsules never do this; this is the last line of defence
         // if a bad ring still arrives.
@@ -7739,6 +7761,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           ) / 2;
           if (area > 8000 || (ringA > 1 && area > ringA * 0.45)) continue;
         }
+        if (style === S_LAWN || style === S_PATH) {
+          const mid: [number, number] = [
+            (q[0][0] + q[1][0] + q[2][0]) / 3,
+            (q[0][1] + q[1][1] + q[2][1]) / 3,
+          ];
+          if (inWet(mid)) continue;
+        }
         if (sub) split(q, z, style, 0); else emit(q, z, style);
       }
     };
@@ -7746,11 +7775,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (const p of parks) {
       const ring = Array.isArray(p) && typeof p[0]?.[0] === "number"
         ? p as [number, number][]
-        : (p as { ring: [number, number][]; flavour?: string }).ring;
+        : (p as { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }).ring;
+      const holes = Array.isArray(p) && typeof p[0]?.[0] === "number"
+        ? []
+        : (p as { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }).holes ?? [];
       const flavour = Array.isArray(p) && typeof p[0]?.[0] === "number"
         ? "park"
         : (p as { ring: [number, number][]; flavour?: string }).flavour ?? "park";
-      fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true);
+      fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true, holes);
     }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was
@@ -7778,6 +7810,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const L = Math.hypot(dx, dy);
         if (L < 0.2) continue;
+        const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        if (inWet(mid)) continue;
         // run each segment a half-width long at both ends so the corners of a
         // dog-leg close instead of showing a wedge of grass
         const ex = (dx / L) * HW, ey = (dy / L) * HW;

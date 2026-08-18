@@ -814,7 +814,8 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                 const cb = { ...pb, min: Math.max(pb.min, bid.price + pb.step) };
                 return (
                 <>
-                  <Slider min={cb.min} max={cb.max} step={cb.step} editable="price"
+                  <Slider min={cb.min} max={cb.max} step={cb.step}
+                    typedMin={cb.typedMin} typedMax={cb.typedMax} editable="price"
                     value={counter || Math.round(bid.price * 1.05)} onChange={setCounter}
                     label="Counter at" format={(v: number) => usd(v)}
                     hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />

@@ -337,6 +337,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   min={bb.min}
                   max={bb.max}
                   step={bb.step}
+                  typedMin={bb.typedMin}
+                  typedMax={bb.typedMax}
                   editable="price"
                   onChange={setCounterPx}
                   format={(v: number) => usd(v)}
@@ -426,6 +428,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   min={counterBounds.min}
                   max={counterBounds.max}
                   step={counterBounds.step}
+                  typedMin={counterBounds.typedMin}
+                  typedMax={counterBounds.typedMax}
                   editable="price"
                   onChange={setCounter}
                   format={(v) => usd(v)}
@@ -821,6 +825,8 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         min={bounds.min}
         max={bounds.max}
         step={bounds.step}
+        typedMin={bounds.typedMin}
+        typedMax={bounds.typedMax}
         editable="price"
         onChange={setOfferPrice}
         format={(v) => usd(v)}
@@ -831,7 +837,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
           : distress
             ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` The desk is clearing ${usd(loanBasis)} of debt` : " Motivated seller"} — counter below the ask; they move more readily than a voluntary seller.`
-            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Name a price; they take it, counter, or walk.`}
+            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Type 2.75M or drag near the ask; they take it, counter, or walk.`}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a

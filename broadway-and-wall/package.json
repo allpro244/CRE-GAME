@@ -93,7 +93,8 @@
     "baseline:check": "node tools/baseline.mjs --check",
     "vactape": "node test/vac-tape.mjs",
     "tape": "node test/tape.mjs",
-    "liquidity": "node test/liquidity.mjs"
+    "liquidity": "node test/liquidity.mjs",
+    "price-bounds": "node --experimental-strip-types test/price-bounds.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

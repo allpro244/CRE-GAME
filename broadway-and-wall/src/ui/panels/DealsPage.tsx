@@ -232,6 +232,8 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
                 min={counterBounds.min}
                 max={counterBounds.max}
                 step={counterBounds.step}
+                typedMin={counterBounds.typedMin}
+                typedMax={counterBounds.typedMax}
                 editable="price"
                 onChange={setCounter}
                 format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% on their bid`}

@@ -343,7 +343,7 @@ export default function TopBar() {
               bad={cf < 0}
               keep
               w={88}
-              title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
+              title={`After debt service. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
             />
             <Stat
               label="Occupancy"

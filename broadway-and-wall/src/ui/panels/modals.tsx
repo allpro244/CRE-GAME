@@ -878,6 +878,8 @@ function DecisionBody({
               min={counterBounds.min}
               max={counterBounds.max}
               step={counterBounds.step}
+              typedMin={counterBounds.typedMin}
+              typedMax={counterBounds.typedMax}
               editable="price"
               onChange={setScPx}
               format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% on their bid`}

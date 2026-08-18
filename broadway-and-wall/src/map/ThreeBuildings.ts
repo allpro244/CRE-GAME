@@ -6552,6 +6552,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // property write per crane per frame, and a dynGroup rebuild clears the
   // list wholesale alongside the meshes it points into.
   private cranes: { g: THREE.Group; bear: number; w: number; phase: number }[] = [];
+  // The last occupancy and retail maps the game handed over. Kept because
+  // setPlayerBuildings rebuilds the dynamic group wholesale, and by the time
+  // it does, this month's occupancy pass has already run — MapView's
+  // occupancy effect is declared before its skyline effect, and both key on
+  // the same paint signature — so a tower rebuilt this tick would sit
+  // dataless (no dusk warmth, no papered bays) until the NEXT month moved
+  // the signature again. The rebuild re-applies these instead.
+  private lastOcc = new Map<string, number>();
+  private lastRet = new Map<string, number>();
   private shadowTex: THREE.Texture | null = null;
   private water: THREE.Mesh | null = null;
   // dressing for the unbuilt half of the city, collected while the volumes are
@@ -8593,6 +8602,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
+    // THE MESHES JUST CLEARED GIVE BACK THEIR STATE SLOTS. The two static
+    // sheets own attribute slots 0 (wall) and 1 (roof); every slot above
+    // belongs to a dynamic mesh, registered in mk() below, and after clear()
+    // those attributes point at geometry that is no longer in the scene.
+    // Ranges are pruned too, or setOccupancy would index attribute arrays
+    // that were truncated out from under it.
+    if (this.litAttrs.length > 2) {
+      this.tintAttrs.length = 2; this.baseTints.length = 2;
+      this.litAttrs.length = 2; this.retAttrs.length = 2;
+      for (const [bbl, list] of this.rangesByBBL) {
+        const keep = list.filter((e) => e.attr < 2);
+        if (keep.length === list.length) continue;
+        if (keep.length) this.rangesByBBL.set(bbl, keep);
+        else this.rangesByBBL.delete(bbl);
+      }
+    }
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -8935,9 +8960,44 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aEra", new THREE.Float32BufferAttribute(D.era, 1));
         g.setAttribute("aSeg", new THREE.Float32BufferAttribute(D.seg, 2));
         g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
-        g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
-        g.setAttribute("aLit", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
-        g.setAttribute("aRet", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
+        // STATE REACHES THE PLAYER'S HALF OF THE CITY. These three attributes
+        // used to be constants — tint 1, lit -1, ret -1 — baked at build and
+        // never registered anywhere, so setTints, setOccupancy and setRetail
+        // walked rangesByBBL straight past every building the player or a
+        // rival put up. Twenty years into a campaign that is most of downtown
+        // sitting out the vacancy treatment: no dusk warmth on a let tower,
+        // no kraft paper on a dead frontage, no highlight when you clicked
+        // your own building. Registered now as extra slots in the SAME
+        // attr-indexed arrays the static sheets use, so the setters serve
+        // both populations through one code path. Construction shells stay
+        // unregistered: a site has no rent roll and no shopfront, and its
+        // default -1 (no data) is exactly what the static path shows for a
+        // fact the game is not asserting.
+        const verts = D.pos.length / 3;
+        const tintA = new THREE.Float32BufferAttribute(new Float32Array(verts * 3).fill(1), 3);
+        const litA = new THREE.Float32BufferAttribute(new Float32Array(verts).fill(-1), 1);
+        const retA = new THREE.Float32BufferAttribute(new Float32Array(verts).fill(-1), 1);
+        if (!item.construction) {
+          // dynamic usage, like the static sheets: monthly rewrites in place,
+          // no realloc
+          tintA.setUsage(THREE.DynamicDrawUsage);
+          litA.setUsage(THREE.DynamicDrawUsage);
+          retA.setUsage(THREE.DynamicDrawUsage);
+          const slot = this.litAttrs.length;
+          this.tintAttrs.push(tintA);
+          this.baseTints.push(new Float32Array(verts * 3).fill(1));
+          this.litAttrs.push(litA);
+          this.retAttrs.push(retA);
+          // posAttrs deliberately does NOT grow: flattenLot is the generator
+          // stock's wrecking crew, and it already skips slots it has no
+          // positions for — a dynamic building comes down by rebuild, not by
+          // clamping its own z.
+          if (!this.rangesByBBL.has(item.bbl)) this.rangesByBBL.set(item.bbl, []);
+          this.rangesByBBL.get(item.bbl)!.push({ attr: slot, r: { start: 0, count: verts } });
+        }
+        g.setAttribute("aTint", tintA);
+        g.setAttribute("aLit", litA);
+        g.setAttribute("aRet", retA);
         return g;
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
@@ -9173,6 +9233,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
       }
     }
+    // Re-dress the fresh meshes from the last maps the game sent (see
+    // lastOcc/lastRet at their declaration for why waiting on the feed's own
+    // cadence is a month too late). Idempotent on the static sheets, and a
+    // building delivered THIS tick gets its value here too, because the
+    // occupancy pass that just ran computed it against a registry the bbl
+    // already stood in.
+    if (this.lastOcc.size) this.setOccupancy(this.lastOcc);
+    if (this.lastRet.size) this.setRetail(this.lastRet);
     this.sunDirty = true;
     this.map.triggerRepaint();
   }
@@ -9330,11 +9398,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /**
    * WHICH FLOORS ARE LET. -1 means "not yours to know" and switches the whole
    * treatment off for that building; 0..1 is the leased share. Uses the same
-   * per-BBL vertex ranges the ownership tints already walk, so it costs one
-   * pass over the buildings you actually have a number for.
+   * per-BBL vertex ranges the ownership tints already walk — generator stock
+   * and player-built alike, since the dynamic meshes register into the same
+   * registry — so it costs one pass over the buildings you actually have a
+   * number for.
    */
   setOccupancy(occ: Map<string, number>) {
     if (!this.litAttrs.length) return;
+    this.lastOcc = occ; // kept for the dynamic-group rebuild to re-apply
     for (const a of this.litAttrs) (a.array as Float32Array).fill(-1);
     for (const [bbl, v] of occ) {
       const ranges = this.rangesByBBL.get(bbl);
@@ -9404,6 +9475,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   setRetail(ret: Map<string, number>) {
     if (!this.retAttrs.length) return;
+    this.lastRet = ret; // kept for the dynamic-group rebuild to re-apply
     for (const a of this.retAttrs) (a.array as Float32Array).fill(-1);
     for (const [bbl, f] of ret) {
       const ranges = this.rangesByBBL.get(bbl);

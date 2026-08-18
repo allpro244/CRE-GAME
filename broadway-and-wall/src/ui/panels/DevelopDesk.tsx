@@ -370,7 +370,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                     onChange={(v) => setUnits((p) => ({ ...p, [u]: v }))}
                     format={(v) => `${v} ${v === 1 ? "space" : "spaces"} · ${sf(per)} each`}
                     marks={[{ at: r.typical, label: "typical" }, { at: r.max, label: `max ${r.max}` }]}
-                    hint={per <= SUITE_BOUNDS[u].min * 1.15
+                    hint={legSf > SUITE_BOUNDS[u].min && per <= SUITE_BOUNDS[u].min * 1.15
                       ? `${sf(SUITE_BOUNDS[u].min)} is the floor for ${USE_WORD[u].toLowerCase()} — below that it is not a space, it is a cupboard.`
                       : per >= SUITE_BOUNDS[u].max * 0.85
                         ? "Spaces this big mean one tenant, or none. Single-tenant buildings are a real product and a slow let."

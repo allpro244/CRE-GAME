@@ -20,7 +20,7 @@ import { fundableNow } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerOf } from "@/engine/rivals";
 import { taxAppealQuote } from "@/engine/tax";
-import { usd, sf, pct } from "@/ui/format";
+import { usd, sf, pct, termLeft } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
@@ -326,7 +326,7 @@ function ParcelPanelInner({
           />
         )}
         {holding && isBuilt && commercial && (
-          <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs"} />
+          <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs avg remaining"} />
         )}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
@@ -466,7 +466,8 @@ function ParcelPanelInner({
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
-                      {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {" "}· {termLeft(t.endM, game.month)}
                       {fit && <> · {fit}</>}
                       {strained && <> · <span className="warn">strained</span></>}
                       {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renews</span> — {ri.why[0]}</>}
@@ -488,14 +489,14 @@ function ParcelPanelInner({
               <div className="roll-row roll-vacant">
                 <span className="roll-name">In make-ready</span>
                 <span className="roll-meta mono">
-                  {(notReadySf(holding, game.month) / 1000).toFixed(1)}k sf · showable {monthLabel(Math.max(...(holding.makeReady ?? []).map((m) => m.readyM)))}
+                  {sf(notReadySf(holding, game.month))} · showable {monthLabel(Math.max(...(holding.makeReady ?? []).map((m) => m.readyM)))}
                 </span>
               </div>
             )}
             {vacantSf(rec, holding) - notReadySf(holding, game.month) > 500 && (
               <div className="roll-row roll-vacant">
                 <span className="roll-name">Vacant</span>
-                <span className="roll-meta mono">{((vacantSf(rec, holding) - notReadySf(holding, game.month)) / 1000).toFixed(1)}k sf</span>
+                <span className="roll-meta mono">{sf(vacantSf(rec, holding) - notReadySf(holding, game.month))}</span>
               </div>
             )}
           </div>

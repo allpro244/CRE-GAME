@@ -135,16 +135,24 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 export const COMMERCIAL_SUITE_MIN = 2_000;
 
 export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
-  // A building you programmed yourself is cut the way you cut it.
-  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
-  if (chosen && chosen > 0) return chosen;
   // Sized off the COMPONENT, not the building. Ground-floor retail under a
   // tower demises into shops, not into floors — sizing it off the tower gave
   // a 400,000 sf building 30,000 sf "shops", which is a department store.
   const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
+  // A building you programmed yourself is cut the way you cut it — but never
+  // into a suite larger than the leg. A 9,371 ft warehouse programmed (or
+  // defaulted) as a 12,000 ft bay is a number the building does not contain.
+  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
+  if (chosen && chosen > 0) return Math.min(a, chosen);
+  let raw: number;
   switch (use) {
-    case "multifamily": return 900;                                    // an apartment
-    case "industrial":  return Math.max(12_000, Math.min(90_000, a / 2.2));
+    case "multifamily": raw = 900; break;                              // an apartment
+    // A warehouse bay is large — twelve thousand feet is a typical single
+    // tenancy — but a 9,000 ft shed is one bay the size of the shed, not a
+    // 12,000 ft suite in a building that does not have 12,000 feet. Playtest
+    // on 54 Packet St: 9,371 sf industrial, 1/1 spaces, ParcelDesk "12,000 sf
+    // each". Same class of lie as the 26,100 ft office that read 1/1 at 8%.
+    case "industrial":  raw = Math.max(12_000, Math.min(90_000, a / 2.2)); break;
     // TWO THOUSAND FEET IS THE FLOOR FOR A COMMERCIAL TENANCY.
     //
     // Shops were demising to 1,400 and offices to 2,500, which produced towers
@@ -152,7 +160,7 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // Below about two thousand feet a commercial tenancy is not an asset —
     // it is a serviced office or a kiosk, and neither is what this game is
     // about. Flats keep their own floor, because a flat is a flat.
-    case "retail":      return Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(14_000, a / 6));
+    case "retail":      raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(14_000, a / 6)); break;
     // ...AND TWENTY-EIGHT THOUSAND WAS THE WRONG CEILING AT THE OTHER END.
     //
     // The cap binds on everything sizeable: any office building over about
@@ -164,8 +172,9 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // anchor floor: the same tower now needs the better part of thirty deals
     // and three to four years, which is what leasing a tower actually costs
     // and most of why merchant development is supposed to be frightening.
-    default:            return Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12));  // office
+    default:            raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12)); break;  // office
   }
+  return Math.min(a, Math.max(1, raw));
 }
 
 /**
@@ -263,7 +272,13 @@ export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): U
       continue;
     }
     const leasedSf = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
-    const leased = Math.min(total, Math.max(leasedSf > 0 ? 1 : 0, Math.round(leasedSf / sfPer)));
+    // Round to whole suites. A 2,000 ft tenant in a 26,000 ft single-tenant
+    // office is on the roll, but they have not let the space — counting any
+    // positive sf as 1 of 1 made occupancy 8% next to a full building.
+    // A remnant in a multi-suite building still occupies a suite (it would
+    // otherwise round to zero and hide a real tenant).
+    let leased = Math.min(total, Math.max(0, Math.round(leasedSf / sfPer)));
+    if (leased === 0 && leasedSf > 0 && total > 1) leased = 1;
     // WHAT IS TURNING IN THIS LEG, ASKED DIRECTLY.
     //
     // This used to take the WHOLE building's make-ready and apportion it across
@@ -304,7 +319,7 @@ export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
  * to means a building can never lease its last ten per cent and sits at 91%
  * occupancy for a century.
  */
-function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
+export function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
   const sfPer = use ? useSuiteSf(rec, use) : suiteSf(rec);
   // Flats have their own floor — 450 ft is a studio, not a closet. And a
   // building smaller than the market's smallest suite is not unlettable, it is
@@ -317,7 +332,16 @@ function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass
   // the floor — which is most small commercial buildings. Thirty per cent of
   // every inherited rent roll came out below the minimum because of it. A
   // sliver nobody will lease stays vacant; that is what a floor means.
-  if (maxUnits < 1) return cap >= floor ? Math.round(cap) : 0;
+  //
+  // And a remnant is the LAST PIECE OF A SUITE, not a bite of a much larger
+  // one. Construction used to pass the 32% spec-office ceiling as `cap`; this
+  // branch then handed back 2,000 ft of a 26,000 ft single tenancy, and the
+  // book read 1/1 spaces at 8% occupancy. Nobody leases 8% of a one-space
+  // building. Take the leftover only when it is most of a suite.
+  if (maxUnits < 1) {
+    if (cap >= floor && cap >= sfPer * 0.65) return Math.round(Math.min(cap, sfPer));
+    return 0;
+  }
   const n = Math.max(1, Math.min(maxUnits, Math.round(want / sfPer)));
   const taken = n * sfPer;
   // if letting whole suites would strand an unlettable sliver, take it too
@@ -623,11 +647,14 @@ export function genAnchorTenant(
   // are not part of the deal, and letting the anchor take the whole building
   // put more square feet under lease than the building had.
   const use = (forUse && leasableUses(rec).includes(forUse) ? forUse : leasableUses(rec)[0]) ?? "office";
-  const sfAnchor = Math.min(sfWanted, useVacantSf(rec, h, use, s.month));
-  // The same floor every other tenancy obeys. This said 1,000 while the rest
-  // of the engine says a commercial tenancy under 2,000 ft is not one — and
-  // the invariant sweep caught a 1,634 ft anchor signed at a delivery.
-  if (sfAnchor < minTenancySf(rec, use)) return false;
+  const vacant = useVacantSf(rec, h, use, s.month);
+  const sfPer = useSuiteSf(rec, use);
+  // A letter for a fraction of an indivisible suite is not a tenancy. Do not
+  // round it UP to the whole HQ — that would gift 24,000 ft to a 2,000 ft
+  // construction bite. Refuse; the space lets after opening, in whole suites.
+  if (sfWanted < sfPer * 0.65 && sfWanted < vacant * 0.65) return false;
+  const sfAnchor = toSuites(rec, sfWanted, vacant, use);
+  if (!sfAnchor) return false;
   const sector = pickSector(s, use);
   const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
   h.tenants.push({

@@ -13,3 +13,13 @@ export const usd = (n: number): string => {
 
 export const sf = (n: number) => Number.isFinite(n) ? Math.round(n).toLocaleString() + " sf" : "—";
 export const pct = (n: number) => Number.isFinite(n) ? n.toFixed(2) + "%" : "—";
+
+/** Remaining term on a lease, in the unit a person can read at a glance.
+ *  Under two years that is months — "0.7 yrs left" next to "exp Sep 2000"
+ *  was misread as 8.7, and WALT on the row above is already in years. */
+export function termLeft(endM: number, now: number): string {
+  const mo = endM - now;
+  if (mo <= 0) return "holding over";
+  if (mo < 24) return `${mo} mo left`;
+  return `${(mo / 12).toFixed(1)} yrs left`;
+}

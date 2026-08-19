@@ -41,6 +41,7 @@ import {
 // no access to it, so they had a coverage inset and nothing else while the
 // stock around them had twenty plan families.
 import { massingStack } from "@/citygen/massing.mjs";
+import { OPEN_SEA } from "./sea";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
 export interface Oriented { p: [number, number]; r: number }
@@ -1793,7 +1794,14 @@ const vec3 HAZE_COOL = vec3(0.742, 0.818, 0.900);   // the sky, scattered back
 const vec3 HAZE_WARM = vec3(0.964, 0.906, 0.812);   // the sun, scattered forward
 const vec3 HAZE_COL  = vec3(0.790, 0.845, 0.902);   // the average, for anything that wants one
 
-vec3 aerial(vec3 c, vec3 p, vec3 cam) {
+// HOW MUCH AIR IS IN THE WAY, and WHAT COLOUR THE AIR IS, as two functions
+// instead of one. They were a single aerial() and that was fine until the sea
+// needed the FRACTION with a different target: MapLibre paints the far harbour
+// as a flat unhazed fill, so the Three sea has to arrive at that colour rather
+// than at the sky's, or the two disagree and the disagreement shows up as a
+// bright ring of nothing at the range where the haze has peaked and the
+// hand-off has not started. Same numbers, same curve, asked in two pieces.
+float airFrac(vec3 p, vec3 cam) {
   vec3 d3 = p - cam;
   float d = length(d3);
   float k = max(cam.z, 140.0);
@@ -1804,22 +1812,6 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // Depth reads better from a curve that stays clear up close and then falls
   // away hard, which is also what air actually does.
   float f = 1.0 - exp(-(d / k) * 0.056);
-
-  // Which way am I looking, relative to where the sun is? Taken on the compass
-  // only: the elevation of the sun is the same everywhere in frame, so letting
-  // it into this term would just add a constant tilt top-to-bottom.
-  vec2 vdir = d3.xy;
-  vec2 sdir = SUN_DIR.xy;
-  float toSun = 0.5;
-  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
-    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
-  }
-  // The forward lobe opened from 2.4: with the sun riding lower through the
-  // year there is more air along its bearing in every frame, and the warm
-  // glow down-sun is the half of aerial perspective that says LATE LIGHT
-  // rather than just distance.
-  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
-  haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
 
   // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
   // dirtiest, which is at the bottom — so a distant street floor washes out
@@ -1859,7 +1851,29 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // map-of-the-world zooms, where the frame should read as a chart again.
   alt *= mix(1.0, 0.5, smoothstep(8000.0, 20000.0, cam.z));
 
-  return mix(c, haze, clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0));
+  return clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0);
+}
+
+vec3 airColour(vec3 p, vec3 cam) {
+  // Which way am I looking, relative to where the sun is? Taken on the compass
+  // only: the elevation of the sun is the same everywhere in frame, so letting
+  // it into this term would just add a constant tilt top-to-bottom.
+  vec2 vdir = (p - cam).xy;
+  vec2 sdir = SUN_DIR.xy;
+  float toSun = 0.5;
+  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
+    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  // The forward lobe opened from 2.4: with the sun riding lower through the
+  // year there is more air along its bearing in every frame, and the warm
+  // glow down-sun is the half of aerial perspective that says LATE LIGHT
+  // rather than just distance.
+  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
+  return mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+}
+
+vec3 aerial(vec3 c, vec3 p, vec3 cam) {
+  return mix(c, airColour(p, cam), airFrac(p, cam));
 }`;
 
 /**
@@ -8136,6 +8150,10 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
+// The colour MapLibre paints past this mesh. A fact about the other renderer,
+// not a setting: everything this shader does in its far field has to arrive
+// here, or the world ends in a visible band.
+uniform vec3 uSeaFar;
 ` + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
@@ -8182,7 +8200,19 @@ void main() {
   vec3 n = normalize(vec3(-dx * 0.66 * slope, -dy * 0.66 * slope, 1.0));
 
   vec3 V = normalize(uCam - vec3(p, 0.0));
-  float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
+  // SCHLICK, WITH WATER'S OWN NUMBER IN IT.
+  //
+  // This was pow(1 - cos, 3.0) — the right shape with the wrong exponent and
+  // no normal-incidence term, which is why it could never reach either end of
+  // the curve and why every consumer below had to bracket it by hand into some
+  // window like 0.10 + 0.54 * fres. Water is n = 1.33, so R0 = 0.02, and
+  // Schlick's fifth power is the tail: two per cent reflective looking straight
+  // down at it, effectively a mirror edge-on. That single fact is the entire
+  // reason a harbour shows you the far shore and not your own feet, and having
+  // it stated properly here is what lets the far sea find the sky on its own
+  // instead of being washed there by a distance constant.
+  float cosI = clamp(dot(n, V), 0.0, 1.0);
+  float fres = 0.02 + 0.98 * pow(1.0 - cosI, 5.0);
 
   // THE CITY STANDS ON THIS AND HAS NEVER ONCE APPEARED IN IT.
   //
@@ -8260,12 +8290,36 @@ void main() {
   shallow = mix(shallow, vec3(0.286, 0.412, 0.470), SNOW * 0.85);
   sky     = mix(sky,     vec3(0.742, 0.800, 0.848), SNOW * 0.70);
 
+  // THE HORIZON KNOWS WHERE THE SUN IS. Looking down-sun across open water the
+  // far air is full of forward-scattered light and the horizon goes warm and
+  // bright; looking away from it, it stays the sky's own pale blue. Taken on
+  // the compass only — the sun's elevation is the same everywhere in frame, so
+  // letting it in here would only tilt the picture top to bottom. Same
+  // reasoning, and the same cool base, as the aerial term uses.
+  float hSun = 0.5;
+  vec2 hd = vXY - uCam.xy;
+  if (dot(hd, hd) > 1e-6) {
+    hSun = clamp(dot(normalize(hd), normalize(SUN_DIR.xy)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  vec3 horizonC = mix(vec3(0.874, 0.914, 0.933), vec3(0.958, 0.918, 0.856), pow(hSun, 3.0) * 0.65);
+
   vec3 body = mix(deep, shallow, shoal * 0.82);
-  vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
+  // The reflected sky is not one colour either: it is palest, brightest and
+  // warmest down at the horizon, which is precisely the part of it a grazing
+  // reflection is looking at. So the sea takes the horizon's own tone exactly
+  // when it goes edge-on, and its own overhead blue when it does not — and the
+  // two arrive through the SAME Fresnel weight rather than through a second
+  // pass keyed on how far away the camera happens to be.
+  vec3 skyC = mix(sky, horizonC, pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  vec3 col = mix(body, skyC, fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
   // angle — that Fresnel curve is the whole reason a harbour mirrors the far
   // shore and not your own feet. Damped in the shallows, where the bottom is
   // close enough to see and the light coming back up through it competes.
+  // The 0.09 floor is a lift, not a measurement: a planar reflection carries
+  // the only picture of the city this surface has, and at R0 = 0.02 it would be
+  // invisible from the overhead camera the game is mostly played at. Named as
+  // taste, kept small, and it is the only hand-set number left in here.
   col = mix(col, reflCol, reflA * (0.09 + 0.72 * fres) * (1.0 - shoal * 0.45));
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
@@ -8290,8 +8344,28 @@ void main() {
                   + glit * mix(3.4, 1.2, aloft) * (0.5 + 0.9 * streak));
 
   // foam: only on the real crests, and heavier in the shallows where the
-  // swell actually breaks
-  col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+  // swell actually breaks.
+  //
+  // AND IT STOPS BEING PER-CREST WHEN THE CRESTS STOP BEING RESOLVED. This is
+  // the same fault the wave NORMAL already has a fix for a few lines up — past
+  // a few hundred metres a pixel spans several whole waves, so testing the
+  // crest returns whichever phase the pixel centre happened to land on — and
+  // the foam term never got the same treatment. At the establishing camera the
+  // three trains alias against the pixel grid into a regular diamond lattice,
+  // maybe fifty metres on a side, and because the term is weighted toward the
+  // shallows it painted a crocheted band all the way around the island. It has
+  // always been there; correcting the Fresnel below R0 made the water darker
+  // and the additive lattice suddenly legible on top of it.
+  //
+  // The honest answer is the same one the normal gets: hand the lost variance
+  // to the mean. Once the waves are subpixel, what a pixel actually contains is
+  // the COVERAGE — the fraction of the surface under it that is breaking — and
+  // that is a property of these three trains, not a taste setting: with the
+  // phases independent, the mean of smoothstep(0.86, 1.02, h) is 0.0054, by
+  // Monte Carlo over four million samples of the sum as written above. Change
+  // the amplitudes and this number changes with them.
+  float crest = mix(smoothstep(0.86, 1.02, h), 0.0054, farFlat);
+  col += vec3(0.075) * crest * (0.5 + 0.8 * shoal);
 
   // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
   //
@@ -8332,42 +8406,78 @@ void main() {
     col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
   }
 
-  // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
-  // and the global aerial term — deliberately weakened so the city keeps its
-  // contrast — no longer takes the far water all the way to the sky, so the
-  // boundary of the plane arrives as a ruled line straight across the picture.
-  // The sea gets its own far-field fade, run to completion, because the one
-  // thing the horizon must never do is show you where the geometry ran out.
-  // The sheet is a SQUARE six kilometres on the half-side, so its corners
-  // reach 1.41x further than its edges and a fade that is still running at the
-  // edge distance shows the diagonal. Finish well inside the boundary, and
-  // finish on the sky's own horizon colour rather than the haze grey, so the
-  // sea meets the sky instead of meeting a slightly different sky.
-  vec3 outc = aerial(grade(col), vec3(vXY, 0.0), uCam);
-  // MEASURED ALONG THE GROUND, NOT ALONG THE SIGHT LINE. This fade ran on 3D
-  // distance, which contains the camera's own altitude — so from the high
-  // strategic cameras EVERY fragment of sea cleared the band at once and the
-  // whole harbour arrived as one sheet of horizon colour: the island floating
-  // on milk. The horizon is a DIRECTION, not a radius; what should decide
-  // whether water has let go into sky is how far away it is across the
-  // surface, so the sea directly below a high camera keeps its body and only
-  // the genuinely far water meets the sky. The band still saturates by 3900 m
-  // — inside the 6000 m sheet by enough that the mesh edge stays hidden from
-  // every camera the game can reach.
+  // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.
   //
-  // And it is finished on a horizon that knows where the sun is: the far
-  // water brightens and warms along the sun's bearing the way every open-water
-  // horizon in late light does, and stays the sky's own pale blue away from
-  // it. The cool base is MapLibre's horizon-color, so sea and sky still meet
-  // on the same line.
-  float hSun = 0.5;
-  vec2 hd = vXY - uCam.xy;
-  if (dot(hd, hd) > 1e-6) {
-    hSun = clamp(dot(normalize(hd), normalize(SUN_DIR.xy)) * 0.5 + 0.5, 0.0, 1.0);
-  }
-  vec3 horizonC = mix(vec3(0.874, 0.914, 0.933), vec3(0.958, 0.918, 0.856), pow(hSun, 3.0) * 0.65);
-  float dist = length(hd);
-  outc = mix(outc, horizonC, smoothstep(1400.0, 3900.0, dist));
+  // Every other surface in the city loses itself into the air's colour, and
+  // that is right for them. The sea cannot: past the edge of this mesh the same
+  // harbour is drawn by MapLibre as a flat unhazed fill, so if our water heads
+  // for the sky's pale and the fill stays blue, the two disagree — and the
+  // disagreement is not a thin line at the boundary, it is a BRIGHT ANNULUS at
+  // whatever range the haze has peaked and the hand-off has not begun. That ring
+  // was on screen and I could see the fade circle in it.
+  //
+  // So the water takes the air's own FRACTION, computed by exactly the same
+  // curve as everything else, and carries it toward the open sea instead. The
+  // depth cue survives — near water is the deep tone, far water is the flat
+  // offshore one, which is lighter and less saturated, so distance still reads —
+  // and the two renderers now converge on one colour from any distance and any
+  // angle. Labelled for what it is: a compositing constraint, imposed because a
+  // MapLibre fill has no atmosphere and cannot be given one.
+  vec3 outc = mix(grade(col), uSeaFar, airFrac(vec3(vXY, 0.0), uCam));
+
+  // THE SEA HAS NO EDGE AND THIS MESH DOES, AND WHAT HIDES THAT EDGE HAS TO
+  // BELONG TO THE MESH.
+  //
+  // This was smoothstep(1400, 3900, |vXY - uCam.xy|) toward a near-white
+  // horizon colour — a ring of pale painted around the camera's own ground
+  // position. It was itself the fix for a worse version of the same idea (the
+  // fade used to run on 3D distance, so a high camera cleared the whole band at
+  // once and the island floated on milk), and moving it to ground distance only
+  // shrank the blast radius. On a two-kilometre island the 3,900 m band sat out
+  // over empty water where nobody was looking. On Manhattan below 59th Street —
+  // five by eight kilometres — it covers the ENTIRE harbour from every camera
+  // the game can reach, and the island floated on milk again, from the same
+  // constant, for the second time.
+  //
+  // Two separate jobs were tangled in that one line, and neither of them wants
+  // a distance from the viewer:
+  //
+  //   Where the sea meets the sky is a DIRECTION, not a radius. Water goes to
+  //   sky colour edge-on because Fresnel says it reflects nearly all of the sky
+  //   and returns nearly none of its own body, and that depends on the angle
+  //   alone. It is handled above, by the Schlick term and by skyC, and it has
+  //   no length scale in it at all — which is exactly why it cannot come out
+  //   wrong on a bigger island.
+  //
+  //   Where a harbour becomes the open sea is measured FROM THE SHORE. vDepth
+  //   already carries metres to the coastline, baked per vertex for the shoal,
+  //   so the hand-off is one smoothstep on it and needs no length constant tied
+  //   to the map at all. It is metres AT THE VERTICES and linear in between, and
+  //   the annulus triangulates into long thin triangles running from the coast
+  //   out to the sheet's corners, so the band lands closer to the shore than the
+  //   numbers suggest — a few hundred metres of living water rather than eight.
+  //   That is a property of the distance field the shoal already depends on, not
+  //   of this fade, and it is the same everywhere; refining it means subdividing
+  //   the sea, which is a mesh job. I tried two anchors before this and both were wrong in
+  //   the same way: a radius from the camera moves the effect when you pan, and
+  //   a radius from the MAP ORIGIN leaves out every stretch of open water that
+  //   is far from land but near the origin — the whole Hudson west of downtown
+  //   stayed washed out while water the same distance offshore to the north had
+  //   been handed over. Distance from the shore is the only one of the three
+  //   that describes the thing being drawn.
+  //
+  //   The ramp finishes at 3,000 m offshore and seaEnvelope puts the sheet's
+  //   boundary 3,200 m past the furthest rock, so the whole rim of the mesh is
+  //   converged by construction and its edge cannot show — that is the contract
+  //   between the two, and the offing is what enforces it.
+  //
+  // And it finishes on OPEN_SEA — the literal colour MapLibre paints past this
+  // mesh — rather than on a horizon tone, because what is on the far side of
+  // that boundary is not the sky, it is the same harbour drawn by the other
+  // renderer, flat and unhazed because a fill cannot be anything else. Landing
+  // on any other colour is how you get a band across the world's edge, which
+  // the style file has a comment worrying about and which was in fact there.
+  outc = mix(outc, uSeaFar, smoothstep(800.0, 3000.0, vDepth));
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -10338,8 +10448,46 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * occluded against. It has to be hidden during the sun's depth pass, where
    * it would be a lid over the whole city.
    */
+  /**
+   * HOW FAR OUT THE SEA HAS TO REACH — one answer, asked by three places.
+   *
+   * 6,000 m on the half-side is generous around a two-kilometre town and
+   * cramped around Manhattan: below 59th Street the Battery already sits
+   * 4,600 m from the map origin, so there was barely a kilometre of ocean south
+   * of it and the fade that hides the mesh edge would have been running across
+   * the shoreline. The full-island extent is longer than the old sheet
+   * outright — the coast would have crossed its own boundary and the harbour
+   * would have ended in mid-water.
+   *
+   * `land` is the island's own radius from the map origin; `half` is the sheet's
+   * half-side, which is that plus an OFFING of open water.
+   *
+   * THE OFFING IS A CONTRACT, not padding. WATER_FRAG hands the sea over to
+   * MapLibre's flat fill by 3,000 m offshore, measured from the coastline, so
+   * every point on this sheet's rim is at least 3,200 m from the nearest rock
+   * and is therefore already converged — which is what makes the boundary
+   * invisible without the shader knowing anything about the sheet's size. Shrink
+   * the offing below that ramp and the mesh edge comes back.
+   *
+   * Floored at the old 6,000, so the sheet's SIZE is unchanged for every city
+   * that already fitted inside it. (What the sea LOOKS like did change
+   * everywhere — see the Fresnel and far-field notes in WATER_FRAG.)
+   */
+  private seaEnvelope(): { land: number; half: number } {
+    const ring = this.landRing();
+    let land = 0;
+    if (ring) for (const v of ring) land = Math.max(land, Math.hypot(v.x, v.y));
+    const OFFING = 3200;
+    return { land, half: Math.max(6000, Math.ceil((land + OFFING) / 100) * 100) };
+  }
+
   private buildAoGround() {
-    const g = new THREE.PlaneGeometry(13000, 13000);
+    // Wide enough to sit under the whole sea with the same half-kilometre of
+    // overhang it had when both were fixed sizes. It costs nothing — no colour
+    // writes, two triangles — and its job is to give every building in town a
+    // floor, so being short of the coast is the only way it can be wrong.
+    const side = 2 * this.seaEnvelope().half + 1000;
+    const g = new THREE.PlaneGeometry(side, side);
     // AND IT HAS TO SIT UNDER THE SEA, NOT IN IT. At z = 0 this plane is half a
     // centimetre below the water sheet, which is inside the depth buffer's
     // precision out at a kilometre — the two fought, the floor won in patches,
@@ -10361,17 +10509,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildWater() {
-    const land = this.ctxPoints.land;
-    if (!land || land.length < 4) return;
-    const ring = land.map((p) => this.project(p));
+    const ring = this.landRing();
+    if (!ring) return;
     // wind the hole opposite to the outer boundary or the triangulator fills it
-    let a2 = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const p = ring[i], q = ring[(i + 1) % ring.length];
-      a2 += p[0] * q[1] - q[0] * p[1];
-    }
-    const hole = (a2 > 0 ? ring.slice().reverse() : ring).map(([x, y]) => new THREE.Vector2(x, y));
-    const R = 6000;
+    const hole = ring.slice().reverse();
+    // THE SEA WAS A FIXED SIX KILOMETRES AND THE ISLAND IS NOT A FIXED SIZE.
+    // See `seaEnvelope` for what decides this and why.
+    const R = this.seaEnvelope().half;
     const outer = [
       new THREE.Vector2(-R, -R), new THREE.Vector2(R, -R),
       new THREE.Vector2(R, R), new THREE.Vector2(-R, R),
@@ -10407,6 +10551,23 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
         uReflectOn: { value: 0 }, uSeason: this.seasonUni, uWeather: this.weatherUni,
+        // RAW, NOT MANAGED — and this was worth measuring rather than assuming.
+        //
+        // THREE.ColorManagement is on by default, so `new THREE.Color("#33719c")`
+        // helpfully converts to the renderer's linear working space and gives
+        // (0.033, 0.165, 0.333). But this layer's shaders write gl_FragColor
+        // straight out with no encoding stage, so those components reach the
+        // screen as bytes: #082a55, a dark navy, and the "seamless" join came out
+        // as a hard black rim around the harbour. Sampling the canvas across the
+        // boundary is what showed it — the rim read #082a55 exactly, which is the
+        // managed value byte for byte.
+        //
+        // Every hand-written colour in these shaders is display-space for the
+        // same reason (`deep` at vec3(0.078, 0.220, 0.352) is #143859, a near
+        // black-blue, which `grade` and `aerial` then lift). So this one is
+        // parsed in linear-sRGB, which is three's way of saying "do not convert",
+        // and MapLibre's #33719c arrives as #33719c.
+        uSeaFar: { value: new THREE.Color().setStyle(OPEN_SEA, THREE.LinearSRGBColorSpace) },
       },
       side: THREE.DoubleSide,
     });
@@ -10481,39 +10642,85 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private landBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
   /**
-   * THE SHEET THE SHADOWS LAND ON — recentred on the city, not resized to it.
+   * THE SHEET THE SHADOWS LAND ON IS THE SHAPE OF THE GROUND.
    *
-   * It was a 3,800 x 3,200 m plane translated to (0, 150), and the second half of
-   * that was a real bug: the origin used to be every island's own centre, and it
-   * is `manifest.core` now, which for a written-down Manhattan is Wall Street
-   * with eight kilometres of island north of it. So the sheet sat over the wrong
-   * part of the map entirely.
+   * It was a 3,800 x 3,200 m rectangle translated to (0, 150) — every island is
+   * small, sits near the origin, and is apparently square. All three of those
+   * were false at once. The origin used to be each island's own centre and is
+   * `manifest.core` now, which for a written-down Manhattan is downtown with
+   * kilometres of island north of it, so the sheet sat over the wrong part of
+   * the map. The shipped Great City is 6.4 km across, so it has been hanging
+   * off the far edge and losing its street shadows for as long as that size has
+   * existed. And a rectangle laid over an ISLAND covers a great deal of open
+   * water, where this quad has no business at all: the catcher's own table
+   * grain and the sheen's specular were being painted onto the sea, and the
+   * corners of the rectangle showed as a pale quadrilateral in the harbour at
+   * every camera angle, top-down included.
    *
-   * I FIRST TRIED SIZING IT TO THE COASTLINE AND THAT WAS WRONG, which is worth
-   * writing down because the failure was invisible in every small-city shot and
-   * spectacular in a big one. The shadow frustum above is fitted in the LIGHT's
-   * space, so its ground footprint is a sheared parallelogram, not the
-   * axis-aligned land box — a plane grown to that box reaches outside the depth
-   * map's projection, every fragment out there reads as fully lit, and the sun
-   * sheen laid over it paints the excess solid white. It produced a white
-   * quadrilateral over the whole harbour at the 59th Street extent, and because
-   * it affected every city it also appeared on a generated Great City, which is
-   * what briefly convinced me it was not mine.
+   * A shadow catcher's subject is the ground. The ground here is the island, and
+   * the coastline is already traced for the sea and the seawall, so the honest
+   * geometry is that ring triangulated — every square metre of ground covered
+   * at any island size, not one metre of water touched, and no straight edge
+   * anywhere to notice. `landRing` is the shared triangulation.
    *
-   * So: same size it always was, positioned where the city actually is. That
-   * keeps it inside the frustum for the sizes it was designed for and changes
-   * nothing about how it looks. The limitation it has always had is unchanged and
-   * is now stated rather than discovered: on a city wider than about 3.8 km — the
-   * shipped Great City at 6.4 km, and every Manhattan extent — the outer parts
-   * get no ground shadow. Fixing that properly means clipping the sheet to the
-   * frustum's own footprint or fading the shader where the lookup leaves range,
-   * and it is a graphics job rather than a city one.
+   * I MISDIAGNOSED THIS ONCE AND THE WRONG ANSWER IS WORTH KEEPING. When a
+   * white sheet appeared over the whole harbour I blamed a first attempt at
+   * fitting this quad to the coastline, invented a mechanism for it — the
+   * shadow frustum is fitted in light space, so a plane grown past its footprint
+   * reads fully lit and the sheen paints it white — wrote that into this comment
+   * as fact, and reverted a fix that had been right. Then I hid the catcher and
+   * the sheen and the white sheet was still there. It was WATER_FRAG's
+   * far-field fade, which is anchored to the camera and calibrated for a
+   * two-kilometre island; see the note at the bottom of that shader. The
+   * invented mechanism was never tested and never true. What was real, and what
+   * this fixes, is the rectangle over the sea.
+   *
+   * The falls-back-to-a-plane branch is for a bare unit test with no coastline.
    */
-  private groundPlane(z: number): THREE.PlaneGeometry {
-    const b = this.landBox;
-    const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
-    const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
-    return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
+  private groundPlane(z: number): THREE.BufferGeometry {
+    const ring = this.landRing();
+    if (!ring) {
+      const b = this.landBox;
+      const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
+      const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
+      return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
+    }
+    let tris: number[][] = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(ring, []); } catch { tris = []; }
+    if (!tris.length) {
+      const b = this.landBox;
+      const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
+      const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
+      return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
+    }
+    const pos: number[] = [];
+    for (const t of tris) for (const i of t) pos.push(ring[i].x, ring[i].y, z);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }
+
+  /**
+   * The coastline in world metres, wound counter-clockwise so a triangulator
+   * reads it as a solid outer contour. The sea and the shadow catcher share it:
+   * they are the same outline and had been projecting and winding it privately,
+   * which is two chances for the island to disagree with itself about where it
+   * ends. (`buildSeawall` still reads the RAW winding, deliberately — it uses
+   * the sign to work out which way is out to sea, and normalising it here would
+   * take that information away.)
+   */
+  private landRing(): THREE.Vector2[] | null {
+    const land = this.ctxPoints.land;
+    if (!land || land.length < 4) return null;
+    const ring = land.map((p) => this.project(p));
+    let a2 = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      a2 += p[0] * q[1] - q[0] * p[1];
+    }
+    // counter-clockwise is what ShapeUtils treats as a solid outer contour
+    const wound = a2 < 0 ? ring.slice().reverse() : ring;
+    return wound.map(([x, y]) => new THREE.Vector2(x, y));
   }
 
   // One-time sun depth pass — the city is static, so shadows are free at
@@ -10578,11 +10785,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cam.bottom = b - pad; cam.top = t + pad;
         cam.near = Math.max(1, n - pad); cam.far = f + pad;
         cam.updateProjectionMatrix();
-        // Keep the WORLD-space footprint too: the frustum above is fitted in
+        // Keep the WORLD-space footprint too. The frustum above is fitted in
         // light space, which is right for a depth pass and useless for laying a
-        // flat sheet on the ground. The two planes below need the axis-aligned
-        // box, and recomputing it there would be a second answer to a question
-        // already asked.
+        // flat sheet on the ground. The shadow catcher is cut to the coastline
+        // now, so this box is only its fallback for a run with no coast ring at
+        // all — but it is also the record of what the depth map actually covers:
+        // fitted to these eight corners, the map contains the whole island, so a
+        // catcher cut to the island is inside it by construction.
         this.landBox = { x0, y0, x1, y1 };
       }
       this.shadowSpan = cam.far - cam.near;

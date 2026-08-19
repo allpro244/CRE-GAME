@@ -1,4 +1,8 @@
 import type { StyleSpecification, SourceSpecification, LayerSpecification } from "maplibre-gl";
+// The one open-water colour both renderers paint; see `sea.ts` for why it lives
+// in a leaf module of its own rather than next to the layer that uses it.
+import { OPEN_SEA } from "./sea";
+
 
 // Ashport is fictional — the self-contained style built from context.geojson
 // IS the basemap, so no network fetch by default. Set VITE_BASEMAP_STYLE to
@@ -291,7 +295,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       // #2d5f86 was a different, duller ocean for the first second of every
       // session. The background also shows raw past the sea mesh at extreme
       // pitch, where a mismatch reads as a hard band across the world's edge.
-      { id: "bg", type: "background", paint: { "background-color": "#33719c" } },
+      { id: "bg", type: "background", paint: { "background-color": OPEN_SEA } },
       {
         id: "shallows",
         type: "fill",

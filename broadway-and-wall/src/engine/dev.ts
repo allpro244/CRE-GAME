@@ -345,6 +345,11 @@ export interface DevPlan {
   equityAtClose: number;  // what you actually write on day one
   months: number;
   yieldOnCost: number;    // stabilised NOI ÷ total cost — the developer's number
+  // Same NOI over construction only (basis minus land). An owner replacing
+  // their own husk has already paid for the dirt; charging it again is a
+  // merchant underwrite, and that is why worn anonymous fabric never came
+  // down after income moved onto rentable feet.
+  yieldOnCostExLand: number;
   exitCap: number;
   /** Exit yield grossed up by the same developer margin the land residual uses. */
   requiredYield: number;
@@ -1071,6 +1076,8 @@ export function planDevelopment(
   const exitCap = capRateFor(asBuilt, s.econ, "good");
   const exitYieldPct = exitCap + TAX_RATE * 100 * taxBorneShare(asBuilt);
   const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
+  const buildBasis = Math.max(0, basisTotal - landBasis);
+  const yieldOnCostExLand = buildBasis > 0 ? (stabNoi / buildBasis) * 100 : 0;
   // Hurdle against the tax-loaded exit the mark will actually use — not a
   // bare cap that made every tower look like 1.78x on a job that marks at 1.03x.
   const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitYieldPct);
@@ -1097,7 +1104,7 @@ export function planDevelopment(
     // `exitCap` on the plan is the tax-loaded exit yield the hurdle uses —
     // the same capitalisation `assetValue` applies — so reuse / residual
     // readers that call developmentHurdle(yoc, plan.exitCap) stay consistent.
-    months, yieldOnCost, exitCap: exitYieldPct, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
+    months, yieldOnCost, yieldOnCostExLand, exitCap: exitYieldPct, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
@@ -1183,13 +1190,15 @@ export function planAdaptiveReuse(
   const basisTotal = opportunity + costTotal + interestReserve + pointsCost;
   const stabilizedNoi = base.yieldOnCost / 100 * base.basisTotal;
   const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal) * 100;
+  const reuseBuild = costTotal + interestReserve + pointsCost;
+  const yieldOnCostExLand = reuseBuild > 0 ? stabilizedNoi / reuseBuild * 100 : 0;
   const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, base.exitCap);
   return {
     ...base,
     hardCost, softCost, demo, contingency, costTotal,
     commitment, interestReserve, pointsCost,
     equity, equityAtClose: Math.round(equity * 0.55),
-    basisTotal, yieldOnCost, requiredYield, hurdleRatio,
+    basisTotal, yieldOnCost, yieldOnCostExLand, requiredYield, hurdleRatio,
     months: Math.max(9, Math.round(base.months * 0.70)),
     lenderNote: hurdleRatio < 1
       ? `Conversion yield is ${yieldOnCost.toFixed(2)}% against ${requiredYield.toFixed(2)}% required.`
@@ -3280,14 +3289,19 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A replacement is still supply. It may satisfy an existing order, but it
   // cannot create a class of space the market has not ordered at all —
   // "ordered" includes a pinned structural short, not only startOwed.
+  //
+  // Recycle is in scope for the underwriting gate below, not only this
+  // early exit: a husk that densifies in a shortage still uses the owner
+  // hurdle (yield on build cost, no merchant margin) when the merchant
+  // pro forma does not clear.
+  const stood = gradeOf(s, rec);
+  const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+  const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
   if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead)) {
     // Obsolescence is its own reason to clear a site. The order book is
     // how a SHORTAGE densifies; a worn-out building comes down even when
     // the book is quiet — that is how a city stays a city and not a
     // museum. The replacement still has to pencil, below. No extra draw.
-    const stood = gradeOf(s, rec);
-    const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
-    const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
     if (!recycle) return;
   }
   const leadShort = classPinnedOwed(e, lead)
@@ -3386,11 +3400,31 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const underwriting = underwriteDevelopment(
     s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
   );
-  // Soften the stochastic walk under chronic shortage — still requires a
-  // clearing pro forma; does not free-build.
-  const stoodCond = gradeOf(s, rec);
-  const rollGate = leadShort ? 0.88 : stoodCond === "obsolete" ? 0.80 : 0.62;
-  if (!underwriting?.clears || teardownRoll > rollGate * underwriting.appetite) return;
+  if (!underwriting) return;
+  // TWO HURDLES, BECAUSE THEY ARE TWO DECISIONS.
+  //
+  // A merchant densifies: YoC on land-inclusive basis must clear exit ×
+  // (1 + DEV_MARGIN). After income moved onto rentable feet, that almost
+  // never happened on anonymous fabric — hard cost is still on gross, the
+  // 17% margin sits on top, and the wrecking ball went quiet (city-accept L
+  // fell from ~0.10%/yr to ~0.04%/yr). That is the rentable haircut talking,
+  // not a city that should stop renewing.
+  //
+  // An owner replacing a husk already owns the dirt. Their question is
+  // whether replacement income covers construction at the exit yield — no
+  // developer profit, land already sunk. `appetite` is zero when the
+  // merchant hurdle fails, so the recycle path must not read it.
+  const ownerRecycle = recycle
+    && underwriting.financeable
+    && underwriting.plan.yieldOnCostExLand >= underwriting.plan.exitCap;
+  const merchant = underwriting.clears;
+  if (!merchant && !ownerRecycle) return;
+  const rollGate = leadShort ? 0.88 : stood === "obsolete" ? 0.80 : ownerRecycle ? 0.80 : 0.62;
+  if (merchant) {
+    if (teardownRoll > rollGate * underwriting.appetite) return;
+  } else if (teardownRoll > 0.80) {
+    return;
+  }
   const plan = underwriting.plan;
   nsf = plan.sf;
   nfl = plan.floors;

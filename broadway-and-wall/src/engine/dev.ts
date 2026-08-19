@@ -3203,10 +3203,21 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
   // a shortage; the old land/built ratio only found husks, and century nulls
   // rebuilt ~zero lots while jobs outran floors (ECONOMY.md §F #2 / CENTURY #6).
-  let worst: {
-    bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; ratio: number; score: number;
-  } | null = null;
+  type TearCand = {
+    bbl: string;
+    rec: NonNullable<ReturnType<typeof resolveRec>>;
+    ratio: number;
+    score: number;
+    probeUse: DevUse;
+    probeLead: BuiltClass;
+  };
+  const pool: TearCand[] = [];
   const sampleN = chronicShort ? 40 : 26;
+  // After rentable, the single highest-score lot is the one that least
+  // pencils: unused FAR is a bigger gross box, hard cost is on gross, income
+  // is on rentable. Underwriting only that lot is why L fell to ~0.04%/yr.
+  // Keep the best few and take the first whose replacement actually clears.
+  const SCAN = 12;
   for (let i = 0; i < sampleN; i++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     const rec = resolveRec(parcels, s, bbl);
@@ -3240,10 +3251,27 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // replacement does not pencil (measured: office pin and structTight
     // regressed). Surplus empty sheds clear via tickIndustrialExit instead.
     const score = (0.35 + Math.max(0, ratio)) * densify * condW * (1 + 2.2 * st);
-    if (!worst || score > worst.score) worst = { bbl, rec, ratio, score };
+    const row: TearCand = { bbl, rec, ratio, score, probeUse, probeLead };
+    if (pool.length < SCAN) pool.push(row);
+    else {
+      let iMin = 0;
+      for (let k = 1; k < pool.length; k++) if (pool[k].score < pool[iMin].score) iMin = k;
+      if (score > pool[iMin].score) pool[iMin] = row;
+    }
   }
-  if (!worst) return;
-  const { rec, ratio } = worst;
+  if (!pool.length) return;
+  pool.sort((a, b) => b.score - a.score);
+  // RNG-NOTE: one shared stream for the month, not one per candidate. The
+  // second useForZone (a second answer for the same site) is gone — the
+  // programme is the probe already drawn in the sample. inKind / share /
+  // duration draws stay at one each, as before.
+  const teardownRoll = rng(s, "dev");
+  const inKindRoll = rng(s, "dev");
+  const shareJitter = rng(s, "dev");
+  const formerBuildRoll = rng(s, "dev");
+  const formerDemoRoll = rng(s, "dev");
+  void formerBuildRoll; void formerDemoRoll;
+
   // WHAT WOULD GO UP HERE IS DECIDED BEFORE THE BUILDING COMES DOWN, because
   // the only question that licenses a teardown is whether the REPLACEMENT
   // pencils, and that is a question about the replacement's class.
@@ -3262,179 +3290,145 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // — while industrial demand fell to 0.62x with its stock sitting at 1.04x,
   // untouched, because office happened to be soft at the time.
   const yr0 = START_YEAR + Math.floor(s.month / 12);
-  let nextUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
-  let lead = dominantOf(devMix(nextUse));
-  const teardownRoll = rng(s, "dev");
-  const bbl = rec.bbl;
-  const oldSf = rec.bldgArea;
-  // Standing use before teardown — BuiltClass excludes "land", so keep the
-  // raw class for the stock-removal path below. Candidates above already skip
-  // vacant lots; the `!== "land"` check also narrows AssetClass → BuiltClass.
-  const cls = rec.class;
-  // When the standing class is pinned and still wanted, densify IN KIND.
-  // useForZone's programme mix was converting short office into multifamily
-  // — supply answering the wrong demand, and (once the office book went
-  // empty because nothing penciled) dismantling the class the city was
-  // short of. classPinnedOwed now fires on the book OR on structTight.
-  if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-    const standing = cls;
-    const stStand = e.structTight?.[standing] ?? 0;
-    if (classPinnedOwed(e, standing)) {
-      if (rng(s, "dev") < Math.min(0.92, 0.70 + stStand * 1.2)) {
+
+  let chosen: {
+    rec: TearCand["rec"]; ratio: number; bbl: string; oldSf: number;
+    nextUse: DevUse; lead: BuiltClass; nsf: number; nfl: number;
+    opportunityCost: number; plan: DevPlan;
+  } | null = null;
+
+  for (const cand of pool) {
+    const rec = cand.rec;
+    let nextUse = cand.probeUse;
+    let lead = cand.probeLead;
+    const bbl = rec.bbl;
+    const oldSf = rec.bldgArea;
+    const cls = rec.class;
+    // When the standing class is pinned and still wanted, densify IN KIND.
+    // useForZone's programme mix was converting short office into multifamily
+    // — supply answering the wrong demand, and (once the office book went
+    // empty because nothing penciled) dismantling the class the city was
+    // short of. classPinnedOwed now fires on the book OR on structTight.
+    if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
+      const standing = cls;
+      const stStand = e.structTight?.[standing] ?? 0;
+      if (classPinnedOwed(e, standing) && inKindRoll < Math.min(0.92, 0.70 + stStand * 1.2)) {
         nextUse = standing;
         lead = standing;
       }
     }
-  }
-  // A replacement is still supply. It may satisfy an existing order, but it
-  // cannot create a class of space the market has not ordered at all —
-  // "ordered" includes a pinned structural short, not only startOwed.
-  //
-  // Recycle is in scope for the underwriting gate below, not only this
-  // early exit: a husk that densifies in a shortage still uses the owner
-  // hurdle (yield on build cost, no merchant margin) when the merchant
-  // pro forma does not clear.
-  const stood = gradeOf(s, rec);
-  const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
-  const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
-  if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead)) {
-    // Obsolescence is its own reason to clear a site. The order book is
-    // how a SHORTAGE densifies; a worn-out building comes down even when
-    // the book is quiet — that is how a city stays a city and not a
-    // museum. The replacement still has to pencil, below. No extra draw.
-    if (!recycle) return;
-  }
-  const leadShort = classPinnedOwed(e, lead)
-    || ((e.structTight?.[lead] ?? 0) > 0.06
-      && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
+    const stood = gradeOf(s, rec);
+    const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+    const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
+    if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead) && !recycle) continue;
+    const leadShort = classPinnedOwed(e, lead)
+      || ((e.structTight?.[lead] ?? 0) > 0.06
+        && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
 
-  // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
-  //
-  // A wrecking ball is the first line item of a development budget, not an end
-  // in itself: you clear a site BECAUSE you have a project, financing and a
-  // contractor, and the hoarding goes up the same season. This used to clear
-  // the lot and trust that "the existing city and street builders will find it
-  // like any other site" — and measured over 50 years with no player, they did
-  // not. The city tore down 343 buildings and delivered 115, and the standing
-  // stock fell from 1,030 to 802. That is not a city recycling itself, it is a
-  // city being quietly dismantled.
-  //
-  // So the teardown IS the groundbreaking. The replacement is sized off the
-  // envelope the site can now reach rather than off what stood here — which is
-  // the entire reason the old building came down — and it is bound by the same
-  // cornice datum and per-use floor caps every other city job respects, so a
-  // three-storey town does not sprout a tower on one cleared lot.
-  const yr = yr0;
-  const farMax = farMaxFor(rec);
-  // A redevelopment goes bigger than what it replaced — that is the arithmetic
-  // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
-  // QUESTION, and the first cut of this did not ask it. It took 45-80% of the
-  // envelope unconditionally, so every teardown added floor area whether or
-  // not anybody wanted the space. Measured: the city grew its floor area
-  // ~50% in fifty years regardless of vacancy, and sim:accept F went bimodal —
-  // office rent at year 50 landed anywhere from $34 to $505 across seven
-  // seeds, because in half the runs the supply response ran away from demand
-  // and real rents fell 3-5% a year for half a century.
-  //
-  // Nobody builds fifty per cent more space into a glut. A developer facing
-  // slack takes the smallest building that justifies clearing the site — or
-  // walks — and the same site in a shortage gets the full envelope. So the
-  // share is read off how far this class's vacancy sits from its natural
-  // rate, which is the same signal the rest of the pipeline already uses.
-  //
-  // These two are SHAPE PARAMETERS and, per CLAUDE.md, they get to say which.
-  // The elasticity (7) is anchored on how hard real starts respond to slack:
-  // about five points of vacancy above natural roughly halves them, and ten
-  // points very nearly stops them — 1 - 7*slack reads 0.65 and 0.30 at those
-  // two points, which is the right shape. The 0.30 floor is the smallest
-  // building that still justifies mobilising a site at all. Neither was
-  // iterated against a test: they were chosen once from that anchor. What DID
-  // come from measurement is that the previous unconditional 0.45-0.80 share
-  // was wrong, and the evidence is in the paragraph above.
-  const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
-  const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
-  // Shortage asks for more of the legal envelope; glut still walks small.
-  const shareFloor = leadShort ? 0.55 : 0.30;
-  const share = shareFloor + (0.80 - shareFloor) * appetite * (0.75 + rng(s, "dev") * 0.5);
-  let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
-  let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * 0.62)));
-  const infill = cityInfillCap(s, parcels, rec, 1, lead);
-  if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
-  const ucap = MAX_FLOORS_BY_USE[nextUse];
-  if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
-  // When the class is short of housable floor, refuse teardowns that do not
-  // grow stock — clearing to a same-size box is how the century stayed pinned.
-  if (leadShort && nsf < oldSf * 1.12) {
-    const needFl = Math.min(
-      infill,
-      ucap ?? infill,
-      Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * 0.62)),
-    );
-    if (needFl > nfl) {
-      nfl = needFl;
-      nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100);
+    // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
+    //
+    // A wrecking ball is the first line item of a development budget, not an end
+    // in itself: you clear a site BECAUSE you have a project, financing and a
+    // contractor, and the hoarding goes up the same season. This used to clear
+    // the lot and trust that "the existing city and street builders will find it
+    // like any other site" — and measured over 50 years with no player, they did
+    // not. The city tore down 343 buildings and delivered 115, and the standing
+    // stock fell from 1,030 to 802. That is not a city recycling itself, it is a
+    // city being quietly dismantled.
+    //
+    // So the teardown IS the groundbreaking. The replacement is sized off the
+    // envelope the site can now reach rather than off what stood here — which is
+    // the entire reason the old building came down — and it is bound by the same
+    // cornice datum and per-use floor caps every other city job respects, so a
+    // three-storey town does not sprout a tower on one cleared lot.
+    const farMax = farMaxFor(rec);
+    // A redevelopment goes bigger than what it replaced — that is the arithmetic
+    // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
+    // QUESTION, and the first cut of this did not ask it. It took 45-80% of the
+    // envelope unconditionally, so every teardown added floor area whether or
+    // not anybody wanted the space. Measured: the city grew its floor area
+    // ~50% in fifty years regardless of vacancy, and sim:accept F went bimodal —
+    // office rent at year 50 landed anywhere from $34 to $505 across seven
+    // seeds, because in half the runs the supply response ran away from demand
+    // and real rents fell 3-5% a year for half a century.
+    //
+    // Nobody builds fifty per cent more space into a glut. A developer facing
+    // slack takes the smallest building that justifies clearing the site — or
+    // walks — and the same site in a shortage gets the full envelope. So the
+    // share is read off how far this class's vacancy sits from its natural
+    // rate, which is the same signal the rest of the pipeline already uses.
+    //
+    // These two are SHAPE PARAMETERS and, per CLAUDE.md, they get to say which.
+    // The elasticity (7) is anchored on how hard real starts respond to slack:
+    // about five points of vacancy above natural roughly halves them, and ten
+    // points very nearly stops them — 1 - 7*slack reads 0.65 and 0.30 at those
+    // two points, which is the right shape. The 0.30 floor is the smallest
+    // building that still justifies mobilising a site at all. Neither was
+    // iterated against a test: they were chosen once from that anchor. What DID
+    // come from measurement is that the previous unconditional 0.45-0.80 share
+    // was wrong, and the evidence is in the paragraph above.
+    const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
+    const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
+    const shareFloor = leadShort ? 0.55 : 0.30;
+    const share = shareFloor + (0.80 - shareFloor) * appetite * (0.75 + shareJitter * 0.5);
+    let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
+    let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * 0.62)));
+    const infill = cityInfillCap(s, parcels, rec, 1, lead);
+    if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
+    const ucap = MAX_FLOORS_BY_USE[nextUse];
+    if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
+    if (leadShort && nsf < oldSf * 1.12) {
+      const needFl = Math.min(
+        infill,
+        ucap ?? infill,
+        Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * 0.62)),
+      );
+      if (needFl > nfl) {
+        nfl = needFl;
+        nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100);
+      }
+      if (nsf < oldSf * 1.08) continue;
     }
-    if (nsf < oldSf * 1.08) return;
-  }
 
-  // The wrecking ball does not move until the replacement clears the same full
-  // site-level pro forma as every other builder. Because the existing building
-  // is still resolved here, the shared plan includes demolition cost.
-  //
-  // Opportunity cost is what a REDEVELOPER must pay the owner — not full
-  // stabilized income value. A buyer who will darken and demolish the building
-  // never pays the keep-operating mark: obsolete fabric, vacancy during the
-  // wipe, and demo risk are real discounts. The old gate required land/building
-  // >= 0.85 then put only LAND in the basis (two different questions). Charging
-  // undiscounted assetValue after that fix made densify almost never clear
-  // (≈5% of FAR-rich office candidates in a shortage) while jobs outran floors
-  // for a century — ECONOMY.md §F #2. Haircut by condition; still take the
-  // max of dirt and the discounted as-is bid.
-  // Unowned fabric only on this path (player / named firms skipped above).
-  // Full assetValue was an owner's forgoing applied to a building with no
-  // owner — densify cleared on ≈5% of FAR-rich office candidates while jobs
-  // outran floors (ECONOMY.md §F #2). Land is the opportunity cost; demo is
-  // inside the shared plan. Rival-owned densify keeps the discounted as-is
-  // bid in startOwnJob.
-  const opportunityCost = landValue(rec, e);
-  const underwriting = underwriteDevelopment(
-    s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
-  );
-  if (!underwriting) return;
-  // TWO HURDLES, BECAUSE THEY ARE TWO DECISIONS.
-  //
-  // A merchant densifies: YoC on land-inclusive basis must clear exit ×
-  // (1 + DEV_MARGIN). After income moved onto rentable feet, that almost
-  // never happened on anonymous fabric — hard cost is still on gross, the
-  // 17% margin sits on top, and the wrecking ball went quiet (city-accept L
-  // fell from ~0.10%/yr to ~0.04%/yr). That is the rentable haircut talking,
-  // not a city that should stop renewing.
-  //
-  // An owner replacing a husk already owns the dirt. Their question is
-  // whether replacement income covers construction at the exit yield — no
-  // developer profit, land already sunk. `appetite` is zero when the
-  // merchant hurdle fails, so the recycle path must not read it.
-  const ownerRecycle = recycle
-    && underwriting.financeable
-    && underwriting.plan.yieldOnCostExLand >= underwriting.plan.exitCap;
-  const merchant = underwriting.clears;
-  if (!merchant && !ownerRecycle) return;
-  const rollGate = leadShort ? 0.88 : stood === "obsolete" ? 0.80 : ownerRecycle ? 0.80 : 0.62;
-  if (merchant) {
-    if (teardownRoll > rollGate * underwriting.appetite) return;
-  } else if (teardownRoll > 0.80) {
-    return;
+    // TWO HURDLES, BECAUSE THEY ARE TWO DECISIONS.
+    //
+    // A merchant densifies: YoC on the land-inclusive basis must clear exit ×
+    // (1 + DEV_MARGIN). An owner replacing a husk already owns the dirt —
+    // yieldOnCostExLand ≥ exit, no developer profit. `appetite` is zero when
+    // the merchant test fails, so recycle must not read it.
+    // Unowned fabric only (player / named firms skipped above). Land is the
+    // opportunity cost; demo is inside the shared plan. Rival-owned densify
+    // keeps the discounted as-is bid in startOwnJob.
+    const opportunityCost = landValue(rec, e);
+    const underwriting = underwriteDevelopment(
+      s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
+    );
+    if (!underwriting) continue;
+    const ownerRecycle = recycle
+      && underwriting.financeable
+      && underwriting.plan.yieldOnCostExLand >= underwriting.plan.exitCap;
+    const merchant = underwriting.clears;
+    if (!merchant && !ownerRecycle) continue;
+    const rollGate = leadShort ? 0.88 : stood === "obsolete" ? 0.80 : ownerRecycle ? 0.80 : 0.62;
+    if (merchant) {
+      if (teardownRoll > rollGate * underwriting.appetite) continue;
+    } else if (teardownRoll > 0.80) {
+      continue;
+    }
+    const plan = underwriting.plan;
+    nsf = plan.sf;
+    nfl = plan.floors;
+    if (leadShort && nsf < oldSf * 1.05) continue;
+    chosen = {
+      rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
+      opportunityCost, plan,
+    };
+    break;
   }
-  const plan = underwriting.plan;
-  nsf = plan.sf;
-  nfl = plan.floors;
-  if (leadShort && nsf < oldSf * 1.05) return;
+  if (!chosen) return;
+  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan } = chosen;
+  const yr = yr0;
   const tprog = plan.mix;
-  // Preserve both historical duration draws. The date itself now comes from
-  // the common schedule rather than a teardown-only clock.
-  const formerBuildRoll = rng(s, "dev");
-  const formerDemoRoll = rng(s, "dev");
-  void formerBuildRoll; void formerDemoRoll;
   const months = plan.months;
 
   // Off the record and off the stock only AFTER the replacement is funded.

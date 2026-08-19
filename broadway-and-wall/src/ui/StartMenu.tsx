@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
 import { lifeForCash } from "@/engine/estate";
-// `currentCity` is gone with the island column: there is one island and it is
-// generated, so the run's island is a constant rather than a stored choice.
-import { currentSize, currentDev, currentCash0 } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList, PROCEDURAL } from "@/citygen/index.mjs";
+// `currentCity` is back with the island column: there are two islands now and
+// they are different games, so which one this browser last played is a default
+// worth keeping again.
+import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
+import { cityList, cityName, sizeList, developmentList, extentList } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
@@ -55,14 +56,29 @@ export default function StartMenu() {
 
   const sizes = sizeList();
   const devs = developmentList();
-  // THERE IS NO ISLAND TO CHOOSE. Every new run is cut on a generated island —
-  // its coast, its districts, its parks and its street names all come out of
-  // the seed rolled when Break ground is pressed — so a column offering one
-  // button was a control that could not be used. What this browser last played
-  // is not a default any more either: the point is that it is somewhere new.
-  const island = PROCEDURAL;
-  const [size, setSize] = useState(currentSize());
-  const [dev, setDev] = useState(currentDev());
+  // THERE IS AN ISLAND TO CHOOSE AGAIN, and only because there are now two that
+  // are genuinely different games rather than two of the same thing. The column
+  // was removed when it offered one button; the bar a second island has to clear
+  // was set in the same commit that deleted the last pair — "two genuinely
+  // different games, and that is what a second map has to earn."
+  //
+  // A generated island and Manhattan differ in what the SEED does. On a
+  // generated island the seed draws the coast, the districts, the parks and
+  // every street name, so the geography is the thing you are dealt. On Manhattan
+  // the geography is history and the seed deals the STOCK instead — which lots
+  // are built on, how old, how tall inside the same envelope, and who owns them.
+  const [island, setIsland] = useState<string>(currentCity());
+  const [size, setSize] = useState(currentSize(island));
+  const cities = cityList();
+  const isWritten = !!cities.find((c) => c.id === island)?.extents;
+  // The size slot means different things in the two cities, so switching island
+  // has to re-read it or Manhattan inherits "metro" and the island inherits
+  // "42nd" — both of which fall back silently and neither of which is what the
+  // player picked.
+  const pickIsland = (id: string) => {
+    setIsland(id); setSize(currentSize(id)); setDev(currentDev(id));
+  };
+  const [dev, setDev] = useState(currentDev(island));
   const [cash0, setCash0] = useState<number>(currentCash0());
 
   // Lot count goes as the square of the scale. The standard island is about
@@ -148,24 +164,63 @@ export default function StartMenu() {
                     much of the town one firm can ever be. Your opening cheque
                     does NOT scale: Hamlet is a concentration game, Great City
                     is a bigger pond. */}
+                {/* WHICH ISLAND. Two entries, and they are not two flavours of
+                    one thing — see the note by `island` above. */}
                 <div className="start-col">
-                  <div className="start-col-head">how big</div>
+                  <div className="start-col-head">where</div>
                   <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
-                    Same starting cash on every size. Bigger maps mean more lots, bigger banks and richer rivals — not higher rents by themselves.
+                    You do not get to change town mid-campaign. A run belongs to its island.
                   </div>
-                  {sizes.map((s) => (
+                  {cities.map((c) => (
                     <button
-                      key={s.id}
-                      className={"start-opt" + (s.id === size ? " start-opt-on" : "")}
-                      onClick={() => setSize(s.id)}
+                      key={c.id}
+                      className={"start-opt" + (c.id === island ? " start-opt-on" : "")}
+                      onClick={() => pickIsland(c.id)}
                     >
-                      <span className="start-opt-name">
-                        {s.name}
-                        <span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span>
-                      </span>
-                      <span className="start-opt-note">{s.note}</span>
+                      <span className="start-opt-name">{c.name}</span>
+                      <span className="start-opt-note">{c.tagline}</span>
                     </button>
                   ))}
+                </div>
+
+                {/* HOW BIG, or on a written-down city HOW FAR UPTOWN.
+                    A generated island scales: the geography multiplies and the
+                    street grid does not, so a bigger map is more blocks rather
+                    than bigger ones. Manhattan cannot do that — scaling a traced
+                    coastline gives a fictional island shaped like a shrunken one
+                    with real-sized blocks in it — so its dial is the extent, and
+                    every entry is a real place at real scale. */}
+                <div className="start-col">
+                  <div className="start-col-head">{isWritten ? "how far uptown" : "how big"}</div>
+                  <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
+                    {isWritten
+                      ? "Real lots at real block sizes, so the map grows by taking in more of the island rather than by stretching it. Further uptown is a bigger game and a slower month."
+                      : "Same starting cash on every size. Bigger maps mean more lots, bigger banks and richer rivals — not higher rents by themselves."}
+                  </div>
+                  {isWritten
+                    ? extentList().map((e) => (
+                      <button
+                        key={e.id}
+                        className={"start-opt" + (e.id === size ? " start-opt-on" : "")}
+                        onClick={() => setSize(e.id)}
+                      >
+                        <span className="start-opt-name">{e.name}</span>
+                        <span className="start-opt-note">{e.note}</span>
+                      </button>
+                    ))
+                    : sizes.map((s) => (
+                      <button
+                        key={s.id}
+                        className={"start-opt" + (s.id === size ? " start-opt-on" : "")}
+                        onClick={() => setSize(s.id)}
+                      >
+                        <span className="start-opt-name">
+                          {s.name}
+                          <span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span>
+                        </span>
+                        <span className="start-opt-note">{s.note}</span>
+                      </button>
+                    ))}
                 </div>
 
                 {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it

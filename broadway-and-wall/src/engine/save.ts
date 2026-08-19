@@ -87,6 +87,55 @@ const ISLAND_GROUND_MOVED_AT = 39;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 
+/**
+ * THE GROUND MOVES PER ISLAND, NOT ONCE FOR THE WHOLE GAME.
+ *
+ * The gate above was written when there was one island, so it asks
+ * `cityIsland === PROCEDURAL_ISLAND` — and that made it unreachable for any
+ * second city. A save stamped `manhattan` at any stale version took the
+ * "ground did not move" branch, was bumped silently to current, and passed.
+ * The first time a Manhattan coast vertex or block pitch changed, that is
+ * exactly the corruption `5660e0e` measured on the generated island: about 30%
+ * of deeds vanish outright, about 70% survive by BBL, and of those 99% are on
+ * DIFFERENT GROUND — same lot number, different parcel, different size,
+ * somewhere else entirely — and the campaign opens without a word.
+ *
+ * So each island carries its own watermark: the SAVE_VERSION at which that
+ * island's plat last moved. A save is refused when it predates its own island's
+ * watermark, and an island absent from the table has never moved its ground.
+ * Add a row the moment you change a coastline, a pitch, a bearing or a
+ * partition — the whole point is that this is edited in the same commit as the
+ * geometry, not afterwards when somebody notices.
+ */
+const GROUND_MOVED_AT: Record<string, number> = {
+  [PROCEDURAL_ISLAND]: ISLAND_GROUND_MOVED_AT,
+  // MANHATTAN ARRIVES AT 39 and its ground has not moved since, because 39 is
+  // the version it was born at — no Manhattan save can predate its own island.
+  // SAVE_VERSION does NOT move for it: a new city is additive, the generated
+  // island's plat is untouched (proved by hashing the parcel table), and the one
+  // new field on the save is optional. Bumping would refuse every live campaign
+  // to add a city none of them is on.
+  //
+  // WHEN MANHATTAN'S PLAT DOES MOVE — a nudged coast vertex, a changed pitch or
+  // bearing, a re-cut partition — bump SAVE_VERSION and set this to the new
+  // number IN THE SAME COMMIT. That is the whole contract, and the reason this
+  // table exists instead of one global constant.
+  manhattan: 39,
+};
+
+/**
+ * The islands this build can actually construct. Kept here rather than imported
+ * from citygen for the same reason PROCEDURAL_ISLAND is: the engine does not
+ * depend on the generator.
+ */
+const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
+
+/** Did this save predate the plat its own island now stands on? */
+function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
+  const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
+  return mark !== undefined && typeof state.v === "number" && state.v < mark;
+}
+
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
   migrateExtendedPaper(state);
@@ -114,9 +163,7 @@ export function migrateSaveState(state: GameState): GameState {
   // `state.v = SAVE_VERSION` after this block would make the gate below
   // unreachable and quietly restore the corruption.
   if (typeof state.v === "number" && state.v < SAVE_VERSION) {
-    const groundMoved = state.v < ISLAND_GROUND_MOVED_AT
-      && state.cityIsland === PROCEDURAL_ISLAND;
-    if (!groundMoved) state.v = SAVE_VERSION;
+    if (!groundMovedUnder(state)) state.v = SAVE_VERSION;
   } else {
     state.v = SAVE_VERSION;
   }
@@ -143,14 +190,24 @@ export function prepareSaveForResume(state: GameState):
     // differently now and the deeds no longer describe real ground.
     return {
       ok: false,
-      reason: typeof migrated.v === "number" && migrated.v < ISLAND_GROUND_MOVED_AT
-        && migrated.cityIsland === PROCEDURAL_ISLAND
+      reason: groundMovedUnder(migrated)
         ? "this campaign's island was drawn by an older map generator, and its deeds no longer match the ground"
         : "unsupported save version",
     };
   }
   if (migrated.citySeed === undefined) {
     return { ok: false, reason: "save has no city seed" };
+  }
+  // AN ISLAND THIS BUILD DOES NOT HAVE is a refusal, not a crash. Without this
+  // rung a save naming a city added after the build sailed through every check
+  // and then threw inside makeCity, which the store surfaces as "The city would
+  // not build. This is a bug — please report it." It is not a bug and it is not
+  // the player's fault; it is a newer save than the build.
+  if (migrated.cityIsland && !KNOWN_ISLANDS.has(migrated.cityIsland)) {
+    return {
+      ok: false,
+      reason: `this campaign is on ${migrated.cityIsland}, which this build does not have — it was saved by a newer version`,
+    };
   }
   return { ok: true, state: migrated };
 }

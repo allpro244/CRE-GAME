@@ -31,10 +31,21 @@ const q=(a,p)=>{const s=[...a].filter(Number.isFinite).sort((x,y)=>x-y);return s
 const M_LAT = 111320;
 function areaOf(r){let a=0;for(let i=0;i<r.length;i++){const [x1,y1]=r[i],[x2,y2]=r[(i+1)%r.length];a+=x1*y2-x2*y1;}return Math.abs(a)/2;}
 
+// THE CITIES THIS PROVES THE IDENTITY ON, and the centre comes from each one
+// rather than from a constant. `[-70.9, 41.1]` was the generated island's own
+// origin and reproducing the renderer meant copying it — but the renderer reads
+// `manifest.core` now, because a written-down Manhattan sits 257 km from that
+// point and cos(lat) alone would put every area out by half a per cent, which
+// is the same order as the identity being tested. A harness that stops
+// reproducing the thing it reproduces is measuring nothing.
+//
+// Manhattan runs at its smallest extent so this stays a twenty-second check.
+const CITIES = [["somewhere", [1, 7, 20261], null], ["manhattan", [1], "houston"]];
+
 let built=[], vacant=[];
-for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
-  const c = makeCity(cityId, seed);
-  const ctr = [ -70.9, 41.1 ];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
   const kx = M_LAT * Math.cos(ctr[1]*Math.PI/180);
   const proj = ([lon,lat]) => [ (lon-ctr[0])*kx, (lat-ctr[1])*M_LAT ];
   // the renderer's two maps, reproduced from ThreeBuildings
@@ -148,9 +159,9 @@ function inside(poly, ring) {                   // every vertex of poly inside r
 }
 
 let towerRows = [];
-for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
-  const c = makeCity(cityId, seed);
-  const ctr = [-70.9, 41.1];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
   const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);
   const proj = ([lon, lat]) => [(lon - ctr[0]) * kx, (lat - ctr[1]) * M_LAT];
   for (const f of c.parcelFeatures?.features ?? []) {
@@ -278,9 +289,9 @@ const pmHash = (a, b) => {
   return ((h >>> 0) % 100000) / 100000;
 };
 const pmRows = [];
-for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
-  const c = makeCity(cityId, seed);
-  const ctr = [-70.9, 41.1];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
   const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);
   const proj = ([lon, lat]) => [(lon - ctr[0]) * kx, (lat - ctr[1]) * M_LAT];
   for (const f of c.parcelFeatures?.features ?? []) {

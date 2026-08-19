@@ -10477,6 +10477,34 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     mesh.frustumCulled = true;
   }
 
+  /** The city's own footprint in world metres, filled by the frustum fit. */
+  private landBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
+
+  /**
+   * THE SHEET THE SHADOWS LAND ON, sized to the city rather than to a guess.
+   *
+   * It was a 3,800 x 3,200 m plane pinned to (0, 150) — the old assumption that
+   * every island is small and sits near the origin. Both halves of that are now
+   * false: the shipped Great City is about 6.4 km across, so it has been
+   * hanging off this sheet and losing its ground shadows at the edges for as
+   * long as that size has existed, and a written-down Manhattan is 4 x 4.7 km
+   * around a core that is nowhere near the origin.
+   *
+   * Fitted to the same land ring the shadow frustum fits to, with a generous
+   * margin so a low sun's shadows still have ground to fall on past the
+   * coastline. Falls back to the old box when there is no land ring, which is
+   * the case in a bare unit test.
+   */
+  private groundPlane(z: number): THREE.PlaneGeometry {
+    const b = this.landBox;
+    if (!b) return new THREE.PlaneGeometry(3800, 3200).translate(0, 150, z);
+    const MARGIN = 900;                       // room for a December shadow to land
+    const w = Math.max(1200, b.x1 - b.x0 + MARGIN * 2);
+    const h = Math.max(1200, b.y1 - b.y0 + MARGIN * 2);
+    return new THREE.PlaneGeometry(w, h)
+      .translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, z);
+  }
+
   // One-time sun depth pass — the city is static, so shadows are free at
   // runtime: a single texture sample per fragment.
   private bakeShadows() {
@@ -10539,8 +10567,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cam.bottom = b - pad; cam.top = t + pad;
         cam.near = Math.max(1, n - pad); cam.far = f + pad;
         cam.updateProjectionMatrix();
+        // Keep the WORLD-space footprint too: the frustum above is fitted in
+        // light space, which is right for a depth pass and useless for laying a
+        // flat sheet on the ground. The two planes below need the axis-aligned
+        // box, and recomputing it there would be a second answer to a question
+        // already asked.
+        this.landBox = { x0, y0, x1, y1 };
       }
       this.shadowSpan = cam.far - cam.near;
+
 
       if (!this.shadowTarget) {
         this.shadowTarget = new THREE.WebGLRenderTarget(3072, 3072, {
@@ -10614,7 +10649,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           transparent: true,
           depthWrite: false,
         });
-        this.groundCatcher = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
+        this.groundCatcher = new THREE.Mesh(this.groundPlane(0.07), catcherMat);
         this.scene.add(this.groundCatcher);
 
         // and the sun's own contribution to that same ground, added on top
@@ -10654,7 +10689,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // by depth exactly where there is no ground, and the hole punched in
         // the water for the island is precisely where it should show through.
         this.groundSheen = new THREE.Mesh(
-          new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.005), sheenMat,
+          this.groundPlane(0.005), sheenMat,
         );
         // a flat sheet lying on the ground: nothing to cast, nothing to mirror
         this.groundSheen.userData.noShadow = true;

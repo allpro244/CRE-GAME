@@ -2103,6 +2103,16 @@ export interface GameState {
    */
   citySize?: string;
   /**
+   * HOW MANY LOTS THE TOWN ACTUALLY HAS, for the cities that do not have a
+   * size. A generated island declares its scale by the preset the player chose;
+   * a written-down one — Manhattan — is a traced coastline at true scale and
+   * declares nothing, so the only honest measure of how big its market is comes
+   * from counting the plat. See `cityscale.ts`. Absent on every save written
+   * before Manhattan existed, and absent means "read the preset", which is what
+   * those towns have.
+   */
+  cityLots?: number;
+  /**
    * How built-up the town was generated. Third half of the address: the same
    * island, seed and size at Frontier and at Metropolis are different towns
    * with different deeds. Absent means the standard opening.

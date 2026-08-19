@@ -43,6 +43,22 @@ function mapPaintSig(g: GameState | null | undefined): string {
   ].join("|");
 }
 
+/**
+ * WHERE THE METRE FRAME IS PINNED — and it is read from the city now, because a
+ * constant here is only ever right for one island.
+ *
+ * The camera two blocks up already learned this: "the pipeline puts the city's
+ * bounding box and its demand-weighted core into the manifest, so the opening
+ * shot frames whatever city was built... Hand-tuned constants meant every new
+ * map opened looking at the wrong piece of water." The PROJECTION ORIGIN never
+ * got the same treatment, and it is the more dangerous of the two — the camera
+ * looking at the wrong water is visible, whereas a projection pinned to the
+ * wrong meridian silently places every building somewhere else on earth.
+ *
+ * Measured for the written-down Manhattan: it sits about 257 km from this
+ * constant, which is nothing subtle. Generated islands are all cut around
+ * [-70.9, 41.1] so nothing moves for them, and the fallback keeps that.
+ */
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
 // One colour per firm, in the order the street was founded, so a rival's book
@@ -164,9 +180,12 @@ const framesOf = (f: CityFrame, wpx: number, hpx: number) => {
 // collinear edge pairs owned by DIFFERENT districts are exactly the seams.
 // Brute force over the ~1-2k street-length edges runs in under 20ms, once,
 // the first time a lens opens.
-function hoodBoundaries(ctx: GeoJSON.FeatureCollection | null | undefined): GeoJSON.FeatureCollection {
+function hoodBoundaries(
+  ctx: GeoJSON.FeatureCollection | null | undefined,
+  center: [number, number] = CITY_CENTER,
+): GeoJSON.FeatureCollection {
   const M = 111320; // metres per degree of latitude
-  const cosLat = Math.cos((CITY_CENTER[1] * Math.PI) / 180);
+  const cosLat = Math.cos((center[1] * Math.PI) / 180);
   type Seg = { ux: number; uy: number; c: number; t0: number; t1: number; d: string };
   const segs: Seg[] = [];
   for (const f of ctx?.features ?? []) {
@@ -295,7 +314,7 @@ export default function MapView() {
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
-            const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs, {
+            const layer = new ThreeBuildings(volumes, frame.core, curbs, {
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
@@ -1066,8 +1085,17 @@ export default function MapView() {
     const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases";
     map.getContainer().classList.toggle("bw-lens-hoods", hoods);
     if (hoods && !map.getLayer("bw-hood-line")) {
-      const ctx = useStore.getState().city?.context as GeoJSON.FeatureCollection | null;
-      map.addSource("bw-hoods", { type: "geojson", data: hoodBoundaries(ctx) as never });
+      const cityNow = useStore.getState().city;
+      const ctx = cityNow?.context as GeoJSON.FeatureCollection | null;
+      // The same origin the 3D layer is pinned to — see CITY_CENTER. This one
+      // only sets metres-per-degree for the seam merge, so being a few hundred
+      // kilometres out is a slow drift rather than a catastrophe; it is read
+      // from the city for the same reason all the same.
+      const core = (cityNow?.manifest as unknown as CityFrame | undefined)?.core;
+      map.addSource("bw-hoods", {
+        type: "geojson",
+        data: hoodBoundaries(ctx, Array.isArray(core) ? core : CITY_CENTER) as never,
+      });
       map.addLayer({
         id: "bw-hood-line",
         type: "line",

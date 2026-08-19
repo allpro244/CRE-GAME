@@ -1889,7 +1889,7 @@ export const useStore = create<AppState>((set, get) => ({
       // identity, before anything is generated — see START_CASH_CHOICES.
       const money = cash0 ?? currentCash0();
       setCash0(money);
-      setDev(dev);
+      setDev(dev, island);
       const seed = rerollCity();
       const { built, parcels } = buildTown(island, seed, size, dev);
       get().setData({
@@ -1903,6 +1903,11 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;
+      // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
+      // announces its scale through the size preset it was cut at; a
+      // written-down city has no preset to read, so the economy sizes rivals
+      // and lender hold caps off the plat itself. See engine/cityscale.ts.
+      g.cityLots = Object.keys(parcels).length;
       set({ game: g, phase: "playing", building: null, resume: null });
       persist(g);
     } catch (e) {

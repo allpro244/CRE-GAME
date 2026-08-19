@@ -3216,8 +3216,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // After rentable, the single highest-score lot is the one that least
   // pencils: unused FAR is a bigger gross box, hard cost is on gross, income
   // is on rentable. Underwriting only that lot is why L fell to ~0.04%/yr.
-  // Keep the best few and take the first whose replacement actually clears.
-  const SCAN = 12;
+  // The sample is the candidate set — underwrite them in score order and
+  // take the first whose replacement actually clears.
   for (let i = 0; i < sampleN; i++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     const rec = resolveRec(parcels, s, bbl);
@@ -3251,13 +3251,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // replacement does not pencil (measured: office pin and structTight
     // regressed). Surplus empty sheds clear via tickIndustrialExit instead.
     const score = (0.35 + Math.max(0, ratio)) * densify * condW * (1 + 2.2 * st);
-    const row: TearCand = { bbl, rec, ratio, score, probeUse, probeLead };
-    if (pool.length < SCAN) pool.push(row);
-    else {
-      let iMin = 0;
-      for (let k = 1; k < pool.length; k++) if (pool[k].score < pool[iMin].score) iMin = k;
-      if (score > pool[iMin].score) pool[iMin] = row;
-    }
+    if (!pool.some((p) => p.bbl === bbl)) pool.push({ bbl, rec, ratio, score, probeUse, probeLead });
   }
   if (!pool.length) return;
   pool.sort((a, b) => b.score - a.score);

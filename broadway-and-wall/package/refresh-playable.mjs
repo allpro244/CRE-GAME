@@ -46,8 +46,15 @@ Office:    $${rent} base (secondary market)
 HOW TO KNOW YOU HAVE THIS BUILD
   On the start screen footer you should see:
     build ${commit} · office base $${rent}
-  There is NO island picker — every new run is a generated island (Break ground).
-  New Alden and Kestrel Point are gone.
+  The start screen asks WHICH CITY first:
+    Somewhere else - a generated island, a new one every run
+    Manhattan      - the written-down one, with an extent picker
+                     (below Houston / 14th / 23rd / 34th / 42nd / 59th)
+  Pick Manhattan below 59th Street with the Metropolis build-out for the
+  largest map in the game, about 25,000 parcels.
+  The old hand-drawn fictional islands, New Alden and Kestrel Point, are
+  still gone; Manhattan is a real city written down, which is a different
+  thing and is why it came back as a named choice rather than as those.
 
 DOWNLOAD
   Prefer: Broadway-and-Wall-playable.zip  (from pnpm package)

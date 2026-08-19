@@ -1,1 +1,1 @@
-procedural-only
+manhattan-deco

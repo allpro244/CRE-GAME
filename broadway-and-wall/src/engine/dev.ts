@@ -3313,7 +3313,11 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     }
     const stood = gradeOf(s, rec);
     const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
-    const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
+    // US commercial economic life is 50–60 years (IRS depreciation is 39;
+    // appraisers and BOMA use the longer life). Anonymous fabric never
+    // starts obsolete, so "worn and 70" left the wrecking ball waiting on
+    // a grade that nobody can earn. Sixty is the birthday, not a volume dial.
+    const recycle = stood === "obsolete" || stoodAge >= 60;
     if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead) && !recycle) continue;
     const leadShort = classPinnedOwed(e, lead)
       || ((e.structTight?.[lead] ?? 0) > 0.06

@@ -268,8 +268,9 @@ retirement, #33 sellers, #36 zoning, #48/#49 firms, optional graphics). Phase 1
    rentable, merchant teardown (`clears` = YoC ≥ exit × 1.17, land in the
    basis) almost never fired on the single highest-score lot (largest unused
    FAR, least likely to pencil). Two decisions now: merchant densify still
-   needs the full developer hurdle; owner-recycle (worn and ≥70, or obsolete)
-   is YoC on build cost ≥ exit. The sample is the candidate set; they are
+   needs the full developer hurdle; owner-recycle (age ≥ 60, the commercial
+   economic life, or obsolete) is YoC on build cost ≥ exit. The sample is
+   the candidate set; they are
    underwritten in score order and the first that clears is the
    groundbreaking. Re-measure `CITY_SEEDS=1 node test/city-accept.mjs` K/L
    before trusting the bands.

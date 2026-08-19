@@ -134,10 +134,19 @@ for (const seed of SEEDS) {
         if (!rec || g.holdings[li.bbl] || rec.class === "land") continue;
         if (li.ask > E.assetValue(rec, g.econ, E.initialCondition(rec))) continue;
         // Leave a working balance behind, the way anybody solvent does.
-        const q = E.buyQuote(g, parcels, li.bbl, li.ask, "senior", 1);
-        if (q.equity > g.cash - START * 0.25) continue;
-        const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 1);
-        if (!r.err) { g = r.s; break; }
+        // Leave cash-out room — a purchase at lev=1 plus Alden's $2.5M
+        // minimum is how this bot printed `borrowed NO` and passed. Try
+        // 60% of Harbor's advance first; if the equity cheque does not
+        // fit the reserve, take 85%. Either way there is principal left
+        // to draw. Skip "senior" — that id is not a desk.
+        let closed = false;
+        for (const lev of [0.60, 0.85]) {
+          const q = E.buyQuote(g, parcels, li.bbl, li.ask, "harbor", lev);
+          if (q.equity > g.cash - START * 0.25) continue;
+          const r = E.executePurchase(g, parcels, li.bbl, li.ask, "harbor", false, lev);
+          if (!r.err) { g = r.s; closed = true; break; }
+        }
+        if (closed) break;
       }
     }
     // AND IT PUTS A CRANE UP, ONCE. Development is the largest and lumpiest
@@ -187,17 +196,31 @@ for (const seed of SEEDS) {
         if (!r.err) g = r.s;
       }
     }
-    // A CASH-OUT REFINANCE, so `borrowed` is actually exercised. An identity
-    // that never sees a principal draw cannot claim the debt gap is closed.
-    // Once every few years on a stabilised income asset with room to lever.
-    if (m > 36 && m % 48 === 0) {
+    // DRAW PRINCIPAL INTO CASH, so `borrowed` is actually exercised. An
+    // identity that never sees a principal draw cannot claim the debt gap
+    // is closed. Two doors, same bucket:
+    //   1. A land loan on the cash lot the crane already bought — the
+    //      dirt is unlevered, so the whole principal is net new.
+    //   2. A cash-out on an income deed. Cordage first (open prepay, 80%
+    //      LTV) so we do not wait out Harbor's 36-month stepdown; Harbor
+    //      and Alden follow. Alden is not the first call — its $2.5M
+    //      minimum silently refused every small deed the bot owns.
+    if (m > 2 && m % 6 === 0) {
       for (const bbl of Object.keys(g.holdings)) {
         const h = g.holdings[bbl];
         const rec = E.resolveRec(parcels, g, bbl);
-        if (!h || !rec || rec.class === "land" || h.sale) continue;
-        if ((h.tenants?.length ?? 0) < 1) continue;
-        const r = E.refinance(g, parcels, bbl, "savings", 1);
-        if (!r.err) { g = r.s; break; }
+        if (!h || !rec || h.sale) continue;
+        const desks = rec.class === "land"
+          ? ["land"]
+          : ((h.tenants?.length ?? 0) < 1 && rec.class !== "multifamily")
+            ? []
+            : ["cordage", "harbor", "savings"];
+        let done = false;
+        for (const desk of desks) {
+          const r = E.refinance(g, parcels, bbl, desk, 1);
+          if (!r.err) { g = r.s; done = true; break; }
+        }
+        if (done) break;
       }
     }
     // FUND EQUITY BUCKETS — plant a vehicle once and call/distribute so
@@ -282,7 +305,11 @@ console.log(`\n${"=".repeat(64)}`);
 // somewhere, check that dollars went anywhere: an identity nothing exercises
 // reports a pass it did not earn. `sold` is exempt — the bot only lists when it
 // is short, so a run where it never had to is a healthy run, not a dead one.
-const REQUIRED = ["noi", "interest", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
+// `borrowed` is on the income side of the identity — net new mortgage and
+// facility principal drawn into cash. A silent exemption here is the same
+// fault as the dead bot: both sides zero, the run prints a pass it did not
+// earn. `sold` stays exempt — the bot only lists when it is short.
+const REQUIRED = ["noi", "interest", "borrowed", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
 const dead = REQUIRED.filter((k) => coverage[k] === 0);
 console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);
 if (dead.length) {

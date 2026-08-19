@@ -4,7 +4,6 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
-import { marketRequirement } from "@/engine/absorption";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
@@ -599,28 +598,20 @@ export function EconomyPage() {
             />
           );
         })()}
-        {/* THE DEMAND LEDGER — proof that letters come from a finite looking
-            book, not from empty floors. Occupied + looking pool + this month's
-            requirement are the same quantities leasingOdds reads on the desk. */}
+        {/* THE DEMAND LEDGER. Letters still come from a finite looking book,
+            not from empty floors: the search pool (`e.pool`) and this month's
+            requirement (`marketRequirement`) are the same quantities
+            leasingOdds reads on the desk, and they still gate every LOI.
+            They are no longer PRINTED here — two intermediate stocks the
+            player cannot act on directly, on a page whose job is the tells
+            they can. The tells they can act on stay: what is let, and whether
+            the city wants more floors than it has. */}
         {(() => {
           const occ = e.occupied?.[focus] ?? stock * (1 - directNow);
-          const pool = e.pool?.[focus] ?? occ;
-          const housable = stock * (1 - frictionFloor(focus));
-          const req = marketRequirement(e, focus);
-          const looking = Math.max(0, pool - occ);
           const struct = e.structTight?.[focus] ?? 0;
           return (
             <>
               <Row k="Occupied" v={`${(occ / 1e6).toFixed(2)}M sf let`} />
-              <Row
-                k="Looking for space"
-                v={`${(looking / 1e6).toFixed(2)}M sf in the search pool · pool capped at housable ${(housable / 1e6).toFixed(2)}M`}
-                strong={looking > stock * 0.02}
-              />
-              <Row
-                k="City needs this month"
-                v={`${(req / 1_000).toFixed(0)}k sf of requirement · every LOI competes for a share of this`}
-              />
               {struct > 0.02 && (
                 <Row
                   k="Unmet structural demand"

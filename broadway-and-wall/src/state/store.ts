@@ -29,7 +29,7 @@ import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
-import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
+import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import {
@@ -98,6 +98,21 @@ interface AppState {
   mapFilter: MapFilter;
   setMapFilter: (f: MapFilter) => void;
   page: Page;
+  /**
+   * WHERE YOU WERE, so a detour is not a loss of place.
+   *
+   * Going to draw on the line, check a comp, or read the debt book in the
+   * middle of a decision used to cost the player their spot: they came back
+   * to the map and had to find the building again. This is the trail of
+   * (page, deed) they can walk back up. View state only — which room you
+   * were standing in is not a fact about the campaign, so it is never saved.
+   *
+   * Capped, and it never records standing still: only a move that actually
+   * changes the room or the deed pushes a step.
+   */
+  navBack: { page: Page; bbl: string | null }[];
+  /** Step back to the previous room and deed. No-op with nowhere to go. */
+  goBack: () => void;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
   paletteOpen: boolean;
@@ -153,7 +168,7 @@ interface AppState {
   /** Blind off-market bid — a number only; financing comes after they take it. */
   bidBlind: (bbl: string, bid: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; termM?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
   /** Answer a tenant's mid-lease relief letter. */
   answerAsk: (id: number, action: "grant" | "decline") => void;
   /**
@@ -295,6 +310,13 @@ interface AppState {
   setTeamLeasing: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
   /** Auto-sign at or above this share of market (net effective). */
+  /**
+   * Signing authority by size: the desk may sign a letter this big or smaller,
+   * anything larger comes to you. 0 clears the limit.
+   */
+  setDeskMaxSf: (sf: number) => void;
+  /** Take the pen back entirely — no delegation signs anything. */
+  setSignOwnAll: (on: boolean) => void;
   setAgentFloor: (f: number) => void;
   /** Auto-pass below this share; between pass and floor is referred back. */
   setAgentPassBelow: (f: number) => void;
@@ -304,6 +326,8 @@ interface AppState {
   /** Paper a cross-collateralised facility over a pool of buildings. */
   openFacility: (bbls: string[], productId: string, lev: number) => void;
   /** Pay the facility down out of cash. */
+  /** Re-quote the pool at today's rates and values and pay off the old paper. */
+  refiFacility: (productId: string, lev?: number) => void;
   repayFacility: (amount: number) => void;
   /** Buy one deed back out of the pool at the release price. */
   releaseFacility: (bbl: string) => void;
@@ -367,6 +391,33 @@ function queueDeliveryCeremony(
   if (player.includes(bbl)) {
     toast(`◆ Delivered — ${rec?.address ?? bbl}.`, "ok");
   }
+}
+
+/**
+ * How far back the trail goes. Deep enough to cover a real detour — the map,
+ * a building, its debt, a comp, back — and short enough that it is a way home
+ * rather than a second history of the campaign.
+ */
+const NAV_MAX = 24;
+
+/**
+ * Record where the player is standing, if the move actually goes somewhere.
+ * Returns the partial to merge, or null when there is nothing to remember:
+ * re-selecting the same deed, or re-opening the room you are already in, is
+ * standing still, and a Back button that walks through repeats of one place
+ * is worse than none.
+ */
+function pushNav(
+  st: { page: Page; selectedBBL: string | null; navBack: { page: Page; bbl: string | null }[] },
+  nextPage: Page,
+  nextBbl: string | null,
+): { navBack: { page: Page; bbl: string | null }[] } | null {
+  if (st.page === nextPage && st.selectedBBL === nextBbl) return null;
+  const top = st.navBack[st.navBack.length - 1];
+  if (top && top.page === st.page && top.bbl === st.selectedBBL) return null;
+  const navBack = [...st.navBack, { page: st.page, bbl: st.selectedBBL }];
+  if (navBack.length > NAV_MAX) navBack.shift();
+  return { navBack };
 }
 
 function toast(text: string, kind: "ok" | "err" = "ok") {
@@ -466,6 +517,7 @@ export const useStore = create<AppState>((set, get) => ({
   mapFilter: "all",
   lens: "none",
   page: "none",
+  navBack: [],
   paletteOpen: false,
   docketSnooze: {},
   advancing: false,
@@ -489,11 +541,13 @@ export const useStore = create<AppState>((set, get) => ({
   select: (bbl) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
-    const page = bbl && get().page !== "property" ? "none" as const : get().page;
-    if (bbl !== get().selectedBBL) {
-      startTransition(() => set({ selectedBBL: bbl, page }));
+    const st = get();
+    const page = bbl && st.page !== "property" ? "none" as const : st.page;
+    const nav = pushNav(st, page, bbl);
+    if (bbl !== st.selectedBBL) {
+      startTransition(() => set({ selectedBBL: bbl, page, ...(nav ?? {}) }));
     } else {
-      set({ selectedBBL: bbl, page });
+      set({ selectedBBL: bbl, page, ...(nav ?? {}) });
     }
   },
   hover: (bbl) => {
@@ -512,15 +566,23 @@ export const useStore = create<AppState>((set, get) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
+    ...(pushNav(st, closePanel ? "none" : st.page, bbl) ?? {}),
   })),
   openAttention: (key) => {
-    const game = get().game;
-    const route = routeAttention(key, game);
+    const st0 = get();
+    const route = routeAttention(key, st0.game);
+    // One entry for the whole jump, recorded before anything moves: a notice
+    // that changes both the deed and the room is still one move away from where
+    // the player was standing.
+    const nav = pushNav(st0, route.page ?? st0.page, route.bbl ?? st0.selectedBBL);
     if (route.bbl) {
       set((st) => ({
         selectedBBL: route.bbl!,
         flyTo: { bbl: route.bbl!, n: (st.flyTo?.n ?? 0) + 1 },
+        ...(nav ?? {}),
       }));
+    } else if (nav) {
+      set(nav);
     }
     if (route.auction) set({ auctionOpen: true });
     // Opening a desk leaves map-only — the skyline mode is for watching, not answering.
@@ -534,12 +596,33 @@ export const useStore = create<AppState>((set, get) => ({
   setPage: (page) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
     // highlight paints before the page body. Opening a desk leaves map-only.
-    if (page !== "none" && get().mapOnly) {
+    const st = get();
+    const nav = pushNav(st, page, st.selectedBBL);
+    if (page !== "none" && st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
-      startTransition(() => set({ page, mapOnly: false }));
+      startTransition(() => set({ page, mapOnly: false, ...(nav ?? {}) }));
       return;
     }
-    startTransition(() => set({ page }));
+    startTransition(() => set({ page, ...(nav ?? {}) }));
+  },
+  // Going to the Debt desk to draw on the line should not cost you the deal you
+  // were reading. Back restores the room AND the deed together; the camera is
+  // left alone because the map never moved to get here.
+  goBack: () => {
+    const st = get();
+    if (st.navBack.length === 0) return;
+    const navBack = st.navBack.slice();
+    const prev = navBack.pop()!;
+    const leavingMapOnly = prev.page !== "none" && st.mapOnly;
+    if (leavingMapOnly) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+    }
+    startTransition(() => set({
+      page: prev.page,
+      selectedBBL: prev.bbl,
+      navBack,
+      ...(leavingMapOnly ? { mapOnly: false } : {}),
+    }));
   },
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
@@ -1146,9 +1229,9 @@ export const useStore = create<AppState>((set, get) => ({
   // THE JULY AUCTION. One call, replacing whatever bids were down; ten per
   // cent leaves the account today and the hammer settles the rest next tick.
   bidAuction: (bids) => {
-    const { game } = get();
-    if (!game) return;
-    const r = registerAuctionBids(game, bids);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = registerAuctionBids(game, parcels, bids);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Registered."); void persist(r.s);
   },
@@ -1359,6 +1442,16 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  refiFacility: (productId, lev) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = refinanceFacility(game, parcels, productId, lev);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "The pool is refinanced.");
+    void persist(r.s);
+  },
+
   repayFacility: (amount) => {
     const { game } = get();
     if (!game) return;
@@ -1418,6 +1511,24 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
+  setDeskMaxSf: (sf) => {
+    const { game } = get();
+    if (!game) return;
+    // Zero means "no limit" rather than "nobody may sign anything" — the
+    // second reading is what setSignOwnAll is for, and a dial that silently
+    // became a master switch at one end would be two controls in one.
+    const lim = sf > 0 ? Math.round(sf) : undefined;
+    const next = { ...game, deskMaxSf: lim };
+    set({ game: next });
+    void persist(next);
+  },
+  setSignOwnAll: (on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, signOwnAll: on || undefined };
+    set({ game: next });
+    void persist(next);
+  },
   setAgentFloor: (f) => {
     const { game } = get();
     if (!game) return;
@@ -1554,9 +1665,9 @@ export const useStore = create<AppState>((set, get) => ({
   // two months while they work out a notice, which is why this toast talks
   // about a start date rather than a hire.
   hireStaff: (candidateId) => {
-    const { game } = get();
-    if (!game) return;
-    const r = hire(game, candidateId);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = hire(game, parcels, candidateId);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Offer accepted. They give notice first — the seat is empty until they walk in.");
@@ -1564,9 +1675,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fireStaff: (staffId) => {
-    const { game } = get();
-    if (!game) return;
-    const r = fire(game, staffId);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fire(game, parcels, staffId);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     // Marked as a bad outcome deliberately, the way handing back keys is: it
@@ -1611,9 +1722,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setStaffSearchTier: (key) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setSearchTier(game, key);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = setSearchTier(game, parcels, key);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(key === "post" ? "Posted. Cheap looks, wide bands."
@@ -1778,7 +1889,7 @@ export const useStore = create<AppState>((set, get) => ({
       // identity, before anything is generated — see START_CASH_CHOICES.
       const money = cash0 ?? currentCash0();
       setCash0(money);
-      setDev(dev);
+      setDev(dev, island);
       const seed = rerollCity();
       const { built, parcels } = buildTown(island, seed, size, dev);
       get().setData({
@@ -1792,6 +1903,11 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;
+      // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
+      // announces its scale through the size preset it was cut at; a
+      // written-down city has no preset to read, so the economy sizes rivals
+      // and lender hold caps off the plat itself. See engine/cityscale.ts.
+      g.cityLots = Object.keys(parcels).length;
       set({ game: g, phase: "playing", building: null, resume: null });
       persist(g);
     } catch (e) {

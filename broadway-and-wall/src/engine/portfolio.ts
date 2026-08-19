@@ -32,10 +32,9 @@ import { sweepLocIdleCash } from "./credit";
 import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned } from "./value";
 import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
-import { prepayPenalty } from "./debt";
 import { recordComp } from "./comps";
-import { saleTaxQuote, EXCHANGE_WINDOW_M, transferGroundLeaseOffBook } from "./actions";
-import { releaseCost } from "./facility";
+import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } from "./actions";
+import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -272,22 +271,46 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
 export function listPortfolio(
   s: GameState, parcels: ParcelTable, bbls: string[], ask: number,
 ): { s: GameState; err?: string; msg?: string } {
-  if (s.portfolioSale) return { s, err: "You already have a portfolio in the market. One process at a time." };
+  if (s.portfolioSale) {
+    // ONE PROCESS AT A TIME, AND SAY WHICH ONE. An unsolicited approach sits in
+    // the same slot as a marketed book, so the refusal has to name the thing
+    // that is actually in the way — a player who never listed anything was
+    // being told they had a portfolio in the market.
+    const buyer = s.portfolioSale.bids?.[0]?.name;
+    return {
+      s,
+      err: s.portfolioSale.unsolicited
+        ? `${buyer ?? "A buyer"} has approached you about ${s.portfolioSale.bbls.length} of your buildings. `
+          + `Answer that or tell them no before you take a book of your own to market — one process at a time.`
+        : "You already have a portfolio in the market. One process at a time.",
+    };
+  }
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b]);
   if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
   if (clean.some((b) => s.workouts?.[b])) {
     return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };
   }
-  // A CROSSED DEED CANNOT BE SOLD IN A BUNDLE. The facility is released one
-  // building at a time against payment of its allocated share at a premium —
-  // see engine/facility.ts — and a bundle sale settles as one trade with no
-  // room for twelve separate release calculations at the same closing. Sell it
-  // out of the pool first, or sell it on its own where the release is
-  // collected at the table.
-  const crossed = clean.filter((b) => s.facility?.bbls.includes(b));
-  if (crossed.length > 0) {
-    return { s, err: `${crossed.length} of these are pledged to your facility. Release them first, or sell them individually.` };
+  // A CRANE IS NOT SALEABLE, IN A BUNDLE OR OUT OF ONE. `listForSale` has
+  // always refused a deed under construction; this path did not, and the close
+  // deletes the holding without touching the development — a job still drawing
+  // its construction loan and still due to deliver, on land somebody else now
+  // owns. Same rule, same reason, both directions.
+  const cranes = clean.filter((b) => s.developments[b]);
+  if (cranes.length > 0) {
+    return {
+      s,
+      err: `${cranes.length === 1 ? "One of these has" : `${cranes.length} of these have`} a crane on site. `
+        + `Deliver the building first, or leave that deed out of the bundle.`,
+    };
   }
+  // A PLEDGED DEED IS NOT A REFUSAL, IT IS A COST. This used to bounce the
+  // whole bundle if a single building sat in the facility, and told the player
+  // to release it first — which `releaseFromFacility` refuses below three
+  // deeds while the balance is live, so a facility-financed book could never
+  // be sold as one at all. The close already settles the release per deed at
+  // the premium (see `portfolioSettlement`), and repays the balance outright
+  // when the pool falls through its floor. The premium is still charged and it
+  // is on the desk and the card before you commit; what has gone is the wall.
   const q = portfolioQuote(s, parcels, clean);
   if (ask <= 0) return { s, err: "Name a price." };
   // AN EMPTY ROOM IS NOT A PROCESS. Rolling the arrival die against zero
@@ -308,6 +331,10 @@ export function listPortfolio(
   next.portfolioSale = { bbls: clean, ask: Math.round(ask), listedM: next.month, sumOfParts: q.sumOfParts, bids: [] };
   const eager = Math.min(1, q.indicative / Math.max(1, ask));
   const richAsk = ask > q.indicative * 1.05;
+  // What the pool takes out of this trade, said at the door rather than at the
+  // table. The desk prints the same two numbers off the same function.
+  const book = portfolioSettlement(next, parcels, clean, Math.round(ask));
+  const pledged = book.release + book.facilityDue;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `Took ${clean.length} buildings to market as a portfolio at ${money(ask)} — `
@@ -319,6 +346,10 @@ export function listPortfolio(
         : eager >= 0.95
           ? `Priced at the indication — expect a call inside a quarter if the book holds. `
           : "")
+      + (pledged > 0
+        ? `${money(pledged)} of it goes straight back to the facility at the closing — the allocated shares at the `
+          + `release premium${book.facilityDue > 0 ? `, and the balance in full once the pool drops below ${FACILITY_MIN_ASSETS} deeds` : ""}. `
+        : "")
       + `Indications inside ${RUN_M} months or the process goes stale.`,
   });
   return { s: next, msg: richAsk ? "In the market — ask is rich against the indication." : "In the market." };
@@ -333,6 +364,11 @@ export function delistPortfolio(s: GameState): GameState {
 /** Move the ask. A portfolio that has sat for six months is telling you something. */
 export function repricePortfolio(s: GameState, ask: number): { s: GameState; err?: string; msg?: string } {
   if (!s.portfolioSale) return { s, err: "Nothing in the market." };
+  // Nothing to reprice on a book you never listed: they named the number and
+  // the answer to a number is a counter, not an ask.
+  if (s.portfolioSale.unsolicited) {
+    return { s, err: "You did not put these on the market — they came to you. Counter their number or tell them no." };
+  }
   if (ask <= 0) return { s, err: "Name a price." };
   const next = clone(s);
   const old = next.portfolioSale!.ask;
@@ -440,11 +476,119 @@ export function counterPortfolio(s: GameState, price: number): { s: GameState; e
   return { s: next, msg: "They walked." };
 }
 
+/** One deed inside a bundle, priced and settled on its own. */
+export interface PortfolioLeg {
+  bbl: string;
+  address: string;
+  /** Resolved class, or "land". What the player needs to recognise the deed. */
+  cls: string;
+  /** What it is worth on its own — the weight the bundle price is split by. */
+  mark: number;
+  /** Its share of the bundle price. */
+  price: number;
+  net: number; gain: number; tax: number; kick: number; breakFee: number;
+  release: number; loanPayoff: number; toSeller: number;
+}
+
+/**
+ * WHAT EVERY DEED IN A BUNDLE ACTUALLY SETTLES AT — one function, three readers.
+ *
+ * There is one price for the portfolio and one closing date, and underneath
+ * that there are nine separate settlements: brokerage and transfer tax, the
+ * mortgage and whatever mezzanine sits behind it, the participation, the
+ * prepayment break, the facility release, the gain and the tax on it. This is
+ * that schedule, and the decision card, the desk and the close all read it,
+ * because the alternative is what was here before — the card netting through
+ * `saleProceedsToSeller` (mezzanine included) while the close netted through
+ * the senior balance alone. On a mezz-levered deed the player was shown one
+ * number, paid another, and the mezzanine was written off with the holding.
+ *
+ * The pool is walked in the order the close walks it: each release is that
+ * deed's allocated share of what is LEFT in the facility, at the premium, so
+ * the sequence and the balance cap are the same arithmetic in both places.
+ * The walk runs on a shallow view of the state — `releaseCost` reads the
+ * facility and the holdings and nothing else — so this stays a pure read.
+ */
+export interface PortfolioSettlement {
+  legs: PortfolioLeg[];
+  /** Sum of the individual marks used to allocate the price. */
+  totalMark: number;
+  price: number;
+  loanPayoff: number; kick: number; breakFee: number; release: number; tax: number;
+  /** Proceeds after every payoff, before tax. */
+  toSeller: number;
+  /**
+   * WHAT IS LEFT OF THE FACILITY WHEN THE POOL FALLS THROUGH ITS FLOOR.
+   *
+   * A facility is written against a pool, not a building: below
+   * `FACILITY_MIN_ASSETS` deeds the lender does not have a facility any more,
+   * it has a mortgage it never underwrote. Selling the pool out from under it
+   * repays it at the table. That is the cost the old crossed-deed refusal was
+   * hiding, and it is charged rather than hidden — see `listPortfolio`.
+   */
+  facilityDue: number;
+  /** Cash that reaches you: proceeds less tax less any facility payoff. */
+  netToYou: number;
+}
+
+export function portfolioSettlement(
+  s: GameState, parcels: ParcelTable, bbls: string[], price: number,
+): PortfolioSettlement {
+  const live = bbls.filter((b) => s.holdings[b]);
+  const marks = live.map((b) => ownedHoldingValue(s, parcels, s.holdings[b]));
+  const totalMark = marks.reduce((a, v) => a + v, 0);
+  // Shallow view: the facility is the only thing the walk mutates, and the
+  // caller's copy of it must not move.
+  let work: GameState = s.facility
+    ? { ...s, facility: { ...s.facility, bbls: [...s.facility.bbls] } }
+    : s;
+  const legs: PortfolioLeg[] = [];
+  for (let i = 0; i < live.length; i++) {
+    const bbl = live[i];
+    const h = s.holdings[bbl];
+    const rec = resolveRec(parcels, s, bbl);
+    // PURCHASE PRICE ALLOCATION. The bundle price lands on each deed in
+    // proportion to what it was worth, which is how the schedule to a purchase
+    // and sale agreement gets written, and why one weak building drags the tax
+    // basis of every strong one.
+    const alloc = totalMark > 0 ? Math.round(price * (marks[i] / totalMark)) : 0;
+    const p = saleProceedsToSeller(work, parcels, h, alloc);
+    legs.push({
+      bbl, address: rec?.address ?? bbl, cls: rec?.class ?? "—",
+      mark: marks[i], price: alloc, ...p,
+    });
+    // The deed leaves the pool whether or not its allocated share came to
+    // anything — a conveyed building is not collateral, and leaving a sold
+    // address on the schedule is the collateral walk `pnpm facility` watches for.
+    if (work.facility?.bbls.includes(bbl)) {
+      work.facility.balance = Math.max(0, work.facility.balance - p.release);
+      work.facility.bbls = work.facility.bbls.filter((b) => b !== bbl);
+      if (work.facility.balance <= 0) work = { ...work, facility: undefined };
+    }
+  }
+  const pool = work.facility;
+  const facilityDue = pool && pool.balance > 0 && pool.bbls.length < FACILITY_MIN_ASSETS
+    ? pool.balance : 0;
+  const sum = (f: (l: PortfolioLeg) => number) => legs.reduce((a, l) => a + f(l), 0);
+  const toSeller = sum((l) => l.toSeller);
+  const tax = sum((l) => l.tax);
+  return {
+    legs, totalMark, price,
+    loanPayoff: sum((l) => l.loanPayoff),
+    kick: sum((l) => l.kick),
+    breakFee: sum((l) => l.breakFee),
+    release: sum((l) => l.release),
+    tax, toSeller, facilityDue,
+    netToYou: toSeller - tax - facilityDue,
+  };
+}
+
 /**
  * CLOSE IT. Every building settles individually, because that is what actually
  * happens at the table: one price for the portfolio, allocated across the
  * deeds pro rata to value, and then nine separate loan payoffs, nine separate
- * gain calculations and nine separate tax bills.
+ * gain calculations and nine separate tax bills — `portfolioSettlement`, the
+ * same schedule the card and the desk print before you sign.
  */
 export function acceptPortfolioBid(
   s: GameState, parcels: ParcelTable, exchange = false,
@@ -456,40 +600,33 @@ export function acceptPortfolioBid(
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   const next = clone(s);
   const live = ps.bbls.filter((b) => next.holdings[b]);
-  const marks = live.map((b) => ownedHoldingValue(next, parcels, next.holdings[b]));
-  const totalMark = marks.reduce((a, v) => a + v, 0);
-  if (totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
+  const book = portfolioSettlement(next, parcels, live, bid.price);
+  if (book.totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
 
-  // Same waterfall as acceptSaleOffer, deed by deed: loan, kicker, break fee,
-  // facility release, deposits (including assemblage children). The old path
-  // booked kick/break as debtSvc while also netting them out of sold — conserve
-  // saw money appear — and skipped release + child deposits entirely.
+  // Same waterfall as acceptSaleOffer, deed by deed: loan and mezzanine,
+  // kicker, break fee, facility release, deposits (including assemblage
+  // children). The old path booked kick/break as debtSvc while also netting
+  // them out of sold — conserve saw money appear — and skipped release + child
+  // deposits entirely.
   let cashToYou = 0, soldGross = 0, feeExp = 0, taxTotal = 0, gainTotal = 0;
-  live.forEach((bbl, i) => {
+  book.legs.forEach((leg) => {
+    const bbl = leg.bbl;
     const h = next.holdings[bbl];
     const rec = resolveRec(parcels, next, bbl)!;
-    // PURCHASE PRICE ALLOCATION. The bundle price lands on each deed in
-    // proportion to what it was worth, which is how the schedule gets written
-    // and why one weak building drags the tax basis of every strong one.
-    const price = Math.round(bid.price * (marks[i] / totalMark));
-    const { net, gain, tax } = saleTaxQuote(h, price, next);
-    const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-    const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
-    const release = releaseCost(next, parcels, bbl);
-    const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
-    cashToYou += toSeller;
-    soldGross += toSeller + kick + breakFee;
-    feeExp += kick + breakFee;
-    if (release > 0 && next.facility) {
-      next.facility.balance = Math.max(0, next.facility.balance - release);
+    const price = leg.price;
+    cashToYou += leg.toSeller;
+    soldGross += leg.toSeller + leg.kick + leg.breakFee;
+    feeExp += leg.kick + leg.breakFee;
+    if (next.facility?.bbls.includes(bbl)) {
+      next.facility.balance = Math.max(0, next.facility.balance - leg.release);
       next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
       if (next.facility.balance <= 0) delete next.facility;
     }
-    gainTotal += gain;
-    taxTotal += tax;
+    gainTotal += leg.gain;
+    taxTotal += leg.tax;
     next.exits.push({
       bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
-      price, basis: h.costBasis, gain,
+      price, basis: h.costBasis, gain: leg.gain,
     });
     recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
@@ -507,6 +644,22 @@ export function acceptPortfolioBid(
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
     next.lois = next.lois.filter((l) => l.bbl !== bbl);
   });
+  // THE POOL CANNOT SURVIVE THE BUILDINGS IT WAS WRITTEN AGAINST. Under the
+  // deed floor the balance is repaid out of the proceeds — the same clause
+  // `releaseFromFacility` enforces when you release one deed at a time, except
+  // that here nobody is left to release against. It is a payoff of principal,
+  // so it comes out of `sold` for the same reason the releases do.
+  if (book.facilityDue > 0 && next.facility) {
+    cashToYou -= book.facilityDue;
+    soldGross -= book.facilityDue;
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `${money(book.facilityDue)} of the portfolio proceeds repaid the ${next.facility.lender} facility in full — `
+        + `the pool fell below ${FACILITY_MIN_ASSETS} deeds at the closing, and a facility with nothing behind it is `
+        + `a loan the desk never underwrote.`,
+    });
+    delete next.facility;
+  }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
   logBooks(next, "sold", soldGross);
@@ -558,8 +711,13 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
       delete s.portfolioSale;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `Nine months and no indication on the portfolio at ${money(live.ask)}. The process is stale — `
-          + `every buyer in town has now seen it and passed, which is worth knowing and expensive to have learned.`,
+        // A book you never listed cannot go stale — the caller simply stopped
+        // calling, and the desk is yours again.
+        text: live.unsolicited
+          ? `Nobody came back on the ${live.bbls.length} buildings you were approached about. `
+            + `That approach is closed and the bundling desk is free again.`
+          : `Nine months and no indication on the portfolio at ${money(live.ask)}. The process is stale — `
+            + `every buyer in town has now seen it and passed, which is worth knowing and expensive to have learned.`,
       });
     } else {
       const q = portfolioQuote(s, parcels, live.bbls);
@@ -648,13 +806,18 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         // whether or not it was ever read. The alert card already carries a
         // `portfolio` kind — the lender's seizure raises one — and this is the
         // other thing that happens to a book of buildings.
+        // AND IT IS AN APPROACH, NOT A LISTING. The offer lives in the same
+        // slot a marketed book does, so every word on the way out has to say
+        // whose idea this was: nothing of the player's has been put on the
+        // market, they picked the deeds, and the only thing owed is an answer.
         raiseAlert(s, {
           kind: "portfolio", tone: "good",
-          title: `${buyer.name} wants ${bbls.length} of your buildings`,
+          title: `${buyer.name} has approached you about ${bbls.length} of your buildings`,
           body: `They rang unprompted with ${money(price)} for ${bbls.length} of your ${best[0]} buildings, `
             + `${price >= q.sumOfParts ? "above" : `${((1 - price / q.sumOfParts) * 100).toFixed(0)}% inside`} the sum of the `
-            + `individual marks. Nobody offers on a portfolio they have not already underwritten. It is on the `
-            + `Deals desk, and it lapses ${monthLabel(s.month + 4)}.`,
+            + `individual marks. Nobody offers on a portfolio they have not already underwritten. Nothing of yours `
+            + `has been listed — the buildings are theirs to name and the answer is yours. It is on the Portfolio `
+            + `and Deals desks, and it lapses ${monthLabel(s.month + 4)}.`,
           detail: money(price),
         });
         s.news.unshift({

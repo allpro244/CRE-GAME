@@ -19,8 +19,29 @@ import {
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_MODULAR, S_PVCLAD, S_LABBLDG, S_MEDIAFACE, S_PRECAST, S_BALCONY, S_FRIT,
   T_MODERN, T_STONE, T_OLDROOF, T_CAPPED_PLAIN, T_TRADE,
+  // THE CROWN LADDER ASKS BY TRAIT NOW. `isDeco` says "its crown comes out of
+  // the deco kit" and covers all seventeen deco families; `isStreamline` is the
+  // veto that keeps a ziggurat, a fin, a mast and a pier finial off the
+  // horizontal half of the movement, on which every vertical device is
+  // cancelled. The four `style === S_ARTDECO` equality tests they replace —
+  // crownTop's local `deco`, the ziggurat/fin push, the crown-material roll,
+  // and the spire in the landmark block — were each an `s < 8` waiting to
+  // happen to the sixteen families added around them.
+  isDeco, isStreamline,
+  // ...and the sub-styles by name, because the crown pool is per FAMILY and
+  // not per era: a tank bulkhead belongs on an apartment house and a blade sign
+  // belongs on a cinema, and one pool with both in it means neither.
+  S_DECOMAYAN, S_DECOEGYPT, S_DECOPUEBLO, S_DECOMETAL, S_DECOBRICK,
+  S_DECOTROP, S_DECOPWA, S_DECOTHEATRE, S_DECOINDUST, S_DECOTRANSIT,
+  S_DECOSHANGHAI, S_DECONAPIER, S_DECOROADSIDE, S_PMODDECO, S_NEODECO,
   STYLE_SETS_GLSL, has, modernCap, styleFor, styleForBuilt, keyOf, hash01,
 } from "./styles";
+// The generator's own silhouette vocabulary, imported rather than copied. See
+// `playerMassing`: the buildings the player and the rivals put up used to have
+// no access to it, so they had a coverage inset and nothing else while the
+// stock around them had twenty plan families.
+import { massingStack } from "@/citygen/massing.mjs";
+import { OPEN_SEA } from "./sea";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
 export interface Oriented { p: [number, number]; r: number }
@@ -285,7 +306,15 @@ export interface CrownIn {
   style: number; rnd: number; varr: number; fh: number;
   /** A shed, a plant or a warehouse — it ends in coping, never in a cornice. */
   industrial: boolean;
-  area: number;               // signed plan area, for the pyramid's span
+  /**
+   * Signed RAW SHOELACE SUM — twice the plan area in m², which is the
+   * convention `plateM` and every inset in here was measured under. The player
+   * path was passing true area, so `pyramid`'s span and every deco setback
+   * came out a factor of root two small on a building the player built and
+   * right on the one beside it the town started with. Same fault, same line,
+   * as the one `roofKitWants`' caller documents.
+   */
+  area: number;
   cs: (n: number) => number;  // the crown's own hash stream, independent of the wall's
   pier: (n: number) => number;// a second stream, one draw per fin
   props: { kind: number; x: number; y: number; z: number; s: number; rot: number; b?: string }[];
@@ -296,6 +325,18 @@ export interface CrownOut {
   mechDeck: { ring: [number, number][]; z: number } | null;
   /** How high that plate sits. */
   roofZ: number;
+  /**
+   * WHICH CROWN IT BUILT, and what the second pass added on top.
+   *
+   * Nothing in the renderer reads these. They exist because a crown is
+   * geometry with no label on it, so "is this crown reachable" was a question
+   * no harness in the repo could ask — and BUILDINGS.md §7 is explicit that a
+   * gate on a condition the stock never produces reports a confident,
+   * permanent zero. `tools/probe/crownsweep.mjs` sweeps the real function over
+   * the real style ids and counts these.
+   */
+  crown: string;
+  extra: string[];
 }
 
 /**
@@ -547,6 +588,97 @@ export function roofKitWants(o: RoofKitIn): RoofWant[] {
   return wants;
 }
 
+/**
+ * THE ONE THING ON A ROOF THAT IS NOT EQUIPMENT.
+ *
+ * A steeple, a dome, a cupola, a works chimney, a spire. These are not plant
+ * and they do not queue with it: they ARE the building's silhouette, and they
+ * are how you know where you are from the far side of the water.
+ *
+ * Shared, because it was one path's. This ran inline in `buildCity` and
+ * nowhere else, so `put(24, ...)` — the spire — occurred exactly once in the
+ * file and every building the player or a rival put up ended flat no matter
+ * how tall or how deco it was. That is the same fault `Mason`, `crownTop`,
+ * `roofDeck` and `roofKitWants` each had before they were lifted out of that
+ * closure, and it bites hardest here: a generated town has seven buildings
+ * over 34 m, so a tower family is almost entirely a player-built family, and
+ * the point of a tower is what it ends in.
+ *
+ * Rarity is a GATE here, not a weight. Every branch is a height test AND a low
+ * probability roll, because these are the buildings a town has one or two of —
+ * a weight in a pool would put a dome on every bank in the city.
+ */
+export interface LandmarkIn {
+  ring: [number, number][];
+  style: number;
+  year: number;
+  /** The BUILDING's height, not how high its roof happens to sit. */
+  hgt: number;
+  /** Signed raw shoelace sum — TWICE the plan area in m², the convention every plate gate here was measured under. */
+  area: number;
+  /** The deck `crownTop` left: a landmark stands on the bulkhead when there is one. */
+  roofZ: number;
+  bbl?: string;
+  /** The base plate's seam bearing, in radians — what faces the street. */
+  bear: number;
+  /** The landmark's own hash stream, independent of the wall's and the crown's. */
+  L: (k: number) => number;
+  props: { kind: number; x: number; y: number; z: number; s: number; rot: number; b?: string }[];
+}
+
+export function landmarkProp(o: LandmarkIn): void {
+  const { ring, style, hgt, L } = o;
+  const plateM = Math.sqrt(Math.max(1, Math.abs(o.area) / 2));
+  const oldStone = has(T_STONE, style);
+  const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+  const bearOf = () => o.bear;
+  const put = (kind: number, s: number, rot = 0) => {
+    // Room to stand on: half the plate has to clear the object's own
+    // footprint, or a dome ends up wider than the building under it.
+    if (plateM * 0.5 < (PROP_R[kind] ?? 2) * s * 0.9) return;
+    o.props.push({ kind, x: c[0], y: c[1], z: o.roofZ, s, rot, b: o.bbl });
+  };
+  // The works chimney: only where something was burning coal.
+  if (style === S_MILL && o.year < 1950 && hgt >= 7 && plateM > 11 && L(1) < 0.20) put(22, 0.75 + 0.5 * L(2));
+  // A steeple stands on a small, old, tall-for-its-plate building. A New
+  // England port town has half a dozen and they are its landmarks.
+  else if (o.year < 1920 && plateM < 24 && hgt >= 8 && hgt <= 28 &&
+    (style === S_FEDERAL || style === S_ITALIANATE || style === S_CIVIC ||
+      style === S_PREWAR || style === S_MARKET || style === S_GOTHIC) &&
+    L(3) < 0.10) put(27, 0.75 + 0.45 * L(4), bearOf());
+  // A dome wants a public building with a big room under it.
+  else if (oldStone && o.year < 1940 && plateM > 19 && hgt >= 12 && L(5) < 0.14) put(25, 0.75 + 0.5 * L(6));
+  // A clock stage on a tower narrow for its height — a campanile, which
+  // the plan families now actually build.
+  else if (oldStone && o.year < 1945 && hgt >= 18 && hgt > plateM * 1.35 && L(7) < 0.24) put(26, 0.7 + 0.45 * L(8), bearOf());
+  // THE FOUR-FACE CLOCK IN TURQUOISE TERRACOTTA. Eastern Columbia, Los
+  // Angeles, 1930: the clock tower is the building, and it is why anybody can
+  // name it. It sits ahead of the spire because a deco clock tower and a deco
+  // finial are alternatives to each other, and it is separate from the
+  // campanile branch above because that one wants a tower SLENDER for its
+  // height — Eastern Columbia is a squat thirteen-storey block with a clock
+  // stage on top of it, and it fails that test.
+  else if (isDeco(style) && !isStreamline(style) && o.year >= 1926 && o.year < 1942 &&
+    hgt >= 20 && L(23) < 0.16) put(26, 0.7 + 0.4 * L(24), bearOf());
+  // A deco or Gothic tower ends in a point, and from across the harbour that
+  // point is the only part of it you can see. This was `style === S_ARTDECO`,
+  // which is the `s < 8` fault BUILDINGS.md §3 names: one id inherited the
+  // behaviour and the sixteen added around it did not. Streamline is vetoed
+  // because a spire on the horizontal half of the movement is the other half
+  // of the movement — see T_STREAMLINE.
+  else if (((isDeco(style) && !isStreamline(style)) || style === S_GOTHIC) && hgt >= 24 && L(9) < 0.45) put(24, 0.8 + 0.6 * L(10));
+  // A cupola is the cheap version of all of it: a market, a firehouse, a
+  // school, anything that wanted to look civic in 1890.
+  else if (o.year < 1930 && hgt >= 6 && hgt <= 22 &&
+    (style === S_MARKET || style === S_CIVIC || style === S_CARRIAGE ||
+      style === S_FEDERAL || style === S_CHICAGO) && L(11) < 0.24) put(23, 0.8 + 0.4 * L(12), bearOf());
+  // The tank on its own steel tower — a different object from the tank
+  // sitting on the deck, and visible from the street.
+  else if (o.year < 1975 && hgt >= 12 && plateM > 15 && L(13) < 0.20) put(38, 0.75 + 0.4 * L(14), bearOf());
+  // Sign letters on a frame: commercial, and high enough to be read.
+  else if (hgt >= 11 && !has(T_MODERN, style) && has(T_TRADE, style) && L(15) < 0.16) put(37, 0.7 + 0.5 * L(16), bearOf());
+}
+
 export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut {
   const { ring, z1, style, rnd, varr, fh, area } = o;
   let mechDeck: CrownOut["mechDeck"] = null;
@@ -577,7 +709,36 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
   // building's crown does not move when its wall colour does.
   const cs = o.cs;
   const tall = z1 >= 26 && !!o.roof;
-  const deco = style === S_ARTDECO;
+  // The side of the equivalent square, in metres — the same convention
+  // `plateM` uses in the landmark pass and in `roofKitWants`. `area` arrives
+  // as the raw shoelace sum, which is TWICE the plan area. Every inset below
+  // is a fraction of this rather than an absolute metre count, because
+  // `insetRing` pulls toward the centroid: a 4 m step is a modest setback on a
+  // 40 m plate and eats a 7 m one entirely, and the crowns that collapsed
+  // that way came out as a cone of slivers.
+  const span = Math.sqrt(Math.max(1, Math.abs(area) / 2));
+  // THE DECO KIT, ASKED BY TRAIT. This was `style === S_ARTDECO` — the exact
+  // shape of the `s < 8` fault BUILDINGS.md §3 names, correct for the one deco
+  // id that existed when it was written and silently wrong for the sixteen
+  // added around it, every one of which would have ended in a plain stone
+  // cornice.
+  //
+  // MIND THE COLLISION: `o.deco` is `CrownIn.deco` and means "a decorative
+  // prop rather than a building" — a ship, a crane, a gantry. Different thing,
+  // one word apart, and the bulkhead gate at the bottom of this function reads
+  // THAT one. The local is `decoKit` now so the two cannot be confused again.
+  const decoKit = isDeco(style);
+  // ...and the veto that comes with it. Gebhard's distinction is structural,
+  // not chronological: Zigzag is the decorative APPLICATION on a facade,
+  // Streamline is the building's DESIGN — and on Streamline the horizontal
+  // wins outright. Banded windows round a rounded corner, an eyebrow hood, a
+  // thin coping, no piers at all. A ziggurat or a pier finial there is not a
+  // variation on the style, it is the other half of the movement. So the
+  // VERTICAL devices ask for `vert`, and the parapet devices — which a Miami
+  // hotel and a re-clad Main Street front really do have — ask only for
+  // `decoKit`.
+  const stream = isStreamline(style);
+  const vert = decoKit && !stream;
   const modern = has(T_MODERN, style);
   const stone = has(T_STONE, style);
   // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
@@ -589,13 +750,146 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
     // a loading dock. Coping, a corbelled brick band, a shed slope or a plant
     // enclosure are the four things the top of one of these actually is.
     crowns.push("coping", "coping", "corbel", "slope", "mech");
+    // EXCEPT THE DECO WORKS, which is industrial by class and ceremonial by
+    // intent — that IS the type. Battersea 1935 is a brick cathedral with four
+    // chimneys and Giles Gilbert Scott's contribution to it was precisely the
+    // fluting and the brick; Cincinnati Union Terminal 1933 is a half-dome
+    // over a concourse. Both are `industrial` to the pool that placed them, so
+    // the class gate above runs before the style is ever asked and they took
+    // the loading-dock ladder. These two lines are the whole reason the
+    // reference's fluted stacks and half-dome are reachable at all.
+    if (style === S_DECOINDUST) crowns.push("stacks", "stacks", "pylons");
+    if (style === S_DECOTRANSIT) crowns.push("halfdome", "halfdome", "pylons");
   } else if (z1 >= 12) {
-    if (stone) crowns.push("cornice", "cornice", "corbel", "decapitated");
-    if (stone && tall) crowns.push("temple", "pyramid", "lantern");
-    if (deco && tall) crowns.push("ziggurat", "ziggurat", "fin", "fin");
+    // THREE OF THE STONE CROWNS ARE WRONG ON A DECO BUILDING, and the sweep is
+    // what showed it: `crownsweep` reported that Egyptian revival could reach
+    // eleven crowns and only ONE of them was Egyptian, because T_STONE hands
+    // every deco family the nineteenth-century masonry ladder as well.
+    //
+    // `cornice` projects 0.35 to 2.1 m and carries cast-stone balustrade urns —
+    // a classical entablature, and a deco parapet is the wall carried up with
+    // the ornament still in it. `decapitated` tells a story about a cornice
+    // that came off to a leak or a fire code, which is a story about a building
+    // built with one. `temple` is the open colonnaded loggia on top of a 1920s
+    // bank: an order, on a style whose whole argument was doing without one.
+    // None of the three is in the reference's eighteen deco crowns.
+    //
+    // `corbel` STAYS, because courses stepping out under a coping is a real
+    // deco parapet — the reference names the stepped-and-corbelled head as the
+    // deco alternative to an arch. `pyramid` and `lantern` stay because both
+    // are documented on named buildings: 40 Wall Street's gilded pyramid, 1930
+    // (unverified this session), and the Carbide & Carbon stepped lantern in
+    // green terracotta and gold leaf, Chicago 1929.
+    if (stone && !decoKit) crowns.push("cornice", "cornice", "corbel", "decapitated");
+    else if (stone) crowns.push("corbel");
+    if (stone && tall && !decoKit) crowns.push("temple", "pyramid", "lantern");
+    else if (stone && tall) crowns.push("pyramid", "lantern");
+    if (vert && tall) crowns.push("ziggurat", "ziggurat", "fin", "fin");
     if (modern) crowns.push("mech", "mech", "slope");
     if (modern && tall) crowns.push("amenity", "mech");
     if (!stone && !modern) crowns.push("coping", "corbel");
+    // ---- WHICH DECO ---------------------------------------------------
+    //
+    // Seventeen families and eighteen documented crowns, so the pool is per
+    // FAMILY and not per era. The tank bulkhead belongs on an apartment house
+    // and the blade sign belongs on a cinema; putting them in one pool and
+    // rolling is how a family stops meaning anything, which is the drift this
+    // file keeps a register of. Every line below names its building.
+    //
+    // Two of the eighteen need no new mesh and are already reachable through
+    // T_STONE: 40 Wall Street's gilded pyramid, 1930, is `pyramid`, and the
+    // Carbide & Carbon stepped lantern in green terracotta and gold leaf,
+    // Chicago 1929, is `lantern`. Eastern Columbia's four-face clock tower,
+    // 1930, is a landmark prop rather than a crown — see `landmarkProp`.
+    if (decoKit) {
+      // The apartment house, and it is the highest-count deco crown in the
+      // world: the water-tank bulkhead is the ONLY vertical event on a
+      // five-to-seven storey deco block, so it gets the chevron brick and the
+      // stepped parapet the rest of the building did not get. ~300 of these on
+      // the Grand Concourse alone.
+      if (style === S_DECOBRICK && z1 >= 15) crowns.push("tankhouse", "tankhouse", "tankhouse", "parapet", "parapet");
+      if ((style === S_ARTDECO || style === S_DECOMETAL) && z1 >= 15) crowns.push("tankhouse");
+      // Mayan and Aztec revival: the temple platform is a ziggurat and it does
+      // not need to be tall to be one — the Aztec Hotel, Monrovia 1924, is
+      // three storeys. This is the one deco family whose stepped crown is
+      // reachable below `tall`.
+      if (style === S_DECOMAYAN) crowns.push("ziggurat", "ziggurat", "corbel");
+      // Egyptian revival c.1922-30: the cavetto cornice FLARES OUTWARD, which
+      // is the opposite of every other corbel in this file and the one thing
+      // you can name the style by from the pavement.
+      if (style === S_DECOEGYPT) crowns.push("cavetto", "cavetto", "cavetto", "cavetto", "cavetto");
+      // Pueblo Deco (KiMo Theater, Albuquerque 1927) and Napier, rebuilt
+      // 1931-33 after the 7.8 quake of 3 February 1931: two and three storeys,
+      // and the stepped parapet is the entire architecture.
+      if (style === S_DECOPUEBLO || style === S_DECONAPIER) crowns.push("parapet", "parapet", "parapet");
+      // Tropical Deco. Streamline, so no finial and no ziggurat — but the
+      // parapet tower is real: the Eros Cinema, Bombay 1938, "rises in tiers
+      // like a wedding cake and is topped by a semi-circular tower", and
+      // Miami Beach does the same thing at three storeys.
+      if (style === S_DECOTROP) crowns.push("parapet", "parapet", "roundtower", "roundtower");
+      // PWA/WPA Moderne: two blank vertical slabs framing a recessed centre
+      // with a relief panel in it. A courthouse, not a shopfront.
+      if (style === S_DECOPWA) crowns.push("pylons", "pylons", "pylons", "parapet");
+      // The cinema. Odeon Leicester Square, 1937: a 120 ft tower whose only
+      // function is to carry the name.
+      if (style === S_DECOTHEATRE) crowns.push("blade", "blade", "blade", "roundtower");
+      // Treaty-port deco — Park Hotel Shanghai 1934, Broadway Mansions 1934,
+      // Soona Mahal Bombay 1937, whose corner is a cylindrical turret.
+      if (style === S_DECOSHANGHAI) crowns.push("parapet", "roundtower", "ziggurat");
+      // The re-clad shopfront. "Modernize Main Street" (Architectural Record
+      // with Libbey-Owens-Ford) and an FHA loan bought a sheet of pigmented
+      // structural glass and a stepped sign band, and the sign band's job was
+      // to HIDE the Victorian cornice behind it.
+      if (style === S_DECOROADSIDE) crowns.push("signband", "signband", "signband", "parapet");
+      // The 1980s postmodern-Deco moment: One Liberty Place, Philadelphia
+      // 1988, Jahn's "neo-Deco cascade of chevrons", with the Chrysler
+      // Building as the acknowledged influence.
+      if (style === S_PMODDECO && tall) crowns.push("cascade", "cascade", "mechlantern");
+      // The sustained revival. One Bennett Park, Chicago 2019, is the
+      // documented modern variant twice over: "an asymmetrical crown that
+      // steps up toward the city as it favors views to Lake Michigan", and "a
+      // lantern at the top housing mechanical equipment that provides a
+      // memorable skyline silhouette".
+      if (style === S_NEODECO && tall) crowns.push("skewstep", "skewstep", "mechlantern", "mechlantern");
+      if (style === S_NEODECO && !tall) crowns.push("parapet");
+      // ---- AND THE TWO THAT ARE ONE BUILDING IN A CITY -----------------
+      //
+      // RARITY IS A GATE, NOT A WEIGHT, and this file already works that way
+      // for the landmarks. A weight of one in a pool of six still puts a
+      // Chrysler crown on a sixth of the towers in town; a probability test on
+      // top of a height test puts it on one of them, which is how many there
+      // are. The Chrysler Building's seven radiating terraced arches in Enduro
+      // KA-2 stainless, 1930, and the Empire State's 200-foot mooring mast,
+      // 1931 — a publicity stunt no airship ever docked at — are each exactly
+      // one building.
+      if (vert && tall && z1 >= 40 && cs(20) < 0.13 &&
+        (style === S_ARTDECO || style === S_DECOMETAL)) crowns.push("sunburst");
+      if (vert && tall && z1 >= 40 && cs(21) < 0.11 &&
+        (style === S_ARTDECO || style === S_DECOMETAL || style === S_DECOSHANGHAI)) crowns.push("mast");
+    }
+  } else if (decoKit) {
+    // ---- THE LOW DECO, WHICH NEVER REACHED THE LADDER AT ALL -----------
+    //
+    // The branch above starts at twelve metres and there was no `else`, so
+    // everything under it fell straight through to `coping`. Measured against
+    // the stock: Napier is two storeys and Miami Beach is three, which is 7 to
+    // 11 m at this floor height — so the three families whose ONLY event is
+    // what happens at the parapet were the three that could not have one. A
+    // 1932 Vitrolite shopfront with a plain concrete cap on it is not a
+    // Vitrolite shopfront.
+    crowns.push("parapet", "parapet");
+    if (style === S_DECOROADSIDE) crowns.push("signband", "signband", "signband");
+    if (style === S_DECOTHEATRE) crowns.push("blade", "blade");
+    if (style === S_DECOTROP) crowns.push("roundtower");
+    if (style === S_DECONAPIER || style === S_DECOPUEBLO) crowns.push("parapet");
+    // MEASURED, AND IT WAS A GATE ERROR. `cavetto` sat behind the twelve-metre
+    // line with nothing else, and Egyptian revival draws four buildings in
+    // 9,665 — all of them low — so the one crown that family exists to wear was
+    // unreachable in a generated town. Carreras 1928 is five storeys and the
+    // cavetto is at the top of it. Same for the PWA pylon pair: a WPA post
+    // office is two storeys and the pylons are the whole front of it.
+    if (style === S_DECOEGYPT) crowns.push("cavetto", "cavetto", "cavetto");
+    if (style === S_DECOPWA) crowns.push("pylons", "pylons");
   }
   crowns.push("coping");                       // a plain parapet is a real answer
   const crown = crowns[Math.min(crowns.length - 1, Math.floor(cs(1) * crowns.length))];
@@ -603,12 +897,105 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
   // The material a crown is made of is rarely the material of the wall
   // under it — that is most of what makes a top read as a top.
   const CROWN_MAT = [S_CORNICE, S_CORNICE, S_PLAIN, S_GABLE, S_BRICK, S_MILL];
-  const cmat = deco || stone
+  const cmat = decoKit || stone
     ? (cs(2) > 0.72 ? S_GABLE : S_CORNICE)     // copper and slate among the stone
     : CROWN_MAT[Math.floor(cs(2) * CROWN_MAT.length)];
   // Beta-ish: most crowns are shallow, a few are enormous.
   const ch = Math.max(1.2, Math.min(14, z1 * (0.028 + 0.087 * cs(3) * cs(4))));
   const M = (z: number, st = cmat) => [st, rnd, varr, z, fh];
+  // ---- WHAT THE DECO CROWNS ARE MADE OF, BEYOND A RING AND A HEIGHT ----
+  //
+  // Four helpers, because six of the fourteen deco crowns are not concentric
+  // with the plate. A cornice and a ziggurat are — they are the plate pulled
+  // in, which is all `insetRing` can say. But a blade sign stands on the
+  // street wall, a pylon pair stands at the two ends of it, a turret is a
+  // circle the plate has no way to describe, and a chimney stands at a corner.
+  const ctr = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+  /** A circle as a ring. Twelve facets by default: at this distance a flute IS a facet. */
+  const drum = (px: number, py: number, r: number, n = 12): [number, number][] => {
+    const out: [number, number][] = [];
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; out.push([px + Math.cos(a) * r, py + Math.sin(a) * r]); }
+    return out;
+  };
+  /**
+   * A quad centred at (px,py), `len` each way along (ux,uy) and `wid` across.
+   *
+   * Wound so its signed area is positive, because `Mason.wall` reads corner
+   * convexity off the winding and the caller's frame flips whenever the inward
+   * normal does — the same correction `buildCity` makes to a footprint.
+   */
+  const quadAt = (px: number, py: number, ux: number, uy: number, len: number, wid: number): [number, number][] => {
+    const vx = -uy, vy = ux;
+    const q: [number, number][] = [
+      [px - ux * len - vx * wid, py - uy * len - vy * wid],
+      [px + ux * len - vx * wid, py + uy * len - vy * wid],
+      [px + ux * len + vx * wid, py + uy * len + vy * wid],
+      [px - ux * len + vx * wid, py - uy * len + vy * wid],
+    ];
+    let a2 = 0;
+    for (let i = 0; i < 4; i++) { const p0 = q[i], p1 = q[(i + 1) % 4]; a2 += p0[0] * p1[1] - p1[0] * p0[1]; }
+    return a2 < 0 ? q.slice().reverse() : q;
+  };
+  // THE STREET WALL is the longest edge of the plate. The same assumption the
+  // fire escapes and the deck's seam bearing already make, for the same
+  // reason: a lot is deeper than it is wide, so the long side is the side the
+  // street sees, and a sign nobody can read from the pavement is not a sign.
+  let eI = 0, eLen = -1;
+  for (let i = 0; i < ring.length; i++) {
+    const p0 = ring[i], p1 = ring[(i + 1) % ring.length];
+    const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    if (L > eLen) { eLen = L; eI = i; }
+  }
+  const eA = ring[eI], eB = ring[(eI + 1) % ring.length];
+  const eTx = eLen > 0 ? (eB[0] - eA[0]) / eLen : 1, eTy = eLen > 0 ? (eB[1] - eA[1]) / eLen : 0;
+  let eNx = -eTy, eNy = eTx;
+  if ((ctr[0] - eA[0]) * eNx + (ctr[1] - eA[1]) * eNy < 0) { eNx = -eNx; eNy = -eNy; }
+  /**
+   * A box standing on the street wall: `t` metres along it, `halfW` either way,
+   * `d` deep. `off` is measured along the INWARD normal, so a negative one
+   * stands the box proud of the facade — which is what a blade sign and a
+   * pigmented-glass sign band both do.
+   */
+  const slab = (t: number, halfW: number, d: number, z0: number, zt: number, meta: number[], off = 0) => {
+    const px = eA[0] + eTx * t + eNx * (off + d * 0.5), py = eA[1] + eTy * t + eNy * (off + d * 0.5);
+    const q = quadAt(px, py, eTx, eTy, halfW, d * 0.5);
+    m.wall(W, q, z0, zt, meta); m.cap(R, q, zt, meta);
+  };
+  /** How high the crown reached. A second pass stands on this — see the composition block. */
+  let crestZ = z1;
+  /**
+   * THE MOORING MAST. The Empire State Building, 1931: a 200-foot modernistic
+   * metal tower "flanked by stylized wings clamped tight to the ribbed shaft
+   * and topped with a small octagonal room", a steel skeleton clad in Nirosta
+   * sheet. NO AIRSHIP EVER DOCKED — it was a publicity stunt, and the room
+   * became an observation deck.
+   *
+   * Its own function because it is the one crown that is also a SECOND crown:
+   * the Empire State move is piers running up through three setbacks and
+   * ending in a crowned tower with this on top of it, which is two crowns
+   * composed. The wings and the octagonal room are what keep it from reading
+   * as the broadcast mast `roofKitWants` already puts on anything over 95 m.
+   */
+  const buildMast = (zBase: number, k: number) => {
+    const H = Math.max(8, Math.min(ch * 3.4, z1 * 0.24)) * k;
+    const rS = Math.max(0.85, span * 0.075) * (0.7 + 0.5 * k);
+    const skin = [S_METALPAN, rnd, varr, zBase + H, fh];
+    const shaft = drum(ctr[0], ctr[1], rS);
+    m.wall(W, shaft, zBase - 0.4, zBase + H * 0.72, skin);
+    // the wings, clamped tight to the shaft on two sides
+    for (const sgn of [1, -1]) {
+      const wq = quadAt(ctr[0] + eTx * sgn * rS * 1.5, ctr[1] + eTy * sgn * rS * 1.5,
+        eTx, eTy, rS * 1.1, rS * 0.22);
+      m.wall(W, wq, zBase + H * 0.10, zBase + H * 0.46, skin);
+    }
+    const room = drum(ctr[0], ctr[1], rS * 1.6, 8);
+    m.wall(W, room, zBase + H * 0.72, zBase + H * 0.87, [S_GLASS, rnd, varr, zBase + H, fh]);
+    m.cap(R, room, zBase + H * 0.87, skin);
+    const need = drum(ctr[0], ctr[1], Math.max(0.26, rS * 0.3), 6);
+    m.wall(W, need, zBase + H * 0.87, zBase + H, skin);
+    m.cap(R, need, zBase + H, skin);
+    return zBase + H;
+  };
 
   if (crown === "cornice") {
     // A PROJECTING CORNICE, in one to three courses. The projection was
@@ -684,6 +1071,7 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
       m.wall(W, inset, zc, zc + hStep, [style, rnd, varr, zc + hStep, fh]);
       m.cap(R, inset, zc + hStep, M(zc + hStep));
       step0 = inset; zc += hStep; depth *= 0.75;
+      crestZ = zc;
     }
   } else if (crown === "fin") {
     // VERTICAL PIERS OVERRUN THE ROOFLINE. The deco move: the shaft's
@@ -771,6 +1159,314 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
       m.cap(R, box, z1 + hB, M(z1 + hB, S_PLAIN));
     }
     m.wall(W, ring, z1 - 0.1, z1 + 1.05, M(z1, S_CORNICE));
+  } else if (crown === "cavetto") {
+    // THE EGYPTIAN CORNICE, and it is the only cornice in this file that gets
+    // WIDER as it rises. A cavetto is a hollow quarter-round crowned by a torus
+    // roll, and the outward flare is the whole signature — every other corbel
+    // here steps out by a hand's breadth and stops. Carreras, London 1928, and
+    // Grauman's Egyptian, Hollywood 1922 (both unverified this session). Five
+    // thin courses on a cosine give the cove its curve; the roll on top is one
+    // deeper band standing proud of it.
+    let z = z1 - 0.4, out = 0.18;
+    for (let k = 0; k < 5; k++) {
+      const f = (k + 1) / 5;
+      out = 0.18 + 1.05 * (1 - Math.cos(f * Math.PI * 0.5));
+      const lip = insetRing(ring, -out);
+      if (!lip) break;
+      m.wall(W, lip, z, z + 0.34, M(z + 0.34));
+      z += 0.34;
+    }
+    const roll = insetRing(ring, -(out + 0.14));
+    if (roll) { m.wall(W, roll, z, z + 0.55, M(z + 0.55)); m.cap(R, roll, z + 0.55, M(z + 0.55)); }
+    crestZ = z + 0.55;
+  } else if (crown === "parapet") {
+    // THE STEPPED PARAPET: the wall carried up past the roof and stepped in
+    // ELEVATION over the entrance. The commonest deco top in the world after
+    // the tank bulkhead, and on a two-storey building it is the entire
+    // architecture — Napier's 111 buildings, rebuilt 1931-33 after the 7.8
+    // quake of 3 February 1931, are this; so is Pueblo Deco; so is the
+    // wedding-cake front of a Miami hotel.
+    //
+    // Note what it is NOT. `T_CAPPED_STONE` and `T_CAPPED_PLAIN` say "the
+    // parapet is made of something other than the wall", and no deco family is
+    // in either list, because a deco parapet IS the wall carried up with the
+    // ornament still in it. So the steps are drawn in `style` and only the
+    // coping is drawn in `cmat`.
+    const ph = 0.8 + 0.7 * cs(15);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, [style, rnd, varr, z1, fh]);
+    const cop = insetRing(ring, -0.08);
+    if (cop) { m.wall(W, cop, z1 + ph, z1 + ph + 0.16, M(z1 + ph + 0.16)); m.cap(R, cop, z1 + ph + 0.16, M(z1 + ph + 0.16)); }
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
+    const steps = 2 + Math.floor(cs(22) * 3);
+    const hS = Math.max(0.65, ch * 0.40);
+    for (let k = 0; k < steps; k++) {
+      const halfW = eLen * (0.30 - k * 0.075);
+      if (halfW < 0.5) break;
+      slab(eLen * 0.5, halfW, 0.55, z1 + ph - 0.05, z1 + ph + hS * (k + 1),
+        [style, rnd, varr, z1 + ph + hS * (k + 1), fh]);
+      crestZ = z1 + ph + hS * (k + 1);
+    }
+  } else if (crown === "tankhouse") {
+    // THE WATER-TANK BULKHEAD, TREATED AS ARCHITECTURE — and it is the
+    // highest-count deco crown in the world. On a five-to-seven storey deco
+    // apartment house this is the ONLY vertical event the building has, so the
+    // tank enclosure gets the chevron brick and the stepped parapet the wall
+    // below it did not. About 300 of them on the Grand Concourse alone, 27 in
+    // the historic district built 1935-45.
+    //
+    // Drawn in the WALL's own style deliberately: the point of the type is
+    // that the bond pattern carries up onto the bulkhead. Falling through to
+    // `cmat` here would put a copper box on a brick building.
+    const ph = 0.8 + 0.6 * cs(15);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, [style, rnd, varr, z1, fh]);
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
+    const house = insetRing(ring, Math.min(7, Math.max(2.4, span * 0.30)));
+    if (house) {
+      const hH = Math.max(3.4, ch * 1.25);
+      const hT = hH + Math.max(2.2, ch * 0.8);
+      m.wall(W, house, z1 + 0.3, z1 + hH, [style, rnd, varr, z1 + hH, fh]);
+      m.cap(R, house, z1 + hH, M(z1 + hH));
+      const tank = insetRing(house, Math.max(0.9, span * 0.09));
+      if (tank) {
+        m.wall(W, tank, z1 + hH, z1 + hT, [style, rnd, varr, z1 + hT, fh]);
+        m.cap(R, tank, z1 + hT, M(z1 + hT));
+      }
+      // IT IS THE BULKHEAD, so it reports itself as one. The generic penthouse
+      // at the bottom of this function would otherwise draw a second box
+      // inside this one on anything over 26 m, and `roofKitWants` would then
+      // fit a stair bulkhead and a lift overrun onto the deck as well — the
+      // same "one object drawn twice" that `hasMechDeck` exists to prevent.
+      mechDeck = { ring: house, z: z1 + hH };
+      roofZ = z1 + hH;
+      crestZ = z1 + hT;
+    }
+  } else if (crown === "roundtower") {
+    // THE PARAPET TOWER. The Eros Cinema, Bombay 1938, "rises in tiers like a
+    // wedding cake and is topped by a semi-circular tower"; Soona Mahal,
+    // Bombay 1937, puts a "cylindrical turret-like observatory" on the street
+    // corner. One drum, two placements, and the roll picks: the corner one
+    // stands clear and the entrance one is half-buried in the front wall,
+    // which is exactly what makes one read semicircular and the other round.
+    // They are one crown and not two on purpose — at this distance the
+    // difference between them is WHERE it is, not what it is.
+    const r = Math.min(7.0, Math.max(2.2, span * 0.24));
+    const onCorner = cs(23) < 0.45;
+    const bx = onCorner ? eB[0] : eA[0] + eTx * eLen * 0.5;
+    const by = onCorner ? eB[1] : eA[1] + eTy * eLen * 0.5;
+    const dx = ctr[0] - bx, dy = ctr[1] - by, dl = Math.hypot(dx, dy) || 1;
+    const d0 = drum(bx + (dx / dl) * r * 0.6, by + (dy / dl) * r * 0.6, r);
+    const hT = Math.max(3.6, ch * 1.5);
+    const ph = 0.75 + 0.5 * cs(15);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, [style, rnd, varr, z1, fh]);
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
+    m.wall(W, d0, z1 - 2.0, z1 + hT, [style, rnd, varr, z1 + hT, fh]);
+    const band = insetRing(d0, -0.22);
+    if (band) { m.wall(W, band, z1 + hT, z1 + hT + 0.35, M(z1 + hT + 0.35)); m.cap(R, band, z1 + hT + 0.35, M(z1 + hT + 0.35)); }
+    crestZ = z1 + hT + 0.35;
+  } else if (crown === "pylons") {
+    // THE FLANKING PYLON PAIR — PWA Moderne's whole compositional move. Two
+    // blank vertical slabs at the ends of the front, the centre set back
+    // between them, and a relief panel in the middle of that. No order, no
+    // cornice, no ornament: the relief IS the decoration and the granite is
+    // the rest, which is what "stripped classical" means when it is meant
+    // literally.
+    const ph = 0.7 + 0.5 * cs(15);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, [style, rnd, varr, z1, fh]);
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
+    const halfW = Math.max(1.1, Math.min(3.6, eLen * 0.07));
+    const hP = Math.max(3.2, ch * 1.6);
+    if (eLen > halfW * 9) {
+      slab(halfW * 1.5, halfW, 1.2, z1 - 0.2, z1 + hP, M(z1 + hP));
+      slab(eLen - halfW * 1.5, halfW, 1.2, z1 - 0.2, z1 + hP, M(z1 + hP));
+      slab(eLen * 0.5, eLen * 0.24, 0.5, z1 - 0.1, z1 + ph + hP * 0.42,
+        [style, rnd, varr, z1 + hP, fh], 0.35);
+      crestZ = z1 + hP;
+    }
+  } else if (crown === "blade") {
+    // THE VERTICAL BLADE SIGN AS THE CROWN. The Odeon Leicester Square, 1937,
+    // ends in a 120 ft / 37 m tower whose only function is to carry the name —
+    // the tallest element of the building is its sign. It is drawn in metal
+    // because a sign is pressed and painted, not laid, and it is set PROUD of
+    // the facade because a blade you can only see from directly in front is
+    // not a blade.
+    const ph = 0.7 + 0.5 * cs(15);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, [style, rnd, varr, z1, fh]);
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
+    const halfW = Math.max(1.1, Math.min(2.4, eLen * 0.09));
+    const hB = Math.min(Math.max(6.5, ch * 2.8), z1 * 0.9 + 9);
+    slab(eLen * 0.5, halfW * 1.4, 1.6, z1 - 0.3, z1 + hB * 0.42, [style, rnd, varr, z1 + hB, fh]);
+    slab(eLen * 0.5, halfW, 0.55, z1 + hB * 0.28, z1 + hB, [S_METALPAN, rnd, varr, z1 + hB, fh], -0.45);
+    crestZ = z1 + hB;
+  } else if (crown === "stacks") {
+    // FLUTED CHIMNEY STACKS. Battersea, 1935: four of them, one at each
+    // corner, and Giles Gilbert Scott's contribution to the building was
+    // precisely the fluting and the brick. Twelve facets per drum — at the
+    // distance a power station is read from, a flute IS a facet, and a real
+    // flute count would be gone by the second pixel. The shaft is the
+    // building's own brick and only the cap band is `cmat`.
+    const r = Math.min(3.4, Math.max(1.1, span * 0.11));
+    const hS = Math.max(7.5, ch * 3.2);
+    const n = Math.min(4, ring.length);
+    for (let i = 0; i < n; i++) {
+      const p = ring[Math.floor((i * ring.length) / n)];
+      const dx = ctr[0] - p[0], dy = ctr[1] - p[1], dl = Math.hypot(dx, dy) || 1;
+      const px = p[0] + (dx / dl) * r * 1.25, py = p[1] + (dy / dl) * r * 1.25;
+      m.wall(W, drum(px, py, r), z1 - 1.2, z1 + hS * 0.72, [style, rnd, varr, z1 + hS, fh]);
+      const top = drum(px, py, r * 0.86);
+      m.wall(W, top, z1 + hS * 0.72, z1 + hS, M(z1 + hS));
+      m.cap(R, top, z1 + hS, M(z1 + hS));
+    }
+    crestZ = z1 + hS;
+  } else if (crown === "halfdome") {
+    // THE HALF-DOME. Cincinnati Union Terminal, 1933: the crown IS the
+    // concourse. The building is one half-dome with a facade stretched across
+    // the front of it, and no other family in this registry has a roof that is
+    // its whole architecture.
+    //
+    // Five stacked drums on a cosine profile rather than a cone. A cone reads
+    // as a silo; what makes this a dome is that the profile is steep at the
+    // springing and flat at the top, and five steps is enough to say so at any
+    // distance this building is seen from.
+    m.wall(W, ring, z1 - 0.1, z1 + 0.9, [style, rnd, varr, z1, fh]);
+    const inner = insetRing(ring, 0.28);
+    if (inner) m.cap(R, inner, z1 + 0.9, [modernCap(style), rnd, varr, z1 + 0.9, fh]);
+    const R0 = Math.min(eLen * 0.42, span * 0.60);
+    const cxD = eA[0] + eTx * eLen * 0.5 + eNx * R0 * 0.75;
+    const cyD = eA[1] + eTy * eLen * 0.5 + eNy * R0 * 0.75;
+    let z = z1 - 0.5;
+    for (let k = 0; k < 5; k++) {
+      const f = k / 5, f2 = (k + 1) / 5;
+      const dz = R0 * 0.62 * (Math.sin(f2 * Math.PI * 0.5) - Math.sin(f * Math.PI * 0.5));
+      m.wall(W, drum(cxD, cyD, Math.max(0.8, R0 * Math.cos(f * Math.PI * 0.5)), 14), z, z + dz, M(z + dz));
+      z += dz;
+    }
+    m.cap(R, drum(cxD, cyD, Math.max(0.8, R0 * Math.cos(Math.PI * 0.4)), 14), z, M(z));
+    crestZ = z;
+  } else if (crown === "cascade") {
+    // THE CHEVRON CASCADE. One Liberty Place, Philadelphia 1988: Jahn's
+    // "jaunty skyscraper crowned with a neo-Deco cascade of chevrons", with
+    // the Chrysler Building named as the acknowledged influence. Four tiers,
+    // each stepping in and each ending in a PITCHED gable that the next tier
+    // rises out of — so the silhouette is a stack of points rather than a
+    // stack of boxes, which is the whole difference between this and
+    // `ziggurat`.
+    let r0 = ring, z = z1;
+    const hS = Math.max(2.0, ch * 0.75);
+    for (let k = 0; k < 4; k++) {
+      const ins = insetRing(r0, Math.max(0.6, span * 0.095));
+      if (!ins) break;
+      m.wall(W, ins, z, z + hS, M(z + hS));
+      m.pitch(R, ins, z + hS, hS * 0.85, Math.max(0.5, span * 0.13), M(z + hS * 1.85));
+      r0 = ins; z += hS;
+    }
+    crestZ = z + hS * 0.85;
+  } else if (crown === "skewstep") {
+    // THE ASYMMETRIC STEPPED CROWN, and it is a documented MODERN variant
+    // rather than a 1930s one. One Bennett Park, Chicago 2019: "an
+    // asymmetrical crown that steps up toward the city as it favors views to
+    // Lake Michigan."
+    //
+    // The lean direction is a fact about that site, and this renderer has no
+    // view analysis and no idea where the water is. So it comes off the crown's
+    // own hash stream — which is a STAND-IN for a real input, named as one: if
+    // the generator ever hands a volume its outlook, this is the line that
+    // should read it instead of rolling.
+    const bearS = cs(24) * Math.PI * 2;
+    const sx = Math.cos(bearS), sy = Math.sin(bearS);
+    let r0 = ring, z = z1;
+    const hS = Math.max(2.2, ch * 0.85);
+    for (let k = 0; k < 3; k++) {
+      const ins = insetRing(r0, Math.max(0.7, span * 0.15));
+      if (!ins) break;
+      const lean = span * 0.11;
+      const sh = ins.map(([x, y]) => [x + sx * lean, y + sy * lean] as [number, number]);
+      m.wall(W, sh, z, z + hS, M(z + hS));
+      m.cap(R, sh, z + hS, M(z + hS));
+      r0 = sh; z += hS;
+    }
+    crestZ = z;
+  } else if (crown === "mechlantern") {
+    // THE ILLUMINATED MECHANICAL LANTERN. One Bennett Park, 2019, names it
+    // outright: "a lantern at the top housing mechanical equipment that
+    // provides a memorable skyline silhouette" — the plant room as the thing
+    // you recognise the building by, which is the oldest deco idea there is
+    // turning up in a 2019 specification.
+    //
+    // It is not `amenity`, which is a wide glass floor of flats behind a green
+    // terrace, and it is not `mech`, which is a louvred screen wrapped round
+    // the whole plate. It is narrow, it is tall, and it stands on a solid
+    // plinth — that is what makes a box read as a lantern.
+    const ph = Math.max(1.6, ch * 0.55);
+    m.wall(W, ring, z1 - 0.1, z1 + ph, M(z1 + ph));
+    const plinth = insetRing(ring, 0.5);
+    if (plinth) m.cap(R, plinth, z1 + ph, M(z1 + ph, S_PLAIN));
+    const box = insetRing(ring, Math.min(9, Math.max(2.6, span * 0.32)));
+    if (box) {
+      const hL = Math.max(4.5, ch * 1.9);
+      m.wall(W, box, z1 + ph - 0.2, z1 + ph + hL, [S_GLASS, rnd, varr, z1 + ph + hL, fh]);
+      const crest = insetRing(box, -0.30);
+      if (crest) {
+        m.wall(W, crest, z1 + ph + hL, z1 + ph + hL + 0.45, M(z1 + ph + hL + 0.45));
+        m.cap(R, crest, z1 + ph + hL + 0.45, M(z1 + ph + hL + 0.45));
+      }
+      crestZ = z1 + ph + hL + 0.45;
+    }
+  } else if (crown === "signband") {
+    // THE STEPPED SIGN BAND, AND WHAT IT IS FOR: hiding the cornice. A
+    // "Modernize Main Street" re-clad — the Architectural Record competition
+    // with Libbey-Owens-Ford, paid for on an FHA loan — did not take the
+    // Victorian cornice off. It built a flat band of pigmented structural
+    // glass across the front of it and put the shop's name on that. By 1940
+    // the glass was synonymous with the modern look, and the tell is that the
+    // band stands PROUD of the old wall rather than cut into it.
+    const bh = Math.max(1.1, ch * 0.60);
+    const hS = Math.max(0.6, ch * 0.4);
+    slab(eLen * 0.5, eLen * 0.5, 0.35, z1 - 1.8, z1 + bh, [style, rnd, varr, z1 + bh, fh], -0.35);
+    const steps = 2 + Math.floor(cs(22) * 2);
+    for (let k = 0; k < steps; k++) {
+      const halfW = eLen * (0.24 - k * 0.07);
+      if (halfW < 0.45) break;
+      slab(eLen * 0.5, halfW, 0.30, z1 + bh - 0.1, z1 + bh + hS * (k + 1),
+        [style, rnd, varr, z1 + bh, fh], -0.35);
+      crestZ = z1 + bh + hS * (k + 1);
+    }
+    // the rest of the roof still needs an edge to stop at
+    const cop = insetRing(ring, -0.06);
+    if (cop) { m.wall(W, cop, z1 - 0.1, z1 + 0.5, M(z1 + 0.5)); m.cap(R, cop, z1 + 0.5, M(z1 + 0.5)); }
+  } else if (crown === "sunburst") {
+    // THE RADIATING ARCHES. The Chrysler Building, 1930: "seven radiating
+    // terraced arches covered in stainless steel", clad in Enduro KA-2 — the
+    // austenitic stainless Krupp developed and marketed as Nirosta. That is
+    // why this crown is drawn in metal rather than in the wall's own stone,
+    // and stainless cladding is a 1930-and-after fact (Chrysler 1930, the
+    // Empire State mast 1931, Niagara Mohawk's figure 1932), so it is
+    // reachable only from families whose own era gate opens by then.
+    //
+    // Seven tiers on a CIRCULAR profile, not a linear taper: each tier's inset
+    // is read off a quarter circle, so the silhouette bulges at the springing
+    // and flattens at the top. A ziggurat tapers by a constant 0.75 and reads
+    // as a pyramid; this reads as a fan, and that is the whole difference.
+    const H = Math.max(4.5, Math.min(ch * 2.4, z1 * 0.20));
+    const skin = (zt: number) => [S_METALPAN, rnd, varr, zt, fh];
+    for (let k = 0; k < 7; k++) {
+      const f = (k + 1) / 7;
+      const tier = insetRing(ring, span * 0.48 * (1 - Math.sqrt(Math.max(0, 1 - f * f))));
+      if (!tier) break;
+      m.wall(W, tier, z1 + H * (k / 7), z1 + H * f, skin(z1 + H * f));
+      m.cap(R, tier, z1 + H * f, skin(z1 + H * f));
+    }
+    const need = drum(ctr[0], ctr[1], Math.max(0.4, span * 0.035), 8);
+    const hN = z1 + H + Math.max(3.0, ch * 1.5);
+    m.wall(W, need, z1 + H, hN, skin(hN));
+    m.cap(R, need, hN, skin(hN));
+    crestZ = hN;
+  } else if (crown === "mast") {
+    crestZ = buildMast(z1, 1.0);
   } else {
     // FLAT COPING — a parapet with a cap on it, and the cap is not the
     // same stuff as the wall.
@@ -781,6 +1477,48 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
     const inner = insetRing(ring, 0.28);
     if (inner) m.cap(R, inner, z1 + ph, [modernCap(style), rnd, varr, z1 + ph, fh]);
   }
+  // ---- COMPOSITION: A SECOND THING ON TOP OF THE FIRST -----------------
+  //
+  // `crownTop` returned after exactly ONE crown, and the Empire State move is
+  // two of them: piers running up through three setbacks, and then a mast on
+  // the crowned tower they end in. So there is one second pass, and it is
+  // deliberately not an open combinatorial explosion — everything downstream
+  // reads `tiers[tiers.length - 1]` as the roof, and this file records that
+  // going wrong twice, once putting a notched slab's mast on the low link
+  // across the bottom of its slot.
+  //
+  // The two options are complementary by construction rather than by a rule:
+  // `crestZ > z1 + 0.5` means the first crown built something to stand ON, and
+  // a parapet finial belongs on a parapet. So at most one of them can fire,
+  // and neither can fire on a crown that already ends in a point.
+  const extra: string[] = [];
+  if (vert && o.roof && crestZ > z1 + 0.5 && tall && cs(26) < 0.20 && crown !== "mast" && crown !== "sunburst") {
+    crestZ = buildMast(crestZ, 0.62);
+    extra.push("mast");
+  } else if (vert && o.roof && crestZ <= z1 + 0.5 && crown !== "fin" && cs(27) < 0.24) {
+    // THE FROZEN FOUNTAIN, as a parapet finial. Bombay deco — Merwanji Bana &
+    // Co. — put these at the corners and over the entrance: a narrow element
+    // stepping up in three stages, the deco motif that is a fountain drawn as
+    // a stack of chevrons. It is the cheapest possible break in a parapet line,
+    // and a parapet line against the sky is exactly where a roof is read from,
+    // which is the same argument the balustrade urns on a stone cornice make.
+    const fnH = Math.max(1.4, ch * 0.75);
+    const w0 = Math.max(0.35, Math.min(1.1, span * 0.035));
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i];
+      const dx = ctr[0] - p[0], dy = ctr[1] - p[1], dl = Math.hypot(dx, dy) || 1;
+      const px = p[0] + (dx / dl) * w0 * 1.7, py = p[1] + (dy / dl) * w0 * 1.7;
+      for (let k = 0; k < 3; k++) {
+        const w = w0 * (1 - k * 0.22);
+        const q = quadAt(px, py, dx / dl, dy / dl, w, w);
+        const zb = z1 + 0.2 + fnH * (k / 3), zt = z1 + 0.2 + fnH * ((k + 1) / 3);
+        m.wall(W, q, zb, zt, M(zt));
+        if (k === 2) m.cap(R, q, zt, M(zt));
+      }
+    }
+    crestZ = z1 + 0.2 + fnH;
+    extra.push("finial");
+  }
   // some modern mid-rises grow a green roof
   if (style === S_GLASS && crown !== "amenity" && z1 >= 15 && z1 <= 60 && varr > 0.62) {
     const g = insetRing(ring, 1.6);
@@ -789,7 +1527,9 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
   // bulkheads: the stair and lift overrun every tall building carries.
   // o.roof gates it to the roof: dropped on the base tier of a wedding cake
   // it is a box drawn inside the tower standing on that tier.
-  if (z1 >= 26 && !o.deco && o.roof) {
+  // `!mechDeck` because the tank house above already IS one, in the wall's own
+  // brick — see that branch.
+  if (z1 >= 26 && !o.deco && o.roof && !mechDeck) {
     const pent = insetRing(ring, Math.min(6, Math.max(2.2, Math.sqrt(z1) * 0.55)));
     if (pent) {
       const ph2 = z1 > 70 ? 5.2 : 3.6;
@@ -800,7 +1540,7 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
       roofZ = z1 + ph2;
     }
   }
-  return { mechDeck, roofZ };
+  return { mechDeck, roofZ, crown, extra };
 }
 
 
@@ -1054,7 +1794,14 @@ const vec3 HAZE_COOL = vec3(0.742, 0.818, 0.900);   // the sky, scattered back
 const vec3 HAZE_WARM = vec3(0.964, 0.906, 0.812);   // the sun, scattered forward
 const vec3 HAZE_COL  = vec3(0.790, 0.845, 0.902);   // the average, for anything that wants one
 
-vec3 aerial(vec3 c, vec3 p, vec3 cam) {
+// HOW MUCH AIR IS IN THE WAY, and WHAT COLOUR THE AIR IS, as two functions
+// instead of one. They were a single aerial() and that was fine until the sea
+// needed the FRACTION with a different target: MapLibre paints the far harbour
+// as a flat unhazed fill, so the Three sea has to arrive at that colour rather
+// than at the sky's, or the two disagree and the disagreement shows up as a
+// bright ring of nothing at the range where the haze has peaked and the
+// hand-off has not started. Same numbers, same curve, asked in two pieces.
+float airFrac(vec3 p, vec3 cam) {
   vec3 d3 = p - cam;
   float d = length(d3);
   float k = max(cam.z, 140.0);
@@ -1065,22 +1812,6 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // Depth reads better from a curve that stays clear up close and then falls
   // away hard, which is also what air actually does.
   float f = 1.0 - exp(-(d / k) * 0.056);
-
-  // Which way am I looking, relative to where the sun is? Taken on the compass
-  // only: the elevation of the sun is the same everywhere in frame, so letting
-  // it into this term would just add a constant tilt top-to-bottom.
-  vec2 vdir = d3.xy;
-  vec2 sdir = SUN_DIR.xy;
-  float toSun = 0.5;
-  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
-    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
-  }
-  // The forward lobe opened from 2.4: with the sun riding lower through the
-  // year there is more air along its bearing in every frame, and the warm
-  // glow down-sun is the half of aerial perspective that says LATE LIGHT
-  // rather than just distance.
-  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
-  haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
 
   // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
   // dirtiest, which is at the bottom — so a distant street floor washes out
@@ -1120,7 +1851,29 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // map-of-the-world zooms, where the frame should read as a chart again.
   alt *= mix(1.0, 0.5, smoothstep(8000.0, 20000.0, cam.z));
 
-  return mix(c, haze, clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0));
+  return clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0);
+}
+
+vec3 airColour(vec3 p, vec3 cam) {
+  // Which way am I looking, relative to where the sun is? Taken on the compass
+  // only: the elevation of the sun is the same everywhere in frame, so letting
+  // it into this term would just add a constant tilt top-to-bottom.
+  vec2 vdir = (p - cam).xy;
+  vec2 sdir = SUN_DIR.xy;
+  float toSun = 0.5;
+  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
+    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  // The forward lobe opened from 2.4: with the sun riding lower through the
+  // year there is more air along its bearing in every frame, and the warm
+  // glow down-sun is the half of aerial perspective that says LATE LIGHT
+  // rather than just distance.
+  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
+  return mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+}
+
+vec3 aerial(vec3 c, vec3 p, vec3 cam) {
+  return mix(c, airColour(p, cam), airFrac(p, cam));
 }`;
 
 /**
@@ -1488,9 +2241,31 @@ void main() {
   if (s == 4) { glassy = true; colW = 2.7; win = vec2(0.62, 0.58);
     wall = vec3(0.25, 0.27, 0.31); glassA = vec3(0.72, 0.60, 0.34); glassB = vec3(0.88, 0.78, 0.52);
   }
-  if (s == 6) { colW = 2.4; win = vec2(0.48, 0.60);
-    wall = mix(vec3(0.84, 0.78, 0.64), vec3(0.72, 0.64, 0.50), step(0.5, vVar));
-    glassA = vec3(0.28, 0.33, 0.38); glassB = vec3(0.42, 0.48, 0.54);
+  if (s == 6) {
+    // THE ZIGZAG TOWER, and the family is named after it. It had TWO colourways
+    // — one mix() on a step() — while S_BRICK next door had eight, so the
+    // flagship was the shallowest deco id in the registry and the audit said so.
+    // These are the eight walls a 1925-1945 setback tower was actually built in,
+    // each with the building it comes from. The era mix leans the late thirties
+    // paler and greyer on purpose: the Depression cut budgets, and limestone and
+    // cast stone displaced polychrome brick and terracotta as the money went.
+    //
+    // Nothing here exceeds 0.79. See the note on the tone curve above the deco
+    // block: the reason is loss of RELIEF, not clipping.
+    colW = 2.4; win = vec2(0.48, 0.60);
+    float pk = clamp(vVar * 0.62 + vEra * 0.38, 0.0, 0.999);
+    if (pk < 0.15)      { wall = vec3(0.76, 0.73, 0.66); }   // Indiana limestone - Empire State, 1931
+    else if (pk < 0.29) { wall = vec3(0.68, 0.67, 0.63); }   // Bedford grey limestone - Rockefeller Center, 1933
+    else if (pk < 0.44) { wall = vec3(0.74, 0.70, 0.60); }   // buff cast stone, the budget answer, everywhere
+    else if (pk < 0.55) { wall = vec3(0.78, 0.77, 0.73); }   // white glazed architectural terracotta
+    else if (pk < 0.68) { wall = vec3(0.70, 0.62, 0.48); }   // warm buff brick with limestone piers
+    else if (pk < 0.79) { wall = vec3(0.64, 0.47, 0.36); }   // salmon-ochre brick, the Midwest and Southwest
+    else if (pk < 0.90) { wall = vec3(0.52, 0.48, 0.44); }   // grey-brown schist, a dark-based tower
+    else                { wall = vec3(0.72, 0.63, 0.60); }   // pale pink granite - 40 Wall Street, 1930
+    // The spandrel is the whole type: window and spandrel share one deep reveal
+    // and the spandrel is DARKER, so the vertical channel reads continuous from
+    // the second floor to the parapet. That is why the glass runs dark here.
+    glassA = vec3(0.26, 0.30, 0.35); glassB = vec3(0.40, 0.45, 0.51);
   }
   if (s == 7) { glassy = true; colW = 6.5; win = vec2(0.94, 0.46);
     wall = mix(vec3(0.80, 0.80, 0.77), vec3(0.72, 0.74, 0.72), step(0.5, vVar));
@@ -1652,8 +2427,10 @@ void main() {
     // and it washes clean in the rain — the one old building on the block that
     // never went black. Crisp, bright, and slightly cold.
     colW = 3.2; win = vec2(0.50, 0.66);
-    // Held under 0.80: contrast runs in linear space about a 0.18 pivot, so an
-    // albedo over ~0.85 clips to flat white before the light rig touches it.
+    // Held under 0.80, and for the measured reason rather than the one this
+    // comment used to give: the tone curve does not clip a pale wall, it
+    // COMPRESSES it, so a 0.12 step between a lit and a shaded facet is worth
+    // 0.048 of output at base 0.60 and 0.011 at 1.26. Pale goes flat, not white.
     // A glaze reads bright because it is GLOSSY, not because it is pale, and
     // the sheen below is what carries that.
     wall = mix(vec3(0.795, 0.785, 0.740), vec3(0.760, 0.745, 0.675), step(0.5, vVar));
@@ -2710,6 +3487,499 @@ void main() {
     wall = mix(vec3(0.545, 0.450, 0.395), vec3(0.590, 0.585, 0.570), step(0.55, vVar));
     glassA = vec3(0.32, 0.40, 0.46); glassB = vec3(0.50, 0.60, 0.67);
   }
+  // ========================================================================
+  // ART DECO — SIXTEEN PALETTE BRANCHES.
+  //
+  // Two things about the keys, both measured, because the obvious move is
+  // wrong here. First: DO NOT ERA-WEIGHT THESE. vEra is (year - 1870) / 160,
+  // so a family whose whole documented window is fifteen years long occupies
+  // 0.09 of that ramp — polychrome terracotta, 1926-1932, spans vEra 0.350 to
+  // 0.388. S_BRICK's vVar*0.60 + vEra*0.40 works because it carries 109
+  // years; inside one deco family the same key is a constant with a vVar
+  // wobble on it, which is worse than vVar alone because it also biases the
+  // mean. The tight window is the whole point of these families and it is why
+  // the colourway roll is pure vVar.
+  //
+  // Second: the second and third axes are salted off vRand through hash,
+  // never off vVar. Three separate collapses are on record in this file from
+  // deriving one scalar from another — every mansard in the city came out the
+  // same copper green because the shingle and both gates read vVar — and the
+  // shared masonry block already thresholds vRand at 0.46 and 0.62 and
+  // vVar at 0.55. So bay width, opening size and the ornament tier roll off
+  // hash(vec2(vRand * K, C)) with a different K per axis.
+  //
+  // Every colour is a documented material combination with its availability
+  // window in the comment. The two that matter most: polychrome glazed
+  // terracotta is dead after about 1933 because the Depression collapsed the
+  // industry (NPS Preservation Brief 7 — the popularity "did not persist past
+  // the 1930s" and the industry "nearly disappear[ed] completely"), and glass
+  // block was not mass-produced before 1932. Both are enforced in the pool
+  // rather than here, because a palette branch cannot see the year.
+  if (s == 152) {
+    // MAYAN REVIVAL. The pier is BATTERED, not fluted, and the relief is deep
+    // enough that hollow-cast terracotta is the only economic way to get it —
+    // which is why this family is a terracotta family and why the openings are
+    // small: the wall is carrying a glyph frieze rather than glass. Aztec
+    // Hotel, Monrovia, 1924-25 (Stacy-Judd); 450 Sutter Street, San Francisco,
+    // 1929 (Pflueger), twenty-six storeys of undulating Mayan terracotta with
+    // no setback at all; Ennis House, Los Angeles, 1924, in cast concrete
+    // textile block. Colour "runs earth-toned or polychrome".
+    float rw = hash(vec2(vRand * 37.0, 3.0));
+    colW = mix(2.25, 3.10, rw);
+    win = vec2(mix(0.40, 0.50, rw), 0.56);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.15)      { wall = vec3(0.74, 0.68, 0.55); } // buff terracotta — Aztec Hotel 1925
+    else if (pk < 0.28) { wall = vec3(0.66, 0.58, 0.45); } // warm ochre cast stone
+    else if (pk < 0.41) { wall = vec3(0.62, 0.63, 0.55); } // grey-green terracotta — 450 Sutter 1929
+    else if (pk < 0.54) { wall = vec3(0.58, 0.41, 0.33); } // oxblood polychrome band
+    else if (pk < 0.67) { wall = vec3(0.64, 0.62, 0.58); } // cast concrete textile block — Ennis House 1924
+    else if (pk < 0.78) { wall = vec3(0.55, 0.52, 0.40); } // olive-drab cast stone, the Californian answer
+    else if (pk < 0.90) { wall = vec3(0.70, 0.55, 0.38); } // burnt-orange polychrome, the Yucatan palette
+    else                { wall = vec3(0.50, 0.47, 0.45); } // grey cast concrete, the plainest version there is
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.40, 0.46, 0.52);
+  }
+  if (s == 153) {
+    // EGYPTIAN REVIVAL, and the thing that separates it from Mayan is the
+    // CORNICE DIRECTION: the Egyptian cavetto flares outward, the Mayan corbel
+    // steps inward. Driven by the Tutankhamun opening of 1922 — Grauman's
+    // Egyptian Theatre, Hollywood, 1922; Carreras Cigarette Factory, London,
+    // 1928, in white Portland cement render with black and coloured faience.
+    // A battered pylon wall is a thick wall with very little in it, so this is
+    // the smallest opening fraction in the family after the cinema.
+    float rw = hash(vec2(vRand * 41.0, 5.0));
+    colW = mix(2.9, 3.7, rw);
+    win = vec2(0.38, 0.52);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.20)      { wall = vec3(0.78, 0.77, 0.72); } // white Portland cement render — Carreras 1928
+    else if (pk < 0.36) { wall = vec3(0.73, 0.70, 0.61); } // pale limestone
+    else if (pk < 0.50) { wall = vec3(0.70, 0.62, 0.48); } // sandstone buff
+    else if (pk < 0.62) { wall = vec3(0.66, 0.60, 0.52); } // painted stucco, faience picked out
+    else if (pk < 0.74) { wall = vec3(0.74, 0.66, 0.44); } // ochre wash, the Nile palette the pylons were painted in
+    else if (pk < 0.87) { wall = vec3(0.60, 0.58, 0.52); } // grey granite pylon, the sober civic version
+    else                { wall = vec3(0.55, 0.50, 0.46); } // dark basalt base carried up the whole pylon
+    glassA = vec3(0.24, 0.28, 0.33); glassB = vec3(0.38, 0.44, 0.50);
+  }
+  if (s == 154) {
+    // PUEBLO DECO — Carla Breeze's term, 1984. Stucco rather than stone or
+    // terracotta, rounded parapets, softened corners, and Deco's vertical
+    // repetition laid over Pueblo Revival volumes borrowed from adobe. KiMo
+    // Theatre, Albuquerque, opened 19 September 1927. Adobe buff and cream with
+    // polychrome tile accents; the openings are small and deep because the mass
+    // they are cut into is pretending to be two feet of mud brick.
+    float rw = hash(vec2(vRand * 29.0, 7.0));
+    colW = mix(2.7, 3.4, rw);
+    win = vec2(0.36, 0.48);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.24)      { wall = vec3(0.76, 0.68, 0.55); } // adobe buff
+    else if (pk < 0.46) { wall = vec3(0.79, 0.75, 0.66); } // cream stucco
+    else if (pk < 0.65) { wall = vec3(0.75, 0.63, 0.55); } // pink-tan render
+    else if (pk < 0.84) { wall = vec3(0.72, 0.64, 0.46); } // sun-bleached ochre
+    else                { wall = vec3(0.78, 0.76, 0.71); } // whitewashed
+    glassA = vec3(0.25, 0.29, 0.33); glassB = vec3(0.39, 0.45, 0.50);
+  }
+  if (s == 155) {
+    // POLYCHROME GLAZED TERRACOTTA — EIGHT COLOURWAYS, and every one of them is
+    // a named building, because this is the family where the colour IS the
+    // architecture. The whole wall is glazed ceramic in a saturated tone with
+    // the ornament fired into the cladding, so the pattern costs nothing extra
+    // at the crown, which is why these buildings spend their money at the top.
+    //
+    // Eastern Columbia, Los Angeles, 1930 (Beelman): over a thousand tons of
+    // glossy turquoise-blue tile from Gladding, McBean, the gold leaf applied
+    // with heat during manufacture. Carbide & Carbon, Chicago, 1929: black
+    // granite base, green and gold terracotta, gold leaf and bronze trim.
+    // Richfield Tower, Los Angeles, 1929: black and gold, chosen to symbolise
+    // "black gold" — demolished 1969, and a one-client decision rather than a
+    // style, which is why it is a rare colourway here and not an id. Marine
+    // Building, Vancouver, 1930: the architects wrote the brief as a sentence —
+    // "some great crag rising from the sea, clinging with sea flora and fauna,
+    // tinted in sea-green, touched with gold". McGraw-Hill, New York, 1931, in
+    // blue-green (colour and date unverified this session).
+    //
+    // The bay is narrow because a terracotta unit is a module and the pier is
+    // one unit wide. The window is generous because the wall is a veneer on a
+    // steel frame and does not have to carry anything.
+    float rw = hash(vec2(vRand * 53.0, 11.0));
+    colW = mix(2.10, 2.65, rw);
+    win = vec2(mix(0.48, 0.58, rw), 0.62);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.20)      { wall = vec3(0.34, 0.62, 0.66); } // turquoise + gold — Eastern Columbia 1930
+    else if (pk < 0.34) { wall = vec3(0.26, 0.44, 0.38); } // green + gold — Carbide & Carbon 1929
+    else if (pk < 0.44) { wall = vec3(0.36, 0.55, 0.50); } // sea-green + gold — Marine Building 1930
+    else if (pk < 0.54) { wall = vec3(0.30, 0.48, 0.56); } // blue-green — McGraw-Hill 1931 (unverified)
+    else if (pk < 0.68) { wall = vec3(0.62, 0.36, 0.30); } // oxblood glaze
+    else if (pk < 0.80) { wall = vec3(0.76, 0.72, 0.60); } // buff-cream glaze
+    else if (pk < 0.92) { wall = vec3(0.50, 0.60, 0.44); } // jade
+    else                { wall = vec3(0.16, 0.15, 0.15); } // black + gold — Richfield 1929, rare on purpose
+    glassA = vec3(0.24, 0.30, 0.36); glassB = vec3(0.40, 0.48, 0.55);
+  }
+  if (s == 156) {
+    // PRESSED METAL SPANDRELS between stone piers. "Spandrels with copper
+    // panels separated by vertical columns" — cast or pressed copper, bronze,
+    // aluminium or nickel silver in the reveal, with a raised geometric
+    // pattern. This is the sharpest-looking version of the vertical move
+    // because the spandrel is a different MATERIAL rather than a darker course
+    // of the same one, and metal in a shadowed reveal goes almost black.
+    //
+    // Stainless cladding is documented from 1930 (the Chrysler crown in Enduro
+    // KA-2 / Nirosta, the Empire State mast in 1931, Niagara Mohawk's
+    // twenty-eight-foot stainless figure in 1932). Architectural aluminium
+    // spandrel dates could NOT be verified this session, so the pool opens this
+    // family in 1930 on the stainless evidence and the uncertainty stays said.
+    //
+    // Window and spandrel share one reveal, so at 68% the opening is the
+    // tallest fraction of a STOREY in the family. The terminal's lunette is
+    // taller at 72% and it does not count: that is one room, not a storey,
+    // which is why S_DECOTRANSIT is not in T_FLOORLINE either.
+    float rw = hash(vec2(vRand * 31.0, 13.0));
+    colW = mix(2.20, 3.20, rw);
+    win = vec2(mix(0.52, 0.62, rw), 0.68);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.16)      { wall = vec3(0.75, 0.71, 0.62); } // limestone pier, bronze spandrel
+    else if (pk < 0.30) { wall = vec3(0.70, 0.64, 0.52); } // buff cast stone, new copper
+    else if (pk < 0.43) { wall = vec3(0.64, 0.64, 0.62); } // grey granite, nickel silver
+    else if (pk < 0.56) { wall = vec3(0.42, 0.42, 0.44); } // dark stone, aluminium
+    else if (pk < 0.68) { wall = vec3(0.58, 0.46, 0.38); } // brick pier, oxidised copper green
+    else if (pk < 0.79) { wall = vec3(0.72, 0.70, 0.66); } // white terracotta pier, gunmetal panel
+    else if (pk < 0.90) { wall = vec3(0.50, 0.48, 0.42); } // green-black granite, gilt-anodised panel
+    else                { wall = vec3(0.66, 0.58, 0.50); } // cast stone with a pressed-lead spandrel
+    glassA = vec3(0.22, 0.28, 0.33); glassB = vec3(0.38, 0.46, 0.53);
+  }
+  if (s == 157) {
+    // THE DECO APARTMENT HOUSE — NINE COLOURWAYS, the deepest palette in the
+    // registry, and it earns them the same way S_BRICK earns eight: it is the
+    // highest-count deco type in the world and the only one whose ornament is
+    // BOND PATTERN rather than relief, because brick is laid and not cast. So
+    // the whole vocabulary of the type is colour change: a field brick with
+    // contrasting soldier courses, quoins, banding and chevron panels in a
+    // darker or glazed brick, and cast stone only at the entrance and the
+    // parapet.
+    //
+    // The counts: ~300 apartment buildings on the Grand Concourse by the 1930s,
+    // 27 of them in the historic district built 1935-45, five to six storeys,
+    // "built in brick with trim of stone, cast stone or terra cotta"; 650+
+    // documented across Mumbai with 35 in one row on Marine Drive; Soona Mahal,
+    // Mumbai, 1937; Shiv Shanti Bhuvan, 1934-35.
+    //
+    // Tangerine is here as a MID-TIER option rather than a premium one because
+    // that is what it was: Wirt Rowland formulated "Guardian Brick" for the
+    // Guardian Building, Detroit, 1929 — almost two million of them — and chose
+    // brick "specifically because they were cheaper than other materials".
+    //
+    // THE WRAPPED CORNER WINDOW is the second axis. Steel casement in a
+    // wrapped corner is a named device of the type, and where a building has it
+    // the opening is much wider; where it does not, the wall is a tight
+    // rhythm of punched holes. That rolls off its own salt.
+    float rw = hash(vec2(vRand * 43.0, 17.0));
+    float casement = hash(vec2(vRand * 67.0, 19.0));
+    colW = mix(2.70, 3.40, rw);
+    win = vec2(mix(0.42, 0.60, casement), mix(0.48, 0.56, rw));
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.14)      { wall = vec3(0.76, 0.62, 0.46); } // tan field, dark brown chevron
+    else if (pk < 0.26) { wall = vec3(0.79, 0.71, 0.55); } // buff field, red soldier course
+    else if (pk < 0.38) { wall = vec3(0.68, 0.38, 0.31); } // red field, black glazed header
+    else if (pk < 0.48) { wall = vec3(0.74, 0.45, 0.30); } // tangerine — Guardian Brick 1929
+    else if (pk < 0.59) { wall = vec3(0.72, 0.66, 0.52); } // ochre-buff, cast stone trim
+    else if (pk < 0.69) { wall = vec3(0.55, 0.48, 0.43); } // grey-brown iron spot
+    else if (pk < 0.79) { wall = vec3(0.77, 0.58, 0.50); } // salmon — Marine Drive, Bombay
+    else if (pk < 0.90) { wall = vec3(0.44, 0.36, 0.36); } // purple-brown clinker, buff banding
+    else                { wall = vec3(0.78, 0.76, 0.71); } // painted cream, later
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.45, 0.53, 0.59);
+  }
+  if (s == 158) {
+    // TROPICAL DECO, AND THE PASTELS ARE NOT ORIGINAL. This is the most
+    // repeated error about Art Deco and it is worth getting right in the table
+    // rather than in a comment: the Miami Beach schemes were "traditionally
+    // WHITE, trimmed in light pastels to accentuate detail" and "most were
+    // initially painted white or cream". The forty-colour pastel palette is
+    // Leonard Horowitz's, with Barbara Capitman, in the EARLY 1980s, done "to
+    // enliven the dated and worn Art Deco facades".
+    //
+    // So five of the eight colourways here are white, cream, off-white, buff and
+    // grey-cream, and they carry 72% of the roll; the three pastels are the
+    // 1980s repaint that is still on the building today and carry the other 28%. That split is the
+    // honest one available to a fragment shader, and here is why it is not a
+    // date: vEra is the year the building was FINISHED, so a 1938 hotel reads
+    // 0.425 whether it was repainted in 1982 or not, and nothing in this
+    // renderer knows about a repaint. The pastels are a renovation EVENT and
+    // they want a renovation hook — see the hand-off.
+    //
+    // The rest of the type: three storeys almost always, symmetrical about a
+    // central vertical feature, eyebrow sunshades over every window, portholes,
+    // glass block (mass production from 1932), keystone trim, neon.
+    float rw = hash(vec2(vRand * 47.0, 23.0));
+    colW = mix(3.00, 3.90, rw);
+    win = vec2(mix(0.50, 0.62, rw), 0.54);
+    glassy = true;
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.22)      { wall = vec3(0.79, 0.78, 0.75); } // white — the original scheme
+    else if (pk < 0.40) { wall = vec3(0.79, 0.76, 0.67); } // cream
+    else if (pk < 0.54) { wall = vec3(0.76, 0.75, 0.72); } // off-white, weathered
+    else if (pk < 0.64) { wall = vec3(0.78, 0.74, 0.62); } // buff render
+    else if (pk < 0.72) { wall = vec3(0.74, 0.73, 0.70); } // grey-cream
+    else if (pk < 0.82) { wall = vec3(0.70, 0.78, 0.72); } // pale mint — Horowitz repaint, 1980s
+    else if (pk < 0.91) { wall = vec3(0.79, 0.70, 0.71); } // powder pink — same
+    else                { wall = vec3(0.66, 0.75, 0.79); } // sky blue — same
+    glassA = vec3(0.34, 0.44, 0.50); glassB = vec3(0.56, 0.68, 0.74);
+  }
+  if (s == 159) {
+    // PWA MODERNE. The classical proportions kept and the classical detail
+    // stripped: giant flat pilasters with no capitals, a deep flat entablature
+    // with no cornice mouldings, and square-headed windows in DEEP REVEALS as
+    // the only thing that is not wall. "Historical ornament subordinated to a
+    // modernistic emphasis of geometric volume." Almost always pale ashlar —
+    // limestone, granite, cast stone — because the Federal government was the
+    // client and the murals went inside.
+    //
+    // Federal Trade Commission Building, Washington, staff in 21 April 1938;
+    // Buffalo City Hall, 1931; Hoover Dam, 1931-36, where Gordon Kaufmann
+    // "replaced ornamentation with the flowing lines of Modernism and Art
+    // Deco"; and the WPA post office, everywhere.
+    //
+    // The bay is wide — 3.6 to 5.0 m — because the module is a giant order two
+    // storeys tall rather than a window, and the opening is only a third of it.
+    // That ratio, a small square hole in a very wide blank pilaster, is the
+    // whole proportion of the type and it is why these buildings look heavy at
+    // any size. (The shed, the terminal and the cinema's blind field have wider
+    // bays still, but none of those is a wall with rooms behind it.)
+    float rw = hash(vec2(vRand * 59.0, 29.0));
+    colW = mix(3.60, 5.00, rw);
+    win = vec2(mix(0.30, 0.40, rw), 0.58);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.17)      { wall = vec3(0.78, 0.75, 0.67); } // pale limestone
+    else if (pk < 0.31) { wall = vec3(0.68, 0.68, 0.66); } // grey granite
+    else if (pk < 0.44) { wall = vec3(0.74, 0.70, 0.60); } // warm cast stone
+    else if (pk < 0.55) { wall = vec3(0.72, 0.72, 0.70); } // white Georgia marble, the courthouse answer
+    else if (pk < 0.64) { wall = vec3(0.64, 0.60, 0.54); } // grey-buff ashlar, the WPA post office everywhere
+    else if (pk < 0.86) { wall = vec3(0.79, 0.76, 0.65); } // Indiana limestone
+    else                { wall = vec3(0.72, 0.64, 0.61); } // pink granite
+    glassA = vec3(0.22, 0.27, 0.32); glassB = vec3(0.36, 0.43, 0.49);
+  }
+  if (s == 160) {
+    // THE DECO CINEMA. The auditorium is a windowless box, so the front is a
+    // BILLBOARD: a blank field of glazed terracotta, tile mosaic or render, a
+    // projecting marquee, a vertical blade sign taller than the building, and
+    // the only openings are the doors. That is why this branch has the smallest
+    // opening fraction of the seventeen — 14% of a five-and-a-half metre bay
+    // is a ventilation slot, not a window, and it is deliberate.
+    //
+    // Paramount Theatre, Oakland, completed late 1931 (Pflueger), mosaic tile;
+    // Radio City Music Hall, opened 27 December 1932; Odeon Leicester Square,
+    // 1937, black polished granite and a 120 ft tower whose whole function is
+    // to carry the name; KiMo, Albuquerque, 1927; Eros Cinema, Mumbai, 1938,
+    // the central section in red Agra sandstone with the rest painted cream.
+    float rw = hash(vec2(vRand * 61.0, 31.0));
+    colW = mix(4.80, 6.40, rw);
+    win = vec2(0.14, 0.30);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.24)      { wall = vec3(0.77, 0.73, 0.63); } // cream terracotta
+    else if (pk < 0.42) { wall = vec3(0.64, 0.66, 0.62); } // tile mosaic, grey-green — Paramount 1931
+    else if (pk < 0.58) { wall = vec3(0.18, 0.17, 0.18); } // black polished granite — Odeon 1937
+    else if (pk < 0.74) { wall = vec3(0.62, 0.38, 0.32); } // red Agra sandstone — Eros 1938
+    else if (pk < 0.89) { wall = vec3(0.75, 0.70, 0.58); } // buff render
+    else                { wall = vec3(0.38, 0.60, 0.62); } // turquoise tile
+    glassA = vec3(0.20, 0.24, 0.28); glassB = vec3(0.32, 0.38, 0.44);
+  }
+  if (s == 161) {
+    // DECO INDUSTRIAL. Two elevations in one family and the pool sends most of
+    // the floor area to the second: a symmetrical ceremonial entrance pavilion
+    // at the road with battered piers, a stepped parapet and primary-colour
+    // faience on white render — and behind it an unadorned north-light shed. The
+    // utility variant is different again: brick, enormous, with fluted or
+    // vertically-ribbed panels and no windows to speak of.
+    //
+    // Firestone Tyre Factory, Brentford, 1928 (Wallis, Gilbert & Partners),
+    // demolished over the August bank holiday weekend of 1980 days before an
+    // emergency listing took effect; Hoover Building, Perivale, built 1933 —
+    // Betjeman: "a sort of Art Deco Wentworth Woodhouse... with splashes of
+    // primary colour from the Aztec and Mayan fashions at the 1925 Paris
+    // Exhibition"; Battersea A, 1929-35, where Giles Gilbert Scott's whole
+    // contribution was the brick and the fluting on the chimneys.
+    //
+    // The bay is the widest in the family and rolls hard, because a structural
+    // bay in a shed is set by the crane and the roof truss, not by a window.
+    float rw = hash(vec2(vRand * 71.0, 37.0));
+    colW = mix(4.50, 8.00, rw);
+    win = vec2(mix(0.24, 0.40, rw), 0.44);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.18)      { wall = vec3(0.56, 0.36, 0.30); } // red-brown brick — Battersea 1935
+    else if (pk < 0.32) { wall = vec3(0.72, 0.64, 0.50); } // buff brick
+    else if (pk < 0.46) { wall = vec3(0.78, 0.77, 0.73); } // white render, faience picked out — Hoover Building 1933
+    else if (pk < 0.58) { wall = vec3(0.66, 0.65, 0.62); } // grey concrete
+    else if (pk < 0.70) { wall = vec3(0.38, 0.33, 0.32); } // dark engineering brick
+    else if (pk < 0.80) { wall = vec3(0.62, 0.52, 0.42); } // sand-lime brick, the interwar utility standard
+    else if (pk < 0.90) { wall = vec3(0.70, 0.60, 0.34); } // ochre faience banding on brick — Wallis Gilbert, Great West Road
+    else                { wall = vec3(0.48, 0.46, 0.44); } // soot-darkened grey brick, a generating station that worked
+    glassA = vec3(0.30, 0.36, 0.40); glassB = vec3(0.47, 0.55, 0.59);
+  }
+  if (s == 162) {
+    // DECO TRANSPORT. The one family where the PLAN is legible from the street,
+    // because the crown is the concourse: Cincinnati Union Terminal, completed
+    // 1933 (Fellheimer & Wagner with Cret and Wank), is one giant half-dome
+    // over half a million square feet, and the design only turned Deco between
+    // 1931 and 1932 on cost grounds. Buffalo Central Terminal, 1929, is the
+    // seventeen-storey setback version of the same idea.
+    //
+    // So the bay here is enormous — 7 to 9.5 m — and one opening fills 62% of
+    // it by 72% of its height, which is the only place in the family where a
+    // single opening IS the bay rather than a hole punched in one. Pale ashlar
+    // and cast stone, no colour: the money went on the span.
+    float rw = hash(vec2(vRand * 73.0, 41.0));
+    colW = mix(7.00, 9.50, rw);
+    win = vec2(0.62, 0.72);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.19)      { wall = vec3(0.76, 0.72, 0.62); } // buff limestone — Cincinnati Union Terminal 1933
+    else if (pk < 0.34) { wall = vec3(0.78, 0.76, 0.70); } // pale cast stone
+    else if (pk < 0.49) { wall = vec3(0.67, 0.67, 0.65); } // grey granite
+    else if (pk < 0.62) { wall = vec3(0.72, 0.63, 0.50); } // warm sandstone
+    else if (pk < 0.75) { wall = vec3(0.62, 0.45, 0.36); } // red brick with a stone order, the smaller depots
+    else if (pk < 0.88) { wall = vec3(0.70, 0.68, 0.60); } // board-marked concrete, painted — the airfield terminals
+    else                { wall = vec3(0.58, 0.56, 0.54); } // grey engineering brick, the working end of a station
+    glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.44, 0.52, 0.58);
+  }
+  if (s == 163) {
+    // TREATY-PORT DECO. Banded brick over a granite base with stepped
+    // shoulders — the Bund and Marine Drive end of the family, and the one that
+    // travelled furthest. Park Hotel, Shanghai, 1934 (László Hudec) was the
+    // tallest building in East Asia for fifty-five years and is explicitly
+    // modelled on Hood's American Radiator Building; Broadway Mansions, 1934,
+    // nineteen storeys; Sassoon House / Cathay Hotel completed 1929. Mumbai
+    // holds the world's second-largest collection of Art Deco after Miami, with
+    // 94 buildings in the UNESCO ensemble inscribed 30 June 2018.
+    //
+    // A dark brick shaft over a pale granite plinth is the signature, so the
+    // dark colourways carry more weight here than anywhere else in the family.
+    float rw = hash(vec2(vRand * 79.0, 43.0));
+    colW = mix(2.70, 3.40, rw);
+    win = vec2(mix(0.44, 0.52, rw), 0.58);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.22)      { wall = vec3(0.40, 0.32, 0.28); } // dark brown brick — Park Hotel 1934
+    else if (pk < 0.42) { wall = vec3(0.62, 0.44, 0.34); } // red brick, cream stone bands
+    else if (pk < 0.60) { wall = vec3(0.74, 0.68, 0.55); } // buff-yellow brick
+    else if (pk < 0.76) { wall = vec3(0.66, 0.66, 0.63); } // grey granite
+    else if (pk < 0.90) { wall = vec3(0.77, 0.73, 0.65); } // cream render, brick bands
+    else                { wall = vec3(0.70, 0.58, 0.42); } // ochre
+    glassA = vec3(0.25, 0.31, 0.37); glassB = vec3(0.41, 0.49, 0.56);
+  }
+  if (s == 164) {
+    // SMALL-TOWN DECO — the Napier family. Two and three storeys, plastered
+    // brick, a stepped parapet, and a sunburst over the door: block after block
+    // of it, and Maori motifs found nowhere else in the world. 111 new downtown
+    // buildings between 1931 and 1933 after the magnitude 7.8 earthquake of
+    // 3 February 1931, which is the whole reason the type exists and the reason
+    // its window in the pool is three years long.
+    //
+    // Plaster over brick takes colour cheaply and holds it badly, so this is a
+    // pale, chalky, slightly faded palette rather than a saturated one, and the
+    // bay is wide because a small-town commercial front is two shopfronts and
+    // an upstairs office, not a structural rhythm.
+    float rw = hash(vec2(vRand * 83.0, 47.0));
+    colW = mix(3.20, 4.20, rw);
+    win = vec2(mix(0.48, 0.60, rw), 0.56);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.22)      { wall = vec3(0.79, 0.76, 0.68); } // cream plaster
+    else if (pk < 0.40) { wall = vec3(0.76, 0.70, 0.56); } // buff
+    else if (pk < 0.56) { wall = vec3(0.77, 0.68, 0.64); } // pale pink plaster
+    else if (pk < 0.71) { wall = vec3(0.68, 0.72, 0.63); } // sage green picked out
+    else if (pk < 0.86) { wall = vec3(0.74, 0.65, 0.45); } // ochre
+    else                { wall = vec3(0.73, 0.73, 0.70); } // grey-cream
+    glassA = vec3(0.28, 0.34, 0.39); glassB = vec3(0.45, 0.53, 0.58);
+  }
+  if (s == 165) {
+    // THE RE-CLAD SHOPFRONT — probably the highest-count deco facade in
+    // America, and the only one in this family that is a CAPEX EVENT rather
+    // than a building: an 1890s brick two-storey with a new front of pigmented
+    // structural glass and chrome, and a stepped sign band hiding the old
+    // cornice. The mechanism is documented — "Modernize Main Street", sponsored
+    // by Architectural Record and Libbey-Owens-Ford, plus low-rate insured FHA
+    // loans, "stimulated the remodeling fervor", and "by 1940 pigmented
+    // structural glass veneers had become synonymous with the modern look".
+    //
+    // Vitrolite ran 1908-1935 under The Vitrolite Company and 1935-1947 under
+    // Libbey-Owens-Ford; Carrara Glass came in white and black from about 1906.
+    // The colours below are that product's actual catalogue: black, jade,
+    // ivory, maroon, primrose, grey-blue. Daily Express Building, London, 1932,
+    // is the same material used as a whole facade — a concrete frame cloaked in
+    // black Vitrolite with clear glass and chromium strips at the joints.
+    //
+    // It is GLASSY because it is literally faced in glass, and its opening
+    // fraction is the largest of the seventeen because the ground floor is a
+    // plate-glass display window from the bulkhead to the transom.
+    glassy = true;
+    float rw = hash(vec2(vRand * 89.0, 53.0));
+    colW = mix(4.00, 5.40, rw);
+    win = vec2(mix(0.66, 0.80, rw), 0.58);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.26)      { wall = vec3(0.13, 0.13, 0.14); } // black Vitrolite — Daily Express 1932
+    else if (pk < 0.44) { wall = vec3(0.24, 0.46, 0.42); } // jade
+    else if (pk < 0.62) { wall = vec3(0.78, 0.77, 0.73); } // ivory Carrara
+    else if (pk < 0.76) { wall = vec3(0.44, 0.22, 0.24); } // maroon
+    else if (pk < 0.89) { wall = vec3(0.76, 0.71, 0.48); } // primrose
+    else                { wall = vec3(0.50, 0.57, 0.62); } // grey-blue
+    glassA = vec3(0.36, 0.46, 0.52); glassB = vec3(0.60, 0.72, 0.78);
+  }
+  if (s == 166) {
+    // THE 1980s NEO-DECO TOWER. Reflective blue glass on polished granite, and
+    // it is a SEPARATE FAMILY from everything above rather than a colourway,
+    // because the material set has nothing in common with 1930: One Liberty
+    // Place, Philadelphia, 1988 (Helmut Jahn) used the Chrysler Building as its
+    // stated influence and is crowned with "a neo-Deco cascade of chevrons";
+    // 135 East 57th Street, 1987 (KPF), is postmodern "with Art Moderne
+    // influences"; MesseTurm Frankfurt, 1991, and CitySpire are the same
+    // lineage. The window is roughly 1982-1993 and it closes with
+    // postmodernism itself.
+    //
+    // Polished granite is the point of the palette: it is a mirror-finish stone,
+    // so it is much more saturated than any ashlar above it and it comes in
+    // colours no 1930 building could get — rose, verde, absolute black — because
+    // by 1985 it is being sawn thin and shipped from anywhere in the world.
+    glassy = true;
+    float rw = hash(vec2(vRand * 97.0, 59.0));
+    colW = mix(3.10, 3.90, rw);
+    win = vec2(mix(0.58, 0.68, rw), 0.60);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.26)      { wall = vec3(0.60, 0.52, 0.52); glassA = vec3(0.32, 0.46, 0.62); glassB = vec3(0.52, 0.70, 0.86); } // rose granite + blue glass — One Liberty Place 1988
+    else if (pk < 0.46) { wall = vec3(0.30, 0.38, 0.34); glassA = vec3(0.46, 0.52, 0.56); glassB = vec3(0.70, 0.78, 0.82); } // verde granite + silver
+    else if (pk < 0.64) { wall = vec3(0.66, 0.61, 0.52); glassA = vec3(0.48, 0.40, 0.28); glassB = vec3(0.72, 0.62, 0.46); } // buff granite + bronze
+    else if (pk < 0.82) { wall = vec3(0.20, 0.20, 0.22); glassA = vec3(0.30, 0.48, 0.50); glassB = vec3(0.50, 0.74, 0.76); } // absolute black + blue-green
+    else if (pk < 0.88) { wall = vec3(0.52, 0.50, 0.52); glassA = vec3(0.40, 0.44, 0.50); glassB = vec3(0.62, 0.68, 0.76); } // grey granite + grey glass
+    else if (pk < 0.95) { wall = vec3(0.70, 0.66, 0.58); glassA = vec3(0.34, 0.42, 0.38); glassB = vec3(0.56, 0.68, 0.62); } // travertine + green glass, the corporate lobby palette
+    else                { wall = vec3(0.44, 0.34, 0.34); glassA = vec3(0.44, 0.40, 0.34); glassB = vec3(0.68, 0.62, 0.52); } // red granite + bronze glass — the 1980s bank tower
+  }
+  if (s == 167) {
+    // THE REVIVAL, 2008 to now, and it is NOT Art Deco — its own architects
+    // call it "art deco inspired" and "a contemporary interpretation of the
+    // pre-war classics", which is what the UI should call it too.
+    //
+    // What it is made of is well documented and it is real masonry: 15 Central
+    // Park West, 2008 (Robert A. M. Stern), Indiana limestone; 220 Central Park
+    // South, 2019, Alabama Silver Shadow limestone, "syncopated lines of
+    // balconies culminating in an expressive crown"; One Bennett Park, Chicago,
+    // 2019, a "69-story, art deco inspired tower" with a limestone base,
+    // punched windows, stacked bays and a lit mechanical lantern; 200 Amsterdam,
+    // facade complete 2021, "a mix of granite and limestone, ornate decorative
+    // panels, and dramatic oversized windows". Beyer Blinder Belle name the
+    // construction method that makes it buildable now, at 200 East 75th Street:
+    // hand-laid brick, glazed terracotta, limestone and decorative metalwork,
+    // with "a contemporary rainscreen assembly for the terracotta accents".
+    //
+    // The optical signature against everything else built in 2019 is the
+    // OPENING: a punched hole in a thick masonry wall, oversized but still a
+    // hole, where the tower next door is 98% glass with a 28 mm reveal. That
+    // difference is most of why these buildings read pre-war from across a
+    // park, and it is why the reveal below is fifteen times a curtain wall's.
+    float rw = hash(vec2(vRand * 101.0, 61.0));
+    colW = mix(2.90, 3.60, rw);
+    win = vec2(mix(0.48, 0.58, rw), 0.66);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.24)      { wall = vec3(0.78, 0.75, 0.67); } // Indiana limestone — 15 CPW 2008
+    else if (pk < 0.44) { wall = vec3(0.76, 0.75, 0.72); } // Alabama Silver Shadow — 220 CPS 2019
+    else if (pk < 0.60) { wall = vec3(0.74, 0.70, 0.62); } // warm limestone over a granite base — 200 Amsterdam 2021
+    else if (pk < 0.75) { wall = vec3(0.75, 0.66, 0.53); } // hand-laid buff brick, glazed terracotta accents — 200 E 75th
+    else if (pk < 0.89) { wall = vec3(0.69, 0.69, 0.68); } // pale grey granite
+    else                { wall = vec3(0.77, 0.74, 0.68); } // cream cast stone
+    glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.44, 0.52, 0.59);
+  }
   if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
 
@@ -2826,6 +4096,50 @@ void main() {
   if (s == 29) revealM = 0.46;
   if (s == 33) revealM = 0.50;
   if (s == 34) revealM = 0.56;
+  // THE DECO FAMILY, AND THIS LADDER IS WHERE MOST OF IT IS WON. Reveal depth
+  // is the strongest single cue in this file — a deep opening hides its own
+  // glass off-axis, what glass is left sees less sky, and the jamb shadows the
+  // opening when the sun runs along the wall — so it reaches the far view where
+  // colour does not. The seventeen deco families run 0.05 m to 0.62 m, which is
+  // most of the range in use, and the ordering is the architecture:
+  //
+  //   the load-bearing wall pretending to be thicker than it is (PWA ashlar, an
+  //   Egyptian pylon, a Pueblo adobe mass) is deepest;
+  //   the punched masonry wall (brick apartment house, treaty-port brick, the
+  //   revival's hand-laid limestone) is in the middle;
+  //   the VENEER on a frame (glazed terracotta units, cinema tile, plastered
+  //   brick) is shallow because the cladding is four inches thick;
+  //   and the pigmented structural glass shopfront is nearly flush, because a
+  //   Vitrolite panel is set in a chrome frame against the old brick and that
+  //   flatness IS the modernisation people were buying.
+  //
+  // Note the two Streamline members go shallow on purpose. Tropical Deco does
+  // its shading with a cast concrete eyebrow hood standing off the wall, not
+  // with a jamb, so a deep reveal there would be drawing the shadow twice.
+  // S_ARTDECO had no entry at all and fell to the 0.30 m default, which is
+  // ordinary punched masonry. It is not ordinary punched masonry: the window
+  // and the spandrel are sunk into ONE common reveal so the vertical channel
+  // reads continuous from the second floor to the parapet, and the sources
+  // describe "deeply recessed bands of paired windows and spandrels". That
+  // shared channel is deeper than a single punched hole, and at distance it is
+  // most of what makes a zigzag tower read as one.
+  if (s == 6) revealM = 0.40;
+  if (s == 165) revealM = 0.05;
+  if (s == 158) revealM = 0.11;
+  if (s == 160) revealM = 0.16;
+  if (s == 155) revealM = 0.22;
+  if (s == 164) revealM = 0.24;
+  if (s == 166) revealM = 0.26;
+  if (s == 161) revealM = 0.28;
+  if (s == 156) revealM = 0.34;
+  if (s == 157) revealM = 0.36;
+  if (s == 163) revealM = 0.38;
+  if (s == 152) revealM = 0.42;
+  if (s == 167) revealM = 0.44;
+  if (s == 162) revealM = 0.46;
+  if (s == 153) revealM = 0.50;
+  if (s == 154) revealM = 0.55;
+  if (s == 159) revealM = 0.62;
 
   float u = vU / colW;
   float v = vZ / fh;
@@ -4411,6 +5725,710 @@ void main() {
         wall = mix(wall, sign_, 0.72);
       }
     }
+    // ==================== THE DECO FAMILY, AS DEVICES ========================
+    //
+    // Seventeen ids, and what tells them apart is not colour — the palette
+    // ladder has already done colour, and colour is the last thing the eye
+    // uses. It is the pier, the spandrel, the direction the cornice goes, and
+    // WHERE the ornament is allowed to be. The reference this family is built
+    // from breaks the vertical move into twenty-one separable facade devices
+    // and argues for each one that it is a different silhouette or a different
+    // shadow rather than a repaint. These blocks draw them.
+    //
+    // THE ORNAMENT RULE, and it is what keeps a family this large from reading
+    // as a pattern book. Ornament on a deco building appears in FOUR fields and
+    // only four: the entrance surround, the setback shoulder, the parapet band,
+    // and one centred sunburst panel. A building wearing all four at once is
+    // wrong — that is what a revival catalogue looks like, not what got built —
+    // so one field is picked per building and a second joins it about a third of
+    // the time. The building next door on the same block therefore puts its
+    // ornament somewhere else, which is the cheapest depth in the whole job: six
+    // hashes, no new attribute, no new uniform.
+    //
+    // The rolls ride vRand, which is already hierarchically correlated by
+    // district and by block, so one architect's habits cover a row rather than
+    // one building. And the salts are deliberately NOT the palette's: the
+    // palette ladder rolls off hash(vec2(vRand * K, C)) with K in 29..101 and C
+    // in 3..61, and deriving one scalar from another is on record in this file
+    // as the fault that made every mansard in the city the same copper green.
+    // These take K in 103..139 and C in 67..97 and share no pair with it.
+    // AND ONE ARITHMETIC DISCIPLINE THAT COST NINE NUMBERS — with the reason
+    // corrected, because the one this block was first written against is not the
+    // real one and a documented threshold that is wrong is the exact fault this
+    // file warns about elsewhere.
+    //
+    // THE CLAIM WAS that albedo over ~0.85 clips to flat white before the light
+    // rig touches it. Measured against the actual grade() below — 0.18 * pow(c /
+    // 0.18, 1.24), then aces(c * 1.10) — it does not. Albedo 0.85 grades to
+    // 0.861; output reaches 0.95 only at albedo 1.55 and 0.99 at 2.65. Nothing
+    // clips below about 3.0.
+    //
+    // WHAT ACTUALLY GOES WRONG IS LOSS OF RELIEF. The curve compresses, so the
+    // same step between a sunlit facet and a shaded one shrinks as the base
+    // rises: a 0.12 albedo step renders as 0.048 of output at base 0.60, 0.028
+    // at 0.80, and 0.011 at 1.26. That is a four-fold loss of the only thing
+    // carrying the ornament. A pale deco facade does not blow out, it goes
+    // FLAT — which on a style whose whole subject is low relief in raking light
+    // is worse, and is what the eye actually reads.
+    //
+    // So the rule stands and the ceiling stands: base under about 0.80, and a
+    // lit BAND is a multiply on top of it. The cavetto lip at 1.34 on white
+    // Portland render came to 1.045, a blown-out ring rather than a flaring
+    // cornice; the metal spandrel's lip, the eyebrow's top face, the blade's
+    // flute, the arch ring, the chrome joint, the polished-granite streak and
+    // the bay's lit return were all trimmed the same way. Every one is under
+    // 0.95 on its own palette's palest colourway, and where two multiplies in
+    // one branch can land on the same pixel they are checked TOGETHER rather
+    // than one at a time. Checked by multiplying out, not by looking.
+    float dPier = 0.0, dSpan = 0.0, dMot = 0.0;
+    float fEnt = 0.0, fSho = 0.0, fPar = 0.0, fSun = 0.0;
+    if (isDeco(s)) {
+      dPier = hash(vec2(vRand * 103.0, 67.0));   // which pier treatment, of the five
+      dSpan = hash(vec2(vRand * 107.0, 71.0));   // which spandrel treatment, of the four
+      dMot  = hash(vec2(vRand * 109.0, 73.0));   // which motif the ornament is made of
+      float pri = floor(hash(vec2(vRand * 113.0, 79.0)) * 4.0);
+      float sec = hash(vec2(vRand * 131.0, 89.0)) < 0.38
+                ? mod(pri + 1.0 + floor(hash(vec2(vRand * 127.0, 83.0)) * 3.0), 4.0)
+                : -1.0;
+      fEnt = clamp((1.0 - step(0.5, abs(pri))) + (1.0 - step(0.5, abs(sec))), 0.0, 1.0);
+      fSho = clamp((1.0 - step(0.5, abs(pri - 1.0))) + (1.0 - step(0.5, abs(sec - 1.0))), 0.0, 1.0);
+      fPar = clamp((1.0 - step(0.5, abs(pri - 2.0))) + (1.0 - step(0.5, abs(sec - 2.0))), 0.0, 1.0);
+      fSun = clamp((1.0 - step(0.5, abs(pri - 3.0))) + (1.0 - step(0.5, abs(sec - 3.0))), 0.0, 1.0);
+    }
+
+    if (s == 6) {
+      // THE PIER THAT DOES NOT STOP. The one device a zigzag tower is made of:
+      // an unbroken vertical from the second floor to the parapet, with the
+      // window and the spandrel sunk into one common reveal so the channel
+      // between two piers reads continuous all the way up. Chrysler 1930,
+      // Empire State 1931, Guardian Detroit 1929; 450 Sutter Street, San
+      // Francisco, 1929, is twenty-six storeys of it with no setback at all,
+      // which is the proof that deco verticality is a SURFACE logic and needs
+      // no massing to work.
+      //
+      // The reference gives three treatments of that pier and they are three
+      // different buildings at a hundred metres, so this rolls which one it
+      // got. Until now this id had two lines of geometry: a 16% darkening of
+      // the bottom of every storey, and nothing else.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.13, 0.22, d);
+      float sideK = dot(SUN_DIR, T) > 0.0 ? f.x : 1.0 - f.x;
+      wall = mix(wall, wall * (1.10 - 0.16 * sideK), pier);
+      if (dPier < 0.34) {
+        // FLUTED. "Fluting and reeding are commonest motifs." Narrow parallel
+        // channels down the pier face, which at any real distance is a texture
+        // rather than a pattern — and that is exactly what it is on the wall.
+        float fl = cos(f.x * 62.8318531) * 0.5 + 0.5;
+        wall *= 1.0 - 0.13 * pier * fl;
+      } else if (dPier < 0.67) {
+        // CHEVRON HEAD. "Massive vertical fluted pilasters stretch from the
+        // ground to the roof, culminating in stylized, incised chevron or
+        // feather motifs." The ornament is in the top few feet of the pier and
+        // nowhere else on the shaft, which is the discipline of the style.
+        float headK = 1.0 - smoothstep(0.045, 0.10, (vTop - vZ) / max(vTop, 1.0));
+        float chev = abs(fract(vZ / 1.15 + abs(f.x - 0.5) * 2.4) - 0.5) * 2.0;
+        wall *= 1.0 + 0.24 * pier * headK * (0.5 - chev);
+      } else {
+        // PAST THE PARAPET. The pier runs above the roof line and stops in a
+        // blunt block, so the wall between two piers stops short of it and the
+        // top metre reads as teeth. This building has no cornice at all.
+        if (vTop - vZ < 1.5) wall *= mix(0.74, 1.14, pier);
+      }
+      // THE SPANDREL, which is where the reference says the real variety lives,
+      // and there are four honest treatments of it. The value half of the
+      // shader has already darkened the bottom 18% of the storey by 16% — that
+      // is the recessed channel, and it is deliberately in the far half because
+      // it is what survives to two pixels a floor. What is added here is the
+      // MATERIAL, which only exists near.
+      if (f.y < 0.20) {
+        if (dSpan < 0.30) {
+          wall *= 0.94;                                   // recessed dark terracotta, a touch deeper
+        } else if (dSpan < 0.58) {
+          // cast bronze panel in the reveal: a different material, not a
+          // darker course of the same one
+          wall = mix(wall, vec3(0.34, 0.27, 0.17) * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.34, abs(fract(vU / 0.72) - 0.5) * 2.0))), 0.62);
+        } else if (dSpan < 0.82) {
+          wall *= 0.94 + 0.11 * step(0.5, fract(vU / 0.62 + f.y * 3.0));   // patterned brick, the cheap version
+        } else {
+          // flush with one incised line — the late, Moderne-adjacent version,
+          // where verticality survives only in the window rhythm. Undo most of
+          // the value half's channel, then score it once.
+          wall = mix(wall, wall * 1.17, 0.72);
+          wall *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.022, abs(f.y - 0.10)));
+        }
+      }
+    }
+    if (s == 152) {
+      // THE BATTERED PIER, AND A CORNICE THAT CORBELS INWARD. Both halves of
+      // that sentence are the identification, and the second half is how you
+      // tell this apart from the Egyptian building across the street: a Mayan
+      // cornice steps BACK as it rises, course by course, each one further into
+      // the building — so it darkens upward and throws nothing at all onto the
+      // wall below it. Aztec Hotel, Monrovia, 1924-25 (Stacy-Judd), promoted as
+      // the first commercial building in the style; 450 Sutter Street, 1929.
+      //
+      // A fragment shader cannot move geometry, so the batter is drawn the way
+      // this file draws every other depth cue. The pier face is wider at the
+      // base and eats into the opening there; and because a battered face is
+      // tilted skyward it collects more sky light than a vertical one, so it
+      // goes paler the higher it gets. Real batter is a change of silhouette
+      // and it needs a massing family — that is in the hand-off.
+      float hK = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+      float bw = mix(0.30, 0.15, hK);
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(bw - 0.07, bw, d);
+      wall = mix(wall, wall * (1.02 + 0.17 * hK), pier);
+      winMask *= 1.0 - pier * 0.96;
+      // THE GLYPH FRIEZE. Deep relief, not incised: "bas-relief in bands rather
+      // than flat incised pattern", and deep enough that hollow-cast terracotta
+      // was the only economic way to get it. Deep relief means HIGH CONTRAST,
+      // and that is the whole difference between this band and a zigzag
+      // chevron course cut two centimetres into limestone.
+      float ct = vTop - vZ;
+      float fz = -1.0;
+      if (fPar > 0.5 && ct > 2.6 && ct < 4.4) fz = 0.0;
+      if (fEnt > 0.5 && vZ > fh * 1.05 && vZ < fh * 2.10) fz = 1.0;
+      if (fz > -0.5) {
+        float gu = fract(vU / 1.30);
+        float on = step(0.5, hash(vec2(floor(vU / 1.30), fz * 7.0 + 3.0)));
+        float cut = smoothstep(0.40, 0.50, abs(gu - 0.5));
+        wall *= mix(mix(1.20, 0.54, on), 0.60, cut);
+        winMask = 0.0;
+      }
+      if (ct < 2.4) {
+        float course = floor((2.4 - ct) / 0.8);            // three courses, stepping in
+        wall *= 1.0 - 0.14 * course;
+        if (fract((2.4 - ct) / 0.8) < 0.13) wall *= 1.26;  // the lit top face of the course below
+        winMask = 0.0;
+      }
+    }
+    if (s == 153) {
+      // THE CAVETTO CORNICE, AND IT FLARES OUTWARD. This single difference is
+      // how Egyptian revival is told from Mayan, and the reference states it in
+      // one line: "It is distinct from Mayan by the cornice: Egyptian flares
+      // outward, Mayan corbels inward." A cavetto is a concave quarter-round
+      // leaning out over the wall, so its lip is the brightest thing on the
+      // building, a torus roll moulding sits tucked under it in its own shade,
+      // and the wall for a storey below is in the shadow the overhang throws.
+      // Driven by the Tutankhamun opening of 1922 — Grauman's Egyptian Theatre,
+      // Hollywood, 1922, and Carreras, London, 1928 (both unverified this
+      // session).
+      float ct = vTop - vZ;
+      if (ct < 1.85) {
+        float k = 1.0 - ct / 1.85;                         // 0 at the springing, 1 at the lip
+        wall *= mix(0.94, 1.22, k * k);
+        winMask = 0.0;
+      } else if (ct < 2.20) {
+        wall *= 0.70; winMask = 0.0;                       // the torus roll, under the flare
+      } else if (ct < 3.40) {
+        wall *= 0.88;                                      // and the wall the overhang shades
+      }
+      // THE PYLON, battered, carrying a papyrus BUNDLE rather than a flat
+      // fluted face — three half-round reeds bound at the head. That is the
+      // other Egyptian tell and the reason this pier holds three highlights
+      // where a zigzag pier holds one.
+      //
+      // THREE THINGS IN THIS BRANCH USED TO MULTIPLY THE SAME PIXEL, and each was
+      // checked alone. On the palest render, 0.78, the cavetto lip at 1.22 and the
+      // reed highlight at 1.32 came to 1.256, and the tie band took it further.
+      // The ceiling stated above is 0.95 on a palette's palest colourway, so all
+      // three are re-expressed as ONE multiply that cannot exceed it — and each
+      // change is the architecture rather than a trim.
+      //
+      // The pier DIES INTO the cavetto: a cavetto is a continuous cornice
+      // moulding carried across the whole elevation, and a pylon stops at its
+      // springing rather than running through it.
+      // The tie band COVERS the reeds: it is a metal strap binding the bundle, so
+      // inside it there is no reed modulation to highlight, and it contributes its
+      // own lift instead of stacking on top of one.
+      // Budget, multiplied out: pier at worst 0.88 + 0.24 + 0.09 = 1.21, so
+      // 0.78 * 1.21 = 0.944. Inside the strap 0.88 + 0.09 + 0.12 = 1.09, so 0.850.
+      // In the cavetto the lip runs alone: 0.78 * 1.22 = 0.952.
+      float hK = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+      float bw = mix(0.32, 0.19, hK);
+      float d = min(f.x, 1.0 - f.x);
+      float pier = (ct < 1.85) ? 0.0 : 1.0 - smoothstep(bw - 0.06, bw, d);
+      float reed = abs(fract(d / max(bw * 0.34, 0.02)) - 0.5) * 2.0;
+      float tie = (ct > 3.5 && ct < 4.15) ? 1.0 : 0.0;         // the strap binding the bundle
+      float lift = 0.88 + 0.24 * (1.0 - reed) * (1.0 - tie) + 0.09 * hK + 0.12 * tie;
+      wall = mix(wall, wall * lift, pier);
+      winMask *= 1.0 - pier * 0.96;
+    }
+    if (s == 154) {
+      // THE SOFTENED CORNER AND THE VIGA ENDS. A Pueblo Deco wall is stucco
+      // over a mass borrowed from adobe, so it has no arris anywhere: the corner
+      // turns in a hand's breadth of curve, which is why these buildings read as
+      // modelled rather than built and why they never look like the terracotta
+      // ones. The other tell is the row of round beam ends — vigas — poking
+      // through just under the parapet at bay spacing. KiMo Theatre,
+      // Albuquerque, opened 19 September 1927, the first theatre in the style;
+      // Carla Breeze named the type in 1984.
+      float segL = max(1.0, vSeg.y - vSeg.x);
+      float dA = vU - vSeg.x, dB = vSeg.y - vU;
+      float cvx = dA < dB ? vCcv.x : vCcv.y;
+      float dEnd = min(dA, dB);
+      if (cvx > 0.15 && dEnd < 0.85 && segL > 4.0) {
+        float r = 1.0 - dEnd / 0.85;
+        wall *= 1.0 + 0.17 * r * r;                        // the turn, catching light all the way round
+        winMask = 0.0;                                     // and no opening survives into it
+      }
+      float vt = vTop - vZ;
+      if (vt > 0.95 && vt < 1.55) {
+        float vx = abs(fract(vU / colW) - 0.5) * 2.0;
+        wall *= mix(1.0, 0.42, 1.0 - smoothstep(0.16, 0.30, vx));
+        winMask = 0.0;
+      }
+      // and the mass batters, because two feet of mud brick has to
+      float hK = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+      float bw = mix(0.30, 0.20, hK);
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(bw - 0.09, bw, d);
+      wall = mix(wall, wall * (1.03 + 0.11 * hK), pier);
+      winMask *= 1.0 - pier * 0.90;
+      if (fPar > 0.5 && vt > 1.7 && vt < 2.25) {
+        // one polychrome tile band, and only where the ornament field allows it
+        wall = mix(wall, wall * vec3(1.22, 0.80, 0.60), 0.42 + 0.30 * step(0.5, fract(vU / 0.9)));
+        winMask = 0.0;
+      }
+    }
+    if (s == 155) {
+      // THE UNIT. Glazed architectural terracotta is a hollow-cast MODULE, so
+      // the wall is a grid of ceramic blocks with a sharp arris on every one of
+      // them and a glaze that is glossier than any stone — and the ornament is
+      // fired INTO the block rather than carved after. That is why the pattern
+      // can go dense at the crown for nothing, and it is why these buildings
+      // spend all their money at the top. Eastern Columbia, Los Angeles, 1930
+      // (Beelman): over a thousand tons of tile from Gladding, McBean, with the
+      // gold leaf applied with heat during manufacture.
+      float ux = fract(vU / max(colW * 0.5, 0.5)), uz = fract(vZ / 0.76);
+      float jx = 1.0 - smoothstep(0.0, 0.022, min(ux, 1.0 - ux));
+      float jz = 1.0 - smoothstep(0.0, 0.026, min(uz, 1.0 - uz));
+      wall *= 1.0 - 0.13 * max(jx, jz);                              // the joint between units
+      wall *= 1.0 + 0.10 * (1.0 - smoothstep(0.0, 0.14, uz));        // the arris, catching
+      // THE CROWN GETS THE MONEY. In the top eighth of the volume the units
+      // carry a fired pattern at unit frequency, and WHICH pattern rides the
+      // motif roll. Note this is measured off vTop, the top of this volume, on
+      // purpose: on a wedding cake it therefore lands at every setback
+      // shoulder, which is one of the four fields ornament is allowed in.
+      float tk = smoothstep(0.80, 0.94, vZ / max(vTop, 1.0));
+      if (tk > 0.001) {
+        float pat;
+        if (dMot < 0.40)      pat = abs(fract(vU / 1.05 + vZ / 1.05) - 0.5) * 2.0;   // chevron band
+        else if (dMot < 0.74) pat = max(abs(ux - 0.5), abs(uz - 0.5)) * 2.0;         // lozenge fret
+        else                  pat = abs(fract(vU / 1.05 - vZ / 2.10) - 0.5) * 2.0;   // frozen fountain
+        wall *= 1.0 + 0.22 * tk * (0.5 - pat);
+      }
+    }
+    if (s == 156) {
+      // THE METAL PANEL. The reason this id stands apart from the others is that
+      // its spandrel is a different MATERIAL, not a darker course of the same
+      // one: "spandrels with copper panels separated by vertical columns", cast
+      // or pressed copper, bronze, aluminium or nickel silver set in the reveal
+      // with a raised geometric pattern on it. Metal in a shadowed reveal goes
+      // almost black and then throws one hard line off the raised part, and
+      // nothing made of stone does that. Stainless cladding is documented from
+      // 1930 — the Chrysler crown in Enduro KA-2 / Nirosta, the Empire State
+      // mast 1931, Niagara Mohawk's twenty-eight-foot stainless figure 1932.
+      // Architectural aluminium spandrel dates could not be verified this
+      // session; the pool opens the family on the stainless evidence.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.10, 0.17, d);
+      wall = mix(wall, wall * 1.08, pier);
+      if (f.y < 0.22 && d > 0.10) {
+        // WHICH metal follows the palette's own colourway rather than a second
+        // roll, so the pier and the panel cannot disagree about the building.
+        vec3 base = vec3(0.34, 0.26, 0.17);                         // bronze
+        if (vVar >= 0.46 && vVar < 0.82) base = vec3(0.37, 0.38, 0.39);  // nickel silver, aluminium
+        if (vVar >= 0.82) base = vec3(0.22, 0.34, 0.30);            // oxidised copper green
+        float pu = fract(vU / max(colW * 0.25, 0.4));
+        float ridge = 1.0 - smoothstep(0.0, 0.34, abs(pu - 0.5) * 2.0);
+        float sideK = dot(SUN_DIR, T) > 0.0 ? pu : 1.0 - pu;
+        wall = mix(wall, base * (0.62 + 1.30 * ridge * (0.28 + 0.72 * sideK)), 0.88);
+        if (f.y > 0.195) wall *= 1.20;                              // the panel's top lip, catching
+        winMask = 0.0;
+      }
+    }
+    if (s == 157) {
+      // CHEVRON BRICKWORK AND THE WRAPPED CORNER. Brick is LAID, not cast, so
+      // the ornament on the highest-count deco type in the world is bond pattern
+      // and colour change and nothing else: a field brick with a chevron,
+      // basketweave or lozenge panel between the window heads and the sills,
+      // laid in a darker or glazed brick, with cast stone only at the entrance
+      // and the parapet. It costs bricklayer time rather than a mould, which is
+      // exactly why it is the version that got built three hundred times on one
+      // boulevard. Grand Concourse Historic District: 27 apartment houses built
+      // 1935-45, five to six storeys, "built in brick with trim of stone, cast
+      // stone or terra cotta."
+      float d = min(f.x, 1.0 - f.x);
+      if (f.y < 0.26 && d > 0.12) {
+        // one brick is 235 by 86 mm, and the pattern is measured in bricks
+        // because that is the only unit a bricklayer has.
+        float bu = vU / 0.235, bv = (vZ - floor(v) * fh) / 0.086;
+        float pat;
+        if (dMot < 0.42)      pat = abs(fract(bu * 0.25 + bv * 0.18) - 0.5) * 2.0;                        // chevron
+        else if (dMot < 0.70) pat = max(abs(fract(bu * 0.20) - 0.5), abs(fract(bv * 0.14) - 0.5)) * 2.0;  // lozenge fret
+        else                  pat = abs(fract(bu * 0.22 - bv * 0.09) - 0.5) * 2.0;                        // stepped fountain
+        wall *= mix(0.74, 1.06, smoothstep(0.35, 0.62, pat));
+        if (f.y < 0.035 || f.y > 0.225) wall *= 1.10;               // a soldier course closing the panel
+      }
+      // THE WRAPPED CORNER CASEMENT. A steel casement turning an outside corner
+      // with no pier behind it is a named device of this type and the one place
+      // a brick building admits it has a frame — where the corner is convex the
+      // pier that would have stood there is simply not built. Not on every
+      // building: it is the expensive detail of the type.
+      float dA = vU - vSeg.x, dB = vSeg.y - vU;
+      float cvx = dA < dB ? vCcv.x : vCcv.y;
+      float dEnd = min(dA, dB);
+      if (cvx > 0.20 && dEnd < 0.75 && vZ > fh * 1.10 && vZ < vTop - 1.2
+          && hash(vec2(vRand * 137.0, 91.0)) > 0.55) {
+        if (f.y > m.y + 0.05 && f.y < 1.0 - m.y) winMask = 1.0;
+        else wall *= 0.94;
+      }
+      wall *= 0.975 + 0.05 * step(0.5, fract(vZ / 0.172));          // the field's own coursing
+    }
+    if (s == 158) {
+      // THE EYEBROW. A cast concrete hood standing off the wall over every
+      // window — "practical embellishments such as eyebrow sunshades over
+      // windows to shield rooms from glare", a climate device that became the
+      // signature of the whole district. And it is a HORIZONTAL counter-move: it
+      // cancels every vertical device above it, which is why Streamline and
+      // Tropical are their own list in the registry rather than a variant of
+      // this family. Bright on its top face, a hard shadow underneath falling
+      // across the head of the glass, and it stands PROUD — which is why the
+      // reveal on this id is 110 mm and not half a metre. A deep reveal here
+      // would be drawing the same shadow twice. Miami Beach Architectural
+      // District: 800 contributing buildings, NR-listed 14 May 1979.
+      float hy = f.y - (1.0 - m.y);
+      if (hy > -0.02 && hy < 0.055) { wall *= 1.24; winMask = 0.0; }
+      if (inHole && oy > 0.72) glassShade = min(glassShade, 1.0 - 0.42 * smoothstep(0.72, 1.0, oy));
+      if (fPar > 0.5 && vTop - vZ > 0.9 && vTop - vZ < 1.9) {
+        // SPEED LINES: three parallel incised horizontals, and no more than
+        // three, at the head band.
+        float sl = abs(fract((vTop - vZ - 0.9) / 0.33) - 0.5) * 2.0;
+        wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.25, 0.55, sl));
+      }
+      if (fSun > 0.5 && vZ < vTop - 1.1) {
+        // THE PORTHOLE. One per three bays, beside the entrance, and it is a
+        // round hole in a render wall rather than a pattern on it.
+        float per = colW * 3.0;
+        float pu = (fract(vU / per) - 0.5) * per;
+        float pv = vZ - fh * 1.55;
+        float rr = sqrt(pu * pu + pv * pv);
+        if (rr < 0.62) { winMask = rr < 0.46 ? 1.0 : 0.0; wall *= 1.14; }
+      }
+      float blockBay = step(0.78, hash(vec2(floor(u) + 9.0, floor(vRand * 41.0))));
+      if (blockBay > 0.5 && inHole) {
+        // GLASS BLOCK, mass-produced from 1932 and shown at the Owens-Illinois
+        // pavilion at the 1933 Century of Progress: a pale panel with its own
+        // coarse grid, in a bay or two per building.
+        float gx = abs(fract(ox * 5.0) - 0.5), gy = abs(fract(oy * 5.0) - 0.5);
+        wall = mix(wall, vec3(0.78, 0.84, 0.84) * (0.88 + 0.22 * max(gx, gy)), 0.90);
+        winMask = 0.0;
+      }
+    }
+    if (s == 159) {
+      // THE BLANK GIANT PILASTER. A flat, wide, unornamented strip with a plain
+      // square cap and no capital at all — the classical proportion kept and the
+      // classical detail stripped, which is the whole definition of the type.
+      // What makes it read is that it has NO INCIDENT: not fluted, not rounded,
+      // not chamfered, so it holds one flat value across its entire width, and
+      // the small square hole beside it is the only thing on the building that
+      // is not wall. That ratio is why these look heavy at any size.
+      //
+      // Federal Trade Commission Building, Washington, staff moved in 21 April
+      // 1938; Buffalo City Hall, 1931; Hoover Dam, 1931-36, where Gordon
+      // Kaufmann "replaced ornamentation with the flowing lines of Modernism and
+      // Art Deco"; and the WPA post office, everywhere.
+      float d = min(f.x, 1.0 - f.x);
+      float pil = 1.0 - smoothstep(0.235, 0.265, d);      // a hard edge, no roll on it
+      wall = mix(wall, wall * 1.06, pil);
+      float ct = vTop - vZ;
+      if (ct > 1.1 && ct < 1.5 && pil > 0.5) wall *= 1.12;   // the plain square cap
+      if (ct < 1.1) { wall *= 0.97; winMask = 0.0; }         // a deep flat entablature, no mouldings
+      if (fSun > 0.5 && ct > 1.6 && ct < 3.2 && d > 0.27) {
+        // THE RELIEF PANEL, and it is the only ornament these ever got outside.
+        // Shallow, figurative, and one per elevation: Corrado Parducci's Safety
+        // and Security flank the Guardian Building entrance, Detroit 1929.
+        float fig = 1.0 - smoothstep(0.18, 0.34, abs(fract(vU / max(colW * 2.0, 1.0)) - 0.5));
+        float band = 1.0 - smoothstep(1.6, 3.2, ct);
+        wall *= 1.0 + 0.13 * fig * band - 0.10 * (1.0 - fig) * band;
+        winMask *= 1.0 - fig * 0.9;
+      }
+      if (fEnt > 0.5 && vZ > fh * 1.0 && vZ < fh * 2.4) {
+        // a stepped entrance surround, two planes deep, on the centre of a
+        // four-bay group — deeper relief here than anywhere else on the wall.
+        float eu = abs(fract(vU / max(colW * 4.0, 1.0)) - 0.5) * 2.0;
+        if (eu < 0.34) { wall *= 1.0 - 0.07 * (2.0 - floor(eu * 6.0)); winMask = 0.0; }
+      }
+    }
+    if (s == 160) {
+      // THE BLADE. The auditorium is a windowless box, so the front of a deco
+      // cinema is a billboard, and the tallest thing on it is a sign: Odeon
+      // Leicester Square, 1937, is black polished granite and a 120 ft / 37 m
+      // tower whose entire function is to carry the name. It is FLUTED, it runs
+      // past the parapet, and it stands on the centre of the frontage rather
+      // than on a bay line — this is a one-per-building device, so it is
+      // measured off the wall segment and not off colW. That is what separates
+      // it from the picture palace at s == 65, whose blade is on a 34 m repeat.
+      float segL = max(4.0, vSeg.y - vSeg.x);
+      float cu = (vU - vSeg.x) / segL - 0.5;               // -0.5 .. 0.5 across this elevation
+      float bladeW = clamp(3.4 / segL, 0.04, 0.22);
+      float onBlade = 1.0 - smoothstep(bladeW * 0.85, bladeW, abs(cu));
+      if (onBlade > 0.5 && vZ > fh * 1.35) {
+        float fl = abs(fract(abs(cu) / max(bladeW * 0.30, 0.01)) - 0.5) * 2.0;
+        wall = mix(wall, wall * (0.82 + 0.34 * (1.0 - fl)), 0.90);
+        winMask = 0.0;
+        // the letters, a stack of lit blocks up the blade
+        if (abs(cu) < bladeW * 0.55 && fract(vZ / 1.55) < 0.62)
+          wall = mix(wall, vec3(0.86, 0.34, 0.28), 0.55);
+      }
+      if (vZ < fh * 1.35) {
+        // THE MARQUEE. Deeper than the picture palace's and it runs the whole
+        // frontage: a lit soffit at first floor level with the box blank above.
+        if (vZ > fh * 0.92) { wall = mix(wall, vec3(0.780, 0.700, 0.470), 0.92); winMask = 0.0; }
+        else { wall = mix(wall, wall * 0.66, 0.80); winMask = 0.0; }
+      }
+      if (fSun > 0.5 && onBlade < 0.5 && vZ > fh * 1.6 && vZ < fh * 3.2) {
+        // ONE ENORMOUS FIGURATIVE PANEL, and it is the only ornament on the
+        // building. Paramount Theatre, Oakland, completed late 1931 (Pflueger),
+        // is a mosaic-tile facade the size of a billboard, and it was one of the
+        // first Depression buildings to put a dozen artists' work inside one
+        // architectural whole rather than hanging art on a frame.
+        float pu = abs(cu) - bladeW;
+        float panel = smoothstep(0.02, 0.06, pu) * (1.0 - smoothstep(0.16, 0.22, pu));
+        float grain = hash(vec2(floor(vU / 0.55), floor(vZ / 0.55)));
+        wall = mix(wall, wall * (0.74 + 0.52 * grain), panel * 0.85);
+      }
+    }
+    if (s == 161) {
+      // THE FLUTED WALL. Giles Gilbert Scott was appointed consulting architect
+      // to Battersea in 1929 and his entire contribution was the brick and the
+      // fluting: vertical ribs run the full height of a wall that has no windows
+      // to speak of, and that ribbing is the whole silhouette of the most-loved
+      // industrial building in Europe. The other half of the family is the
+      // ceremonial front block at the road — battered piers, a stepped parapet,
+      // primary-colour faience on white render. A shed gets one or the other and
+      // never both, so it rolls: Wallis, Gilbert & Partners built the fronts
+      // (Firestone, Brentford, 1928, demolished over the August bank holiday
+      // weekend of 1980; Hoover, Perivale, 1933) and the engineers built the
+      // flanks.
+      if (dPier < 0.55) {
+        float rib = abs(fract(vU / 1.15) - 0.5) * 2.0;
+        float sideK = dot(SUN_DIR, T) > 0.0 ? 1.0 : -1.0;
+        float lit = 0.5 + 0.5 * sideK * (fract(vU / 1.15) - 0.5) * 2.0;
+        wall *= 0.84 + 0.34 * (1.0 - rib) * (0.45 + 0.55 * lit);
+        winMask *= smoothstep(0.30, 0.60, rib);
+      } else {
+        float hK = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+        float bw = mix(0.28, 0.17, hK);
+        float d = min(f.x, 1.0 - f.x);
+        float pier = 1.0 - smoothstep(bw - 0.07, bw, d);
+        wall = mix(wall, wall * (1.05 + 0.11 * hK), pier);
+        winMask *= 1.0 - pier * 0.95;
+        float ct = vTop - vZ;
+        if (ct < 2.1) {
+          // the stepped parapet: two steps up over the centre of each pair of
+          // bays, which is what a ceremonial front does instead of a cornice
+          float stp = floor(abs(fract(vU / max(colW * 2.0, 1.0)) - 0.5) * 4.0);
+          if (ct < 0.7 + 0.55 * stp) { wall *= 1.10; winMask = 0.0; }
+          else wall *= 0.90;
+        }
+        if (fPar > 0.5 && ct > 2.2 && ct < 2.9) {
+          // faience, picked out in primary colour. Betjeman on the Hoover
+          // Building: "splashes of primary colour from the Aztec and Mayan
+          // fashions at the 1925 Paris Exhibition."
+          wall = mix(wall, mix(vec3(0.62, 0.20, 0.18), vec3(0.20, 0.34, 0.58), step(0.5, fract(vU / 1.4))), 0.55);
+          winMask = 0.0;
+        }
+      }
+    }
+    if (s == 162) {
+      // ONE COLOSSAL LUNETTE. This is the only family of the seventeen where the
+      // PLAN is legible from the street: Cincinnati Union Terminal, completed
+      // 1933 (Fellheimer & Wagner with Cret and Wank), is a single half-dome over
+      // half a million square feet, and the arch you are looking at IS the room.
+      // No other deco building lets you read the interior volume from a quarter
+      // of a mile away. So the arch is drawn ONCE per elevation, off the wall
+      // segment rather than off the bay, with a fan of radiating mullions in it
+      // and a blind coursed shoulder either side — because the street elevation
+      // of a terminal has no other openings in it. The design only turned deco
+      // between 1931 and 1932, on cost grounds.
+      float segL = max(6.0, vSeg.y - vSeg.x);
+      float cu = ((vU - vSeg.x) / segL - 0.5) * segL;      // metres from the centre of the elevation
+      float springs = fh * 0.9;                            // the arch springs above the plinth
+      float rMax = min(segL * 0.34, max(vTop - springs, 2.0) * 0.98);
+      float ay = max(vZ - springs, 0.0);
+      float rr = sqrt(cu * cu + ay * ay);
+      if (rr < rMax && vZ < vTop - 1.2 && vZ > springs * 0.35) {
+        float ang = atan(ay, abs(cu) + 0.02);
+        float ribs = abs(fract(ang * 6.5) - 0.5) * 2.0;
+        float ring = abs(fract(rr / max(rMax * 0.5, 0.5)) - 0.5) * 2.0;
+        winMask = 1.0;
+        if (ribs < 0.16 || ring < 0.08) { winMask = 0.0; wall *= 1.16; }
+        if (rr > rMax - 0.55) { winMask = 0.0; wall *= 1.14; }        // the arch ring itself
+      } else {
+        wall *= 0.96 + 0.05 * step(0.5, fract(vZ / 0.92));           // coursed ashlar shoulder
+        winMask = 0.0;
+      }
+    }
+    if (s == 163) {
+      // THE STONE BAND CROSSING THE BRICK PIER. Treaty-port deco is the American
+      // vertical move carried to a place that liked its buildings banded, and the
+      // collision is the identification: a brick shaft with continuous vertical
+      // piers, cut clean across every third or fourth floor by a pale stone
+      // course that runs straight THROUGH them, over a tall granite plinth. Park
+      // Hotel, Shanghai, 1934 (Laszlo Hudec) was the tallest building in East
+      // Asia for fifty-five years and is explicitly modelled on Hood's American
+      // Radiator Building; Broadway Mansions, 1934, nineteen storeys; Sassoon
+      // House completed 1929.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.14, 0.21, d);
+      wall = mix(wall, wall * 1.09, pier);
+      if (f.y < 0.18) wall *= 0.88;                                  // recessed spandrel
+      float bandN = 3.0 + floor(hash(vec2(vRand * 139.0, 97.0)) * 2.0);
+      if (fract(v / bandN) * bandN < 0.16) {
+        wall = mix(wall, vec3(0.80, 0.78, 0.72), 0.62);               // and the band wins where it crosses
+        winMask = 0.0;
+      }
+      if (vZ < fh * 2.05) {
+        wall = mix(wall, vec3(0.70, 0.69, 0.66), 0.55);               // the granite plinth, two storeys
+        wall *= 0.96 + 0.06 * step(0.5, fract(vZ / 0.78));
+      }
+      if (fPar > 0.5 && vTop - vZ < 2.4) {
+        // THE FROZEN FOUNTAIN, documented as the signature of Merwanji Bana &
+        // Co. in Bombay: a stepped fan of verticals, widest at the TOP, which is
+        // the one deco motif that gets bigger as it rises.
+        float ff = abs(fract(vU / max(colW * 2.0, 1.0)) - 0.5) * 2.0;
+        float wide = 1.0 - (vTop - vZ) / 2.4;
+        if (ff < 0.10 + 0.34 * wide) { wall *= 1.0 + 0.17 * (1.0 - ff); winMask = 0.0; }
+      }
+    }
+    if (s == 164) {
+      // THE STEPPED PARAPET, AND THE SUNBURST UNDER IT. 111 new buildings in
+      // downtown Napier between 1931 and 1933, after the magnitude 7.8
+      // earthquake of 3 February 1931, with Maori motifs found nowhere else in
+      // the world — the tightest and most coherent deco townscape on earth, and
+      // it is all parapet, because at two storeys the parapet is the only place
+      // the building has to put a gesture. So the parapet steps up over the
+      // centre of each shopfront-wide unit and comes back down, and a fan or a
+      // zigzag sits under it. The argument for deco is not any single tower; it
+      // is that this style rebuilt a destroyed town in three years, at two
+      // storeys, on a budget, and came out coherent and joyful.
+      float uu = fract(vU / max(colW * 2.0, 1.0));
+      float cx = abs(uu - 0.5) * 2.0;
+      float ct = vTop - vZ;
+      float stepH = 0.55 + 0.85 * (1.0 - smoothstep(0.18, 0.62, cx));
+      if (ct < stepH) { wall *= 1.12; winMask = 0.0; }
+      else if (ct < stepH + 0.30) { wall *= 0.82; winMask = 0.0; }    // the shadow the step throws
+      if (fSun > 0.5 && cx < 0.30 && ct > stepH + 0.35 && ct < stepH + 1.75) {
+        // THE SUNBURST: a fan of rays from a point at the bottom centre, and it
+        // is always centred — "patterns include zigzags, chevron and lozenge,
+        // sunrise, and floral", and this is the sunrise.
+        float ry = (ct - stepH - 0.35) / 1.40;
+        float ang = atan(max(1.0 - ry, 0.02), (uu - 0.5) * max(colW * 2.0, 1.0));
+        float ray = abs(fract(ang * 3.2) - 0.5) * 2.0;
+        wall *= 1.0 + 0.22 * (0.5 - ray) * (1.0 - ry);
+        winMask = 0.0;
+      }
+      if (fPar > 0.5 && vZ > fh * 1.02 && vZ < fh * 1.02 + 0.42) {
+        // or a zigzag string band at the first floor line instead
+        float zz = abs(fract(vU / 0.85 + (vZ - fh * 1.02) / 0.42) - 0.5) * 2.0;
+        wall *= 1.0 + 0.24 * (0.5 - zz);
+      }
+    }
+    if (s == 165) {
+      // THE FLUSH PANEL AND THE CHROME JOINT. Pigmented structural glass is set
+      // in a chrome frame against the old brick, and the FLATNESS is what people
+      // were buying: "by 1940, pigmented structural glass veneers had become
+      // synonymous with the modern look", and the mechanism was a competition —
+      // "Modernize Main Street", sponsored by Architectural Record and
+      // Libbey-Owens-Ford — plus low-rate insured FHA loans. So the only relief
+      // on the whole front is a bright hairline where two panels meet, which is
+      // also why the reveal on this id is 50 mm, the shallowest of the
+      // seventeen. Vitrolite ran 1908-1935 under The Vitrolite Company and
+      // 1935-1947 under Libbey-Owens-Ford.
+      float pu = fract(vU / 1.25), pv = fract(vZ / 1.05);
+      float joint = max(1.0 - smoothstep(0.0, 0.014, min(pu, 1.0 - pu)),
+                        1.0 - smoothstep(0.0, 0.016, min(pv, 1.0 - pv)));
+      wall = mix(wall, wall * 0.55 + vec3(0.36), joint * 0.85);       // chrome, not shadow
+      // THE STEPPED SIGN BAND, hiding the old cornice. This is a RE-CLAD and
+      // that is the whole tell: the new front stops partway up and the
+      // nineteenth century carries on above it, so the band steps twice over the
+      // centre and everything under it is the new material.
+      float su = abs(fract(vU / max(colW * 2.4, 1.0)) - 0.5) * 2.0;
+      float bandTop = fh * 1.95 + (su < 0.26 ? 0.85 : (su < 0.52 ? 0.42 : 0.0));
+      if (vZ < bandTop && vZ > bandTop - 1.25) {
+        wall = mix(wall, wall * 1.22, 0.85); winMask = 0.0;
+      } else if (vZ > bandTop) {
+        wall = mix(wall, wall * 0.78 + vec3(0.16, 0.13, 0.11), 0.60); // the old brick, left alone
+        wall *= 0.97 + 0.05 * step(0.5, fract(vZ / 0.175));
+      }
+    }
+    if (s == 166) {
+      // THE NOTCHED GRANITE SPANDREL. A 1988 deco quotation is not made of stone
+      // laid in courses — it is polished granite sawn thin and hung on a frame
+      // with reflective glass in the slots between, and what you actually read is
+      // that the stone is POLISHED: it holds a hard specular streak up the pier
+      // instead of the matte gradient every ashlar in this file has. The deco
+      // reference itself is a notch, a chevron stepped out of the spandrel at
+      // every floor line — the same move Helmut Jahn crowned One Liberty Place
+      // with in 1988, "a neo-Deco cascade of chevrons", with the Chrysler
+      // Building named as the influence. 135 East 57th Street, 1987 (KPF);
+      // MesseTurm, Frankfurt, 1991.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.13, 0.19, d);
+      float sideK = dot(SUN_DIR, T) > 0.0 ? f.x : 1.0 - f.x;
+      float spec = pow(max(1.0 - abs(sideK - 0.62) * 3.2, 0.0), 4.0);
+      wall = mix(wall, wall * (0.94 + 0.10 * sideK) + vec3(0.16) * spec, pier);
+      if (f.y < 0.17) {
+        float nx = abs(fract(vU / max(colW * 0.5, 0.5)) - 0.5) * 2.0;
+        wall *= mix(1.0, 0.70, 1.0 - smoothstep(0.30, 0.62, nx + f.y * 2.6));
+        wall *= 1.0 + 0.14 * (1.0 - smoothstep(0.0, 0.02, abs(f.y - 0.155)));
+        winMask = 0.0;
+      }
+    }
+    if (s == 167) {
+      // THE STACKED BAY. What a 2019 revival tower does that its glass neighbour
+      // cannot is stand a shallow bay proud of the wall and carry it the whole
+      // height, so the facade is a set of vertical ribbons with real shadow
+      // between them. RAMSA's One Bennett Park, Chicago, 2019, is described as a
+      // "69-story, art deco inspired tower" with a limestone base, punched
+      // windows, STACKED BAYS, metal detailing and a mechanical lantern; 220
+      // Central Park South, 2019, as "syncopated lines of balconies culminating
+      // in an expressive crown". The other half of the identification is the
+      // opening itself: a punched hole in a thick masonry wall, oversized but
+      // still a hole, where the tower next door is 98% glass at a 28 mm reveal.
+      // That difference is most of why these read pre-war from across a park.
+      //
+      // And note what it must NOT be called: its own architects say "art deco
+      // inspired" and "a contemporary interpretation of the pre-war classics".
+      float proud = step(0.62, hash(vec2(floor(u) * 0.71, floor(vRand * 29.0) + 3.0)));
+      float d = min(f.x, 1.0 - f.x);
+      if (proud > 0.5) {
+        float sideK = dot(SUN_DIR, T) > 0.0 ? 1.0 : -1.0;
+        float retn = 1.0 - smoothstep(0.0, 0.09, d);
+        float lit = 0.5 + 0.5 * sideK * (f.x - 0.5) * 2.0;
+        wall = mix(wall, wall * (0.62 + 0.50 * lit), retn);           // the bay's return
+        wall *= 1.05;                                                 // its front, one plane forward
+      } else {
+        wall *= 0.955;                                                // the wall behind, in its own shade
+      }
+      if (proud > 0.5 && f.y < 0.13
+          && step(0.72, hash(vec2(floor(v) * 1.31, floor(vRand * 37.0) + 11.0))) > 0.5) {
+        // THE SYNCOPATED BALCONY. Not every floor and not on a regular
+        // interval — that irregularity is the named device, so the roll is on
+        // the floor index rather than on a modulus.
+        wall *= 1.0 - 0.34 * (1.0 - smoothstep(0.0, 0.05, abs(f.y - 0.065)));
+        winMask = 0.0;
+      }
+      if (f.y < 0.10 && d > 0.14) {
+        // and the metal spandrel inside the bay, which is the contemporary
+        // rainscreen assembly Beyer Blinder Belle name at 200 East 75th Street:
+        // hand-laid brick, glazed terracotta, limestone and decorative metalwork.
+        wall = mix(wall, vec3(0.40, 0.37, 0.32), 0.55);
+        winMask = 0.0;
+      }
+    }
   }
 
   // ---- occupancy, read once ------------------------------------------------
@@ -5166,6 +7184,26 @@ void main() {
   if (s == 149) roof = vec3(0.585, 0.590, 0.595); // showroom
   if (s == 150) roof = vec3(0.475, 0.420, 0.375); // outlet
   if (s == 151) roof = vec3(0.545, 0.530, 0.505); // corner retail
+  // THE DECO FAMILY. What is on top follows from what the parapet is made of,
+  // and no deco family is in T_CAPPED_STONE or T_CAPPED_PLAIN — the parapet is
+  // the wall carried up with the ornament in it — so these are the colour of
+  // the attic band as much as of the deck behind it.
+  if (s == 152) roof = vec3(0.590, 0.550, 0.470); // mayan: terracotta attic, tar behind
+  if (s == 153) roof = vec3(0.620, 0.600, 0.545); // egyptian: cavetto coping in render
+  if (s == 154) roof = vec3(0.660, 0.600, 0.510); // pueblo: rounded adobe parapet
+  if (s == 155) roof = vec3(0.560, 0.600, 0.575); // terracotta: the glazed attic keeps its colour
+  if (s == 156) roof = vec3(0.545, 0.545, 0.530); // metal spandrel: metal coping over stone
+  if (s == 157) roof = vec3(0.520, 0.450, 0.400); // apartment house: brick parapet, tar deck
+  if (s == 158) roof = vec3(0.700, 0.685, 0.650); // tropical: white render parapet
+  if (s == 159) roof = vec3(0.640, 0.630, 0.600); // PWA: pale granite coping
+  if (s == 160) roof = vec3(0.480, 0.470, 0.460); // cinema: tar, and the back of the marquee
+  if (s == 161) roof = vec3(0.470, 0.410, 0.375); // industrial: sooted brick coping
+  if (s == 162) roof = vec3(0.655, 0.635, 0.575); // transport: limestone, and lead on the dome
+  if (s == 163) roof = vec3(0.505, 0.455, 0.415); // treaty port: brick parapet, granite cap
+  if (s == 164) roof = vec3(0.665, 0.640, 0.585); // napier: plastered parapet
+  if (s == 165) roof = vec3(0.545, 0.535, 0.520); // re-clad front: the sign band's metal top
+  if (s == 166) roof = vec3(0.400, 0.385, 0.390); // 1980s neo-deco: polished granite coping
+  if (s == 167) roof = vec3(0.585, 0.575, 0.545); // the revival: limestone coping on a membrane
 
   roof *= 0.92 + 0.16 * vRand;
 
@@ -6112,6 +8150,10 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
+// The colour MapLibre paints past this mesh. A fact about the other renderer,
+// not a setting: everything this shader does in its far field has to arrive
+// here, or the world ends in a visible band.
+uniform vec3 uSeaFar;
 ` + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
@@ -6158,7 +8200,19 @@ void main() {
   vec3 n = normalize(vec3(-dx * 0.66 * slope, -dy * 0.66 * slope, 1.0));
 
   vec3 V = normalize(uCam - vec3(p, 0.0));
-  float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
+  // SCHLICK, WITH WATER'S OWN NUMBER IN IT.
+  //
+  // This was pow(1 - cos, 3.0) — the right shape with the wrong exponent and
+  // no normal-incidence term, which is why it could never reach either end of
+  // the curve and why every consumer below had to bracket it by hand into some
+  // window like 0.10 + 0.54 * fres. Water is n = 1.33, so R0 = 0.02, and
+  // Schlick's fifth power is the tail: two per cent reflective looking straight
+  // down at it, effectively a mirror edge-on. That single fact is the entire
+  // reason a harbour shows you the far shore and not your own feet, and having
+  // it stated properly here is what lets the far sea find the sky on its own
+  // instead of being washed there by a distance constant.
+  float cosI = clamp(dot(n, V), 0.0, 1.0);
+  float fres = 0.02 + 0.98 * pow(1.0 - cosI, 5.0);
 
   // THE CITY STANDS ON THIS AND HAS NEVER ONCE APPEARED IN IT.
   //
@@ -6236,12 +8290,36 @@ void main() {
   shallow = mix(shallow, vec3(0.286, 0.412, 0.470), SNOW * 0.85);
   sky     = mix(sky,     vec3(0.742, 0.800, 0.848), SNOW * 0.70);
 
+  // THE HORIZON KNOWS WHERE THE SUN IS. Looking down-sun across open water the
+  // far air is full of forward-scattered light and the horizon goes warm and
+  // bright; looking away from it, it stays the sky's own pale blue. Taken on
+  // the compass only — the sun's elevation is the same everywhere in frame, so
+  // letting it in here would only tilt the picture top to bottom. Same
+  // reasoning, and the same cool base, as the aerial term uses.
+  float hSun = 0.5;
+  vec2 hd = vXY - uCam.xy;
+  if (dot(hd, hd) > 1e-6) {
+    hSun = clamp(dot(normalize(hd), normalize(SUN_DIR.xy)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  vec3 horizonC = mix(vec3(0.874, 0.914, 0.933), vec3(0.958, 0.918, 0.856), pow(hSun, 3.0) * 0.65);
+
   vec3 body = mix(deep, shallow, shoal * 0.82);
-  vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
+  // The reflected sky is not one colour either: it is palest, brightest and
+  // warmest down at the horizon, which is precisely the part of it a grazing
+  // reflection is looking at. So the sea takes the horizon's own tone exactly
+  // when it goes edge-on, and its own overhead blue when it does not — and the
+  // two arrive through the SAME Fresnel weight rather than through a second
+  // pass keyed on how far away the camera happens to be.
+  vec3 skyC = mix(sky, horizonC, pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  vec3 col = mix(body, skyC, fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
   // angle — that Fresnel curve is the whole reason a harbour mirrors the far
   // shore and not your own feet. Damped in the shallows, where the bottom is
   // close enough to see and the light coming back up through it competes.
+  // The 0.09 floor is a lift, not a measurement: a planar reflection carries
+  // the only picture of the city this surface has, and at R0 = 0.02 it would be
+  // invisible from the overhead camera the game is mostly played at. Named as
+  // taste, kept small, and it is the only hand-set number left in here.
   col = mix(col, reflCol, reflA * (0.09 + 0.72 * fres) * (1.0 - shoal * 0.45));
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
@@ -6266,8 +8344,28 @@ void main() {
                   + glit * mix(3.4, 1.2, aloft) * (0.5 + 0.9 * streak));
 
   // foam: only on the real crests, and heavier in the shallows where the
-  // swell actually breaks
-  col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+  // swell actually breaks.
+  //
+  // AND IT STOPS BEING PER-CREST WHEN THE CRESTS STOP BEING RESOLVED. This is
+  // the same fault the wave NORMAL already has a fix for a few lines up — past
+  // a few hundred metres a pixel spans several whole waves, so testing the
+  // crest returns whichever phase the pixel centre happened to land on — and
+  // the foam term never got the same treatment. At the establishing camera the
+  // three trains alias against the pixel grid into a regular diamond lattice,
+  // maybe fifty metres on a side, and because the term is weighted toward the
+  // shallows it painted a crocheted band all the way around the island. It has
+  // always been there; correcting the Fresnel below R0 made the water darker
+  // and the additive lattice suddenly legible on top of it.
+  //
+  // The honest answer is the same one the normal gets: hand the lost variance
+  // to the mean. Once the waves are subpixel, what a pixel actually contains is
+  // the COVERAGE — the fraction of the surface under it that is breaking — and
+  // that is a property of these three trains, not a taste setting: with the
+  // phases independent, the mean of smoothstep(0.86, 1.02, h) is 0.0054, by
+  // Monte Carlo over four million samples of the sum as written above. Change
+  // the amplitudes and this number changes with them.
+  float crest = mix(smoothstep(0.86, 1.02, h), 0.0054, farFlat);
+  col += vec3(0.075) * crest * (0.5 + 0.8 * shoal);
 
   // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
   //
@@ -6308,42 +8406,78 @@ void main() {
     col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
   }
 
-  // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
-  // and the global aerial term — deliberately weakened so the city keeps its
-  // contrast — no longer takes the far water all the way to the sky, so the
-  // boundary of the plane arrives as a ruled line straight across the picture.
-  // The sea gets its own far-field fade, run to completion, because the one
-  // thing the horizon must never do is show you where the geometry ran out.
-  // The sheet is a SQUARE six kilometres on the half-side, so its corners
-  // reach 1.41x further than its edges and a fade that is still running at the
-  // edge distance shows the diagonal. Finish well inside the boundary, and
-  // finish on the sky's own horizon colour rather than the haze grey, so the
-  // sea meets the sky instead of meeting a slightly different sky.
-  vec3 outc = aerial(grade(col), vec3(vXY, 0.0), uCam);
-  // MEASURED ALONG THE GROUND, NOT ALONG THE SIGHT LINE. This fade ran on 3D
-  // distance, which contains the camera's own altitude — so from the high
-  // strategic cameras EVERY fragment of sea cleared the band at once and the
-  // whole harbour arrived as one sheet of horizon colour: the island floating
-  // on milk. The horizon is a DIRECTION, not a radius; what should decide
-  // whether water has let go into sky is how far away it is across the
-  // surface, so the sea directly below a high camera keeps its body and only
-  // the genuinely far water meets the sky. The band still saturates by 3900 m
-  // — inside the 6000 m sheet by enough that the mesh edge stays hidden from
-  // every camera the game can reach.
+  // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.
   //
-  // And it is finished on a horizon that knows where the sun is: the far
-  // water brightens and warms along the sun's bearing the way every open-water
-  // horizon in late light does, and stays the sky's own pale blue away from
-  // it. The cool base is MapLibre's horizon-color, so sea and sky still meet
-  // on the same line.
-  float hSun = 0.5;
-  vec2 hd = vXY - uCam.xy;
-  if (dot(hd, hd) > 1e-6) {
-    hSun = clamp(dot(normalize(hd), normalize(SUN_DIR.xy)) * 0.5 + 0.5, 0.0, 1.0);
-  }
-  vec3 horizonC = mix(vec3(0.874, 0.914, 0.933), vec3(0.958, 0.918, 0.856), pow(hSun, 3.0) * 0.65);
-  float dist = length(hd);
-  outc = mix(outc, horizonC, smoothstep(1400.0, 3900.0, dist));
+  // Every other surface in the city loses itself into the air's colour, and
+  // that is right for them. The sea cannot: past the edge of this mesh the same
+  // harbour is drawn by MapLibre as a flat unhazed fill, so if our water heads
+  // for the sky's pale and the fill stays blue, the two disagree — and the
+  // disagreement is not a thin line at the boundary, it is a BRIGHT ANNULUS at
+  // whatever range the haze has peaked and the hand-off has not begun. That ring
+  // was on screen and I could see the fade circle in it.
+  //
+  // So the water takes the air's own FRACTION, computed by exactly the same
+  // curve as everything else, and carries it toward the open sea instead. The
+  // depth cue survives — near water is the deep tone, far water is the flat
+  // offshore one, which is lighter and less saturated, so distance still reads —
+  // and the two renderers now converge on one colour from any distance and any
+  // angle. Labelled for what it is: a compositing constraint, imposed because a
+  // MapLibre fill has no atmosphere and cannot be given one.
+  vec3 outc = mix(grade(col), uSeaFar, airFrac(vec3(vXY, 0.0), uCam));
+
+  // THE SEA HAS NO EDGE AND THIS MESH DOES, AND WHAT HIDES THAT EDGE HAS TO
+  // BELONG TO THE MESH.
+  //
+  // This was smoothstep(1400, 3900, |vXY - uCam.xy|) toward a near-white
+  // horizon colour — a ring of pale painted around the camera's own ground
+  // position. It was itself the fix for a worse version of the same idea (the
+  // fade used to run on 3D distance, so a high camera cleared the whole band at
+  // once and the island floated on milk), and moving it to ground distance only
+  // shrank the blast radius. On a two-kilometre island the 3,900 m band sat out
+  // over empty water where nobody was looking. On Manhattan below 59th Street —
+  // five by eight kilometres — it covers the ENTIRE harbour from every camera
+  // the game can reach, and the island floated on milk again, from the same
+  // constant, for the second time.
+  //
+  // Two separate jobs were tangled in that one line, and neither of them wants
+  // a distance from the viewer:
+  //
+  //   Where the sea meets the sky is a DIRECTION, not a radius. Water goes to
+  //   sky colour edge-on because Fresnel says it reflects nearly all of the sky
+  //   and returns nearly none of its own body, and that depends on the angle
+  //   alone. It is handled above, by the Schlick term and by skyC, and it has
+  //   no length scale in it at all — which is exactly why it cannot come out
+  //   wrong on a bigger island.
+  //
+  //   Where a harbour becomes the open sea is measured FROM THE SHORE. vDepth
+  //   already carries metres to the coastline, baked per vertex for the shoal,
+  //   so the hand-off is one smoothstep on it and needs no length constant tied
+  //   to the map at all. It is metres AT THE VERTICES and linear in between, and
+  //   the annulus triangulates into long thin triangles running from the coast
+  //   out to the sheet's corners, so the band lands closer to the shore than the
+  //   numbers suggest — a few hundred metres of living water rather than eight.
+  //   That is a property of the distance field the shoal already depends on, not
+  //   of this fade, and it is the same everywhere; refining it means subdividing
+  //   the sea, which is a mesh job. I tried two anchors before this and both were wrong in
+  //   the same way: a radius from the camera moves the effect when you pan, and
+  //   a radius from the MAP ORIGIN leaves out every stretch of open water that
+  //   is far from land but near the origin — the whole Hudson west of downtown
+  //   stayed washed out while water the same distance offshore to the north had
+  //   been handed over. Distance from the shore is the only one of the three
+  //   that describes the thing being drawn.
+  //
+  //   The ramp finishes at 3,000 m offshore and seaEnvelope puts the sheet's
+  //   boundary 3,200 m past the furthest rock, so the whole rim of the mesh is
+  //   converged by construction and its edge cannot show — that is the contract
+  //   between the two, and the offing is what enforces it.
+  //
+  // And it finishes on OPEN_SEA — the literal colour MapLibre paints past this
+  // mesh — rather than on a horizon tone, because what is on the far side of
+  // that boundary is not the sky, it is the same harbour drawn by the other
+  // renderer, flat and unhazed because a fill cannot be anything else. Landing
+  // on any other colour is how you get a band across the world's edge, which
+  // the style file has a comment worrying about and which was in fact there.
+  outc = mix(outc, uSeaFar, smoothstep(800.0, 3000.0, vDepth));
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -6922,13 +9056,49 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // over every fifth lot. That stripe is what a street actually looks
       // like from above, and it is why the city read as wallpaper.
       //
-      // Two independent hashes now, mixed with the city seed, so a reroll is a
-      // genuinely different town and neighbours are uncorrelated.
+      // Two independent hashes, mixed with the city seed, so a reroll is a
+      // genuinely different town. But fully i.i.d. per building was the
+      // OPPOSITE failure — the candy quilt: every wall tone, glass tint and
+      // roof pick rolled alone, so no two neighbours shared anything and a
+      // block read as confetti at exactly the zoom the game is played at.
+      // Real fabric is hierarchical. A block went up in one era out of two or
+      // three builders' shared brick stock; a district is a palette; only the
+      // building's own deviation is individual. So the scalar a facade draws
+      // from is layered — district centre (v.t, the district tone family the
+      // ground's dt already uses), a block-and-era offset (±0.4), then the
+      // building's own deviation — summed mod 1, so the result stays uniform
+      // on [0,1) and every vVar threshold downstream keeps its calibrated
+      // rate; the correlation moves WITHIN blocks, never the marginals.
+      //
+      // The within-block share is the era's: a pre-1930 block is one
+      // builder's speculative row, so 30% of the variance stays individual
+      // (spread 0.55); a post-1990 block filled in parcel by parcel keeps 45%
+      // (spread 0.67). Between the two it slides linearly — the calibration
+      // is the construction history, not a tuned look.
       // 0 = 1870, 1 = 2030. Every triangle this volume emits carries it.
       mst.era = Math.max(0, Math.min(1, ((v.y || 1950) - 1870) / 160));
       const key = keyOf(v.b) ^ Math.imul(v.t + 1, 0x9e3779b1);
-      const rnd = hash01(key, this.citySeed);
-      const varr = hash01(key ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
+      // bbl = 1e9 + block·1e4 + lot, exact in a double — the block number is
+      // recoverable with no schema field. Deco volumes (b = "") fall to block
+      // 0, which only makes the harbour furniture one family, as it was.
+      const bblN = v.b ? Number(v.b) : 0;
+      const blockNo = bblN >= 1e9 ? Math.floor((bblN - 1e9) / 1e4) : 0;
+      // 15-year bands: two buildings on one block share a material family
+      // only if they also share a construction generation (M2).
+      const bKey = (Math.imul(blockNo + 1, 0x9e3779b1)
+        ^ Math.imul(Math.floor((v.y || 1950) / 15) + 1, 0x85ebca6b)) >>> 0;
+      const dKey = Math.imul(v.t + 1, 0xc2b2ae35) >>> 0;
+      const seed2 = Math.imul(this.citySeed, 3) + 1;
+      const wB = 0.55 + 0.12 * Math.min(1, Math.max(0, ((v.y || 1950) - 1930) / 60));
+      /** district centre + block offset + building deviation, wrapped to [0,1). */
+      const layer = (d: number, b: number, i: number) => {
+        const x = d + (b - 0.5) * 0.8 + (i - 0.5) * wB;
+        return x - Math.floor(x);
+      };
+      const rnd = layer(hash01(dKey, this.citySeed), hash01(bKey, this.citySeed),
+        hash01(key, this.citySeed));
+      const varr = layer(hash01(dKey ^ 0x5bf03635, seed2), hash01(bKey ^ 0x5bf03635, seed2),
+        hash01(key ^ 0x5bf03635, seed2));
       const fh = v.f > 0 && v.z1 > 0 ? Math.max(2.6, v.z1 / Math.max(v.f, 1)) : 3.55;
       let ring = v.r.map((p) => this.project(p));
       let area = 0;
@@ -6939,8 +9109,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (area < 0) ring = ring.slice().reverse();
 
       {
-        mst.deck = roofDeck(style, v.y || 1950, v.f, v.z1,
-          hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f));
+        // One roofer covered the row: the deck roll rides the block-and-era
+        // key with only the building's own deviation on top, so a block of
+        // one generation re-covers in one material and a lone infill differs.
+        const deckRoll = (() => {
+          const x = hash01(bKey ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f)
+            + (hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) - 0.5) * wB;
+          return x - Math.floor(x);
+        })();
+        mst.deck = roofDeck(style, v.y || 1950, v.f, v.z1, deckRoll);
         if (v.d) mst.deck = 8;
         mst.wear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
         let bi = 0, bl = -1;
@@ -6971,13 +9148,45 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (v.k) {
         if (v.b) this.lotRings.set(v.b, ring);
         const ds = v.ds ?? 50;
-        const fringe = ds < 38;
         const downtown = ds >= 62;
-        // vVar still textures the shader; the DRESSING follows demand so a
-        // downtown hole is a parking lot and a millside hole is scrub.
-        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : 0.40, 1, fh]);
+        // R-zoned land reads as a kept lawn behind a hedge, not a fenced
+        // yard — a residential hole is mown by the street that fronts it,
+        // and nobody chain-links it. zn rides the vacant record (build.mjs,
+        // the zoning code's first letter — the same letter dev.ts builds
+        // by), and it OUTRANKS the generic scrub band: measured over five
+        // seeds, R-vacant demand runs median 7-16 with p90 15-33, so a
+        // demand gate alone (the old 38) left this dress firing on 0-12
+        // lots per city. The ds ≥ 12 floor is the deep edge where the grid
+        // peters out and nobody is left to mow — it keeps 24-77% of each
+        // island's R-vacants mown and both states alive on every seed
+        // measured.
+        const resi = !downtown && ds >= 12 && ((v as BuildingVolume & { zn?: number }).zn ?? 0) === 1;
+        const fringe = !resi && ds < 38;
+        // vVar still textures the shader; the DRESSING follows demand and
+        // zoning so a downtown hole is a parking lot, a millside hole is
+        // scrub, and a residential one is grass (>0.62 is the turf band).
+        capRoof(R, ring, 0.06, [S_LOT, rnd, fringe ? 0.78 : downtown ? 0.12 : resi ? 0.70 : 0.40, 1, fh]);
         const fence = insetRing(ring, 0.5);
-        if (fence && !fringe) extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
+        if (fence && resi) {
+          // The hedge: a privet annulus in the ROOF buffer, so it shades as
+          // planting (S_GREEN clump noise + seasonGreen) rather than as wall
+          // — and it goes dormant with the trees rather than with the lawns.
+          const inner = insetRing(fence, 0.8);
+          if (inner) {
+            const hh = 0.9 + 0.3 * varr;   // privet holds 0.9-1.2 m, kept
+            const hMeta = [S_GREEN, rnd, varr, hh, fh];
+            extrudeWalls(R, fence, 0, hh, hMeta);
+            extrudeWalls(R, inner.slice().reverse(), 0, hh, hMeta);
+            for (let i = 0; i < fence.length; i++) {
+              const a = fence[i], b = fence[(i + 1) % fence.length];
+              const c = inner[(i + 1) % inner.length], d2 = inner[i];
+              pushWallTri(R, [a[0], a[1], hh], [b[0], b[1], hh], [c[0], c[1], hh], [0, 0, 1], [3, 3, 3], hMeta);
+              pushWallTri(R, [a[0], a[1], hh], [c[0], c[1], hh], [d2[0], d2[1], hh], [0, 0, 1], [3, 3, 3], hMeta);
+            }
+          }
+        } else if (fence && !fringe) {
+          extrudeWalls(W, fence, 0, downtown ? 1.15 : 0.85, [S_LOT, rnd, varr, downtown ? 1.15 : 0.85, fh]);
+        }
         const m2 = Math.abs(area) / 2;
         if (fringe) {
           const n = Math.min(48, Math.max(3, Math.round(m2 / 85)));
@@ -7088,9 +9297,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // Decorrelate the slate colour from the roof-type gate. S_GABLE picks
         // its shingle out of vVar, and both gates below are vVar thresholds —
         // so every mansard in the city came out the same copper green and no
-        // hip was ever brown. Re-hash it and the three slates spread evenly
-        // across both.
-        const slate = (varr * 3.71 + rnd * 1.93) % 1;
+        // hip was ever brown. Its own hash stream keeps the slates spread
+        // across both — but layered like the walls (block full-width, the
+        // building's deviation on top), because the multiply-and-wrap it
+        // replaced amplified the within-block spread ×3.71 and quietly undid
+        // the block clustering for exactly the surface this camera sees most.
+        const slate = (() => {
+          const x = hash01(bKey ^ 0x51a7e3, this.citySeed ^ 0x0f00f)
+            + (hash01(key ^ 0x51a7e3, this.citySeed ^ 0x0f00f) - 0.5) * wB;
+          return x - Math.floor(x);
+        })();
         const rMeta = [S_GABLE, rnd, slate, v.z1 + 4, fh];
         const span = Math.sqrt(Math.abs(area) / 2);
         const rise = mansard ? Math.min(4.2, Math.max(2.6, span * 0.30)) : Math.min(3.4, Math.max(1.9, span * 0.34));
@@ -7200,43 +9416,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // A helipad still wants 55 m and there are none, which is correct — the
       // town has not built one yet, and the player can.
       if (v.b && !v.d && !v.k && v.x) {
-        const L = (k: number) => hash01(keyOf(v.b!) ^ Math.imul(k + 1, 0x7feb352d), this.citySeed ^ 0x1a2b3c4d);
-        const plateM = Math.sqrt(Math.max(1, Math.abs(area) / 2));
-        const oldStone = has(T_STONE, style);
-        const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
-        const bearOf = () => Math.atan2(mst.bearY, mst.bearX);
-        const put = (kind: number, s: number, rot = 0) => {
-          // Room to stand on: half the plate has to clear the object's own
-          // footprint, or a dome ends up wider than the building under it.
-          if (plateM * 0.5 < (PROP_R[kind] ?? 2) * s * 0.9) return;
-          props.push({ kind, x: c[0], y: c[1], z: roofZ, s, rot, b: v.b });
-        };
-        // The works chimney: only where something was burning coal.
-        if (style === S_MILL && v.y < 1950 && hgt >= 7 && plateM > 11 && L(1) < 0.20) put(22, 0.75 + 0.5 * L(2));
-        // A steeple stands on a small, old, tall-for-its-plate building. A New
-        // England port town has half a dozen and they are its landmarks.
-        else if (v.y < 1920 && plateM < 24 && hgt >= 8 && hgt <= 28 &&
-          (style === S_FEDERAL || style === S_ITALIANATE || style === S_CIVIC ||
-            style === S_PREWAR || style === S_MARKET || style === S_GOTHIC) &&
-          L(3) < 0.10) put(27, 0.75 + 0.45 * L(4), bearOf());
-        // A dome wants a public building with a big room under it.
-        else if (oldStone && v.y < 1940 && plateM > 19 && hgt >= 12 && L(5) < 0.14) put(25, 0.75 + 0.5 * L(6));
-        // A clock stage on a tower narrow for its height — a campanile, which
-        // the plan families now actually build.
-        else if (oldStone && v.y < 1945 && hgt >= 18 && hgt > plateM * 1.35 && L(7) < 0.24) put(26, 0.7 + 0.45 * L(8), bearOf());
-        // A deco or Gothic tower ends in a point, and from across the harbour
-        // that point is the only part of it you can see.
-        else if ((style === S_ARTDECO || style === S_GOTHIC) && hgt >= 24 && L(9) < 0.45) put(24, 0.8 + 0.6 * L(10));
-        // A cupola is the cheap version of all of it: a market, a firehouse, a
-        // school, anything that wanted to look civic in 1890.
-        else if (v.y < 1930 && hgt >= 6 && hgt <= 22 &&
-          (style === S_MARKET || style === S_CIVIC || style === S_CARRIAGE ||
-            style === S_FEDERAL || style === S_CHICAGO) && L(11) < 0.24) put(23, 0.8 + 0.4 * L(12), bearOf());
-        // The tank on its own steel tower — a different object from the tank
-        // sitting on the deck, and visible from the street.
-        else if (v.y < 1975 && hgt >= 12 && plateM > 15 && L(13) < 0.20) put(38, 0.75 + 0.4 * L(14), bearOf());
-        // Sign letters on a frame: commercial, and high enough to be read.
-        else if (hgt >= 11 && !has(T_MODERN, style) && has(T_TRADE, style) && L(15) < 0.16) put(37, 0.7 + 0.5 * L(16), bearOf());
+        landmarkProp({
+          ring: ring as [number, number][], style, year: v.y, hgt, area, roofZ, bbl: v.b,
+          bear: Math.atan2(mst.bearY, mst.bearX),
+          L: (k) => hash01(keyOf(v.b!) ^ Math.imul(k + 1, 0x7feb352d), this.citySeed ^ 0x1a2b3c4d),
+          props,
+        });
       }
 
       // Twelve metres of stature buys a machine deck — OR an acre of plate
@@ -8263,8 +10448,46 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * occluded against. It has to be hidden during the sun's depth pass, where
    * it would be a lid over the whole city.
    */
+  /**
+   * HOW FAR OUT THE SEA HAS TO REACH — one answer, asked by three places.
+   *
+   * 6,000 m on the half-side is generous around a two-kilometre town and
+   * cramped around Manhattan: below 59th Street the Battery already sits
+   * 4,600 m from the map origin, so there was barely a kilometre of ocean south
+   * of it and the fade that hides the mesh edge would have been running across
+   * the shoreline. The full-island extent is longer than the old sheet
+   * outright — the coast would have crossed its own boundary and the harbour
+   * would have ended in mid-water.
+   *
+   * `land` is the island's own radius from the map origin; `half` is the sheet's
+   * half-side, which is that plus an OFFING of open water.
+   *
+   * THE OFFING IS A CONTRACT, not padding. WATER_FRAG hands the sea over to
+   * MapLibre's flat fill by 3,000 m offshore, measured from the coastline, so
+   * every point on this sheet's rim is at least 3,200 m from the nearest rock
+   * and is therefore already converged — which is what makes the boundary
+   * invisible without the shader knowing anything about the sheet's size. Shrink
+   * the offing below that ramp and the mesh edge comes back.
+   *
+   * Floored at the old 6,000, so the sheet's SIZE is unchanged for every city
+   * that already fitted inside it. (What the sea LOOKS like did change
+   * everywhere — see the Fresnel and far-field notes in WATER_FRAG.)
+   */
+  private seaEnvelope(): { land: number; half: number } {
+    const ring = this.landRing();
+    let land = 0;
+    if (ring) for (const v of ring) land = Math.max(land, Math.hypot(v.x, v.y));
+    const OFFING = 3200;
+    return { land, half: Math.max(6000, Math.ceil((land + OFFING) / 100) * 100) };
+  }
+
   private buildAoGround() {
-    const g = new THREE.PlaneGeometry(13000, 13000);
+    // Wide enough to sit under the whole sea with the same half-kilometre of
+    // overhang it had when both were fixed sizes. It costs nothing — no colour
+    // writes, two triangles — and its job is to give every building in town a
+    // floor, so being short of the coast is the only way it can be wrong.
+    const side = 2 * this.seaEnvelope().half + 1000;
+    const g = new THREE.PlaneGeometry(side, side);
     // AND IT HAS TO SIT UNDER THE SEA, NOT IN IT. At z = 0 this plane is half a
     // centimetre below the water sheet, which is inside the depth buffer's
     // precision out at a kilometre — the two fought, the floor won in patches,
@@ -8286,17 +10509,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildWater() {
-    const land = this.ctxPoints.land;
-    if (!land || land.length < 4) return;
-    const ring = land.map((p) => this.project(p));
+    const ring = this.landRing();
+    if (!ring) return;
     // wind the hole opposite to the outer boundary or the triangulator fills it
-    let a2 = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const p = ring[i], q = ring[(i + 1) % ring.length];
-      a2 += p[0] * q[1] - q[0] * p[1];
-    }
-    const hole = (a2 > 0 ? ring.slice().reverse() : ring).map(([x, y]) => new THREE.Vector2(x, y));
-    const R = 6000;
+    const hole = ring.slice().reverse();
+    // THE SEA WAS A FIXED SIX KILOMETRES AND THE ISLAND IS NOT A FIXED SIZE.
+    // See `seaEnvelope` for what decides this and why.
+    const R = this.seaEnvelope().half;
     const outer = [
       new THREE.Vector2(-R, -R), new THREE.Vector2(R, -R),
       new THREE.Vector2(R, R), new THREE.Vector2(-R, R),
@@ -8332,6 +10551,23 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
         uReflectOn: { value: 0 }, uSeason: this.seasonUni, uWeather: this.weatherUni,
+        // RAW, NOT MANAGED — and this was worth measuring rather than assuming.
+        //
+        // THREE.ColorManagement is on by default, so `new THREE.Color("#33719c")`
+        // helpfully converts to the renderer's linear working space and gives
+        // (0.033, 0.165, 0.333). But this layer's shaders write gl_FragColor
+        // straight out with no encoding stage, so those components reach the
+        // screen as bytes: #082a55, a dark navy, and the "seamless" join came out
+        // as a hard black rim around the harbour. Sampling the canvas across the
+        // boundary is what showed it — the rim read #082a55 exactly, which is the
+        // managed value byte for byte.
+        //
+        // Every hand-written colour in these shaders is display-space for the
+        // same reason (`deep` at vec3(0.078, 0.220, 0.352) is #143859, a near
+        // black-blue, which `grade` and `aerial` then lift). So this one is
+        // parsed in linear-sRGB, which is three's way of saying "do not convert",
+        // and MapLibre's #33719c arrives as #33719c.
+        uSeaFar: { value: new THREE.Color().setStyle(OPEN_SEA, THREE.LinearSRGBColorSpace) },
       },
       side: THREE.DoubleSide,
     });
@@ -8402,6 +10638,91 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     mesh.frustumCulled = true;
   }
 
+  /** The city's own footprint in world metres, filled by the frustum fit. */
+  private landBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
+
+  /**
+   * THE SHEET THE SHADOWS LAND ON IS THE SHAPE OF THE GROUND.
+   *
+   * It was a 3,800 x 3,200 m rectangle translated to (0, 150) — every island is
+   * small, sits near the origin, and is apparently square. All three of those
+   * were false at once. The origin used to be each island's own centre and is
+   * `manifest.core` now, which for a written-down Manhattan is downtown with
+   * kilometres of island north of it, so the sheet sat over the wrong part of
+   * the map. The shipped Great City is 6.4 km across, so it has been hanging
+   * off the far edge and losing its street shadows for as long as that size has
+   * existed. And a rectangle laid over an ISLAND covers a great deal of open
+   * water, where this quad has no business at all: the catcher's own table
+   * grain and the sheen's specular were being painted onto the sea, and the
+   * corners of the rectangle showed as a pale quadrilateral in the harbour at
+   * every camera angle, top-down included.
+   *
+   * A shadow catcher's subject is the ground. The ground here is the island, and
+   * the coastline is already traced for the sea and the seawall, so the honest
+   * geometry is that ring triangulated — every square metre of ground covered
+   * at any island size, not one metre of water touched, and no straight edge
+   * anywhere to notice. `landRing` is the shared triangulation.
+   *
+   * I MISDIAGNOSED THIS ONCE AND THE WRONG ANSWER IS WORTH KEEPING. When a
+   * white sheet appeared over the whole harbour I blamed a first attempt at
+   * fitting this quad to the coastline, invented a mechanism for it — the
+   * shadow frustum is fitted in light space, so a plane grown past its footprint
+   * reads fully lit and the sheen paints it white — wrote that into this comment
+   * as fact, and reverted a fix that had been right. Then I hid the catcher and
+   * the sheen and the white sheet was still there. It was WATER_FRAG's
+   * far-field fade, which is anchored to the camera and calibrated for a
+   * two-kilometre island; see the note at the bottom of that shader. The
+   * invented mechanism was never tested and never true. What was real, and what
+   * this fixes, is the rectangle over the sea.
+   *
+   * The falls-back-to-a-plane branch is for a bare unit test with no coastline.
+   */
+  private groundPlane(z: number): THREE.BufferGeometry {
+    const ring = this.landRing();
+    if (!ring) {
+      const b = this.landBox;
+      const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
+      const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
+      return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
+    }
+    let tris: number[][] = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(ring, []); } catch { tris = []; }
+    if (!tris.length) {
+      const b = this.landBox;
+      const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
+      const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
+      return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
+    }
+    const pos: number[] = [];
+    for (const t of tris) for (const i of t) pos.push(ring[i].x, ring[i].y, z);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }
+
+  /**
+   * The coastline in world metres, wound counter-clockwise so a triangulator
+   * reads it as a solid outer contour. The sea and the shadow catcher share it:
+   * they are the same outline and had been projecting and winding it privately,
+   * which is two chances for the island to disagree with itself about where it
+   * ends. (`buildSeawall` still reads the RAW winding, deliberately — it uses
+   * the sign to work out which way is out to sea, and normalising it here would
+   * take that information away.)
+   */
+  private landRing(): THREE.Vector2[] | null {
+    const land = this.ctxPoints.land;
+    if (!land || land.length < 4) return null;
+    const ring = land.map((p) => this.project(p));
+    let a2 = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      a2 += p[0] * q[1] - q[0] * p[1];
+    }
+    // counter-clockwise is what ShapeUtils treats as a solid outer contour
+    const wound = a2 < 0 ? ring.slice().reverse() : ring;
+    return wound.map(([x, y]) => new THREE.Vector2(x, y));
+  }
+
   // One-time sun depth pass — the city is static, so shadows are free at
   // runtime: a single texture sample per fragment.
   private bakeShadows() {
@@ -8464,8 +10785,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cam.bottom = b - pad; cam.top = t + pad;
         cam.near = Math.max(1, n - pad); cam.far = f + pad;
         cam.updateProjectionMatrix();
+        // Keep the WORLD-space footprint too. The frustum above is fitted in
+        // light space, which is right for a depth pass and useless for laying a
+        // flat sheet on the ground. The shadow catcher is cut to the coastline
+        // now, so this box is only its fallback for a run with no coast ring at
+        // all — but it is also the record of what the depth map actually covers:
+        // fitted to these eight corners, the map contains the whole island, so a
+        // catcher cut to the island is inside it by construction.
+        this.landBox = { x0, y0, x1, y1 };
       }
       this.shadowSpan = cam.far - cam.near;
+
 
       if (!this.shadowTarget) {
         this.shadowTarget = new THREE.WebGLRenderTarget(3072, 3072, {
@@ -8539,7 +10869,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           transparent: true,
           depthWrite: false,
         });
-        this.groundCatcher = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
+        this.groundCatcher = new THREE.Mesh(this.groundPlane(0.07), catcherMat);
         this.scene.add(this.groundCatcher);
 
         // and the sun's own contribution to that same ground, added on top
@@ -8579,7 +10909,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // by depth exactly where there is no ground, and the hole punched in
         // the water for the island is precisely where it should show through.
         this.groundSheen = new THREE.Mesh(
-          new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.005), sheenMat,
+          this.groundPlane(0.005), sheenMat,
         );
         // a flat sheet lying on the ground: nothing to cast, nothing to mirror
         this.groundSheen.userData.noShadow = true;
@@ -8674,184 +11004,43 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         });
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
       const meta = [style, rnd, varr, h, fh2];
-      // THE SHAPE. One flat prism is one of five silhouettes now, picked by
-      // hash and gated by height the way the real decisions are: podium and
-      // tower is a zoning trade, the setback is a light-plane trade, and the
-      // slender point only exists where the floors justify the core.
-      const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
-      const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
+      // THE SHAPE, AND WHERE IT COMES FROM.
+      //
+      // This used to be a five-way ladder written here, and the generator's own
+      // twenty families were unreachable from it. `playerMassing` is now the
+      // single chooser for everything the player and the rivals put up — the
+      // modern tower kit, `citygen/massing.mjs`, and the three moves that are
+      // not centroid scales — so the two populations draw from one vocabulary
+      // and this file has one answer about shape rather than two.
+      //
       // THE BASE PLATE IS THE BUILDING'S OWN COVERAGE, NOT A CONSTANT.
       //
-      // This was a flat 0.78 for every building the player or the city put up,
-      // which meant the drawn footprint never changed and site coverage reached
-      // the picture ONLY through the floor count — backwards, because covering
-      // more of the lot buys FEWER floors for the same square footage. Owner's
-      // report: "I have built some office buildings which are 2x the next
-      // largest by square footage and visually they look like they are not
-      // nearly the biggest." They were right. On a 10,000 sf lot at FAR 4,
-      // every one of these is the same 40,000 sf building:
-      //
-      //     coverage 0.40   10 floors   drawn volume 60,840
-      //     coverage 0.70    6 floors   drawn volume 36,504
-      //     coverage 0.90    5 floors   drawn volume 30,420
-      //
-      // A 2:1 spread in apparent size across buildings of identical area, and
-      // the wide ones — which is what a big floorplate office IS — lost.
-      //
-      // Coverage is an AREA ratio and the inset is a LINEAR one, so it enters
-      // as a square root: inset f gives a plate of f^2 of the lot. The old 0.78
-      // was implicitly claiming 61% coverage for everything. Buildings from
-      // before this field existed fall back to that same 0.78 so nothing in an
-      // old save moves.
+      // Coverage was a flat 0.78 for every building the player or the city put
+      // up, so the drawn footprint never changed and site coverage reached the
+      // picture ONLY through the floor count — backwards, because covering more
+      // of the lot buys FEWER floors for the same square footage. It is an AREA
+      // ratio and the inset is a LINEAR one, so it enters as a square root.
+      // Buildings from before the field existed still fall back to 0.78, so
+      // nothing in an old save moves.
       const B = item.cov && item.cov > 0 ? Math.min(0.97, Math.sqrt(item.cov)) : 0.78;
       let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
-      // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------
-      //
-      // Below this the five silhouettes underneath are right: a podium, a
-      // setback, a shaft — those are the trades a mid-rise actually makes.
-      // Above it they are not, because every one of them is the plate scaled
-      // toward its own centre, which is a 1961 move, and a tower finished last
-      // year does not look like that. towerMassing rotates the plate, offsets
-      // it, cuts its corners off and lets the top oversail — and it brings its
-      // own skin, because these shapes and those walls were designed together.
-      //
-      // It can refuse: a spiral needs height to turn through and a blade needs
-      // a plate long enough to be slender ON. When it does, the stack below
-      // catches it.
-      let towerStyle = -1;
-      if (!item.construction && fl >= 20 && h >= 62) {
-        const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
-        // THE DIAL REACHES THE TOWER — BY SIMILARITY, NOT BY ARGUMENT.
-        //
-        // towerMassing builds every tier from `ring x 0.78`, and each of its
-        // recipes offsets by a fraction of `span`, which it measures on the
-        // ring it is given. Passing the coverage in as a parameter was tried
-        // and reverted: it changes the plate without changing the offsets, so
-        // the silhouettes detach from the plate they move and tiers walk off
-        // the deed — measured, `stack` and `twist` put half their tier-0
-        // vertices outside the parcel at the upper end of the dial.
-        //
-        // Handing it a ring pre-scaled by B/0.78 changes NOTHING inside: it is
-        // one similarity transform of the whole recipe, so `base` lands exactly
-        // on the promised plate, span scales with it, and every offset stays in
-        // the same proportion to the plate it was calibrated against. The
-        // silhouettes are identical shapes at a different size, which is what
-        // the coverage dial is supposed to mean.
-        const tRing = plScale(ring as [number, number][], cx, cy, B / 0.78);
-        const built = towerMassing(tf, tRing, cx, cy, h, fl, fh2,
-          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
-        if (built && built.tiers.length >= 2) {
-          // ...and none of it leaves the deed. The recipes jog and rotate off
-          // the base plate and none of them knows where the lot ends; at the
-          // top of the coverage dial they walk off it. See plClipToLot.
-          for (const t of built.tiers) t.fp = plClipToLot(t.fp, ring as [number, number][], cx, cy);
-          tiers = built.tiers;
-          towerStyle = built.style;
-        }
-      }
-      if (towerStyle >= 0) { meta[0] = towerStyle; }
-      else if (item.construction || fl < 7 || h < 22) {
-        tiers = [{ fp: inset(B), z0: 0, z1: h }];
+      if (item.construction || fl < 7 || h < 22) {
+        // A SITE UNDER A CRANE IS A FRAME, and a small building is a small
+        // building. Neither becomes sculpture.
+        tiers = [{ fp: ring.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as [number, number]), z0: 0, z1: h }];
       } else {
-        // ---- THE MID-RISE, WHICH WAS FIVE WAYS OF DOING ONE THING ---------
-        //
-        // Below the tower gate there were five silhouettes and EVERY ONE OF
-        // THEM WAS THE PLATE SCALED TOWARD ITS OWN CENTROID — a podium, a
-        // setback, a three-stage wedding cake, a tower on a podium, a prism.
-        // That is the 1916-to-1961 envelope, and it is the wrong shape twice
-        // over for a building finished after 2000. It puts the top of every
-        // building directly over the middle of its bottom, so a street of them
-        // is a row of pyramids; and it steps back on ALL FOUR SIDES, including
-        // the two that are party walls a neighbour is standing against.
-        //
-        // What a real one does instead: the street wall goes straight up to
-        // the lot line and the shaft goes to the BACK of the plate, so the
-        // block keeps a continuous frontage and the light plane is met on the
-        // side that has light to protect. That is one `plMove`, and no amount
-        // of centroid scaling can produce it.
-        //
-        // Three shapes are new and none of them is a centroid scale: the
-        // shifted shaft, the slab (narrowed on ONE axis, which is what an
-        // apartment building is), and the chamfered shaft. The wedding cake
-        // survives because terraced setbacks did come back — but as the rare
-        // answer it now is rather than a third of everything.
-        const P = tiers as TowerTier[];
-        const plate = inset(B) as Plate;
-        // The plate's own frame: `ax` is its long axis, which on an ordinary
-        // urban parcel is the deep direction — street to rear. Half-extents
-        // along and across it, measured rather than approximated off the area,
-        // because a deep narrow lot and a square one of the same area give
-        // very different answers about how far anything can travel.
-        const ax = plAxis(plate);
-        const ca = Math.cos(ax), sa = Math.sin(ax);
-        let deep = 0, wide = 0;
-        for (const [px, py] of plate) {
-          const dx = px - cx, dy = py - cy;
-          deep = Math.max(deep, Math.abs(dx * ca + dy * sa));
-          wide = Math.max(wide, Math.abs(-dx * sa + dy * ca));
-        }
-        // WHICH END IS THE STREET IS NOT KNOWABLE HERE. The layer has the lot
-        // ring and not the street graph, so the direction is hashed off the
-        // deed. That is a real limitation and it is worth fixing when the
-        // frontage is available — a block reads best when every shaft steps
-        // back from the SAME side. What survives either way, and is the whole
-        // point, is that the shaft is not over the middle of its own base.
-        const dirS = hash01(k ^ 0x5b1f, this.citySeed) < 0.5 ? 1 : -1;
-        const back = (fp: Plate, d: number): Plate => plMove(fp, ca * d * dirS, sa * d * dirS);
-        const podTop = Math.min(h * 0.28, fh2 * 3.2);
-        const resi = item.cls === "multifamily";
-        if (mroll < 0.26) {
-          // PODIUM AND SHAFT, SHAFT TO THE BACK. The zoning trade, done the
-          // way it is actually done.
-          const sc = 0.58 + 0.14 * hash01(k ^ 0x51, this.citySeed);
-          const off = deep * (1 - sc) * (0.5 + 0.4 * hash01(k ^ 0x53, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: podTop });
-          P.push({ fp: plClipToLot(back(inset(B * sc) as Plate, off), ring as Plate, cx, cy), z0: podTop, z1: h });
-        } else if (mroll < 0.46) {
-          // A SLAB. Narrowed on ONE axis only, which is what nearly every
-          // mid-rise apartment building on earth is, and which a centroid
-          // scale cannot make — it shrinks both dimensions together and gives
-          // you a smaller box instead of a thinner one.
-          const cut = h * (0.30 + 0.16 * hash01(k ^ 0x52, this.citySeed));
-          const thin = resi ? 0.46 + 0.12 * hash01(k ^ 0x54, this.citySeed) : 0.58 + 0.14 * hash01(k ^ 0x54, this.citySeed);
-          const slab = plScaleAxis(inset(B) as Plate, cx, cy, ax, 0.97, thin);
-          P.push({ fp: inset(B), z0: 0, z1: cut });
-          P.push({ fp: plClipToLot(back(slab, deep * 0.16), ring as Plate, cx, cy), z0: cut, z1: h });
-        } else if (mroll < 0.62) {
-          // A CHAMFERED SHAFT. Corners off the tower and not off the base —
-          // the base wants the floor area and the corner is where the tower
-          // reads. Cheap, and it stops the thing being a rectangle from every
-          // angle at once.
-          const cut2 = h * (0.22 + 0.14 * hash01(k ^ 0x55, this.citySeed));
-          const ch2 = Math.min(deep, wide) * (0.20 + 0.20 * hash01(k ^ 0x56, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: cut2 });
-          P.push({ fp: plChamfer(inset(B * 0.92) as Plate, ch2), z0: cut2, z1: h });
-        } else if (mroll < 0.74) {
-          // A SINGLE SETBACK, high up. The light-plane trade, and the one
-          // centroid move that is still right — a top-floor step-in is
-          // symmetric because it is above everything it could shade.
-          const cut3 = h * (0.66 + 0.14 * hash01(k ^ 0x57, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: cut3 });
-          P.push({ fp: inset(B * 0.76), z0: cut3, z1: h });
-        } else if (mroll < 0.80 && fl >= 14) {
-          // TOWER ON A THIN PODIUM, shaft to the back.
-          const pod = fh2 * 2.2;
-          P.push({ fp: inset(B), z0: 0, z1: pod });
-          P.push({ fp: plClipToLot(back(inset(B * 0.52) as Plate, deep * 0.40), ring as Plate, cx, cy), z0: pod, z1: h });
-        } else if (mroll < 0.85 && fl >= 12) {
-          // THE WEDDING CAKE. Kept, because terraced setbacks came back — Via
-          // 57, the Hudson Yards residential — but it is a form for a tall
-          // building on a big plate, not the answer to a third of everything.
-          const c1 = h * 0.45, c2 = h * 0.75;
-          P.push({ fp: inset(B), z0: 0, z1: c1 });
-          P.push({ fp: inset(B * 0.80), z0: c1, z1: c2 });
-          P.push({ fp: inset(B * 0.62), z0: c2, z1: h });
-        } else {
-          // A PLAIN SHAFT. The commonest building in any city and not a
-          // failure to choose — most mid-rise is a box on its lot line.
-          P.push({ fp: inset(B), z0: 0, z1: h });
-        }
+        const mass = playerMassing({
+          ring: ring as [number, number][], cx, cy, h, fl, fh: fh2,
+          cls: item.cls, year: yearBuilt, cov: item.cov ?? 0,
+          style: meta[0],
+          u: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057),
+        });
+        tiers = mass.tiers;
+        // The tower kit brings its own skin — those shapes and those walls were
+        // designed together. Everything else keeps the facade the registry
+        // chose off class, year and deed.
+        if (mass.style >= 0) meta[0] = mass.style;
       }
       const mkBuf = () => ({
         pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
@@ -8918,6 +11107,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // be a cornice halfway up a wall.
       const crownProps: { kind: number; x: number; y: number; z: number; s: number; rot: number; b?: string }[] = [];
       let crownDeck: { ring: [number, number][]; z: number } | null = null;
+      let crownZ = h;
       if (!item.construction) {
         const tt = tiers[tiers.length - 1];
         const tfp = tt.fp as [number, number][];
@@ -8928,7 +11118,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
         const cr = crownTop(mason2, T, R2, {
           ring: tfp, z1: tt.z1, roof: true, deco: false, bbl: item.bbl,
-          style: tt.style ?? meta[0], rnd, varr, fh: fh2, area: ar2 / 2,
+          // RAW SHOELACE, NOT TRUE AREA. This passed `ar2 / 2`, and `crownTop`
+          // reads it as the raw sum the generator feeds — its span is
+          // `sqrt(|area| / 2)`, the side of the equivalent square. So every
+          // span and every setback inset in the crown came out a factor of root
+          // two small on a building the player built and right on the one next
+          // door the town started with: a pyramid 29% narrower than its plate
+          // asked for. Identical fault, three hundred lines apart, to the one
+          // the `roofKitWants` call below already documents.
+          style: tt.style ?? meta[0], rnd, varr, fh: fh2, area: ar2,
           // The industrial gate arrived on the static path only. It belongs to
           // the crown, not to the path, so it reaches player and rival sheds
           // too — which is the whole reason this block was extracted.
@@ -8938,6 +11136,35 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           props: crownProps,
         });
         crownDeck = cr.mechDeck;
+        crownZ = cr.roofZ;
+        // ---- AND THE LANDMARKS, WHICH THIS PATH HAD NONE OF ---------------
+        //
+        // `put(24, ...)` — the spire — occurred exactly ONCE in this file, in
+        // `buildCity`, so a deco tower the player built ended in a bare deck
+        // no matter how tall it was, and a rival's 1930s bank could not grow a
+        // dome. That is most of a deco family: a generated town has seven
+        // buildings over 34 m and the player builds the rest of them.
+        //
+        // Same function, same inputs, same shape of hash stream as the static
+        // stock — and it stands on whatever the crown left, so a spire goes on
+        // top of the bulkhead rather than through it.
+        const landProps: typeof crownProps = [];
+        landmarkProp({
+          ring: tfp, style: tt.style ?? meta[0], year: yearBuilt, hgt: h, area: ar2,
+          roofZ: crownZ, bbl: item.bbl,
+          bear: Math.atan2(by2, bx2),
+          L: (n) => hash01(k ^ Math.imul(n + 1, 0x7feb352d), this.citySeed ^ 0x1a2b3c4d),
+          props: landProps,
+        });
+        for (const pr of landProps) {
+          const g = propKit()[pr.kind];
+          if (!g) continue;
+          const mesh = new THREE.Mesh(g.geom, this.propMaterial(g.color, false));
+          mesh.name = "prop:" + pr.kind;
+          mesh.rotation.z = pr.rot; mesh.scale.setScalar(pr.s ?? 1);
+          mesh.position.set(pr.x, pr.y, pr.z);
+          this.dynGroup.add(mesh);
+        }
       }
       // The only ornament the ladder places itself: balustrade urns along a
       // stone cornice. They sit ON the parapet rather than a metre inside it,
@@ -11009,6 +13236,439 @@ export function towerMassing(
     }
     default: return null;
   }
+}
+
+/**
+ * The narrowest dimension of a plate, in metres — the width a floor actually
+ * has. Sampled on the edge normals, which is exact for a convex plate and near
+ * enough for the handful that are not.
+ */
+const plMinWidth = (r: Plate): number => {
+  if (r.length < 3) return 0;
+  let best = Infinity;
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i], b = r[(i + 1) % r.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const L = Math.hypot(ex, ey);
+    if (L < 1e-6) continue;
+    const nx = -ey / L, ny = ex / L;
+    let lo = Infinity, hi = -Infinity;
+    for (const [x, y] of r) { const t = x * nx + y * ny; if (t < lo) lo = t; if (t > hi) hi = t; }
+    best = Math.min(best, hi - lo);
+  }
+  return Number.isFinite(best) ? best : 0;
+};
+
+/** Signed-area magnitude of a plate, m². */
+const plArea = (r: Plate): number => {
+  let a = 0;
+  for (let i = 0; i < r.length; i++) {
+    const p = r[i], q = r[(i + 1) % r.length];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return Math.abs(a) / 2;
+};
+
+/**
+ * A FLOOR HAS TO BE WIDE ENOUGH TO BE A FLOOR.
+ *
+ * The narrowest habitable plate there is runs a corridor and a single bay:
+ * about eleven metres. Under that a plate is the core, its stairs and its
+ * risers with nothing left to let, and no tower has ever been built with one —
+ * the hyper-slenders are thin in RATIO and not in metres (111 West 57th is
+ * 1:23 and still eighteen metres across).
+ *
+ * Several recipes here scale hard on the way up, and on the plates this city's
+ * lots actually yield — a median 16 m at the standard dial, 12 m at the tower
+ * preset — that put a six-metre stick on top of a sixteen-metre building. It is
+ * exactly the mast the owner sent a screenshot of.
+ *
+ * This is a rule about the DRAWING, not about the deal: the floors, the area,
+ * the cost and the rent are the engine's and none of them moves. A silhouette
+ * whose narrowest volume falls under it is skipped and the next family on the
+ * list is tried, so the player still gets every floor they paid for — drawn as
+ * something that could stand up.
+ *
+ * A CAP IS NOT A FLOOR, and the test knows the difference. Two storeys is the
+ * line: a stepped penthouse, a plant enclosure or a cornice volume on top of a
+ * shaft is normal and may be as small as it likes, and it is why a narrow
+ * building can still have a top. Forty per cent of the building at six metres
+ * across is not a top, it is a mast.
+ */
+const MIN_PLATE_W = 11;
+/**
+ * Height to width, measured across the plate's NARROW axis — which is the one
+ * the overturning moment governs about, and the one you see when a building
+ * reads as a blade.
+ *
+ * Past about 6:1 the lateral system stops being an afterthought and somebody
+ * has to pay for it; past about 10:1 it is a specialist product. Both are
+ * answered the same two ways in life — a broad base under the shaft, or a
+ * shaft that steps in as it rises — and both are families already on the list
+ * below. So slenderness WEIGHTS the list; it caps nothing and costs nothing.
+ * Difficulty is an output.
+ *
+ * Measured over 13,405 site-and-dial combinations on three islands: the median
+ * build is 2.9:1 and the ninetieth 4.5:1, so the 6:1 weighting reaches 1.52% of
+ * buildings and the 10:1 restriction 6 of them. The second is a GUARD, not a
+ * mechanism — it exists so that an assembled megasite dialled to a needle is
+ * drawn as one of the things that gets built at that ratio, and it is stated
+ * here rather than left to be discovered as a dead branch.
+ */
+const SLENDER_BRACED = 6;
+const SLENDER_ONLY_BRACED = 10;
+/** The families that broaden the base against the shaft, or step the shaft in. */
+const BRACED = new Set([
+  "g:base", "g:cake", "g:taper", "g:mech", "g:step", "g:terrace",
+  // The 1916 envelope steps the shaft in, which is this set's definition. It
+  // is also the historical answer to the same engineering question: a tower
+  // that gives width away as it rises is a tower whose overturning moment
+  // falls off with height, which is why the shape survived the code that
+  // required it.
+  "g:zigzag", "g:telescope", "g:quarter", "g:ferriss",
+  "m:podium", "m:thinpod", "m:setback", "m:cake",
+  "t:vanderbilt", "t:exo", "t:shelf", "t:spiral",
+]);
+
+export interface PlayerMassIn {
+  /** The deed, in metres. */
+  ring: Plate;
+  cx: number; cy: number;
+  /** Metres to the top, floors, floor-to-floor. */
+  h: number; fl: number; fh: number;
+  cls: string;
+  /** The year it was finished — the same one the facade is chosen on. */
+  year: number;
+  /** The coverage dial the player paid for; 0 for a save from before it existed. */
+  cov: number;
+  /**
+   * The facade the registry already chose for this building, so the silhouette
+   * can agree with it. The caller has it: `styleForBuilt` runs before this does.
+   *
+   * WHY THIS IS NOT THE 1916 LAW BEING FALSIFIED. The sky exposure plane applied
+   * to every tall building in a height district whatever it was wearing, and the
+   * envelope families are gated on year and height for exactly that reason — a
+   * 1938 brick apartment house met the same plane. What the STYLE decided was
+   * how emphatically the envelope was expressed: a deco architect made the
+   * setback the subject, ran the piers through it and crowned the tower that
+   * came out of it, where the same plane was met next door with one plain step.
+   * So this weights; it gates nothing, and a non-deco building can still step.
+   */
+  style?: number;
+  /** A stable [0,1) per building per question. */
+  u: (k: number) => number;
+}
+
+/**
+ * THE SHAPE OF EVERYTHING THE PLAYER AND THE RIVALS PUT UP — in one place,
+ * out of one vocabulary.
+ *
+ * The generator has twenty silhouette families and this path had none of them.
+ * It had a modern tower kit above twenty storeys and, below that, five moves
+ * that were all the plate scaled toward its own centre; the plan families that
+ * make a city look like a city — the twin towers off one podium, the notched
+ * slab, the tower on a base, the cruciform, the light court — were unreachable
+ * from here. Twenty years into a campaign most of downtown is the player's, and
+ * the skyline flattened exactly as they built it. The owner's report was "this
+ * style of tower happens way too often, I have 4 of them".
+ *
+ * So there is one list of families and three implementations behind it, each
+ * with its own gates:
+ *
+ *   t:  the modern tower kit above — ten silhouettes designed with their skins,
+ *       for what is genuinely a tower.
+ *   g:  `citygen/massing.mjs`, the generator's OWN machinery, imported. A
+ *       building the player tops out in 2031 is now drawn by the rules that
+ *       would have drawn it if the town had started with it.
+ *   m:  the three moves neither of those has, because they are not centroid
+ *       scales: the shaft to the BACK of the plate, the slab thinned on ONE
+ *       axis, the chamfered shaft.
+ *
+ * The choice is hashed off the deed and gated on what the site can take, so it
+ * is the same building every reload and the same building in every save. No
+ * rng stream is touched: this is the renderer, and the deed hash is what it
+ * already uses for the facade and the palette.
+ *
+ * The coverage dial is a price the player paid, so every `g:` and `m:` tier is
+ * cut FROM the plate, and the base that makes a slender building read as a
+ * building is that plate with the shaft stepping in above it, not a podium
+ * drawn wider than the site was sold. The one exception is the tower kit's
+ * `exo`, whose splayed legs are deliberately wider than the shaft they carry;
+ * that predates this.
+ *
+ * THAT SENTENCE USED TO END "measured, tier-0 is 1.000x the promised plate at
+ * the median and at the 99th" AND NOTHING MEASURED IT. `pnpm plate` called
+ * `towerMassing` — the ten `t:` recipes — and never called this function at
+ * all, so the twenty citygen families and the eight `m:` moves, which are most
+ * of what gets drawn, sat outside the reach of the one harness whose subject is
+ * the coverage contract. It has a third section now, over real parcels at real
+ * dial positions on a (class, year, floors) ladder that crosses every gate in
+ * the list, and the real numbers are: base/promised p50 1.000, p99 1.011 across
+ * 84,960 readings and 39 families, zero readings over 1.02 with `t:exo`
+ * exempted by name, and zero tiers outside the deed. `OLD=1` sweeps at `cov: 0`
+ * and the same check reports 27,636 violations at p99 4.056, which is what says
+ * it can fail.
+ */
+export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: number; family: string } {
+  const { ring, cx, cy, h, fl, fh, cls, year, u } = o;
+  // A deco building steps because stepping is what it is FOR. See PlayerMassIn.
+  const decoSkin = o.style !== undefined && isDeco(o.style) && !isStreamline(o.style);
+  const B = o.cov > 0 ? Math.min(0.97, Math.sqrt(o.cov)) : 0.78;
+  const inset = (f: number): Plate => plScale(ring, cx, cy, f);
+  const plate = inset(B);
+  const areaM2 = plArea(plate);
+  const W = Math.sqrt(areaM2);                 // the plate's width, near enough
+  const narrow = plMinWidth(plate);            // and the one the wind works on
+  const slender = narrow > 0.5 ? h / narrow : 0;
+  const resi = cls === "multifamily";
+  const clip = (fp: Plate) => plClipToLot(fp, ring, cx, cy);
+
+  // ---- the list -----------------------------------------------------------
+  const fam: string[] = [];
+  const add = (name: string, n = 1) => { for (let i = 0; i < n; i++) fam.push(name); };
+  // A tower, and the kit that was designed for one. Same gate as before.
+  if (fl >= 20 && h >= 62) for (const t of TOWER_FAMILIES) add("t:" + t);
+  // The generator's list, on the lots that can take each one. The gates are
+  // citygen's own: a setback gives away width and a building that has none
+  // cannot give any.
+  if (h >= 32) add("g:mech", 2);
+  if (h >= 30 && W >= 18) add("g:taper", 2);
+  if (h >= 30 && W >= 22) add("g:cake");
+  if (h >= 30 && W >= 19) add("g:base", 2);
+  if (h >= 30 && W >= 15) add("g:step");
+  if (h >= 24) add("g:terrace");
+  // A tall thin building goes straight up and stops, with a step under the
+  // cornice. On the plates this city's lots yield it is often the only honest
+  // answer that is not a bare box, because it is the only one that does not
+  // ask a narrow floor to get narrower.
+  if (h >= 30) add("g:loft", 2);
+  if (h >= 38 && W >= 22) add("g:cruciform");
+  if (h >= 42 && W >= 26) add("g:twins");
+  if (h >= 40) add("g:shifted", 2);
+  if (h >= 30 && W >= 30) add("g:notch");
+  if (h >= 26 && W >= 26) add("g:endtowers");
+  // THE 1916 ENVELOPE. Same recipes and same gates as the generated stock's,
+  // because they are the same functions — a tower the player tops out on a
+  // prewar lot is stepped by the code that would have stepped it. The year
+  // windows are the resolution's own (in force from 25 July 1916 until the 1961
+  // resolution replaced it with floor area ratio) and then the two dates the
+  // stepped mass came back as a choice rather than a requirement. The
+  // reasoning, the sources and the honest conflict about the plane's slope are
+  // all in `citygen/massing.mjs`.
+  //
+  // AND A DECO BUILDING GETS MORE OF THEM. Measured before this: the deco family
+  // had no privileged silhouette at all — the envelope families were gated on
+  // year and height and nothing else, so a 1938 glass box was exactly as likely
+  // to come out a ziggurat as a 1930 zigzag tower, and across twelve generated
+  // islands the whole deco envelope vocabulary drew 32 buildings of 9,665. The
+  // weight below is the articulation, not the law: everything keeps its access
+  // to the stepped envelope because everything had to meet the plane, and a
+  // building wearing the style that made the setback its subject reaches for it
+  // roughly three times as often. Streamline is excluded by `decoSkin` for the
+  // same reason it is excluded from the fin and the mast — its whole argument is
+  // horizontal, and a wedding cake cancels it.
+  if (h >= 30 && year >= 1916 && year < 1961) {
+    add("g:zigzag", decoSkin ? 8 : 3); add("g:telescope", decoSkin ? 5 : 2);
+    add("g:ferriss", decoSkin ? 3 : 1); add("g:quarter", decoSkin ? 3 : 1);
+  }
+  // The parapet bay is a style device rather than a code outcome, so it is
+  // dated like one, and it is weighted toward housing because the deco
+  // apartment house is the type there are most of.
+  if (h >= 22 && year >= 1927 && year <= 1943) add("g:crest", (resi ? 3 : 1) * (decoSkin ? 3 : 1));
+  if (h >= 40 && year >= 1982 && year < 1996) {
+    add("g:zigzag", decoSkin ? 4 : 1); add("g:telescope", decoSkin ? 3 : 1);
+  }
+  // THE REVIVAL STEPS ON PURPOSE, and it is the one era where the silhouette is
+  // a pure style choice rather than a code outcome: nothing in 2019 required a
+  // setback. One Bennett Park's asymmetric crown steps up toward the city to
+  // keep the lake views, and 220 Central Park South is an eighteen-storey villa
+  // at the street with a 950-foot tower behind it — a tower on a quarter of the
+  // site, chosen. So the weight here is heavier on deco than anywhere else.
+  if (h >= 40 && year >= 2008) {
+    add("g:zigzag", decoSkin ? 5 : 1); add("g:telescope", decoSkin ? 3 : 1);
+    add("g:quarter", decoSkin ? 4 : 1);
+  }
+  // The chamfered faceted taper and the twist are moves of the last twenty
+  // years. A building finished in 1974 does not get one, for the same reason
+  // it does not get a diagrid.
+  if (h >= 62 && year >= 1998) { add("g:chamfertaper", 2); add("g:twist"); }
+  // The daylight plans. Air conditioning and the fluorescent tube made a deep
+  // plate habitable, so a modern OFFICE has no reason to cut itself open —
+  // but a housing block still wants a window in every room, which is why the
+  // courtyard block is alive and well and the deep office plate is not.
+  if (resi && h < 46) {
+    if (areaM2 >= 1500 && W >= 36) add("g:courtyard", 2);
+    if (areaM2 >= 850 && W >= 27) add("g:lightcourt");
+    if (areaM2 >= 620 && W >= 23) add("g:dumbbell");
+  }
+  // The three that are not centroid scales.
+  add("m:podium", 2);
+  add("m:slab", 2);
+  add("m:chamfer");
+  add("m:setback");
+  // Not on a shed: a warehouse is one skin from the slab to the eaves, and an
+  // expressed masonry base under one is a thing nobody has ever built.
+  if (cls !== "industrial") add("m:stonebase", 3);
+  if (fl >= 14) add("m:thinpod");
+  if (fl >= 12) add("m:cake");
+  // A box is a real answer. A street with no boxes on it is as obviously wrong
+  // as a street with nothing else — fewer of them once a building is tall
+  // enough that somebody had to think about its top.
+  add("m:prism", h >= 32 ? 1 : 2);
+
+  // Slenderness weights the list. At 6:1 the braced answers get a second copy
+  // each; past 10:1 they are the only answers, because at that ratio a plain
+  // shaft is not a thing anybody has built.
+  let pool = fam;
+  if (slender >= SLENDER_ONLY_BRACED) {
+    const braced = fam.filter((f) => BRACED.has(f));
+    if (braced.length) pool = braced;
+  } else if (slender >= SLENDER_BRACED) {
+    pool = fam.concat(fam.filter((f) => BRACED.has(f)));
+  }
+
+  // ---- the recipes the other two do not have ------------------------------
+  const ax = plAxis(plate);
+  const ca = Math.cos(ax), sa = Math.sin(ax);
+  let deep = 0, wide = 0;
+  for (const [px, py] of plate) {
+    const dx = px - cx, dy = py - cy;
+    deep = Math.max(deep, Math.abs(dx * ca + dy * sa));
+    wide = Math.max(wide, Math.abs(-dx * sa + dy * ca));
+  }
+  // WHICH END IS THE STREET IS NOT KNOWABLE HERE. The layer has the lot ring
+  // and not the street graph, so the direction is hashed off the deed. What
+  // survives either way, and is the whole point, is that the shaft is not over
+  // the middle of its own base.
+  const dirS = u(0x5b) < 0.5 ? 1 : -1;
+  const back = (fp: Plate, d: number): Plate => plMove(fp, ca * d * dirS, sa * d * dirS);
+  const podTop = Math.min(h * 0.28, fh * 3.2);
+  function midRise(name: string): TowerTier[] | null {
+    switch (name) {
+      case "m:podium": {
+        // PODIUM AND SHAFT, SHAFT TO THE BACK. The zoning trade, done the way
+        // it is actually done: the street wall goes straight up to the lot line
+        // and the shaft steps back off the side that has light to protect.
+        const sc = 0.58 + 0.14 * u(0x51);
+        const off = deep * (1 - sc) * (0.5 + 0.4 * u(0x53));
+        return [{ fp: plate, z0: 0, z1: podTop },
+          { fp: clip(back(inset(B * sc), off)), z0: podTop, z1: h }];
+      }
+      case "m:slab": {
+        // A SLAB. Narrowed on ONE axis only, which is what nearly every
+        // mid-rise apartment building on earth is, and which a centroid scale
+        // cannot make — it shrinks both dimensions together and gives you a
+        // smaller box instead of a thinner one.
+        const cut = h * (0.30 + 0.16 * u(0x52));
+        const thin = (resi ? 0.46 : 0.58) + 0.14 * u(0x54);
+        return [{ fp: plate, z0: 0, z1: cut },
+          { fp: clip(back(plScaleAxis(plate, cx, cy, ax, 0.97, thin), deep * 0.16)), z0: cut, z1: h }];
+      }
+      case "m:chamfer": {
+        // Corners off the tower and not off the base — the base wants the floor
+        // area and the corner is where the tower reads.
+        const cut2 = h * (0.22 + 0.14 * u(0x55));
+        const ch2 = Math.min(deep, wide) * (0.20 + 0.20 * u(0x56));
+        return [{ fp: plate, z0: 0, z1: cut2 },
+          { fp: plChamfer(inset(B * 0.92), ch2), z0: cut2, z1: h }];
+      }
+      case "m:setback": {
+        // A single setback, high up: the one centroid move that is still right,
+        // because a top-floor step-in is above everything it could shade.
+        const cut3 = h * (0.66 + 0.14 * u(0x57));
+        return [{ fp: plate, z0: 0, z1: cut3 }, { fp: inset(B * 0.76), z0: cut3, z1: h }];
+      }
+      case "m:thinpod": {
+        const pod = fh * 2.2;
+        return [{ fp: plate, z0: 0, z1: pod },
+          { fp: clip(back(inset(B * 0.52), deep * 0.40)), z0: pod, z1: h }];
+      }
+      case "m:stonebase": {
+        // A BASE EXPRESSED IN A DIFFERENT MATERIAL, AT THE FULL PLATE.
+        //
+        // The move a narrow building actually has. On the twelve-metre plate a
+        // typical lot here yields you cannot set anything back and still have a
+        // floor — every silhouette that steps produces a stub — so what varies
+        // is the WALL. A stone or precast base of a storey or two under a glass
+        // shaft is one of the commonest things on any street, and it costs the
+        // floor nothing. S_PLAIN is the expressed-structure skin this file
+        // already uses for the same purpose in `exo` and `shelf`.
+        const baseTop = Math.min(h * 0.34, fh * (1.6 + 1.4 * u(0x58)));
+        return [{ fp: plate, z0: 0, z1: baseTop, style: S_PLAIN, roof: S_PLAIN },
+          { fp: plate, z0: baseTop, z1: h }];
+      }
+      case "m:cake": {
+        // Terraced setbacks came back — Via 57, the Hudson Yards residential —
+        // but it is a form for a tall building on a big plate, not the answer
+        // to a third of everything.
+        //
+        // THE THREE FRACTIONS WERE HARDCODED AND THIS IS THE FAULT THE FILE
+        // ALREADY HAS A NAME FOR. `build.mjs` records it: "TWO SHAPES WERE 61%
+        // OF EVERY TOWER IN THIS CITY", setbacks nailed at 52% and 82% of
+        // height and insets at 66% and 38% of area. This recipe was the last
+        // survivor of that pattern — 45%, 75%, 0.80 and 0.62 on every single
+        // building that drew it, so every terraced player tower in every town
+        // was the same object at a different size. Four rolls off the deed
+        // hash, on the same salt block as the rest of the `m:` set.
+        const c1 = h * (0.36 + 0.16 * u(0x59));
+        const c2 = c1 + (h - c1) * (0.44 + 0.22 * u(0x5a));
+        const k1 = 0.74 + 0.12 * u(0x5c);
+        const k2 = k1 * (0.74 + 0.14 * u(0x5d));
+        return [{ fp: plate, z0: 0, z1: c1 },
+          { fp: inset(B * k1), z0: c1, z1: c2 },
+          { fp: inset(B * k2), z0: c2, z1: h }];
+      }
+      default: return null;
+    }
+  }
+
+  // ---- try them in hash order, take the first that stands up ---------------
+  const prism: TowerTier[] = [{ fp: plate, z0: 0, z1: h }];
+  const start = Math.floor(u(0x70e2) * pool.length);
+  for (let i = 0; i < pool.length; i++) {
+    const name = pool[(start + i) % pool.length];
+    let tiers: TowerTier[] | null = null;
+    let style = -1;
+    if (name === "m:prism") { tiers = prism; }
+    else if (name.startsWith("t:")) {
+      // The tower kit builds every tier from `ring x 0.78` and offsets by
+      // fractions of the span it measures on the ring it is handed, so the
+      // coverage dial reaches it as ONE similarity transform of the whole
+      // recipe. Passing coverage in as a parameter was tried and reverted:
+      // it moves the plate without moving the offsets and the tiers walk off
+      // the deed. See `pnpm plate`.
+      const built = towerMassing(name.slice(2), plScale(ring, cx, cy, B / 0.78), cx, cy, h, fl, fh,
+        (n) => u(0x7057 + n));
+      if (built && built.tiers.length >= 2) {
+        tiers = built.tiers.map((t) => ({ ...t, fp: clip(t.fp) }));
+        style = built.style;
+      }
+    } else if (name.startsWith("g:")) {
+      const built = massingStack({
+        ring: plate, lotRing: null, hM: h, year, klass: cls,
+        u: (n: number) => u(0x9000 + n), families: [name.slice(2)],
+      });
+      if (built && built.tiers.length >= 2) {
+        tiers = built.tiers.map((t) => ({ fp: clip(t.ring as Plate), z0: t.base, z1: t.top }));
+      }
+    } else {
+      tiers = midRise(name);
+    }
+    if (!tiers || !tiers.length) continue;
+    // Nothing narrower than a floor, where the volume is floors at all. A prism
+    // is exempt: a narrow plate makes a narrow building and that is honest —
+    // what is not is slicing it thinner.
+    if (name !== "m:prism"
+      && tiers.some((t) => t.z1 - t.z0 > 2 * fh && plMinWidth(t.fp) < MIN_PLATE_W)) continue;
+    // THE CROWN BELONGS ON THE TOP OF THE BUILDING. Everything downstream
+    // reads `tiers[tiers.length - 1]` as the roof — the cornice, the bulkhead,
+    // the whole roof kit — and several of these recipes push the tall volume
+    // before a short one. A notched slab was getting its mast on the low link
+    // across the bottom of the slot.
+    tiers = [...tiers].sort((a, b) => a.z1 - b.z1);
+    return { tiers, style, family: name };
+  }
+  return { tiers: prism, style: -1, family: "m:prism" };
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

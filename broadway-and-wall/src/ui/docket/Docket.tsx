@@ -105,13 +105,28 @@ export default function Docket() {
                   {/* the triangle carries urgency alongside the red, never instead of it */}
                   {it.urgent ? "▲ " : ""}{CAT_TAG[it.cat]}
                 </span>
-                <span
-                  className="docket-title"
-                  title={it.sub ? `${it.title} — ${it.sub}` : it.title}
-                >
-                  {it.title}
-                  {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
-                </span>
+                {/* The words are the link. A row about a building takes you to
+                    the building when you click the sentence, not only the small
+                    button beside it — the button stays as the visible affordance. */}
+                {(it.attnKey || it.bbl || it.page) ? (
+                  <button
+                    type="button"
+                    className="docket-title docket-title-link"
+                    title={it.sub ? `${it.title} — ${it.sub}` : it.title}
+                    onClick={() => openItem(it)}
+                  >
+                    {it.title}
+                    {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
+                  </button>
+                ) : (
+                  <span
+                    className="docket-title"
+                    title={it.sub ? `${it.title} — ${it.sub}` : it.title}
+                  >
+                    {it.title}
+                    {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
+                  </span>
+                )}
                 {(it.attnKey || it.bbl || it.page) ? (
                   <button type="button" className="year-rail-go" onClick={() => openItem(it)}>
                     Open

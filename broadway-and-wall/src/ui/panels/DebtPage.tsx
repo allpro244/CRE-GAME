@@ -6,7 +6,8 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec } from "@/engine/value";
 import { PRODUCTS, productById, payOffDue } from "@/engine/debt";
 import { fundableNow, locRate } from "@/engine/credit";
-import { facilityQuotes, facilityMetrics, facilityStatus, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
+import type { FacilityQuote } from "@/engine/facility";
+import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, FACILITY_CURE_M, RELEASE_PREMIUM } from "@/engine/facility";
 import { usd } from "@/ui/format";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { Big, Row } from "@/ui/panels/shared";
@@ -66,10 +67,64 @@ export { Landlords } from "@/ui/panels/LandlordsDesk";
  * The order is the order a lender's credit memo puts them in: what you owe,
  * what it costs, what covers it, when it comes due, and what could go wrong.
  */
+/**
+ * WHAT THE POOL WILL COST AND WHAT WILL COVER IT — before you sign, not after.
+ *
+ * The two facts a borrower needs to decide a facility were computed inside
+ * `facilityQuotes` and thrown away: the monthly cheque and the coverage it
+ * leaves. So the card advertised a borrowing base and a coupon, and the first
+ * time anybody saw the payment or the DSCR was on the covenant test the month
+ * after closing.
+ *
+ * Every number here comes out of `facilityDrawTerms`, which is the same function
+ * the close and the monthly covenant test use. Not "the same formula" — the same
+ * function, so the card and the lender cannot disagree.
+ */
+function DrawTerms({ qt, draw }: { qt: FacilityQuote; draw: number }) {
+  const t = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
+  return (
+    <>
+      <Row
+        k="Pool NOI today"
+        v={`${usd(Math.round(qt.quality.noi))}/yr — ${usd(Math.round(qt.quality.noi - t.annualDs))} after debt service`}
+        bad={qt.quality.noi - t.annualDs < 0}
+        title="Today's rent roll, not a stabilised pro forma. This is the number the covenant is struck on."
+      />
+      <Row k="Debt service" v={`${usd(t.monthlyPmt)}/mo · ${usd(t.annualDs)}/yr`} strong />
+      <Row
+        k="Coverage at this draw"
+        v={`${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant`}
+        bad={t.dscr < qt.minDSCR}
+        strong
+      />
+      <Row
+        k="Leverage at this draw"
+        v={`${(t.ltv * 100).toFixed(0)}% against a ${(qt.advance * 100).toFixed(0)}% covenant`}
+        bad={t.ltv > qt.advance}
+      />
+    </>
+  );
+}
+
+/** The covenant warning for the slider, from the same terms the rows show. */
+function drawHint(qt: FacilityQuote, draw: number): string {
+  const t = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
+  if (t.dscr < qt.minDSCR) {
+    return `At this draw the pool covers ${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant — `
+      + `it would open in default, swept, with ${FACILITY_CURE_M} months to cure. Draw less.`;
+  }
+  return `${usd(t.monthlyPmt)} a month, ${t.dscr.toFixed(2)}x covered. `
+    + "Drawing less than the base is the room you will have when the market turns — the covenant is tested against what you drew.";
+}
+
 export function DebtPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const { releaseFacility, repayFacility: payFac } = useStore.getState();
+  // The pool refinancing goes through the store like every other money action.
+  // Read optionally: the engine function is the contract, and this desk must not
+  // fail to compile against a store wrapper that has not landed yet.
+  const refiFacility = useStore.getState().refiFacility;
   // WHICH LOAN HAS ITS REFINANCING OPEN. The debt page is where a borrower
   // decides what to do about their debt, and until now the only door to the
   // refinance desk was the property record or a row on the portfolio — two
@@ -79,6 +134,11 @@ export function DebtPage() {
   const [prod, setProd] = useState<string>("savings");
   const [lev, setLev] = useState(1);
   const [building, setBuilding] = useState(false);
+  // The pool's own refinancing desk — open on demand, because re-quoting a pool
+  // walks every pledged deed and there is no reason to pay for it on every render.
+  const [refiFac, setRefiFac] = useState(false);
+  const [refiProd, setRefiProd] = useState<string>("");
+  const [refiLev, setRefiLev] = useState(1);
 
   const rows = Object.values(game.holdings)
     .map((h) => {
@@ -181,6 +241,14 @@ export function DebtPage() {
   const candidates = pledgeable(game, parcels);
   const quotes = building && pool.length >= FACILITY_MIN_ASSETS ? facilityQuotes(game, parcels, pool) : [];
   const qt = quotes.find((x) => x.productId === prod) ?? quotes.find((x) => x.available) ?? quotes[0];
+  // Re-underwritten against the deeds still in the pool, through the same
+  // function the engine's own renewal test uses.
+  const facQuotes = fac && refiFac
+    ? facilityQuotes(game, parcels, fac.bbls.filter((b) => game.holdings[b]))
+    : [];
+  const rqt = facQuotes.find((x) => x.productId === refiProd)
+    ?? facQuotes.find((x) => x.available)
+    ?? facQuotes[0];
 
   return (
     <div>
@@ -290,7 +358,7 @@ export function DebtPage() {
       {fac ? (
         <>
           <div className="grid">
-            <Row k="Status" v={facilityStatus(game, parcels)} bad={fac.breachedSince !== undefined || fac.accelM !== undefined} strong />
+            <Row k="Status" v={facilityStatus(game, parcels)} bad={fac.breachedSince !== undefined || fac.accelM !== undefined || fac.noticedM !== undefined} strong />
             <Row k="Lender" v={`${fac.lender} · ${fac.ratePct.toFixed(2)}%`} />
             <Row k="Balance" v={`${usd(fac.balance)} of ${usd(fac.drawn)} drawn`} />
             <Row k="Pool" v={`${fac.bbls.length} buildings · ${usd(Math.round(facM.value))} of value`} />
@@ -306,7 +374,80 @@ export function DebtPage() {
             <button className="btn" disabled={game.cash < fac.balance} onClick={() => payFac(fac.balance)}>
               Repay in full · {usd(fac.balance)}
             </button>
+            <button className={"btn" + (refiFac ? " btn-on" : "")} disabled={fac.accelM !== undefined}
+              onClick={() => setRefiFac(!refiFac)}>
+              Refinance the pool
+            </button>
           </div>
+          {/* THE POOL'S REFINANCING DESK. There was no way to refinance a
+              facility at all: `openFacility` refuses while one exists and every
+              single-asset desk marks a pledged deed unavailable, so the only exit
+              was paying the whole balance in cash — and at maturity the engine
+              took the pool. Same underwriting as the opening card, same numbers,
+              same function behind the button. */}
+          {refiFac && (
+            <>
+              {facQuotes.length === 0 ? (
+                <div className="hint">Nobody will re-quote this pool today.</div>
+              ) : (
+                <>
+                  <div className="btn-row">
+                    {facQuotes.map((x) => (
+                      <button key={x.productId}
+                        className={"btn" + (rqt?.productId === x.productId ? " btn-on" : "")}
+                        disabled={!x.available}
+                        style={!x.available ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
+                        title={x.why ?? `${x.lender} · ${(x.advance * 100).toFixed(0)}% advance`}
+                        onClick={() => setRefiProd(x.productId)}>
+                        {x.lender} · {x.available ? `${x.ratePct.toFixed(2)}%` : "won't quote"}
+                      </button>
+                    ))}
+                  </div>
+                  {rqt && (() => {
+                    const draw = Math.floor(rqt.base * refiLev);
+                    const fees = Math.round(draw * 0.01) + Math.round(draw * rqt.points);
+                    const paydown = Math.max(0, fac.balance - draw);
+                    const out = Math.max(0, draw - fac.balance);
+                    return (
+                      <>
+                        <div className="grid">
+                          <Row k="New borrowing base" v={`${usd(rqt.base)} · ${(rqt.advance * 100).toFixed(0)}% advance · capped by ${rqt.binding}`} strong />
+                          <Row k="Balance to roll" v={`${usd(fac.balance)} at ${fac.ratePct.toFixed(2)}% with ${fac.lender}`} />
+                          <Row k="New coupon" v={`${rqt.ratePct.toFixed(2)}% · ${Math.round(rqt.termM / 12)}-yr term${rqt.ioM ? `, ${Math.round(rqt.ioM / 12)}-yr IO` : ""}`}
+                            bad={rqt.ratePct > fac.ratePct} />
+                          <DrawTerms qt={rqt} draw={draw} />
+                          <Row k="Closing costs" v={`${usd(fees)} of fee and points${paydown > 0 ? ` plus a ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
+                          <Row k="Cash out" v={out > 0 ? `${usd(out)} to the operating account` : "none — the same balance rolls"} />
+                        </div>
+                        <Slider
+                          label="New draw"
+                          value={refiLev}
+                          min={0.2}
+                          max={1}
+                          step={0.02}
+                          onChange={setRefiLev}
+                          format={() => `${usd(draw)} · ${((draw / Math.max(1, rqt.quality.value)) * 100).toFixed(0)}% of the pool`}
+                          marks={[{ at: 0.5, label: "half" }, { at: 1, label: "the base" }]}
+                          hint={drawHint(rqt, draw)}
+                        />
+                        <div className="btn-row">
+                          <button className="btn btn-buy" disabled={!rqt.available}
+                            title={!refiFacility ? "The refinancing desk is not wired up in this build." : undefined}
+                            onClick={() => { refiFacility?.(rqt.productId, refiLev); setRefiFac(false); }}>
+                            Refinance · {usd(draw)} at {rqt.ratePct.toFixed(2)}%
+                          </button>
+                        </div>
+                        <div className="hint">
+                          The pool stays crossed and the guarantee stays signed — this replaces the paper, not the structure.
+                          A draw below the balance is a paydown you fund at the closing; above it, the difference is cash out.
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+            </>
+          )}
           <div className="scroll-x">
             <table className="tbl">
               <thead>
@@ -325,7 +466,15 @@ export function DebtPage() {
                       <td className="num">{usd(allocatedAmount(game, parcels, b))}</td>
                       <td className="num">{usd(rel)}</td>
                       <td>
-                        <button className="btn btn-sm" disabled={game.cash < rel} onClick={() => releaseFacility(b)}>
+                        {/* The button and the engine ask the same question:
+                            `releaseFromFacility` funds the release price from
+                            cash and then the line, so quoting raw cash here
+                            would grey out a release the firm can actually make. */}
+                        <button className="btn btn-sm" disabled={fundableNow(game, parcels) < rel}
+                          title={fundableNow(game, parcels) < rel
+                            ? `The release price is ${usd(rel)} and you can raise ${usd(fundableNow(game, parcels))} from cash and the line.`
+                            : `${usd(rel)} — the allocated share plus ${Math.round((RELEASE_PREMIUM - 1) * 100)}%. The balance comes down by what you pay.`}
+                          onClick={() => releaseFacility(b)}>
                           Release
                         </button>
                       </td>
@@ -407,6 +556,8 @@ export function DebtPage() {
                 })()}
                 <Row k="Covenants" v={`${qt.minDSCR.toFixed(2)}x coverage, ${(qt.advance * 100).toFixed(0)}% leverage — tested on the POOL`} />
                 <Row k="Structure" v={`${qt.ioM ? `${Math.round(qt.ioM / 12)}-yr IO, ` : ""}${qt.amortYears}-yr amort, ${Math.round(qt.termM / 12)}-yr term, recourse`} />
+                {/* THE PAYMENT AND THE COVERAGE, AT THE DRAW ON THE SLIDER. */}
+                <DrawTerms qt={qt} draw={Math.floor(qt.base * lev)} />
               </div>
               <Slider
                 label="Draw"
@@ -418,7 +569,7 @@ export function DebtPage() {
                 format={() => `${usd(Math.floor(qt.base * lev))} · ${((qt.base * lev) / Math.max(1, qt.quality.value) * 100).toFixed(0)}% of the pool`}
                 marks={[{ at: 0.5, label: "half" }, { at: 1, label: "the base" }]}
                 hint={`Net to you ${usd(Math.floor(qt.base * lev) - qt.payoff - qt.penalties - Math.round(Math.floor(qt.base * lev) * (0.01 + qt.points)))} after the payoffs and fees. `
-                  + "Drawing less than the base is the room you will have when the market turns — the covenant is tested against what you drew."}
+                  + drawHint(qt, Math.floor(qt.base * lev))}
               />
               <div className="btn-row">
                 <button className="btn btn-buy" disabled={!qt.available || pool.length < FACILITY_MIN_ASSETS}

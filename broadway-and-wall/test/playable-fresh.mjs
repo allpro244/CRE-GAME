@@ -7,7 +7,7 @@
 //
 // PR #82 merged UI + distress work but only refreshed the zip; the single-file
 // HTML stayed older than TopBar/ParcelDesk. Guard against that too.
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,15 +15,28 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PLAYABLE = join(HERE, "..", "playable", "broadway-and-wall.html");
 const PLAYABLE_ZIP = join(HERE, "..", "playable", "Broadway-and-Wall-playable.zip");
 
-// Any UI change in these files must trigger a playable rebuild.
-const SOURCE_ANCHORS = [
-  join(HERE, "..", "src", "ui", "StartMenu.tsx"),
-  join(HERE, "..", "src", "ui", "TopBar.tsx"),
-  join(HERE, "..", "src", "ui", "panels", "ParcelDesk.tsx"),
-  join(HERE, "..", "src", "ui", "panels", "DevelopDesk.tsx"),
-  join(HERE, "..", "src", "ui", "panels", "AcquireDesk.tsx"),
-  join(HERE, "..", "src", "ui", "panels", "RefiDesk.tsx"),
-];
+// A change in ANY of these must trigger a playable rebuild.
+//
+// THIS LIST WAS SIX UI FILES AND THAT IS A GUARD WITH A HOLE IN IT. The whole
+// point of this test is "the committed playable must match the source", and it
+// was only ever asked about six panels — so a day's work on the renderer, the
+// generator and the engine could land, and the download would still be the
+// build from before any of it, and this test would print "fresh" the whole
+// time. It did exactly that: the committed bundle sat six hours behind
+// Manhattan, seventeen Art Deco families and the harbour rewrite, green.
+//
+// The honest anchor is the whole of src/, since everything under it ends up in
+// the bundle. Walked rather than listed, so a new module cannot be forgotten —
+// a hand-kept list of files to watch is the fault this replaces, not the fix.
+const SRC = join(HERE, "..", "src");
+function newestUnder(dir) {
+  let newest = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    newest = Math.max(newest, e.isDirectory() ? newestUnder(p) : statSync(p).mtimeMs);
+  }
+  return newest;
+}
 
 const LEGACY = [
   "which island",
@@ -57,10 +70,10 @@ if (hits.length) {
   process.exit(1);
 }
 
-const newestSource = Math.max(...SOURCE_ANCHORS.map((p) => statSync(p).mtimeMs));
+const newestSource = newestUnder(SRC);
 const playableMtime = statSync(PLAYABLE).mtimeMs;
 if (playableMtime < newestSource - 1000) {
-  console.error("\nSTALE PLAYABLE — playable/broadway-and-wall.html is older than UI source.");
+  console.error("\nSTALE PLAYABLE — playable/broadway-and-wall.html is older than src/.");
   console.error("Rebuild and commit:\n  pnpm --dir broadway-and-wall package:playable\n");
   process.exit(1);
 }

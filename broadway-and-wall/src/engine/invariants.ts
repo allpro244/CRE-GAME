@@ -409,7 +409,15 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     const h = s.holdings[l.bbl];
     if (!rec || !h) continue;
     const use = l.use ?? leasableUses(rec)[0] ?? "office";
-    const floor = minTenancySf(rec, use);
+    // WHAT "CANNOT SIGN" MEANS DEPENDS ON WHAT THE LETTER DOES. A new lease cuts
+    // a suite and needs the demise floor. An expansion adds to a demise that
+    // already exists and cuts nothing, so what it needs is the space it was
+    // written for — which is how a MUST-TAKE letter can exist at all: a remnant
+    // under the floor that no new tenant can ever lease, offered to the sitting
+    // neighbour. Same test signLoi applies, so the two cannot disagree.
+    const floor = l.kind === "expansion"
+      ? Math.min(l.sf, minTenancySf(rec, use))
+      : minTenancySf(rec, use);
     const vac = useVacantSf(rec, h, use, s.month);
     if (vac < floor) {
       bad("loi", `${l.bbl} ${l.name}`, `letter for ${Math.round(l.sf)} sf of ${use} is live, but only `

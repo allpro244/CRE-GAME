@@ -546,7 +546,12 @@ export function DealsPage() {
         </div>
         {sales.length === 0 && !game.portfolioSale
           && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
-        {game.portfolioSale && <PortfolioSaleDesk bundle={game.portfolioSale.bbls} clear={() => { /* nothing to clear: not bundling here */ }} />}
+        {/* The live process only. `bundle` is the picks being assembled on the
+            Portfolio page and there is no ticking here, so it is empty rather
+            than the deeds already in the market — passing those meant any
+            change to the desk's live-process guard would turn this into a
+            prompt to re-list the buildings you had just sold. */}
+        {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
 
         <div className="page-section" style={{ marginTop: 18 }}>Rolling within a year · {expiring.length}</div>

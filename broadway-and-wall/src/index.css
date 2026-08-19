@@ -99,6 +99,28 @@ body {
   margin-left: 12px; font-size: 12px; color: var(--ink-dim);
   letter-spacing: 1.2px; text-transform: uppercase;
 }
+/* THE WAY BACK, top-left, always. `.topbar` is pointer-events:none so the map
+   drags through the empty header, so this island re-enables its own — without
+   that line the button paints and cannot be clicked. */
+.nav-back {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: 12px; max-width: 190px;
+  font-size: 12px; font-weight: 600; color: var(--ink-dim);
+  background: linear-gradient(to bottom, rgba(255, 253, 246, 0.82), rgba(236, 229, 210, 0.76));
+  border: 1px solid rgba(96, 76, 34, 0.22); border-radius: var(--r-sm);
+  padding: 6px 10px 6px 8px; cursor: pointer;
+  box-shadow: var(--edge-top), var(--lift-1);
+  transition: background 0.13s var(--ease), color 0.13s var(--ease),
+              border-color 0.13s var(--ease), box-shadow 0.13s var(--ease), transform 0.08s var(--ease);
+}
+.nav-back:hover:not(:disabled) { color: var(--ink); border-color: var(--gold); box-shadow: var(--edge-top), var(--lift-2); }
+.nav-back:active:not(:disabled) { transform: translateY(1px); }
+/* Kept in place rather than removed: a control that appears and disappears
+   moves the firm name under the cursor every time the player changes rooms. */
+.nav-back:disabled { opacity: 0.34; cursor: default; box-shadow: var(--edge-top); }
+.nav-back-arrow { font-size: 14px; line-height: 1; }
+.nav-back-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* THE NEW-CITY BUTTON HAS TO TAKE CLICKS. `.topbar` is pointer-events:none so
    the map can be dragged through the empty space either side of the header,
    and every interactive island in the bar re-enables it — .topbar-right and
@@ -257,13 +279,14 @@ body {
 /* ---- game top bar ---- */
 .topbar-game { display: flex; align-items: center; gap: 16px; pointer-events: auto; min-width: 0; flex: 0 1 auto; }
 /* THE BAR CANNOT OVERLAP ITSELF.
-   Only .topbar-stats may shrink, and it clips rather than overflowing; every
-   readout in it is also on a page. Everything else in the bar is flex-shrink:0
-   so the controls keep their size and the right-hand island keeps its place,
-   which is what stops Advance/Yr/skip landing on top of Saves and Settings. */
-/* Vital readouts (date, cash, line) sit outside the clip box so a crowded
-   nav row cannot truncate "$5.2M / $12.0M" into "$5..". Droppable stats still
-   live in .topbar-stats and may clip / shed via media queries. */
+   Nothing in the bar shrinks: the controls keep their size and the right-hand
+   island keeps its place, which is what stops Advance/Yr/skip landing on top
+   of Saves and Settings. Width the readouts cannot have is taken out of the
+   bar's HEIGHT (the summary's own row, and its flex-wrap), never out of a
+   number the player is reading.
+   Vital readouts — date, cash, net worth, the line, cash flow — sit outside
+   .topbar-stats; the droppables in there still shed whole by media query, but
+   a readout that renders now renders complete. */
 .topbar-vital {
   display: flex; align-items: center; gap: 12px;
   flex: 0 0 auto; overflow: visible;
@@ -272,8 +295,13 @@ body {
   display: flex; align-items: center; gap: 12px;
   /* SHRINK, NEVER GROW. flex-grow:1 here made the readouts expand to fill the
      bar and shove the right-hand island onto a second line at EVERY width —
-     the bar measured 122px tall at 1920px, where there was room to spare. */
-  min-width: 0; flex: 0 1 auto; overflow: hidden;
+     the bar measured 122px tall at 1920px, where there was room to spare.
+     It no longer CLIPS either: a clip box makes `keep` a contradiction, and
+     it was measured doing exactly that — Book, which is never droppable, was
+     cut to 15px of its 103 at 1440 and 1600. Now that the summary has its own
+     full-width row the box has the room it was being denied, and the summary's
+     flex-wrap is what absorbs an unusual run instead of a blade. */
+  min-width: 0; flex: 0 0 auto; overflow: visible;
 }
 .topbar-game > :not(.topbar-stats) { flex: 0 0 auto; }
 .topbar-right { flex: 0 0 auto; }
@@ -473,7 +501,13 @@ body {
   color: var(--ink);
 }
 .loi-hero-sep { margin: 0 0.35em; color: var(--ink-dim); font-weight: 400; }
-.loi-hero-block { margin: 4px 0 8px; }
+/* THE BANNER IS A ROW, NOT A CELL. `.grid` pairs children into label/value
+   columns, and this block is a single child sitting inside one — so it ate
+   the first cell and shifted every Row after it by one: the rent landed in
+   the label column and read as though "Annual bump" were its name, which is
+   how a letter came to say "$48.00/sf Annual bump". Spanning both columns
+   puts the pairs back on their own labels. */
+.loi-hero-block { margin: 4px 0 8px; grid-column: 1 / -1; }
 .loi-hero-sub { margin-top: 2px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
 .modal .loi-hero { margin-top: 4px; margin-bottom: 2px; }
 .loi-line { margin-top: 3px; line-height: 1.4; }
@@ -671,7 +705,13 @@ body {
 .tstat-d3 { display: none; }
 .tstat-d2 { display: none; }
 @media (min-width: 1680px) { .tstat-d2 { display: flex; } }
-@media (min-width: 2200px) { .tstat-d3 { display: flex; } }
+/* 2200 was the width the readouts needed while they shared row 1 with the
+   brand and the right-hand island, i.e. a width almost nobody plays at, so
+   Market and Vacant lots were gated out of the game. On their own row the
+   strip measures 939px used of 1408 at 1440 — 469 of slack against the 200
+   these two want, and 115 still spare on a run carrying a fund vehicle and a
+   drawn line, which are the two things that widen it. */
+@media (min-width: 1440px) { .tstat-d3 { display: flex; } }
 @media (max-width: 1360px) {
   .brand-name { font-size: 18px; }
   .topbar-right .stat { display: none; }
@@ -1442,7 +1482,7 @@ body {
 .topbar {
   display: grid;
   grid-template-columns: minmax(220px, auto) minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   align-items: center;
   column-gap: 18px;
   row-gap: 7px;
@@ -1450,14 +1490,37 @@ body {
 }
 .brand { grid-column: 1; grid-row: 1; min-width: 0; display: flex; align-items: center; }
 .topbar-game { display: contents; }
+/* THE READOUTS GET A ROW OF THEIR OWN, AT EVERY WIDTH.
+   Arithmetic, not taste. Measured: the vital strip is 820px with net worth in
+   it and 1003 once the delta chips and the spark appear, the stats box wants
+   another 103-307, and the brand (415-461 across seeds — firm name plus city)
+   and the right-hand island leave column 2 about 610px at 1440. Sharing row 1
+   was therefore unsatisfiable at every width anyone plays at, and the summary
+   centres itself, so it spilled BOTH ways: at 1440 and 1600 the date printed
+   on top of the town name while the clip box cut Book to 15px of its 103, and
+   net worth did not render at all below 1680.
+   A row of its own is this bar's own documented trade — grow taller, never
+   overlap, never bury Advance — and --topbar-h is measured and published, so
+   the eight rules hanging off the bar follow it down. The bar measures 132px
+   to 1460 and 136 above it, which is the bar 1280 has always drawn. */
 .topbar-summary {
-  grid-column: 2; grid-row: 1;
-  min-width: 0; display: flex; align-items: center; justify-content: center;
+  grid-column: 1 / -1; grid-row: 2;
+  min-width: 0; display: flex; align-items: center; justify-content: flex-start;
+  /* Last resort is a taller bar, never an overlap: a run with a vehicle AND a
+     drawn line at 1280 wraps the tail of the strip instead of clipping it. */
+  flex-wrap: wrap;
   gap: 16px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(96, 76, 34, 0.12);
 }
+/* Net worth travels with cash now, outside the clip box; the gate in
+   vitals.css hid the pair below 1680px and cannot see that it has moved.
+   Higher specificity rather than a duplicated media query — one place decides
+   whether the pair exists. */
+.topbar-vital .nw-pair { display: inline-flex; }
 .topbar-right { grid-column: 3; grid-row: 1; justify-self: end; }
 .topbar-workspace {
-  grid-column: 1 / -1; grid-row: 2;
+  grid-column: 1 / -1; grid-row: 3;
   min-width: 0;
   display: flex; align-items: center; gap: 10px;
   padding-top: 7px;
@@ -1704,24 +1767,22 @@ body {
 }
 
 @media (max-width: 1280px) {
+  /* The summary and the workspace already have their own rows; below 1280 the
+     spacer column goes too, so the brand keeps the whole line it needs. */
   .topbar {
     grid-template-columns: minmax(180px, 1fr) auto;
     column-gap: 10px;
   }
   .brand { grid-column: 1; }
   .topbar-right { grid-column: 2; }
-  .topbar-summary {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-content: flex-start;
-    padding-top: 6px;
-    border-top: 1px solid rgba(96, 76, 34, 0.12);
-  }
-  .topbar-workspace { grid-row: 3; }
 }
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }
   .firm-id, .brand-sub { display: none; }
+  /* The arrow survives every width — it is the one control the player must
+     never have to hunt for. Only its name folds away. */
+  .nav-back-label { display: none; }
+  .nav-back { margin-right: 8px; padding: 6px 8px; }
   .topbar-right { gap: 4px; }
   .topbar-right .lens-btn { font-size: 0; width: 29px; height: 28px; padding: 0; }
   .topbar-right .lens-btn::first-letter { font-size: 13px; }

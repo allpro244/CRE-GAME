@@ -56,6 +56,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, bumpLenderRel } from "./debt";
 import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
+import { spendable, fundAndBook } from "./credit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -624,15 +625,28 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
   const o = s.noteOffers?.find((x) => x.id === id);
   if (!o) return { s, err: "That paper is gone." };
   const px = Math.round(o.face * o.askPct);
-  if (s.cash < px) return { s, err: `That is ${money(px)} in cash — you are short ${money(px - s.cash)}. Nobody finances a note purchase.` };
+  // NOBODY LENDS AGAINST THE NOTE. That has not changed and it is the honest
+  // part of the old refusal — there is no repo line on a defaulted mortgage
+  // you just bought at sixty cents. What changed is that the corporate
+  // revolver is not asset financing: it is the firm's own working capital, and
+  // a buyer who can write the cheque out of an undrawn line writes it. The
+  // credit-book rail below still says how much paper the firm may carry, which
+  // is the constraint that was actually doing the work.
+  const liq = spendable(s, parcels);
+  if (liq.total < px) {
+    return {
+      s,
+      err: `That is ${money(px)} and you can raise ${money(liq.total)} — ${money(liq.cash)} of cash and `
+        + `${money(liq.line)} on the line. Nobody finances the note itself.`,
+    };
+  }
   // Phase C — purchased paper counts against the combined credit book.
   const room = creditBookRoom(s, parcels);
   if (px > room) {
     return { s, err: `Your credit book will only carry another ${money(room)} — originated sleeve plus purchased notes share one rail.` };
   }
   const next = clone(s);
-  next.cash -= px;
-  logBooks(next, "bought", px);
+  fundAndBook(next, parcels, px, "bought");
   next.noteOffers = next.noteOffers!.filter((x) => x.id !== o.id);
   if (next.cityLoans?.[o.bbl]) delete next.cityLoans[o.bbl];   // off the bank's statement — it is your paper now
   next.notes!.push({
@@ -695,15 +709,26 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
 }
 
 /** File to foreclose. Legal money out, and then you wait. */
-export function fileOnNote(s: GameState, _parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
+export function fileOnNote(s: GameState, parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const n = s.notes?.find((x) => x.id === id);
   if (!n) return { s, err: "You do not hold that paper." };
   if (n.perf === "performing") return { s, err: "It is paying. You cannot foreclose on a loan that is current, however much you want the building." };
   if (n.filedM !== undefined) return { s, err: "You have already filed." };
   const cost = Math.round(n.face * FILE_COST);
-  if (s.cash < cost) return { s, err: `Filing costs ${money(cost)} in legal — you are short.` };
+  // Foreclosure counsel is a legal fee on paper you already own, and a note
+  // buyer who cannot start the process because the operating account is light
+  // this month simply watches the collateral rot. The line pays the retainer;
+  // the years on the courthouse calendar and the collect-nothing gap stand.
+  const liq = spendable(s, parcels);
+  if (liq.total < cost) {
+    return {
+      s,
+      err: `Filing costs ${money(cost)} in legal and you can raise ${money(liq.total)} — `
+        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+    };
+  }
   const next = clone(s);
-  next.cash -= cost; logBooks(next, "ga", cost);
+  fundAndBook(next, parcels, cost, "ga");
   const nn = next.notes!.find((x) => x.id === id)!;
   nn.filedM = next.month;
   // The process takes what it takes, and then it waits for the county: one
@@ -801,14 +826,30 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const w = s.workouts?.[bbl];
   if (!q || !h?.loan || !w) return { s, err: "There is nothing in default there." };
   if (!q.open) return { s, err: q.why };
-  if (s.cash < q.px) return { s, err: `A discounted payoff is cash on the table: ${money(q.px)}. You are short ${money(q.px - s.cash)}.` };
+  // A DPO IS A CURE, NOT A VOLUNTARY PAYDOWN. The rule against funding debt
+  // reduction on the revolver is about retiring cheap term paper you were
+  // happily servicing; this is a defaulted loan on a building the desk is
+  // about to take, retired below par. credit.ts already says a sponsor who can
+  // reinstate from the line does not lose the deed, and refusing the same line
+  // for the better version of that trade — same deed, less money — was the
+  // inconsistency. Everything that makes it dangerous stays: the credit event
+  // is still reported, the lender relationship still takes eighteen points,
+  // and `markSponsor` still cuts the advance rate afterwards, which can put
+  // the very draw that funded it over the line.
+  const liq = spendable(s, parcels);
+  if (liq.total < q.px) {
+    return {
+      s,
+      err: `A discounted payoff is money on the table: ${money(q.px)}, against ${money(liq.total)} you can raise — `
+        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+    };
+  }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
   const lender = h.loan.holder ?? productById(h.loan.product).lender;
   const discount = q.bal - q.px;
-  next.cash -= q.px;
-  logBooks(next, "debtSvc", q.px);
+  fundAndBook(next, parcels, q.px, "debtSvc");
   next.holdings[bbl]!.loan = null;
   delete next.workouts![bbl];
   chargeLenderLoss(next, lender, discount);

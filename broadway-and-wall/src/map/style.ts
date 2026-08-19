@@ -1,4 +1,8 @@
 import type { StyleSpecification, SourceSpecification, LayerSpecification } from "maplibre-gl";
+// The one open-water colour both renderers paint; see `sea.ts` for why it lives
+// in a leaf module of its own rather than next to the layer that uses it.
+import { OPEN_SEA } from "./sea";
+
 
 // Ashport is fictional — the self-contained style built from context.geojson
 // IS the basemap, so no network fetch by default. Set VITE_BASEMAP_STYLE to
@@ -291,7 +295,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       // #2d5f86 was a different, duller ocean for the first second of every
       // session. The background also shows raw past the sea mesh at extreme
       // pitch, where a mismatch reads as a hard band across the world's edge.
-      { id: "bg", type: "background", paint: { "background-color": "#33719c" } },
+      { id: "bg", type: "background", paint: { "background-color": OPEN_SEA } },
       {
         id: "shallows",
         type: "fill",
@@ -399,6 +403,19 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "apron"],
         paint: { "fill-color": "#86817a" },
+      },
+      {
+        // THE MALL BETWEEN THE CARRIAGEWAYS. A grand boulevard is two roadways
+        // either side of planted ground, not one field of asphalt — the
+        // generator now cuts the reservation that way and this is the green in
+        // the middle of it. A shade duller and drier than a park's lawn: it is
+        // a median under allée trees, mown but walked over, and it must not
+        // read as somewhere you could sit.
+        id: "median",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "median"],
+        paint: { "fill-color": "#a8bd93" },
       },
       {
         // timber decking, with a shadowed edge so the pier stands proud of

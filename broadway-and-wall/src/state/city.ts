@@ -16,7 +16,7 @@
 //
 // Nothing below knows which kind of island it is holding an id for, and nothing
 // below should.
-import { randomSeed, PROCEDURAL } from "@/citygen/index.mjs";
+import { randomSeed, PROCEDURAL, MANHATTAN, DEFAULT_EXTENT } from "@/citygen/index.mjs";
 import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
@@ -64,13 +64,27 @@ export const DEFAULT_DEV = "village";
  * How built-up the town starts. Browser-local like the seed, and read at
  * generation time — it decides what buildings exist, so like the size it can
  * only be chosen when a run begins.
+ *
+ * THE DEFAULT IS PER CITY, because "how far along is this town" is a question a
+ * real one has already answered. A generated island opens at `village`: two
+ * fifths of the plat still grass, three-storey fabric, nothing over fourteen
+ * floors — a town you are going to help build, which is the game the generated
+ * island is for. Manhattan below 14th Street in 2000 is not two fifths grass.
+ * Measured on the first written-down build, the village default cut 7,354
+ * vacant lots out of 14,924 — half the Financial District as open dirt, which
+ * is not a version of this city that has ever existed. It opens at
+ * `metropolis`: 14% vacant, five-storey fabric, towers past sixty floors, and
+ * "very little dirt left — this is a game about buying what exists."
+ *
+ * The player can still choose. This only changes what the picker starts on.
  */
-export function currentDev(): string {
-  try { return localStorage.getItem(DEV_KEY) || DEFAULT_DEV; } catch { return DEFAULT_DEV; }
+export function currentDev(city = currentCity()): string {
+  const dflt = city === MANHATTAN ? "metropolis" : DEFAULT_DEV;
+  try { return localStorage.getItem(DEV_KEY + ":" + city) || dflt; } catch { return dflt; }
 }
 
-export function setDev(d: string): void {
-  try { localStorage.setItem(DEV_KEY, d); } catch { /* private mode: the standard town, which is survivable */ }
+export function setDev(d: string, city = currentCity()): void {
+  try { localStorage.setItem(DEV_KEY + ":" + city, d); } catch { /* private mode: the standard town, which is survivable */ }
 }
 
 /**
@@ -95,11 +109,19 @@ export function setCash0(v: number): void {
   try { localStorage.setItem(CASH_KEY, String(v)); } catch { /* private mode */ }
 }
 
+/**
+ * The size slot is per-city and it does not mean the same thing in both. A
+ * generated island stores one of the five SIZES; Manhattan stores an EXTENT —
+ * how far uptown the map goes — because scaling a traced coastline is not a
+ * smaller Manhattan, it is a different island. The key is already namespaced by
+ * city, so the two cannot collide; only the default differs.
+ */
 export function currentSize(city = currentCity()): string {
+  const dflt = city === MANHATTAN ? DEFAULT_EXTENT : DEFAULT_SIZE;
   try {
-    return localStorage.getItem(SIZE_KEY + city) || DEFAULT_SIZE;
+    return localStorage.getItem(SIZE_KEY + city) || dflt;
   } catch {
-    return DEFAULT_SIZE;
+    return dflt;
   }
 }
 

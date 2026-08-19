@@ -281,6 +281,19 @@ export function buyPortfolio(
   // reason a portfolio trades back from the sum of its parts, and making the
   // player raise the full amount in cash is what makes the discount earned
   // rather than free money.
+  //
+  // SO THIS ONE STAYS CASH-ONLY while the rest of the engine learned to spend
+  // the revolver. The discount here is not a fee being charged, it is a PRICE
+  // discovered against the size of the buying pool: a book only trades back
+  // from the sum of its parts because almost nobody can settle the whole thing
+  // at once. Let the line settle it and the pool widens, the discount stops
+  // being earned, and a modelled scarcity turns into free money — which is the
+  // one thing this change is not allowed to do. It is also the single largest,
+  // least liquid cheque in the game, and funding it by exhausting the facility
+  // that covers every other building's next bad month is exactly the liquidity
+  // a sponsor must not spend. Every individual deed inside the package is
+  // still bought through `executePurchase`, which does reach the line — one
+  // building at a time, at the sum-of-parts price, with no discount.
   const closing = Math.round(p.ask * 0.02);
   if (s.cash < p.ask + closing) {
     return { s, err: `You are ${money(p.ask + closing - s.cash)} short. A package is one cheque — nobody lends against a book you do not own yet.` };

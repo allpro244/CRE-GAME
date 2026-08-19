@@ -66,6 +66,76 @@ const JOBS: {
   },
 ];
 
+/** What to call each room in the Back button. Built from the nav itself so a
+ *  renamed desk cannot drift out of sync with the label on the way back. */
+const PAGE_LABEL: Partial<Record<Page, string>> = {
+  ...Object.fromEntries(JOBS.flatMap((j) => j.pages.map((p) => [p.id, p.label]))),
+  none: "Map",
+  property: "Property",
+  saves: "Saves",
+  settings: "Settings",
+  primer: "Primer",
+};
+
+/**
+ * THE WAY BACK.
+ *
+ * You are reading a deal, you need cash, so you go to Debt and draw on the
+ * line — and now you are in the Debt desk with no way to the thing you were
+ * about to sign except to find it on the map again. Every desk knows how to
+ * take you somewhere; none of them knew where you came from.
+ *
+ * The store keeps the trail (room + deed, together — restoring one without the
+ * other lands you in the right desk looking at the wrong building), and this is
+ * the handle. It is in the top-left corner at all times while playing, so the
+ * player never has to look for it, and it names its destination so the click is
+ * a decision rather than a guess.
+ */
+function BackButton() {
+  const depth = useStore((s) => s.navBack.length);
+  const prev = useStore((s) => s.navBack[s.navBack.length - 1] ?? null);
+  const goBack = useStore((s) => s.goBack);
+  // Alt+Left is the muscle memory every browser trained; the map owns the bare
+  // arrow keys, so it stays modified.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" || !e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      useStore.getState().goBack();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  // NAME THE PLACE, NOT THE ROUTE. A parcel desk is not a Page — it is the map
+  // with a deed selected — so the honest label for that entry is the building,
+  // and "Map" is only right when nothing was selected. Reading "← Map" on the
+  // way back from a property is how a Back button teaches people not to trust
+  // it.
+  const parcels = useStore((s) => s.parcels);
+  const where = !prev
+    ? null
+    : prev.page === "none" || prev.page === "property"
+      ? (prev.bbl ? (parcels?.[prev.bbl]?.address ?? "Property") : "Map")
+      : (PAGE_LABEL[prev.page] ?? "Back");
+  const deed = prev?.bbl && prev.page !== "none" && prev.page !== "property"
+    ? ` — and ${parcels?.[prev.bbl]?.address ?? "the deed"}` : "";
+  return (
+    <button
+      type="button"
+      className="nav-back"
+      onClick={goBack}
+      disabled={depth === 0}
+      title={where ? `Back to ${where}${deed} (Alt+←)` : "Nowhere to go back to yet"}
+      aria-label={where ? `Back to ${where}` : "Back"}
+    >
+      <span className="nav-back-arrow" aria-hidden="true">←</span>
+      <span className="nav-back-label">{where ?? "Back"}</span>
+    </button>
+  );
+}
+
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
   const [jobOpen, setJobOpen] = useState<JobId | null>(null);
@@ -304,6 +374,7 @@ export default function TopBar() {
   return (
     <div className="topbar" ref={barRef}>
       <div className="brand">
+        {game && <BackButton />}
         <span className="brand-name">Broadway &amp; Wall</span>
         {/* WHO THE CITY THINKS YOU ARE. Every rival firm has a name and a
             characterisation; the player was the string "You". This is the
@@ -400,6 +471,55 @@ export default function TopBar() {
                 />
               );
             })()}
+            {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
+                reasons spread across four pages; the chip says which way, the
+                spark says which way it has BEEN going, and the click opens the
+                waterfall — the same ledger buckets and the same appraisal the
+                Books page reads, so the popover cannot disagree with the desk.
+                It sat in the clip box behind a 1680px gate, which ranked the
+                firm's headline number BELOW occupancy and the base rate: at
+                1440 and 1600 it did not render at all, and at 1680 it rendered
+                cut in half by the clip. Measured across 1280/1440/1600/1920 —
+                it is a vital, so it lives with the vitals and never drops. */}
+            <div className="nw-pair" ref={nwRef}>
+              <Stat
+                label="Net worth"
+                value={usd(nw)}
+                w={96}
+                keep
+                title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
+                onClick={toggleNwPop}
+                expanded={nwOpen}
+              />
+              {dNw !== null && (
+                <span className="vital-extra">
+                  <DeltaChip
+                    value={dNw}
+                    fmt={usd}
+                    epsilon={10_000}
+                    title="Net worth vs a month ago. Click the readout for the full waterfall."
+                  />
+                </span>
+              )}
+              {nwSpark.length >= 2 && (
+                <span className="vital-extra">
+                  <Spark values={nwSpark} title="Net worth, the last 24 months" />
+                </span>
+              )}
+              {nwOpen && (
+                <div
+                  className="nw-pop"
+                  role="dialog"
+                  aria-label="Net worth, attributed"
+                  style={{ left: nwPopLeft }}
+                >
+                  <button type="button" className="nw-pop-close" aria-label="Close" onClick={() => setNwOpen(false)}>
+                    ✕
+                  </button>
+                  <Waterfall compact />
+                </div>
+              )}
+            </div>
             {/* CF + Occupancy live in the vital strip (not droppable stats).
                 They used to sit in .topbar-stats with drop 2 and vanished below
                 1680px — and the whole stats box hides under 760px — so the
@@ -469,47 +589,8 @@ export default function TopBar() {
             />
           </div>
           <div className="topbar-stats">
-          {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
-              reasons spread across four pages; the chip says which way, the
-              spark says which way it has BEEN going, and the click opens the
-              waterfall — the same ledger buckets and the same appraisal the
-              Books page reads, so the popover cannot disagree with the desk.
-              The pair shares the droppable readouts' width gate (.nw-pair). */}
-          <div className="nw-pair" ref={nwRef}>
-            <Stat
-              label="Net worth"
-              value={usd(nw)}
-              w={96}
-              title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
-              onClick={toggleNwPop}
-              expanded={nwOpen}
-            />
-            {dNw !== null && (
-              <DeltaChip
-                value={dNw}
-                fmt={usd}
-                epsilon={10_000}
-                title="Net worth vs a month ago. Click the readout for the full waterfall."
-              />
-            )}
-            {nwSpark.length >= 2 && (
-              <Spark values={nwSpark} title="Net worth, the last 24 months" />
-            )}
-            {nwOpen && (
-              <div
-                className="nw-pop"
-                role="dialog"
-                aria-label="Net worth, attributed"
-                style={{ left: nwPopLeft }}
-              >
-                <button type="button" className="nw-pop-close" aria-label="Close" onClick={() => setNwOpen(false)}>
-                  ✕
-                </button>
-                <Waterfall compact />
-              </div>
-            )}
-          </div>
-          {/* NW rides drop 2. Market phase and vacant-lot counts are drop 3. */}
+          {/* Market phase and vacant-lot counts are drop 3 — the two readouts
+              in here that a player never steers by mid-month. */}
           <Stat
             label="Market"
             value={game.econ.phase}

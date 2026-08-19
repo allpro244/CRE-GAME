@@ -16,7 +16,7 @@ import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
-import { releaseCost, tickFacility } from "./facility";
+import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
@@ -38,7 +38,7 @@ import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
-import { tickTaxAppeals } from "./tax";
+import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -140,7 +140,7 @@ export function newGame(
 ): GameState {
   const startAge = age0 ?? lifeForCash(cash0).age;
   const s: GameState = {
-    v: 38,
+    v: 39,
     seed,
     rng: seed,
     streams: initStreams(seed),
@@ -737,8 +737,8 @@ function tickMonth(
       const v = ownedHoldingValue(s, parcels, h);
       const prior = h.assessed ?? h.costBasis;
       h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
-      // taxable income: NOI less interest less straight-line depreciation
-      // (2.6%/yr on the 80% of basis that's improvements, not land)
+      // taxable income: NOI less interest less straight-line depreciation on
+      // the improvement half of the basis.
       // Taxable income includes the ground coupon on a leased fee — same deed
       // NOI the header and the debt page use. Vacant freehold dirt still has
       // no taxable NOI here (carry is not income).
@@ -749,19 +749,50 @@ function tickMonth(
       // years and everything else 39, which is why an apartment building
       // shelters materially more income than an office block of the same
       // price, and why the recapture bill on the way out is larger too.
-      const improvements = h.costBasis * 0.8;
-      const life = rec.class === "multifamily" ? 27.5 : 39;
+      //
+      // The improvement share is ALLOCATED, not assumed — see depreciableBasis
+      // in tax.ts. It was a flat 80% of basis on every deed, which over-
+      // sheltered a downtown tower standing on half its own price and under-
+      // sheltered a shed on cheap ground. `v` is reused as the denominator so
+      // the split reads the same mark the assessment two lines above does.
+      const improvements = depreciableBasis(rec, s.econ, h.costBasis, v);
+      const life = deprLifeYrs(rec.class);
       const deprCapacity = improvements - (h.deprTaken ?? 0);
-      const depr = rec.class === "land" ? 0 : Math.max(0, Math.min(improvements / life, deprCapacity));
+      const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       taxable += noi - interest - depr; // losses net against gains across the portfolio
     }
-    const tax = Math.round(Math.max(0, taxable) * 0.25);
-    if (tax > 1000) {
-      s.cash -= tax;
-      s.taxesPaid = (s.taxesPaid ?? 0) + tax;
-      logBooks(s, "taxes", tax);
-      s.news.unshift({ q: s.month, kind: "info", text: `Tax season: $${(tax / 1e6).toFixed(2)}M due on last year's portfolio income (after interest and depreciation).` });
+    // THE LOSS CARRIES. Netting happens in settleIncomeTax so the cheque, the
+    // news line and the Books page are one answer — see tax.ts for the 80%
+    // §172(a) cap and why there is no expiry.
+    const yr = settleIncomeTax(taxable, s.taxLossCarry ?? 0);
+    const priorCarry = Math.max(0, s.taxLossCarry ?? 0);
+    s.taxLossCarry = yr.carry;
+    const M = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
+    if (yr.tax > 1000) {
+      s.cash -= yr.tax;
+      s.taxesPaid = (s.taxesPaid ?? 0) + yr.tax;
+      logBooks(s, "taxes", yr.tax);
+      // A shelter the player cannot see is a shelter they will not plan
+      // around, so the line says what the carry did and what is left of it.
+      const shel = yr.sheltered > 1000
+        ? ` ${M(yr.sheltered)} of carried-forward loss went against it`
+          + (yr.carry > 1000 ? `, ${M(yr.carry)} still banked.` : `, and the bank is now empty.`)
+        : yr.carry > 1000
+          ? ` ${M(yr.carry)} of loss stays banked — a carryforward reaches only 80% of a year's income.`
+          : "";
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Tax season: ${M(yr.tax)} due on last year's portfolio income (after interest and depreciation).${shel}`,
+      });
+    } else if (yr.carry > priorCarry + 100_000) {
+      // A sheltered year used to pass in silence, which is how a player learns
+      // nothing from the best tax outcome the business offers.
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Tax season: no income tax due — depreciation and interest ran the book to a paper loss. `
+          + `${M(yr.carry - priorCarry)} banked against future income; ${M(yr.carry)} carried forward in all.`,
+      });
     }
   }
   // Appeal decisions follow the annual roll so a successful challenge is not
@@ -1283,7 +1314,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       if (h.planCutM === s.month) {
         out.push({
           key: `capital-plan:${h.bbl}:${h.planCutM}`,
-          label: `${addr(h.bbl)} capital plan could not be funded from cash — condition will deteriorate`,
+          // NAME THE CONDITION THAT ACTUALLY FIRED. The plan now funds off cash
+          // OR the undrawn line, so `planCutM` is set when both are gone — and
+          // a notice that says "from cash" sends the player to look for cash
+          // when the real answer is that there is no liquidity anywhere.
+          label: `${addr(h.bbl)} capital plan could not be funded — no cash and no room on the line, so condition will deteriorate`,
         });
       }
     }
@@ -1302,6 +1337,29 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       });
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
+    // MISSED PAYMENTS, FROM THE FIRST ONE. The arrears clock runs three months
+    // before a lender opens a file and nothing on this list said so until the
+    // file existed — so auto-advance walked straight through the only part of
+    // that road the owner could still do something about. The counter is in the
+    // key on purpose: it stops the clock once a month while the loan is short,
+    // and stops nothing once the payment is made.
+    if ((h.loan?.arrearsMs ?? 0) > 0) {
+      const ms = h.loan!.arrearsMs!;
+      out.push({
+        key: `arrears:${h.bbl}:${ms}`,
+        label: `${addr(h.bbl)} has missed ${ms} payment${ms === 1 ? "" : "s"} — `
+          + `${productById(h.loan!.product).lender} files at three`,
+      });
+    }
+    // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
+    // liability against a building — announced once, in the month it happened.
+    if (h.loan && (h.loan as { renewedM?: number }).renewedM === s.month) {
+      out.push({
+        key: `renewed:${h.bbl}:${s.month}`,
+        label: `${addr(h.bbl)} balloon renewed with ${productById(h.loan.product).lender} at `
+          + `${h.loan.ratePct.toFixed(2)}% — matures ${monthLabel(h.loan.maturityM)}`,
+      });
+    }
   }
   // A portfolio facility is one loan against many deeds, so it never appears
   // in the holding loop above. Its balloon and covenant sweep are at least as
@@ -1320,15 +1378,63 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
         label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
       });
     }
+    // THE POOL IS SHORT ON ITS COUPON. Same clock as a single loan and a great
+    // deal worse at the end of it, and it was invisible for its first two months.
+    if ((s.facility.arrearsMs ?? 0) > 0) {
+      const ms = s.facility.arrearsMs!;
+      out.push({
+        key: `facility-arrears:${ms}`,
+        label: `${s.facility.lender} facility payment short ${ms} month${ms === 1 ? "" : "s"} — `
+          + `${s.facility.bbls.length} buildings stand behind it`,
+      });
+    }
+    // THE MATURITY HAS BEEN CALLED and the cure window is running. Keyed on the
+    // month it was called, so it stops the clock once and then lets the player
+    // work — the countdown is in the label, not in the key.
+    if (s.facility.noticedM !== undefined) {
+      const left = Math.max(0, FACILITY_CURE_M - (s.month - s.facility.noticedM));
+      out.push({
+        key: `facility-called:${s.facility.noticedM}`,
+        label: `${s.facility.lender} has called the facility's maturity — ${left} month${left === 1 ? "" : "s"} to `
+          + `refinance or pay down $${(s.facility.balance / 1e6).toFixed(1)}M before a receiver takes all `
+          + `${s.facility.bbls.length} buildings`,
+      });
+    }
+    // ACCELERATED, AND THE RECEIVER'S CALENDAR IS RUNNING. There was no inbox
+    // row for this at all — the single most expensive event in the game had one
+    // line of news behind it and three silent months. Keyed on `accelM` rather
+    // than the month so it stops the clock ONCE; the label carries the countdown.
+    if (s.facility.accelM !== undefined) {
+      const left = Math.max(0, 3 - (s.month - s.facility.accelM));
+      out.push({
+        key: `facility-accel:${s.facility.accelM}`,
+        label: left <= 0
+          ? `${s.facility.lender} has accelerated — the receiver is selling all ${s.facility.bbls.length} buildings now`
+          : `${s.facility.lender} has accelerated the facility — a receiver sells all ${s.facility.bbls.length} `
+            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is paid`,
+      });
+    }
+    // …and the pool renewing is news the docket should carry too.
+    if ((s.facility as { renewedM?: number }).renewedM === s.month) {
+      out.push({
+        key: `facility-renewed:${s.month}`,
+        label: `${s.facility.lender} renewed the facility at ${s.facility.ratePct.toFixed(2)}% — `
+          + `matures ${monthLabel(s.facility.maturityM)}`,
+      });
+    }
   }
   for (const d of Object.values(s.developments ?? {})) {
     if (d.lastCapitalCallM === s.month && (d.lastCapitalCall ?? 0) > 0) {
       const n = d.lastCapitalCall ?? 0;
       out.push({
         key: `capital-call:${d.bbl}:${d.lastCapitalCallM}`,
+        // No source claim. A capital call debits the account whatever is in it
+        // and month-end `coverCashShortfall` draws the line for the remainder,
+        // so "funded from cash" was true only when cash happened to cover it.
+        // The amount and the address are the notice.
         label: `${addr(d.bbl)} construction capital call — ${n >= 1_000_000
           ? `$${(n / 1_000_000).toFixed(2)}M`
-          : `$${Math.round(n / 1000)}K`} funded from cash`,
+          : `$${Math.round(n / 1000)}K`} drawn down`,
       });
     }
   }

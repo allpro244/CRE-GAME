@@ -49,7 +49,7 @@
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
-import { logBooks, cloneState} from "./types";
+import { cloneState } from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
 import {
@@ -57,6 +57,7 @@ import {
   type Person,
 } from "./people";
 import { firmCapital } from "./firmCapital";
+import { fundableNow, fundAndBook } from "./credit";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -997,12 +998,27 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
   }
 }
 
-export function hire(s: GameState, candidateId: number): { s: GameState; err?: string } {
+/**
+ * The three desk actions below take `parcels` because liquidity is cash PLUS
+ * the undrawn line, and the line's limit is a function of the book. It is a
+ * required argument on purpose: an optional one would have given each of these
+ * two answers to the same question — the line counts when the caller happens
+ * to pass a table and does not when it does not — which is exactly the fault
+ * the conversion was undoing.
+ */
+export function hire(
+  s: GameState, parcels: ParcelTable, candidateId: number,
+): { s: GameState; err?: string } {
   const pool = s.hirePool?.list ?? [];
   const c = pool.find((x) => x.id === candidateId);
   if (!c) return { s, err: "That candidate is no longer available." };
   const first = Math.round(c.askSalary * (s.econ.costIdx ?? 1) / 12);
-  if (s.cash < first) return { s, err: "You cannot cover the first month's salary." };
+  // Payroll is the most ordinary use a revolver has: a firm hires against the
+  // book it is about to manage, not against the balance in the current account
+  // on the day the offer goes out. Nothing is spent here — the seat is empty
+  // for the notice period and `tickStaff` writes the cheques — so this is a
+  // solvency test only, and it should be asked of liquidity rather than cash.
+  if (fundableNow(s, parcels) < first) return { s, err: "You cannot cover the first month's salary." };
   const next: GameState = cloneState(s);
   next.pendingHires = next.pendingHires ?? [];
   next.pendingHires.push({ staff: { ...c, salary: c.askSalary, hiredM: -1 }, startM: next.month + SEARCH_MONTHS });
@@ -1015,11 +1031,17 @@ export function hire(s: GameState, candidateId: number): { s: GameState; err?: s
   return { s: next };
 }
 
-export function fire(s: GameState, staffId: number): { s: GameState; err?: string } {
+export function fire(
+  s: GameState, parcels: ParcelTable, staffId: number,
+): { s: GameState; err?: string } {
   const st = (s.staff ?? []).find((x) => x.id === staffId);
   if (!st) return { s, err: "Nobody by that name works here." };
   const pay = severanceFor(s, st);
-  if (s.cash < pay) return { s, err: `Severance is $${Math.round(pay / 1000)}k and you do not have it.` };
+  // Severance is the one payroll cheque you write when cash is worst, and a
+  // firm trapped into keeping a salary it cannot afford because it cannot
+  // afford to end it is the wrong shape of hard. The line funds it; the
+  // reputation hit, the empty desk and the three months of pay all stand.
+  if (fundableNow(s, parcels) < pay) return { s, err: `Severance is $${Math.round(pay / 1000)}k and you do not have it.` };
   const next: GameState = cloneState(s);
   next.staff = (next.staff ?? []).filter((x) => x.id !== staffId);
   // MONEY MOVES THROUGH THE LEDGER OR IT DOES NOT MOVE. This wrote severance
@@ -1029,8 +1051,7 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
   // has no staff and therefore never fires anybody, so a player who let
   // somebody go silently put the ledger out by three months of salary. It is
   // overhead, so it books where the rest of the office does.
-  next.cash -= pay;
-  logBooks(next, "ga", pay);
+  fundAndBook(next, parcels, pay, "ga");
   // No leasing hire left → they cannot hold the pen. Leaving teamLeasing on
   // after the last seat emptied made coverage silently drop while the toggle
   // still said the team had the book.
@@ -1052,6 +1073,7 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
 
 export function setSearchTier(
   s: GameState,
+  parcels: ParcelTable,
   key: typeof SEARCH_TIERS[number]["key"],
 ): { s: GameState; err?: string } {
   const tier = SEARCH_TIERS.find((t) => t.key === key);
@@ -1067,13 +1089,15 @@ export function setSearchTier(
     return { s, err: `That list is still up. ${wait} month${wait === 1 ? "" : "s"} until it ages out, or pay for a sharper search.` };
   }
   const cost = Math.round(tier.cost * (s.econ.costIdx ?? 1));
-  if (cost > 0 && s.cash < cost) {
+  // A retained search is overhead, same drawer as the severance above, and
+  // firms pay recruiters on the line every day of the week. The fee, the
+  // six-month cooldown and the band the money buys are all unchanged.
+  if (cost > 0 && fundableNow(s, parcels) < cost) {
     return { s, err: `Search costs $${Math.round(cost / 1000)}k and you do not have it.` };
   }
   const next: GameState = cloneState(s);
   if (cost > 0) {
-    next.cash -= cost;
-    logBooks(next, "ga", cost);
+    fundAndBook(next, parcels, cost, "ga");
   }
   if (!next.hirePool) next.hirePool = { m: -999, band: tier.band, list: [] };
   next.hirePool.band = tier.band;

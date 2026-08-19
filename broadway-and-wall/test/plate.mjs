@@ -31,10 +31,21 @@ const q=(a,p)=>{const s=[...a].filter(Number.isFinite).sort((x,y)=>x-y);return s
 const M_LAT = 111320;
 function areaOf(r){let a=0;for(let i=0;i<r.length;i++){const [x1,y1]=r[i],[x2,y2]=r[(i+1)%r.length];a+=x1*y2-x2*y1;}return Math.abs(a)/2;}
 
+// THE CITIES THIS PROVES THE IDENTITY ON, and the centre comes from each one
+// rather than from a constant. `[-70.9, 41.1]` was the generated island's own
+// origin and reproducing the renderer meant copying it — but the renderer reads
+// `manifest.core` now, because a written-down Manhattan sits 257 km from that
+// point and cos(lat) alone would put every area out by half a per cent, which
+// is the same order as the identity being tested. A harness that stops
+// reproducing the thing it reproduces is measuring nothing.
+//
+// Manhattan runs at its smallest extent so this stays a twenty-second check.
+const CITIES = [["somewhere", [1, 7, 20261], null], ["manhattan", [1], "houston"]];
+
 let built=[], vacant=[];
-for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
-  const c = makeCity(cityId, seed);
-  const ctr = [ -70.9, 41.1 ];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
   const kx = M_LAT * Math.cos(ctr[1]*Math.PI/180);
   const proj = ([lon,lat]) => [ (lon-ctr[0])*kx, (lat-ctr[1])*M_LAT ];
   // the renderer's two maps, reproduced from ThreeBuildings
@@ -114,13 +125,25 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 const TD = mkdtempSync(join(tmpdir(), "plate-"));
-writeFileSync(join(TD, "e.ts"), `export { towerMassing, plClipToLot } from ${JSON.stringify(join(HERE, "..", "src", "map", "ThreeBuildings"))};\n`);
+writeFileSync(join(TD, "e.ts"), `export { towerMassing, plClipToLot, playerMassing, TOWER_FAMILIES } from ${JSON.stringify(join(HERE, "..", "src", "map", "ThreeBuildings"))};\n`);
 execFileSync(join(HERE, "..", "node_modules", ".bin", "esbuild"),
   [join(TD, "e.ts"), "--bundle", "--format=esm", "--platform=node", "--log-level=error",
    `--outfile=${join(TD, "e.mjs")}`, `--alias:@=${join(HERE, "..", "src")}`]);
-const { towerMassing, plClipToLot } = await import(join(TD, "e.mjs"));
+const { towerMassing, plClipToLot, playerMassing, TOWER_FAMILIES } = await import(join(TD, "e.mjs"));
 
-const FAMS = ["exo", "stack", "carve", "blade", "shelf", "curveslab", "deepframe", "twist", "setback", "podium"];
+// THE LIST WAS HAND-WRITTEN AND HAD DRIFTED FROM THE THING IT MEASURES.
+//
+// It read ["exo","stack","carve","blade","shelf","curveslab","deepframe",
+// "twist","setback","podium"] — ten names, so the footer printed
+// "dial-invariant: 10 of 10". Two of those names are not tower families at all:
+// `towerMassing` has no case for `setback` or `podium`, so both fell to its
+// default, returned null, and were dropped before they reached a row. And two
+// families that ARE in the kit, `vanderbilt` and `spiral`, were missing
+// entirely. Eight families measured, a denominator of ten, and the gap between
+// the two is precisely what the file's own comment above calls a test that
+// cannot fail about the thing it was written for. Read it off the export, so it
+// cannot drift again.
+const FAMS = [...TOWER_FAMILIES];
 function inside(poly, ring) {                   // every vertex of poly inside ring
   const hit = ([px, py]) => {
     let c = false;
@@ -136,9 +159,9 @@ function inside(poly, ring) {                   // every vertex of poly inside r
 }
 
 let towerRows = [];
-for (const cityId of ["somewhere"]) for (const seed of [1, 7, 20261]) {
-  const c = makeCity(cityId, seed);
-  const ctr = [-70.9, 41.1];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
   const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);
   const proj = ([lon, lat]) => [(lon - ctr[0]) * kx, (lat - ctr[1]) * M_LAT];
   for (const f of c.parcelFeatures?.features ?? []) {
@@ -221,6 +244,112 @@ if (towerRows.length) {
   if (process.env.OLD !== "1" && (drift || offdeed)) {
     if (drift) console.error(`  ${drift} tower families change size relative to the dial instead of with it.`);
     if (offdeed) console.error(`  ${offdeed} readings put a tier outside the parcel.`);
+    process.exit(1);
+  }
+}
+
+// ------------------------------------------------- the other twenty-eight
+//
+// THE COMMENT THIS SECTION EXISTS TO STOP BEING A GUESS.
+//
+// `playerMassing`'s docstring says every `g:` and `m:` tier is cut from the
+// plate and that "tier-0 is 1.000x the promised plate at the median and at the
+// 99th". Nothing measured it. The section above calls `towerMassing`, which is
+// the ten `t:` recipes and nothing else — so the twenty citygen families and the
+// eight `m:` moves, which between them draw the overwhelming majority of what
+// the player and the rivals put up, were entirely outside the reach of the one
+// harness whose subject is the coverage contract. The claim was an unverified
+// comment sitting on top of the file's most load-bearing identity.
+//
+// It calls the real chooser, bundled not copied, over real parcels at real dial
+// positions, on a (class, year, floors) ladder that crosses every gate in the
+// pool. Two assertions, the same two as the tower section:
+//
+//   tier 0 must not EXCEED the promised plate     — the dial is a price paid.
+//     Under is fine and is often correct: a notched slab's tier 0 is one wing
+//     of the slot, a ferriss base is the plate but its wings are not. Over is
+//     a podium drawn wider than the site was sold.
+//   every tier must lie inside the deed           — nothing on the
+//     neighbour's land, at zero tolerance.
+//
+// AND IT CAN FAIL: `OLD=1` sweeps with `cov: 0`, which is the pre-coverage
+// fallback every save from before the field existed still takes — a plate fixed
+// at 0.78 of the deed regardless of the dial. The ratios then go to
+// 0.78^2 / cov, which is 4.06x the promised plate at the 15% mark, and the
+// assertion trips. That is the shape of the fault this identity is here for.
+const PM_LADDER = [
+  ["multifamily", 1936, 8], ["office", 1930, 9], ["retail", 1934, 8],
+  ["office", 1929, 14], ["office", 1931, 24], ["industrial", 1936, 7],
+  ["multifamily", 1972, 8], ["office", 1968, 16], ["office", 1974, 26],
+  ["multifamily", 2016, 10], ["office", 2014, 22], ["office", 2019, 34],
+];
+const pmHash = (a, b) => {
+  let h = (a * 0x9e3779b1) ^ (b * 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); h ^= h >>> 12;
+  return ((h >>> 0) % 100000) / 100000;
+};
+const pmRows = [];
+for (const [cityId, seeds, size] of CITIES) for (const seed of seeds) {
+  const c = makeCity(cityId, seed, size ? { size } : undefined);
+  const ctr = c.manifest.core;
+  const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);
+  const proj = ([lon, lat]) => [(lon - ctr[0]) * kx, (lat - ctr[1]) * M_LAT];
+  for (const f of c.parcelFeatures?.features ?? []) {
+    const bbl = f.properties?.bbl;
+    const rec = c.parcels[bbl];
+    if (!bbl || !rec?.lotArea || f.geometry?.type !== "Polygon") continue;
+    const r0 = f.geometry.coordinates[0];
+    if (!(r0?.length >= 4)) continue;
+    const ring = r0.slice(0, -1).map(proj);
+    if (areaOf(ring) < 400) continue;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    const key = Number(String(bbl).slice(-7)) || 1;
+    for (const [cls, year, fl] of PM_LADDER) {
+      const fh = cls === "office" ? 3.9 : cls === "industrial" ? 5.2 : 3.1;
+      const h = fl * fh;
+      for (const cov of [0.15, 0.60, 0.90]) {
+        // the promised plate, from the same expression engine/dev.ts charges on
+        const want = rec.lotArea * cov * 0.092903;
+        const got = playerMassing({ ring, cx, cy, h, fl, fh, cls, year,
+          cov: process.env.OLD === "1" ? 0 : cov,
+          u: (k) => pmHash(key + fl * 7919 + Math.round(cov * 100) * 104729, k) });
+        if (!got?.tiers?.length) continue;
+        pmRows.push({ fam: got.family, cov,
+          plate: areaOf(got.tiers.find((t) => t.z0 === 0)?.fp ?? got.tiers[0].fp) / want,
+          off: Math.max(...got.tiers.map((t) => inside(t.fp, ring))) });
+      }
+    }
+  }
+}
+if (pmRows.length) {
+  const fams = [...new Set(pmRows.map((r) => r.fam))].sort();
+  console.log(`\n  PLAYER PATH (fl>=7, h>=22) — ${pmRows.length} readings, ${fams.length} families\n`);
+  console.log(`    ${"family".padEnd(17)}${"n".padStart(7)}${"tier0/promised p50".padStart(20)}${"p99".padStart(8)}${"off-deed".padStart(10)}`);
+  for (const fam of fams) {
+    const v = pmRows.filter((r) => r.fam === fam);
+    console.log(`    ${fam.padEnd(17)}${String(v.length).padStart(7)}${q(v.map((r) => r.plate), 0.5).toFixed(3).padStart(20)}${q(v.map((r) => r.plate), 0.99).toFixed(3).padStart(8)}${(100 * Math.max(...v.map((r) => r.off))).toFixed(0).padStart(9)}%`);
+  }
+  // THE ONE DELIBERATE EXCEPTION, and it is the same one the tower section
+  // above prints: `exo` splays its legs wider than the shaft they carry, which
+  // predates the coverage contract and is stated in `playerMassing`'s own
+  // docstring. It measures 1.46x here. Naming it is the point — an exemption
+  // that is a list of one, written down, is not the same thing as a threshold
+  // loose enough to hide the next one.
+  const OVERSAIL_OK = new Set(["t:exo"]);
+  const over = pmRows.filter((r) => r.plate > 1.02 && !OVERSAIL_OK.has(r.fam));
+  const pmOff = pmRows.filter((r) => r.off > 0.02);
+  console.log(`\n    readings whose base EXCEEDS the promised plate: ${over.length}   (must be 0 — the dial is a price)`);
+  console.log(`    tiers outside the parcel: ${pmOff.length}   (must be 0 — nothing is built on the neighbour's land)`);
+  console.log(`    base/promised across every family: p50 ${q(pmRows.map((r) => r.plate), 0.5).toFixed(3)}  p99 ${q(pmRows.map((r) => r.plate), 0.99).toFixed(3)}\n`);
+  if (process.env.OLD !== "1" && (over.length || pmOff.length)) {
+    if (over.length) console.error(`  ${over.length} of ${pmRows.length} player-path readings draw a base bigger than the plate the dial promised.`);
+    if (pmOff.length) console.error(`  ${pmOff.length} player-path readings put a tier outside the parcel.`);
+    process.exit(1);
+  }
+  if (process.env.OLD === "1" && !over.length && !pmOff.length) {
+    console.error("  OLD=1 produced no violation: this check cannot fail and is therefore not a check.");
     process.exit(1);
   }
 }

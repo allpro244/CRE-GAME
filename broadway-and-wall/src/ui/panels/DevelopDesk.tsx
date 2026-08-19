@@ -7,11 +7,11 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { BuiltClass, Contract, DevUse } from "@/engine/types";
-import { resolveRec } from "@/engine/value";
+import { resolveRec, physicalMaxFloors, REF_PLATE_SF } from "@/engine/value";
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, unitRange, suiteSfForUnits,
-  SUITE_BOUNDS, specCostMult,
+  SUITE_BOUNDS, specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -41,6 +41,47 @@ export function capStack(p: Stack, retailMaxPct: number): Stack {
     ? Math.round((p.office * (100 - retailMaxPct)) / rest)
     : Math.round((100 - retailMaxPct) / 2);
   return { retail: retailMaxPct, office, multifamily: 100 - retailMaxPct - office };
+}
+
+/**
+ * WHAT A FLOOR THIS SIZE IS FOR, AND WHO WILL TAKE IT.
+ *
+ * The desk knew the plate — the footprint slider has printed it for as long as
+ * it has existed — and said nothing about whether anybody leases one. Measured
+ * on a generated island: at the standard 60% dial the median lot yields a
+ * 2,800 ft² plate and 0.5% of lots reach 8,000; NOT ONE lot in the city reaches
+ * 15,000 without assembling. So a player dialling a "large office building" is
+ * being handed a floor a third the size of the smallest boutique floor anybody
+ * markets, and the only signal was that the tower looked like a mast.
+ *
+ * The bands are the leasing market's, not a balance decision: 15,000-25,000 ft²
+ * is the workhorse full-floor range in a modern office tower, 8,000-10,000 is a
+ * boutique floor, and under about 5,000 a floor is one small tenant with the
+ * core taking most of it. A flat does not care — it wants a window, and the
+ * sliver apartment house is a real and common building — and a shed wants clear
+ * span, which is a different quantity again.
+ *
+ * NOTHING IS CAPPED HERE. The player can build it; the desk says what it is.
+ */
+export function plateVerdict(plateSf: number, use: DevUse): { word: string; note: string; bad: boolean } {
+  if (use === "industrial") {
+    return plateSf >= 40000
+      ? { word: "clear-span shed", note: "Big enough to rack and turn a lorry in.", bad: false }
+      : { word: "small shed", note: "Modern distribution wants 40,000 ft² and up on one level — this lets to trade and storage, not to logistics.", bad: false };
+  }
+  if (use === "retail") {
+    return { word: "shopfront", note: "Shops are bought on frontage and footfall, not on plate.", bad: false };
+  }
+  if (use === "multifamily") {
+    return plateSf >= 6000
+      ? { word: "a full floor of flats", note: "Eight to twelve homes a floor off one core.", bad: false }
+      : { word: "a sliver house", note: "Two or three flats a floor. Perfectly lettable — a flat wants a window, not a big plate — but the core is expensive per home.", bad: false };
+  }
+  // office, and the mixed programme whose swing leg is office
+  if (plateSf >= 15000) return { word: "a workhorse floor", note: "15,000-25,000 ft² is what a full-floor covenant tenant takes.", bad: false };
+  if (plateSf >= 8000) return { word: "a boutique floor", note: "Lets to one good tenant a floor. Below the range a corporate occupier shortlists.", bad: false };
+  if (plateSf >= 5000) return { word: "under a boutique floor", note: "Boutique floors bottom out near 8,000 ft². This lets to small tenants, several to a floor, at small-tenant rents.", bad: true };
+  return { word: "not a leasable office floor", note: "Under 5,000 ft² the core, the stairs and the risers take most of the plate. Offices this size let to one small firm at a time. More land, not more storeys, is what fixes it.", bad: true };
 }
 
 type BuildTab = "programme" | "design" | "financing";
@@ -300,7 +341,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             hint={use === "retail"
               ? `Shops are two storeys. The second floor already rents at a discount to the first and there is no third — what you want on a site this size is ${retailWantsMixed(rec, cov) ? "the mixed-use programme, which puts shops at grade under offices and flats" : "exactly this"}.`
               : plan
-                ? `${sf(plan.sf)} of building at ${plan.far} FAR (envelope ${plan.farMax.toFixed(1)}). The cap is zoning AND engineering — a tower needs a real floor plate (4,000+ sf for a core, ~15:1 slenderness at the limit), so a small plate tops out low no matter what the FAR allows.`
+                ? `${sf(plan.sf)} of building at ${plan.far} FAR (envelope ${plan.farMax.toFixed(1)}). ${
+                  // WHICH CEILING YOU ARE ACTUALLY STANDING ON. The hint used to
+                  // name all three at once, which tells you nothing about the
+                  // site in front of you. `maxFloorsFor` is the min of zoning,
+                  // structure and the use's own shape, so comparing its answer
+                  // against the two it minimises over says which one bound —
+                  // read off the same functions the planner runs, never a
+                  // second copy of their arithmetic.
+                  MAX_FLOORS_BY_USE[use] !== undefined && maxFl === MAX_FLOORS_BY_USE[use]
+                    ? `The cap is the use: ${devUseLabel(use)} does not stack past ${maxFl}.`
+                    : maxFl === physicalMaxFloors(rec.lotArea * cov)
+                      ? `The cap is STRUCTURE, not zoning: a ${sf(Math.round(rec.lotArea * cov))} plate cannot carry more than ${maxFl} floors of core and stair. Widen the footprint and the site carries more.`
+                      : `The cap is ZONING: the envelope runs out at ${maxFl} floors on this footprint. Narrow the footprint and the same envelope goes higher.`
+                }`
                 : undefined}
           />
           <Slider
@@ -312,8 +366,77 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v, use))); }}
             format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
             marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
-            hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint). On a big site you can put up something small and keep the rest of the land.`}
+            hint={(() => {
+              // THE SLIDER USED TO PROMISE THE OPPOSITE OF WHAT IT DOES HERE.
+              //
+              // "A slim tower goes higher on the same envelope" is true where
+              // zoning is the binding ceiling, and on this island it almost
+              // never is: the median lot is under 5,000 ft², so narrowing the
+              // footprint takes the plate below what a core can serve and the
+              // storey ceiling FALLS. Measured on the top demand decile, the
+              // same lot carried 9 floors at the 32% mark and 23 at 78%.
+              //
+              // Rather than assert either story, ask the same function the
+              // planner asks, at a wider and a narrower dial, and report what
+              // it says about THIS lot.
+              const wider = maxFloorsFor(rec, Math.min(0.9, cov + 0.15), use);
+              const slimmer = maxFloorsFor(rec, Math.max(0.08, cov - 0.15), use);
+              const dir = wider > maxFl
+                ? `Widening to ${Math.round(Math.min(0.9, cov + 0.15) * 100)}% carries ${wider} floors — the plate, not the envelope, is what is holding the height down.`
+                : slimmer > maxFl
+                  ? `Narrowing to ${Math.round(Math.max(0.08, cov - 0.15) * 100)}% carries ${slimmer} floors on the same envelope.`
+                  : `${maxFl} floors either way — you are between the two ceilings.`;
+              return `${dir} On a big site you can put up something small and keep the rest of the land.`;
+            })()}
           />
+          {/* WHAT THE SITE YIELDS, AND WHAT IT IMPLIES — see plateVerdict. The
+              desk printed the plate and never said whether anybody leases one,
+              or what the height-to-width of the result would be. Both are
+              facts about the design on the dials, so they belong beside the
+              dials, and neither of them changes the design. */}
+          {plan && (() => {
+            const plateSf = Math.round(rec.lotArea * cov);
+            const v = plateVerdict(plateSf, use);
+            // The engine's own slenderness identity, at the engine's own floor
+            // height: `physicalMaxFloors` caps floors at 1.2·√plate, which is
+            // MAX_SLENDERNESS / FLOOR_HEIGHT_FT. Reading the ratio back off the
+            // same two constants is that identity, not a second opinion.
+            const ratio = (plan.floors * FLOOR_HEIGHT_FT) / Math.sqrt(Math.max(1, plateSf));
+            return (
+              <div className="page-section" style={{ marginTop: 6 }}>
+                <div className="page-section-head">The site, and what it will carry</div>
+                <div className="grid">
+                  <Row
+                    k="Floor plate"
+                    v={`${sf(plateSf)} · ${v.word}`}
+                    strong
+                    bad={v.bad}
+                    title={v.note}
+                  />
+                  <Row
+                    k="Against this city"
+                    v={`median new building here is ${sf(REF_PLATE_SF)}`}
+                    title="The plate a median new building in this town actually carries, measured across every vacant lot planned at its own best height and footprint."
+                  />
+                  <Row
+                    k="Height : width"
+                    v={`${(plan.floors * FLOOR_HEIGHT_FT).toFixed(0)} ft on a ${Math.round(Math.sqrt(Math.max(1, plateSf)))} ft plate · ${ratio.toFixed(1)}:1`}
+                    bad={ratio > 10}
+                    title={`Past about 6:1 the lateral system stops being an afterthought and somebody pays for it. Past 10:1 it is a specialist product — New York's super-slenders reach ${MAX_SLENDERNESS}:1 and beyond, and they are built as a product, not as a default.`}
+                  />
+                </div>
+                <div className={"hint" + (v.bad ? " alarm" : "")}>
+                  {v.note}
+                  {ratio > 10
+                    ? " At this height on this plate the frame is a specialist job — a broad base and a shaft that steps in as it rises is what gets built."
+                    : ratio > 6
+                      ? " Slender enough that the frame is a real line in the budget."
+                      : ""}
+                  {v.bad ? " Assembling the lot next door is the only thing that moves it." : ""}
+                </div>
+              </div>
+            );
+          })()}
           {use === "mixed" && (
             <>
               <div className="page-section" style={{ marginTop: 6 }}>What goes where</div>
@@ -411,6 +534,13 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 key={p.label}
                 type="button"
                 className={"btn" + (Math.abs(cov - p.cov) < 0.02 && Math.abs(spec - p.spec) < 0.04 ? " btn-on" : "")}
+                // WHAT THE PRESET COSTS YOU IN STOREYS, ON THIS LOT. "Tower"
+                // narrows the footprint, which buys height only where zoning is
+                // the binding ceiling. On a small lot it is not — the plate
+                // stops carrying a core — and the preset makes the building
+                // SHORTER. Measured on the top demand decile: 9 floors at the
+                // 32% mark against 23 at 78%, on the same dirt.
+                title={`${Math.round(p.cov * 100)}% footprint · ${sf(Math.round(rec.lotArea * p.cov))} plate · carries ${maxFloorsFor(rec, p.cov, use)} floors here`}
                 onClick={() => {
                   setCov(p.cov);
                   setSpec(p.spec);
@@ -447,7 +577,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             <div className="page-section" style={{ marginTop: 8 }}>
               <div className="page-section-head">Costs</div>
               <div className="grid">
-                <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * 3.4).toFixed(0)} m tall`} strong />
+                {/* ONE FLOOR-TO-FLOOR. This said 3.4 m, which is neither the
+                    12.5 ft the storey ceiling is computed from nor the 3.55 m
+                    the map draws — a third answer to "how tall is it". The
+                    engine's constant is the one the slenderness cap is built
+                    on, so it is the one the desk quotes. */}
+                <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * FLOOR_HEIGHT_FT).toFixed(0)} ft tall`} strong />
                 <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
                 <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
                 <Row k="Soft cost" v={usd(plan.softCost)} />

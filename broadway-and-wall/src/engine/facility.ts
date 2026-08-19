@@ -66,7 +66,15 @@ import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor,
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
-import { fundCashNeed, fundableNow } from "./credit";
+import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
+
+/** Facility money in news copy — never "$0.03M" for a $30k shortfall. */
+function dollars(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1_000) return `$${Math.round(n / 1e3)}K`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
 
 /** Standard annuity payment, monthly, on a level-pay loan. */
 function monthlyPayment(principal: number, ratePct: number, years: number): number {
@@ -74,6 +82,53 @@ function monthlyPayment(principal: number, ratePct: number, years: number): numb
   const n = years * 12;
   if (r <= 0) return principal / n;
   return (principal * r) / (1 - Math.pow(1 + r, -n));
+}
+
+/**
+ * THE FACILITY PAYMENT — one function, four callers.
+ *
+ * The quote card solved its borrowing base off one expression of this, the
+ * closing wrote another, and the monthly tick a third. Three copies of one
+ * quantity is how a card and a close come to disagree, and on a pool the
+ * disagreement is the whole decision: the coverage covenant is struck against
+ * this number the month after you sign it.
+ *
+ * `ioMLeft` is months of interest-only REMAINING — the tick passes what is left
+ * of the IO window, the quote passes the product's whole IO period, and both
+ * mean the same thing: is this month's cheque interest, or interest and
+ * principal.
+ */
+export function facilityPmt(principal: number, ratePct: number, ioMLeft: number, amortYears: number): number {
+  return ioMLeft > 0
+    ? Math.ceil((principal * ratePct) / 100 / 12)
+    : Math.round(monthlyPayment(principal, ratePct, amortYears));
+}
+
+/** The same payment per dollar of balance, unrounded — what the coverage test solves against. */
+export function facilityPmtPerDollar(ratePct: number, ioMLeft: number, amortYears: number): number {
+  return ioMLeft > 0 ? ratePct / 100 / 12 : monthlyPayment(1, ratePct, amortYears);
+}
+
+/**
+ * WHAT A GIVEN DRAW WOULD ACTUALLY COST AND COVER — the two facts a borrower
+ * needs before signing a pool, and the two the desk never printed.
+ *
+ * Coverage is struck here exactly as `facilityMetrics` strikes the live covenant
+ * — today's pool NOI over twelve of this month's cheques — so the number on the
+ * card before you sign and the number the lender tests you against afterwards
+ * are the same arithmetic. Anything else and the borrower is being shown a
+ * decision that is not the decision they are taking.
+ */
+export function facilityDrawTerms(
+  draw: number, ratePct: number, ioMLeft: number, amortYears: number, noi: number, value: number,
+): { monthlyPmt: number; annualDs: number; dscr: number; ltv: number } {
+  const monthlyPmt = facilityPmt(draw, ratePct, ioMLeft, amortYears);
+  const annualDs = monthlyPmt * 12;
+  return {
+    monthlyPmt, annualDs,
+    dscr: annualDs > 0 ? noi / annualDs : 0,
+    ltv: value > 0 ? draw / value : 0,
+  };
 }
 
 /**
@@ -158,6 +213,18 @@ export interface FacilityQuote {
   termM: number;
   ioM: number;
   points: number;
+  /**
+   * WHAT IT COSTS TO CARRY, per dollar drawn — the number the coverage test was
+   * solved from, handed to the screen so the debt service and the DSCR a
+   * borrower is shown before signing are the ones the covenant will use after.
+   * They were computed here and thrown away, which is why the pool's payment
+   * and its coverage were the two facts a facility never told you.
+   */
+  pmtPerDollar: number;
+  /** …and the monthly cheque at the full borrowing base, for the card. */
+  monthlyPmtAtBase: number;
+  /** Pool coverage at the full base. Below `minDSCR` the loan opens in breach. */
+  dscrAtBase: number;
   /** What has to be repaid out of the proceeds before a penny reaches you. */
   payoff: number;
   penalties: number;
@@ -228,9 +295,7 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
       p.ltv * advanceFactor(s, p.lender) * (1 - st.advanceCut) + 0.06 * q.score);
     const byLtv = advance * q.value;
     // Coverage: the balance whose level payment pool NOI covers minDSCR times.
-    const pmtPerDollar = p.ioM > 0
-      ? ratePct / 100 / 12
-      : monthlyPayment(1, ratePct, p.amortYears);
+    const pmtPerDollar = facilityPmtPerDollar(ratePct, p.ioM, p.amortYears);
     const byDscr = q.noi > 0 ? q.noi / 12 / (p.minDSCR * pmtPerDollar) : 0;
     // Debt yield. A facility is underwritten to a floor on income per dollar
     // lent, and a pool does not get a better one than a building — the
@@ -248,10 +313,14 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
       : !open ? `${p.label} has stopped writing new paper this cycle.`
       : base < FACILITY_MIN_LOAN ? `The base comes to ${Math.round(base / 1e6)}M and nobody documents a facility under $5M.`
       : undefined;
+    const atBase = facilityDrawTerms(base, ratePct, p.ioM, p.amortYears, q.noi, q.value);
     out.push({
       lender: p.lender, productId: p.id, ratePct, base, binding,
       maxLTV: p.maxLTV, minDSCR: p.minDSCR, advance, spreadCut,
       amortYears: p.amortYears, termM: p.termM, ioM: p.ioM, points: p.points,
+      pmtPerDollar,
+      monthlyPmtAtBase: atBase.monthlyPmt,
+      dscrAtBase: atBase.dscr,
       payoff, penalties, fees,
       netToYou: base - payoff - penalties - fees,
       quality: q,
@@ -310,9 +379,7 @@ export function openFacility(
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
   }
   const io = qt.ioM;
-  const pmt = io > 0
-    ? Math.ceil((draw * qt.ratePct) / 100 / 12)
-    : Math.round(monthlyPayment(draw, qt.ratePct, qt.amortYears));
+  const pmt = facilityPmt(draw, qt.ratePct, io, qt.amortYears);
   next.facility = {
     bbls: [...pool],
     balance: draw,
@@ -386,17 +453,29 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
     return { s, err: `A facility needs at least ${FACILITY_MIN_ASSETS} deeds behind it. Repay the balance to unwind it.` };
   }
   const price = releaseCost(s, parcels, bbl);
-  if (s.cash < price) return { s, err: `The release price is $${(price / 1e6).toFixed(2)}M and you are short.` };
+  // A release is what a sponsor pays at a closing table to hand over clean
+  // title, and no sponsor lets that closing fail over a thin operating account
+  // while the revolver is open — the sale proceeds land the same month. The
+  // premium, the three-deed floor and the deleveraging are all untouched: this
+  // only stops the refusal that no principal would accept.
+  const room = spendable(s, parcels);
+  if (room.total < price) {
+    return {
+      s,
+      err: `The release price is $${(price / 1e6).toFixed(2)}M and you can raise `
+        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and `
+        + `$${(room.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next: GameState = cloneState(s);
   const nf = next.facility!;
-  next.cash -= price;
-  logBooks(next, "debtSvc", price);
-  nf.balance = Math.max(0, nf.balance - price);
+  const paid = fundAndBook(next, parcels, price, "debtSvc");
+  nf.balance = Math.max(0, nf.balance - paid);
   nf.bbls = nf.bbls.filter((b) => b !== bbl);
   const rec = resolveRec(parcels, next, bbl);
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Released ${rec?.address ?? bbl} from the facility for $${(price / 1e6).toFixed(2)}M — `
+    text: `Released ${rec?.address ?? bbl} from the facility for $${(paid / 1e6).toFixed(2)}M — `
       + `${Math.round((RELEASE_PREMIUM - 1) * 100)}% over its allocated share. Balance $${(nf.balance / 1e6).toFixed(1)}M.`,
   });
   if (nf.balance <= 0) {
@@ -406,7 +485,177 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   return { s: next };
 }
 
-/** Pay the balance down out of cash. */
+/**
+ * ORIGINATION COST AT A GIVEN DRAW — one point of fee plus the desk's points.
+ * The card quotes this at the base, the close charges it at the draw, and the
+ * refinancing charges it again on the rolled balance. Same formula every time.
+ */
+function facilityFees(draw: number, points: number): number {
+  return Math.round(draw * 0.01) + Math.round(draw * points);
+}
+
+/**
+ * ROLL THE POOL ONTO NEW PAPER. Same deeds, same cross-default, new terms.
+ *
+ * Returns the dollars taken out of liquidity (fees, plus any paydown when the
+ * new base is smaller than the old balance) WITHOUT booking them, because the
+ * two callers book on different lines: the monthly tick reports its cash to
+ * `sim` which puts it on `debtSvc`, and the player action books it here. A
+ * cash-out above the old balance is an inflow either way and is booked to
+ * `borrowed` on the spot — the same bucket `openFacility` uses, so conserve's
+ * identity can see it.
+ */
+function takeFacilityRoll(
+  s: GameState, parcels: ParcelTable, qt: FacilityQuote, draw: number,
+): { spent: number; cashOut: number; oldBal: number; oldRate: number; oldLender: string } {
+  const f = s.facility!;
+  const q = s.month;
+  const oldBal = f.balance, oldRate = f.ratePct, oldLender = f.lender;
+  const fees = facilityFees(draw, qt.points);
+  const paydown = Math.max(0, oldBal - draw);
+  const spent = fundCashNeed(s, parcels, fees + paydown);
+  const cashOut = Math.max(0, draw - oldBal);
+  if (cashOut > 0) {
+    s.cash += cashOut;
+    logBooks(s, "borrowed", cashOut);
+  }
+  // The old desk is repaid in full and remembers it; the new one opens a file.
+  bumpLenderRel(s, oldLender, 0.4);
+  bumpLenderRel(s, qt.lender, 2);
+  // The new lender takes a lien on what is actually there. A deed that left the
+  // book by any route cannot stand behind the new paper — the same sweep
+  // `tickFacility` runs at the top of every month.
+  f.bbls = f.bbls.filter((b) => s.holdings[b]);
+  f.balance = draw;
+  f.drawn = draw;
+  f.ratePct = qt.ratePct;
+  f.lender = qt.lender;
+  f.productId = qt.productId;
+  f.originM = q;
+  f.maturityM = q + qt.termM;
+  f.ioUntilM = q + qt.ioM;
+  f.amortYears = qt.amortYears;
+  f.monthlyPmt = facilityPmt(draw, qt.ratePct, qt.ioM, qt.amortYears);
+  f.minDSCR = qt.minDSCR;
+  // The covenant ceiling is the ADVANCE RATE, exactly as `openFacility` stores
+  // it — retesting a refinanced pool against `product.maxLTV` instead would
+  // silently move the wall the moment the paper rolled.
+  f.maxLTV = qt.advance;
+  f.recourse = true;
+  // New paper, and the defaults on the old paper died with it: the balance the
+  // new desk underwrote is the balance it just funded. Anything unresolved would
+  // have stopped the underwriting above.
+  f.arrearsMs = 0;
+  delete f.breachedSince;
+  delete f.sweep;
+  delete f.accelM;
+  delete f.noticedM;
+  // Stamped so the inbox says the pool renewed, once, in the month it happened.
+  (f as { renewedM?: number }).renewedM = q;
+  return { spent, cashOut, oldBal, oldRate, oldLender };
+}
+
+/**
+ * THE POOL'S OWN REFINANCING DESK.
+ *
+ * There was none. `openFacility` refuses while a facility exists and
+ * `refiQuotes` marks every product unavailable on a pledged deed, so the only
+ * exit from a crossed pool was paying the whole balance in cash — and at
+ * maturity the engine accelerated in the tick the loan came due. A borrower
+ * with a performing pool and a lender who will write it is not in default, and
+ * that is what this function is: re-underwrite the SAME pool at today's rates
+ * and values through `facilityQuotes`, so the three tests the new balance must
+ * clear are the same three the original close cleared.
+ *
+ * `lev` scales the new draw off the base the way the opening slider does. Below
+ * the old balance it is a paydown out of liquidity; above it, cash out.
+ */
+export function refinanceFacility(
+  s: GameState, parcels: ParcelTable, productId: string, lev = 1,
+): { s: GameState; err?: string; msg?: string } {
+  const f = s.facility;
+  if (!f) return { s, err: "No facility to refinance." };
+  if (f.accelM !== undefined) return { s, err: "The facility is accelerated — a receiver has the pool and there is nothing left to refinance." };
+  const pool = f.bbls.filter((b) => s.holdings[b]);
+  const quotes = facilityQuotes(s, parcels, pool);
+  const qt = quotes.find((x) => x.productId === productId);
+  if (!qt) return { s, err: "That desk does not write facilities." };
+  if (!qt.available) return { s, err: qt.why ?? "That desk will not quote this pool today." };
+  const draw = Math.floor(qt.base * Math.max(0.1, Math.min(1, lev)));
+  if (draw < FACILITY_MIN_LOAN) return { s, err: "Draw at least $5M or there is nothing to document." };
+  const fees = facilityFees(draw, qt.points);
+  const need = fees + Math.max(0, f.balance - draw);
+  const room = spendable(s, parcels);
+  if (room.total < need) {
+    return {
+      s,
+      err: `Closing costs $${(need / 1e6).toFixed(2)}M — $${(fees / 1e6).toFixed(2)}M of fees and points`
+        + (f.balance > draw ? ` plus a $${((f.balance - draw) / 1e6).toFixed(2)}M paydown, because ${qt.lender} will only write $${(draw / 1e6).toFixed(1)}M against a $${(f.balance / 1e6).toFixed(1)}M balance` : "")
+        + `. You can raise $${(room.total / 1e6).toFixed(2)}M.`,
+    };
+  }
+  const terms = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
+  const next: GameState = cloneState(s);
+  const r = takeFacilityRoll(next, parcels, qt, draw);
+  logBooks(next, "debtSvc", r.spent);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `${qt.lender} has refinanced the facility — $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
+      + `${qt.ratePct.toFixed(2)}% for ${Math.round(qt.termM / 12)} years, against ${r.oldRate.toFixed(2)}% on the old paper. `
+      + `$${Math.round(terms.monthlyPmt / 1000)}K a month, ${terms.dscr.toFixed(2)}x covered against a ${qt.minDSCR.toFixed(2)}x covenant`
+      + (r.cashOut > 0 ? `, and $${(r.cashOut / 1e6).toFixed(2)}M of it came out as cash.` : ".")
+      + ` The pool stays crossed and the guarantee stays signed.`,
+  });
+  return {
+    s: next,
+    msg: r.cashOut > 0
+      ? `Refinanced at ${qt.ratePct.toFixed(2)}% — $${(r.cashOut / 1e6).toFixed(2)}M out.`
+      : `Refinanced at ${qt.ratePct.toFixed(2)}%, due ${monthLabel(next.month + qt.termM)}.`,
+  };
+}
+
+/**
+ * THE LENDER'S OWN RENEWAL TEST, at the full outstanding balance.
+ *
+ * A performing loan renewing at maturity is what happens in life — the desk has
+ * twelve years of payment history and would rather roll it than take the
+ * collateral. A desk renewing a loan that FAILS its coverage and leverage tests
+ * is not; that is the refinancing cliff, and it is one of the named reasons this
+ * business is hard. So the split is exactly that and nothing softer: if some
+ * desk's borrowing base covers the whole balance plus the closing costs, take
+ * the cheapest of them automatically and say so. If none does, the pool does not
+ * quietly renew at a fake number — it gets the cure window below.
+ *
+ * `facilityQuotes` is the underwriting; nothing here bypasses it.
+ */
+function renewalMarket(s: GameState, parcels: ParcelTable): { best: FacilityQuote | null; base: number } {
+  const f = s.facility!;
+  const pool = f.bbls.filter((b) => s.holdings[b]);
+  // A pool that has shrunk below the smallest anybody papers is not a facility
+  // any more, and no desk will re-document it at any price.
+  if (pool.length < FACILITY_MIN_ASSETS) return { best: null, base: 0 };
+  const open = facilityQuotes(s, parcels, pool).filter((x) => x.available);
+  // What today's market will advance against this pool at all — the number the
+  // gap is named against when nothing clears.
+  const base = open.length ? Math.max(...open.map((x) => x.base)) : 0;
+  const clears = open.filter((x) => x.base >= f.balance + facilityFees(f.balance, x.points));
+  // Best-priced, not first-on-a-list: the borrower takes the lowest coupon that
+  // will actually write the whole balance.
+  return { best: clears.length ? clears.reduce((a, b) => (b.ratePct < a.ratePct ? b : a)) : null, base };
+}
+
+/**
+ * Pay the balance down out of cash — and out of cash ONLY, deliberately.
+ *
+ * Every other refusal in this file now counts the revolver, because a sponsor
+ * with an open line does not let a closing or a covenant fail over a thin
+ * month. A VOLUNTARY paydown is the one case where drawing it is simply worse
+ * money: the facility is term debt in the fives and the line is index plus 400,
+ * so funding this from the revolver raises the interest bill and spends the
+ * liquidity that keeps the next bad quarter from becoming a default. The
+ * mandatory version of this payment — the coupon, the balloon, the cure — draws
+ * the line already.
+ */
 export function repayFacility(s: GameState, amount: number): { s: GameState; err?: string } {
   const f = s.facility;
   if (!f) return { s, err: "No facility." };
@@ -467,9 +716,7 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
 
   const io = q < f.ioUntilM;
   const yearsLeft = Math.max(1, f.amortYears - (q - f.originM) / 12);
-  f.monthlyPmt = io
-    ? Math.ceil((f.balance * f.ratePct) / 100 / 12)
-    : Math.round(monthlyPayment(f.balance, f.ratePct, yearsLeft));
+  f.monthlyPmt = facilityPmt(f.balance, f.ratePct, io ? f.ioUntilM - q : 0, yearsLeft);
   const interest = (f.balance * f.ratePct) / 100 / 12;
   const principalWanted = io ? 0 : Math.max(0, Math.min(f.balance, f.monthlyPmt - interest));
   // Cash first, then the line — same stack as a single-asset loan. Going
@@ -514,6 +761,18 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
             + `Cash flow is swept and you have ${FACILITY_CURE_M} months to bring it current or they accelerate.`,
         });
       }
+    } else {
+      // MONTHS ONE AND TWO USED TO BE SILENT. The clock that ends with a
+      // receiver selling every building in the pool started with nothing on the
+      // screen at all — no news, no inbox row — and the player first heard about
+      // it in month three. The runway is unchanged; what changes is that it is
+      // now audible from the first missed dollar.
+      s.news.unshift({
+        q, kind: "warn",
+        text: `The facility payment came up ${dollars(unpaid)} short — month ${f.arrearsMs} of `
+          + `${f.lender}'s cheque unpaid, and the shortfall is on the balance at ${f.ratePct.toFixed(2)}%. `
+          + `A third month puts all ${f.bbls.length} buildings into default with the cash flow swept.`,
+      });
     }
   } else {
     f.arrearsMs = 0;
@@ -575,8 +834,15 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
     }
   } else if (f.breachedSince !== undefined && (f.arrearsMs ?? 0) === 0) {
     delete f.breachedSince;
-    delete f.sweep;
-    s.news.unshift({ q, kind: "deal", text: "The facility is back inside its covenants and the sweep has been lifted." });
+    // A called maturity keeps the sweep on its own account — clearing a
+    // covenant test does not un-mature the loan.
+    if (f.noticedM === undefined) delete f.sweep;
+    s.news.unshift({
+      q, kind: "deal",
+      text: f.noticedM === undefined
+        ? "The facility is back inside its covenants and the sweep has been lifted."
+        : "The facility is back inside its covenants, but the maturity is still called and the pool is still swept.",
+    });
   }
 
   // THE SWEEP IS A TRAP, NOT A FLAG. Single-asset loans skim surplus NOI into
@@ -602,6 +868,28 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
   // ALL AT ONCE — the single maturity that made the paperwork simple is a
   // single maturity to refinance in whatever market happens to be open that
   // year. Pay it, refinance it, or it is accelerated.
+  //
+  // AND IT IS A LADDER, NOT A CLIFF EDGE. This used to set `accelM` in the same
+  // tick the loan came due whenever liquidity fell short of the balance: no
+  // notice, no desk, no extension, and three months later a receiver sold every
+  // building in the pool. A single mortgage has walked a whole ladder at its
+  // balloon for as long as the engine has had one (tickLoan) — renew it, retire
+  // it, write the gap cheque, or open a file with six months' notice. A crossed
+  // pool, the biggest loan on the book, had nothing. The steps below are that
+  // same ladder, pool-wide:
+  //
+  //   1  liquidity covers it        pay it off, deeds clear
+  //   2  a desk underwrites it      renew automatically at the best price
+  //   3  nobody will write it all   CALL the maturity and open the cure window
+  //   4  the window runs out        accelerate, receiver, distress sale
+  //
+  // Step 3 is the refinancing cliff and it still kills the pool. What it no
+  // longer does is kill it silently and instantly: for FACILITY_CURE_M months —
+  // the same window a covenant breach and a payment default get — the borrower
+  // can refinance (the market reopens, values recover), pay the balance down
+  // below what somebody will write, or sell into it. The lender keeps collecting
+  // the coupon and sweeping the surplus the whole time, which is what a real
+  // standstill looks like.
   if (q >= f.maturityM && f.balance > 0) {
     if (fundableNow(s, parcels) >= f.balance) {
       const paid = fundCashNeed(s, parcels, f.balance);
@@ -611,12 +899,62 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       s.news.unshift({ q, kind: "deal", text: "The facility matured and you paid it off. The deeds are clear." });
       return out;
     }
-    f.accelM = q;
-    s.news.unshift({
-      q, kind: "warn",
-      text: `The facility matured with $${(f.balance / 1e6).toFixed(1)}M outstanding and no refinancing. `
-        + `${f.lender} has accelerated over the whole pool.`,
-    });
+    const market = renewalMarket(s, parcels);
+    const renewal = market.best;
+    if (renewal) {
+      const rolled = f.balance;
+      const wasCalled = f.noticedM !== undefined;
+      const r = takeFacilityRoll(s, parcels, renewal, rolled);
+      // The fee goes out on the same line as the rest of the month's facility
+      // cash — `sim` books what this function returns to debtSvc, so booking it
+      // here as well would charge the ledger twice for one cheque.
+      out += r.spent;
+      const terms = facilityDrawTerms(rolled, renewal.ratePct, renewal.ioM, renewal.amortYears, renewal.quality.noi, renewal.quality.value);
+      s.news.unshift({
+        q, kind: "deal",
+        text: `${renewal.lender} has renewed the facility at maturity — the same ${dollars(rolled)} across `
+          + `${f.bbls.length} buildings at ${renewal.ratePct.toFixed(2)}% for ${Math.round(renewal.termM / 12)} years `
+          + `(was ${r.oldRate.toFixed(2)}%), ${dollars(r.spent)} of fees and points. `
+          + `${dollars(terms.monthlyPmt)} a month, ${terms.dscr.toFixed(2)}x covered against a `
+          + `${renewal.minDSCR.toFixed(2)}x covenant, due ${monthLabel(f.maturityM)}. `
+          + (wasCalled
+            ? "The called maturity is withdrawn and the sweep lifted."
+            : "A pool that covers its debt service gets renewed; that is what the payment history is for."),
+      });
+      return out;
+    }
+    // NOBODY WILL WRITE THE WHOLE BALANCE. Call the maturity and start the clock.
+    const base = market.base;
+    const gap = Math.max(0, f.balance - base);
+    if (f.noticedM === undefined) {
+      f.noticedM = q;
+      // A matured, unpaid loan is in default whatever the covenants say, and a
+      // defaulted crossed pool is swept. Cash flow stops reaching the sponsor
+      // here rather than at the receiver's sale.
+      f.sweep = true;
+      s.news.unshift({
+        q, kind: "warn",
+        text: `The facility matured with ${dollars(f.balance)} outstanding and no desk will refinance the whole of it — `
+          + (base > 0
+            ? `today's market writes ${dollars(base)} against this pool, ${dollars(gap)} short. `
+            : `nobody will quote this pool at all today. `)
+          + `${f.lender} has called the maturity and swept the pool's cash flow. You have ${FACILITY_CURE_M} months `
+          + `to refinance it, `
+          + (base > 0 ? `pay the balance down under ${dollars(base)}` : "pay it off")
+          + `, or sell buildings out of it — after that a receiver sells all ${f.bbls.length} at once, `
+          + `and the facility is recourse.`,
+      });
+    } else if (q - f.noticedM >= FACILITY_CURE_M) {
+      f.accelM = q;
+      s.news.unshift({
+        q, kind: "warn",
+        text: `${FACILITY_CURE_M} months since ${f.lender} called the facility's maturity and ${dollars(f.balance)} is `
+          + `still outstanding`
+          + (base > 0 ? ` against a market that will write ${dollars(base)}` : ", with no desk quoting the pool")
+          + `. They have accelerated: a receiver is being appointed over all ${f.bbls.length} buildings.`,
+      });
+      return out;
+    }
   }
   return out;
 }
@@ -708,6 +1046,10 @@ export function facilityStatus(s: GameState, parcels: ParcelTable): string {
   if (!f) return "";
   const m = facilityMetrics(s, parcels);
   if (f.accelM !== undefined) return "ACCELERATED — the receiver is selling the pool";
+  if (f.noticedM !== undefined) {
+    const left = FACILITY_CURE_M - (s.month - f.noticedM);
+    return `MATURITY CALLED — swept, ${left} month${left === 1 ? "" : "s"} to refinance or pay it down`;
+  }
   if (f.breachedSince !== undefined) {
     const left = FACILITY_CURE_M - (s.month - f.breachedSince);
     return `IN DEFAULT — swept, ${left} month${left === 1 ? "" : "s"} to cure`;

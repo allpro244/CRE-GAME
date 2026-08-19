@@ -31,7 +31,7 @@ console.log("\nCONTINUE PATH\n");
   live.cityIsland = "somewhere";
   live.citySize = "standard";
   live.cityDev = "established";
-  live.v = 38;
+  live.v = 39;
   for (let i = 0; i < 18 && !live.gameOver; i++) {
     live = E.advanceMonth(live, parcels, bbls, adjacency);
   }
@@ -42,8 +42,8 @@ console.log("\nCONTINUE PATH\n");
   };
 
   const prepared = E.prepareSaveForResume(snap);
-  check(prepared.ok === true, "v38 campaign prepares for resume after migration");
-  check(prepared.state?.v === 38, "prepare keeps save version at current");
+  check(prepared.ok === true, "v39 campaign prepares for resume after migration");
+  check(prepared.state?.v === 39, "prepare keeps save version at current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -63,7 +63,7 @@ console.log("\nCONTINUE PATH\n");
 
   const gen = structuredClone(base); gen.cityIsland = "somewhere"; gen.v = 31;
   const genOut = E.prepareSaveForResume(gen);
-  check(genOut.ok === false, "a pre-v38 campaign on a GENERATED island is refused");
+  check(genOut.ok === false, "a pre-v39 campaign on a GENERATED island is refused");
   check(/older map generator/.test(genOut.reason ?? ""),
     "...and says the island moved, not just 'older build'");
 
@@ -75,9 +75,13 @@ console.log("\nCONTINUE PATH\n");
   check(E.prepareSaveForResume(other33).ok === false,
     "a v33 campaign on a generated island is refused too — that 33 was the Principal break, not this one");
 
-  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 38;
+  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 39;
   check(E.prepareSaveForResume(now).ok === true,
-    "a v38 campaign on a generated island opens normally");
+    "a v39 campaign on a generated island opens normally");
+
+  const old38 = structuredClone(base); old38.cityIsland = "somewhere"; old38.v = 38;
+  check(E.prepareSaveForResume(old38).ok === false,
+    "a v38 campaign is refused — the plat overhaul recut the lots");
 
   const old37 = structuredClone(base); old37.cityIsland = "somewhere"; old37.v = 37;
   check(E.prepareSaveForResume(old37).ok === false,

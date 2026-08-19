@@ -21,8 +21,10 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
+import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
+export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
 
 /** The sizes an island can be built at, for the picker. */
 export function sizeList() {
@@ -82,6 +84,13 @@ export function cityList() {
       name: "Somewhere else",
       tagline: "An island nobody has drawn. The coast, the districts, the parks and every street name come out of your seed.",
     },
+    {
+      id: MANHATTAN,
+      name: "Manhattan",
+      tagline: "The real one. The Commissioners' grid at its true bearing, Broadway cutting it on the diagonal, and a lot the size of a lot.",
+      /** A written-down city takes an EXTENT rather than a size — see manhattan.mjs. */
+      extents: true,
+    },
   ];
 }
 
@@ -93,8 +102,9 @@ export function cityList() {
  * Continue row can name the town instead of saying "Somewhere else" about a
  * place the player has lived in for twenty years.
  */
-export function cityName(cityId, seed) {
+export function cityName(cityId, seed, opts) {
   if (cityId === PROCEDURAL) return islandName(seed);
+  if (cityId === MANHATTAN) return manhattanName(opts?.size);
   return cityId;
 }
 
@@ -117,10 +127,20 @@ export function makeCity(cityId, seed, opts) {
   if (LEGACY_DRAWN.has(cityId)) {
     throw new Error(`removed city: ${cityId} — all islands are generated from a seed now`);
   }
-  if (cityId !== PROCEDURAL) throw new Error(`unknown city: ${cityId}`);
-  const base = islandConfig(seed);
-  const sizeId = opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE;
-  const cfg = scaleCity(base, SIZES[sizeId].k);
+  if (cityId !== PROCEDURAL && cityId !== MANHATTAN) throw new Error(`unknown city: ${cityId}`);
+  // A WRITTEN-DOWN CITY DOES NOT TAKE A SIZE, it takes an extent. `scaleCity`
+  // multiplies every position and extent, and doing that to a traced Manhattan
+  // gives a fictional island shaped like a shrunken one with real-sized blocks
+  // in it — Central Park at a third of its acreage. So the `size` slot carries
+  // the extent id for this city, which is what the picker writes into it, and
+  // the same field still identifies the town in a save.
+  const manhattan = cityId === MANHATTAN;
+  const sizeId = manhattan
+    ? (opts?.size && EXTENTS[opts.size] ? opts.size : DEFAULT_EXTENT)
+    : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
+  const cfg = manhattan
+    ? manhattanConfig(seed, { extent: sizeId })
+    : scaleCity(islandConfig(seed), SIZES[sizeId].k);
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
   const data = buildCityData({
     rawParcels: city.parcels,
@@ -134,7 +154,7 @@ export function makeCity(cityId, seed, opts) {
     id: cityId,
     seed: seed >>> 0,
     size: sizeId,
-    sizeK: SIZES[sizeId].k,
+    sizeK: manhattan ? 0 : SIZES[sizeId].k,
     name: cfg.name,
     parcels: data.parcels,
     adjacency: data.adjacency,

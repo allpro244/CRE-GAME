@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, START_YEAR } from "@/engine/types";
 import { firmShort } from "@/engine/firm";
+import { resolveRec } from "@/engine/value";
 import { LineChart } from "@/ui/Chart";
 import { compFlows, compStats } from "@/engine/comps";
 import { usd } from "@/ui/format";
@@ -18,10 +19,28 @@ import { usd } from "@/ui/format";
  */
 export function CompsSheet() {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const [win, setWin] = useState(60);
   const comps = game.comps ?? [];
+  /**
+   * THE VINTAGE OF THE BUILDING THAT TRADED — or nothing.
+   *
+   * A comp is a price at a DATE, and the parcel table only knows what stands
+   * on the lot now. So the year is printed only where the two cannot disagree:
+   * the standing building must have been standing when the deed moved. A lot
+   * redeveloped since resolves to a later year and a razed one to none, and
+   * both print a dash rather than dressing a decade-old sale in today's
+   * tower — the same appraisal-date error `mark` exists to avoid. Dirt has no
+   * year at all. `resolveRec` is what every other surface reads, so a
+   * delivered building shows its completion year here too.
+   */
+  const vintage = (c: { bbl: string; sf: number; m: number }) => {
+    if (c.sf <= 0) return "—";
+    const y = resolveRec(parcels, game, c.bbl)?.yearBuilt ?? 0;
+    return y > 0 && y <= START_YEAR + Math.floor(c.m / 12) ? String(y) : "—";
+  };
   if (comps.length < 3) {
     return (
       <>
@@ -144,7 +163,7 @@ export function CompsSheet() {
         <table className="tbl">
           <thead>
             <tr>
-              <th>Closed</th><th>Property</th><th>Class</th><th className="num">Price</th>
+              <th>Closed</th><th>Property</th><th>Class</th><th className="num">Built</th><th className="num">Price</th>
               <th className="num">$/sf</th><th className="num">Cap</th><th>Buyer</th><th>Seller</th>
             </tr>
           </thead>
@@ -156,6 +175,7 @@ export function CompsSheet() {
                 <td className="mono">{monthLabel(c.m)}</td>
                 <td>{c.address}{c.distress ? " · distressed" : ""}</td>
                 <td className="dim">{CLASS_LABEL[c.cls as keyof typeof CLASS_LABEL] ?? c.cls}</td>
+                <td className="num">{vintage(c)}</td>
                 <td className="num">{usd(c.price)}</td>
                 <td className="num">{c.sf > 0 ? `$${c.psf.toFixed(0)}` : `$${c.psf.toFixed(0)} land`}</td>
                 <td className="num">{c.capRate > 0 ? `${c.capRate.toFixed(2)}%` : "—"}</td>

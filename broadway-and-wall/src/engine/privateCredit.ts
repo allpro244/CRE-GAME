@@ -239,6 +239,17 @@ export function fundPrivateAsk(
   if (ask.face > sleeve) {
     return { s, err: `Your private sleeve will only carry another ${money(sleeve)} of face.` };
   }
+  // CASH ONLY, AND THE FILE ALREADY SAID SO: "the LOC is for buildings, not
+  // for warehousing other people's mortgages" — see `privateSleeveCapacity`,
+  // whose cash sleeve is one of the three rails that size this book. Funding
+  // hard-money paper on a revolver is borrowing short and callable to lend
+  // long and illiquid, against collateral you do not control, to a borrower
+  // whose distress is the reason they are asking. That is not a liquidity
+  // refusal the way a roof or an appeal fee was; it is the shape of the
+  // business, and the reserve is what stops one ask taking the firm with it.
+  // Buying somebody else's note at a discount (notes.ts) is a different trade
+  // and reaches the line — there you are acquiring an asset, not opening a
+  // lending desk.
   if (s.cash < ask.face + PRIVATE_CASH_RESERVE) {
     return { s, err: `Funding ${money(ask.face)} would leave you under the ${money(PRIVATE_CASH_RESERVE)} cash reserve.` };
   }

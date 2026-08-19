@@ -2,7 +2,7 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { netWorth } from "@/engine/value";
-import { locLimit, locRate } from "@/engine/credit";
+import { locLimit, locRate, locAvailable, spendable } from "@/engine/credit";
 import { usd, pct } from "@/ui/format";
 import { Big } from "@/ui/panels/shared";
 import { SponsorRecord } from "@/ui/panels/SponsorRecord";
@@ -18,7 +18,11 @@ export function CreditLine() {
   const limit = locLimit(game, parcels);
   const nw = netWorth(game, parcels);
   const balance = game.loc?.balance ?? 0;
-  const avail = Math.max(0, limit - balance);
+  // The engine's number, not a second copy of the subtraction: `locAvailable`
+  // is what every refusal and every automatic draw is measured against, so a
+  // panel that recomputes it can disagree with the button it is describing.
+  const avail = locAvailable(game, parcels);
+  const power = spendable(game, parcels);
   const rate = locRate(game);
   const [amt, setAmt] = useState(0);
   const room = Math.max(avail, balance);
@@ -38,6 +42,10 @@ export function CreditLine() {
         })()}
         <Big label="Drawn" value={usd(balance)} bad={balance > limit * 0.8} />
         <Big label="Available" value={usd(avail)} />
+        {/* WHAT THE FIRM CAN ACTUALLY WRITE A CHEQUE FOR. Cash on its own was
+            never the answer to "can I afford this" — the engine funds a need
+            from cash and then the line, and the desks quote the same total. */}
+        <Big label="Spending power · cash + line" value={usd(power.total)} />
         <Big label="Rate · index + 400" value={pct(rate)} />
         <Big label="Interest paid" value={usd(game.loc?.interestPaid ?? 0)} />
       </div>

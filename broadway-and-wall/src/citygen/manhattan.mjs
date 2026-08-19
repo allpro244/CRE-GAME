@@ -30,12 +30,25 @@
 // renewal tracts — because that is what is really there, not to tick a box.
 //
 // SOURCES AND THEIR STATUS. General web egress was blocked when this was
-// written, so the geography is from the repo's own traced data plus knowledge,
-// and it is marked where it matters. The shoreline is the 41-vertex ring that
-// has been in `pipeline/synth.mjs` since the synthetic-Manhattan pipeline was
-// written, whose own header calls it "real-ish (from memory)"; measured against
-// it this island is 61.5 km2 of ring where the real island is about 59, so it
-// is right to a couple of per cent and no better. The grid numbers are the ones
+// written, so the geography is from knowledge plus the repo's own traced data,
+// and it is marked where it matters.
+//
+// THE SHORELINE WAS RETRACED, and the reason is worth keeping. The first cut
+// reused the 41-vertex ring that has sat in `pipeline/synth.mjs` since the
+// synthetic-Manhattan pipeline was written — whose own header calls it
+// "real-ish (from memory)". Its AREA was fine (61.5 km2 against the real 59)
+// and its length was fine (21.2 km against 21.6), which is why it passed a
+// casual look. Its SHAPE was not: measured across the grid, it ran +44% at
+// Canal, +31% at Houston, +29% at 59th and +54% at 110th while coming out 6%
+// NARROW at 14th, which is the island's real widest point. In other words a fat
+// sausage rather than something that swells at 14th and tapers north. The owner
+// spotted it from one screenshot.
+//
+// This ring is 100 vertices, traced west-shore-north then round Spuyten Duyvil
+// then south down the Harlem and East Rivers, and it is checked against ten
+// anchors by `tools/mh-shape.mjs`. The anchors are the island's well-known
+// dimensions — 21.6 km long, 3.7 km at its widest around 14th Street, 59 km2 —
+// plus river-to-river distances read off the street grid. The grid numbers are the ones
 // `island.mjs` already cites in its own comments: the Commissioners' plan of
 // 1811 meeting the West Village "at about twenty-nine degrees", and "Manhattan
 // is 200 x 800 ft — 61 x 244 m". Anything below marked (unverified) could not
@@ -48,17 +61,35 @@ import { makeProjection, ringArea } from "./geom.mjs";
 // Harlem and East Rivers. Lifted from pipeline/synth.mjs so there is ONE traced
 // Manhattan in this repo rather than two that can drift apart.
 const COAST_LL = [
-  [-74.0158, 40.7003], [-74.0176, 40.7035], [-74.0186, 40.7065], [-74.0158, 40.7118],
-  [-74.0135, 40.7250], [-74.0110, 40.7350], [-74.0095, 40.7420], [-74.0070, 40.7490],
-  [-74.0040, 40.7560], [-74.0005, 40.7640], [-73.9962, 40.7725], [-73.9930, 40.7780],
-  [-73.9880, 40.7880], [-73.9800, 40.7990], [-73.9720, 40.8100], [-73.9620, 40.8270],
-  [-73.9525, 40.8395], [-73.9470, 40.8500], [-73.9385, 40.8610], [-73.9330, 40.8720],
-  [-73.9210, 40.8780], [-73.9105, 40.8720], [-73.9190, 40.8580], [-73.9260, 40.8450],
-  [-73.9330, 40.8330], [-73.9340, 40.8180], [-73.9320, 40.8060], [-73.9290, 40.7960],
-  [-73.9380, 40.7800], [-73.9440, 40.7690], [-73.9610, 40.7550], [-73.9670, 40.7430],
-  [-73.9720, 40.7330], [-73.9740, 40.7250], [-73.9715, 40.7160], [-73.9760, 40.7090],
-  [-73.9905, 40.7075], [-73.9985, 40.7060], [-74.0028, 40.7022], [-74.0100, 40.7002],
-  [-74.0130, 40.7000],
+  // --- the Hudson shore, north from the Battery -----------------------------
+  [-74.0165, 40.7030], [-74.0182, 40.7048], [-74.0192, 40.7070], [-74.0197, 40.7100],
+  [-74.0188, 40.7128], [-74.0155, 40.7148], [-74.0132, 40.7175], [-74.0115, 40.7196],
+  [-74.0104, 40.7228], [-74.0096, 40.7256], [-74.0100, 40.7292], [-74.0106, 40.7330],
+  [-74.0099, 40.7368], [-74.0092, 40.7402], [-74.0082, 40.7436], [-74.0072, 40.7468],
+  [-74.0060, 40.7502], [-74.0048, 40.7534], [-74.0035, 40.7570], [-74.0018, 40.7606],
+  [-73.9996, 40.7648], [-73.9970, 40.7686], [-73.9944, 40.7722], [-73.9914, 40.7760],
+  [-73.9884, 40.7794], [-73.9852, 40.7832], [-73.9820, 40.7870], [-73.9788, 40.7910],
+  [-73.9756, 40.7952], [-73.9720, 40.7998], [-73.9694, 40.8046], [-73.9658, 40.8098],
+  [-73.9620, 40.8152], [-73.9584, 40.8206], [-73.9550, 40.8258], [-73.9520, 40.8306],
+  [-73.9500, 40.8348], [-73.9480, 40.8392], [-73.9456, 40.8440], [-73.9430, 40.8492],
+  [-73.9400, 40.8544], [-73.9370, 40.8592], [-73.9336, 40.8642], [-73.9300, 40.8692],
+  [-73.9252, 40.8734], [-73.9228, 40.8762],
+  // --- the northern tip, round Spuyten Duyvil ------------------------------
+  [-73.9196, 40.8784], [-73.9160, 40.8778], [-73.9132, 40.8760],
+  // --- the Harlem River, coming back south ---------------------------------
+  [-73.9118, 40.8722], [-73.9146, 40.8686], [-73.9180, 40.8650], [-73.9214, 40.8606],
+  [-73.9226, 40.8560], [-73.9248, 40.8512], [-73.9266, 40.8462], [-73.9282, 40.8410],
+  [-73.9294, 40.8356], [-73.9302, 40.8300], [-73.9306, 40.8244], [-73.9308, 40.8188],
+  [-73.9308, 40.8132], [-73.9310, 40.8076], [-73.9318, 40.8020], [-73.9330, 40.7966],
+  // --- the East River --------------------------------------------------------
+  [-73.9356, 40.7910], [-73.9382, 40.7862], [-73.9412, 40.7818], [-73.9438, 40.7776],
+  [-73.9464, 40.7734], [-73.9494, 40.7694], [-73.9528, 40.7652], [-73.9566, 40.7610],
+  [-73.9604, 40.7568], [-73.9636, 40.7528], [-73.9664, 40.7492], [-73.9686, 40.7456],
+  [-73.9704, 40.7422], [-73.9718, 40.7388], [-73.9722, 40.7352], [-73.9716, 40.7316],
+  [-73.9714, 40.7280], [-73.9722, 40.7244], [-73.9736, 40.7206], [-73.9752, 40.7168],
+  [-73.9768, 40.7134], [-73.9800, 40.7112], [-73.9846, 40.7100], [-73.9898, 40.7094],
+  [-73.9948, 40.7086], [-73.9996, 40.7072], [-74.0038, 40.7058], [-74.0078, 40.7040],
+  [-74.0118, 40.7024], [-74.0146, 40.7016],
 ];
 
 /** Midtown, so the metre frame's origin is somewhere a player will spend time. */
@@ -126,7 +157,8 @@ function band(at, deg, aSide, a, b) {
 
 // ----------------------------------------------------------- the value surface
 //
-// THIRTEEN CORES, because Manhattan has never had one downtown. `coreHeat(p) =
+// TWENTY-SEVEN CORES, because Manhattan has never had one downtown and has never
+// had one CENTRE either. `coreHeat(p) =
 // min(1, sum of w * exp(-d^2 / 2r^2))`, so `w` is how hard a centre pulls and
 // `r` is a Gaussian sigma in metres — how far it reaches before the land stops
 // caring. The ladder below is the real shape of the island's land market: two
@@ -142,19 +174,66 @@ function band(at, deg, aSide, a, b) {
 // island that has to be Wall Street — the city really did start at the bottom
 // and grow north, which is why the oldest fabric is downtown.
 const CORES_LL = [
-  { ll: [-74.0081, 40.7053], w: 1.00, r: 750,  role: "Wall Street" },
+  // ---- the two peaks -------------------------------------------------------
+  // DOWNTOWN CAME OFF THE CLAMP. `coreHeat` is min(1, sum), and with Wall Street
+  // at 1.00 the Financial District's cores summed past that across 10.2% of the
+  // island — a tenth of the map resting ON the rail, which is fake number five:
+  // a guard doing load-bearing work. Everything inside it read exactly 1.000, so
+  // the four real centres down there had no gradient between them and every lot
+  // in FiDi was worth the same. These peak just under the ceiling instead, and
+  // the district keeps its own internal slope.
+  { ll: [-74.0081, 40.7053], w: 0.7, r: 600,  role: "Wall Street" },
   { ll: [-73.9769, 40.7538], w: 0.98, r: 1250, role: "Grand Central" },
+  // ---- the rest of the majors ---------------------------------------------
   { ll: [-73.9862, 40.7577], w: 0.90, r: 900,  role: "Times Square" },
   { ll: [-73.9755, 40.7646], w: 0.86, r: 850,  role: "Plaza District" },
-  { ll: [-74.0111, 40.7118], w: 0.72, r: 500,  role: "World Trade Center" },
+  { ll: [-74.0111, 40.7118], w: 0.44, r: 470,  role: "World Trade Center" },
   { ll: [-73.9888, 40.7507], w: 0.68, r: 700,  role: "Herald Square" },
   { ll: [-73.9983, 40.7539], w: 0.55, r: 550,  role: "Hudson Yards" },
   { ll: [-73.9902, 40.7414], w: 0.52, r: 700,  role: "Flatiron" },
   { ll: [-73.9814, 40.7679], w: 0.44, r: 550,  role: "Columbus Circle" },
-  { ll: [-74.0048, 40.7266], w: 0.34, r: 550,  role: "Hudson Square" },
   { ll: [-73.9689, 40.7671], w: 0.34, r: 700,  role: "Upper East Side" },
   { ll: [-73.9457, 40.8077], w: 0.28, r: 700,  role: "125th Street" },
   { ll: [-73.9794, 40.7807], w: 0.26, r: 750,  role: "Upper West Side" },
+  // ---- AND THE NEIGHBOURHOOD CENTRES, which is the point -------------------
+  //
+  // A CITY IS NOT ONE HILL. Written with only the twelve above, the default
+  // extent — below 14th Street — inherited exactly THREE of them, and two of
+  // those (Wall Street at 1.00 and the World Trade Center at 0.72) sit on top of
+  // each other at the southern tip. The whole lower island was one dome with a
+  // faint smudge at Hudson Square, which is not how any part of Manhattan works
+  // and was visible the moment somebody looked at it.
+  //
+  // These are the submarkets a leasing agent would name, each a real centre with
+  // its own rent and its own reason.
+  //
+  // AND THE SIGMA IS THE WHOLE TRICK, which the first attempt at this got wrong
+  // in an instructive way. Thirteen cores were declared at the default extent and
+  // the surface still had exactly ONE local maximum, measured on a 60 m lattice:
+  // at sigma 360-520 m against a spacing of 400-900 m, every Gaussian still
+  // carries most of its height into its neighbour, the valleys fill, and the sum
+  // is monotone toward whichever cluster is biggest. Two equal humps only read as
+  // two when sigma is under about half their separation.
+  //
+  // So these run 240-300 m — about one avenue-block, which is also the honest
+  // number: a neighbourhood retail spine's premium is gone two or three blocks
+  // off it, unlike a CBD which pulls for a kilometre. The majors above keep their
+  // long reaches because they really do have them.
+  { ll: [-74.0030, 40.7075], w: 0.32, r: 260, role: "Seaport" },
+  { ll: [-74.0010, 40.7240], w: 0.44, r: 280, role: "SoHo" },
+  { ll: [-73.9905, 40.7355], w: 0.42, r: 300, role: "Union Square" },
+  { ll: [-74.0045, 40.7128], w: 0.24, r: 250, role: "Civic Center" },
+  { ll: [-73.9990, 40.7310], w: 0.38, r: 300, role: "Greenwich Village" },
+  { ll: [-74.0095, 40.7190], w: 0.3, r: 280, role: "Tribeca" },
+  { ll: [-73.9975, 40.7175], w: 0.28, r: 240, role: "Chinatown" },
+  { ll: [-74.0048, 40.7266], w: 0.32, r: 300, role: "Hudson Square" },
+  { ll: [-73.9915, 40.7295], w: 0.3, r: 260, role: "Astor Place" },
+  { ll: [-74.0065, 40.7395], w: 0.28, r: 270, role: "Meatpacking" },
+  { ll: [-73.9875, 40.7185], w: 0.24, r: 290, role: "Lower East Side" },
+  { ll: [-73.9820, 40.7265], w: 0.22, r: 280, role: "East Village" },
+  { ll: [-73.9860, 40.7460], w: 0.3, r: 300, role: "Gramercy" },
+  { ll: [-74.0020, 40.7460], w: 0.3, r: 300, role: "Chelsea" },
+  { ll: [-73.9760, 40.7420], w: 0.24, r: 280, role: "Kips Bay" },
 ];
 
 // ------------------------------------------------------------------- the parks
@@ -317,17 +396,17 @@ const AVENUES = [
 // FLAVOR lot grain with the coast clipped at that street.
 export const EXTENTS = {
   houston: { at: [-73.9920, 40.7255], name: "below Houston Street",
-    note: "The oldest city. Wall Street, the Seaport, City Hall, Tribeca, SoHo and the Bowery — about 10,400 lots, and every street below Chambers is a colonial lane." },
+    note: "The oldest city. Wall Street, the Seaport, City Hall, Tribeca, SoHo and the Bowery — about 9,100 lots, and every street below Chambers is a colonial lane." },
   "14th": { at: [-73.9975, 40.7370], name: "below 14th Street",
-    note: "Adds Greenwich Village on its own survey, the Lower East Side and Union Square. About 14,400 lots — two and a half times the largest generated island." },
+    note: "Adds Greenwich Village on its own survey, the Lower East Side and Union Square. About 12,800 lots — over twice the largest generated island." },
   "23rd": { at: [-73.9890, 40.7410], name: "below 23rd Street",
-    name2: "Flatiron", note: "Adds Chelsea, Gramercy, Madison Square and the Flatiron gore. About 17,600 lots." },
+    note: "Adds Chelsea, Gramercy, Madison Square and the Flatiron gore. About 15,700 lots." },
   "34th": { at: [-73.9857, 40.7484], name: "below 34th Street",
-    note: "Adds the Garment District, Herald Square, Penn Station and the Empire State Building's block. About 21,600 lots." },
+    note: "Adds the Garment District, Herald Square, Penn Station and the Empire State Building's block. About 18,900 lots." },
   "42nd": { at: [-73.9855, 40.7550], name: "below 42nd Street",
-    note: "Adds Times Square, Bryant Park, Grand Central and the Chrysler Building. About 23,800 lots — the Art Deco heartland." },
+    note: "Adds Times Square, Bryant Park, Grand Central and the Chrysler Building. About 21,500 lots — the Art Deco heartland." },
   "59th": { at: [-73.9800, 40.7660], name: "below 59th Street",
-    note: "All of Midtown, the Plaza District, Rockefeller Center and the south edge of Central Park. About 28,500 lots, and a month takes noticeably longer to tick." },
+    note: "All of Midtown, the Plaza District, Rockefeller Center and the south edge of Central Park. About 25,500 lots, and a month takes noticeably longer to tick." },
 };
 export const DEFAULT_EXTENT = "14th";
 export function extentList() {
@@ -388,9 +467,21 @@ export function manhattanConfig(seed = 1, opts = {}) {
   const bwXY = BROADWAY_LL.map(xy);
   const diagonals = [];
   for (let i = 0; i < bwXY.length - 1; i++) {
-    const a = bwXY[i], b = bwXY[i + 1];
+    let a = bwXY[i], b = bwXY[i + 1];
     if (!keep(a) && !keep(b)) continue;
+    // CLIP THE SEGMENT THAT STRADDLES THE CUT, do not keep it whole. Keeping any
+    // segment with one end inside left the run that crosses the extent line
+    // sticking out past the coast and drawn as a reservation into the river —
+    // visible as a lone dark stripe heading north out of the island on the first
+    // land-lens shot of this city.
+    if (!keep(b) || !keep(a)) {
+      const ua = alongUp(a) - limit, ub = alongUp(b) - limit;
+      const t = ua / (ua - ub);
+      const cutPt = [Math.round(a[0] + t * (b[0] - a[0])), Math.round(a[1] + t * (b[1] - a[1]))];
+      if (keep(a)) b = cutPt; else a = cutPt;
+    }
     const dx = b[0] - a[0], dy = b[1] - a[1];
+    if (Math.hypot(dx, dy) < 60) continue;      // a stub is not a street
     diagonals.push({
       cx: Math.round((a[0] + b[0]) / 2), cy: Math.round((a[1] + b[1]) / 2),
       w: Math.round(Math.hypot(dx, dy)), h: 26,

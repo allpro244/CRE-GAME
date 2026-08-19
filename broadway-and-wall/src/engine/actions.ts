@@ -8,7 +8,7 @@ import { recentLowballs, sellerOf, strikeDeal } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -1043,7 +1043,7 @@ function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, 
     bbl,
     source: "ground-lease",
     deliverM,
-    sfByUse: { [use]: sf },
+    sfByUse: { [use]: rentableFromSpec(sf, floors) },
   });
 }
 

@@ -427,7 +427,7 @@ export function developerOptimism(e: Econ, k: BuiltClass): number {
 // version's whole defect was that it did not need to: it worked from index
 // RATIOS against a single class-blind BASE_YOC and never touched a real
 // number. See `devPencils` in value.ts.
-import { devPencils } from "./value";
+import { devPencils, rentableSf } from "./value";
 export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
@@ -575,10 +575,13 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
     const r = parcels[bbl];
     if (!r || r.class === "land" || !r.bldgArea) continue;
     const m = r.mix;
+    // Stock is RENTABLE. Tenants occupy demiseable feet; cores are not vacant
+    // office. `bldgArea` stays gross on the parcel (zoning, cost, the map).
+    const letSf = rentableSf(r);
     if (m) {
-      for (const k of BUILT_CLASSES) out[k] += r.bldgArea * (m[k] ?? 0);
+      for (const k of BUILT_CLASSES) out[k] += letSf * (m[k] ?? 0);
     } else if (r.class in out) {
-      out[r.class as BuiltClass] += r.bldgArea;
+      out[r.class as BuiltClass] += letSf;
     }
   }
   // THE FLOOR IS A SHARE OF THE TOWN, NOT A FIXED NUMBER OF FEET.

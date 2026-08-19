@@ -110,10 +110,12 @@ is set. Any probe running past ~year 30 without a player must resurrect:
 in how many firms a city supports turned out to be the game being over.
 
 **The conservation identity and debt principal.** `pnpm conserve` asserts
-`Δcash == books + Δloc.balance + Δdeposits`, and `borrowed` is now a books
+`Δcash == books + Δloc.balance + Δdeposits`, and `borrowed` is a books
 inflow for cash-out refinance and facility draws. Voluntary paydowns book to
-`debtSvc`. The conserve bot refinances so the bucket is exercised. Purchase
-still books equity only (`bought`) — the loan goes to the seller at closing.
+`debtSvc`. The conserve bot buys at half Harbor's advance and cash-out
+refinances after the stepdown so `borrowed` is in REQUIRED, not a silent
+exemption. Purchase still books equity only (`bought`) — the loan goes to
+the seller at closing.
 
 **One quantity, two answers.** The most productive bug class in this repo.
 `managedRentPsfYr(rec, econ, h)` with no `use` returns the area-weighted BLEND
@@ -200,7 +202,9 @@ roughly 8–12%. #47.
 
 **3. ~~The conservation identity's debt gap~~ — CLOSED.** Cash-out refinance and
 facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
-bot refinances so the identity is exercised.
+bot buys at half leverage and refinances so the identity is exercised, and
+`borrowed` is in REQUIRED. The first close left the bucket dead: the bot
+bought at max LTV and called Alden ($2.5M minimum) on small deeds.
 
 **4. ~~CPI is non-monotonic~~ — CLOSED (floor).** Monthly CPI change floors at
 −0.05%/mo (~−0.6%/yr) while national inflation is non-negative; only a national

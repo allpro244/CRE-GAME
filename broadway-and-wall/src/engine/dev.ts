@@ -13,9 +13,9 @@ import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand"
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
 import { coverRoleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  noiYr, taxBorneShare } from "./value";
+  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -811,17 +811,16 @@ export function planDevelopment(
   // corridor take a bite out of every floor that is mostly FIXED — so a big
   // plate gives up a tenth of itself and a narrow one gives up a third.
   const plate = rec.lotArea * cov;
-  const eff = plateEfficiency(plate);
-  // ...AND THE ENVELOPE IS THE CAP, so the partial top floor `maxFloorsFor` now
-  // allows cannot overrun the zoning. Coverage x floors can exceed the FAR by
-  // up to one storey's worth; this is where that comes back off, and it comes
-  // off the top floor rather than off the building. See the note on
-  // `maxFloorsFor`: together these make building area depend on the ENVELOPE
-  // and not on how neatly the coverage happened to divide into it.
+  // GROSS is what we store and what zoning/cost read. Rentable is what you
+  // let — `rentableRatio`, not the plate-efficiency INDEX (median = 1.0),
+  // which is why every new building's income used to be struck on cores.
   const envelope = rec.lotArea * farMaxFor(rec);
   const gsf = Math.round(Math.min(rec.lotArea * cov * fl, envelope) / 100) * 100;
-  const sf = Math.round((gsf * eff) / 100) * 100;
-  if (sf < 2000) return null;
+  const rentable = Math.round((gsf * rentableRatio(plate)) / 100) * 100;
+  if (rentable < 2000) return null;
+  // Stored area is GROSS so citygen buildings and player buildings are the
+  // same quantity. Income, lease-up and the space market read `rentable`.
+  const sf = gsf;
 
   // Shops at grade wherever the street will carry them — see withStreetRetail.
   // Applied before the cap, so the cap still has the last word.
@@ -831,9 +830,9 @@ export function planDevelopment(
     && proposedBts.use !== "multifamily"
     && proposedBts.use in mix
     && proposedBts.sf > 0
-    ? { ...proposedBts, sf: Math.min(sf * (mix[proposedBts.use] ?? 0), proposedBts.sf) }
+    ? { ...proposedBts, sf: Math.min(rentable * (mix[proposedBts.use] ?? 0), proposedBts.sf) }
     : undefined;
-  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, sf))) : 0;
+  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, rentable))) : 0;
 
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
@@ -870,7 +869,7 @@ export function planDevelopment(
   // the gap between debt service and income across the whole absorption
   // period. It is expensive, it is financed, and it is the single biggest
   // reason a marginal deal does not pencil. That is the point.
-  const openSf = sf;
+  const openSf = rentable;
   // apartments have no fit-out, but they do have concessions and marketing
   const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
   const asBuilt0 = asBuiltRec(rec, use, sf, fl);
@@ -1066,7 +1065,7 @@ export function planDevelopment(
     const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
     const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
     const egiPsf = bts.rentPsf + opex * recovery;
-    const btsNoi = sf * (egiPsf - opex - egiPsf * MGMT_FEE);
+    const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);
     stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
   }
   const exitCap = capRateFor(asBuilt, s.econ, "good");
@@ -1226,7 +1225,7 @@ export function startAdaptiveReuse(
   fundAndBook(next, parcels, dayOne, "dev");
   const oldMix = mixOf(rec);
   for (const use of BUILT_CLASSES) {
-    const oldSf = useSf(rec, use);
+    const oldSf = useRentableSf(rec, use);
     if (oldSf > 0) addStock(next.econ, use, -oldSf);
   }
   next.cash -= depositsOn(nh);
@@ -1234,7 +1233,7 @@ export function startAdaptiveReuse(
   nh.occ = 0;
   queueSupplyProject(next, {
     bbl, source: "reuse", deliverM: next.month + plan.months,
-    sfByUse: programmeSf(plan.sf, plan.mix),
+    sfByUse: programmeSf(rentableFromSpec(plan.sf, plan.floors), plan.mix),
   });
   next.developments[bbl] = {
     bbl, use: target, mix: plan.mix, sf: plan.sf, floors: plan.floors,
@@ -1248,7 +1247,7 @@ export function startAdaptiveReuse(
     ratePct: plan.ratePct, startM: next.month, deliverM: next.month + plan.months,
     baseMonths: plan.months, piped: true, signed: [], events: 0,
     mode: "reuse", reuseFrom: oldMix,
-    reuseOldSf: rec.bldgArea,
+    reuseOldSf: rentableSf(rec),
   };
   recordPropertyEvent(next, bbl, {
     kind: "build-start", use: target, sf: plan.sf, floors: plan.floors,
@@ -1625,7 +1624,7 @@ export function startDevelopment(
   // schedule slip can move it and an abandoned job can pull it back out; and
   // it fills part of the order the space market has already placed
   // (startOwed), exactly as an anonymous start on the same corner would have.
-  const playerProgramme = programmeSf(plan.sf, plan.mix);
+  const playerProgramme = programmeSf(rentableFromSpec(plan.sf, plan.floors), plan.mix);
   queueSupplyProject(next, {
     bbl,
     source: "player",
@@ -1951,7 +1950,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         source: d.mode === "reuse" ? "reuse" : "player",
         startM: d.startM,
         deliverM: d.deliverM,
-        sfByUse: programmeSf(d.sf, d.mix ?? devMix(d.use)),
+        sfByUse: programmeSf(rentableFromSpec(d.sf, d.floors), d.mix ?? devMix(d.use)),
       });
     }
     const span = Math.max(1, d.deliverM - d.startM);
@@ -3162,7 +3161,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const pinned = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015;
     return pinned && ((e.structTight?.[k] ?? 0) > 0.08 || (e.startOwed?.[k] ?? 0) > 0);
   });
-  if (rng(s, "dev") > (chronicShort ? 0.50 : 0.85)) return;
+  // ONE CANDIDATE A MONTH, which is what the comment above has always said.
+  // The skip used to be 0.85 — 15% of months, ~1.8 looks a year — so a
+  // thousand-building town replaced ~0.1%/yr against a ~0.5% real-world
+  // anchor and mean age climbed with the calendar. The roll is the same
+  // draw as before (RNG-NOTE: more months now enter the sample below).
+  if (rng(s, "dev") > (chronicShort ? 0.05 : 0.15)) return;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
   // This path is 96% of all the square footage this city builds, and it broke
@@ -3276,7 +3280,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A replacement is still supply. It may satisfy an existing order, but it
   // cannot create a class of space the market has not ordered at all —
   // "ordered" includes a pinned structural short, not only startOwed.
-  if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead)) return;
+  if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead)) {
+    // Obsolescence is its own reason to clear a site. The order book is
+    // how a SHORTAGE densifies; a worn-out building comes down even when
+    // the book is quiet — that is how a city stays a city and not a
+    // museum. The replacement still has to pencil, below. No extra draw.
+    const stood = gradeOf(s, rec);
+    const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+    const recycle = stood === "obsolete" || (stood === "worn" && stoodAge >= 70);
+    if (!recycle) return;
+  }
   const leadShort = classPinnedOwed(e, lead)
     || ((e.structTight?.[lead] ?? 0) > 0.06
       && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
@@ -3375,7 +3388,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   );
   // Soften the stochastic walk under chronic shortage — still requires a
   // clearing pro forma; does not free-build.
-  const rollGate = leadShort ? 0.88 : 0.62;
+  const stoodCond = gradeOf(s, rec);
+  const rollGate = leadShort ? 0.88 : stoodCond === "obsolete" ? 0.80 : 0.62;
   if (!underwriting?.clears || teardownRoll > rollGate * underwriting.appetite) return;
   const plan = underwriting.plan;
   nsf = plan.sf;
@@ -3393,7 +3407,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const stoodAs = rec.class !== "land" ? (rec.class as BuiltClass) : null;
   if (stoodAs && (CITY_STOCK as Record<string, number>)[stoodAs] !== undefined) {
-    addStock(e, stoodAs as keyof typeof CITY_STOCK, -oldSf);
+    addStock(e, stoodAs as keyof typeof CITY_STOCK, -rentableSf(rec));
   }
   s.demolished = (s.demolished ?? 0) + 1;
   recordPropertyEvent(s, bbl, {
@@ -3412,7 +3426,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     party: "The city",
   });
   // ...and the one delivery queue carries that same programme, whole.
-  const teardownProgramme = programmeSf(nsf, tprog);
+  const teardownProgramme = programmeSf(rentableFromSpec(nsf, nfl), tprog);
   queueSupplyProject(s, {
     bbl,
     source: "teardown",
@@ -3545,7 +3559,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   const { bbl, rec } = worst;
   const oldSf = rec.bldgArea;
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  addStock(e, "industrial", -oldSf);
+  addStock(e, "industrial", -rentableSf(rec));
   // Vacancy accounting: we cleared empty surplus. Keep occupied; next market
   // tick recomputes cityVac from occ/stock. Clamp occupied into housable if
   // a large shed somehow overshot (guard only).
@@ -3832,7 +3846,7 @@ export function tickCityGrowth(
     // Into the pipeline the day the hole is dug: the Economy page's delivery
     // schedule and forward vacancy are reading this queue, so what is coming
     // is visible for years before it lands.
-    const cityProgramme = programmeSf(sf, prog);
+    const cityProgramme = programmeSf(rentableFromSpec(sf, floors), prog);
     queueSupplyProject(s, {
       bbl,
       source: "city",

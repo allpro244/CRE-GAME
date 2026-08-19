@@ -76,7 +76,7 @@ for (let i = 0; i < SEEDS; i++) {
   const built0 = Object.values(parcels).filter((r) => r.class !== "land" && r.bldgArea > 0);
   const n0 = built0.length;
   const sf0 = built0.reduce((a, r) => a + r.bldgArea, 0);
-  const age0 = built0.reduce((a, r) => a + (2000 - (r.yearBuilt || 1900)), 0) / Math.max(1, n0);
+  const age0 = built0.reduce((a, r) => a + (E.START_YEAR - (r.yearBuilt || 1900)), 0) / Math.max(1, n0);
 
   for (let mo = 0; mo < YEARS * 12; mo++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
@@ -85,7 +85,7 @@ for (let i = 0; i < SEEDS; i++) {
     g.cash = 50_000_000; g.insolventMs = 0; g.gameOver = null;
   }
 
-  const yr = 2000 + Math.floor(g.month / 12);
+  const yr = E.START_YEAR + Math.floor(g.month / 12);
   let n1 = 0, sf1 = 0, ageSum = 0, bad = 0, youngest = 9999;
   for (const bbl of bbls) {
     const rec = E.resolveRec(parcels, g, bbl);

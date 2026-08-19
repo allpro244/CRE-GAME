@@ -8,7 +8,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
+import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
@@ -370,7 +370,14 @@ function ParcelPanelInner({
         })()}
         {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
-        {omFull && isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
+        {omFull && isBuilt && <Row k="Gross area" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
+        {omFull && isBuilt && (
+          <Row
+            k="Rentable area"
+            v={`${sf(Math.round(rentableSf(rec)))} · ${(rentableRatio(plateOf(rec)) * 100).toFixed(0)}% of gross`}
+            title="BOMA rentable — core, stairs and risers out. Rent, NOI and cap rate are struck on these feet, not on gross. Same function the engine uses."
+          />
+        )}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
         <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />

@@ -4,6 +4,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
 import { serviceSpec, START_YEAR } from "./types";
+export { START_YEAR };
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE } from "./market";
@@ -106,33 +107,43 @@ export const REF_LOT_SF = 4950;
 function coreLoss(plateSf: number): number { return 0.07 + 420 / Math.max(400, plateSf); }
 const REF_CORE_LOSS = coreLoss(REF_PLATE_SF);
 /**
- * Rentable feet per gross foot built, against the median plate.
+ * RENTABLE FEET PER GROSS FOOT. The number the business actually uses.
  *
- * THE CEILING WAS 1.14 AND THAT IS NOT A THING A RENTABLE RATIO CAN DO. The
- * expression is normalised so the median 4,300 sf plate reads exactly 1.0,
- * which makes it an INDEX of efficiency against that plate rather than the
- * ratio its name and docstring promise — and above the median it went over one:
+ * A floor is not all demiseable. The core, the two stairs, the risers and the
+ * corridor take a bite that is mostly FIXED, so a big plate gives up a tenth
+ * of itself and a narrow one gives up a quarter. `1 - coreLoss` runs 0.72 to
+ * 0.92, which is the BOMA office range (BOMA 2017 / typical loss factor
+ * 8–28%). This is a measured fact about buildings, not a coefficient.
  *
- *     plate  8,000 sf   1.054        plate 20,000 sf   1.092
- *     plate 12,000 sf   1.075        plate 30,000 sf   1.101
+ * `bldgArea` stays GROSS — zoning counts it, the contractor bills it, the
+ * map draws it. Every income, occupancy and space-market read goes through
+ * `rentableSf` / `useRentableSf` so rent psf, NOI and cap rate are quoted
+ * against the feet a tenant can actually sit in. One function, one answer.
+ * A panel that computed its own haircut would be a second opinion.
+ */
+export function rentableRatio(plateSf: number): number {
+  return clamp(1 - coreLoss(plateSf), 0.72, 0.92);
+}
+export function rentableSf(rec: { bldgArea: number; floors: number }): number {
+  if (!rec.bldgArea) return 0;
+  return rec.bldgArea * rentableRatio(plateOf(rec));
+}
+/** Rentable feet of a planned shell — same identity, no parcel yet. */
+export function rentableFromSpec(gsf: number, floors: number): number {
+  if (!(gsf > 0)) return 0;
+  return gsf * rentableRatio(gsf / Math.max(1, floors));
+}
+export function useRentableSf(rec: ParcelRecord, use: BuiltClass): number {
+  return useSf(rec, use) * rentableRatio(plateOf(rec));
+}
+/**
+ * Plate quality against the median plate — an INDEX, not the rentable ratio.
  *
- * `planDevelopment` then computes `sf = gsf * eff` and stores that as the
- * building's area, so a big-plate office was recorded with up to 10% MORE
- * rentable feet than the gross it was priced, costed and zoned against. Two
- * things follow and both are visible in the game. The development card computes
- * FAR on gross and reads inside the envelope; the parcel panel computes it on
- * the stored figure and reads OVER it, so the player's own building appears to
- * breach the zoning it was granted. And `invariants.ts` flags "overleased" at
- * `leased > bldgArea`, which means those buildings could be let past their own
- * gross area — core, stairs and risers included.
- *
- * Capped at 1.0 here rather than renormalised, deliberately. Removing the
- * normalisation altogether is the correct end state — the true ratio is
- * `1 - coreLoss(plate)`, which runs 0.72 to 0.92 and is exactly the range real
- * office buildings run at — but that shrinks EVERY building's rentable area by
- * about 17% and moves every rent, value and cap rate calibrated against it.
- * That is a recalibration with its own A/B, not a bracket change. This cap is
- * the part that is unambiguous: rentable cannot exceed gross.
+ * The true ratio is `rentableRatio`. This stays relative so a median new
+ * building still reads 1.0 for land-quality and assemblage comparisons
+ * (`siteQualityMult` divides by `REF_SITE_Q`). Capped at 1.0: rentable
+ * cannot exceed gross, and the old un-capped form stored big-plate offices
+ * with more area than they were zoned for.
  */
 export function plateEfficiency(plateSf: number): number {
   return clamp((1 - coreLoss(plateSf)) / (1 - REF_CORE_LOSS), 0.78, 1.0);
@@ -563,9 +574,10 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
 
     // ZONING COUNTS GROSS AND THE CONTRACTOR BILLS GROSS; YOU LET RENTABLE.
     // The core, the stairs, the risers and the corridor come out of every
-    // floor. Leaving this out was worth 10-30% of overstated income on every
-    // lot in the city, and it fell straight through into the land price.
-    const eff = plateEfficiency(rec.lotArea * 0.7);
+    // floor. This used to multiply by `plateEfficiency` — an index that reads
+    // 1.0 on the median plate — so the median lot's residual was still struck
+    // on gross. `rentableRatio` is the actual 0.72–0.92 the business uses.
+    const eff = rentableRatio(rec.lotArea * 0.7);
     const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
     const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
     const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ);
@@ -1228,8 +1240,8 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
 export function physicalOcc(rec: ParcelRecord, h: Holding): number {
   if (!rec.bldgArea) return 0;
   const comm = h.tenants.reduce((a, t) => a + t.sf, 0);
-  const res = useSf(rec, "multifamily") * (h.occ ?? 0);
-  return Math.min(1, (comm + res) / rec.bldgArea);
+  const res = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  return Math.min(1, (comm + res) / Math.max(1, rentableSf(rec)));
 }
 
 // ---------------------------------------------------------------- the opex stack
@@ -1442,7 +1454,10 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
   // which is how the business actually works and which no flat ratio can say.
   let rent = 0, recovered = 0, opex = 0;
   for (const use of uses(rec)) {
-    const sf = useSf(rec, use);
+    // Income and opex on RENTABLE feet. Industry $/sf is BOMA rentable;
+    // quoting it on gross (core, stairs, risers in) was the largest fake
+    // number still standing — every rent, NOI and cap rate ~17% high.
+    const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
     const occ = useOccupancy(rec, econ, use, stabilised);
     const op = sf * opexPsf(use, econ, false);
@@ -1706,7 +1721,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // units turn over and things break: a 7% reserve off collections for
     // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
-    const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
+    const egi = rentableSf(rec) * marketRentPsfYr(rec, econ, h.condition) * occ;
     // ONE OPERATING-COST MODEL, AND APARTMENTS ARE NOT AN EXCEPTION. This read
     // the legacy flat table at $10.00/sf while planDevelopment, the land
     // residual and every other class read opexPsf() at $8.22 — so a block of
@@ -1715,7 +1730,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rec.bldgArea * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
@@ -1740,7 +1755,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     baseRent += t.rentPsf * t.sf;
   }
   const egi = baseRent + recoveredOpex + recoveredTax;
-  const opexBill = opexNowPsf * rec.bldgArea;                 // the owner pays it all, then bills it out
+  const opexBill = opexNowPsf * rentableSf(rec);               // the owner pays it all, then bills it out
   const mgmt = egi * MGMT_FEE;
   return egi - opexBill - mgmt - taxBill;
 }
@@ -1767,7 +1782,7 @@ export function heldOccupancy(rec: ParcelRecord, econ: Econ, h: Holding): number
   if (!rec.bldgArea) return 0;
   let leased = 0;
   for (const t of h.tenants ?? []) leased += t.sf;
-  return clamp(leased / rec.bldgArea, 0, 1);
+  return clamp(leased / Math.max(1, rentableSf(rec)), 0, 1);
 }
 
 export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, month: number) {
@@ -1790,20 +1805,21 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   // for one building.
   if (rec.class === "multifamily") {
     const occ = h.occ ?? occupancy(rec, econ);
-    const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
+    const letSf = rentableSf(rec);
+    const egi = letSf * marketRentPsfYr(rec, econ, h.condition) * occ;
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rec.bldgArea * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1);
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
       opex: opexBill, mgmt: egi * MGMT_FEE, reserve: egi * APT_RESERVE, tax: taxBill,
       noi: egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - taxBill,
-      leasedSf: Math.round(rec.bldgArea * occ), vacantSf: Math.round(rec.bldgArea * (1 - occ)),
+      leasedSf: Math.round(letSf * occ), vacantSf: Math.round(letSf * (1 - occ)),
       // gross leases bill nothing back; the whole expense stack is the owner's
       leakage: opexBill + taxBill > 0 ? 1 : 0,
-      opexPsf: opexBill / Math.max(1, rec.bldgArea), taxPsf: taxBill / Math.max(1, rec.bldgArea),
+      opexPsf: opexBill / Math.max(1, letSf), taxPsf: taxBill / Math.max(1, letSf),
     };
   }
   const cls = rec.class as BuiltClass;
@@ -1821,7 +1837,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     if (t.freeUntilM !== undefined && month < t.freeUntilM) { free += t.rentPsf * t.sf; continue; }
     baseRent += t.rentPsf * t.sf;
   }
-  const opexBill = opexNowPsf * rec.bldgArea;
+  const opexBill = opexNowPsf * rentableSf(rec);
   const egi = baseRent + recOpex + recTax;
   const mgmt = egi * MGMT_FEE;
   const noi = egi - opexBill - mgmt - taxBill;
@@ -1829,7 +1845,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   return {
     baseRent, freeRent: free, recoveredOpex: recOpex, recoveredTax: recTax, egi,
     opex: opexBill, mgmt, tax: taxBill, noi,
-    leasedSf, vacantSf: Math.max(0, rec.bldgArea - leasedSf),
+    leasedSf, vacantSf: Math.max(0, rentableSf(rec) - leasedSf),
     // what you pay and never bill back, as a share of the whole expense stack
     leakage: billed > 0 ? Math.max(0, billed - recOpex - recTax) / billed : 0,
     opexPsf: opexNowPsf, taxPsf: taxNowPsf,
@@ -2070,9 +2086,9 @@ function leaseUpMark(rec: ParcelRecord, econ: Econ, h: Holding, month: number, c
   if (h.deliveredM === undefined || !rec.bldgArea) return null;
   const apt = (rec.class as BuiltClass) === "multifamily";
   const letSf = apt
-    ? Math.max(0, Math.min(1, h.occ ?? 0)) * rec.bldgArea
+    ? Math.max(0, Math.min(1, h.occ ?? 0)) * rentableSf(rec)
     : (h.tenants ?? []).reduce((a, t) => a + t.sf, 0);
-  return leaseUpMarkAt(rec, econ, h.condition, month - h.deliveredM, letSf / Math.max(1, rec.bldgArea), capNoRoll);
+  return leaseUpMarkAt(rec, econ, h.condition, month - h.deliveredM, letSf / Math.max(1, rentableSf(rec)), capNoRoll);
 }
 
 /**

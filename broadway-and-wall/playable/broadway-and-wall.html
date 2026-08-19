@@ -7605,7 +7605,7 @@ void main() {
       // it makes a ten-storey building read as one room.
       float baseTop = fh * 2.1, atticAt = vTop - fh * 1.5;
       if (vZ < baseTop) {
-        wall *= 0.94 + 0.10 * step(0.5, fract(vZ / 0.85));   // rusticated courses
+        wall *= 0.94 + 0.10 * mix(0.5, step(0.5, fract(vZ / 0.85)), grainFade(0.85, mpp));   // rusticated courses
       } else if (vZ < atticAt) {
         float colm = 1.0 - smoothstep(0.0, 0.16, min(f.x, 1.0 - f.x));
         wall = mix(wall, wall * 1.13, colm);
@@ -7939,7 +7939,7 @@ void main() {
                                 : vec3(0.62, 0.46, 0.12);
         wall = mix(wall, chain, s == 139 ? 0.55 : 0.80);
       }
-      if (s != 139) wall *= 0.96 + 0.07 * step(0.5, fract(vZ / 0.41));   // split-face block
+      if (s != 139) wall *= 0.96 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.41)), grainFade(0.41, mpp));   // split-face block
       // the gable parapet, once, in the middle of the frontage
       float g = abs(fract(vU / 46.0) - 0.5);
       if (s == 142 && g < 0.13 && vZ > vTop - fh * 1.5) {
@@ -8252,7 +8252,7 @@ void main() {
       if (dr < 0.5) winMask = 0.0;
       if (rq > 2.20 && rq < 2.72) wall = mix(wall, wall * 0.84, 0.85);   // voussoir ring
       wall *= 0.995 + 0.13 * (hash(floor(vec2(vU / 0.23, vZ / 0.081))) - 0.5) * grainFade(0.081, mpp);
-      if (vZ > vTop - 1.4) wall = mix(wall, wall * 1.14, step(0.5, fract(vU / 0.58)));
+      if (vZ > vTop - 1.4) wall = mix(wall, wall * 1.14, mix(0.5, step(0.5, fract(vU / 0.58)), grainFade(0.58, mpp)));
     }
     if (s == 106) {
       // ONE DOOR, a dozen leaves. Every joint a hard shadow line full height,
@@ -8262,7 +8262,7 @@ void main() {
       winMask = step(dh + 1.20, vZ) * step(vZ, dh + 3.40);
       if (dr > 0.5) wall = mix(wall, wall * 0.86, 0.8);
       if (dr > 0.5 && fract(vU / 2.15) < 0.055) wall = mix(wall, wall * 0.52, 0.9);
-      if (dr < 0.5) wall *= 1.0 - 0.09 * step(0.5, fract(vU / 0.90));
+      if (dr < 0.5) wall *= 1.0 - 0.09 * mix(0.5, step(0.5, fract(vU / 0.90)), grainFade(0.90, mpp));
       if (abs(vZ - (dh + 0.35)) < 0.22) wall = mix(wall, vec3(0.340, 0.340, 0.330), 0.9);
     }
     if (s == 107) {
@@ -8301,7 +8301,7 @@ void main() {
       wall *= 0.99 + 0.14 * (hash(floor(vec2(vU / 0.225, vZ / 0.081))) - 0.5) * grainFade(0.081, mpp);
       wall *= mix(1.06, 0.90, rec);
       if (vZ > vTop - 2.4 || vZ < 0.9) wall = mix(wall, vec3(0.700, 0.670, 0.600), 0.7);
-      if (rec > 0.5 && vZ > 1.0 && vZ < 2.0 && fract(vU / 0.18) > 0.5) wall = mix(wall, vec3(0.240, 0.230, 0.210), 0.8);
+      if (rec > 0.5 && vZ > 1.0 && vZ < 2.0) wall = mix(wall, vec3(0.240, 0.230, 0.210), 0.8 * mix(0.5, step(0.5, fract(vU / 0.18)), grainFade(0.18, mpp)));
     }
     if (s == 110) {
       // THE COMB. 155 mm louvre pitch over whole panels, lit on each blade face
@@ -8374,7 +8374,7 @@ void main() {
       if (inHole) winMask *= step(abs(ox - 0.5) * 2.0, hw);
       float ang = atan(max(oy - 0.60, 0.0) * 2.2, (ox - 0.5) * 2.0);
       if (oy > 0.58 && winMask < 0.5) wall *= 0.88 + 0.26 * step(0.5, fract(ang * 2.9));
-      wall *= 0.94 + 0.12 * step(0.5, fract(vZ / 0.62));
+      wall *= 0.94 + 0.12 * mix(0.5, step(0.5, fract(vZ / 0.62)), grainFade(0.62, mpp));
       vec2 rp2 = vec2((f.x - 0.5) * colW, vZ - (vTop - fh * 1.5));
       float rr2 = length(rp2);
       if (abs(floor(vU / colW) - (floor(vRand * 2.0) + 2.0)) < 0.5 && rr2 < 1.90) {
@@ -8390,7 +8390,7 @@ void main() {
         winMask = 1.0; glassShade = 0.30;
         float post = 1.0 - smoothstep(0.0, 0.06, abs(fract(vU / 2.15) - 0.5));
         if (post > 0.4 || vy < 0.34) { winMask = 0.0; wall = vec3(0.760, 0.740, 0.680); }
-        if (vy < 0.34) wall *= 0.92 + 0.10 * step(0.5, fract(vU / 0.18));
+        if (vy < 0.34) wall *= 0.92 + 0.10 * mix(0.5, step(0.5, fract(vU / 0.18)), grainFade(0.18, mpp));
       } else {
         wall *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.05, f.y - 0.63));
       }
@@ -8407,7 +8407,7 @@ void main() {
         winMask *= smoothstep(0.0, 0.22, min(bar, 1.0 - bar));
       }
       wall *= 1.0 + 0.06 * (hash(vec2(floor(vU / 1.25), floor(vZ / 0.62))) - 0.5) * grainFade(0.62, mpp);
-      wall *= 1.0 - 0.16 * (1.0 - smoothstep(0.0, 0.05, fract(vZ / 0.62)));
+      wall *= 1.0 - 0.16 * mix(0.025, 1.0 - smoothstep(0.0, 0.05, fract(vZ / 0.62)), grainFade(0.62, mpp));
     }
     if (s == 99) {
       // THE BATTLEMENT. Merlons and embrasures on a corbelled course, over a
@@ -8418,7 +8418,7 @@ void main() {
         wall = mix(wall * 1.06, wall * 0.42, gap * smoothstep(1.1, 0.75, topd));
         winMask = 0.0;
       }
-      if (topd > 1.6 && topd < 2.4) wall *= 0.72 + 0.34 * step(0.5, fract(vU / 0.62));
+      if (topd > 1.6 && topd < 2.4) wall *= 0.72 + 0.34 * mix(0.5, step(0.5, fract(vU / 0.62)), grainFade(0.62, mpp));
       wall *= 1.0 + 0.16 * smoothstep(fh * 1.6, 0.0, vZ);
       if (vZ < fh * 1.5) winMask = 0.0;
       if (inHole) winMask *= step(abs(ox - 0.5), 0.5 - 0.10 * smoothstep(0.75, 1.0, oy));
@@ -8449,8 +8449,8 @@ void main() {
       winMask *= smoothstep(0.0, 0.06, abs(abs(q.x) - 0.34));
       if (rq > 1.0 && rq < 1.20 && q.y > -0.02) wall *= 1.16;
       if (q.y < -0.03 && q.y > -0.14) wall *= 0.86;
-      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.025, fract(vU / 0.61)));
-      if (vZ < 1.1) wall *= 0.88 + 0.08 * step(0.5, fract(vU / 0.28));
+      wall *= 1.0 - 0.05 * mix(0.0125, 1.0 - smoothstep(0.0, 0.025, fract(vU / 0.61)), grainFade(0.61, mpp));
+      if (vZ < 1.1) wall *= 0.88 + 0.08 * mix(0.5, step(0.5, fract(vU / 0.28)), grainFade(0.28, mpp));
     }
     if (s == 102) {
       // BLIND, until the last metre. The galleries are lit from the roof, so
@@ -8458,8 +8458,8 @@ void main() {
       if (vZ < vTop - fh * 0.85) winMask = 0.0;
       float jj = fract(vU / 1.55);
       wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, min(jj, 1.0 - jj)));
-      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, fract(vZ / 1.05)));
-      if (vZ < fh * 1.15) wall *= 0.90 + 0.08 * step(0.5, fract(vZ / 0.55));
+      wall *= 1.0 - 0.05 * mix(0.01, 1.0 - smoothstep(0.0, 0.02, fract(vZ / 1.05)), grainFade(1.05, mpp));
+      if (vZ < fh * 1.15) wall *= 0.90 + 0.08 * mix(0.5, step(0.5, fract(vZ / 0.55)), grainFade(0.55, mpp));
       float cz = vTop - vZ;
       if (cz < 1.5 && cz > 0.9) { wall *= 0.66; winMask = 0.0; }
       else if (cz < 0.9) wall *= 1.10;
@@ -8495,14 +8495,14 @@ void main() {
         float pst = max(1.0 - smoothstep(0.12, 0.17, f.x), 1.0 - smoothstep(0.12, 0.17, 1.0 - f.x));
         if (pst > 0.0) wall = mix(wall, wall * 1.30, pst * 0.9);
       } else {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));    // clapboard beyond
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.22)), grainFade(0.22, mpp));    // clapboard beyond
       }
     }
     if (s == 83 || s == 90) {
       // CLAPBOARD, and one big opening. The shotgun puts its door and window
       // on a front one room wide; the ranch runs a picture window and a garage
       // door along a front five rooms long. Same siding, opposite proportion.
-      wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.21));
+      wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.21)), grainFade(0.21, mpp));
       if (s == 90 && vZ < fh * 0.95) {
         float t = fract(vU / 11.0);
         if (t > 0.58 && t < 0.92) { wall = mix(wall, wall * 0.60, 0.85); winMask = 0.0; }  // garage
@@ -8518,7 +8518,7 @@ void main() {
         winMask *= 0.4;
         if (head > fh * 0.80) wall = mix(wall, wall * 1.35, 0.7);   // the flare
       } else {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.22)), grainFade(0.22, mpp));
       }
     }
     if (s == 85 || s == 86) {
@@ -8589,7 +8589,7 @@ void main() {
         wall = mix(wall, vec3(0.180, 0.165, 0.150), cut * 0.95);
         if (cut > 0.4) winMask = 0.0;
       }
-      if (vZ < fh * 1.9) wall *= 0.95 + 0.06 * step(0.5, fract(vZ / 0.86));   // rustication
+      if (vZ < fh * 1.9) wall *= 0.95 + 0.06 * mix(0.5, step(0.5, fract(vZ / 0.86)), grainFade(0.86, mpp));   // rustication
     }
     if (s == 93) {
       // ONE ROOM PER FLOOR. Tight rhythm, tiny openings, a flat stone lintel
@@ -8666,7 +8666,7 @@ void main() {
       if (fy > 0.18 && fy < 0.86 && t > 0.10 && t < 0.90) {
         wall = mix(wall, wall * 0.72, 0.85);
         // the corrugations of the shutter itself
-        wall *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))));
+        wall *= 1.0 - 0.10 * mix(0.06, 1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))), grainFade(0.16, mpp));
       }
       if (vZ > vTop - fh * 0.5) {
         vec3 band = vec3(0.62 + 0.26 * vVar, 0.32 + 0.20 * fract(vVar * 4.3), 0.22 + 0.16 * fract(vVar * 7.1));
@@ -8692,7 +8692,7 @@ void main() {
       // pattern the style is named for.
       float upper = step(fh * 1.55, vZ);
       if (upper < 0.5) {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.24));      // clapboard
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.24)), grainFade(0.24, mpp));      // clapboard
       }
     if (s == 61) {
         vec2 sc = vec2(vU / 0.42, vZ / 0.30);                     // shingle courses
@@ -8769,7 +8769,7 @@ void main() {
       // columns running three floors, then a heavy entablature.
       float baseTop = fh * (s == 70 ? 2.0 : 1.35);
       if (vZ < baseTop) {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.92));      // coursed ashlar
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.92)), grainFade(0.92, mpp));      // coursed ashlar
         winMask = 0.0;
       } else if (vZ > vTop - fh * 0.85) {
         wall *= 1.06; winMask = 0.0;                              // the entablature
@@ -8790,7 +8790,7 @@ void main() {
       // THREE PARTS AND A CANOPY. Rusticated base, a banded middle of
       // identical bedroom windows, a cornice — and a canopy over the door,
       // which is the one asymmetric thing on the whole front.
-      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * step(0.5, fract(vZ / 0.88));
+      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.88)), grainFade(0.88, mpp));
       if (fract(vZ / fh) < 0.08) wall *= 0.93;                    // the sill band
       float dcan = 1.0 - smoothstep(0.0, 0.22, abs(fract(vU / 31.0) - 0.28));
       if (dcan > 0.0 && vZ > fh * 0.85 && vZ < fh * 1.12) {
@@ -9010,7 +9010,7 @@ void main() {
     if (s == 45) {
       // BIG BOX: split-face block coursing, and the tenant's colour on the
       // parapet band. The band is the only thing on the building.
-      wall *= 0.96 + 0.07 * step(0.5, fract(vZ / 0.41));
+      wall *= 0.96 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.41)), grainFade(0.41, mpp));
       if (vZ > vTop - fh * 0.75) {
         vec3 sign_ = vec3(0.30 + 0.50 * vVar, 0.26 + 0.30 * fract(vVar * 5.3), 0.24 + 0.36 * fract(vVar * 2.7));
         wall = mix(wall, sign_, 0.72);
@@ -9137,7 +9137,7 @@ void main() {
         } else if (dSpan < 0.58) {
           // cast bronze panel in the reveal: a different material, not a
           // darker course of the same one
-          wall = mix(wall, vec3(0.34, 0.27, 0.17) * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.34, abs(fract(vU / 0.72) - 0.5) * 2.0))), 0.62);
+          wall = mix(wall, vec3(0.34, 0.27, 0.17) * (1.0 + 0.9 * mix(0.17, 1.0 - smoothstep(0.0, 0.34, abs(fract(vU / 0.72) - 0.5) * 2.0), grainFade(0.72, mpp))), 0.62);
         } else if (dSpan < 0.82) {
           wall *= 0.94 + 0.11 * step(0.5, fract(vU / 0.62 + f.y * 3.0));   // patterned brick, the cheap version
         } else {
@@ -9278,7 +9278,7 @@ void main() {
       winMask *= 1.0 - pier * 0.90;
       if (fPar > 0.5 && vt > 1.7 && vt < 2.25) {
         // one polychrome tile band, and only where the ornament field allows it
-        wall = mix(wall, wall * vec3(1.22, 0.80, 0.60), 0.42 + 0.30 * step(0.5, fract(vU / 0.9)));
+        wall = mix(wall, wall * vec3(1.22, 0.80, 0.60), 0.42 + 0.30 * mix(0.5, step(0.5, fract(vU / 0.9)), grainFade(0.9, mpp)));
         winMask = 0.0;
       }
     }
@@ -9375,7 +9375,7 @@ void main() {
         if (f.y > m.y + 0.05 && f.y < 1.0 - m.y) winMask = 1.0;
         else wall *= 0.94;
       }
-      wall *= 0.975 + 0.05 * step(0.5, fract(vZ / 0.172));          // the field's own coursing
+      wall *= 0.975 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.172)), grainFade(0.172, mpp));          // the field's own coursing
     }
     if (s == 158) {
       // THE EYEBROW. A cast concrete hood standing off the wall over every
@@ -9558,7 +9558,7 @@ void main() {
         if (ribs < 0.16 || ring < 0.08) { winMask = 0.0; wall *= 1.16; }
         if (rr > rMax - 0.55) { winMask = 0.0; wall *= 1.14; }        // the arch ring itself
       } else {
-        wall *= 0.96 + 0.05 * step(0.5, fract(vZ / 0.92));           // coursed ashlar shoulder
+        wall *= 0.96 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.92)), grainFade(0.92, mpp));           // coursed ashlar shoulder
         winMask = 0.0;
       }
     }
@@ -9583,7 +9583,7 @@ void main() {
       }
       if (vZ < fh * 2.05) {
         wall = mix(wall, vec3(0.70, 0.69, 0.66), 0.55);               // the granite plinth, two storeys
-        wall *= 0.96 + 0.06 * step(0.5, fract(vZ / 0.78));
+        wall *= 0.96 + 0.06 * mix(0.5, step(0.5, fract(vZ / 0.78)), grainFade(0.78, mpp));
       }
       if (fPar > 0.5 && vTop - vZ < 2.4) {
         // THE FROZEN FOUNTAIN, documented as the signature of Merwanji Bana &
@@ -9652,7 +9652,7 @@ void main() {
         wall = mix(wall, wall * 1.22, 0.85); winMask = 0.0;
       } else if (vZ > bandTop) {
         wall = mix(wall, wall * 0.78 + vec3(0.16, 0.13, 0.11), 0.60); // the old brick, left alone
-        wall *= 0.97 + 0.05 * step(0.5, fract(vZ / 0.175));
+        wall *= 0.97 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.175)), grainFade(0.175, mpp));
       }
     }
     if (s == 166) {

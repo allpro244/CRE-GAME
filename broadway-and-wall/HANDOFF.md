@@ -272,8 +272,11 @@ retirement, #33 sellers, #36 zoning, #48/#49 firms, optional graphics). Phase 1
    economic life, or obsolete) is YoC on build cost ≥ exit. The sample is
    the candidate set; they are
    underwritten in score order and the first that clears is the
-   groundbreaking. Re-measure `CITY_SEEDS=1 node test/city-accept.mjs` K/L
-   before trusting the bands.
+   groundbreaking. Measured `CITY_SEEDS=1` × 5 × 50y: K passes (median
+   age +42, need < 43). L median demo 0.097%/yr (need ≥ 0.100; was
+   ~0.036 after rentable, ~0.098 before). The ~0.5% anchor is not a
+   birthday: median replacement YoC ex-land is ~3.2% against a ~6.1%
+   exit. Do not invent a coefficient to close that.
 2. **~~Holder memory beyond approaches~~ — CLOSED.** `pnpm holder`.
 3. **Retire load-bearing rails** — `NO_PLAYTEST_PLAN.md` Phase 3; measure with
    `pnpm rails` first. (3.1–3.2 largely done; see `RAIL_AUDIT.md`.)

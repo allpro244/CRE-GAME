@@ -29,7 +29,7 @@ import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
-import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
+import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import {
@@ -311,6 +311,8 @@ interface AppState {
   /** Paper a cross-collateralised facility over a pool of buildings. */
   openFacility: (bbls: string[], productId: string, lev: number) => void;
   /** Pay the facility down out of cash. */
+  /** Re-quote the pool at today's rates and values and pay off the old paper. */
+  refiFacility: (productId: string, lev?: number) => void;
   repayFacility: (amount: number) => void;
   /** Buy one deed back out of the pool at the release price. */
   releaseFacility: (bbl: string) => void;
@@ -1363,6 +1365,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("The facility is papered.");
+    void persist(r.s);
+  },
+
+  refiFacility: (productId, lev) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = refinanceFacility(game, parcels, productId, lev);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "The pool is refinanced.");
     void persist(r.s);
   },
 

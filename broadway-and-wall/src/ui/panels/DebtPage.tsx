@@ -124,9 +124,7 @@ export function DebtPage() {
   // The pool refinancing goes through the store like every other money action.
   // Read optionally: the engine function is the contract, and this desk must not
   // fail to compile against a store wrapper that has not landed yet.
-  const refiFacility = (useStore.getState() as unknown as {
-    refiFacility?: (productId: string, lev?: number) => void;
-  }).refiFacility;
+  const refiFacility = useStore.getState().refiFacility;
   // WHICH LOAN HAS ITS REFINANCING OPEN. The debt page is where a borrower
   // decides what to do about their debt, and until now the only door to the
   // refinance desk was the property record or a row on the portfolio — two
@@ -433,7 +431,7 @@ export function DebtPage() {
                           hint={drawHint(rqt, draw)}
                         />
                         <div className="btn-row">
-                          <button className="btn btn-buy" disabled={!rqt.available || !refiFacility}
+                          <button className="btn btn-buy" disabled={!rqt.available}
                             title={!refiFacility ? "The refinancing desk is not wired up in this build." : undefined}
                             onClick={() => { refiFacility?.(rqt.productId, refiLev); setRefiFac(false); }}>
                             Refinance · {usd(draw)} at {rqt.ratePct.toFixed(2)}%

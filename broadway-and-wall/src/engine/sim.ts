@@ -768,7 +768,7 @@ function tickMonth(
     const yr = settleIncomeTax(taxable, s.taxLossCarry ?? 0);
     const priorCarry = Math.max(0, s.taxLossCarry ?? 0);
     s.taxLossCarry = yr.carry;
-    const M = (n: number) => `$${(n / 1e6).toFixed(2)}M`;
+    const M = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
     if (yr.tax > 1000) {
       s.cash -= yr.tax;
       s.taxesPaid = (s.taxesPaid ?? 0) + yr.tax;
@@ -779,7 +779,7 @@ function tickMonth(
         ? ` ${M(yr.sheltered)} of carried-forward loss went against it`
           + (yr.carry > 1000 ? `, ${M(yr.carry)} still banked.` : `, and the bank is now empty.`)
         : yr.carry > 1000
-          ? ` ${M(yr.carry)} of banked loss could not be used — a carryforward only reaches 80% of a year's income.`
+          ? ` ${M(yr.carry)} of loss stays banked — a carryforward reaches only 80% of a year's income.`
           : "";
       s.news.unshift({
         q: s.month, kind: "info",

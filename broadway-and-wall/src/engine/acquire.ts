@@ -25,6 +25,7 @@ import { describeFirm } from "./firm";
 import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
+import { spendable, fundAndBook } from "./credit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -395,7 +396,7 @@ export function negotiate(
   // And that is a handshake, not a closing. The deed is reserved and the clock
   // starts; the money is the next conversation.
   if (px >= reservation) {
-    const struck = strikeDeal(next, bbl, px, seller, rec.address);
+    const struck = strikeDeal(next, parcels, bbl, px, seller, rec.address);
     return struck.err ? { s, err: struck.err } : { s: struck.s, msg: `Agreed at ${fmtM(px)}. Now fund it.` };
   }
 
@@ -424,7 +425,7 @@ export function negotiate(
     const credible = recentLowballs(next) < 2;
     const bar = credible ? Math.round(reservation * 0.965) : reservation;
     if (px >= bar) {
-      const struck = strikeDeal(next, bbl, px, seller, rec.address);
+      const struck = strikeDeal(next, parcels, bbl, px, seller, rec.address);
       if (struck.err) return { s, err: struck.err };
       struck.s.news.unshift({
         q: struck.s.month, kind: "deal",
@@ -617,7 +618,7 @@ export function acceptCounter(s: GameState, parcels: ParcelTable, bbl: string): 
   const rec = resolveRec(parcels, s, t.bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
-  const struck = strikeDeal(next, t.bbl, t.theirPrice, { kind: t.sellerKind, name: t.sellerName }, rec.address);
+  const struck = strikeDeal(next, parcels, t.bbl, t.theirPrice, { kind: t.sellerKind, name: t.sellerName }, rec.address);
   return struck.err ? { s, err: struck.err } : { s: struck.s, msg: `Agreed at ${fmtM(t.theirPrice)}. Now fund it.` };
 }
 
@@ -661,19 +662,32 @@ function forfeitDeposit(s: GameState, t: Talks) {
  * negotiations and by an accepted blind off-market bid — same instrument.
  */
 export function strikeDeal(
-  next: GameState, bbl: string, px: number,
+  next: GameState, parcels: ParcelTable, bbl: string, px: number,
   seller: { kind: SellerKind; name: string }, address: string,
 ): { s: GameState; err?: string } {
   // YOU CANNOT SIGN WHAT YOU CANNOT PUT MONEY BEHIND. This is the constraint
   // that replaces the old one-negotiation-at-a-time rule: chase as many as you
-  // like, but every handshake costs real cash the day you make it, so the
+  // like, but every handshake costs real money the day you make it, so the
   // number of contracts you can carry is set by your balance sheet rather than
   // by an arbitrary limit in the rules.
+  //
+  // AND THE BALANCE SHEET INCLUDES THE LINE. Earnest money is the single most
+  // ordinary thing a revolver is drawn for — it goes down at signing and comes
+  // back at the table three months later, which is precisely the shape a
+  // revolver is built to bridge. Testing it against the operating account
+  // alone told a firm with an open line and a thin week that it could not sign
+  // a contract, and that is not a constraint any principal would recognise.
+  // The size of the deposit, the three-month clock and the forfeiture on a
+  // blown closing are all exactly where they were — and a firm that signs
+  // several contracts on the line has spent the room it needs for the next
+  // emergency, which is the honest version of this discipline.
   const dep = Math.round(px * DEPOSIT_PCT);
-  if (next.cash < dep) {
+  const liq = spendable(next, parcels);
+  if (liq.total < dep) {
     return {
       s: next,
-      err: `A deposit on ${fmtM(px)} is ${fmtM(dep)} and you have ${fmtM(next.cash)}. `
+      err: `A deposit on ${fmtM(px)} is ${fmtM(dep)} and you can raise ${fmtM(liq.total)} — `
+        + `${fmtM(liq.cash)} of cash and ${fmtM(liq.line)} on the line. `
         + `You cannot sign a contract you cannot put earnest money behind.`,
     };
   }
@@ -689,8 +703,7 @@ export function strikeDeal(
   // (auction.ts, registering bids) for the same instrument: hard money down,
   // credited if you take the deed, gone if you do not. Same quantity, one
   // answer.
-  next.cash -= dep;
-  logBooks(next, "bought", dep);
+  fundAndBook(next, parcels, dep, "bought");
   const prev = next.talks?.[bbl];
   next.talks = next.talks ?? {};
   next.talks[bbl] = {

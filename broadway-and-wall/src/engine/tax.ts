@@ -14,10 +14,11 @@
 // rather than three copies of them.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { cloneState, logBooks } from "./types";
+import { cloneState } from "./types";
 import { rng } from "./market";
 import { landValue, ownedHoldingValue, TAX_RATE } from "./value";
 import { recordPropertyEvent } from "./history";
+import { spendable, fundAndBook } from "./credit";
 
 const COOLDOWN_M = 36;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -57,11 +58,23 @@ export function fileTaxAppeal(
   if (h.taxAppeal) return { s, err: "That assessment is already under appeal." };
   const q = taxAppealQuote(s, parcels, bbl);
   if (!q) return { s, err: "The assessment is not materially above today's market evidence, or the last appeal is too recent." };
-  if (s.cash < q.fee) return { s, err: `The appraisal and tax counsel require ${money(q.fee)} up front.` };
+  // An appeal fee is the cheapest money in the business — a retainer against a
+  // permanent reduction in the annual bill — and no owner leaves one unfiled
+  // because the operating account is thin the week the appraiser invoices.
+  // The revolver funds it, the way it funds every other professional fee.
+  // Nothing here gets cheaper: the fee, the cooldown, the odds and the board's
+  // waiting months are untouched, and a draw runs at index+400 until swept.
+  const room = spendable(s, parcels);
+  if (room.total < q.fee) {
+    return {
+      s,
+      err: `The appraisal and tax counsel require ${money(q.fee)} up front and you can raise `
+        + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
+    };
+  }
   const next = cloneState(s);
   const nh = next.holdings[bbl];
-  next.cash -= q.fee;
-  logBooks(next, "taxes", q.fee);
+  fundAndBook(next, parcels, q.fee, "taxes");
   nh.taxAppeal = {
     filedM: next.month,
     decideM: next.month + q.months,

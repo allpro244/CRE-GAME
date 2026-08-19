@@ -9,7 +9,7 @@ import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
-import { locAvailable, sweepLocIdleCash } from "./credit";
+import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
@@ -187,18 +187,36 @@ export function executePurchase(
   // Otherwise GP cash — the balance-sheet default.
   const fromFund = !!(s.fundPay && s.fund && !s.fund.settled
     && s.month <= s.fund.investEndM);
-  const purse = fromFund ? (s.fund?.cash ?? 0) : s.cash;
+  // CLOSING EQUITY COMES OFF THE BALANCE SHEET, NOT OFF THE CURRENT ACCOUNT.
+  // This is the refusal the owner walked into: agree a price, come to the
+  // table, get told you are short, go to the Debt page, draw, come back. A
+  // sponsor closes on the revolver and terms it out afterwards — that is the
+  // ordinary sequence, and the earnest money in `strikeDeal` is already down
+  // on the same principle. Nothing about the deal gets cheaper: the equity is
+  // the same equity, the loan is the same loan, and a book bought on the line
+  // is a book with no room left when the next balloon lands.
+  //
+  // THE VEHICLE IS THE EXCEPTION AND STAYS ONE. `fund.cash` is the LPs' money
+  // in a separate account; the GP's corporate line is not a source for it, and
+  // letting it be would have the GP silently guaranteeing fund deals. A
+  // vehicle short of capital calls capital.
+  const purse = fromFund ? (s.fund?.cash ?? 0) : fundableNow(s, parcels);
   if (purse < bq.equity) {
     return {
       s,
       err: fromFund
         ? `This deal needs $${(bq.equity / 1e6).toFixed(2)}M from the vehicle — you're short.`
-        : `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.`,
+        : `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} `
+          + `and you can raise $${(purse / 1e6).toFixed(2)}M of cash and line.`,
     };
   }
   const next = clone(s);
+  // `fundCashNeed` rather than `fundAndBook`, because the entry here is not a
+  // single number: the cheque books to `bought` NET of the financing points
+  // and GROSS of deposits that never moved in cash (see below). Drawing and
+  // booking are still paired — they are just paired across three lines.
   if (fromFund && next.fund) next.fund.cash -= bq.equity;
-  else next.cash -= bq.equity;
+  else fundCashNeed(next, parcels, bq.equity);
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
   // netted out of the cheque are a liability transfer, not a cheaper building.
@@ -446,7 +464,10 @@ export function buyListing(
 
   // check the money is there before spending a negotiation on it
   const q = buyQuote(s, parcels, bbl, price, product, lev);
-  if (s.cash < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  // Same purse the closing uses — an offer you could fund at the table is an
+  // offer worth making, and testing it against cash alone stopped bids the
+  // firm could plainly have honoured.
+  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
 
   const next = clone(s);
   const p = bidOdds(next, parcels, bbl, listing, price);
@@ -668,7 +689,10 @@ export function assembleLots(
   // cost three when you pull in a fourth.
   const allDeeds = roots.flatMap((r) => siteDeeds(s, r));
   const cost = mergeCost(s, allDeeds.length);
-  if (s.cash < cost) {
+  // Survey, title and counsel on dirt you already own — pre-development legal
+  // spend, and it comes off the line like every other professional fee. The
+  // per-deed price and the contiguity rule above are untouched.
+  if (fundableNow(s, parcels) < cost) {
     return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}k — you're short.` };
   }
 
@@ -678,8 +702,7 @@ export function assembleLots(
   const sorted = [...roots].sort((a, b) => siteLotArea(s, parcels, b) - siteLotArea(s, parcels, a));
   const parent = sorted[0];
   const next = clone(s);
-  next.cash -= cost;
-  logBooks(next, "dev", cost);
+  fundAndBook(next, parcels, cost, "dev");
   if (!next.merged) next.merged = {};
 
   for (const root of sorted.slice(1)) {
@@ -1094,9 +1117,14 @@ export function defaultGroundLease(
       });
     } else {
       const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
-      if (buyout > 0 && s.cash >= buyout) {
-        s.cash -= buyout;
-        logBooks(s, "bought", buyout);
+      // A landlord taking a tower back off short paper writes an acquisition
+      // cheque for the leasehold residual, and no fee owner lets a building
+      // they are entitled to buy get cleared because the operating account was
+      // light the month the lease died. The residual is priced as it was; miss
+      // it on cash AND line and the improvement still goes, which is the
+      // penalty for writing short ground paper in the first place.
+      if (buyout > 0 && (s.cash >= buyout || fundableNow(s, parcels) >= buyout)) {
+        fundAndBook(s, parcels, buyout, "bought");
         revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
         recordPropertyEvent(s, bbl, {
           kind: "default",
@@ -1311,9 +1339,9 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
           // Short paper: residual is not a gift. Fund the leasehold buyout or
           // the improvement clears and you get the dirt back alone.
           const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
-          if (buyout > 0 && s.cash >= buyout) {
-            s.cash -= buyout;
-            logBooks(s, "bought", buyout);
+          // Same cheque at expiry as on default above, funded the same way.
+          if (buyout > 0 && (s.cash >= buyout || fundableNow(s, parcels) >= buyout)) {
+            fundAndBook(s, parcels, buyout, "bought");
             revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
             s.news.unshift({
               q: s.month, kind: "event",
@@ -1910,7 +1938,7 @@ function bidBlind(
     // forced Structure-the-stack before the seller had even accepted a number.
     if (!rec) return { s, err: "Unknown parcel." };
     const seller = sellerOf(next, parcels, bbl);
-    const struck = strikeDeal(next, bbl, price, { kind: seller.kind, name: seller.name }, rec.address);
+    const struck = strikeDeal(next, parcels, bbl, price, { kind: seller.kind, name: seller.name }, rec.address);
     if (struck.err) return { s, err: struck.err };
     delete struck.s.approaches[bbl];
     const eager = price >= reserve * 1.15;
@@ -2011,7 +2039,10 @@ export function buyOffMarket(
   if (price >= a.ask) return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
 
   const q = buyQuote(s, parcels, bbl, price, product, lev);
-  if (s.cash < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  // Same purse the closing uses — an offer you could fund at the table is an
+  // offer worth making, and testing it against cash alone stopped bids the
+  // firm could plainly have honoured.
+  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
   const next = clone(s);
   // an owner who wasn't selling in the first place has no reason to bend:
   // off-market discounts come much harder than they do on the open tape
@@ -2182,9 +2213,15 @@ export function listForSale(
         + `Wait until ${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}, or sell it quietly.` };
     }
     const marketing = Math.round(ask * 0.0035);
-    if (next.cash < marketing) return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front. You do not have it.` };
-    next.cash -= marketing;
-    logBooks(next, "ga", marketing);
+    // The book, the photography and the mailing are a marketing spend against
+    // a sale you are about to make — the shortest-dated use a revolver has,
+    // repaid out of the proceeds. What was priced here is the OPTION: 35bps
+    // whether or not it trades, and the two-year cooling-off on a pulled
+    // campaign. Both stand.
+    if (fundableNow(next, parcels) < marketing) {
+      return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front. You do not have it.` };
+    }
+    fundAndBook(next, parcels, marketing, "ga");
     const weeks = Math.round(rrange(next, 2, 4));
     next.holdings[bbl].sale = {
       ask: Math.round(ask), listedM: next.month, mode: "marketed",
@@ -3423,10 +3460,21 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
     }
   }
   const cost = renovationCost(rec, s.econ);
-  if (s.cash < cost) return { s, err: `Renovation costs $${(cost / 1e6).toFixed(2)}M cash — you're short.` };
+  // A gut is the largest capital cheque an owner writes on a building they
+  // keep, and it is financed like one. The 35% roll-burn gate above is what
+  // makes this hard, not the state of the current account on the day the
+  // scaffolding goes up — and a building emptied for a gut earns nothing for
+  // the whole job while the draw accrues, which is the cost that matters.
+  const liq = spendable(s, parcels);
+  if (liq.total < cost) {
+    return {
+      s,
+      err: `Renovation costs $${(cost / 1e6).toFixed(2)}M and you can raise $${(liq.total / 1e6).toFixed(2)}M — `
+        + `$${(liq.cash / 1e6).toFixed(2)}M of cash and $${(liq.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next = clone(s);
-  next.cash -= cost;
-  logBooks(next, "capex", cost);
+  fundAndBook(next, parcels, cost, "capex");
   const nh = next.holdings[bbl];
   nh.renovatingUntilM = next.month + RENO_MONTHS;
   nh.tenants = []; // remaining tenants are bought out as part of the job

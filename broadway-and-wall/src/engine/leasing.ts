@@ -14,7 +14,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_
   physicalOcc } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
-import { drawLoc, locAvailable } from "./credit";
+import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
@@ -1129,9 +1129,25 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // Fund this month when the firm can pay this month's bill — a 4× cash
       // buffer used to cut the plan while three months of runway were still in
       // the account, which read the same way to the player.
-      if (want > 0 && s.cash >= want) {
-        s.cash -= want;
-        logBooks(s, "capex", want);
+      //
+      // AND THE BILL IS PAID OUT OF LIQUIDITY, NOT THE CURRENT ACCOUNT. This
+      // is the reserve cheque the owner named out loud: a firm with an open
+      // revolver does not let a roof go because the operating balance dipped
+      // below thirty-four basis points of one building's value for one month.
+      // Deferring maintenance to save the draw is a decision — `plan: defer`
+      // is the button for it — and it is not the same thing as being unable to
+      // write the cheque. Nothing here is cheaper: the reserve rate, the wear
+      // it is scaled by and the lift it buys are all untouched, the draw runs
+      // at index+400 until idle cash sweeps it, and `planCutM` still fires
+      // (with the warning sim.ts prints off it) when cash AND line are both
+      // gone, which is now what "could not fund the plan" actually means.
+      //
+      // Cash first in the TEST as well as in the payment, and not for taste:
+      // `fundableNow` walks the whole book through `netWorth`, and this runs
+      // once per building per month. Asking it only when the account is
+      // actually short keeps the ordinary case free.
+      if (want > 0 && (s.cash >= want || fundableNow(s, parcels) >= want)) {
+        fundAndBook(s, parcels, want, "capex");
         h.condIdx += wear * plan.lift;
         h.lastCapM = q;
       } else if (want > 0) {
@@ -2061,10 +2077,22 @@ export function buildSpecSuites(
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   const q = specSuiteQuote(s, rec, h, use, sf);
   if (!q) return { s, err: "There is not enough open space to pre-build, or this class does not fit out." };
-  if (s.cash < q.cost) return { s, err: `Pre-building that runs $${(q.cost / 1e6).toFixed(2)}M — you're short.` };
+  // Fit-out is the textbook revolver draw: money out now against rent that
+  // signs later, which is the whole reason a landlord keeps a line open. The
+  // premium over an allowance, the four-month build and the risk that nobody
+  // wants the suite are all exactly as they were — this only stops a sponsor
+  // with room on the line being told they cannot fit out their own building.
+  const liq = spendable(s, parcels);
+  if (liq.total < q.cost) {
+    return {
+      s,
+      err: `Pre-building that runs $${(q.cost / 1e6).toFixed(2)}M and you can raise `
+        + `$${(liq.total / 1e6).toFixed(2)}M — $${(liq.cash / 1e6).toFixed(2)}M of cash and `
+        + `$${(liq.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next: GameState = cloneState(s);
-  next.cash -= q.cost;
-  logBooks(next, "leasing", q.cost);
+  fundAndBook(next, parcels, q.cost, "leasing");
   next.holdings[bbl].specSuites = { sf: q.sf, readyM: q.readyM, use };
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -2123,9 +2151,13 @@ export function answerAsk(
     if (freed <= 0) return { s: next, msg: "", err: "There is no space left to take back." };
     // the lawyer papers the surrender; the space turns like any other giveback
     const legal = Math.max(8_000, Math.round(t.rentPsf * freed * 0.01));
-    if (next.cash < legal) return { s, msg: "", err: `Papering the surrender costs $${(legal / 1000).toFixed(0)}K — you're short.` };
-    next.cash -= legal;
-    logBooks(next, "leasing", legal);
+    // Eight thousand dollars of lawyer against a tenancy you are restructuring
+    // to keep. A landlord does not lose a covenant over the retainer, and the
+    // line pays it like any other professional fee.
+    if (fundableNow(next, parcels) < legal) {
+      return { s, msg: "", err: `Papering the surrender costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+    }
+    fundAndBook(next, parcels, legal, "leasing");
     const use = (t.use ?? (rec.class as BuiltClass)) as BuiltClass;
     h.makeReady = [...(h.makeReady ?? []), { sf: freed, readyM: next.month + 3, use: t.use }];
     noteTenantSfChange(next, use, freed);
@@ -2160,9 +2192,12 @@ export function answerAsk(
   }
   // the lawyer papers the amendment; there is no broker on a deal nobody toured
   const legal = Math.max(8_000, Math.round(a.askPsf * a.sf * 0.01));
-  if (next.cash < legal) return { s, msg: "", err: `Papering the amendment costs $${(legal / 1000).toFixed(0)}K — you're short.` };
-  next.cash -= legal;
-  logBooks(next, "leasing", legal);
+  // Same retainer, same reasoning as the surrender above — a legal fee on a
+  // deal that keeps a paying tenant in the building is funded from liquidity.
+  if (fundableNow(next, parcels) < legal) {
+    return { s, msg: "", err: `Papering the amendment costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+  }
+  fundAndBook(next, parcels, legal, "leasing");
   const oldRent = t.rentPsf;
   t.rentPsf = a.askPsf;
   t.endM = t.endM + a.addM;
@@ -2210,11 +2245,13 @@ export function blendExtend(
   if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no lease to reopen." };
   const q = blendExtendQuote(s, rec, h, idx);
   if (!q) return { s, err: "There is no deal to do with that tenant right now." };
-  if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
+  // A leasing commission is a signing cost, and signing costs are what a
+  // revolver bridges until the rent arrives. The rent given up to buy the term
+  // is the price of this trade and it has not moved.
+  if (fundableNow(s, parcels) < q.cost) return { s, err: "You cannot cover the commission on that." };
   const next: GameState = cloneState(s);
   const t = next.holdings[bbl].tenants[idx];
-  next.cash -= q.cost;
-  logBooks(next, "leasing", q.cost);
+  fundAndBook(next, parcels, q.cost, "leasing");
   t.rentPsf = q.newRent;
   t.endM = q.newEndM;
   next.news.unshift({
@@ -2595,6 +2632,19 @@ function deskVerdict(
   return { ...base, verdict: "sign" };
 }
 
+/**
+ * CASH ONLY, DELIBERATELY, AND IT STAYS THAT WAY.
+ *
+ * Everything else in this file learned to see the line. This did not, because
+ * it is not a funding test — it is a DELEGATION test. A managing agent holding
+ * a signing mandate does not get to lever the firm to close their own deal;
+ * drawing a corporate revolver is a principal's decision and always has been.
+ * The desk's answer when the money is not sitting there is `refer`, not
+ * `refuse`, so nothing is lost: the letter lands on the player's desk and the
+ * player may sign it on the line in `respondLOI` the same afternoon. Teaching
+ * this the revolver would delete the treasury control the doc above describes
+ * and let an agent sign the firm into an over-advance nobody authorised.
+ */
 function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE): boolean {
   return s.cash - loiSigningCost(loi, feeRate) >= agentCashReserve(s);
 }
@@ -3183,6 +3233,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
     }
     // The letter's own commission plus the manager's mandate — see above.
     const cost = loiSigningCost(loi, rate);
+    // Cash only — see `agentCanFund`. The desk refers rather than draws.
     const reserve = agentCashReserve(s);
     if (s.cash - cost < reserve) {
       bumpDeskMonth(s, "referred");
@@ -3415,13 +3466,24 @@ export type LOIAction = "accept" | "counter" | "decline";
 /**
  * Answer a letter of intent.
  *
- * `fund` draws the shortfall on the line of credit as part of the same action.
- * It has to happen in here rather than as two calls from the UI: signing a
- * lease you cannot fund is the one path where the player has no move left, and
- * a draw that lands without the signature following it is worse than either.
+ * The shortfall is drawn on the line of credit as part of the same action. It
+ * has to happen in here rather than as two calls from the UI: signing a lease
+ * you cannot fund is the one path where the player has no move left, and a
+ * draw that lands without the signature following it is worse than either.
+ *
+ * IT USED TO NEED PERMISSION. The draw was gated behind a `fund` flag, so the
+ * first click on a letter the firm could easily afford came back "you're
+ * short" and the player went to the Debt page, drew, came back, and clicked
+ * again — the detour, on the single most frequent action in the game. The line
+ * is the firm's money; a landlord signing a lease funds the TI and the
+ * commission from whatever the balance sheet has. The flag is still accepted
+ * so the store's call signature does not move, and it no longer decides
+ * anything. What has NOT changed: if cash and line together cannot cover the
+ * cheque, the letter is refused exactly as before, and `drawNote` still tells
+ * the player in as many words that they just borrowed to sign it.
  */
 export function respondLOI(
-  s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
+  s: GameState, parcels: ParcelTable, id: number, action: LOIAction, _fund = false,
   counter?: {
     rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number;
     /** Months. Absent = leave the term the tenant asked for alone. */
@@ -3449,7 +3511,6 @@ export function respondLOI(
     const cost = loiSigningCost(l, fee);
     if (next.cash < cost) {
       const short = Math.ceil((cost - next.cash) / 1000) * 1000;
-      if (!fund) return `Signing costs ${money(cost)} (TI + commission) — you're short ${money(short)}.`;
       const avail = locAvailable(next, parcels);
       if (short > avail) {
         return `Signing costs ${money(cost)}. You're short ${money(short)} and the line only has ${money(avail)} left.`;
@@ -3787,15 +3848,21 @@ export function buyOutTenants(
   const resCost = Math.round(resSf * useRentPsfYr(rec, s.econ, h0.condition, "multifamily") * BUYOUT_PREMIUM);
   const total = q.cost + resCost;
   if (total <= 0) return { s, err: "Nobody to buy out — it is already empty." };
-  if (s.cash < total) {
-    return { s, err: `Clearing the building costs ${money(total)} — you're short ${money(total - s.cash)}.` };
+  // Emptying a building is the first cheque of a redevelopment, and nobody
+  // funds a site assembly out of petty cash. The 25% premium over the
+  // remaining contracts, the leasing hold and the dark building you are left
+  // holding are the price and they have not moved.
+  const liq = spendable(s, parcels);
+  if (liq.total < total) {
+    return { s, err: `Clearing the building costs ${money(total)} — you can raise ${money(liq.total)}.` };
   }
   const next: GameState = cloneState(s);
   const h = next.holdings[bbl]!;
-  next.cash -= total;
-  // The deposits go back with them; they were never yours.
+  fundAndBook(next, parcels, total, "leasing");
+  // The deposits go back with them; they were never yours — a liability
+  // released, not an expense, which is why it books nowhere and shows up in
+  // conserve as Δdeposits instead.
   next.cash -= q.deposits;
-  logBooks(next, "leasing", total);
   const n = h.tenants.length;
   const sf = q.sf + Math.round(resSf);
   h.tenants = [];

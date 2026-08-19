@@ -42,6 +42,7 @@ import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
 import { clearRivalClaims, forgetDeed } from "./rivals";
 import { reinstateFundedForeclosures } from "./workout";
+import { spendable, fundAndBook } from "./credit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -627,7 +628,7 @@ export function tickAuction(s: GameState, parcels: ParcelTable) {
  * hammer, winners see it credited, and a winner who cannot close forfeits it.
  */
 export function registerAuctionBids(
-  s: GameState, bids: Record<string, number>,
+  s: GameState, parcels: ParcelTable, bids: Record<string, number>,
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.auction) return { s, err: "There is no sale on the calendar. The county's docket comes out in July." };
   const next = clone(s);
@@ -650,10 +651,28 @@ export function registerAuctionBids(
     dep += depositFor(lot, Math.round(amt));
     placed++;
   }
-  if (dep > next.cash) {
-    return { s, err: `Registering these bids takes ${money(dep)} down today — you are short ${money(dep - next.cash)}.` };
+  // THE SAME INSTRUMENT AS EARNEST MONEY, SO THE SAME PURSE. `strikeDeal` says
+  // it out loud — hard money down, credited if you take the deed, gone if you
+  // do not — and it funds off cash plus the line. Testing the courthouse
+  // deposit against the operating account alone gave one quantity two answers,
+  // and it was the stricter of the two on the only path where the SETTLEMENT
+  // does not test cash at all: winning a lot debits the full price and lets
+  // month-end `coverCashShortfall` draw for it. So the old rule stopped you
+  // registering for a sale you could have settled.
+  //
+  // What is unchanged: ten per cent of every bid is really gone from the
+  // account the day you register, the forfeiture on a winner who cannot close
+  // still bites, and a firm that registers on the line has spent the room it
+  // needs at the hammer.
+  const liq = spendable(next, parcels);
+  if (dep > liq.total) {
+    return {
+      s,
+      err: `Registering these bids takes ${money(dep)} down today and you can raise ${money(liq.total)} — `
+        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+    };
   }
-  next.cash -= dep; if (dep) logBooks(next, "bought", dep);
+  if (dep) fundAndBook(next, parcels, dep, "bought");
   a.deposit = dep;
   return {
     s: next,

@@ -1229,9 +1229,9 @@ export const useStore = create<AppState>((set, get) => ({
   // THE JULY AUCTION. One call, replacing whatever bids were down; ten per
   // cent leaves the account today and the hammer settles the rest next tick.
   bidAuction: (bids) => {
-    const { game } = get();
-    if (!game) return;
-    const r = registerAuctionBids(game, bids);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = registerAuctionBids(game, parcels, bids);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Registered."); void persist(r.s);
   },
@@ -1665,9 +1665,9 @@ export const useStore = create<AppState>((set, get) => ({
   // two months while they work out a notice, which is why this toast talks
   // about a start date rather than a hire.
   hireStaff: (candidateId) => {
-    const { game } = get();
-    if (!game) return;
-    const r = hire(game, candidateId);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = hire(game, parcels, candidateId);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Offer accepted. They give notice first — the seat is empty until they walk in.");
@@ -1675,9 +1675,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fireStaff: (staffId) => {
-    const { game } = get();
-    if (!game) return;
-    const r = fire(game, staffId);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fire(game, parcels, staffId);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     // Marked as a bad outcome deliberately, the way handing back keys is: it
@@ -1722,9 +1722,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setStaffSearchTier: (key) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setSearchTier(game, key);
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = setSearchTier(game, parcels, key);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(key === "post" ? "Posted. Cheap looks, wide bands."

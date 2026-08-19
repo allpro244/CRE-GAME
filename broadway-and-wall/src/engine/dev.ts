@@ -22,7 +22,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf, toSuites } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
-import { locAvailable } from "./credit";
+import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, useSf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
@@ -1209,16 +1209,21 @@ export function startAdaptiveReuse(
   if (!plan) return { s, err: "That conversion cannot be planned." };
   if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
   const margin = Math.round(plan.costTotal * 0.06);
-  if (s.cash + locAvailable(s, parcels) < plan.equity + plan.pointsCost + margin) {
+  if (fundableNow(s, parcels) < plan.equity + plan.pointsCost + margin) {
     return { s, err: `The conversion requires $${(plan.equity / 1e6).toFixed(2)}M of equity plus a change-order margin.` };
   }
-  if (s.cash < plan.equityAtClose + plan.pointsCost) {
-    return { s, err: `$${((plan.equityAtClose + plan.pointsCost) / 1e6).toFixed(2)}M is due at closing.` };
+  // THE DAY-ONE CHEQUE COUNTS THE LINE TOO, and this was the odd one out: the
+  // whole-job test three lines up has always counted the revolver as committed
+  // money, then the closing test refused the same firm for the same money on a
+  // narrower definition of it. Two answers to one question. Closing equity is
+  // written from the balance sheet, and the balance sheet includes the line.
+  const dayOne = plan.equityAtClose + plan.pointsCost;
+  if (fundableNow(s, parcels) < dayOne) {
+    return { s, err: `$${(dayOne / 1e6).toFixed(2)}M is due at closing.` };
   }
   const next = clone(s);
   const nh = next.holdings[bbl];
-  next.cash -= plan.equityAtClose + plan.pointsCost;
-  logBooks(next, "dev", plan.equityAtClose + plan.pointsCost);
+  fundAndBook(next, parcels, dayOne, "dev");
   const oldMix = mixOf(rec);
   for (const use of BUILT_CLASSES) {
     const oldSf = useSf(rec, use);
@@ -1575,7 +1580,7 @@ export function startDevelopment(
   // fund its whole share — that is the first thing they ask for. The line of
   // credit counts, because it is committed money and that is what it is for.
   const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);   // and a margin for change orders — origination is cash at close too
-  const fundable = s.cash + locAvailable(s, parcels);
+  const fundable = fundableNow(s, parcels);
   if (fundable < commitCap) {
     const short = commitCap - fundable;
     return {
@@ -1586,9 +1591,17 @@ export function startDevelopment(
         + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
-  if (s.cash < plan.equityAtClose + plan.pointsCost) {
-    const dayOne = plan.equityAtClose + plan.pointsCost;
-    const short = dayOne - s.cash;
+  // AND THE DAY-ONE CHEQUE IS ASKED OF THE SAME PURSE. The whole-job test
+  // immediately above already counts the revolver — "it is committed money and
+  // that is what it is for" — so measuring the closing instalment against cash
+  // alone was the same quantity with two different answers, and the one it
+  // gave was the one that stopped a developer who could plainly finish. The
+  // 55% at close, the origination points and the change-order margin are all
+  // where they were; a job closed on the line simply starts with less room for
+  // the capital call that comes at 90% complete, which is the real discipline.
+  const dayOne = plan.equityAtClose + plan.pointsCost;
+  if (fundable < dayOne) {
+    const short = dayOne - fundable;
     return {
       s,
       err: `Equity short $${(short / 1e6).toFixed(2)}M at close. `
@@ -1600,8 +1613,7 @@ export function startDevelopment(
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
-  next.cash -= plan.equityAtClose + plan.pointsCost;
-  logBooks(next, "dev", plan.equityAtClose + plan.pointsCost);
+  fundAndBook(next, parcels, dayOne, "dev");
   if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
   noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
   // YOUR CRANE IS IN THE SAME SKY AS EVERYBODY ELSE'S. A city job enters
@@ -1757,10 +1769,21 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
     };
   }
   const cost = demolitionCost(rec, s);
-  if (s.cash < cost) return { s, err: `Demolition runs $${(cost / 1e6).toFixed(2)}M — you're short.` };
+  // Clearing a site is the first line of a development budget, and a developer
+  // with an open line does not leave a dead building standing because the
+  // operating account is light this month. Everything that guards this action
+  // is upstream and untouched — no lien, no landmark, no occupied space, and
+  // the site is dirt with no income afterwards, which is the real cost.
+  const liq = spendable(s, parcels);
+  if (liq.total < cost) {
+    return {
+      s,
+      err: `Demolition runs $${(cost / 1e6).toFixed(2)}M and you can raise $${(liq.total / 1e6).toFixed(2)}M — `
+        + `$${(liq.cash / 1e6).toFixed(2)}M of cash and $${(liq.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next = clone(s);
-  next.cash -= cost;
-  logBooks(next, "capex", cost);
+  fundAndBook(next, parcels, cost, "capex");
   next.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const nh = next.holdings[bbl];
   nh.tenants = [];
@@ -1835,6 +1858,15 @@ function tickRepudiation(s: GameState, d: Development, rec: { address: string },
     // borrower's own cash counts, because a developer with money in the bank
     // genuinely can finish a job that the bank alone cannot.
     const newMoney = gross - reserve - d.loanBalance;
+    // CASH ONLY, AND IT IS THE LENDER'S TEST RATHER THAN YOURS. This is a
+    // rescue desk underwriting sources against uses on a half-built job whose
+    // last bank walked. A credit committee counts equity in hand; it does not
+    // count an unsecured corporate revolver sized off a net worth that this
+    // very job is in the middle of destroying, and it certainly does not
+    // count room the borrower could draw and spend elsewhere tomorrow. The
+    // borrower is free to draw the line and hold the cash — that is what
+    // makes this pass — but the line is not a source on somebody else's
+    // credit memo.
     if (newMoney + equityLeft + Math.max(0, s.cash) < toComplete) { short = true; continue; }
     deal = { q, gross, reserve };
     break;
@@ -2489,10 +2521,21 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
     return { s, err: `${p.label} was done here in ${monthLabel(last)}. It does not need doing again yet.` };
   }
   const cost = programCost(rec, s, p);
-  if (s.cash < cost) return { s, err: `${p.label} costs $${(cost / 1e6).toFixed(2)}M — you're short.` };
+  // A facade, a plant replacement or a new lobby is capital spend on a
+  // building you already own and intend to keep — the exact thing a corporate
+  // revolver exists to bridge until the higher rents show up on the roll. The
+  // per-foot cost, the months it takes and the decade-long cycle before the
+  // same job comes round again are all unchanged.
+  const liq = spendable(s, parcels);
+  if (liq.total < cost) {
+    return {
+      s,
+      err: `${p.label} costs $${(cost / 1e6).toFixed(2)}M and you can raise $${(liq.total / 1e6).toFixed(2)}M — `
+        + `$${(liq.cash / 1e6).toFixed(2)}M of cash and $${(liq.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next = clone(s);
-  next.cash -= cost;
-  logBooks(next, "capex", cost);
+  fundAndBook(next, parcels, cost, "capex");
   const nh = next.holdings[bbl];
   nh.program = { id: programId, untilM: next.month + p.months };
   next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} ($${(cost / 1e6).toFixed(2)}M).` });

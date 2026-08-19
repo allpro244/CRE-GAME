@@ -1314,7 +1314,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       if (h.planCutM === s.month) {
         out.push({
           key: `capital-plan:${h.bbl}:${h.planCutM}`,
-          label: `${addr(h.bbl)} capital plan could not be funded from cash — condition will deteriorate`,
+          // NAME THE CONDITION THAT ACTUALLY FIRED. The plan now funds off cash
+          // OR the undrawn line, so `planCutM` is set when both are gone — and
+          // a notice that says "from cash" sends the player to look for cash
+          // when the real answer is that there is no liquidity anywhere.
+          label: `${addr(h.bbl)} capital plan could not be funded — no cash and no room on the line, so condition will deteriorate`,
         });
       }
     }
@@ -1424,9 +1428,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       const n = d.lastCapitalCall ?? 0;
       out.push({
         key: `capital-call:${d.bbl}:${d.lastCapitalCallM}`,
+        // No source claim. A capital call debits the account whatever is in it
+        // and month-end `coverCashShortfall` draws the line for the remainder,
+        // so "funded from cash" was true only when cash happened to cover it.
+        // The amount and the address are the notice.
         label: `${addr(d.bbl)} construction capital call — ${n >= 1_000_000
           ? `$${(n / 1_000_000).toFixed(2)}M`
-          : `$${Math.round(n / 1000)}K`} funded from cash`,
+          : `$${Math.round(n / 1000)}K`} drawn down`,
       });
     }
   }

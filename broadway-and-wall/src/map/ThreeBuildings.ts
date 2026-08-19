@@ -11025,6 +11025,13 @@ const MIN_PLATE_W = 11;
  * shaft that steps in as it rises — and both are families already on the list
  * below. So slenderness WEIGHTS the list; it caps nothing and costs nothing.
  * Difficulty is an output.
+ *
+ * Measured over 13,405 site-and-dial combinations on three islands: the median
+ * build is 2.9:1 and the ninetieth 4.5:1, so the 6:1 weighting reaches 1.52% of
+ * buildings and the 10:1 restriction 6 of them. The second is a GUARD, not a
+ * mechanism — it exists so that an assembled megasite dialled to a needle is
+ * drawn as one of the things that gets built at that ratio, and it is stated
+ * here rather than left to be discovered as a dead branch.
  */
 const SLENDER_BRACED = 6;
 const SLENDER_ONLY_BRACED = 10;
@@ -11080,10 +11087,13 @@ export interface PlayerMassIn {
  * rng stream is touched: this is the renderer, and the deed hash is what it
  * already uses for the facade and the palette.
  *
- * Nothing here oversails the coverage dial. Every tier is cut from the plate
- * the player was charged for and then clipped to the deed, so the base that
- * makes a slender tower read as a building is the plate itself with the shaft
- * stepping in above it — not a podium drawn wider than the site was sold.
+ * The coverage dial is a price the player paid, so every `g:` and `m:` tier is
+ * cut FROM the plate — measured, tier-0 is 1.000x the promised plate at the
+ * median and at the 99th — and the base that makes a slender building read as
+ * a building is that plate with the shaft stepping in above it, not a podium
+ * drawn wider than the site was sold. The one exception is the tower kit's
+ * `exo`, whose splayed legs are deliberately wider than the shaft they carry;
+ * that predates this and `pnpm plate` measures it.
  */
 export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: number; family: string } {
   const { ring, cx, cy, h, fl, fh, cls, year, u } = o;
@@ -11092,7 +11102,8 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
   const plate = inset(B);
   const areaM2 = plArea(plate);
   const W = Math.sqrt(areaM2);                 // the plate's width, near enough
-  const slender = W > 0.5 ? h / W : 0;
+  const narrow = plMinWidth(plate);            // and the one the wind works on
+  const slender = narrow > 0.5 ? h / narrow : 0;
   const resi = cls === "multifamily";
   const clip = (fp: Plate) => plClipToLot(fp, ring, cx, cy);
 
@@ -11110,6 +11121,11 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
   if (h >= 30 && W >= 19) add("g:base", 2);
   if (h >= 30 && W >= 15) add("g:step");
   if (h >= 24) add("g:terrace");
+  // A tall thin building goes straight up and stops, with a step under the
+  // cornice. On the plates this city's lots yield it is often the only honest
+  // answer that is not a bare box, because it is the only one that does not
+  // ask a narrow floor to get narrower.
+  if (h >= 30) add("g:loft", 2);
   if (h >= 38 && W >= 22) add("g:cruciform");
   if (h >= 42 && W >= 26) add("g:twins");
   if (h >= 40) add("g:shifted", 2);
@@ -11133,6 +11149,9 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
   add("m:slab", 2);
   add("m:chamfer");
   add("m:setback");
+  // Not on a shed: a warehouse is one skin from the slab to the eaves, and an
+  // expressed masonry base under one is a thing nobody has ever built.
+  if (cls !== "industrial") add("m:stonebase", 3);
   if (fl >= 14) add("m:thinpod");
   if (fl >= 12) add("m:cake");
   // A box is a real answer. A street with no boxes on it is as obviously wrong
@@ -11207,6 +11226,20 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
         return [{ fp: plate, z0: 0, z1: pod },
           { fp: clip(back(inset(B * 0.52), deep * 0.40)), z0: pod, z1: h }];
       }
+      case "m:stonebase": {
+        // A BASE EXPRESSED IN A DIFFERENT MATERIAL, AT THE FULL PLATE.
+        //
+        // The move a narrow building actually has. On the twelve-metre plate a
+        // typical lot here yields you cannot set anything back and still have a
+        // floor — every silhouette that steps produces a stub — so what varies
+        // is the WALL. A stone or precast base of a storey or two under a glass
+        // shaft is one of the commonest things on any street, and it costs the
+        // floor nothing. S_PLAIN is the expressed-structure skin this file
+        // already uses for the same purpose in `exo` and `shelf`.
+        const baseTop = Math.min(h * 0.34, fh * (1.6 + 1.4 * u(0x58)));
+        return [{ fp: plate, z0: 0, z1: baseTop, style: S_PLAIN, roof: S_PLAIN },
+          { fp: plate, z0: baseTop, z1: h }];
+      }
       case "m:cake": {
         // Terraced setbacks came back — Via 57, the Hudson Yards residential —
         // but it is a form for a tall building on a big plate, not the answer
@@ -11252,9 +11285,11 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
       tiers = midRise(name);
     }
     if (!tiers || !tiers.length) continue;
-    // Nothing narrower than a floor. A prism is exempt: a narrow plate makes a
-    // narrow building, and that is honest — what is not is slicing it thinner.
-    if (name !== "m:prism" && tiers.some((t) => plMinWidth(t.fp) < MIN_PLATE_W)) continue;
+    // Nothing narrower than a floor, where the volume is floors at all. A prism
+    // is exempt: a narrow plate makes a narrow building and that is honest —
+    // what is not is slicing it thinner.
+    if (name !== "m:prism"
+      && tiers.some((t) => t.z1 - t.z0 > 2 * fh && plMinWidth(t.fp) < MIN_PLATE_W)) continue;
     // THE CROWN BELONGS ON THE TOP OF THE BUILDING. Everything downstream
     // reads `tiers[tiers.length - 1]` as the roof — the cornice, the bulkhead,
     // the whole roof kit — and several of these recipes push the tall volume

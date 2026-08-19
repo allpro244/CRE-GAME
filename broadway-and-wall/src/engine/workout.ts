@@ -36,7 +36,7 @@ import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
-import { fundCashNeed, fundableNow } from "./credit";
+import { fundCashNeed, fundableNow, fundAndBook } from "./credit";
 import { recordPropertyEvent } from "./history";
 import { transferGroundLeaseOffBook } from "./actions";
 
@@ -420,15 +420,24 @@ export function requestForbearance(
   const fee = Math.round(bal * mood.feePct);
   const paydown = Math.round(bal * mood.paydownPct);
   const due = fee + paydown;
-  if (next.cash < due) {
+  // THE LAST UNCONVERTED CHEQUE ON THIS DESK. Every other path in this file
+  // already asks `fundableNow` — the coupon, the cure, the auto-cure, the
+  // reinstatement — because a sponsor who can fund the payment does not lose
+  // the building. The extension fee and its paydown are the same instrument
+  // bought a different way, and refusing the line here meant the one workout
+  // you negotiate rather than simply pay was the one the revolver could not
+  // reach. This is not a voluntary paydown of cheap paper: it is the price of
+  // an extension on a loan already in default, and the rate bump, the cash
+  // sweep, the one-ask-per-building limit and the mood test that decides
+  // whether the desk extends at all are all untouched.
+  if (fundableNow(next, parcels) < due) {
     return {
       s,
       err: `${w.lender} will extend — for a ${(mood.feePct * 100).toFixed(0)}% fee and a `
         + `${(mood.paydownPct * 100).toFixed(0)}% paydown, ${money(due)} in total. You do not have it.`,
     };
   }
-  next.cash -= due;
-  logBooks(next, "debtSvc", due);
+  fundAndBook(next, parcels, due, "debtSvc");
   const nh = next.holdings[bbl]!;
   nh.loan!.balance = Math.max(0, nh.loan!.balance - paydown);
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);

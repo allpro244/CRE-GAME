@@ -24,10 +24,11 @@
 //                are no longer allowed to knock down.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
-import { logBooks, monthLabel, cloneState} from "./types";
+import { monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
 import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
+import { spendable, fundAndBook } from "./credit";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -262,10 +263,22 @@ export function fileVariance(
     }
     return { s, err: "Nothing to apply for here." };
   }
-  if (s.cash < q.cost) return { s, err: `The application runs $${(q.cost / 1e6).toFixed(2)}M in fees — you're short.` };
+  // Land-use counsel, the expediter and the hearing calendar are pre-development
+  // spend on dirt you already own, and every sponsor funds that out of the
+  // corporate line while the entitlement runs. The odds, the months and the
+  // fee are unchanged — this only stops the filing deadline being missed for
+  // want of cash on hand, and the draw accrues at index+400 the whole wait.
+  const room = spendable(s, parcels);
+  if (room.total < q.cost) {
+    return {
+      s,
+      err: `The application runs $${(q.cost / 1e6).toFixed(2)}M in fees and you can raise `
+        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and `
+        + `$${(room.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const next: GameState = cloneState(s);
-  next.cash -= q.cost;
-  logBooks(next, "dev", q.cost);
+  fundAndBook(next, parcels, q.cost, "dev");
   next.varianceApps = {
     ...pendingVariances(next),
     [bbl]: { bbl, filedM: next.month, decideM: next.month + q.months, cost: q.cost, grant: q.grant, odds: q.odds },

@@ -112,6 +112,17 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
   if (!q.ok) return { s, err: q.reason };
   const next = cloneState(s);
   const gpCommit = Math.round(q.size * FUND_GP_COINVEST);
+  // CASH ONLY, AND ON PURPOSE. Nothing is spent here — the co-invest moves
+  // from `s.cash` into `s.fund.cash`, so this is not a cost the revolver can
+  // bridge, it is liquidity being CONVERTED into a ten-year locked commitment
+  // in a vehicle the GP cannot unwind. A revolver is callable at the bank's
+  // option and shrinks with net worth in exactly the quarter a fund is
+  // underwater; funding a decade of illiquidity out of it is the duration
+  // mismatch that ends firms, and it would let a sponsor with no capital at
+  // all raise a vehicle on borrowed skin. Two clean exits and real cash in the
+  // account is what the LPs are buying. The vehicle's own purchases are
+  // likewise fenced to `fund.cash` in `executePurchase`, for the same reason
+  // from the other side.
   if (next.cash < gpCommit) {
     return { s, err: `GP co-invest is $${(gpCommit / 1e6).toFixed(2)}M and you do not have it.` };
   }

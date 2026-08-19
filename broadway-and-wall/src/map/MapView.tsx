@@ -956,7 +956,17 @@ export default function MapView() {
       const total = Math.max(1, j.deliverM - j.startM);
       const raw = (game.month - j.startM + 1) / total;
       const prog = Math.min(1, Math.max(0.12, j.orphaned ? Math.min(raw, 0.75) : raw));
-      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true, year: nowYear });
+      // EVERY CRANE IN THE CITY IS DRAWN AT 61% COVERAGE, and that is a gap
+      // rather than a decision. The player's jobs carry the footprint they were
+      // dialled at; a rival's pipeline entry does not carry one at all, so the
+      // renderer falls back to the old flat 0.78 inset for all of them and the
+      // whole rival population has one footprint. Read optionally so the moment
+      // the pipeline records the coverage it was planned at, the rivals get
+      // honest plates with no change here. Deriving it from `sf / floors /
+      // lotArea` was considered and refused: rentable is not gross, so that
+      // would be a SECOND answer to a quantity the planner already has.
+      const jcov = (j as { coverage?: number }).coverage;
+      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true, year: nowYear, cov: jcov });
     }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       if (game.developments?.[bbl]) continue; // conversion shell is represented by the construction massing

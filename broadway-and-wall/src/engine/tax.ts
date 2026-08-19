@@ -161,6 +161,8 @@ export const NOL_SHELTER_CAP = 0.80;
  */
 export const LAND_SHARE_MIN = 0.10;
 export const LAND_SHARE_MAX = 0.80;
+/** Used only when the parcel has no land read at all — the metro-typical share. */
+export const LAND_SHARE_TYPICAL = 0.30;
 
 /**
  * THE DEPRECIABLE HALF OF WHAT YOU PAID — allocated, not asserted.
@@ -193,7 +195,9 @@ export function depreciableBasis(
   if (rec.class === "land" || !(costBasis > 0)) return 0;
   const total = marketValue > 0 ? marketValue : costBasis;
   const land = landValue(rec, econ);
-  if (!(land > 0) || !(total > 0)) return costBasis * (1 - LAND_SHARE_MIN);
+  // No land read on the parcel: assume the metro-typical split rather than the
+  // generous end of the band, so a missing number cannot buy a bigger shelter.
+  if (!(land > 0) || !(total > 0)) return costBasis * (1 - LAND_SHARE_TYPICAL);
   return costBasis * (1 - clamp(land / total, LAND_SHARE_MIN, LAND_SHARE_MAX));
 }
 

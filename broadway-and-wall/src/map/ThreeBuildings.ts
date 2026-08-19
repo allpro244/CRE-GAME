@@ -8761,184 +8761,42 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         });
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
       const meta = [style, rnd, varr, h, fh2];
-      // THE SHAPE. One flat prism is one of five silhouettes now, picked by
-      // hash and gated by height the way the real decisions are: podium and
-      // tower is a zoning trade, the setback is a light-plane trade, and the
-      // slender point only exists where the floors justify the core.
-      const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
-      const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
+      // THE SHAPE, AND WHERE IT COMES FROM.
+      //
+      // This used to be a five-way ladder written here, and the generator's own
+      // twenty families were unreachable from it. `playerMassing` is now the
+      // single chooser for everything the player and the rivals put up — the
+      // modern tower kit, `citygen/massing.mjs`, and the three moves that are
+      // not centroid scales — so the two populations draw from one vocabulary
+      // and this file has one answer about shape rather than two.
+      //
       // THE BASE PLATE IS THE BUILDING'S OWN COVERAGE, NOT A CONSTANT.
       //
-      // This was a flat 0.78 for every building the player or the city put up,
-      // which meant the drawn footprint never changed and site coverage reached
-      // the picture ONLY through the floor count — backwards, because covering
-      // more of the lot buys FEWER floors for the same square footage. Owner's
-      // report: "I have built some office buildings which are 2x the next
-      // largest by square footage and visually they look like they are not
-      // nearly the biggest." They were right. On a 10,000 sf lot at FAR 4,
-      // every one of these is the same 40,000 sf building:
-      //
-      //     coverage 0.40   10 floors   drawn volume 60,840
-      //     coverage 0.70    6 floors   drawn volume 36,504
-      //     coverage 0.90    5 floors   drawn volume 30,420
-      //
-      // A 2:1 spread in apparent size across buildings of identical area, and
-      // the wide ones — which is what a big floorplate office IS — lost.
-      //
-      // Coverage is an AREA ratio and the inset is a LINEAR one, so it enters
-      // as a square root: inset f gives a plate of f^2 of the lot. The old 0.78
-      // was implicitly claiming 61% coverage for everything. Buildings from
-      // before this field existed fall back to that same 0.78 so nothing in an
-      // old save moves.
+      // Coverage was a flat 0.78 for every building the player or the city put
+      // up, so the drawn footprint never changed and site coverage reached the
+      // picture ONLY through the floor count — backwards, because covering more
+      // of the lot buys FEWER floors for the same square footage. It is an AREA
+      // ratio and the inset is a LINEAR one, so it enters as a square root.
+      // Buildings from before the field existed still fall back to 0.78, so
+      // nothing in an old save moves.
       const B = item.cov && item.cov > 0 ? Math.min(0.97, Math.sqrt(item.cov)) : 0.78;
       let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
-      // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------
-      //
-      // Below this the five silhouettes underneath are right: a podium, a
-      // setback, a shaft — those are the trades a mid-rise actually makes.
-      // Above it they are not, because every one of them is the plate scaled
-      // toward its own centre, which is a 1961 move, and a tower finished last
-      // year does not look like that. towerMassing rotates the plate, offsets
-      // it, cuts its corners off and lets the top oversail — and it brings its
-      // own skin, because these shapes and those walls were designed together.
-      //
-      // It can refuse: a spiral needs height to turn through and a blade needs
-      // a plate long enough to be slender ON. When it does, the stack below
-      // catches it.
-      let towerStyle = -1;
-      if (!item.construction && fl >= 20 && h >= 62) {
-        const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
-        // THE DIAL REACHES THE TOWER — BY SIMILARITY, NOT BY ARGUMENT.
-        //
-        // towerMassing builds every tier from `ring x 0.78`, and each of its
-        // recipes offsets by a fraction of `span`, which it measures on the
-        // ring it is given. Passing the coverage in as a parameter was tried
-        // and reverted: it changes the plate without changing the offsets, so
-        // the silhouettes detach from the plate they move and tiers walk off
-        // the deed — measured, `stack` and `twist` put half their tier-0
-        // vertices outside the parcel at the upper end of the dial.
-        //
-        // Handing it a ring pre-scaled by B/0.78 changes NOTHING inside: it is
-        // one similarity transform of the whole recipe, so `base` lands exactly
-        // on the promised plate, span scales with it, and every offset stays in
-        // the same proportion to the plate it was calibrated against. The
-        // silhouettes are identical shapes at a different size, which is what
-        // the coverage dial is supposed to mean.
-        const tRing = plScale(ring as [number, number][], cx, cy, B / 0.78);
-        const built = towerMassing(tf, tRing, cx, cy, h, fl, fh2,
-          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
-        if (built && built.tiers.length >= 2) {
-          // ...and none of it leaves the deed. The recipes jog and rotate off
-          // the base plate and none of them knows where the lot ends; at the
-          // top of the coverage dial they walk off it. See plClipToLot.
-          for (const t of built.tiers) t.fp = plClipToLot(t.fp, ring as [number, number][], cx, cy);
-          tiers = built.tiers;
-          towerStyle = built.style;
-        }
-      }
-      if (towerStyle >= 0) { meta[0] = towerStyle; }
-      else if (item.construction || fl < 7 || h < 22) {
-        tiers = [{ fp: inset(B), z0: 0, z1: h }];
+      if (item.construction || fl < 7 || h < 22) {
+        // A SITE UNDER A CRANE IS A FRAME, and a small building is a small
+        // building. Neither becomes sculpture.
+        tiers = [{ fp: ring.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as [number, number]), z0: 0, z1: h }];
       } else {
-        // ---- THE MID-RISE, WHICH WAS FIVE WAYS OF DOING ONE THING ---------
-        //
-        // Below the tower gate there were five silhouettes and EVERY ONE OF
-        // THEM WAS THE PLATE SCALED TOWARD ITS OWN CENTROID — a podium, a
-        // setback, a three-stage wedding cake, a tower on a podium, a prism.
-        // That is the 1916-to-1961 envelope, and it is the wrong shape twice
-        // over for a building finished after 2000. It puts the top of every
-        // building directly over the middle of its bottom, so a street of them
-        // is a row of pyramids; and it steps back on ALL FOUR SIDES, including
-        // the two that are party walls a neighbour is standing against.
-        //
-        // What a real one does instead: the street wall goes straight up to
-        // the lot line and the shaft goes to the BACK of the plate, so the
-        // block keeps a continuous frontage and the light plane is met on the
-        // side that has light to protect. That is one `plMove`, and no amount
-        // of centroid scaling can produce it.
-        //
-        // Three shapes are new and none of them is a centroid scale: the
-        // shifted shaft, the slab (narrowed on ONE axis, which is what an
-        // apartment building is), and the chamfered shaft. The wedding cake
-        // survives because terraced setbacks did come back — but as the rare
-        // answer it now is rather than a third of everything.
-        const P = tiers as TowerTier[];
-        const plate = inset(B) as Plate;
-        // The plate's own frame: `ax` is its long axis, which on an ordinary
-        // urban parcel is the deep direction — street to rear. Half-extents
-        // along and across it, measured rather than approximated off the area,
-        // because a deep narrow lot and a square one of the same area give
-        // very different answers about how far anything can travel.
-        const ax = plAxis(plate);
-        const ca = Math.cos(ax), sa = Math.sin(ax);
-        let deep = 0, wide = 0;
-        for (const [px, py] of plate) {
-          const dx = px - cx, dy = py - cy;
-          deep = Math.max(deep, Math.abs(dx * ca + dy * sa));
-          wide = Math.max(wide, Math.abs(-dx * sa + dy * ca));
-        }
-        // WHICH END IS THE STREET IS NOT KNOWABLE HERE. The layer has the lot
-        // ring and not the street graph, so the direction is hashed off the
-        // deed. That is a real limitation and it is worth fixing when the
-        // frontage is available — a block reads best when every shaft steps
-        // back from the SAME side. What survives either way, and is the whole
-        // point, is that the shaft is not over the middle of its own base.
-        const dirS = hash01(k ^ 0x5b1f, this.citySeed) < 0.5 ? 1 : -1;
-        const back = (fp: Plate, d: number): Plate => plMove(fp, ca * d * dirS, sa * d * dirS);
-        const podTop = Math.min(h * 0.28, fh2 * 3.2);
-        const resi = item.cls === "multifamily";
-        if (mroll < 0.26) {
-          // PODIUM AND SHAFT, SHAFT TO THE BACK. The zoning trade, done the
-          // way it is actually done.
-          const sc = 0.58 + 0.14 * hash01(k ^ 0x51, this.citySeed);
-          const off = deep * (1 - sc) * (0.5 + 0.4 * hash01(k ^ 0x53, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: podTop });
-          P.push({ fp: plClipToLot(back(inset(B * sc) as Plate, off), ring as Plate, cx, cy), z0: podTop, z1: h });
-        } else if (mroll < 0.46) {
-          // A SLAB. Narrowed on ONE axis only, which is what nearly every
-          // mid-rise apartment building on earth is, and which a centroid
-          // scale cannot make — it shrinks both dimensions together and gives
-          // you a smaller box instead of a thinner one.
-          const cut = h * (0.30 + 0.16 * hash01(k ^ 0x52, this.citySeed));
-          const thin = resi ? 0.46 + 0.12 * hash01(k ^ 0x54, this.citySeed) : 0.58 + 0.14 * hash01(k ^ 0x54, this.citySeed);
-          const slab = plScaleAxis(inset(B) as Plate, cx, cy, ax, 0.97, thin);
-          P.push({ fp: inset(B), z0: 0, z1: cut });
-          P.push({ fp: plClipToLot(back(slab, deep * 0.16), ring as Plate, cx, cy), z0: cut, z1: h });
-        } else if (mroll < 0.62) {
-          // A CHAMFERED SHAFT. Corners off the tower and not off the base —
-          // the base wants the floor area and the corner is where the tower
-          // reads. Cheap, and it stops the thing being a rectangle from every
-          // angle at once.
-          const cut2 = h * (0.22 + 0.14 * hash01(k ^ 0x55, this.citySeed));
-          const ch2 = Math.min(deep, wide) * (0.20 + 0.20 * hash01(k ^ 0x56, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: cut2 });
-          P.push({ fp: plChamfer(inset(B * 0.92) as Plate, ch2), z0: cut2, z1: h });
-        } else if (mroll < 0.74) {
-          // A SINGLE SETBACK, high up. The light-plane trade, and the one
-          // centroid move that is still right — a top-floor step-in is
-          // symmetric because it is above everything it could shade.
-          const cut3 = h * (0.66 + 0.14 * hash01(k ^ 0x57, this.citySeed));
-          P.push({ fp: inset(B), z0: 0, z1: cut3 });
-          P.push({ fp: inset(B * 0.76), z0: cut3, z1: h });
-        } else if (mroll < 0.80 && fl >= 14) {
-          // TOWER ON A THIN PODIUM, shaft to the back.
-          const pod = fh2 * 2.2;
-          P.push({ fp: inset(B), z0: 0, z1: pod });
-          P.push({ fp: plClipToLot(back(inset(B * 0.52) as Plate, deep * 0.40), ring as Plate, cx, cy), z0: pod, z1: h });
-        } else if (mroll < 0.85 && fl >= 12) {
-          // THE WEDDING CAKE. Kept, because terraced setbacks came back — Via
-          // 57, the Hudson Yards residential — but it is a form for a tall
-          // building on a big plate, not the answer to a third of everything.
-          const c1 = h * 0.45, c2 = h * 0.75;
-          P.push({ fp: inset(B), z0: 0, z1: c1 });
-          P.push({ fp: inset(B * 0.80), z0: c1, z1: c2 });
-          P.push({ fp: inset(B * 0.62), z0: c2, z1: h });
-        } else {
-          // A PLAIN SHAFT. The commonest building in any city and not a
-          // failure to choose — most mid-rise is a box on its lot line.
-          P.push({ fp: inset(B), z0: 0, z1: h });
-        }
+        const mass = playerMassing({
+          ring: ring as [number, number][], cx, cy, h, fl, fh: fh2,
+          cls: item.cls, year: yearBuilt, cov: item.cov ?? 0,
+          u: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057),
+        });
+        tiers = mass.tiers;
+        // The tower kit brings its own skin — those shapes and those walls were
+        // designed together. Everything else keeps the facade the registry
+        // chose off class, year and deed.
+        if (mass.style >= 0) meta[0] = mass.style;
       }
       const mkBuf = () => ({
         pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
@@ -11148,17 +11006,25 @@ const plArea = (r: Plate): number => {
  * whose narrowest volume falls under it is skipped and the next family on the
  * list is tried, so the player still gets every floor they paid for — drawn as
  * something that could stand up.
+ *
+ * A CAP IS NOT A FLOOR, and the test knows the difference. Two storeys is the
+ * line: a stepped penthouse, a plant enclosure or a cornice volume on top of a
+ * shaft is normal and may be as small as it likes, and it is why a narrow
+ * building can still have a top. Forty per cent of the building at six metres
+ * across is not a top, it is a mast.
  */
 const MIN_PLATE_W = 11;
 /**
- * Height to width, measured on the plate the building actually stands on.
+ * Height to width, measured across the plate's NARROW axis — which is the one
+ * the overturning moment governs about, and the one you see when a building
+ * reads as a blade.
  *
- * Past about 6:1 the overturning moment stops being an afterthought and the
- * building needs a lateral system somebody has to pay for; past about 10:1 it
- * is a specialist product. Both are answered the same two ways in life — a
- * broad base under the shaft, or a shaft that steps in as it rises — and both
- * are families already on the list below. So slenderness WEIGHTS the list; it
- * caps nothing and costs nothing. Difficulty is an output.
+ * Past about 6:1 the lateral system stops being an afterthought and somebody
+ * has to pay for it; past about 10:1 it is a specialist product. Both are
+ * answered the same two ways in life — a broad base under the shaft, or a
+ * shaft that steps in as it rises — and both are families already on the list
+ * below. So slenderness WEIGHTS the list; it caps nothing and costs nothing.
+ * Difficulty is an output.
  */
 const SLENDER_BRACED = 6;
 const SLENDER_ONLY_BRACED = 10;

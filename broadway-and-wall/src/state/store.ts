@@ -98,6 +98,21 @@ interface AppState {
   mapFilter: MapFilter;
   setMapFilter: (f: MapFilter) => void;
   page: Page;
+  /**
+   * WHERE YOU WERE, so a detour is not a loss of place.
+   *
+   * Going to draw on the line, check a comp, or read the debt book in the
+   * middle of a decision used to cost the player their spot: they came back
+   * to the map and had to find the building again. This is the trail of
+   * (page, deed) they can walk back up. View state only — which room you
+   * were standing in is not a fact about the campaign, so it is never saved.
+   *
+   * Capped, and it never records standing still: only a move that actually
+   * changes the room or the deed pushes a step.
+   */
+  navBack: { page: Page; bbl: string | null }[];
+  /** Step back to the previous room and deed. No-op with nowhere to go. */
+  goBack: () => void;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
   paletteOpen: boolean;
@@ -378,6 +393,33 @@ function queueDeliveryCeremony(
   }
 }
 
+/**
+ * How far back the trail goes. Deep enough to cover a real detour — the map,
+ * a building, its debt, a comp, back — and short enough that it is a way home
+ * rather than a second history of the campaign.
+ */
+const NAV_MAX = 24;
+
+/**
+ * Record where the player is standing, if the move actually goes somewhere.
+ * Returns the partial to merge, or null when there is nothing to remember:
+ * re-selecting the same deed, or re-opening the room you are already in, is
+ * standing still, and a Back button that walks through repeats of one place
+ * is worse than none.
+ */
+function pushNav(
+  st: { page: Page; selectedBBL: string | null; navBack: { page: Page; bbl: string | null }[] },
+  nextPage: Page,
+  nextBbl: string | null,
+): { navBack: { page: Page; bbl: string | null }[] } | null {
+  if (st.page === nextPage && st.selectedBBL === nextBbl) return null;
+  const top = st.navBack[st.navBack.length - 1];
+  if (top && top.page === st.page && top.bbl === st.selectedBBL) return null;
+  const navBack = [...st.navBack, { page: st.page, bbl: st.selectedBBL }];
+  if (navBack.length > NAV_MAX) navBack.shift();
+  return { navBack };
+}
+
 function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
 }
@@ -475,6 +517,7 @@ export const useStore = create<AppState>((set, get) => ({
   mapFilter: "all",
   lens: "none",
   page: "none",
+  navBack: [],
   paletteOpen: false,
   docketSnooze: {},
   advancing: false,
@@ -498,11 +541,13 @@ export const useStore = create<AppState>((set, get) => ({
   select: (bbl) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
-    const page = bbl && get().page !== "property" ? "none" as const : get().page;
-    if (bbl !== get().selectedBBL) {
-      startTransition(() => set({ selectedBBL: bbl, page }));
+    const st = get();
+    const page = bbl && st.page !== "property" ? "none" as const : st.page;
+    const nav = pushNav(st, page, bbl);
+    if (bbl !== st.selectedBBL) {
+      startTransition(() => set({ selectedBBL: bbl, page, ...(nav ?? {}) }));
     } else {
-      set({ selectedBBL: bbl, page });
+      set({ selectedBBL: bbl, page, ...(nav ?? {}) });
     }
   },
   hover: (bbl) => {
@@ -521,15 +566,23 @@ export const useStore = create<AppState>((set, get) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
+    ...(pushNav(st, closePanel ? "none" : st.page, bbl) ?? {}),
   })),
   openAttention: (key) => {
-    const game = get().game;
-    const route = routeAttention(key, game);
+    const st0 = get();
+    const route = routeAttention(key, st0.game);
+    // One entry for the whole jump, recorded before anything moves: a notice
+    // that changes both the deed and the room is still one move away from where
+    // the player was standing.
+    const nav = pushNav(st0, route.page ?? st0.page, route.bbl ?? st0.selectedBBL);
     if (route.bbl) {
       set((st) => ({
         selectedBBL: route.bbl!,
         flyTo: { bbl: route.bbl!, n: (st.flyTo?.n ?? 0) + 1 },
+        ...(nav ?? {}),
       }));
+    } else if (nav) {
+      set(nav);
     }
     if (route.auction) set({ auctionOpen: true });
     // Opening a desk leaves map-only — the skyline mode is for watching, not answering.
@@ -543,12 +596,33 @@ export const useStore = create<AppState>((set, get) => ({
   setPage: (page) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
     // highlight paints before the page body. Opening a desk leaves map-only.
-    if (page !== "none" && get().mapOnly) {
+    const st = get();
+    const nav = pushNav(st, page, st.selectedBBL);
+    if (page !== "none" && st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
-      startTransition(() => set({ page, mapOnly: false }));
+      startTransition(() => set({ page, mapOnly: false, ...(nav ?? {}) }));
       return;
     }
-    startTransition(() => set({ page }));
+    startTransition(() => set({ page, ...(nav ?? {}) }));
+  },
+  // Going to the Debt desk to draw on the line should not cost you the deal you
+  // were reading. Back restores the room AND the deed together; the camera is
+  // left alone because the map never moved to get here.
+  goBack: () => {
+    const st = get();
+    if (st.navBack.length === 0) return;
+    const navBack = st.navBack.slice();
+    const prev = navBack.pop()!;
+    const leavingMapOnly = prev.page !== "none" && st.mapOnly;
+    if (leavingMapOnly) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+    }
+    startTransition(() => set({
+      page: prev.page,
+      selectedBBL: prev.bbl,
+      navBack,
+      ...(leavingMapOnly ? { mapOnly: false } : {}),
+    }));
   },
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),

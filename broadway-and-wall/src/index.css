@@ -99,6 +99,28 @@ body {
   margin-left: 12px; font-size: 12px; color: var(--ink-dim);
   letter-spacing: 1.2px; text-transform: uppercase;
 }
+/* THE WAY BACK, top-left, always. `.topbar` is pointer-events:none so the map
+   drags through the empty header, so this island re-enables its own — without
+   that line the button paints and cannot be clicked. */
+.nav-back {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: 12px; max-width: 190px;
+  font-size: 12px; font-weight: 600; color: var(--ink-dim);
+  background: linear-gradient(to bottom, rgba(255, 253, 246, 0.82), rgba(236, 229, 210, 0.76));
+  border: 1px solid rgba(96, 76, 34, 0.22); border-radius: var(--r-sm);
+  padding: 6px 10px 6px 8px; cursor: pointer;
+  box-shadow: var(--edge-top), var(--lift-1);
+  transition: background 0.13s var(--ease), color 0.13s var(--ease),
+              border-color 0.13s var(--ease), box-shadow 0.13s var(--ease), transform 0.08s var(--ease);
+}
+.nav-back:hover:not(:disabled) { color: var(--ink); border-color: var(--gold); box-shadow: var(--edge-top), var(--lift-2); }
+.nav-back:active:not(:disabled) { transform: translateY(1px); }
+/* Kept in place rather than removed: a control that appears and disappears
+   moves the firm name under the cursor every time the player changes rooms. */
+.nav-back:disabled { opacity: 0.34; cursor: default; box-shadow: var(--edge-top); }
+.nav-back-arrow { font-size: 14px; line-height: 1; }
+.nav-back-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* THE NEW-CITY BUTTON HAS TO TAKE CLICKS. `.topbar` is pointer-events:none so
    the map can be dragged through the empty space either side of the header,
    and every interactive island in the bar re-enables it — .topbar-right and
@@ -1757,6 +1779,10 @@ body {
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }
   .firm-id, .brand-sub { display: none; }
+  /* The arrow survives every width — it is the one control the player must
+     never have to hunt for. Only its name folds away. */
+  .nav-back-label { display: none; }
+  .nav-back { margin-right: 8px; padding: 6px 8px; }
   .topbar-right { gap: 4px; }
   .topbar-right .lens-btn { font-size: 0; width: 29px; height: 28px; padding: 0; }
   .topbar-right .lens-btn::first-letter { font-size: 13px; }

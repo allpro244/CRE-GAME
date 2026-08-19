@@ -43,11 +43,18 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "leasing", bbl };
   }
-  if (head === "balloon" || head === "sweep") {
+  // Arrears and a renewed balloon are both answered on the debt desk: one
+  // needs the refinance / payoff buttons, the other is the record of them.
+  if (head === "balloon" || head === "sweep" || head === "arrears" || head === "renewed") {
     const bbl = key.split(":")[1];
     return { page: "debt", bbl };
   }
-  if (head === "facility-balloon" || head === "facility-sweep") return { page: "debt" };
+  // Everything the pool does lands on the same page, because there is one pool
+  // and its refinance, paydown and release desks are all on it.
+  if (
+    head === "facility-balloon" || head === "facility-sweep" || head === "facility-arrears"
+    || head === "facility-called" || head === "facility-accel" || head === "facility-renewed"
+  ) return { page: "debt" };
   if (head === "capital-call") {
     const bbl = key.split(":")[1];
     return { page: "property", bbl };

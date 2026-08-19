@@ -13,7 +13,7 @@ import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf } from "@/engine/leasing";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
@@ -26,7 +26,7 @@ import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/Pr
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
-import { useLabel, physicalOcc, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -305,7 +305,14 @@ function ParcelPanelInner({
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
             : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />
         )}
-        {holding && isBuilt && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
+        {/* The leasing read, and it names the loss factor rather than burying it
+            in a percentage. The appraisal's number — feet let over feet built —
+            is still what the value and the buyer's quote above are struck on;
+            see occRead for why those are two questions and not two answers. */}
+        {holding && isBuilt && (() => {
+          const or = occRead(rec, holding);
+          return <Row k="Occupancy" v={occLabel(or)} title={occTitle(or)} />;
+        })()}
         {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => (
           <Row
             key={u.use}
@@ -511,12 +518,34 @@ function ParcelPanelInner({
                 </span>
               </div>
             )}
-            {vacantSf(rec, holding) - notReadySf(holding, game.month) > 500 && (
-              <div className="roll-row roll-vacant">
-                <span className="roll-name">Vacant</span>
-                <span className="roll-meta mono">{sf(vacantSf(rec, holding) - notReadySf(holding, game.month))}</span>
-              </div>
-            )}
+            {/* VACANT, AND THE PART OF IT THAT IS NOT SPACE. A leg whose whole
+                leftover is under the demise floor cannot be shown to anybody —
+                the tour gate and toSuites both refuse it — so listing it as
+                vacant sends the owner chasing a percentage no letter can fill.
+                Same feet the engine offers a sitting neighbour as a must-take. */}
+            {(() => {
+              const vac = vacantSf(rec, holding) - notReadySf(holding, game.month);
+              const dead = unlettableRemainderSf(rec, holding);
+              const live = Math.max(0, vac - dead);
+              return (
+                <>
+                  {live > 500 && (
+                    <div className="roll-row roll-vacant">
+                      <span className="roll-name">Vacant</span>
+                      <span className="roll-meta mono">{sf(live)}</span>
+                    </div>
+                  )}
+                  {dead > 0 && (
+                    <div className="roll-row roll-vacant">
+                      <span className="roll-name">Unlettable remainder</span>
+                      <span className="roll-meta mono">
+                        {sf(dead)} · under the minimum tenancy — a sitting neighbour can take it at a renewal or an expansion
+                      </span>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

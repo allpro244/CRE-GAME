@@ -400,6 +400,55 @@ export default function TopBar() {
                 />
               );
             })()}
+            {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
+                reasons spread across four pages; the chip says which way, the
+                spark says which way it has BEEN going, and the click opens the
+                waterfall — the same ledger buckets and the same appraisal the
+                Books page reads, so the popover cannot disagree with the desk.
+                It sat in the clip box behind a 1680px gate, which ranked the
+                firm's headline number BELOW occupancy and the base rate: at
+                1440 and 1600 it did not render at all, and at 1680 it rendered
+                cut in half by the clip. Measured across 1280/1440/1600/1920 —
+                it is a vital, so it lives with the vitals and never drops. */}
+            <div className="nw-pair" ref={nwRef}>
+              <Stat
+                label="Net worth"
+                value={usd(nw)}
+                w={96}
+                keep
+                title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
+                onClick={toggleNwPop}
+                expanded={nwOpen}
+              />
+              {dNw !== null && (
+                <span className="vital-extra">
+                  <DeltaChip
+                    value={dNw}
+                    fmt={usd}
+                    epsilon={10_000}
+                    title="Net worth vs a month ago. Click the readout for the full waterfall."
+                  />
+                </span>
+              )}
+              {nwSpark.length >= 2 && (
+                <span className="vital-extra">
+                  <Spark values={nwSpark} title="Net worth, the last 24 months" />
+                </span>
+              )}
+              {nwOpen && (
+                <div
+                  className="nw-pop"
+                  role="dialog"
+                  aria-label="Net worth, attributed"
+                  style={{ left: nwPopLeft }}
+                >
+                  <button type="button" className="nw-pop-close" aria-label="Close" onClick={() => setNwOpen(false)}>
+                    ✕
+                  </button>
+                  <Waterfall compact />
+                </div>
+              )}
+            </div>
             {/* CF + Occupancy live in the vital strip (not droppable stats).
                 They used to sit in .topbar-stats with drop 2 and vanished below
                 1680px — and the whole stats box hides under 760px — so the
@@ -469,47 +518,8 @@ export default function TopBar() {
             />
           </div>
           <div className="topbar-stats">
-          {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
-              reasons spread across four pages; the chip says which way, the
-              spark says which way it has BEEN going, and the click opens the
-              waterfall — the same ledger buckets and the same appraisal the
-              Books page reads, so the popover cannot disagree with the desk.
-              The pair shares the droppable readouts' width gate (.nw-pair). */}
-          <div className="nw-pair" ref={nwRef}>
-            <Stat
-              label="Net worth"
-              value={usd(nw)}
-              w={96}
-              title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
-              onClick={toggleNwPop}
-              expanded={nwOpen}
-            />
-            {dNw !== null && (
-              <DeltaChip
-                value={dNw}
-                fmt={usd}
-                epsilon={10_000}
-                title="Net worth vs a month ago. Click the readout for the full waterfall."
-              />
-            )}
-            {nwSpark.length >= 2 && (
-              <Spark values={nwSpark} title="Net worth, the last 24 months" />
-            )}
-            {nwOpen && (
-              <div
-                className="nw-pop"
-                role="dialog"
-                aria-label="Net worth, attributed"
-                style={{ left: nwPopLeft }}
-              >
-                <button type="button" className="nw-pop-close" aria-label="Close" onClick={() => setNwOpen(false)}>
-                  ✕
-                </button>
-                <Waterfall compact />
-              </div>
-            )}
-          </div>
-          {/* NW rides drop 2. Market phase and vacant-lot counts are drop 3. */}
+          {/* Market phase and vacant-lot counts are drop 3 — the two readouts
+              in here that a player never steers by mid-month. */}
           <Stat
             label="Market"
             value={game.econ.phase}

@@ -16,7 +16,7 @@ import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
-import { releaseCost, tickFacility } from "./facility";
+import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
@@ -1302,6 +1302,29 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       });
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
+    // MISSED PAYMENTS, FROM THE FIRST ONE. The arrears clock runs three months
+    // before a lender opens a file and nothing on this list said so until the
+    // file existed — so auto-advance walked straight through the only part of
+    // that road the owner could still do something about. The counter is in the
+    // key on purpose: it stops the clock once a month while the loan is short,
+    // and stops nothing once the payment is made.
+    if ((h.loan?.arrearsMs ?? 0) > 0) {
+      const ms = h.loan!.arrearsMs!;
+      out.push({
+        key: `arrears:${h.bbl}:${ms}`,
+        label: `${addr(h.bbl)} has missed ${ms} payment${ms === 1 ? "" : "s"} — `
+          + `${productById(h.loan!.product).lender} files at three`,
+      });
+    }
+    // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
+    // liability against a building — announced once, in the month it happened.
+    if (h.loan && (h.loan as { renewedM?: number }).renewedM === s.month) {
+      out.push({
+        key: `renewed:${h.bbl}:${s.month}`,
+        label: `${addr(h.bbl)} balloon renewed with ${productById(h.loan.product).lender} at `
+          + `${h.loan.ratePct.toFixed(2)}% — matures ${monthLabel(h.loan.maturityM)}`,
+      });
+    }
   }
   // A portfolio facility is one loan against many deeds, so it never appears
   // in the holding loop above. Its balloon and covenant sweep are at least as
@@ -1318,6 +1341,50 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       out.push({
         key: "facility-sweep",
         label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
+      });
+    }
+    // THE POOL IS SHORT ON ITS COUPON. Same clock as a single loan and a great
+    // deal worse at the end of it, and it was invisible for its first two months.
+    if ((s.facility.arrearsMs ?? 0) > 0) {
+      const ms = s.facility.arrearsMs!;
+      out.push({
+        key: `facility-arrears:${ms}`,
+        label: `${s.facility.lender} facility payment short ${ms} month${ms === 1 ? "" : "s"} — `
+          + `${s.facility.bbls.length} buildings stand behind it`,
+      });
+    }
+    // THE MATURITY HAS BEEN CALLED and the cure window is running. Keyed on the
+    // month it was called, so it stops the clock once and then lets the player
+    // work — the countdown is in the label, not in the key.
+    if (s.facility.noticedM !== undefined) {
+      const left = Math.max(0, FACILITY_CURE_M - (s.month - s.facility.noticedM));
+      out.push({
+        key: `facility-called:${s.facility.noticedM}`,
+        label: `${s.facility.lender} has called the facility's maturity — ${left} month${left === 1 ? "" : "s"} to `
+          + `refinance or pay down $${(s.facility.balance / 1e6).toFixed(1)}M before a receiver takes all `
+          + `${s.facility.bbls.length} buildings`,
+      });
+    }
+    // ACCELERATED, AND THE RECEIVER'S CALENDAR IS RUNNING. There was no inbox
+    // row for this at all — the single most expensive event in the game had one
+    // line of news behind it and three silent months. Keyed on `accelM` rather
+    // than the month so it stops the clock ONCE; the label carries the countdown.
+    if (s.facility.accelM !== undefined) {
+      const left = Math.max(0, 3 - (s.month - s.facility.accelM));
+      out.push({
+        key: `facility-accel:${s.facility.accelM}`,
+        label: left <= 0
+          ? `${s.facility.lender} has accelerated — the receiver is selling all ${s.facility.bbls.length} buildings now`
+          : `${s.facility.lender} has accelerated the facility — a receiver sells all ${s.facility.bbls.length} `
+            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is paid`,
+      });
+    }
+    // …and the pool renewing is news the docket should carry too.
+    if ((s.facility as { renewedM?: number }).renewedM === s.month) {
+      out.push({
+        key: `facility-renewed:${s.month}`,
+        label: `${s.facility.lender} renewed the facility at ${s.facility.ratePct.toFixed(2)}% — `
+          + `matures ${monthLabel(s.facility.maturityM)}`,
       });
     }
   }

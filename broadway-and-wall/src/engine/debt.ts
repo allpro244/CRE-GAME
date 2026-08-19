@@ -16,7 +16,7 @@ import {
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
-import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash } from "./credit";
+import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
@@ -954,6 +954,19 @@ export function tickLoan(
   const gap = Math.max(0, Math.ceil(loan.monthlyPmt - assetCF));
   const short = gap > 0 && s.cash < 0 && fundableNow(s, parcels) < gap;
   loan.arrearsMs = short ? (loan.arrearsMs ?? 0) + 1 : 0;
+  // MONTHS ONE AND TWO USED TO SAY NOTHING AT ALL. The three-month clock that
+  // ends with a lender's file, a notice period and a July auction started in
+  // total silence — the first the owner heard of it was the file being opened,
+  // by which time two thirds of the runway was gone. The clock is unchanged;
+  // only the silence is.
+  if (short && (loan.arrearsMs ?? 0) < 3) {
+    s.news.unshift({
+      q, kind: "warn",
+      text: `${rec.address} did not cover its debt service and there is nothing left to make it up with — `
+        + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs} of it. `
+        + `${productById(loan.product).lender} opens a file at three, and from there it is a notice period and an auction.`,
+    });
+  }
   if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
     openWorkout(s, h.bbl, "arrears", Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3)));
     s.news.unshift({
@@ -993,31 +1006,87 @@ export function tickLoan(
     // A leased fee with a coupon walks the income desks; vacant dirt keeps
     // the land loan as its only takeout. Bridge gets the stabilised view the
     // same way the Refi card does — one underwriting, not two.
-    const ladder = (vacantDirt ? ["land"] : ["savings", "harbor", "cordage"]).map(productById)
-      .filter((p) => productOpen(s, p) && windowOpen(s, p));
-    let product = ladder[ladder.length - 1] ?? PRODUCTS[0];
-    let qd = { ...quote(s, product, value, noi, quoteClass, false, stab), principal: 0 };
+    //
+    // EVERY DESK THAT WRITES INCOME PAPER, not three of them. The ladder used to
+    // read savings → harbor → cordage, which left out the life company, the
+    // conduit and the 25-year bank sheet — so a building that Pelican or
+    // Meridian Street would have refinanced at a point and a half over the index
+    // fell to Cordage bridge at spread 4.10 instead, and the borrower could not
+    // tell the difference between "the market will not renew this" and "the
+    // ladder did not ask". A maturing performing loan is renewed by whoever will
+    // write it, and a borrower takes the cheapest of them.
+    const ladder = (vacantDirt ? ["land"] : ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"])
+      .map(productById)
+      .filter((p) => productOpen(s, p) && windowOpen(s, p)
+        // A desk that cannot close on this building must not be chosen as its
+        // renewal: the life company only writes well-kept product, and
+        // `originate` refuses at the table after the ladder has already picked.
+        && !(p.minCondition === "good" && h.condition !== undefined && h.condition !== "good"));
     const fee = Math.round(loan.balance * REFI_FEE);
-    for (const cand of ladder) {
-      const raw = quote(s, cand, value, noi, quoteClass, false, stab);
-      const sized = { ...raw, principal: Math.round(raw.principal * hair.mult) };
-      product = cand; qd = sized;
-      if (sized.principal >= loan.balance + fee) break;
-    }
+    const sized = ladder.map((p) => {
+      const raw = quote(s, p, value, noi, quoteClass, false, stab);
+      return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
+    });
+    // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
+    // "clears" only when this desk's advance, coverage, debt-yield and hold
+    // tests size the WHOLE outstanding balance plus the fee — `quote` is that
+    // test and nothing here goes around it. Among the desks that clear, take the
+    // lowest coupon: that is what "renew with whoever writes a normal loan"
+    // means, and it is why this is realistic while a lender renewing paper that
+    // fails coverage would not be. When none clears, carry the BIGGEST cheque
+    // anybody will write, because that is the number the gap is measured
+    // against and the number the borrower is told.
+    const clears = sized.filter((x) => x.qd.principal >= loan.balance + fee);
+    const pick = clears.length
+      ? clears.reduce((a, b) => (b.qd.ratePct < a.qd.ratePct ? b : a))
+      : sized.length
+        ? sized.reduce((a, b) => (b.qd.principal > a.qd.principal ? b : a))
+        : null;
+    // No desk open at all is still an answer: a zero-proceeds quote, which walks
+    // straight into the gap-cheque and workout branches below.
+    const product = pick?.p ?? PRODUCTS[0];
+    const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab), principal: 0 };
+    let renewed = false;
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
-      h.loan = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab);
-      if (h.loan) {
-        h.loan.balance = h.loan.principal = rolled;
-        h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
+      // ORIGINATE CAN REFUSE. It returns null on a shut window, a failed
+      // condition test or a sub-$100k cheque, and this used to assume it never
+      // did: the deed came out free and clear, the 1% fee was paid anyway, and
+      // the lender's paper simply evaporated. Guard it and walk the rest of the
+      // ladder's answers — retire it, write the gap, or open a file.
+      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab);
+      if (fresh) {
+        h.loan = fresh;
+        fresh.balance = fresh.principal = rolled;
+        // AND IT RESPECTS THE IO PERIOD. Recutting the rolled balance as a
+        // level annuity regardless of `product.ioM` overstated the payment for
+        // the whole interest-only run — the same quantity the partial-refi
+        // branch below already computes correctly, with two answers.
+        fresh.monthlyPmt = Math.round(
+          product.ioM > 0
+            ? (rolled * fresh.ratePct) / 100 / 12
+            : monthlyPayment(rolled, fresh.ratePct, fresh.amortYears),
+        );
+        const feePaid = fundCashNeed(s, parcels, fee);
+        logBooks(s, "debtSvc", feePaid);
+        renewed = true;
+        // THE DOCKET HAS TO SAY IT RENEWED. A balloon rolling onto new paper at
+        // a new rate for a new term is one of the largest events in a levered
+        // book, and a news line alone is a line the player scrolls past. Stamped
+        // with the month so the inbox row appears once and cannot stop the clock
+        // twice, and so it is distinguishable from a purchase or a chosen refi,
+        // which also open paper this month and are not surprises.
+        (fresh as { renewedM?: number }).renewedM = q;
+        s.news.unshift({
+          q, kind: "deal",
+          text: `The balloon at ${rec.address} renewed with ${product.lender} — the same `
+            + `$${(rolled / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% for ${Math.round(product.termM / 12)} years, `
+            + `$${fresh.monthlyPmt.toLocaleString()} a month, $${(fee / 1000).toFixed(0)}K of fee. `
+            + `Nothing came out and nothing went in: a bank does not hand you equity unasked, and cash-out is a refi you choose.`,
+        });
       }
-      const feePaid = fundCashNeed(s, parcels, fee);
-      logBooks(s, "debtSvc", feePaid);
-      s.news.unshift({
-        q, kind: "deal",
-        text: `Balloon at ${rec.address} rolled into new paper at ${qd.ratePct.toFixed(2)}% (fee $${(fee / 1000).toFixed(0)}K). Want equity out? That's a refi you choose.`,
-      });
-    } else {
+    }
+    if (!renewed) {
       const payoff = loan.balance + fee;
       const shortfall = payoff - qd.principal;
       // Prefer retiring the note when liquidity covers the whole balloon —
@@ -1065,13 +1134,21 @@ export function tickLoan(
         });
       } else {
         // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
+        //
+        // And the conversation has to name the number. "There is no refinancing"
+        // is not a decision a principal can act on; "$4.10M against a $5.62M
+        // balance, $1.62M short, and here is what each way out costs" is. The
+        // gap has been in scope here all along and was never said out loud.
         openWorkout(s, h.bbl, "balloon", payoff);
+        const room = fundableNow(s, parcels);
         s.news.unshift({
           q, kind: "warn",
-          text: `The balloon came due at ${rec.address} and there is no refinancing — today's market writes `
-            + `$${(qd.principal / 1e6).toFixed(1)}M against a $${(loan.balance / 1e6).toFixed(2)}M balance and you cannot cover the gap. `
-            + `${productById(loan.product).lender} has put it in workout: you have until ${monthLabel(s.month + 6)} to cure it, `
-            + `ask them to extend, or hand back the deed before they file.`,
+          text: `The balloon came due at ${rec.address} and no desk will refinance the whole of it — today's market writes `
+            + `$${(qd.principal / 1e6).toFixed(2)}M against a $${(loan.balance / 1e6).toFixed(2)}M balance plus a `
+            + `$${(fee / 1000).toFixed(0)}K fee: $${(shortfall / 1e6).toFixed(2)}M short, and you can raise `
+            + `$${(room / 1e6).toFixed(2)}M of it from cash and the line. `
+            + `${productById(loan.product).lender} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
+            + `pay the difference, ask them to extend, sell it, or hand back the deed before they file.`,
         });
       }
     }
@@ -1248,10 +1325,20 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Caps hedge floating debt — this loan is fixed." };
   if (h.loan.cap) return { s, err: "This loan already carries a live cap." };
   const cost = rateCapCost(h.loan);
-  if (next.cash < cost) return { s, err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium — you're short.` };
+  // A cap premium is a financing cost on paper the firm already owns, and the
+  // revolver is what a sponsor funds financing costs with. Refusing it for want
+  // of cash on hand left floating debt naked in exactly the month a borrower
+  // most wants the hedge.
+  const room = spendable(next, parcels);
+  if (room.total < cost) {
+    return {
+      s,
+      err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium and you can raise `
+        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and $${(room.line / 1e6).toFixed(2)}M on the line.`,
+    };
+  }
   const strike = +(next.econ.indexRate + 0.5).toFixed(2);
-  next.cash -= cost;
-  logBooks(next, "debtSvc", cost);
+  fundAndBook(next, parcels, cost, "debtSvc");
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({
     q: next.month, kind: "deal",

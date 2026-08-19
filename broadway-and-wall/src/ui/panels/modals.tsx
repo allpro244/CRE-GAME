@@ -7,10 +7,10 @@ import { saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
-import { portfolioQuote } from "@/engine/portfolio";
+import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
 import { usd } from "@/ui/format";
-import { PortfolioCap } from "@/ui/panels/PortfolioPage";
+import { PortfolioCap, PortfolioLegList, PortfolioProceeds, PortfolioBidActions } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiTermsGrid, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
@@ -464,7 +464,10 @@ function AlertBody() {
     ground: ["Ground-lease default", "Your leased fee"],
     sale: ["A sale fell apart", "Bids are in"],
   };
-  const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
+  let kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
+  // "Your portfolio" over a call you did not make reads as though the game has
+  // put your book on the market. It has not: they chose the deeds and rang.
+  if (a.kind === "portfolio" && !bad && game.portfolioSale?.unsolicited) kicker = "Somebody has approached you";
   const queued = (game.alerts?.length ?? 1) - 1;
   // A seized rival book is inventory, not scenery — the package is on Marketplace.
   const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
@@ -484,7 +487,10 @@ function AlertBody() {
           {goBooks
             ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Rivals are looking at it too."
             : goOwnBook
-              ? "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              ? game.portfolioSale?.unsolicited
+                ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
+                  + "answers — take it, counter it, tell them no — are on the Portfolio and Deals desks."
+                : "Open Portfolio or Deals to answer the indication. It will not wait forever."
               : bad
                 ? "This is not a decision and there is nothing on this card to accept. It has happened; "
                   + "what it does to your rents, your lenders and your book is the rest of the game."
@@ -499,7 +505,7 @@ function AlertBody() {
           )}
           {goOwnBook && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("portfolio"); }}>
-              Open Portfolio
+              {game.portfolioSale?.unsolicited ? "See which buildings" : "Open Portfolio"}
             </button>
           )}
           {goNotes && (
@@ -542,6 +548,15 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
 export function DecisionModal() {
   // Keep local outcome mounted after a counter resolves (lois may be empty).
   const [outcome, setOutcome] = useState<{ text: string; ok: boolean } | null>(null);
+  /* WHAT "DECIDE LATER" HAS TO SURVIVE.
+     The deferrals used to live inside `DecisionBody`, which unmounts whenever
+     the card sleeps and whenever the answer screen below takes over. So
+     deferring the portfolio card and then answering any unrelated letter
+     remounted the body with an empty set and put the portfolio card straight
+     back in front of the player — the "it asks again" this modal is accused
+     of. Up here the set outlives both, because this component is mounted for
+     the life of the run whether or not it draws anything. */
+  const [deferred, setDeferred] = useState<Set<number | string>>(new Set());
   const awake = useStore((s) => decisionAwake(s.game, s.popupsOff));
   if (!awake && !outcome) return null;
   if (outcome) {
@@ -559,18 +574,19 @@ export function DecisionModal() {
       </div>
     );
   }
-  return <DecisionBody setOutcome={setOutcome} />;
+  return <DecisionBody setOutcome={setOutcome} deferred={deferred} setDeferred={setDeferred} />;
 }
 
 function DecisionBody({
-  setOutcome,
+  setOutcome, deferred, setDeferred,
 }: {
   setOutcome: (o: { text: string; ok: boolean } | null) => void;
+  deferred: Set<number | string>;
+  setDeferred: (f: (d: Set<number | string>) => Set<number | string>) => void;
 }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
   const { respondLoi, acceptOffer, declineOffer, counterSale, takeBid, setPage, focus } = useStore.getState();
-  const [deferred, setDeferred] = useState<Set<number>>(new Set());
   // Lease counter draft — sliders live in LoiCounterDraft so the modal and
   // the Deals page cannot drift apart.
   const [modalCounter, setModalCounter] = useState(false);
@@ -591,66 +607,56 @@ function DecisionBody({
      on the portfolio page still holds the counter slider for a number you want
      to set by hand. */
   const pb = game.portfolioSale?.bids?.[0];
-  if (pb && !deferred.has(-2)) {
+  /* KEYED ON THE NUMBER, NOT ON THE CARD. "Decide later" has to hold until
+     something changes, and a buyer moving their number IS something changing —
+     a countered bid that comes back up is new information and belongs back in
+     front of the player. A flat "this card is muted" would delete that fuse. */
+  const pKey = pb ? `portfolio:${pb.name}:${pb.price}` : "";
+  if (pb && !deferred.has(pKey)) {
     const live = game.portfolioSale!;
     const q = portfolioQuote(game, parcels, live.bbls);
     const inside = q.sumOfParts > 0 ? (1 - pb.price / q.sumOfParts) * 100 : 0;
-    // Same per-deed waterfall acceptPortfolioBid runs — payoffs, kick, break,
-    // facility release, tax — so the button is not the gross bid.
-    const marks = live.bbls.map((b) => {
-      const h = game.holdings[b];
-      return h ? ownedHoldingValue(game, parcels, h) : 0;
-    });
-    const totalMark = marks.reduce((a, v) => a + v, 0) || 1;
-    let netToYou = 0, taxAtClose = 0, releaseTot = 0, loanTot = 0;
-    live.bbls.forEach((bbl, i) => {
-      const h = game.holdings[bbl];
-      if (!h) return;
-      const price = Math.round(pb.price * (marks[i] / totalMark));
-      const p = saleProceedsToSeller(game, parcels, h, price);
-      netToYou += p.toSeller - p.tax;
-      taxAtClose += p.tax;
-      releaseTot += p.release;
-      loanTot += p.loanPayoff + p.breakFee + p.kick;
-    });
+    const inbound = !!live.unsolicited;
+    // The schedule the close runs, deed by deed — payoffs, mezzanine, kick,
+    // break fee, facility release, tax. Not a second copy of it: the accept
+    // button below is spending this exact object.
+    const book = portfolioSettlement(game, parcels, live.bbls, pb.price);
     return (
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
-          <div className="modal-kicker">◆ AN INDICATION ON YOUR PORTFOLIO — {live.bbls.length} buildings, one ticket</div>
+          <div className="modal-kicker">
+            {inbound
+              ? `◆ AN APPROACH FOR ${live.bbls.length} OF YOUR BUILDINGS — you have not listed anything`
+              : `◆ AN INDICATION ON YOUR PORTFOLIO — ${live.bbls.length} buildings, one ticket`}
+          </div>
           <div className="modal-title">{usd(pb.price)} from {pb.name}</div>
-          <div className="modal-sub">Good until {monthLabel(pb.expiresM)}. Your ask is {usd(live.ask)}.</div>
+          <div className="modal-sub">
+            {inbound
+              ? `They rang unprompted and want an answer by ${monthLabel(pb.expiresM)}. These are the deeds they asked for.`
+              : `Good until ${monthLabel(pb.expiresM)}. Your ask is ${usd(live.ask)}.`}
+          </div>
           <div className="grid">
             <Row k="Their number" v={usd(pb.price)} strong />
-            <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />
+            {!inbound && <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />}
             <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
             <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
-            <Row k="Loan / fee payoffs" v={usd(loanTot)} />
-            {releaseTot > 0 && <Row k="Facility releases" v={usd(releaseTot)} bad />}
-            {taxAtClose > 0 && <Row k="Capital-gains tax" v={usd(taxAtClose)} bad />}
-            <Row k="Net to you" v={usd(netToYou)} strong bad={netToYou < 0} />
+            <PortfolioProceeds book={book} />
             <PortfolioCap q={q} ask={pb.price} bbls={live.bbls} />
             {pb.countered && <Row k="Rounds" v="you have been back to them once" bad />}
           </div>
-          <div className="hint">
-            An institution has a committee number. You can push them a few points and no further, and pushing hard
-            on a bundle is how the whole thing goes away — there is another portfolio next quarter and they know it.
-          </div>
-          <div className="modal-actions">
-            <button className="btn btn-buy" onClick={() => { useStore.getState().acceptPortfolio(false); setDeferred((d) => new Set(d).add(-2)); }}>
-              Close it · net {usd(netToYou)}
-            </button>
-            <button className="btn btn-buy" title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"
-              onClick={() => { useStore.getState().acceptPortfolio(true); setDeferred((d) => new Set(d).add(-2)); }}>
-              Close into a 1031{taxAtClose > 0 ? ` · defer ${usd(taxAtClose)}` : ""}
-            </button>
-            {!pb.countered && (
-              <button className="btn" title="Set the number by hand on the portfolio desk"
-                onClick={() => { setDeferred((d) => new Set(d).add(-2)); useStore.getState().setPage("portfolio"); }}>
-                Counter…
+          {/* WHICH BUILDINGS. The card carried a count and nothing else, so on
+              an approach — where the buyer picked the deeds — there was no way
+              to learn what was being sold without dismissing it. */}
+          <PortfolioLegList book={book} />
+          <PortfolioBidActions
+            key={pKey}
+            bid={pb} sumOfParts={q.sumOfParts} book={book} rowClass="modal-actions"
+            trailing={
+              <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(pKey))}>
+                Decide later
               </button>
-            )}
-            <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-2))}>Decide later</button>
-          </div>
+            }
+          />
         </div>
       </div>
     );

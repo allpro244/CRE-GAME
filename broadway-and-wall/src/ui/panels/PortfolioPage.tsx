@@ -1,18 +1,19 @@
 import { useState, Fragment } from "react";
+import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import type { BuiltClass } from "@/engine/types";
+import type { BuiltClass, GameState } from "@/engine/types";
 import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
 import { payOffDue } from "@/engine/debt";
-import { portfolioQuote } from "@/engine/portfolio";
+import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
-import type { PortfolioQuote } from "@/engine/portfolio";
-import { allocatedAmount } from "@/engine/facility";
+import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
+import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
 import { usd, sf } from "@/ui/format";
 import { ListSection, GroundLeaseSection } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
@@ -361,7 +362,6 @@ export function PortfolioPage() {
       <MaturityWall />
       <Rollover />
       <Concentration />
-      <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
       <div className="btn-row" style={{ marginTop: 10 }}>
         {/* Shortcuts, not modes. Every column sorts from its own header now;
             these two are here because they are the two questions asked most. */}
@@ -370,22 +370,46 @@ export function PortfolioPage() {
         <button className={"btn" + (ranked ? " btn-on" : "")}
           onClick={() => setSort({ key: "noi", dir: -1 })}
           title="Ranked by NOI, biggest earner first.">Top earners</button>
-        {!game.portfolioSale && holdings.length >= 2 && (
-          <button className={"btn" + (bundling ? " btn-on" : "")}
-            onClick={() => { setBundling(!bundling); if (bundling) setBundle([]); }}
-            title="Tick two or more buildings and take them to market as one trade">
-            {bundling ? `Bundling · ${bundle.length} picked` : "Sell several at once"}
-          </button>
-        )}
+        {/* A DISABLED BUTTON WITH A REASON, NOT A BUTTON THAT VANISHED.
+            One process at a time is the right constraint — a seller cannot run
+            two — but this used to disappear outright the month an institution
+            rang unprompted, so the bundling tool went missing for up to four
+            months with nothing on screen to say why or how to get it back. */}
+        {holdings.length >= 2 && (() => {
+          const busy = game.portfolioSale;
+          const who = busy?.bids?.[0]?.name;
+          return (
+            <button className={"btn" + (bundling ? " btn-on" : "")}
+              disabled={!!busy}
+              onClick={() => { setBundling(!bundling); if (bundling) setBundle([]); }}
+              title={busy
+                ? (busy.unsolicited
+                  ? `${who ?? "A buyer"} has approached you about ${busy.bbls.length} of your buildings. Answer it or tell them no on the desk above, and this comes back.`
+                  : `${busy.bbls.length} buildings are already in the market as one trade. Close or pull that process on the desk above, and this comes back.`)
+                : "Tick two or more buildings and take them to market as one trade"}>
+              {bundling ? `Bundling · ${bundle.length} picked` : "Sell several at once"}
+            </button>
+          );
+        })()}
         {bundling && bundle.length > 0 && (
           <button className="btn" onClick={() => setBundle([])}>Clear picks</button>
         )}
         {bundling && (
-          <button className="btn" onClick={() => setBundle(rows.filter((r) => !r.h.sale).map((r) => r.h.bbl))}>
+          /* PICK EVERYTHING MEANS EVERYTHING. It used to skip any deed already
+             listed on its own — which `listPortfolio` de-lists for you anyway —
+             so the one button for "sell the whole book" quietly left buildings
+             behind. The only deeds it cannot take are the ones under a crane,
+             which no sale of any kind will convey. */
+          <button className="btn"
+            onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl]).map((r) => r.h.bbl))}>
             Pick everything
           </button>
         )}
       </div>
+      {/* The desk sits UNDER the controls that feed it. Mounted above them, a
+          player ticking their way down a thirty-building book pushed the panel
+          holding "Take it to market" off the top of the screen. */}
+      <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
       <div className="scroll-x">
       <table className="tbl">
         <thead>
@@ -430,12 +454,21 @@ export function PortfolioPage() {
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
               {bundling && (
+                /* A deed under a crane cannot be conveyed by any route — the
+                   job is still drawing its loan and still due to deliver. A
+                   deed on its own listing can: the bundle pulls it off the
+                   market on the way past, which is what the engine does. */
                 <td onClick={(ev) => {
                   ev.stopPropagation();
+                  if (dv) return;
                   setBundle(bundle.includes(h.bbl) ? bundle.filter((x) => x !== h.bbl) : [...bundle, h.bbl]);
-                }} style={{ cursor: "pointer", userSelect: "none" }}
-                  title={h.sale ? "Already listed on its own — delist it first" : "Add to the bundle"}>
-                  {bundle.includes(h.bbl) ? "☑" : h.sale ? "·" : "☐"}
+                }} style={{ cursor: dv ? "default" : "pointer", userSelect: "none" }}
+                  title={dv
+                    ? "Under construction — deliver the building before it can be sold"
+                    : h.sale
+                      ? "Listed on its own. Ticking it pulls that listing and puts the deed in the bundle."
+                      : "Add to the bundle"}>
+                  {dv ? "·" : bundle.includes(h.bbl) ? "☑" : "☐"}
                 </td>
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
@@ -762,58 +795,190 @@ export function PortfolioCap({ q, ask, bbls }: { q: PortfolioQuote; ask: number;
   );
 }
 
+/**
+ * WHICH BUILDINGS ARE BEING BOUGHT, AND WHAT EACH ONE PAYS YOU.
+ *
+ * A bundle used to be a count — "6 buildings, one ticket" — on both the card
+ * that stops the screen and the desk behind it, so the one thing a seller has
+ * to know before signing (which deeds leave, and what each returns after its
+ * own mortgage, release and tax) could not be read anywhere. Every number here
+ * comes off `portfolioSettlement`, which is the schedule the close itself
+ * runs: there is no second waterfall on this page.
+ */
+export function PortfolioLegList({ book }: { book: PortfolioSettlement }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  return (
+    <div className="mini-list" style={{ marginTop: 8 }}>
+      {book.legs.map((l) => {
+        const rec = resolveRec(parcels, game, l.bbl);
+        const net = l.toSeller - l.tax;
+        return (
+          <div key={l.bbl} className="mini-row" style={{ cursor: "pointer" }}
+            title={`${usd(l.price)} allocated · ${usd(l.loanPayoff)} of debt off`
+              + (l.release > 0 ? ` · ${usd(l.release)} facility release` : "")
+              + (l.kick + l.breakFee > 0 ? ` · ${usd(l.kick + l.breakFee)} of participation and break fees` : "")
+              + (l.tax > 0 ? ` · ${usd(l.tax)} of tax` : "")}
+            onClick={() => useStore.getState().focus(l.bbl, true)}>
+            <span>{l.address}<span className="dim"> · {rec ? useLabel(rec) : l.cls}</span></span>
+            <span className="mono dim">
+              {usd(l.price)} <span className={net < 0 ? "neg" : ""}>→ {usd(net)} to you</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The waterfall, once, for every surface that quotes it. */
+export function PortfolioProceeds({ book }: { book: PortfolioSettlement }) {
+  return (
+    <>
+      <Row k="Loan and mezzanine payoffs" v={usd(book.loanPayoff)} />
+      {book.kick + book.breakFee > 0 && (
+        <Row k="Participation and break fees" v={usd(book.kick + book.breakFee)} bad />
+      )}
+      {book.release > 0 && <Row k="Facility releases at the premium" v={usd(book.release)} bad />}
+      {book.facilityDue > 0 && (
+        <Row k="Facility repaid in full at the table" v={usd(book.facilityDue)} bad />
+      )}
+      {book.tax > 0 && <Row k="Capital-gains tax" v={usd(book.tax)} bad />}
+      <Row k="Net to you" v={usd(book.netToYou)} strong bad={book.netToYou < 0} />
+    </>
+  );
+}
+
+/**
+ * ONE INDICATION, ONE SET OF ANSWERS, WHEREVER YOU ARE STANDING.
+ *
+ * The same three questions used to be asked on three surfaces — the alert
+ * card, the decision card, and this desk — and the decision card's "Counter…"
+ * was a navigation to the desk, so answering it meant being asked it again.
+ * The card and the desk mount this component instead: one accept, one 1031,
+ * one counter, no second confirmation anywhere on the path.
+ */
+export function PortfolioBidActions({
+  bid, sumOfParts, book, onDone, trailing, rowClass = "btn-row",
+}: {
+  bid: NonNullable<NonNullable<GameState["portfolioSale"]>["bids"]>[number];
+  sumOfParts: number;
+  book: PortfolioSettlement;
+  onDone?: () => void;
+  trailing?: ReactNode;
+  /** The card wants modal-sized buttons; the desk wants desk-sized ones. */
+  rowClass?: string;
+}) {
+  const { counterPortfolioBid, acceptPortfolio } = useStore.getState();
+  const [countering, setCountering] = useState(false);
+  const [counter, setCounter] = useState(0);
+  const pb = counterPriceBounds(bid.price, sumOfParts);
+  const cb = { ...pb, min: Math.max(pb.min, bid.price + pb.step) };
+  // The number on the slider and the number that gets sent are the same
+  // number, clamped the same way — a stale draft from a previous indication
+  // used to display clamped and send raw.
+  const px = Math.min(cb.max, Math.max(cb.min, counter || Math.round(bid.price * 1.05)));
+  return (
+    <>
+      <div className={rowClass}>
+        <button className="btn btn-buy" onClick={() => { acceptPortfolio(false); onDone?.(); }}>
+          Close it · net {usd(book.netToYou)}
+        </button>
+        <button className="btn" onClick={() => { acceptPortfolio(true); onDone?.(); }}
+          title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due">
+          Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
+        </button>
+        {!bid.countered && (
+          <button className={"btn" + (countering ? " btn-on" : "")} onClick={() => setCountering(!countering)}>
+            Counter…
+          </button>
+        )}
+        {trailing}
+      </div>
+      {!bid.countered && countering && (
+        <>
+          <Slider min={cb.min} max={cb.max} step={cb.step} editable="price"
+            value={px} onChange={setCounter}
+            label="Counter at" format={(v: number) => usd(v)}
+            hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />
+          <div className="btn-row">
+            <button className="btn" onClick={() => { counterPortfolioBid(px); setCountering(false); }}>
+              Put {usd(px)} to {bid.name}
+            </button>
+          </div>
+        </>
+      )}
+      <div className="hint">
+        An institution has a committee number. You can push them a few points and no further, and pushing
+        hard on a bundle is how the whole thing goes away — there is another portfolio next quarter and
+        they know it.
+      </div>
+    </>
+  );
+}
+
 export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: () => void }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const { sellPortfolio, repricePortfolioSale, counterPortfolioBid, acceptPortfolio, pullPortfolio } =
-    useStore.getState();
+  const { sellPortfolio, repricePortfolioSale, pullPortfolio } = useStore.getState();
   const live = game.portfolioSale;
   const [askPct, setAskPct] = useState(100);
-  const [counter, setCounter] = useState(0);
 
   // ---- a process already running -------------------------------------------
   if (live) {
     const q = portfolioQuote(game, parcels, live.bbls);
     const bid = live.bids?.[0];
     const age = game.month - live.listedM;
+    // SOMEBODY ELSE'S APPROACH IS NOT YOUR LISTING. It occupies the same slot —
+    // one process at a time is right, a seller cannot run two — but every word
+    // on this desk has to say whose process it is. Read as a listing it looked
+    // like the game had put the player's book on the market unasked.
+    const inbound = !!live.unsolicited;
+    const onTable = bid?.price ?? live.ask;
+    const book = portfolioSettlement(game, parcels, live.bbls, onTable);
     return (
       <div className="page-section">
         <div className="page-section-head">
-          {live.unsolicited ? "An unsolicited approach" : "Portfolio in the market"} · {live.bbls.length} buildings
+          {inbound
+            ? `${bid?.name ?? "A buyer"} has approached you about ${live.bbls.length} buildings`
+            : `Portfolio in the market · ${live.bbls.length} buildings`}
         </div>
+        {inbound && (
+          <div className="hint" style={{ marginTop: 6 }}>
+            You have not listed anything. They chose these {live.bbls.length} deeds themselves and named the
+            number, which is what an unsolicited approach is — nobody rings about a book they have not already
+            underwritten. Answer it, counter it, or tell them no and the desk is yours again.
+          </div>
+        )}
         <div className="grid">
-          <Row k="Asking" v={usd(live.ask)} strong />
+          {inbound
+            ? <Row k="Their number" v={usd(onTable)} strong />
+            : <Row k="Asking" v={usd(live.ask)} strong />}
           {/* THE NUMBER THE COMMITTEE ON THE OTHER SIDE IS ACTUALLY LOOKING AT.
               A portfolio is quoted as a yield; the price is what the yield
               implies. This desk showed dollars and a spread against the parts
               and never once said what cap the ask was struck at. */}
-          <PortfolioCap q={q} ask={live.ask} bbls={live.bbls} />
+          <PortfolioCap q={q} ask={onTable} bbls={live.bbls} />
           <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
           <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
             bad={q.spreadPct < -0.06} />
-          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"} · stale at 9`} bad={age > 6} />
+          {inbound
+            ? bid && <Row k="They want an answer by" v={monthLabel(bid.expiresM)} bad={bid.expiresM - game.month <= 1} />
+            : <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"} · stale at 9`} bad={age > 6} />}
           <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
-          <Row k="Ask vs indication"
-            v={live.ask > q.indicative
-              ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above · interest thins fast`
-              : live.ask < q.indicative * 0.98
-                ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under · priced to move`
-                : "at the indication"}
-            bad={live.ask > q.indicative * 1.05} />
-          <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />
+          {!inbound && (
+            <Row k="Ask vs indication"
+              v={live.ask > q.indicative
+                ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above · interest thins fast`
+                : live.ask < q.indicative * 0.98
+                  ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under · priced to move`
+                  : "at the indication"}
+              bad={live.ask > q.indicative * 1.05} />
+          )}
+          {!inbound && <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />}
+          {bid && <PortfolioProceeds book={book} />}
         </div>
-        <div className="mini-list" style={{ marginTop: 8 }}>
-          {live.bbls.map((b) => {
-            const rec = resolveRec(parcels, game, b);
-            return (
-              <div key={b} className="mini-row" style={{ cursor: "pointer" }}
-                onClick={() => useStore.getState().focus(b, true)}>
-                <span>{rec?.address ?? b}</span>
-                <span className="mono dim">{rec ? useLabel(rec) : ""}</span>
-              </div>
-            );
-          })}
-        </div>
+        <PortfolioLegList book={book} />
         {bid ? (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
@@ -821,53 +986,40 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
               inside the sum of the parts, good until {monthLabel(bid.expiresM)}.
               {bid.countered && " You have already been back to them once."}
             </div>
-            <div className="btn-row">
-              <button className="btn btn-buy" onClick={() => acceptPortfolio(false)}>
-                Close it — {usd(bid.price)}
-              </button>
-              <button className="btn" onClick={() => acceptPortfolio(true)}
-                title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due">
-                Close into a 1031
-              </button>
-              {!bid.countered && (() => {
-                const pb = counterPriceBounds(bid.price, q.sumOfParts);
-                const cb = { ...pb, min: Math.max(pb.min, bid.price + pb.step) };
-                return (
-                <>
-                  <Slider min={cb.min} max={cb.max} step={cb.step} editable="price"
-                    value={counter || Math.round(bid.price * 1.05)} onChange={setCounter}
-                    label="Counter at" format={(v: number) => usd(v)}
-                    hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />
-                  <button className="btn" onClick={() => counterPortfolioBid(counter || Math.round(bid.price * 1.05))}>
-                    Counter
-                  </button>
-                </>
-                );
-              })()}
-              <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>Pull it</button>
-            </div>
-            <div className="hint">
-              An institution has a committee number. You can push them a few points and no further, and pushing
-              hard on a bundle is how the whole thing goes away — there is another portfolio next quarter and
-              they know it.
-            </div>
+            <PortfolioBidActions
+              key={`${bid.name}:${bid.price}`}
+              bid={bid} sumOfParts={q.sumOfParts} book={book}
+              onDone={clear}
+              trailing={
+                <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>
+                  {inbound ? "Tell them no" : "Pull it"}
+                </button>
+              }
+            />
           </>
         ) : (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
-              No indications yet.
-              {q.depth <= 0
+              {inbound
+                ? "They have not come back. Nothing of yours is on the market and nothing is holding this open — "
+                  + "clear it and the bundling desk is free."
+                : "No indications yet."}
+              {!inbound && (q.depth <= 0
                 ? " Nobody in this city can fund a book this small as a portfolio — pull it and sell the deeds one at a time."
                 : live.ask > q.indicative * 1.05
                   ? " Your ask sits above what a bundle is indicated at. Cut the number or wait out a thin room — nine months and the process goes stale."
                   : age > 5
                     ? " Half a year of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
-                    : " Institutional buyers underwrite a bundle for a quarter before they call. A live indication also lands on News and as a stop-everything card (unless you turned those off in Settings)."}
+                    : " Institutional buyers underwrite a bundle for a quarter before they call. A live indication also lands on News and as a stop-everything card (unless you turned those off in Settings).")}
             </div>
             <div className="btn-row">
-              <Slider min={Math.round(q.indicative * 0.8)} max={Math.round(q.sumOfParts * 1.05)} step={250_000}
-                value={live.ask} onChange={(v: number) => repricePortfolioSale(v)} label="Ask" format={(v: number) => usd(v)} />
-              <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>Pull it</button>
+              {!inbound && (
+                <Slider min={Math.round(q.indicative * 0.8)} max={Math.round(q.sumOfParts * 1.05)} step={250_000}
+                  value={live.ask} onChange={(v: number) => repricePortfolioSale(v)} label="Ask" format={(v: number) => usd(v)} />
+              )}
+              <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>
+                {inbound ? "Clear the approach" : "Pull it"}
+              </button>
             </div>
           </>
         )}
@@ -879,6 +1031,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
   if (bundle.length < 1) return null;
   const q = portfolioQuote(game, parcels, bundle);
   const ask = Math.round(q.indicative * (askPct / 100));
+  const preview = portfolioSettlement(game, parcels, bundle, ask);
   return (
     <div className="page-section">
       <div className="page-section-head">Sell {bundle.length} buildings as one trade</div>
@@ -895,8 +1048,21 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
               strong bad={q.spreadPct < 0} />
             <PortfolioCap q={q} ask={ask} bbls={bundle} />
             <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+            {/* WHAT THE CLOSING TAKES, BEFORE YOU COMMIT TO IT. A pledged deed
+                used to be refused outright with an instruction the facility
+                itself would not let you follow; it settles at the release
+                premium instead, and a premium you cannot see coming is a
+                punishment rather than a decision. Struck at the indication,
+                through the same schedule the close runs. */}
+            <PortfolioProceeds book={preview} />
           </div>
           <div className="hint">
+            {preview.facilityDue > 0
+              ? `Selling these takes the facility pool below the ${FACILITY_MIN_ASSETS}-deed floor it was written against, so `
+                + `what is left of the balance is repaid out of the proceeds at the closing table. `
+              : preview.release > 0
+                ? "The pledged deeds come out of the pool at their allocated share plus the release premium, paid out of the proceeds. "
+                : ""}
             {q.depth <= 0
               ? "No desk in this city will underwrite a portfolio this small. Sell them one at a time — a bundle sale with an empty room is nine months of silence, not a process."
               : q.spreadPct < -0.10
@@ -917,7 +1083,14 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
               className="btn btn-buy"
               disabled={q.depth <= 0}
               title={q.depth <= 0 ? "No buyer can fund this book as a portfolio" : undefined}
-              onClick={() => { sellPortfolio(bundle, ask); clear(); }}
+              onClick={() => {
+                sellPortfolio(bundle, ask);
+                // The picks survive a refusal. The engine can still say no — a
+                // crane on a site, a deed in a workout — and wiping twenty
+                // ticks on the way to a red toast means re-ticking nineteen
+                // good ones to fix the twentieth.
+                if (useStore.getState().game?.portfolioSale) clear();
+              }}
             >
               Take it to market at {usd(ask)}
             </button>

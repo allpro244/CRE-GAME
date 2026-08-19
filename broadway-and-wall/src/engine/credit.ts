@@ -4,7 +4,7 @@
 // negative, because no real sponsor lets a rent cheque bounce while an
 // undrawn line sits on the desk.
 import type { ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { BooksYear, GameState } from "./types";
 import { logBooks, cloneState} from "./types";
 import { netWorth } from "./value";
 import { sponsorStanding } from "./sponsor";
@@ -164,13 +164,61 @@ export function fundCashNeed(
   return pay;
 }
 
+/**
+ * WHAT THE FIRM CAN WRITE A CHEQUE FOR TODAY, split into the two places the
+ * money comes from.
+ *
+ * A revolver IS working capital. A sponsor with an undrawn line does not
+ * decline to fix a roof, pay a broker, or file a tax appeal because the
+ * operating account is thin that month — they draw, they spend, and idle cash
+ * sweeps it back down (`sweepLocIdleCash`). Thirty engine actions refused on
+ * `s.cash` alone while the line sat open, which is not a difficulty setting: it
+ * is the model failing to know its own balance sheet. The risk stays exactly
+ * where it was — the draw costs index+400 every month it is out, it shrinks the
+ * room left for the next emergency, and an over-advance when values fall is
+ * still a default (`tickLoc`). What goes away is a refusal that no real
+ * principal would accept.
+ *
+ * REFUSE with this. SPEND with `fundCashNeed`/`fundAndBook`. Never both for the
+ * same dollars in one action — `fundCashNeed` takes the money as a side effect.
+ */
+export function spendable(
+  s: GameState, parcels: ParcelTable,
+  opts?: { allowLoc?: boolean },
+): { cash: number; line: number; total: number } {
+  const cash = Math.max(0, Math.floor(s.cash));
+  const line = (opts?.allowLoc ?? true) ? locAvailable(s, parcels) : 0;
+  return { cash, line, total: cash + line };
+}
+
 /** How much the firm can fund right now (cash, plus undrawn line when allowed). */
 export function fundableNow(
   s: GameState, parcels: ParcelTable,
   opts?: { allowLoc?: boolean },
 ): number {
-  const allowLoc = opts?.allowLoc ?? true;
-  return Math.max(0, Math.floor(s.cash)) + (allowLoc ? locAvailable(s, parcels) : 0);
+  // One quantity, one answer: the panels quote `spendable`, the engine refuses
+  // on `fundableNow`, and both are the same arithmetic.
+  return spendable(s, parcels, opts).total;
+}
+
+/**
+ * SPEND IT AND BOOK IT, in that order, from cash then the line.
+ *
+ * `fundCashNeed` moves the money; every dollar it moves still needs a ledger
+ * entry or `pnpm conserve` calls it a vanishing. Pairing the two here is what
+ * stops a converted refusal site from paying a fee off the books — which is
+ * exactly how the balloon-gap cheque stayed invisible for years. Returns the
+ * dollars that actually cleared, which is what a caller should amortise,
+ * credit or announce; a partial payment books partially and no more.
+ */
+export function fundAndBook(
+  s: GameState, parcels: ParcelTable, amount: number,
+  cat: keyof Omit<BooksYear, "yr">,
+  opts?: { allowLoc?: boolean },
+): number {
+  const paid = fundCashNeed(s, parcels, amount, opts);
+  if (paid > 0) logBooks(s, cat, paid);
+  return paid;
 }
 
 /** Cover a negative cash balance from the line — same draw tickLoc used to do alone at month-end. */

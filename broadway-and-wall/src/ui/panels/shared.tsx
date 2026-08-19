@@ -6,6 +6,8 @@ import type { ParcelRecord } from "@/data/types";
 import type { GameState, Holding } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, appraise, physicalOcc as physicalOccupancy, inPlace } from "@/engine/value";
+import { occupancyRead } from "@/engine/leasing";
+import type { OccRead } from "@/engine/leasing";
 import { blockReport } from "@/engine/demand";
 import { isMixedUse, uses as usesOf } from "@/engine/mix";
 import { usd, sf } from "@/ui/format";
@@ -28,6 +30,42 @@ export const devUseLabel = (u: string) => (u === "mixed" ? "Mixed-Use" : CLASS_L
  */
 export function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number }): number {
   return physicalOccupancy(rec as never as ParcelRecord, h as never as Holding);
+}
+
+/**
+ * OCCUPANCY THE WAY A LEASING DESK HAS TO READ IT — one answer, shared by the
+ * leasing table and the property card.
+ *
+ * `physicalOcc` above divides by the feet that were BUILT, which is what an
+ * appraiser capitalises and what a buyer is quoted, and it stays exactly that.
+ * A landlord working the book is asking a different question: of the space I can
+ * actually let, how much is let? Those two differ by the vacancy that sits under
+ * the smallest tenancy the building demises — the loss factor, rentable against
+ * usable — and the difference is why a building could read 92% for twenty-five
+ * years with 1,311 unlettable feet in it and no way for the owner to know the
+ * last two per cent was not their fault.
+ *
+ * So the surfaces quote the lettable read and NAME the remainder. The engine
+ * answers both (`occupancyRead`); this is only the wrapper that keeps the
+ * panels from each computing their own.
+ */
+export function occRead(rec: ParcelRecord, h: Holding): OccRead {
+  return occupancyRead(rec, h);
+}
+
+/** "fully let · 1,311 sf unlettable remainder", or just the percentage. */
+export function occLabel(r: OccRead): string {
+  if (r.fullyLet) return `fully let · ${sf(r.remainderSf)} unlettable`;
+  return `${(r.lettableOcc * 100).toFixed(0)}%`;
+}
+
+/** Why the two numbers differ, for the cell's tooltip. */
+export function occTitle(r: OccRead): string {
+  if (!r.remainderSf) return "Let space over lettable space.";
+  return `${sf(r.remainderSf)} of the vacancy is under the smallest tenancy this building demises — `
+    + `nobody can lease it, so it sits in the loss factor rather than in the occupancy you can chase. `
+    + `On the feet built the building is ${(r.occ * 100).toFixed(0)}% let, which is what an appraisal counts. `
+    + `A sitting neighbour can still take it on at a renewal or an expansion.`;
 }
 
 /**

@@ -15,7 +15,7 @@ import { portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
-import { useLabel, physicalOcc, Big } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import type { Credit } from "@/engine/types";
 
 export function LeasingPage() {
@@ -26,6 +26,7 @@ export function LeasingPage() {
   const {
     setAgent, setTeamLeasing, setRenewalMgmt, setAgentFloor, setAgentPassBelow,
     setAgentMinCredit, setAgentMaxTiMonths, setAgentMaxSigningMonths, broker,
+    setDeskMaxSf, setSignOwnAll,
   } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
@@ -50,11 +51,16 @@ export function LeasingPage() {
     const resSf = useSf(rec, "multifamily");
     const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + Math.round((h.occ ?? 0) * resSf);
     const notReady = notReadySf(h, q);
-    const occ = physicalOcc(rec as never, h);
+    // The leasing read, not the appraisal read — see occRead. A building whose
+    // whole leftover is under the demise floor is fully let, and the feet that
+    // cannot be let are named instead of sitting inside a percentage the owner
+    // spends a decade chasing.
+    const or = occRead(rec, h);
+    const occ = or.lettableOcc;
     const rentRoll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0)
       + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
-    return [{ h, rec, commercial, leased, notReady, occ, rentRoll, rolling }];
+    return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling }];
   });
 
   const ind = portfolioIndustries(game);
@@ -108,7 +114,11 @@ export function LeasingPage() {
       </div>
     );
   }
-  const totSf = rows.reduce((a, r) => a + r.rec.bldgArea, 0);
+  // Portfolio occupancy over LETTABLE feet, the same denominator every row
+  // uses. Totalling raw floor area here while the rows quoted lettable area
+  // would put two answers to one question on one screen.
+  const totRemainder = rows.reduce((a, r) => a + r.or.remainderSf, 0);
+  const totSf = rows.reduce((a, r) => a + r.rec.bldgArea, 0) - totRemainder;
   const totLeased = rows.reduce((a, r) => a + r.leased, 0);
   const totRoll = rows.reduce((a, r) => a + r.rentRoll, 0);
   const totRolling = rows.reduce((a, r) => a + r.rolling, 0);
@@ -263,6 +273,8 @@ export function LeasingPage() {
     const tiM = agentMaxTiMonths(game);
     const signingM = agentMaxSigningMonths(game);
     const cashReserve = agentCashReserve(game);
+    // 0 is "no limit", not "nobody may sign" — that reading is the switch below.
+    const authSf = game.deskMaxSf ?? 0;
     const creditLabel = (c: Credit) => (c === 2 ? "A only" : c === 1 ? "B or better" : "any credit");
     return (
       <div className="agent-bar" style={{ display: "block" }}>
@@ -339,8 +351,57 @@ export function LeasingPage() {
             Weaker covenants than this are referred — you can still take them; the desk will not do it alone.
           </div>
         </div>
+        {/* SIGNING AUTHORITY — the pen, which is a different question from the
+            price. Everything above tells a desk what a good letter looks like;
+            these two say how big a deal they may close without you. A real
+            leasing mandate is bounded both ways, and it is a limit on the FIRM:
+            it overrides the outside agent, a building's exclusive and the
+            renewal desk alike, because the letter that matters is the one
+            nobody thought to ask you about. */}
+        <div style={{ marginTop: 14 }}>
+          <Slider
+            label="Signing authority"
+            value={authSf}
+            min={0}
+            max={100_000}
+            step={1_000}
+            onChange={(v) => setDeskMaxSf(v)}
+            marks={[{ at: 0, label: "no limit" }, { at: 20_000, label: "20k" }, { at: 50_000, label: "50k" }]}
+            format={(v) => v <= 0
+              ? "no size limit — the mandate above is the only test"
+              : `letters over ${sf(v)} come to you`}
+            hint={authSf > 0
+              ? `Anything larger is referred with the reason, whichever desk was covering it. The commission does not change: an exclusive is owed its 6% on every lease signed while it holds the file, so taking the pen back moves who decides and not who is paid.`
+              : "A desk can sign your largest tenancy without asking. Set a ceiling and the whole-floor deals come to you while the small paper keeps moving."}
+          />
+          <div className="btn-row" style={{ marginTop: 6 }}>
+            <button
+              className={"btn" + (game.signOwnAll ? " btn-on" : "")}
+              onClick={() => setSignOwnAll(!game.signOwnAll)}
+              title="Every letter in the book comes to you, whatever the mandate says"
+            >
+              {game.signOwnAll ? "You sign everything · on" : "Nobody signs but you"}
+            </button>
+          </div>
+          <div className="hint">
+            {game.signOwnAll
+              ? "Every letter comes to you unnegotiated. The desks still market the space and bring the tenants through it — and are still paid for the ones they bring — but nobody else touches the terms."
+              : "One switch for a principal who wants the whole rent roll in their own hand."}
+          </div>
+        </div>
         <div className="hint" style={{ marginTop: 8 }}>
           Shop letters are judged on shop market, office on office — not the building's blended average.
+        </div>
+        {/* WHO SIGNS AND WHO ONLY MARKETS, said plainly. "Put it on the house"
+            reads like a listing and is not one: an exclusive holds the pen. */}
+        <div className="hint" style={{ marginTop: 8 }}>
+          <b>Who holds the pen.</b> An outside agent and a building's exclusive both market the space
+          <i> and sign it</i> inside this mandate — an exclusive is a leasing house working the phones for
+          6% of the base rent over the term, not a listing. Your own leasing hires sign only after you hand
+          them the book, at the in-house 4%/2%. Management signs renewals only. Everything else is yours: an
+          expansion that changes how the building is programmed, a tour dead heat, a credit or capital breach,
+          and anything over the authority above. A must-take — the remnant next door that is too small for
+          anybody else to lease — is housekeeping, not programming, and the desk signs it.
         </div>
       </div>
     );
@@ -353,7 +414,14 @@ export function LeasingPage() {
       <DeskActivity />
       <MandateBar />
       <div className="stat-strip">
-        <Big label="Portfolio occupancy" value={totSf ? ((100 * totLeased) / totSf).toFixed(1) + "%" : "—"} bad={totSf > 0 && totLeased / totSf < 0.8} />
+        <Big
+          label="Portfolio occupancy"
+          value={totSf ? ((100 * Math.min(totLeased, totSf)) / totSf).toFixed(1) + "%" : "—"}
+          bad={totSf > 0 && totLeased / totSf < 0.8}
+          title={totRemainder
+            ? `Of lettable space. ${sf(totRemainder)} across the book is under the smallest tenancy those buildings demise — a loss factor, not vacancy you can work.`
+            : "Let space over lettable space."}
+        />
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />
         <Big label="Rent roll / yr" value={usd(totRoll)} />
         <Big label="Rolling in 12 mo" value={sf(totRolling)} bad={totRolling > totLeased * 0.25} />
@@ -426,7 +494,7 @@ export function LeasingPage() {
                   <td>{r.rec.address}</td>
                   <td>{useLabel(r.rec)}</td>
                   <td className="num">{sf(r.rec.bldgArea)}</td>
-                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")}>{(r.occ * 100).toFixed(0)}%</td>
+                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
                   <td className="num">{usd(r.rentRoll)}</td>
                   <td className="num">{r.leased ? "$" + (r.rentRoll / r.leased).toFixed(0) : "—"}</td>
                   <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>

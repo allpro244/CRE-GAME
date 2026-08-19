@@ -8,7 +8,10 @@ import type { GameState, LOI } from "@/engine/types";
 import { CREDIT_LABEL, monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { managedRentPsfYr, resolveRec } from "@/engine/value";
-import { bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf } from "@/engine/leasing";
+import {
+  bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf,
+  termBandM, termPushBands,
+} from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
 import { Row } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
@@ -55,16 +58,27 @@ export function openingNe(loi: LOI): number {
 export function LoiHero({ loi }: { loi: LOI }) {
   const yrs = loi.termM / 12;
   const yrLabel = Number.isInteger(yrs) ? String(yrs) : yrs.toFixed(1);
+  // Once the term itself has been negotiated, the number on the paper is not
+  // what they walked in wanting — and which is which decides how the rest of
+  // the card reads. Absent on any letter nobody has countered.
+  const openTerm = loi.openTermM ?? loi.termM;
+  const moved = Math.abs(openTerm - loi.termM) >= 1;
   return (
     <div className="loi-hero" aria-label={`${sf(loi.sf)}, ${yrLabel} years`}>
       <span className="loi-hero-sf">{sf(loi.sf)}</span>
       <span className="loi-hero-sep">·</span>
       <span className="loi-hero-term">{yrLabel}-year term</span>
+      {moved && <span className="loi-hero-sep dim"> · they asked {(openTerm / 12).toFixed(1)}</span>}
     </div>
   );
 }
 
-type Counter = { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; bestFinal?: boolean };
+type Counter = {
+  rentPsf: number; tiPsf: number; freeM: number; bumpPct: number;
+  /** Months. The term is negotiable like the rest of it. */
+  termM: number;
+  bestFinal?: boolean;
+};
 
 /**
  * Sliders + the live NE readout. Parent owns Accept / Pass / Decide later;
@@ -86,17 +100,39 @@ export function LoiCounterDraft({
   const [cTi, setCTi] = useState(loi.tiPsf);
   const [cFree, setCFree] = useState(loi.freeM);
   const [cBump, setCBump] = useState(bumpOf(loi));
-  const tiCap = loiTiCap(loi, market);
-  const freeCap = loiFreeCap(loi);
+  const [cTerm, setCTerm] = useState(loi.termM);
+  const openTerm = loi.openTermM ?? loi.termM;
+  // EVERYTHING ON THIS CARD IS STRUCK OVER THE TERM ON THE DIAL, not the term
+  // they walked in with. The allowance cap, the free-rent cap, net effective and
+  // the cash to sign all read `termM` — `loiSigningCost` scales the commission
+  // by termM/12, so pushing a three-year tenant to ten roughly triples the
+  // cheque. Without this view the card would quote a deal the player cannot fund.
+  const view: LOI = { ...loi, termM: cTerm };
+  const tiCap = loiTiCap(view, market);
+  const freeCap = loiFreeCap(view);
+  // Both caps are functions of the term, so shortening the paper can put a dial
+  // above its own ceiling. Read the clamped value everywhere — including what
+  // Send hands over — rather than letting the card price a counter it would not
+  // let you set.
+  const cTiC = Math.min(cTi, tiCap);
+  const cFreeC = Math.min(cFree, freeCap);
   const theirNe = openingNe(loi);
-  const yourNe = netEffectivePsf(loi, cRent, cTi, cFree, cBump);
+  const yourNe = netEffectivePsf(view, cRent, cTiC, cFreeC, cBump);
   const vsMkt = (yourNe / market - 1) * 100;
-  // Signing cost follows the TI on the dial — cutting fit-out has to show up
-  // in the cash line before you send, or the player cannot learn the trade.
-  const costNow = loiSigningCost({ ...loi, tiPsf: cTi, rentPsf: cRent, freeM: cFree }, feeRate);
+  // Signing cost follows the TI and the term on the dials — cutting fit-out or
+  // stretching the paper has to show up in the cash line before you send, or
+  // the player cannot learn the trade.
+  const costNow = loiSigningCost({ ...view, tiPsf: cTiC, rentPsf: cRent, freeM: cFreeC }, feeRate);
   const pushy = vsMkt > 8;
   const soft = vsMkt < -2;
   const openBump = loi.openBumpPct ?? bumpOf(loi);
+  // The tenant's own band — the same one the letter's term was drawn from, and
+  // the same unit the engine scores the push in.
+  const band = termBandM(loi.credit);
+  const termMin = Math.max(12, Math.floor(Math.min(openTerm, band.loM) / 12) * 12 - 12);
+  const termMax = Math.min(180, Math.max(Math.ceil(Math.max(openTerm, band.hiM) / 12) * 12 + 24, 120));
+  const push = termPushBands(loi, cTerm);
+  const draft: Counter = { rentPsf: cRent, tiPsf: cTiC, freeM: cFreeC, bumpPct: cBump, termM: cTerm };
 
   return (
     <div className="loi-counter">
@@ -116,9 +152,36 @@ export function LoiCounterDraft({
           ? "Moving is expensive — an incumbent bends further than a prospect."
           : "They read your number against the market, not against their own opener."}
       />
+      {/* THE TERM IS A DIAL, NOT INK. WALT, when the space rolls, and the size
+          of the commission cheque are all this number — and it was the one term
+          on the letter the landlord could not answer. The band is the tenant's
+          own: past about one band-width they stop being able to sign at any
+          rent, because the length of the lease is a fact about their business
+          and not about the price of the space. */}
+      <Slider
+        label="Term"
+        value={cTerm}
+        min={termMin}
+        max={termMax}
+        step={12}
+        onChange={setCTerm}
+        format={(v) => `${(v / 12).toFixed(0)} years`
+          + (Math.abs(v - openTerm) < 6
+            ? " · what they asked for"
+            : ` · ${push > 0 ? "+" : ""}${push.toFixed(1)}× their band`)}
+        marks={[
+          { at: openTerm, label: "they asked" },
+          ...(band.hiM !== openTerm ? [{ at: band.hiM, label: "top of their band" }] : []),
+        ]}
+        hint={Math.abs(push) < 0.35
+          ? `Credit ${CREDIT_LABEL[loi.credit]} covenants plan on ${(band.loM / 12).toFixed(0)}–${(band.hiM / 12).toFixed(0)} years. Commission is struck over the whole term, so a longer lease is a bigger cheque at signing.`
+          : push > 0
+            ? `${push.toFixed(1)} band-widths past their own plan. Longer paper is worth more to you and costs more to sign — the commission is ${(cTerm / 12).toFixed(0)} years of it.`
+            : `Shorter than they asked. The allowance amortises over fewer years, so this reads as a harder deal to them too — and you get the space back sooner.`}
+      />
       <Slider
         label="TI allowance"
-        value={cTi}
+        value={cTiC}
         min={0}
         max={tiCap}
         step={1}
@@ -132,7 +195,7 @@ export function LoiCounterDraft({
       />
       <Slider
         label="Free rent"
-        value={cFree}
+        value={cFreeC}
         min={0}
         max={freeCap}
         step={1}
@@ -164,13 +227,15 @@ export function LoiCounterDraft({
         {Math.abs(theirNe - yourNe) > 0.05 ? ` · their opener $${theirNe.toFixed(2)}` : ""}
         {" · "}
         cash to sign {usd(costNow)}
-        {cTi !== loi.tiPsf ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)` : ""}
+        {cTiC !== loi.tiPsf || cTerm !== loi.termM
+          ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)`
+          : ""}
       </div>
       <div className="btn-row">
         <button
           type="button"
           className="btn btn-buy"
-          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree, bumpPct: cBump })}
+          onClick={() => onSend(draft)}
         >
           Send counter
         </button>
@@ -178,7 +243,7 @@ export function LoiCounterDraft({
           type="button"
           className="btn"
           title="Take-it-or-leave-it. No counter-back — they sign or they walk."
-          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree, bumpPct: cBump, bestFinal: true })}
+          onClick={() => onSend({ ...draft, bestFinal: true })}
         >
           Best &amp; final
         </button>
@@ -236,7 +301,12 @@ export function LoiTermsGrid({
             v={`$${loi.askedRentPsf.toFixed(2)}/sf`
               + (loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : "")
               + (loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : "")
-              + (loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : "")}
+              + (loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : "")
+              /* Only when the term was on the table. A save taken mid-
+                 negotiation can carry no opener at all, hence the fallback. */
+              + (loi.askedTermM !== undefined && loi.askedTermM !== (loi.openTermM ?? loi.termM)
+                ? ` · ${(loi.askedTermM / 12).toFixed(1)} yrs`
+                : "")}
             strong
           />
           <Row
@@ -244,7 +314,10 @@ export function LoiTermsGrid({
             v={`$${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf`
               + (loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : "")
               + ((loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : "")
-              + (loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ` · ${bump.toFixed(2)}%/yr`)}
+              + (loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ` · ${bump.toFixed(2)}%/yr`)
+              + (loi.askedTermM !== undefined && loi.askedTermM !== (loi.openTermM ?? loi.termM)
+                ? ` · ${(loi.termM / 12).toFixed(1)} yrs`
+                : "")}
             strong
           />
         </>
@@ -280,6 +353,11 @@ export function LoiTermsGrid({
         <Row
           k="Your exclusive"
           v={`6% of ${usd(annual * (loi.termM / 12))} of base rent over the term — ${usd(Math.round(annual * (loi.termM / 12) * 0.06))}, inside the number above`}
+          /* An exclusive right to lease is paid on every lease signed while it
+             holds the file. Taking the pen back on one letter — because it is
+             over your desk's signing authority, or because you sign the whole
+             book yourself — moves who decides, not who is paid. */
+          title="Owed whoever signs: the house holds the file on this building, and the exclusive replaces the 4%/2% an in-house deal costs."
         />
       )}
       <Row k="Answer by" v={monthLabel(loi.expiresM)} />

@@ -170,10 +170,23 @@ tower. It is a short list on purpose.
 
 ### Numbers that will bite you
 
-- **Base albedo must stay under ~0.80.** Contrast runs in linear space about a
-  0.18 pivot, so anything over ~0.85 clips to flat white before the light rig
-  touches it. A glaze reads bright because it is *glossy*, not because it is
-  pale. Four of these tables were over it and had to be pulled back.
+- **Base albedo must stay under ~0.80** — and the reason written here for a long
+  time was wrong, which matters because nine trims were once sized against it.
+  It said anything over ~0.85 "clips to flat white". Measured against the real
+  `grade()` (`0.18 * pow(c/0.18, 1.24)` then `aces(c * 1.10)`), albedo 0.85
+  grades to **0.861**; output reaches 0.95 only at albedo **1.55** and 0.99 at
+  **2.65**. Nothing clips below about 3.0.
+  What actually goes wrong is **loss of relief**. The curve compresses, so the
+  same step between a sunlit facet and a shaded one shrinks as the base rises: a
+  0.12 albedo step is worth **0.048** of output at base 0.60, **0.028** at 0.80
+  and **0.011** at 1.26 — a four-fold loss of the only thing carrying the
+  ornament. A pale facade does not blow out, it goes **flat**, which on any
+  family whose subject is low relief in raking light is the worse failure.
+  So the ceiling is unchanged and better founded. A glaze reads bright because it
+  is *glossy*, not because it is pale. Four of these tables were over it and had
+  to be pulled back. And where two multiplies in one branch can land on the same
+  pixel, check them **together** — a lit band over a pale base is a product, not
+  a pair of independent numbers.
 - **Style ids are never compared numerically.** `s < 8` and `s <= 4` used to
   decide floor lines and shopfronts; both were correct for the ids that existed
   and silently wrong for every id added after. Ask by trait, always.

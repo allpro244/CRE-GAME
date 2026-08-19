@@ -1202,6 +1202,10 @@ export function stylePool(v: BuildingVolume): number[] {
     // and for what this chooser cannot read.
     if (y >= 2008 && resi && f >= 6) p.push(S_NEODECO, S_NEODECO);
     if (y >= 2008 && office && f >= 10) p.push(S_NEODECO);
+    // The mid-rise revival types — see the present branch for the citation.
+    if (y >= 2008 && resi && f >= 4) p.push(S_DECOBRICK, S_DECOMETAL);
+    if (y >= 2008 && resi && f >= 8) p.push(S_DECOTERRA);
+    if (y >= 2008 && office && f >= 6) p.push(S_DECOMETAL);
     if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN, S_TILTUP, S_SELFSTOR,
       S_POWERINLINE, S_JRBOX, S_LIFESTYLE, S_LIFESTYLE, S_FASTFOOD, S_PHARMACY,
       S_AUTOPARTS, S_GROCERY, S_RESTAURANT, S_CORNERRETAIL, S_OUTLET);
@@ -1268,9 +1272,36 @@ export function stylePool(v: BuildingVolume): number[] {
   // 2026 keeps its facade, because the facade is a fact about the building
   // rather than about the owner. That is "deco in modern times" delivered for
   // real, without anyone casting hollow terracotta in 2026.
+  // AND IT IS NOT ONE FAMILY, WHICH IS WHAT THE FIRST CUT GOT WRONG. Measured on
+  // the player path with a neutral slate of classes, floors and years from 2004
+  // to 2025, exactly ONE of the seventeen deco families was reachable by a
+  // building somebody puts up new: neodeco. Fifteen were era-gated to before
+  // 1945 and could never be chosen at all. For a family whose whole brief was
+  // "buildable in all of modern times" that is the feature missing.
+  //
+  // The widening is not a preference, it is the same citation. Beyer Blinder
+  // Belle's 200 East 75th Street lists what a revival facade is made of TODAY:
+  // "hand-laid brick, glazed terracotta, limestone, and decorative metalwork",
+  // with "a contemporary rainscreen assembly for terracotta accents". That is
+  // three more families in one sentence — the brick apartment house, the glazed
+  // terracotta, and the pressed-metal spandrel — and unlike neodeco they are
+  // MID-RISE types, so they reach the floor counts a player actually builds at
+  // rather than needing ten storeys before they can be chosen.
+  //
+  // Weighted below neodeco, because the trophy tower is the type the sector is
+  // known for and these are the quieter buildings around it.
   if (resi && f >= 6) p.push(S_NEODECO, S_NEODECO);
   if (resi && f >= 10) p.push(S_NEODECO, S_NEODECO);
   if (office && f >= 10) p.push(S_NEODECO);
+  // Hand-laid brick and decorative metalwork start at the fourth floor, because
+  // 200 East 75th is a mid-rise and so is most of what gets built this way.
+  if (resi && f >= 4) p.push(S_DECOBRICK, S_DECOBRICK, S_DECOMETAL);
+  if (resi && f >= 8) p.push(S_DECOTERRA);
+  if (office && f >= 6) p.push(S_DECOMETAL);
+  // Stripped classicism is still the language of a courthouse and a federal
+  // building, which is the one non-residential corner of the revival that is
+  // not a trophy tower. Rare, because a town builds one.
+  if (!resi && !shop) rare(0.16, 41, S_DECOPWA);
   if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS, S_TILTUP,
     S_LIFESTYLE, S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_FASTFOOD, S_PHARMACY,
     S_GROCERY, S_RESTAURANT, S_CORNERRETAIL, S_SHOWROOM);

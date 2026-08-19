@@ -53,24 +53,37 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 38 as const;
+export const SAVE_VERSION = 39 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
  *
  * A save is `(island, seed, size, build-out)` and the town is REBUILT from it,
  * so anything that changes what a seed produces changes the ground under a
- * campaign's deeds. v38 recuts the plat: the creek centreline no longer
- * U-turns through a park, lot-cutting capsules follow that path, and the
- * park programme is smaller and less frequent (~20% off count and size, more
- * space between greens). The map paints one ribbon per run instead of the
- * capsules themselves. Park trees and walks stay off the painted water.
+ * campaign's deeds. v39 is the plat overhaul, and it moves nearly every lot
+ * line in the town:
  *
- * v37 was convex capsules painted as water — no spike, but a stack of blocks
- * across the green. A save stamped 37 still has that path: opening it here
- * would put every surviving BBL on different ground.
+ *   · A wedge where two surveys or a boulevard met used to be shredded into
+ *     slivers. A stakeable one is now ONE flatiron lot that always builds;
+ *     an unstakeable one is a paved gore, the way a traffic island is paved.
+ *   · The splitter refuses cuts that would leave a lot under eight metres
+ *     wide, and folds sub-minimum scraps into the neighbour they share their
+ *     longest line with.
+ *   · An edge fronting a boulevard reservation pays that clearance once,
+ *     not a second street width on top of it — about thirty lots an island
+ *     that were being erased by a double charge.
+ *   · Creeks bend. The path-tracer preferred the wiggle it had already
+ *     drawn, and the ribbon painter could not draw a curve at all without
+ *     self-intersecting on the inner bank; both are fixed, so a brook is a
+ *     brook and stops slicing the trading floor in half.
+ *   · Boulevard reservations are two carriageways around planted ground
+ *     rather than one field of asphalt, and a radial circus is turfed.
+ *
+ * v38 recut the creek centreline and the park programme. A save stamped 38
+ * still stands on that plat: opening it here would put every surviving BBL
+ * on different ground.
  */
-const ISLAND_GROUND_MOVED_AT = 38;
+const ISLAND_GROUND_MOVED_AT = 39;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 const LEGACY_DRAWN_ISLANDS = new Set(["newalden", "kestrel"]);
 

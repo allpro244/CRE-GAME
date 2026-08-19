@@ -24,6 +24,7 @@ const KIND_STYLE = {
   esplanade: { fill: "#dcded2" },
   paveland: { fill: "#cbc7bb" },
   apron: { fill: "#918e88" },
+  median: { fill: "#a8bd93" },
   park: { fill: "#b7d29f" },
   pond: { fill: "#a9cadf" },
   stream: { fill: "#4e7f96" },
@@ -36,7 +37,7 @@ const KIND_STYLE = {
 };
 // Drawn in this order; anything not listed is skipped (trees, benches, rail
 // and labels are noise at plat scale).
-const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "street", "park", "apron", "pond", "stream", "bridge", "seawall", "quay"];
+const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "street", "park", "apron", "median", "pond", "stream", "bridge", "seawall", "quay"];
 
 export function renderPlatSVG(city, { w = 640 } = {}) {
   const proj = makeProjection(...city.manifest.core);

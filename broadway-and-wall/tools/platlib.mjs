@@ -118,7 +118,9 @@ export function measurePlat(city) {
     if (f.geometry?.type !== "Polygon") continue;
     const k = f.properties?.kind;
     const a = Math.abs(ringArea(f.geometry.coordinates[0].map(P)));
-    if (k === "pavement") pavementA += a;
+    // A median is programmed ground, not a void — it counts as city, not road.
+    if (k === "median") blockA += a;
+    else if (k === "pavement") pavementA += a;
     else if (k === "block") blockA += a;
     else if (k === "apron") { pavedVoid += a; if (a > largestVoid) largestVoid = a; }
   }

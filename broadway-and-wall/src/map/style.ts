@@ -401,6 +401,19 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#86817a" },
       },
       {
+        // THE MALL BETWEEN THE CARRIAGEWAYS. A grand boulevard is two roadways
+        // either side of planted ground, not one field of asphalt — the
+        // generator now cuts the reservation that way and this is the green in
+        // the middle of it. A shade duller and drier than a park's lawn: it is
+        // a median under allée trees, mown but walked over, and it must not
+        // read as somewhere you could sit.
+        id: "median",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "median"],
+        paint: { "fill-color": "#a8bd93" },
+      },
+      {
         // timber decking, with a shadowed edge so the pier stands proud of
         // the water instead of floating on it
         id: "piers",

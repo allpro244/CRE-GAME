@@ -1,4 +1,46 @@
-# Baseline attribution — post #63 merge
+# Baseline attribution — the plat overhaul
+
+**Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
+**Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
+
+`pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
+
+---
+
+## This ruler: the plat overhaul (SAVE_VERSION 39)
+
+The generator was cutting a town nobody would survey. Wedges where two
+surveys or a boulevard met were shredded into slivers; boulevard
+reservations painted as single fields of asphalt up to 112,000 sq m; an
+edge fronting a reservation paid a street width twice, erasing about
+thirty lots an island; creeks ran coast to coast dead straight through the
+trading floor; and the core-to-fringe height gradient was worth about two
+floors against an ambition draw that swung sixty per cent, so downtown
+fabric equalled fringe fabric to the eye.
+
+All of it recut lots, so the ground moved and old generated campaigns are
+refused. Measured on the twelve pinned seeds of `pnpm plat`: sliver lots
+0.6% -> 0.0%, spikes 0.1% -> 0.0%, largest unprogrammed apron 111,936 ->
+10,552 sq m, stream meander 0.022 -> 0.060 (the "ruler, not a brook" flag
+cleared), inner/outer floor gradient 1.73 -> 2.49, lots +312 across the
+sweep. Zero degenerate geometry, the one hard gate. Not an engine `rng()`
+re-roll — citygen has its own salted streams — though the plat change does
+re-roll citygen's own shared stream, which is what a ground move is.
+Conservation stayed green (1,936 months, up from 1,232: the bot trades more
+on a plat with more lots on it).
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `city.employed` (+30%) · `city.population` (+27%) · `city.floorAreaM` (+10%) | 312 more lots and genuinely taller cores | More standing stock carries more jobs and people |
+| `land.p90` (+51%) vs `land.med` (-11%) | The height gradient is real now: heat scales the base term instead of adding two floors to noise | The land curve SPREAD — downtown dearer, fringe cheaper, which is what a gradient does |
+| `rentIdx.office` (+35%) | Office concentrates where heat is, and heat now builds | Follows the fabric |
+| `rentIdx.retail` (+10%) vs `rentIdx.multifamily` (-16%) | Class corridors: retail wants frontage (scarcer), housing fills mid-block (more of it) | Follows the corridor weighting |
+| `dev.affordableLotShare` (-26%) | Follows `land.p90` | Fewer lots pencil at the top of the curve |
+| `vac.industrial` (-13%) · `rail.vac.industrial.lo` (+155%) | Yards seat on the creek, and the creek moved | Follows the plat |
+
+---
+
+## Previous ruler chain — post #63 merge
 
 **Ruler commit:** regenerated on `cursor/consolidate-open-prs-2de8` after folding #102/#104/#105/#106 (`SAVE_VERSION` 38).  
 **Previous ruler:** `664711a` (smaller parks, dry park props, v38).

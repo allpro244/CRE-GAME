@@ -9,13 +9,20 @@ export interface BuildingVolume {
   b: string;   // bbl ("" for decorative props like ships and cranes)
   c: string;   // asset class
   y: number;   // year built
-  t: number;   // tone jitter 0-4
+  t: number;   // district tone family 0-4 — the SAME derivation the ground's
+               //   `dt` uses (FNV of the district name), so a building's
+               //   masonry family agrees with the pavement it stands on. It
+               //   was lotNo % 5, which striped 1,2,3,4,0 down every block
+               //   face and gave the city its candy-quilt roofs.
   f: number;   // floors (whole building)
   z0: number;  // base meters
   z1: number;  // top meters
   d: number;   // 1 = decorative
   k?: number;  // 1 = vacant lot (dress with gravel + fence)
   ds?: number; // demand 0-100, vacant-lot character (downtown vs fringe)
+  zn?: number; // vacant lots only — zoning first letter, so a bare lot is
+               //   dressed by what it is zoned for: 1 = R (grass, hedge),
+               //   2 = M (scrub, broken fence), absent = commercial (gravel).
   x?: number;  // 1 = this volume is the ROOF of its building, not a setback
                //     terrace under it. Bulkheads, masts and stepped crowns
                //     go here and nowhere else.

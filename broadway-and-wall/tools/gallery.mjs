@@ -37,7 +37,7 @@ for (const seed of SEEDS) {
 
 const html = `<!doctype html><meta charset="utf-8"><title>plat gallery — ${SIZE}</title>
 <style>body{background:#2b2b28;margin:0;padding:14px;font-family:Georgia,serif}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start}
 .card{background:#fff;border-radius:4px;overflow:hidden}
 .card svg{display:block;width:100%;height:auto}</style>
 <div class="grid">${cards.map((c) => `<div class="card">${c.svg}</div>`).join("\n")}</div>`;

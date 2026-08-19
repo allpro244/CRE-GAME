@@ -231,6 +231,17 @@ export interface LOI {
    * interrupt modal shows these even while the agent holds the book.
    */
   referred?: boolean;
+  /**
+   * THE TERM THEY CAME IN ASKING FOR, once the term itself is negotiable.
+   * `termM` doubled as both "what they want" and "what is on the paper", which
+   * is fine until the landlord counters the length: after that the opener is
+   * the only record of the tenant's own preference, and the preference is what
+   * decides whether they wear the change. Absent on a letter nobody has
+   * countered — read it as `openTermM ?? termM` everywhere.
+   */
+  openTermM?: number;
+  /** The term the landlord last asked for, for the final-conversation grid. */
+  askedTermM?: number;
 }
 
 /**
@@ -297,6 +308,13 @@ export interface Facility {
   arrearsMs?: number;
   /** The month they accelerated. A receiver sells the whole pool three months later. */
   accelM?: number;
+  /**
+   * THE MONTH THE POOL'S MATURITY WAS CALLED, opening the same cure window a
+   * single mortgage has always had. A crossed facility used to accelerate in
+   * the tick it matured — no notice, no desk, no extension — which made it the
+   * one loss path in the game with nothing behind it.
+   */
+  noticedM?: number;
 }
 
 export interface Loan {
@@ -2490,6 +2508,16 @@ export interface GameState {
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
   exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
   taxesPaid: number;
+  /**
+   * THE LOSS THAT SHELTERS NEXT YEAR. Depreciation exists to make a paper loss
+   * out of a property that pays cash, and the whole point of the loss is that
+   * it carries: a development year or a bad year banks it and it shelters the
+   * income that follows. January used to take `max(0, taxable)` and throw the
+   * negative away, so a sheltered year silently became a wasted one and the
+   * next bill arrived at full freight. Carried forward here, in dollars of
+   * unused loss. Absent on older saves and read as zero.
+   */
+  taxLossCarry?: number;
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
@@ -2549,6 +2577,23 @@ export interface GameState {
   agentFloor?: number;
   /** Auto-pass (kill) letters scoring under this share of market. */
   agentPassBelow?: number;
+  /**
+   * SIGNING AUTHORITY, IN SQUARE FEET. A leasing manager's mandate in life is
+   * bounded by the size of the deal, not only by its price: under the limit
+   * the desk signs, over it the letter goes to the principal whatever the
+   * mandate says. Applies to EVERY delegation — the firm agent, a building's
+   * covering exclusive, renewal management — because it is an authority limit
+   * on the firm, not a setting on one channel. Undefined = no size limit,
+   * which is how every save before it behaved.
+   */
+  deskMaxSf?: number;
+  /**
+   * NOBODY SIGNS BUT YOU. One switch that overrides every delegation, for a
+   * principal who wants the whole rent roll in their own hand. The desks still
+   * tour space and still charge their fee for the ones they bring in; what
+   * they lose is the pen.
+   */
+  signOwnAll?: boolean;
   /** Minimum tenant credit the desk may auto-sign (0 any · 1 solid · 2 strong). */
   agentMinCredit?: Credit;
   /**

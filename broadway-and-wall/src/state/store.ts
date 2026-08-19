@@ -153,7 +153,7 @@ interface AppState {
   /** Blind off-market bid — a number only; financing comes after they take it. */
   bidBlind: (bbl: string, bid: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; termM?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
   /** Answer a tenant's mid-lease relief letter. */
   answerAsk: (id: number, action: "grant" | "decline") => void;
   /**
@@ -295,6 +295,13 @@ interface AppState {
   setTeamLeasing: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
   /** Auto-sign at or above this share of market (net effective). */
+  /**
+   * Signing authority by size: the desk may sign a letter this big or smaller,
+   * anything larger comes to you. 0 clears the limit.
+   */
+  setDeskMaxSf: (sf: number) => void;
+  /** Take the pen back entirely — no delegation signs anything. */
+  setSignOwnAll: (on: boolean) => void;
   setAgentFloor: (f: number) => void;
   /** Auto-pass below this share; between pass and floor is referred back. */
   setAgentPassBelow: (f: number) => void;
@@ -1418,6 +1425,24 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
+  setDeskMaxSf: (sf) => {
+    const { game } = get();
+    if (!game) return;
+    // Zero means "no limit" rather than "nobody may sign anything" — the
+    // second reading is what setSignOwnAll is for, and a dial that silently
+    // became a master switch at one end would be two controls in one.
+    const lim = sf > 0 ? Math.round(sf) : undefined;
+    const next = { ...game, deskMaxSf: lim };
+    set({ game: next });
+    void persist(next);
+  },
+  setSignOwnAll: (on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, signOwnAll: on || undefined };
+    set({ game: next });
+    void persist(next);
+  },
   setAgentFloor: (f) => {
     const { game } = get();
     if (!game) return;

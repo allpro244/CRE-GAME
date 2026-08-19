@@ -10481,28 +10481,39 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private landBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
   /**
-   * THE SHEET THE SHADOWS LAND ON, sized to the city rather than to a guess.
+   * THE SHEET THE SHADOWS LAND ON — recentred on the city, not resized to it.
    *
-   * It was a 3,800 x 3,200 m plane pinned to (0, 150) — the old assumption that
-   * every island is small and sits near the origin. Both halves of that are now
-   * false: the shipped Great City is about 6.4 km across, so it has been
-   * hanging off this sheet and losing its ground shadows at the edges for as
-   * long as that size has existed, and a written-down Manhattan is 4 x 4.7 km
-   * around a core that is nowhere near the origin.
+   * It was a 3,800 x 3,200 m plane translated to (0, 150), and the second half of
+   * that was a real bug: the origin used to be every island's own centre, and it
+   * is `manifest.core` now, which for a written-down Manhattan is Wall Street
+   * with eight kilometres of island north of it. So the sheet sat over the wrong
+   * part of the map entirely.
    *
-   * Fitted to the same land ring the shadow frustum fits to, with a generous
-   * margin so a low sun's shadows still have ground to fall on past the
-   * coastline. Falls back to the old box when there is no land ring, which is
-   * the case in a bare unit test.
+   * I FIRST TRIED SIZING IT TO THE COASTLINE AND THAT WAS WRONG, which is worth
+   * writing down because the failure was invisible in every small-city shot and
+   * spectacular in a big one. The shadow frustum above is fitted in the LIGHT's
+   * space, so its ground footprint is a sheared parallelogram, not the
+   * axis-aligned land box — a plane grown to that box reaches outside the depth
+   * map's projection, every fragment out there reads as fully lit, and the sun
+   * sheen laid over it paints the excess solid white. It produced a white
+   * quadrilateral over the whole harbour at the 59th Street extent, and because
+   * it affected every city it also appeared on a generated Great City, which is
+   * what briefly convinced me it was not mine.
+   *
+   * So: same size it always was, positioned where the city actually is. That
+   * keeps it inside the frustum for the sizes it was designed for and changes
+   * nothing about how it looks. The limitation it has always had is unchanged and
+   * is now stated rather than discovered: on a city wider than about 3.8 km — the
+   * shipped Great City at 6.4 km, and every Manhattan extent — the outer parts
+   * get no ground shadow. Fixing that properly means clipping the sheet to the
+   * frustum's own footprint or fading the shader where the lookup leaves range,
+   * and it is a graphics job rather than a city one.
    */
   private groundPlane(z: number): THREE.PlaneGeometry {
     const b = this.landBox;
-    if (!b) return new THREE.PlaneGeometry(3800, 3200).translate(0, 150, z);
-    const MARGIN = 900;                       // room for a December shadow to land
-    const w = Math.max(1200, b.x1 - b.x0 + MARGIN * 2);
-    const h = Math.max(1200, b.y1 - b.y0 + MARGIN * 2);
-    return new THREE.PlaneGeometry(w, h)
-      .translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, z);
+    const cx = b ? Math.round((b.x0 + b.x1) / 2) : 0;
+    const cy = b ? Math.round((b.y0 + b.y1) / 2) : 150;
+    return new THREE.PlaneGeometry(3800, 3200).translate(cx, cy, z);
   }
 
   // One-time sun depth pass — the city is static, so shadows are free at

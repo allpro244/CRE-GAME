@@ -686,8 +686,8 @@ body {
 /* 2200 was the width the readouts needed while they shared row 1 with the
    brand and the right-hand island, i.e. a width almost nobody plays at, so
    Market and Vacant lots were gated out of the game. On their own row the
-   strip measures 940px used of 1408 at 1440 — 468 of slack against the 200
-   these two want, and 314 left over on a run carrying a fund vehicle and a
+   strip measures 939px used of 1408 at 1440 — 469 of slack against the 200
+   these two want, and 115 still spare on a run carrying a fund vehicle and a
    drawn line, which are the two things that widen it. */
 @media (min-width: 1440px) { .tstat-d3 { display: flex; } }
 @media (max-width: 1360px) {
@@ -1469,18 +1469,18 @@ body {
 .brand { grid-column: 1; grid-row: 1; min-width: 0; display: flex; align-items: center; }
 .topbar-game { display: contents; }
 /* THE READOUTS GET A ROW OF THEIR OWN, AT EVERY WIDTH.
-   Arithmetic, not taste. The vital strip reserves 710px of readout — 864 with
-   a fund vehicle and a drawn line — plus ~200 for net worth and Book, while
-   the brand (382-461px measured across seeds: firm name plus city) and the
-   right-hand island (363-410) leave column 2 about 470px at 1440. Sharing
-   row 1 was therefore unsatisfiable at every common width, and the summary
-   centres itself, so it spilled BOTH ways: measured at 1366-1600 the date
-   printed on top of the town name while the clip box ate Book, and net worth
-   never rendered at all below 1680.
+   Arithmetic, not taste. Measured: the vital strip is 820px with net worth in
+   it and 1003 once the delta chips and the spark appear, the stats box wants
+   another 103-307, and the brand (415-461 across seeds — firm name plus city)
+   and the right-hand island leave column 2 about 610px at 1440. Sharing row 1
+   was therefore unsatisfiable at every width anyone plays at, and the summary
+   centres itself, so it spilled BOTH ways: at 1440 and 1600 the date printed
+   on top of the town name while the clip box cut Book to 15px of its 103, and
+   net worth did not render at all below 1680.
    A row of its own is this bar's own documented trade — grow taller, never
    overlap, never bury Advance — and --topbar-h is measured and published, so
-   the eight rules hanging off the bar follow it down. 132px at every width,
-   which is the bar 1280 has always drawn. */
+   the eight rules hanging off the bar follow it down. The bar measures 132px
+   to 1460 and 136 above it, which is the bar 1280 has always drawn. */
 .topbar-summary {
   grid-column: 1 / -1; grid-row: 2;
   min-width: 0; display: flex; align-items: center; justify-content: flex-start;

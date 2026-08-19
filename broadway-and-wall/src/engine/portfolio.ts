@@ -557,7 +557,10 @@ export function portfolioSettlement(
       bbl, address: rec?.address ?? bbl, cls: rec?.class ?? "—",
       mark: marks[i], price: alloc, ...p,
     });
-    if (p.release > 0 && work.facility) {
+    // The deed leaves the pool whether or not its allocated share came to
+    // anything — a conveyed building is not collateral, and leaving a sold
+    // address on the schedule is the collateral walk `pnpm facility` watches for.
+    if (work.facility?.bbls.includes(bbl)) {
       work.facility.balance = Math.max(0, work.facility.balance - p.release);
       work.facility.bbls = work.facility.bbls.filter((b) => b !== bbl);
       if (work.facility.balance <= 0) work = { ...work, facility: undefined };
@@ -614,7 +617,7 @@ export function acceptPortfolioBid(
     cashToYou += leg.toSeller;
     soldGross += leg.toSeller + leg.kick + leg.breakFee;
     feeExp += leg.kick + leg.breakFee;
-    if (leg.release > 0 && next.facility) {
+    if (next.facility?.bbls.includes(bbl)) {
       next.facility.balance = Math.max(0, next.facility.balance - leg.release);
       next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
       if (next.facility.balance <= 0) delete next.facility;

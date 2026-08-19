@@ -805,11 +805,12 @@ export function PortfolioCap({ q, ask, bbls }: { q: PortfolioQuote; ask: number;
  * comes off `portfolioSettlement`, which is the schedule the close itself
  * runs: there is no second waterfall on this page.
  */
-export function PortfolioLegList({ book }: { book: PortfolioSettlement }) {
+export function PortfolioLegList({ book, caption }: { book: PortfolioSettlement; caption?: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   return (
     <div className="mini-list" style={{ marginTop: 8 }}>
+      {caption && <div className="hint" style={{ margin: 0 }}>{caption}</div>}
       {book.legs.map((l) => {
         const rec = resolveRec(parcels, game, l.bbl);
         const net = l.toSeller - l.tax;
@@ -978,7 +979,10 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
           {!inbound && <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />}
           {bid && <PortfolioProceeds book={book} />}
         </div>
-        <PortfolioLegList book={book} />
+        <PortfolioLegList book={book}
+          caption={bid
+            ? undefined
+            : `Split at your ask of ${usd(live.ask)} — the allocation moves with whatever number clears.`} />
         {bid ? (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
@@ -1054,6 +1058,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                 premium instead, and a premium you cannot see coming is a
                 punishment rather than a decision. Struck at the indication,
                 through the same schedule the close runs. */}
+            <Row k="If it clears at the ask below" v={usd(ask)} strong />
             <PortfolioProceeds book={preview} />
           </div>
           <div className="hint">

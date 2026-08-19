@@ -59,6 +59,11 @@ function incomingDeposits(s: GameState, bbl: string): number {
   return paper.roll.reduce((a, t) => a + (t.deposit ?? 0), 0);
 }
 
+// EXIT TAX IS PERSONAL TAX. These are the SPONSOR'S rates, not a firm's:
+// the deed sits in a pass-through, so a sale lands on the owner's own return
+// and there is no entity-level layer to reorganise away. Same footing as the
+// blended operating rate in tax.ts — different rates because the code taxes
+// different things, not because a different taxpayer is writing the cheque.
 export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
 export const RECAPTURE_RATE = 0.25;   // §1250: depreciation comes back at 25%
 export const SALE_BROKERAGE = 0.015;  // the sell-side fee
@@ -2541,6 +2546,10 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
   // every dollar of it comes back at 25% before a cent of the real
   // appreciation is taxed at the long-term rate. A player who levers hard and
   // depreciates fast has been borrowing against this the whole time.
+  //
+  // `deprTaken` is what January actually allowed on this deed, on the improve-
+  // ment share the assessment ratio gave it — so the shelter and the bill it
+  // creates are two readings of one allocation, not two allocations.
   const recapture = Math.max(0, Math.min(depr, gain));
   const appreciation = Math.max(0, gain - recapture);
   const tax = Math.round(recapture * RECAPTURE_RATE + appreciation * CAP_GAINS_RATE);

@@ -9,7 +9,7 @@ import {
   balanceSnapshotView, buildBalanceSheet, booksMonthAsYear,
   type BalanceSheetView,
 } from "@/engine/books";
-import { taxAppealQuote } from "@/engine/tax";
+import { taxAppealQuote, INCOME_TAX_RATE, NOL_SHELTER_CAP } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
 import { NWChart, Big } from "@/ui/panels/shared";
@@ -53,6 +53,9 @@ export function BooksPage() {
         )}
         <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
         <Big label="Taxes paid, lifetime" value={usd(game.taxesPaid ?? 0)} />
+        {(game.taxLossCarry ?? 0) > 0 && (
+          <Big label="Tax loss banked" value={usd(game.taxLossCarry ?? 0)} />
+        )}
         <Big label="Exits" value={String(game.exits.length)} />
       </div>
       <NWChart data={game.nwHistory} />
@@ -633,7 +636,7 @@ export function IncomeStatement() {
               <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
               <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
               <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
-              <L k="Taxes" v={-cur.taxes} sub note="income and capital gains" />
+              <L k="Taxes" v={-cur.taxes} sub note={`${(INCOME_TAX_RATE * 100).toFixed(0)}% blended personal rate on income · §1250 recapture and gains on exits`} />
               <L k="Change in cash" v={bottom(cur)} strong rule />
             </tbody>
           </table>
@@ -649,6 +652,19 @@ export function IncomeStatement() {
               if (cover !== null) parts.push(`Portfolio coverage ran ${cover.toFixed(2)}× — NOI over debt service, across everything you own.`);
               if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash fell because ${usd(cur.dev)} went into construction. That is not a loss; it is a building that is not finished.`);
               if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} of tax against ${usd(cur.sold)} of disposals — the price of selling rather than exchanging.`);
+              // THE SHELTER, SAID OUT LOUD. Depreciation is designed to throw a
+              // paper loss, and the loss carries forward with no expiry — so a
+              // development year or a soft year is banked capacity, not a
+              // wasted one. A player who cannot see the bank cannot plan the
+              // year they spend it in.
+              const carry = game.taxLossCarry ?? 0;
+              if (carry > 0) {
+                parts.push(
+                  `${usd(carry)} of tax loss is banked. It carries forward with no expiry and covers up to `
+                  + `${(NOL_SHELTER_CAP * 100).toFixed(0)}% of a year's taxable income, so a good year still pays `
+                  + `something — but the first ${usd(carry)} of income after this comes free.`,
+                );
+              }
               return parts.join(" ");
             })()}
           </div>

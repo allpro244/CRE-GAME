@@ -38,7 +38,7 @@ import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
-import { tickTaxAppeals } from "./tax";
+import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -737,8 +737,8 @@ function tickMonth(
       const v = ownedHoldingValue(s, parcels, h);
       const prior = h.assessed ?? h.costBasis;
       h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
-      // taxable income: NOI less interest less straight-line depreciation
-      // (2.6%/yr on the 80% of basis that's improvements, not land)
+      // taxable income: NOI less interest less straight-line depreciation on
+      // the improvement half of the basis.
       // Taxable income includes the ground coupon on a leased fee — same deed
       // NOI the header and the debt page use. Vacant freehold dirt still has
       // no taxable NOI here (carry is not income).
@@ -749,19 +749,50 @@ function tickMonth(
       // years and everything else 39, which is why an apartment building
       // shelters materially more income than an office block of the same
       // price, and why the recapture bill on the way out is larger too.
-      const improvements = h.costBasis * 0.8;
-      const life = rec.class === "multifamily" ? 27.5 : 39;
+      //
+      // The improvement share is ALLOCATED, not assumed — see depreciableBasis
+      // in tax.ts. It was a flat 80% of basis on every deed, which over-
+      // sheltered a downtown tower standing on half its own price and under-
+      // sheltered a shed on cheap ground. `v` is reused as the denominator so
+      // the split reads the same mark the assessment two lines above does.
+      const improvements = depreciableBasis(rec, s.econ, h.costBasis, v);
+      const life = deprLifeYrs(rec.class);
       const deprCapacity = improvements - (h.deprTaken ?? 0);
-      const depr = rec.class === "land" ? 0 : Math.max(0, Math.min(improvements / life, deprCapacity));
+      const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       taxable += noi - interest - depr; // losses net against gains across the portfolio
     }
-    const tax = Math.round(Math.max(0, taxable) * 0.25);
-    if (tax > 1000) {
-      s.cash -= tax;
-      s.taxesPaid = (s.taxesPaid ?? 0) + tax;
-      logBooks(s, "taxes", tax);
-      s.news.unshift({ q: s.month, kind: "info", text: `Tax season: $${(tax / 1e6).toFixed(2)}M due on last year's portfolio income (after interest and depreciation).` });
+    // THE LOSS CARRIES. Netting happens in settleIncomeTax so the cheque, the
+    // news line and the Books page are one answer — see tax.ts for the 80%
+    // §172(a) cap and why there is no expiry.
+    const yr = settleIncomeTax(taxable, s.taxLossCarry ?? 0);
+    const priorCarry = Math.max(0, s.taxLossCarry ?? 0);
+    s.taxLossCarry = yr.carry;
+    const M = (n: number) => `$${(n / 1e6).toFixed(2)}M`;
+    if (yr.tax > 1000) {
+      s.cash -= yr.tax;
+      s.taxesPaid = (s.taxesPaid ?? 0) + yr.tax;
+      logBooks(s, "taxes", yr.tax);
+      // A shelter the player cannot see is a shelter they will not plan
+      // around, so the line says what the carry did and what is left of it.
+      const shel = yr.sheltered > 1000
+        ? ` ${M(yr.sheltered)} of carried-forward loss went against it`
+          + (yr.carry > 1000 ? `, ${M(yr.carry)} still banked.` : `, and the bank is now empty.`)
+        : yr.carry > 1000
+          ? ` ${M(yr.carry)} of banked loss could not be used — a carryforward only reaches 80% of a year's income.`
+          : "";
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Tax season: ${M(yr.tax)} due on last year's portfolio income (after interest and depreciation).${shel}`,
+      });
+    } else if (yr.carry > priorCarry + 100_000) {
+      // A sheltered year used to pass in silence, which is how a player learns
+      // nothing from the best tax outcome the business offers.
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Tax season: no income tax due — depreciation and interest ran the book to a paper loss. `
+          + `${M(yr.carry - priorCarry)} banked against future income; ${M(yr.carry)} carried forward in all.`,
+      });
     }
   }
   // Appeal decisions follow the annual roll so a successful challenge is not

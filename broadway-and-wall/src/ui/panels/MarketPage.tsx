@@ -200,6 +200,10 @@ export function NewsText({ text }: { text: string }) {
 export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: boolean }[] = [
   { key: "addr", label: "Property" },
   { key: "cls", label: "Class" },
+  // Vintage is half of what a class label means — a 1912 loft and a 1994 box
+  // are not the same building at the same $/sf. Sortable because age is a
+  // filter a buyer actually runs; dirt sorts to the bottom with no year.
+  { key: "yr", label: "Built", num: true, desc: true },
   { key: "area", label: "Building", num: true, desc: true },
   { key: "ask", label: "Ask", num: true, desc: true },
   { key: "psf", label: "$/sf", num: true },
@@ -632,6 +636,10 @@ export function MarketPage() {
                 const v: Record<string, number | string> = {
                   addr: rec?.address ?? "",
                   cls: rec ? useLabel(rec) : "",
+                  // 0 for dirt and for a cleared lot: `built` reads the
+                  // resolved record, so a delivered tower sorts on its
+                  // completion year and a razed lot carries no year at all.
+                  yr: built && rec ? rec.yearBuilt : 0,
                   area: rec ? (built ? rec.bldgArea : rec.lotArea) : 0,
                   ask: li.ask,
                   psf,
@@ -721,6 +729,11 @@ export function MarketPage() {
                       )}
                     </td>
                     <td>{useLabel(rec)}</td>
+                    {/* Same dash as the city register: a lot with nothing on
+                        it has no year, and neither has one that was razed —
+                        `built` is read off the resolved record, which carries
+                        the delivery year of anything finished since. */}
+                    <td className="num">{built && rec.yearBuilt ? rec.yearBuilt : "—"}</td>
                     <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
                     <td className="num">{usd(li.ask)}</td>
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>

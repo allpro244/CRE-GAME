@@ -36,7 +36,7 @@ import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
@@ -1793,6 +1793,10 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // A named developer reads the same comps the anonymous city does: one
   // increment above the block's cornice datum, not the zoning envelope.
   const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead);
+  // ...and he can go over it by buying the permission. Same rule as the
+  // anonymous city: the taller scheme stands only if it clears the same
+  // hurdle carrying the entitlement premium. See entitlementPremium in dev.ts.
+  const wantedFl = floors;   // what the envelope asked for, before the cornice
   if (floors > infill) {
     floors = infill;
     sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
@@ -1810,7 +1814,28 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
       return Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, cond) * hair);
     })()
     : undefined;
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
+  // ...AND HE CAN GO OVER THE CORNICE BY BUYING THE PERMISSION. Taken only
+  // when the taller scheme clears the SAME hurdle while carrying the premium,
+  // so it never costs a project that would have gone ahead by right. A
+  // redevelopment's opportunity cost and an entitlement premium are both
+  // basis and therefore ADD: the premium is the price of the permission on
+  // top of the writedown on what is standing, not an alternative to it.
+  // See entitlementPremium in dev.ts.
+  const ownBasis = opp ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
+  let entitlePaid = 0;
+  {
+    const ceilFl = cap !== undefined ? Math.min(wantedFl, cap) : wantedFl;
+    if (ceilFl > floors) {
+      const tallSf = Math.max(3000, Math.round((rec.lotArea * 0.62 * ceilFl) / 100) * 100);
+      const premium = entitlementPremium(ceilFl, infill, tallSf, ownBasis, s.econ.costIdx ?? 1);
+      const tall = premium > 0
+        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, 0.62, ownBasis + premium)
+        : null;
+      if (tall?.clears) { floors = ceilFl; sf = tallSf; entitlePaid = premium; }
+    }
+  }
+  const basisOverride = entitlePaid > 0 ? ownBasis + entitlePaid : opp;
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, basisOverride);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly

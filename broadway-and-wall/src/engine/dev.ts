@@ -2966,6 +2966,69 @@ export function cityInfillCap(
 }
 
 /**
+ * THE PRICE OF PERMISSION — what it costs to build above the cornice.
+ *
+ * `cityInfillCap` was a WALL. A scheme one floor over the block's datum-plus-
+ * step was not expensive, it was impossible, and the pro forma never got to
+ * judge it. That is the last rule standing where an economy belongs, and it
+ * is the reason granting more envelope did nothing: after the planning board
+ * was fixed the legal median went 11 floors to 14 and the cornice went from
+ * binding 59.1% of lots to 74.8%, because paper the crane cannot reach is not
+ * supply.
+ *
+ * In life the line is not "no", it is "not by right". Up to the cornice a
+ * scheme is as-of-right: file, wait a few months, build. Above it you are in
+ * discretionary review — a rezoning, a special permit, a variance — and that
+ * is a real cost with three parts, all of which this charges:
+ *
+ *   DIRECT. Counsel, planners, traffic and environmental work, the exactions
+ *   that buy the votes. US practice quotes this per BUILDABLE foot and it
+ *   runs about $5-15/bsf for a straightforward rezoning, more where an EIS or
+ *   a community-benefits package is involved. $6 is the low end of that band
+ *   because most of what happens here is modest overage, and it scales with
+ *   how far above context the scheme reaches.
+ *
+ *   TIME. NYC's ULURP is a statutory seven months AFTER certification and the
+ *   pre-certification phase routinely runs a year or two; 12-30 months all in
+ *   is the ordinary range. A site earns nothing while it waits, so the whole
+ *   basis carries at the 12% the trade applies to land — the same rate
+ *   `BUILD_DISCOUNT` and `WAIT_DISCOUNT` in value.ts are struck at.
+ *
+ *   RISK. Applications fail, and the ones that fail have already spent the
+ *   money. A developer who wins six of ten funds the four out of the six, so
+ *   the honest charge is the cost DIVIDED BY the odds — which is how an
+ *   entitlement business is actually underwritten, and it means no new rng()
+ *   draw and no re-rolled century. Odds fall as the ask gets further from
+ *   what is standing: routine overage is granted most of the time, a scheme
+ *   at three times the datum is a fight.
+ *
+ * The premium lands on the LAND BASIS, which is where it belongs — you are
+ * buying the right to build, and that is a cost of the dirt, not of the
+ * concrete. The hurdle then decides, which is the entire point: height stops
+ * being a rule and becomes a number the pro forma can argue with.
+ *
+ * NOT MODELLED HERE: the delivery-timing half. Real discretionary review also
+ * makes the space ARRIVE later, which is part of why supply overshoots its
+ * cycle. This charges the wait as carry and leaves the schedule alone.
+ */
+const ENTITLE_PSF = 6;          // $/buildable sf, opening-year dollars
+const ENTITLE_DISCOUNT = 0.12;  // the rate the trade applies to land
+
+export function entitlementPremium(
+  floorsWanted: number, byRight: number, gsf: number,
+  landBasis: number, costIdx: number,
+): number {
+  if (!(floorsWanted > byRight) || !(byRight > 0) || !(gsf > 0)) return 0;
+  const reach = Math.min(2, (floorsWanted - byRight) / byRight);
+  const direct = gsf * ENTITLE_PSF * Math.max(0.2, costIdx) * (1 + 1.2 * reach);
+  const months = 12 + 9 * reach;
+  const carry = (Math.max(0, landBasis) + direct)
+    * (Math.pow(1 + ENTITLE_DISCOUNT, months / 12) - 1);
+  const odds = clamp(0.88 - 0.30 * reach, 0.30, 0.88);
+  return (direct + carry) / odds;
+}
+
+/**
  * WHAT GETS BUILT HERE — AND THE CITY REZONES WHEN A SECTOR LEAVES.
  *
  * This was five lines of pure zoning, and the first one, `M -> industrial`,
@@ -4174,9 +4237,25 @@ export function tickCityGrowth(
     // three-storey town broke ground at a median of fifteen floors. The datum
     // cap is what makes twenty years of growth read like twenty years.
     const infill = cityInfillCap(s, parcels, rec, maturity, lead);
+    // ...AND IT PAYS TO GO OVER IT WHEN THE PRO FORMA SAYS SO. The cornice is
+    // by-right; above it is discretionary review with a price on it. A
+    // speculative developer maximises feet subject to the margin, so the
+    // taller scheme is taken when it still clears the SAME hurdle carrying
+    // the entitlement premium — never at the cost of a project that would
+    // have gone ahead by right.
+    let entitleBasis: number | undefined;
     if (floors > infill) {
-      floors = infill;
-      sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+      const base = s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
+      const premium = entitlementPremium(floors, infill, sf, base, s.econ.costIdx ?? 1);
+      const tall = premium > 0
+        ? underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, base + premium)
+        : null;
+      if (tall?.clears) {
+        entitleBasis = base + premium;
+      } else {
+        floors = infill;
+        sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+      }
     }
     // …and where it IS a shop, it is two storeys, with the area cut to match
     // rather than the same square footage squeezed into a taller-than-legal
@@ -4188,7 +4267,7 @@ export function tickCityGrowth(
     }
     // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
     // financing, lease-up reserve, NOI and required margin the player sees.
-    const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+    const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, entitleBasis);
     if (!underwriting?.clears) continue;
     const plan = underwriting.plan;
     sf = plan.sf;

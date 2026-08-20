@@ -2787,15 +2787,94 @@ export function setOpsPolicy(
  * The PLAYER is deliberately not capped: zoning is their envelope and
  * overbuilding their own market is their risk to take.
  */
-export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: string): number {
-  let datum = 0;
+/**
+ * A COMP SET IS WALKING DISTANCE, NOT A PROPERTY LINE.
+ *
+ * The datum used to read only parcels sharing this parcel's `block` id — a
+ * mean of 3.4 lots on this island. So a lot facing a twenty-storey tower
+ * across the street inherited nothing from it, and the cornice restarted from
+ * zero at every kerb. Measured over 3 seeds x 50 years: block datum p50 3
+ * floors against a legal envelope p50 11, with the cornice (not zoning)
+ * binding on 72% of lots. Height could not propagate.
+ *
+ * That is not how the comp set works. A developer arguing for eighteen storeys
+ * points at what is standing within a few streets, and a lender underwrites
+ * the same set. The adjustment for distance is the appraiser's own: a tower on
+ * your own block is a full comparable, one three hundred metres away is worth
+ * something and less. So the datum is the best DISTANCE-ADJUSTED comparable
+ * rather than the tallest thing sharing a lot line — one mechanism, not a
+ * blend of two.
+ *
+ * 300m is about a four-minute walk and is the radius the retail and station
+ * layers in this engine already treat as "here".
+ *
+ * NEUTRAL IN A FLAT CITY BY CONSTRUCTION. Where nothing nearby is taller than
+ * the home block, the home block's own weight of 1 wins and the number is
+ * exactly what it was. It moves only where height already varies, which is
+ * where a real comp set would have found the argument.
+ */
+const COMP_RADIUS_M = 300;
+const M_PER_DEG_LAT = 111_320;
+type BlockGeo = {
+  byBlock: Map<string, string[]>;
+  neigh: Map<string, { b: string; w: number }[]>;
+};
+/** Static geometry, computed once per parcel table — same pattern as demand.ts. */
+const BLOCK_GEO = new WeakMap<ParcelTable, BlockGeo>();
+
+function blockGeo(parcels: ParcelTable): BlockGeo {
+  const hit = BLOCK_GEO.get(parcels);
+  if (hit) return hit;
+  const byBlock = new Map<string, string[]>();
+  const acc = new Map<string, [number, number, number]>();
   for (const bbl in parcels) {
     const p = parcels[bbl];
-    if (!p || p.block !== block) continue;
-    const r = resolveRec(parcels, s, bbl);
-    if (r && r.class !== "land" && r.floors > datum) datum = r.floors;
+    if (!p?.block) continue;
+    const list = byBlock.get(p.block);
+    if (list) list.push(bbl); else byBlock.set(p.block, [bbl]);
+    const c = p.centroid;
+    if (!c) continue;
+    const a = acc.get(p.block) ?? [0, 0, 0];
+    a[0] += c[0]; a[1] += c[1]; a[2]++;
+    acc.set(p.block, a);
   }
-  return datum;
+  const centre = new Map<string, [number, number]>();
+  for (const [b, a] of acc) if (a[2] > 0) centre.set(b, [a[0] / a[2], a[1] / a[2]]);
+  const blocks = [...byBlock.keys()];
+  const neigh = new Map<string, { b: string; w: number }[]>();
+  for (const b of blocks) {
+    const out: { b: string; w: number }[] = [{ b, w: 1 }];
+    const c0 = centre.get(b);
+    if (c0) {
+      const mPerLon = M_PER_DEG_LAT * Math.cos((c0[1] * Math.PI) / 180);
+      for (const o of blocks) {
+        if (o === b) continue;
+        const c1 = centre.get(o);
+        if (!c1) continue;
+        const d = Math.hypot((c1[0] - c0[0]) * mPerLon, (c1[1] - c0[1]) * M_PER_DEG_LAT);
+        if (d >= COMP_RADIUS_M) continue;
+        out.push({ b: o, w: 1 - d / COMP_RADIUS_M });
+      }
+    }
+    neigh.set(b, out);
+  }
+  const geo = { byBlock, neigh };
+  BLOCK_GEO.set(parcels, geo);
+  return geo;
+}
+
+export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: string): number {
+  const { byBlock, neigh } = blockGeo(parcels);
+  let datum = 0;
+  for (const { b, w } of neigh.get(block) ?? [{ b: block, w: 1 }]) {
+    for (const bbl of byBlock.get(b) ?? []) {
+      const r = resolveRec(parcels, s, bbl);
+      if (!r || r.class === "land" || !(r.floors > 0)) continue;
+      const adjusted = r.floors * w;
+      if (adjusted > datum) datum = adjusted;
+    }
+  }
+  return Math.floor(datum);
 }
 
 /** How high the market will speculatively build on this lot TODAY. */
@@ -2858,13 +2937,29 @@ export function cityInfillCap(
   // the building that ignores the street — the legal envelope, not another
   // two floors of context. Blend toward zoning/physical; do not free the
   // friction floor or mint demand.
-  if (struct > 0.08 && tight > 0.45
-      && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
+  // EITHER SIGNAL OPENS IT, NOT BOTH AT ONCE. This required a chronic capacity
+  // shortage AND vacancy 45% below natural, simultaneously. Measured over 3
+  // seeds x 50 years: `struct` alone qualifies on 40.0% of lot-reads and
+  // `tight` alone on 56.7%, but the conjunction only on 33.3% — the AND was
+  // throwing away most of both signals.
+  //
+  // No city waits for two emergencies. A market where space is simply not
+  // there is one argument for the building that ignores the street; a market
+  // where rent has run away is a different and equally sufficient one, and
+  // 1920s Manhattan, 1980s Hong Kong and present-day Austin each broke their
+  // cornice on one of them without the other. Whichever signal is louder sets
+  // how far the reach goes.
+  //
+  // Still neutral at rest: at natural vacancy with no capacity shortage both
+  // reaches are zero, the branch does not fire, and month zero is unchanged.
+  const structReach = clamp((struct - 0.08) / 0.22, 0, 1);
+  const tightReach = clamp((tight - 0.45) / 0.40, 0, 1);
+  const reach = Math.max(structReach, tightReach);
+  if (reach > 0 && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
     const legal = Math.ceil(farMaxFor({
       farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
     }) / 0.62);
     const ceiling = Math.min(physical, Math.max(cap, legal));
-    const reach = clamp((struct - 0.08) / 0.22, 0, 1);
     cap = Math.max(cap, Math.round(cap + (ceiling - cap) * reach));
   }
   return Math.max(2, Math.min(cap, physical));

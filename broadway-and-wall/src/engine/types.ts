@@ -1272,7 +1272,18 @@ export interface Econ {
   population?: number;        // souls in the city
   jobs?: number;              // filled positions
   unemployment?: number;      // 0-1, of the labour force
-  wageIdx?: number;           // real wage, 1.0 at the start of the century
+  /**
+   * NOMINAL average pay, 1.0 at the start. It is nominal because its growth
+   * carries `inflExp` (market.ts: `growth = inflExp/12 + productivity/12 +
+   * tight*0.012`), and every consumer relies on that — `burden` and the
+   * rent-to-income anchor divide the NOMINAL `rentIdx` by it, which is only a
+   * ratio of like for like if both carry the price level. Deflate by `cpi`
+   * for the real wage. This comment said "real wage" for an unknown number of
+   * commits and a probe believed it: it reported 3.6%/yr real wage growth on
+   * a 2.7%/yr-inflation world, which is a fifty-year sextupling of pay that
+   * nothing in the model actually did. A lying comment is a bug (HANDOFF §8).
+   */
+  wageIdx?: number;
   outputIdx?: number;         // real output; jobs x productivity
   cpi?: number;               // the price level, for turning nominal into real
   phase: MarketPhase;

@@ -511,7 +511,24 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
   // builds less, and building less is exactly how that fact should reach the
   // price. Folding three such lots into one site raises the realisation for
   // all three, which is the entire economics of assemblage.
-  const far = farMaxForLocal(rec) * envelopeRealisation(rec);
+  // THE ENVELOPE THE CITY WILL PERMIT, NOT THE ONE THE ZONING TEXT ALLOWS.
+  //
+  // `envelopeRealisation` is PHYSICAL — can this plate carry that FAR. It is
+  // not the whole story, because the city also has a behavioural cornice:
+  // `cityInfillCap` (dev.ts) is what a shovel actually gets, and on this
+  // city's best corners it runs 5-8 floors against a legal 17-56. Pricing dirt
+  // on the legal envelope therefore sold a building nobody would be permitted
+  // to build — measured at year 15 on the prime office lot, land at $9,624 per
+  // square foot of LAND, struck on a 14-floor scheme where the envelope
+  // allowed six, giving 5.29% yield on cost against a 6.68% hurdle while yield
+  // on cost EX LAND was 15.0%. The building was never the problem.
+  //
+  // `econ.infillShare` is the median buildable-over-legal ratio, published
+  // once a year by the same sampler that already walks these lots (dev.ts).
+  // This function is handed only (rec, econ) and cannot call cityInfillCap
+  // itself, which is why the share travels on econ rather than being computed
+  // here. Absent on old saves and read as 1, which is the old behaviour.
+  const far = farMaxForLocal(rec) * envelopeRealisation(rec) * clamp(econ.infillShare ?? 1, 0.15, 1);
   if (!(far > 0)) return null;
 
   let best: ResidualScheme | null = null;

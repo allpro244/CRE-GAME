@@ -1357,6 +1357,13 @@ export interface Econ {
   incomeEff?: Record<BuiltClass, number>;
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
+  /**
+   * Median buildable-over-legal envelope ratio, published annually by
+   * refreshDevelopmentFeasibility. The land residual reads it so dirt is
+   * priced for the building the city will permit rather than the one the
+   * zoning text allows. Absent on old saves and read as 1.
+   */
+  infillShare?: number;
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;

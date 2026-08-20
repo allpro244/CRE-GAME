@@ -1386,6 +1386,7 @@ export function refreshDevelopmentFeasibility(
   };
   const LAND_N = 96;
   const REDEV_N = 72;
+  const infillRatios: number[] = [];
   const chosen = new Set<string>();
   let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
   const yrNow = START_YEAR + Math.floor(s.month / 12);
@@ -1405,7 +1406,47 @@ export function refreshDevelopmentFeasibility(
       landCount++;
       for (const use of BUILT_CLASSES) {
         if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
-        const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
+        // THE PENCIL TEST MUST PRICE THE SCHEME THE LAND IS PRICED FOR.
+        //
+        // This read `Math.min(14, maxFloorsFor(...))` — a flat fourteen-floor
+        // sampler convenience that had become a structural constraint, because
+        // the LAND under it is a residual struck on the full legal envelope
+        // (`residualScheme` uses farMaxForLocal x envelopeRealisation). So on
+        // any lot whose envelope exceeds fourteen floors, the dirt was priced
+        // for a scheme this test was forbidden to build, and it duly reported
+        // that nothing pencils. One quantity — what can be built here —
+        // answered two different ways, and the disagreement fell entirely on
+        // the best sites in the city.
+        //
+        // Measured on the reference city's prime office lot at year 15
+        // (demand 100, 7,488 sf, legal max 32 floors, land $72.1M = $9,624 per
+        // square foot of LAND):
+        //
+        //     14 fl  FAR  8.7   YoC 5.29%  vs 6.68% required   hurdle 0.79
+        //     30 fl  FAR 18.6   YoC 7.03%  vs 6.68% required   hurdle 1.05
+        //
+        // The same lot fails at fourteen floors and clears at thirty. Yield on
+        // cost EX LAND was 15.0% at fourteen floors — the building was never
+        // the problem; the land was, because it was carrying an envelope the
+        // scheme could not use. That is why `sitePencil.office` sat at 0.000
+        // in half of all months INCLUDING the months the market was welded to
+        // its frictional vacancy floor, and it is the mechanism behind
+        // "supply cannot answer price".
+        //
+        // `cityInfillCap` is the envelope the SHOVEL actually gets
+        // (tickCityGrowth and tickTeardowns both size against it), so the
+        // sampler asks for that and no more. It is not the legal maximum — the
+        // cornice datum and its scarcity push still bind — but it is the same
+        // question the start path asks, which is the whole point.
+        const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), use);
+        const floors = Math.max(2, Math.min(infill, maxFloorsFor(rec, 0.62, use)));
+        // ...and PUBLISH what that envelope is worth against the legal one, so
+        // the land market can price the building the city will actually permit.
+        // See econ.infillShare in market.ts and residualScheme in value.ts.
+        {
+          const legalFl = maxFloorsFor(rec, 0.62, use);
+          if (legalFl > 0) infillRatios.push(Math.max(0.05, Math.min(1, floors / legalFl)));
+        }
         const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
         // Only clearing pencils. Pushing appetite-zero failures from densify
         // sites diluted the P97 and zeroed whole classes (office went to 0
@@ -1438,6 +1479,27 @@ export function refreshDevelopmentFeasibility(
     }
   }
   s.econ.sitePencil = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  // THE BUILDABLE SHARE OF THE LEGAL ENVELOPE — one number, so the land market
+  // and the crane stop disagreeing about what fits on a lot.
+  //
+  // `residualScheme` (value.ts) strikes the land residual on farMaxForLocal x
+  // envelopeRealisation — the LEGAL envelope — because it is handed only
+  // (rec, econ) and cannot see cityInfillCap. But cityInfillCap is what the
+  // shovel actually gets, and on this city's best corners it runs 5-8 floors
+  // against a legal 17-56. So dirt was priced for a building the city would
+  // never permit: measured at year 15 on the prime office lot, land $72.1M
+  // ($9,624 per square foot of LAND) struck on a 14-floor scheme while the
+  // envelope allowed six. Yield on cost ex-land was 15.0% — the BUILDING was
+  // never the problem. That is one quantity, "what can be built here", with
+  // two answers, and it is the mechanism behind "supply cannot answer price".
+  //
+  // This is the median over the same lots the sampler above already walks, so
+  // it costs nothing extra, and it is a SHARE rather than a level so it cannot
+  // drift with the price level.
+  if (infillRatios.length >= 8) {
+    const sorted = infillRatios.slice().sort((a, b) => a - b);
+    s.econ.infillShare = +sorted[Math.floor(sorted.length / 2)].toFixed(4);
+  }
   for (const use of BUILT_CLASSES) {
     const xs = scores[use].sort((a, b) => a - b);
     const at = xs.length ? Math.floor((xs.length - 1) * (36 / 37)) : 0;

@@ -571,3 +571,77 @@ finding-5 build, open below.
    0.35/0.50 bars — near, not past, and its cheap-side clauses are item 3.
    Each needs its seeds or its preconditions re-anchored, not its thresholds
    quietly widened.
+
+
+---
+
+# THE TOP OPEN FAULT — supply cannot answer price, localised but NOT fixed
+
+The income term (`be6813a`) fixed what it aimed at and broke this, which is the
+more useful result. Recorded here with the measurement so the next pass starts
+from evidence rather than from the top.
+
+## What regressed
+
+    rail.vac.office.lo        0.063 -> 0.333       (BASELINE.json)
+    rail.vac.industrial.lo    0.42  -> 0.72
+    rail.vac.multifamily.lo   0.04  -> 0.09
+
+Three independent harnesses report the same thing: `tools/rails.mjs`, the
+baseline rail counters, and `test/rent-anchor.mjs` (real office rent while
+pinned +0.60 -> +1.61%/yr). Demand grew because a richer city wants more space,
+and the city cannot build it, so the frictional vacancy floor now binds a third
+of office months and the market mints scarcity from being unable to get tighter.
+
+The dead income effect had been MASKING this: with demand flat, supply never had
+to respond, so a supply side that cannot respond looked fine.
+
+## What binds — measured, 4 seeds x 100y, pinned months vs the rest
+
+                          pinned      not
+    sitePencil.office      0.000     0.000
+    startOwed (k sf)          38        50
+    crewUtil               0.953     1.016
+    structTight            0.077     0.000
+    real rent index         31.0      33.4
+    real costIdx           0.790     0.870
+
+    share of PINNED months with sitePencil == 0:  50.7%
+
+It is THE PRO FORMA. Not the envelope, not the crews (0.95 against 1.02 — not
+binding), not the order book. `sitePencil.office` has a median of 0.000 whether
+the market is desperate or comfortable, and the rent/cost ratio is materially
+the same in both states (39.2 pinned vs 38.4 not) — so tightness is not moving
+the thing that decides whether anybody builds.
+
+Underwritten directly on the city's best office lot (demand 100) at year 15:
+
+    "5.29% yield on cost is below the 6.68% required yield."
+
+A ~21% shortfall. Required yield is the exit cap times the 1.17 development
+margin, so the exit on that prime lot is ~5.71% and the scheme would be built at
+a yield BELOW its own exit — correctly refused. Some lots DO clear (a demand-89
+lot in the same sample returned `clears: true`), so this is not structural
+impossibility; it is a market whose best sites miss by a fifth.
+
+## Why this pass STOPS here
+
+To close a 21% gap something has to move: rents up, hard cost down, the 1.17
+margin down, or the envelope up so schemes are not subscale. Each is a different
+claim about the world and I have evidence for none of them yet. Picking one
+because it closes the gap is exactly the fake this whole campaign exists to
+remove — and CLAUDE.md's own instruction covers it: "If you are not sure, say so
+and stop."
+
+What the next pass should establish BEFORE touching anything:
+ 1. Is the 5.29% YoC low because rents are low or because costs are high? Price
+    both legs against the record separately — HARD_COST_PSF.office = 295 has a
+    cited RSMeans source; RENT_BASE.office = 35.50 has a cited JLL 2024 source.
+    One of them may be right and the other wrong at the same time.
+ 2. Is a 1.17 development margin right for office? It is DEV_MARGIN and it is
+    class-blind.
+ 3. Does the envelope make schemes subscale — i.e. would the same lot pencil at
+    twice the floors? `cityInfillCap` already carries a scarcity push, so test
+    whether the push is reaching prime lots at all.
+ 4. Whatever moves, `econ:accept` D must stay green: supply is allowed to answer
+    price, and is never allowed to manufacture tenants.

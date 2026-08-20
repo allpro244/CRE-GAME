@@ -21,7 +21,7 @@ export const FAR_CEILING = 40;
  * The pipeline reshapes raw location gravity with a gamma before it writes
  * `demandScore`. Gamma 1.9 was the un-plateau for a two-term blend that piled
  * at the top. The polycentric blend does not pile, so 1.9 crushed displayed
- * scores under the demand>70 office gate. 1.15 is a mild exclusivity bend
+ * scores under the demand>70 office gate. 1.05 is a mild exclusivity bend
  * on a surface that already has a shape.
  *
  * What it is NOT is a repricing. Everything economic below this line reads the
@@ -34,7 +34,7 @@ export const FAR_CEILING = 40;
  * the gradient should be steeper that is its own decision, made deliberately
  * with the harnesses and not smuggled in behind this one.
  */
-const DEMAND_GAMMA = 1.15;   // must match DEMAND_GAMMA in src/citygen/build.mjs
+const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs
 export function demandIdx(demandScore: number): number {
   return Math.pow(Math.max(0, demandScore) / 100, 1 / DEMAND_GAMMA);
 }

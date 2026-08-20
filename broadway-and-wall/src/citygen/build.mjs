@@ -404,25 +404,21 @@ export function buildCityData(src) {
     // top decile starts at 85, and about one lot in eight is genuinely prime.
     // The ORDER is untouched — the same ground is still the best ground — so
     // every district reads the same, it just stops flattering the fringe.
-    // 1.15, not 1.9. Gamma 1.9 was calibrated to a two-term blend that
-    // piled at the top (median raw 0.63). Six independent fields do not
-    // pile — a lot is rarely strong on mill AND office AND a distant
-    // stop — so 1.9 crushed the surface: median 18, p90 50, and almost
-    // no lot cleared the demand>70 office programme in useForZone.
+    // 1.05, not 1.9. Gamma 1.9 was the un-plateau for a two-term blend
+    // that piled at the top. Six independent fields do not pile, so 1.9
+    // crushed scores under the demand>70 office gate (median 18, p90 50).
+    // Compounding the weights the other way (sum 1.36) made half the lots
+    // on some seeds prime. The mix is a 100-point skeleton again; 1.05 is
+    // a mild exclusivity bend on a surface that already has a shape.
     // Keep in lockstep with DEMAND_GAMMA in src/engine/value.ts.
-    const DEMAND_GAMMA = 1.15;
-    // Reasons COMPOUND. They are not shares of one pie. A lot next to a
-    // station AND the sheds AND a second centre is allowed to hit the
-    // cap; a lot with only one of those is not. Weights sum to 1.36 so
-    // two strong reasons still land around 0.7 raw, which is where the
-    // old downtown-without-amenity lot sat.
+    const DEMAND_GAMMA = 1.05;
     const blend = Math.min(1,
-      0.38 * Math.min(1, dem.transit / t95)
-        + 0.30 * Math.min(1, dem.office / o95)
-        + 0.24 * Math.min(1, dem.mill / m95)
-        + 0.10 * Math.min(1, dem.shop / k95)
-        + 0.20 * Math.min(1, dem.second / n95)
-        + 0.14 * Math.min(1, dem.amen / a95));
+      (30 * Math.min(1, dem.transit / t95)
+        + 22 * Math.min(1, dem.office / o95)
+        + 16 * Math.min(1, dem.mill / m95)
+        + 8 * Math.min(1, dem.shop / k95)
+        + 14 * Math.min(1, dem.second / n95)
+        + 10 * Math.min(1, dem.amen / a95)) / 100);
     // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
     //
     // Gravity fields cannot produce this and it is most of what a city actually

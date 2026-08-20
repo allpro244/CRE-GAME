@@ -908,7 +908,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // pivoted on the city's own sf-weighted mean, so steepening the gradient
   // cannot move the aggregate price level on any map we ever ship; the
   // vintage tilt is renormalised the same way. DEMAND_GAMMA must match
-  // value.ts (1.15) — inlined here because value.ts imports this module.
+  // value.ts (1.05) — inlined here because value.ts imports this module.
   if (parcels) {
     let wSum = 0, dSum = 0, vSum = 0;
     // ...AND A PIVOT PER CLASS. The citywide mean is set by the offices,
@@ -935,10 +935,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     for (const bbl in parcels) {
       const r = parcels[bbl];
       if (r && r.class === "land" && r.lotArea > 1500) {
-        landIdx.push(Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.15));
+        landIdx.push(Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.05));
       }
       if (!r || r.class === "land" || !r.bldgArea) continue;
-      const idx = Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.15);
+      const idx = Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.05);
       const vin = Math.min(1.7, Math.max(0.5, 0.5 + Math.max(0, 2000 - (r.yearBuilt || 1960)) / 80));
       wSum += r.bldgArea; dSum += r.bldgArea * idx; vSum += r.bldgArea * vin;
       wBy[r.class] = (wBy[r.class] ?? 0) + r.bldgArea;

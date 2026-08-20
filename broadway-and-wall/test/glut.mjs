@@ -219,8 +219,20 @@ function run(seed, dose) {
     path.push({
       m: m - PRE,
       vac: e.cityVac?.[KLASS] ?? 0,
-      face: (e.rentIdx?.[KLASS] ?? 0) / (e.cpi || 1),
-      eff: (e.effRentIdx?.[KLASS] ?? e.rentIdx?.[KLASS] ?? 0) / (e.cpi || 1),
+      // NOMINAL AND REAL, BOTH, AND THE COMPARISON IS THE NOMINAL ONE.
+      // The first cut deflated each arm by ITS OWN cpi and compared the two —
+      // but the arms' price levels diverge (measured up to 39% by month 144 on
+      // seed 550991), so a "real rent cut" was partly one arm's inflation. The
+      // engine also gates the CPI escalator OFF in a soft market (`softW` in
+      // market.ts), which is the sticky-asking behaviour the record describes,
+      // and deflating turns that stickiness into an apparent cut. Treatment
+      // against control is a comparison of two nominal asks and belongs in
+      // nominal terms; the real series is kept because a single arm's own
+      // trajectory over a century still needs a deflator.
+      face: e.rentIdx?.[KLASS] ?? 0,
+      eff: e.effRentIdx?.[KLASS] ?? e.rentIdx?.[KLASS] ?? 0,
+      faceR: (e.rentIdx?.[KLASS] ?? 0) / (e.cpi || 1),
+      cpi: e.cpi || 1,
       conc: e.concIdx?.[KLASS] ?? 0,
       occ: b.sf > 0 ? b.occ / b.sf : 0,
       occSf: b.occ, sf: b.sf, tenants: b.tenants, vacantSf: b.vacant,
@@ -239,9 +251,70 @@ function run(seed, dose) {
 }
 
 // ---------------------------------------------------------------------------
+// THE NULL. One shared stateful stream drives the whole world (market.ts:50),
+// so ANY change to the number of rng() draws re-rolls the century. A treatment
+// arm and a control arm therefore differ by two things — the building, and the
+// draw sequence — and only one of them is the experiment.
+//
+// This is not hypothetical. The first cut of this harness reported its headline
+// as `faceLo`, the MINIMUM of a treatment/control ratio over 144 monthly draws.
+// A placebo that injects ZERO square feet and merely burns a handful of draws
+// produces worst-face values ranging to -24.1%, which was the exact treatment
+// median being reported. The statistic was inside its own null and measured
+// nothing. Order statistics over a noisy paired series are unusable here.
+//
+// So: every dose is now read at FIXED HORIZONS, and a placebo arm runs beside
+// it that burns draws without adding a square foot. If a treatment number does
+// not clear the placebo band, it is not evidence.
+function placeboBand(seed, burn) {
+  const parcels = JSON.parse(JSON.stringify(P0));
+  let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+  g = { ...g, cash: 3_000_000_000 };
+  const path = [];
+  for (let m = 0; m < PRE + POST; m++) {
+    if (m === PRE) for (let i = 0; i < burn; i++) E.rng(g, "econ");
+    if (g.gameOver) g = { ...g, gameOver: null, cash: 3e9 };
+    g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    path.push({ m: m - PRE, face: g.econ.rentIdx?.[KLASS] ?? 0, vac: g.econ.cityVac?.[KLASS] ?? 0 });
+  }
+  return path;
+}
+
 const MARKS = [0, 6, 12, 24, 36, 60, 96, 120, 144];
 console.log(`A GLUT, AND YOUR OWN RENT ROLL — ${KLASS}, ${SEEDS.length} paired seeds, `
   + `${PRE} months to stabilise then ${POST / 12} years watched\n`);
+
+// The null band: the same city, the same control, differing only in how many
+// draws were taken from the shared stream at the moment of the injection.
+const NULL_AT = {};
+if (process.env.NOPLACEBO !== "1") {
+  const burns = [1, 2, 3, 7];
+  const bag = {};
+  for (const seed of SEEDS) {
+    const base = placeboBand(seed, 0);
+    for (const burn of burns) {
+      const alt = placeboBand(seed, burn);
+      for (const m of MARKS) {
+        if (m > POST) continue;
+        const a = alt.find((p) => p.m === m), b = base.find((p) => p.m === m);
+        if (a && b && b.face > 0) (bag[m] ??= []).push(a.face / b.face - 1);
+      }
+    }
+  }
+  for (const m of Object.keys(bag)) {
+    const xs = bag[m].sort((a, b) => a - b);
+    NULL_AT[m] = { lo: xs[0], hi: xs[xs.length - 1], n: xs.length,
+      p10: xs[Math.floor(xs.length * 0.1)], p90: xs[Math.floor(xs.length * 0.9)] };
+  }
+  console.log(`THE NULL — ${SEEDS.length} seeds x 4 draw-burns, ZERO square feet injected`);
+  console.log(`  a paired difference this large is the shared RNG stream re-rolling, not a glut:`);
+  for (const m of MARKS) {
+    if (!NULL_AT[m]) continue;
+    console.log(`   month ${String(m).padStart(3)}  face vs its own base: ${pct(NULL_AT[m].lo)} .. ${pct(NULL_AT[m].hi)}`
+      + `   (p10..p90 ${pct(NULL_AT[m].p10)} .. ${pct(NULL_AT[m].p90)}, n=${NULL_AT[m].n})`);
+  }
+  console.log("");
+}
 
 const summary = [];
 for (const dose of DOSES) {
@@ -263,7 +336,8 @@ for (const dose of DOSES) {
     + `spread across the demand gradient\n`);
 
   console.log(`  THE MARKET  (median across pairs; TREATMENT vs its own CONTROL)`);
-  console.log(`   month   city vac    vs ctrl   face vs ctrl   eff vs ctrl   eff/face   concession (t vs c)`);
+  console.log(`   month   city vac    vs ctrl   face vs ctrl   eff vs ctrl   eff/face   concession (t vs c)   vs null`);
+  console.log(`   (face and eff are NOMINAL, treatment against its own paired control)`);
   for (const m of MARKS) {
     if (m > POST) continue;
     const tv = rows.map((r) => at(r, "t", m)?.vac).filter((x) => x != null);
@@ -274,51 +348,64 @@ for (const dose of DOSES) {
     const tc = med(rows.map((r) => at(r, "t", m)?.conc).filter((x) => x != null));
     const cc = med(rows.map((r) => at(r, "c", m)?.conc).filter((x) => x != null));
     const rat = Number.isFinite(dF) && Number.isFinite(dE) && dF < -0.002 ? dE / dF : NaN;
+    // Clear of the null, or not evidence. A row inside the placebo band is the
+    // shared RNG stream re-rolling the century, not the building.
+    const nb = NULL_AT[m];
+    const clear = nb ? (dF < nb.lo ? "clear" : "IN NULL") : "";
     console.log(`   ${String(m).padStart(4)}   ${pct(med(tv)).padStart(7)}   ${pp(med(tv) - med(cv)).padStart(9)}`
       + `   ${pct(dF).padStart(9)}   ${pct(dE).padStart(9)}   ${(Number.isFinite(rat) ? rat.toFixed(2) + "x" : "   —").padStart(6)}`
-      + `   ${tc.toFixed(2)} vs ${cc.toFixed(2)}`);
+      + `   ${tc.toFixed(2)} vs ${cc.toFixed(2)}   ${clear}`);
   }
 
-  // THE HEADLINE PAIR: how far each fell against its control, at the worst.
-  const faceLo = rows.map((r) => Math.min(...r.t.path.filter((p) => p.m >= 0).map((p) => {
-    const b = r.c.path.find((x) => x.m === p.m); return b && b.face > 0 ? p.face / b.face - 1 : 0; })));
-  const effLo = rows.map((r) => Math.min(...r.t.path.filter((p) => p.m >= 0).map((p) => {
-    const b = r.c.path.find((x) => x.m === p.m); return b && b.eff > 0 ? p.eff / b.eff - 1 : 0; })));
-  console.log(`\n   worst FACE rent against control:      ${pct(med(faceLo))}   (per pair ${faceLo.map((x) => pct(x)).join("  ")})`);
-  console.log(`   worst EFFECTIVE rent against control: ${pct(med(effLo))}   (per pair ${effLo.map((x) => pct(x)).join("  ")})`);
-  // THE TWO SERIES TROUGH YEARS APART, so the ratio of one worst month to the
-  // other worst month is not a measurement of anything — it silently compares
-  // month 12 to month 120. The concession channel is a LEAD, not a level: it
-  // opens first and burns off while the face rate is still falling. So the
-  // ratio has to be taken at the SAME month, and the month that matters is the
-  // one the market is worst in.
+  // THE HEADLINE, AT A FIXED HORIZON — never at "the worst month".
+  //
+  // A minimum over 144 monthly draws of a paired ratio is an order statistic on
+  // a noisy series, and the placebo above shows how far it travels on zero
+  // square feet. Fixed horizons are clean: the same placebo shows every seed
+  // outside the whole null range at month 36.
+  const atM = (m) => rows.map((r) => {
+    const a = r.t.path.find((p) => p.m === m), b = r.c.path.find((p) => p.m === m);
+    return a && b && b.face > 0 ? { f: a.face / b.face - 1, e: a.eff / b.eff - 1 } : null;
+  }).filter(Boolean);
+  console.log(`\n   AT FIXED HORIZONS  (nominal, treatment vs its own paired control)`);
+  for (const m of [12, 36, 60, 120]) {
+    if (m > POST) continue;
+    const xs = atM(m);
+    if (!xs.length) continue;
+    const f = med(xs.map((x) => x.f)), e = med(xs.map((x) => x.e));
+    const nb = NULL_AT[m];
+    console.log(`      month ${String(m).padStart(3)}  face ${pct(f).padStart(8)}   effective ${pct(e).padStart(8)}`
+      + `   face carries ${pct(e !== 0 ? f / e : NaN).padStart(7)} of the adjustment`
+      + (nb ? `   null band ${pct(nb.lo)}..${pct(nb.hi)}${f < nb.lo ? "  CLEAR" : "  IN NULL"}` : ""));
+    console.log(`               per pair: ${xs.map((x) => pct(x.f)).join("  ")}`);
+  }
+  console.log(`   F-R2 (pre-registered): face must carry <=35% of the adjustment over three years,`);
+  console.log(`   and must be ABLE to carry 0%. Manhattan face carried 3.3/17.3 = 19% over 4+ years.`);
+  // The lead ratio, at the same month, which is a different question from the
+  // share above and the one the concession channel is actually judged on.
   const sameMonth = rows.map((r) => {
-    // NOT the peak-vacancy month: vacancy peaks the month the building lands,
-    // before any price has had time to move, so that column reads the impact
-    // and not the damage. The month FACE rent is furthest below its control is
-    // the moment the market has fully repriced, and it is the honest place to
-    // ask how much of the fall the concession channel was carrying.
-    let worst = 1, at = 0;
-    for (const p of r.t.path) {
-      if (p.m < 0) continue;
-      const b = r.c.path.find((x) => x.m === p.m);
-      if (b && b.face > 0 && p.face / b.face < worst) { worst = p.face / b.face; at = p.m; }
-    }
     const out = [];
-    for (const m of [6, 12, 24, at]) {
+    for (const m of [6, 12, 24, 36]) {
       const a = r.t.path.find((p) => p.m === m), b = r.c.path.find((p) => p.m === m);
       if (!a || !b || !(b.face > 0) || !(b.eff > 0)) { out.push(NaN); continue; }
       const dF = a.face / b.face - 1, dE = a.eff / b.eff - 1;
       out.push(dF < -0.002 ? dE / dF : NaN);
     }
-    return { out, at };
+    return { out };
   });
   const col = (i) => med(sameMonth.map((x) => x.out[i]).filter(Number.isFinite));
-  console.log(`   EFFECTIVE / FACE, taken at the SAME month:`);
-  console.log(`      month 6  ${col(0).toFixed(2)}x      month 12  ${col(1).toFixed(2)}x      month 24  ${col(2).toFixed(2)}x`
-    + `      at peak vacancy (median month ${med(sameMonth.map((x) => x.at))})  ${col(3).toFixed(2)}x`);
+  console.log(`\n   EFFECTIVE / FACE, taken at the SAME month:`);
+  console.log(`      month 6  ${col(0).toFixed(2)}x      month 12  ${col(1).toFixed(2)}x      month 24  ${col(2).toFixed(2)}x      month 36  ${col(3).toFixed(2)}x`);
+  // PER PAIR, because the median hides the case that matters. A seed whose
+  // control city is ALREADY overbuilt has its concession dial open in BOTH
+  // arms, so the injection adds no differential and the ratio is exactly 1.00
+  // — the concession channel is not absent there, it is already spent. That is
+  // a fact about how often this city starts a glut already in one, and a
+  // median would report it as the model failing to concede.
+  console.log(`      per pair at month 12: ${sameMonth.map((x) => (Number.isFinite(x.out[1]) ? x.out[1].toFixed(2) + "x" : "—")).join("  ")}`);
   console.log(`   real world: net effective falls 2-4x as far as face in the first year or two of a`);
-  console.log(`   downturn, then face catches up — the concession is a lead, not a permanent level.`);
+  console.log(`   downturn. The concession is a LEAD, not a permanent level — but in the record it`);
+  console.log(`   persists for years (Manhattan asking -3.3% vs effective -17.3% at four years).`);
 
   // ------------------------------------------------------------------
   console.log(`\n  YOUR BUILDINGS  (median across pairs)`);
@@ -466,26 +553,35 @@ for (const dose of DOSES) {
   console.log(`   months above +5pp of natural: ${med(over5).toFixed(0)}   above +10pp: ${med(over10).toFixed(0)}`
     + `   months until vacancy is back within 2pp of control: ${med(backIn).toFixed(0)}${med(backIn) >= POST ? " (still out at the end)" : ""}`);
 
-  summary.push({ dose, faceLo: med(faceLo), effLo: med(effLo), r6: col(0), r12: col(1), r24: col(2),
+  const h36 = atM(36), h60 = atM(60);
+  summary.push({ dose,
+    f36: med(h36.map((x) => x.f)), e36: med(h36.map((x) => x.e)),
+    f60: med(h60.map((x) => x.f)), e60: med(h60.map((x) => x.e)),
+    share36: med(h36.map((x) => (x.e !== 0 ? x.f / x.e : NaN)).filter(Number.isFinite)),
+    r6: col(0), r12: col(1), r24: col(2),
     over5: med(over5), backIn: med(backIn),
     vacPeak: med(rows.map((r) => Math.max(...r.t.path.filter((p) => p.m >= 0).map((p) => p.vac)))),
-    occDrop: med(rows.map((r) => {
-      let worst = 0;
-      for (const p of r.t.path) { if (p.m < 0) continue; const b = r.c.path.find((x) => x.m === p.m); if (b) worst = Math.min(worst, p.occ - b.occ); }
-      return worst; })),
+    // FIXED HORIZON, not a minimum over months — same reason as the rent rows.
+    occ36: med(rows.map((r) => {
+      const a = r.t.path.find((p) => p.m === 36), b = r.c.path.find((p) => p.m === 36);
+      return a && b ? a.occ - b.occ : NaN; }).filter(Number.isFinite)),
     absGap: (med(nA) - med(nC)) });
   console.log("");
 }
 
 console.log("=".repeat(78));
 console.log(`DOSE RESPONSE — ${KLASS}\n`);
-console.log(`  dose   peak vac   worst face   worst eff   eff/face m6 / m12 / m24   mo >5pp   mo to clear   your occ`);
+console.log(`  dose   peak vac   face@36   eff@36   face's share   face@60   eff/face m6/m12/m24   mo >5pp   mo to clear   your occ@36`);
 for (const s of summary) {
-  const r = (x) => (Number.isFinite(x) ? x.toFixed(2) + "x" : "  — ").padStart(6);
-  console.log(`  ${pct(s.dose).padStart(5)}  ${pct(s.vacPeak).padStart(8)}   ${pct(s.faceLo).padStart(10)}`
-    + `   ${pct(s.effLo).padStart(9)}   ${r(s.r6)} ${r(s.r12)} ${r(s.r24)}`
-    + `   ${s.over5.toFixed(0).padStart(7)}   ${s.backIn.toFixed(0).padStart(11)}   ${pp(s.occDrop).padStart(8)}`);
+  const r = (x) => (Number.isFinite(x) ? x.toFixed(2) + "x" : "  — ").padStart(5);
+  console.log(`  ${pct(s.dose).padStart(5)}  ${pct(s.vacPeak).padStart(8)}   ${pct(s.f36).padStart(7)}  ${pct(s.e36).padStart(7)}`
+    + `   ${pct(s.share36).padStart(11)}   ${pct(s.f60).padStart(7)}`
+    + `   ${r(s.r6)}${r(s.r12)}${r(s.r24)}`
+    + `   ${s.over5.toFixed(0).padStart(7)}   ${s.backIn.toFixed(0).padStart(11)}   ${pp(s.occ36).padStart(11)}`);
 }
+console.log(`\n  EVERY NUMBER HERE IS READ AT A FIXED MONTH, IN NOMINAL TERMS, AGAINST A PAIRED`);
+console.log(`  CONTROL, AND AGAINST A PLACEBO THAT INJECTS NOTHING. The first cut of this file`);
+console.log(`  reported minima over 144 draws and its headline sat inside its own null.`);
 console.log(`\n  The rate at which asking rent falls is deliberately capped in market.ts and the cap`);
 console.log(`  is argued from Manhattan 1990-92 and Houston 1983-87. That makes DURATION the`);
 console.log(`  variable that has to carry a deeper glut, which is what the two middle columns`);

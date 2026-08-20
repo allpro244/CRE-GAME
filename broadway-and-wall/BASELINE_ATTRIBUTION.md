@@ -7,7 +7,31 @@
 
 ---
 
-## This ruler: the owner's mark carries the tenant's tax share (SAVE_VERSION unchanged)
+## This ruler: the realism batch — exits, sheds, sweep rate, recessions, land floors (SAVE_VERSION unchanged)
+
+Six mechanisms landed between this ruler and the last (see REALISM_AUDIT_2026-08.md
+"WHAT WAS FIXED"): the per-class surplus-exit valve, light industrial on fringe C
+corridors, street retail reading the retail gap, the policy-linked sweep rate with
+taxed deposit interest, recession-sized natPull, effective-rent reads in
+zoning/cornice pressure, and the land floor carrying the price level with
+builder-won lots floored at the sales-comparison texture. Every one re-rolls the
+century; the moves below are the sum of six re-rolls plus the intended repricings.
+
+| Metric | Was → is | Reading |
+|---|---|---|
+| `dev.affordableLotShare` | 0.3419 → **0.0943** | THE INTENDED MOVE: inside the documented 8–12% honest band (HANDOFF §6.2) for the first time — the CPI-carried texture floor repriced thin-residual asks. Do not "fix" this back up. |
+| `rail.vac.office.lo` | 0.41 (tip) → **0.063** | The office shortage rail nearly releases — exits + corridor sheds + honest floors together. |
+| `rail.vac.industrial.lo` | 0.7667 → **0.4167** | Sheds can now be built (fringe C); still the tightest class — the shortage-queue regime remains open. |
+| `land.med` / `land.p90` | 58.7 → 96.1 / 2170 → 529 | Floors carry CPI (median up); the p90 tail was the residual violence and is gone. |
+| `vac.retail` | 0.0582 → 0.0727 | Near natural (0.085); street-retail gap wire + valve. |
+| `city.demolished` | 27 → 22 (25y window) | The valve is calibrated to fire on chronic deep gluts, which this window's seeds mostly lack; the 50y city-accept L median is 0.36%/yr, inside its band. |
+
+A full max(builder,holder,floor) land auction was tried inside this window,
+measured (`dev.affordableLotShare` 0.016, office rail re-welded to 0.40,
+stock/jobs halved), and REVERTED — the measurement and the reservation-vs-
+transaction analysis live in value.ts:landRead and the audit doc.
+
+## Previous ruler: the owner's mark carries the tenant's tax share (SAVE_VERSION unchanged)
 
 `holdingValue`'s stabilised leg and `leaseUpMarkAt` capitalised pre-tax NOI at
 `cap + TAX_RATE` — the FULL statutory rate — while `assetValue` and

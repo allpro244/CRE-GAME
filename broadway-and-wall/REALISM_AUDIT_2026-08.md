@@ -1,5 +1,15 @@
 # REALISM AUDIT — 2026-08-20, tip `b4cfae8`
 
+> **SECOND PASS, same day: the fixes.** The findings below were measured at
+> `b4cfae8`; the commits that followed this audit fixed findings 1, 2, 3, 6,
+> 7 (partially), 8, 9 and 10 as mechanisms, and tried-then-reverted one cut at
+> finding 5. See **WHAT WAS FIXED** at the bottom for the after-numbers and
+> what remains open. Headline: `econ:accept` reads **5 of 5** on the fixed
+> tree (A location, B supply shock, C cycle, D conservation, E gradient — C
+> passed with a 10.7% recession-window drawdown against the 3.9% measured
+> here); the 45% vacancy rail releases on healthy seeds; the affordable-lot
+> share sits at 9.4%, inside its documented 8–12% band, for the first time.
+
 Full-campaign measurement pass: which parts of this economy are still a game
 wearing an economic label. Method per CLAUDE.md: `pnpm engine` first, then the
 existing harnesses (`econ:report`, `sim:report`, `city:report`, `stress`,
@@ -437,3 +447,125 @@ liquidity is pro-cyclical and a round trip costs ~4%; the total
 value→orders→breaks→delivery→vacancy→rent→value loop runs 90 months with no
 constant setting it — real property cycles run 7–12 years for the same
 reason.
+
+---
+
+# WHAT WAS FIXED — 2026-08-20 second pass
+
+Every fix is a mechanism; every number below was measured on the fixed tree
+(gate green at every commit: conserve, extleak, city invariants). RNG caveat
+per HANDOFF §4: each engine change re-rolls the century, so before/after pairs
+are distributions, not paired seeds.
+
+## Fixed
+
+**Finding 1 — the exit valve (`tickSurplusExit`, dev.ts).** Empty surplus in a
+class 5pp+ over natural for 2+ years clears to land, worst building first, no
+replacement pro forma — one wrecking ball city-wide per month, paced by the
+deepest class's surplus (the per-class first cut cleared 42–50% of two towns
+in 50y and was re-structured; the single draw caps near Detroit's ~1%/yr
+record by construction). After, 6 seeds × 80y: the 45% rail binds 0.000 on
+healthy seeds (was 3–23% of months); median office vacancy 4–16%; city:accept
+demolition 0.36–0.39%/yr median against the ~0.5% anchor (was 0.03–0.15%);
+J passes (median −11.7%). Residual: seeds where the recalibrated recessions
+produce genuine 50-year decline still ride the clamp for stretches (2 of 6
+campaign seeds, up to 28% of months) — the valve clears at the historical
+pace and a fast collapse outruns it, which is what the record says it should
+do. The clamp stays a guard, watched.
+
+**Finding 2 — industrial can be built (dev.ts `zonePermits`/`useForZone`).**
+Fringe C corridors (demand < 45) permit light industrial — the 2018–2024
+last-mile record: fulfilment went into dead malls and strip corridors, not new
+M districts. `mixmatch`: industrial 0.0% → 11.2% of orders; stock growth on
+the reference city 0.000 → +1% to +33% across seeds; `rail.vac.industrial.lo`
+0.7667 → 0.4167; sim:accept F industrial real rent +1.77%/yr (out of band) →
+**+1.04%/yr (in band)**. Still the tightest class; the shortage-queue regime
+(below) is why.
+
+**Finding 3 — the tournament instrument (tools/econstress.mjs).** Bots fund
+equity from CASH, per their labels. Re-measured: 0/8 in the black → 2/8
+(contrarian +$32.2M real, industrial +$28.0M), survival 0% → 50%, buying
+beats sitting 0/6 → 3/6. The engine's close-on-the-line affordance is
+untouched — it is a player decision; it was never a bot's.
+
+**Finding 6 — one building, one value (value.ts).** `holdingValue` and
+`leaseUpMarkAt` load `TAX_RATE × taxBorneShare`, same as `assetValue` and the
+dev exit yield.
+
+**Finding 7 — recessions reach payrolls (market.ts `natPull`).** Sized to the
+BLS record (−0.0030/mo ordinary, −0.0045 deep, against ~+1.5%/yr trend).
+Labour demand turns −1 to −4.2% through national recessions; filled jobs turn
+where slack exists; econ C passes at a 10.7% recession-window drawdown (3.9%
+at tip). The phases' direct `rentDrift` constants were left in place — with
+the honest channel live they are now a sentiment layer; shrinking them is a
+follow-up, not a bundle-rider.
+
+**Finding 8 — the sweep rate (types.ts `sweepApy`).** Policy rate less 40bp,
+floored at zero, one function for player and street; deposit interest joins
+January's taxable base. Measured: policy 4.55% pays 4.15%, policy 0.25% pays
+zero, and the Books page prints the live rate instead of asserting "1.0%".
+
+**Finding 9 — affordable dirt (via the finding-5 floor fix).**
+`dev.affordableLotShare` 0.33 → **0.094**, inside the documented 8–12% honest
+band for the first time — repriced by the CPI-carried texture floor, not by a
+FAR retune. `rail.vac.office.lo` 0.41 → 0.063 on the baseline window.
+
+**Finding 10 — street retail reads the street (dev.ts `withStreetRetail`).**
+The ground-floor share fades with retail slack, gone 8pp over natural.
+sim:accept F retail −2.57%/yr → −1.72%/yr (still outside −1.0; standing gluts
+on old stock keep bleeding — the valve retires them at the historical pace).
+Baseline retail vacancy 5.8% → 7.3% against 8.5% natural.
+
+**Watchlist item — zoning/cornice pressure reads EFFECTIVE rent** (zoning.ts,
+dev.ts): a glut no longer reads as 14% dearer than it is.
+
+## Tried, measured, reverted — and recorded
+
+**Finding 5, the full auction.** `max(builder, holder, floor)` fixed the
+violence outright (worst 12-month falls −99/−100/−82% → −43/−75/−49%, spikes
++18,700% → +273%) and then starved the city: `dev.affordableLotShare` 0.34 →
+0.016 (the pre-#47 disease from the other side), the office rail re-welded to
+0.40, stock/jobs growth halved. Root: `landPsfNow` serves a RESERVATION price
+(appraisals, asks) and a TRANSACTION price (what the city's start path and
+the desk pay) with one number, and the holder's reservation never learns from
+market silence — the no-bid decay reaches the texture but not the holder bid.
+**Shipped instead:** the texture floor carries the price level (`× cpi` — it
+had quietly dissolved to year-0 dollars), and a builder-won lot never prices
+below the sales-comparison floor (a $2/sf residual is a bid, not a price).
+Measured: 12-month falls now −32/−68/−69%, lows 0.26–0.85x of start (were
+0.00x), spikes +114–187% — inside the historical envelope (Japan −70%, worst
+US −60..80%) — with the affordable share at 9.4% and supply alive. The
+reservation/transaction split with a holder capitulation wire is the real
+finding-5 build, open below.
+
+## Still open, in rank order
+
+1. **The shortage-queue regime.** A structurally short market absorbs demand
+   shocks in its queues (pool pinned at the housable ceiling, unfilled jobs
+   absorbing hiring cuts) — econ C's 550991 trace pins tight for ~30 of 50
+   years and no recession can raise vacancy off the friction floor there.
+   Pre-existing (the F/H history); the glut side now has its door, the
+   shortage side still needs supply to answer price faster than `sitePencil`
+   bursts allow.
+2. **Land reservation vs transaction + holder capitulation** — the finding-5
+   completion, analysis in `landRead`'s comment.
+3. **The wage-rent scissors / AFFORD_BAND vs the anchor's RTI floor.** Real
+   wages compound ~0.9%/yr while real office rents run ~−0.3%/yr (both
+   individually inside the record), so rent-to-income drifts to 0.3–0.6x and
+   the rent-anchor harness's cheap-side floor (≥0.45 median) breaches on its
+   seeds (0.11x median). Two calibrations disagree: AFFORD_BAND says feet per
+   worker is physically capped (so cheap space cannot mint demand and rents
+   CAN sit far under parity — Houston), the anchor says below ~0.45 is a
+   death spiral. One of them is right and it should be decided by evidence,
+   not by whichever harness shouts louder.
+4. **Whale DiD (finding 4)** — still undecided wire-vs-estimator; re-measure
+   on this tree now that parcel prices are sane, before touching comps.
+5. **Deep-decline seeds and the 0.45 clamp** — see finding 1 residual.
+6. **Harness preconditions moved by the re-roll:** `supply-answers` now draws
+   2 of 3 seeds with flat/declining jobs (its ratio clause cannot score);
+   `industrial-exit`'s six seeds drew different secular eras (median
+   industComp 1.00, so its decline-scenario clauses have nothing to measure);
+   `rent-anchor`'s pinned-real clauses read +0.60/+0.64%/yr against
+   0.35/0.50 bars — near, not past, and its cheap-side clauses are item 3.
+   Each needs its seeds or its preconditions re-anchored, not its thresholds
+   quietly widened.

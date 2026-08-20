@@ -827,25 +827,39 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // printing over book already reaches every parcel through `landAdj`, and a
   // second helping here would count the same evidence twice.
   const softDiscount = heat < 1 ? clamp((heat - 1) * 0.55, -0.25, 0) : 0;
-  // THE AUCTION IS A MAX, OR IT IS NOT AN AUCTION. The branch this replaces
-  // let a positive builder residual set the price OUTRIGHT — so a lot whose
-  // residual had thinned to $2/sf priced at $2/sf while the holder and the
-  // floor stood at $50 beside it. No owner sells to the low bidder. Measured
-  // over 100 years on the reference city, mid-city lots lost 99-100% of real
-  // value inside 12 months as the residual thinned, then gained +5,900% to
-  // +18,700% in 12 months off the near-zero base — arithmetic off a price no
-  // market would ever have printed. Land still falls HARD when development
-  // stops penciling — to its option value, fast, which is 1989-93 Manhattan
-  // (-50-60%) — it just no longer falls through the other two bids on the
-  // table. The holder's own bid stays honestly priced (through-cycle rents,
-  // wait-discounted), so a ready builder still outbids a speculator on any
-  // healthy site and the desk keeps finding sites it can win.
-  const builderBid = builder > 0 ? builder * (1 + softDiscount) : 0;
+  // A TRUE max(builder, holder, floor) WAS TRIED HERE AND REVERTED — keep the
+  // measurement. The builder-sets-the-price branch below lets a residual that
+  // has thinned to $2/sf price the lot at $2/sf while the holder and the
+  // floor stand at $50 beside it, and that cliff is real: measured over 100
+  // years, mid-city lots lost 99-100% of real value inside 12 months as the
+  // residual thinned, then gained +5,900% to +18,700% off the near-zero base.
+  // Pricing the lot at the HIGHEST of the three bids fixed the cliff (worst
+  // 12-month falls -43/-75/-49%, spikes +41/+273/+63%) and then starved the
+  // city: `dev.affordableLotShare` fell 0.34 -> 0.016 (the pre-#47 disease,
+  // from the other side), the office vacancy rail re-welded to 40% of months,
+  // and stock/jobs growth halved — because this function serves TWO quantities
+  // with one number. An appraisal is a RESERVATION price, where the max is
+  // right; the city's start path and every ask price off it are TRANSACTION
+  // prices, where dirt clears at what the marginal actual buyer pays, and a
+  // holder who outbids the builder is not a buyer — they are the owner not
+  // selling. Splitting reservation from transaction, and letting the holder's
+  // reservation LEARN from silence (the no-bid decay reaches the texture but
+  // never the holder bid), is the real build; it is recorded as an open
+  // finding in REALISM_AUDIT_2026-08.md rather than half-shipped here.
   let base: number;
   let winner: LandRead["winner"];
-  if (builderBid >= holder && builderBid >= floor && builderBid > 0) {
-    base = builderBid;
+  if (builder > 0) {
+    base = builder;
     winner = "builder";
+    if (softDiscount < 0) base = builder * (1 + softDiscount);
+    // ...BUT NEVER BELOW THE SALES-COMPARISON FLOOR. A residual that has
+    // thinned to $2/sf is a bid, not a price: the district's own comp-based
+    // texture floor is standing evidence of what dirt clears at, and no owner
+    // sells under it to the one bidder whose pro forma happens to be thin
+    // this month. This is the half of the reverted max() that cannot starve
+    // supply — a builder who cannot pay the comp floor SHOULD lose the site,
+    // and the greenfield score (builder − psf) prices exactly that refusal.
+    if (base < floor) { base = floor; winner = "texture"; }
   } else if (holder >= floor) {
     base = holder;
     winner = "holder";

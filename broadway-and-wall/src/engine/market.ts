@@ -279,7 +279,8 @@ const AFFORD_BAND: [number, number] = [0.76, 1.12];
  * it the index drifts toward zero over a long century and the class vanishes
  * as a modelling artefact rather than as a city that still needs warehouses.
  */
-const INDUST_COMP_MONTH = Math.pow(0.5, 1 / (50 * 12));
+// INDUST_COMP_MONTH retired: the -1.72%/yr exodus rate lives on as one era in
+// the secular menu (see the SECULAR DEMAND ERAS block), no longer a constant.
 const INDUST_COMP_FLOOR = 0.50;
 
 /**
@@ -1270,7 +1271,17 @@ export function tickEcon(s: GameState) {
     // difference between a bad year and a bad decade.
     if (n.shockClusterM === undefined) n.shockClusterM = 0;
     if (n.shockClusterM > 0) n.shockClusterM--;
-    const shockHaz = 0.0022 + (n.shockClusterM > 0 ? 0.0050 : 0);
+    // THE HAZARD NOW MATCHES THE COMMENT ABOVE IT. "About one a decade" was
+    // written next to 0.0022/month, which is one every thirty-eight years —
+    // measured over 3 seeds x 50 years, the whole apparatus above (fiscal
+    // pressure, credibility, the ease channel) fired so rarely that CPI came
+    // out at sd 1.0% with zero years over 5% in a hundred and forty-seven.
+    // The US record 1946-2025 has an episode roughly every decade: 1946-48,
+    // 1951, 1969-71, 1973-75, 1978-82, 1990, 2021-23. At 0.006/month the base
+    // rate alone is one per fourteen years, and clustering carries the rest of
+    // the way to the record's cadence — the seventies stay a cluster, not a
+    // constant.
+    const shockHaz = 0.006 + (n.shockClusterM > 0 ? 0.0050 : 0);
     if (n.shockM > 0) { n.shockM--; } else if (rng(s) < shockHaz) {
       n.shockM = Math.round(rrange(s, 10, 26));
       n.shockClusterM = Math.round(rrange(s, 60, 130));
@@ -1536,13 +1547,37 @@ export function tickEcon(s: GameState) {
     // market charges for time and for risk — and that premium WIDENS when
     // credit is frightened, which is why spreads blow out in a crisis even as
     // the policy rate is being cut.
-    const termPrem = 1.55 + 1.85 * Math.max(0, 1 - (e.creditIdx ?? 1));
-    e.indexRate = clamp(
-      e.indexRate + 0.13 * (n.policy + termPrem - e.indexRate) + rrange(s, -0.07, 0.07),
-      RATE_FLOOR, RATE_CEIL,
-    );
+    //
+    // AND THE PREMIUM IS A MARKET, NOT A CONSTANT. This line used to EMA the
+    // index toward policy + 1.55 with seven basis points of noise, which undid
+    // the FOMC fix one street over: the committee now holds and steps like a
+    // committee, and then the index glided monotonically toward each new level
+    // for months — the player read next month's print off this month's all the
+    // same (measured: 66-70% of monthly moves continued the previous
+    // direction; monthly change sd 7-8bp against the ~20-25bp a real loan
+    // index runs; runs of one direction to 62 months).
+    //
+    // So the premium is state now: it mean-reverts toward its structural level
+    // — 1.55, widened when credit is frightened — while real market noise hits
+    // it every month. The index IS policy plus that premium, no smoothing: a
+    // bond market reprices a policy step the day it happens, not over a year.
+    // Retracements inside a trend fall out of the mean-reversion arithmetic
+    // (near equilibrium the expected next change opposes this one), which is
+    // exactly the property that makes direction a coin flip in the data.
+    //
+    // The noise bound is a calibrated shape: +/-0.30 uniform is ~17bp/month
+    // sd, sitting in the 15-25bp a 10-year yield or a loan index shows month
+    // over month. The reversion (0.10/mo) and the level bounds (0.2 to 4.5)
+    // bracket the observed range of term premia without ever binding in an
+    // ordinary decade — they are guards, not rails.
+    const premBase = 1.55 + 1.85 * Math.max(0, 1 - (e.creditIdx ?? 1));
+    if (n.termPrem === undefined) n.termPrem = premBase;
+    n.termPrem = clamp(
+      n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30),
+      0.2, 4.5);
+    e.indexRate = clamp(n.policy + n.termPrem, RATE_FLOOR, RATE_CEIL);
     // the era, for anything that still reads it — now an OUTPUT of the nation
-    e.rateRegime = clamp(n.policy + termPrem, RATE_FLOOR, RATE_CEIL);
+    e.rateRegime = clamp(n.policy + premBase, RATE_FLOOR, RATE_CEIL);
   }
 
   // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
@@ -2308,15 +2343,98 @@ export function tickEcon(s: GameState) {
     e.tightEma = (e.tightEma ?? 0) + gain * (target - (e.tightEma ?? 0));
   }
 
-  // INDUSTRIAL DEMAND TRACKS INDUSTRIAL EMPLOYMENT, NOT TOTAL JOBS.
+  // SECULAR DEMAND ERAS — the slow tide under the business cycle, per class.
   //
-  // Before this walk, sheds read bare `jobIdx`. Total employment rose with the
-  // city; industrial land and floors could not answer (M-zoning, two-storey
-  // cap); vacancy pinned at the frictional floor and `AFFORD_BAND` held the
-  // class up. The composition index declines at the NY/SF/London manufacturing
-  // floor-space rate — see INDUST_COMP_MONTH — so rising jobs no longer mint
-  // shed tenants that the map cannot house.
-  e.industComp = Math.max(INDUST_COMP_FLOOR, (e.industComp ?? 1) * INDUST_COMP_MONTH);
+  // This block replaces a single hardcoded decline. `industComp` shrank sheds'
+  // job share at the 1970-2010 manufacturing-exodus rate on every seed, always
+  // downward — measured, industrial real rents fell 1.6-2.1%/yr for fifty
+  // years on every seed while its vacancy sat pinned at the frictional floor,
+  // and the class was never once the best answer. The exodus was real; making
+  // it the ONLY possible industrial era is how one slice of history became a
+  // permanent thumb on the scale. The same record has the opposite eras too:
+  // sheds were the best-performing class in the country from 2015, office
+  // space-per-worker fell a third between 2000 and 2020, the high street lost
+  // a decade to the browser, and household formation ran in waves.
+  //
+  // Each class carries a compounding composition index whose annual drift
+  // re-rolls every 12-25 years from a menu of eras sized off that record.
+  // The menus lean where history leans — sheds and shopfronts spend more of
+  // the century declining than growing in a dense city — so the old behaviour
+  // is still the most likely single era; it is no longer the certain one.
+  //
+  // ONE COUPLING, because it is an economic identity rather than a flavour:
+  // when retail draws its erosion era, the goods still move — they move
+  // through fulfilment floors instead of shopfronts — so sheds pick up part of
+  // what the high street loses, which is exactly what 2015-2024 looked like.
+  //
+  // Guards, not rails: the index is bracketed at [0.45, 2.2]; the industrial
+  // floor keeps the residual last-mile/food share a dense city never loses.
+  {
+    if (!e.secular) {
+      // Old saves arrive with industComp already partway down its decline —
+      // adopt it as sheds' starting index so a loaded game does not jump.
+      e.secular = {
+        office: { idx: 1, drift: 0, leftM: 0 },
+        retail: { idx: 1, drift: 0, leftM: 0 },
+        multifamily: { idx: 1, drift: 0, leftM: 0 },
+        industrial: { idx: e.industComp ?? 1, drift: 0, leftM: 0 },
+      };
+    }
+    // Annual drift menus: [drift, weight] pairs, each an era with a name in
+    // the comment. Weighted toward history's base case per class.
+    const MENUS: Record<string, [number, number][]> = {
+      office: [
+        // Space-per-worker fell from ~250sf to ~150sf between 2000 and 2020 —
+        // about -2.5%/yr of claim compression sustained for two decades — and
+        // the telework shock stacked a level drop on top. The deep era below
+        // is that record, not a balance choice; office demand per job has
+        // spent more of the modern record shrinking than growing.
+        [-0.024, 2],   // densification + telework era
+        [-0.009, 3],   // slow space-per-worker compression
+        [0.0, 2],      // steady state
+        [0.008, 2],    // services boom pulls desks
+      ],
+      retail: [
+        [-0.02, 2],    // the browser eats the high street
+        [-0.008, 3],   // slow erosion
+        [0.0, 2],      // steady state
+        [0.005, 1],    // urban retail renaissance
+      ],
+      multifamily: [
+        [-0.004, 1],   // suburban exodus
+        [0.0, 2],      // steady state
+        [0.007, 3],    // household-formation wave
+        [0.013, 1],    // urbanization surge
+      ],
+      industrial: [
+        [-0.0172, 3],  // the manufacturing exodus (the old constant, now one era)
+        [-0.006, 2],   // slow thinning
+        [0.0, 2],      // steady state
+        [0.012, 2],    // logistics / fulfilment boom
+      ],
+    };
+    let retailErosion = 0;
+    for (const k of BUILT_CLASSES) {
+      const sec = e.secular[k];
+      if (sec.leftM <= 0) {
+        const menu = MENUS[k];
+        const totW = menu.reduce((a, [, w]) => a + w, 0);
+        let roll = rng(s) * totW;
+        let drift = menu[0][0];
+        for (const [d, w] of menu) { roll -= w; if (roll <= 0) { drift = d; break; } }
+        sec.drift = drift;
+        sec.leftM = Math.round(rrange(s, 144, 300));
+      }
+      sec.leftM--;
+      if (k === "retail" && sec.drift < -0.005) retailErosion = -sec.drift;
+      const coupled = k === "industrial" ? sec.drift + 0.6 * retailErosion : sec.drift;
+      sec.idx = clamp(sec.idx * (1 + coupled / 12), 0.45, 2.2);
+    }
+    // sheds keep their floor: last-mile and food distribution never leave
+    e.secular.industrial.idx = Math.max(INDUST_COMP_FLOOR, e.secular.industrial.idx);
+    // legacy mirror, for anything that still reads it
+    e.industComp = e.secular.industrial.idx;
+  }
 
   const unmet: Record<string, number> = {};
   // ONE QUEUE SETTLES ONCE. Mixed-use projects arrive atomically and a stalled
@@ -2699,10 +2817,10 @@ export function tickEcon(s: GameState) {
       }
       return w > 0 ? acc / w : 1;
     })();
-    const driver = k === "multifamily" ? popIdx
+    const secIdx = e.secular?.[k]?.idx ?? (k === "industrial" ? (e.industComp ?? 1) : 1);
+    const driver = (k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
-      : k === "industrial" ? jobIdx * (e.industComp ?? 1)
-      : jobIdx;
+      : jobIdx) * secIdx;
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent
     // restatement of what this class is wanted for once something has: less
@@ -3405,6 +3523,30 @@ export function tickEcon(s: GameState) {
 
   // cap rates: class base, dragged by the loan index and the cycle, and gapped
   // out when nobody will lend — a credit crunch reprices everything at once
+  //
+  // ...AND BY THE MONEY CHASING LAST YEAR'S WINNER. Before this term the class
+  // bases were constants, so a class could out-earn the others indefinitely
+  // and nothing ever repriced it. Measured: office took the highest rent
+  // growth AND the highest yield on every seed — a 3-4 point crude-return
+  // spread held for fifty years, and every player learned the same lesson:
+  // only build office. No real market permits that, because allocators chase
+  // trailing returns: money floods the winning class, bids its prices up,
+  // compresses its cap, and keeps arriving until its forward return no longer
+  // beats the field (industrial under a 4-cap by 2021 is the textbook case).
+  // The flows term below is that mechanism: each class's trailing realized
+  // return, EMA'd over ~4 years because institutional allocation moves on
+  // committee time, measured RELATIVE to the four-class mean so flows shuffle
+  // capital between classes without moving the overall level of yields.
+  {
+    const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
+    if (!e.retExp) e.retExp = { ...e.capRate };
+    for (const k of BUILT_CLASSES) {
+      const then = h12?.rent?.[k];
+      const g12 = then && then > 0 ? (e.rentIdx[k] / then - 1) * 100 : 0;
+      e.retExp[k] += 0.021 * ((g12 + e.capRate[k]) - e.retExp[k]);
+    }
+  }
+  const retMean = BUILT_CLASSES.reduce((a, k) => a + e.retExp![k], 0) / BUILT_CLASSES.length;
   for (const k of BUILT_CLASSES) {
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
     // A sector in favour reprices harder than it used to: capital rotating
@@ -3424,7 +3566,13 @@ export function tickEcon(s: GameState) {
     // levered purchase were both weather rather than judgement. At 0.55 a rate
     // spike genuinely flips leverage negative and a rate collapse genuinely
     // makes it free — which is the trade the player is supposed to be reading.
-    const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk;
+    // Half a point of cap per point of trailing excess return, bracketed at
+    // +/-1.1 as a guard: the historical spread between the most- and
+    // least-favoured class's cap moved about two points across an allocation
+    // cycle (office vs industrial, 2007 to 2021), and this term's full swing
+    // matches that without ever being the largest term in the sum.
+    const flows = clamp(-0.65 * (e.retExp![k] - retMean), -1.3, 1.3);
+    const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //

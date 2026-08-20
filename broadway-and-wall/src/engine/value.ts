@@ -417,7 +417,7 @@ const CONSTRUCTION_LTC = 0.65;
  * coefficient.
  */
 function residualLeaseUpCarryPsf(
-  use: BuiltClass, econ: Econ, opex: number, occ: number,
+  use: BuiltClass, econ: Econ, opex: number, occ: number, schemeSf = 0,
 ): number {
   const baseCarryMonths = use === "multifamily" ? 19 : 38;
   const stock = Math.max(1, econ.stock?.[use] ?? 1);
@@ -426,7 +426,21 @@ function residualLeaseUpCarryPsf(
   const leaseRaw = availability / Math.max(0.001, NATURAL_VAC[use])
     - (econ.structTight?.[use] ?? 0) * 2.2;
   const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
-  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
+  // A BIG SCHEME FILLS AT THE MARKET'S PACE, NOT AT ITS OWN. The carry was
+  // per-square-foot and size-blind, so a 500k sf envelope carried the same
+  // MONTHS as a 30k sf infill — and with the residual choosing the scheme
+  // that maximises surplus, the maximum envelope priced as if the market
+  // would swallow it in one gulp. Tenants arrive at the market's absorption
+  // rate; a floor of them a quarter is a strong programme for a big building
+  // (which is why Manhattan towers pre-lease for years), so lease-up TIME
+  // grows with the scheme, sub-linearly because bigger jobs run bigger
+  // leasing programmes. One-sided above the city's typical ~45k sf scheme:
+  // today's stock keeps today's carry to the digit, and the term begins to
+  // bite exactly where a doubled envelope starts writing schemes the demand
+  // has to be asked about. The 3x bracket is a guard.
+  const sizeFactor = schemeSf > 45_000
+    ? Math.min(3, Math.pow(schemeSf / 45_000, 0.7)) : 1;
+  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket * sizeFactor);
   const fillOcc = occ * LEASEUP_FILL;
   return opex * (1 - fillOcc) * (carryMonths / 12);
 }
@@ -580,10 +594,11 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     const eff = rentableRatio(rec.lotArea * 0.7);
     const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
     const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
-    const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ);
 
     let bestForUse = -Infinity;
     for (const { floors: fl, usable } of choices) {
+      // the carry knows the scheme's size now — see residualLeaseUpCarryPsf
+      const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ, usable * rec.lotArea);
       const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
       const interestPsf = residualConstructionInterestPsf(costPsf, econ);
       const allInCost = costPsf + (fitPsf + carryPsf) * eff + interestPsf;
@@ -786,7 +801,26 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // most dirt is still dirt.
   const floor = texture * 0.30;
   const heat = econ.districtHeat?.[rec.district ?? "—"] ?? 1;
-  const softDiscount = heat < 1 ? clamp((heat - 1) * 0.5, -0.06, 0) : 0;
+  // THE APPRAISAL IS A RECONCILIATION, AND FOR LAND THE SALES COMPARISON
+  // GOVERNS. The residual above is the income approach: what the maths says a
+  // builder could pay. `districtHeat` is the sales-comparison evidence: what
+  // the district's own prints (and, since the no-bid decay, its silences)
+  // say buyers actually pay, relative to book. When the two diverge the
+  // appraiser does not average them — for land, USPAP practice and every
+  // review appraiser lean on the comparable sales and use the residual as
+  // support, because the residual is a model and the prints are the market.
+  //
+  // This was clamped at -6%, which read as reconciliation and was decoration:
+  // if the envelope doubles tomorrow and every residual doubles with it while
+  // the buyers stay where they were, six per cent does not reconcile anything
+  // — asks track the model into territory nobody bids, and the only honest
+  // corrections left are the slow no-bid decay and a workout. At 0.55 weight
+  // on the comp gap the builder bid concedes up to ~22% to a district whose
+  // prints run at the 0.6 heat floor — sales comparison governing, income
+  // approach supporting. No symmetric premium on hot districts: a district
+  // printing over book already reaches every parcel through `landAdj`, and a
+  // second helping here would count the same evidence twice.
+  const softDiscount = heat < 1 ? clamp((heat - 1) * 0.55, -0.25, 0) : 0;
   let base: number;
   let winner: LandRead["winner"];
   if (builder > 0) {

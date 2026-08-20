@@ -7,7 +7,38 @@
 
 ---
 
-## This ruler: supply answers price (SAVE_VERSION unchanged)
+## This ruler: a concession cannot be un-given (SAVE_VERSION unchanged)
+
+`ad0a156` made the concession dial asymmetric. It chased its target at
+0.25/month in both directions, so the giveaway evaporated as fast as it
+arrived and returned to zero the moment availability normalised. It now opens
+at 0.25/month and closes at the rate the class's leases actually roll — 1/60
+for office and retail, 1/36 industrial, 1/12 for flats — because a landlord
+can concede this month and cannot un-concede until the paper turns over.
+
+Measured with `pnpm glut` before the change: the ASKING index carried 74-86%
+of the whole effective-rent adjustment at three years, in every class at every
+dose, twelve readings out of twelve. Real markets put it the other way round:
+four years after 2020, Manhattan asking was -3.3% and net effective -17.3%.
+No new `rng()` draws, so every move below is a repricing plus the century
+re-roll that follows from changed decisions.
+
+| Metric cluster | Driver | Direction |
+|---|---|---|
+| `rentIdx.office` -11%, `retail` -11%, `multifamily` -4% | THE INTENDED MOVE. The dial now holds a residue of past softness, so the effective index sits under asking for years and asking no longer has to carry the whole cut | One-time repricing, intended |
+| `land.p90` +48%, `land.p10` +5% | Land is a residual and a difference, so a rent series that stops overshooting downward shows up geared on the best dirt | Follows rent |
+| `city.population` +2.2%, `floorAreaM` +1.1%, `demolished` 19 -> 26 | Cheaper effective rent lets more households in and turns more worn stock over | Follows the repricing |
+| **`rail.vac.office.lo` 0.247 -> 0.350** | **A REGRESSION, AND IT IS REPORTED.** Lower asking rents raise demanded space, and office supply still cannot answer it, so the frictional vacancy floor binds a third of months again. This is the same open item the income ruler recorded; it is now the largest one | Report, do not tune |
+| `rail.vac.multifamily.lo` 0.16 -> 0.107 | The other half went the right way — flats' 1/12 decay is short, so their dial still clears | Follows the roll rate |
+| `roll.deadLegShare` +5.4% | More mixed-use legs sit unlet at a lower effective rent | Follows |
+
+The office rail is the honest cost of this ruler. The mechanism is right — a
+market that has taught tenants to expect free rent keeps paying it — and the
+city still cannot build into the demand that a cheaper effective rent creates.
+
+---
+
+## Previous ruler: supply answers price (SAVE_VERSION unchanged)
 
 `9bb975e` removed the third answer to one question. The legal envelope said
 27-56 floors, `cityInfillCap` let a shovel reach 5-8, and the land residual

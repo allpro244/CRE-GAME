@@ -82,6 +82,7 @@
     "leadlag": "node test/leadlag.mjs",
     "legmatch": "node test/legmatch.mjs",
     "inflation": "node test/inflation.mjs",
+    "income": "node test/income-elasticity.mjs",
     "cityclass": "node test/cityclass-rents.mjs",
     "parkclear": "node test/park-clearance.mjs",
     "streetpaint": "node test/street-paint.mjs",

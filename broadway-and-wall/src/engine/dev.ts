@@ -11,7 +11,7 @@ import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
-import { coverRoleState, cmRiskMult } from "./staff";
+import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
@@ -765,9 +765,9 @@ const RETAIL_YIELDS_ABOVE = 6;
 
 // The parcel as it will exist once the building is up — what the rent, the
 // cap rate and the leasing costs all have to be read against.
-function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number) {
+function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number, spec = 0.5) {
   const mix = devMix(use);
-  return { ...(rec as object), class: dominantOf(mix), mix, bldgArea: sf, floors } as never;
+  return { ...(rec as object), class: dominantOf(mix), mix, bldgArea: sf, floors, buildSpec: spec } as never;
 }
 
 export function planDevelopment(
@@ -877,7 +877,7 @@ export function planDevelopment(
   const openSf = rentable;
   // apartments have no fit-out, but they do have concessions and marketing
   const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
-  const asBuilt0 = asBuiltRec(rec, use, sf, fl);
+  const asBuilt0 = asBuiltRec(rec, use, sf, fl, spec);
   // Underwrite the rent tenants are actually paying after market-wide
   // concessions, not the asking-rent headline. This is the same effective-rent
   // index the class order pro forma reads.
@@ -1045,7 +1045,7 @@ export function planDevelopment(
 
   // Yield on cost against today's stabilised rents — the number a developer
   // actually lives by, and the spread to the exit cap is the whole margin.
-  const asBuilt = asBuiltRec(rec, use, sf, fl);
+  const asBuilt = asBuiltRec(rec, use, sf, fl, spec);
   // ORIGINATION IS A COST OF THE PROJECT, not a fee that happens next to it.
   // The interest reserve was already in here for exactly this reason; the
   // points are the same kind of money — a line in every development budget,
@@ -2094,7 +2094,8 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // rest of the century. That fault is documented at the top of staff.ts
       // and it cost an acceptance test once already.
       // Per-job cover: an assigned CM carries this site; otherwise the float desk.
-      const cm = cmRiskMult(coverRoleState(s, parcels, d.bbl, "construction").rs);
+      const cmRaw = coverRoleState(s, parcels, d.bbl, "construction").rs;
+      const cm = cmRiskMult(STAFF_CAPACITY_SHIPPED ? cmRaw : { ...cmRaw, slip: 0 });
       const cmNote = cm > 1.08 ? " The construction desk was underwater and the job went unsupervised." : "";
       if (roll < 0.028 * gmpShield * cm) {
         // change order

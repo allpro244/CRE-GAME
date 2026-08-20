@@ -856,10 +856,14 @@ export function refreshPool(s: GameState, force = false) {
  * differently, and a single stamped number cannot do that.
  */
 /**
- * UI shipped — capacity multipliers bind. Neutral pin kept when flag is false
- * and the desk is empty so saves without staff do not slip silently.
+ * UI shipped — hire / fire / payroll bind. Capacity and management-load
+ * economics are a separate flag: the limit system is parked (Brian: it is
+ * bad the way it is; redo later). Hire quality still stamps; overload slip
+ * does not. `HIRING_UI_SHIPPED` kept so older saves and comments still read.
  */
 export const HIRING_UI_SHIPPED = true;
+/** Load / slip / capacity ceilings. Off until the desk is redesigned. */
+export const STAFF_CAPACITY_SHIPPED = false;
 
 function assignedForBbl(s: GameState, bbl: string, role: StaffRole): Staff | undefined {
   return (s.staff ?? []).find((st) => st.role === role && st.assignedBbls?.includes(bbl));
@@ -876,6 +880,32 @@ export function markStaff(s: GameState, parcels: ParcelTable) {
     }
     delete s.leasingOddsMult; delete s.pmRenewalMult; delete s.leasingRentMult;
     delete s.pmDeskSlip;
+    return;
+  }
+  // CAPACITY PARKED. Skill still stamps — a hire is still a hire — but slip
+  // is forced to zero so an overloaded book does not quietly tax opex,
+  // renewals or tours. The diagnostic functions (pmOpexMult etc.) still
+  // answer the load question; they are just not written onto the month.
+  if (!STAFF_CAPACITY_SHIPPED) {
+    const pmKept = { ...pm, slip: 0 };
+    const leaseKept = { ...lease, slip: 0 };
+    delete s.pmDeskSlip;
+    s.leasingOddsMult = +leasingOddsMult(leaseKept).toFixed(4);
+    s.pmRenewalMult = +pmRenewalMult(pmKept).toFixed(4);
+    s.leasingRentMult = +leasingRentMult(leaseKept).toFixed(4);
+    for (const h of Object.values(s.holdings)) {
+      if (h.groundLeased) {
+        delete h.pmOpexMult;
+        delete h.pmRenewalMult;
+        delete h.leasingRentMult;
+        continue;
+      }
+      const pmCover = coverRoleState(s, parcels, h.bbl, "pm");
+      const leaseCover = coverRoleState(s, parcels, h.bbl, "leasing");
+      h.pmOpexMult = +pmOpexMult({ ...pmCover.rs, slip: 0 }).toFixed(4);
+      h.pmRenewalMult = +pmRenewalMult({ ...pmCover.rs, slip: 0 }).toFixed(4);
+      h.leasingRentMult = +leasingRentMult({ ...leaseCover.rs, slip: 0 }).toFixed(4);
+    }
     return;
   }
   // Firm tour-odds / renewal defaults still come from the whole desk read.

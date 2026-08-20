@@ -56,7 +56,7 @@ import {
   SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
   deskBacklog, firmShapeLabel, personRoleState, isFloatStaff,
   leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
-  readAttr, roleState, severanceFor,
+  readAttr, roleState, severanceFor, STAFF_CAPACITY_SHIPPED,
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
@@ -278,8 +278,9 @@ export default function StaffPage() {
         {staff.length
           ? "Desks own work. Assigned people cover their book; unassigned people cover the rest; uncovered load sits on you. "
           : "Nobody is on the payroll but you — every desk is yours until you hire and, for leasing, hand them the pen. "}
-        Past capacity the roof inspection slips, the renewal conversation happens two months late, and the
-        vendor contract rolls over unexamined. That is work that did not get done, priced below in the units it costs you.
+        {STAFF_CAPACITY_SHIPPED
+          ? "Past capacity the roof inspection slips, the renewal conversation happens two months late, and the vendor contract rolls over unexamined. That is work that did not get done, priced below in the units it costs you."
+          : "Capacity and management-load economics are parked — hire and fire still work, payroll still hits the books, and a good hire still helps, but an overloaded book does not quietly tax the month. The load model will come back later."}
         {rep < 0.45 ? " The street remembers messy firings — the next shortlist will read worse." : ""}
       </div>
 
@@ -419,10 +420,11 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
   armed: number | null;
   severance: (st: Staff) => number;
 }) {
+  const priced: RoleState = STAFF_CAPACITY_SHIPPED ? rs : { ...rs, slip: 0 };
   const covered: RoleState = { ...rs, slip: 0 };
   const lines: { text: string; bad: boolean }[] = [];
   // Work not done — concrete units ahead of the multiplier prose.
-  if (backlog.uncoveredN > 0) {
+  if (STAFF_CAPACITY_SHIPPED && backlog.uncoveredN > 0) {
     lines.push({
       bad: true,
       text: role === "construction"
@@ -430,25 +432,25 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
         : `${backlog.uncoveredN} building${backlog.uncoveredN === 1 ? "" : "s"} (${sf(backlog.uncoveredSf)}) sit on you alone — every ${ROLE_LABEL[role].toLowerCase()} hire is pinned elsewhere.`,
     });
   }
-  if (role === "pm" && backlog.opexDragYr > 500) {
+  if (STAFF_CAPACITY_SHIPPED && role === "pm" && backlog.opexDragYr > 500) {
     lines.push({
       bad: true,
       text: `Deferred PM work is costing about ${usd(backlog.opexDragYr)} a year in controllable operating expense versus the same desk inside capacity.`,
     });
   }
-  if (role === "pm" && backlog.renewalsMissPct > 1) {
+  if (STAFF_CAPACITY_SHIPPED && role === "pm" && backlog.renewalsMissPct > 1) {
     lines.push({
       bad: true,
       text: `Renewal conversations are landing about ${backlog.renewalsMissPct.toFixed(0)}% less often than they would if this desk were keeping up.`,
     });
   }
-  if (role === "leasing" && backlog.prospectsMissPct > 1) {
+  if (STAFF_CAPACITY_SHIPPED && role === "leasing" && backlog.prospectsMissPct > 1) {
     lines.push({
       bad: true,
       text: `About ${backlog.prospectsMissPct.toFixed(0)}% of prospects this desk would catch inside capacity are touring someone else instead.`,
     });
   }
-  if (role === "construction" && backlog.siteRiskExtraPct > 1) {
+  if (STAFF_CAPACITY_SHIPPED && role === "construction" && backlog.siteRiskExtraPct > 1) {
     lines.push({
       bad: true,
       text: `Site risk is running about ${backlog.siteRiskExtraPct.toFixed(0)}% hotter than the same people would carry inside capacity`
@@ -467,7 +469,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
   const turns = manned && one ? "turns" : "turn";
 
   if (role === "pm") {
-    const now = pmOpexMult(rs);
+    const now = pmOpexMult(priced);
     const kept = pmOpexMult(covered);
     const slipCost = opexBase * (now - kept);
     const skillWorth = opexBase * (1 - kept);
@@ -488,7 +490,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
             : `Running them yourself costs about ${usd(-skillWorth)} a year more than a competent manager would — you are underwriting and financing at the same time, and it shows in the invoices nobody reads.`,
       });
     }
-    const renew = pmRenewalMult(rs);
+    const renew = pmRenewalMult(priced);
     const renewKept = pmRenewalMult(covered);
     if (renewKept - renew > 0.005) {
       lines.push({
@@ -503,7 +505,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
     // WHAT THE SEAT IS WORTH, in the only currency it deals in: the things
     // that go wrong on a job. It buys nothing on a book that is not building,
     // and the card says so rather than inventing a benefit.
-    const now = cmRiskMult(rs);
+    const now = cmRiskMult(priced);
     const kept = cmRiskMult(covered);
     if (rs.covered <= 0) {
       lines.push({
@@ -531,7 +533,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
       });
     }
   } else {
-    const odds = leasingOddsMult(rs);
+    const odds = leasingOddsMult(priced);
     const oddsKept = leasingOddsMult(covered);
     if (oddsKept - odds > 0.005) {
       lines.push({
@@ -550,7 +552,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
             : `Answering your own phone turns up about ${((1 - oddsKept) * 100).toFixed(0)}% fewer prospects than a leasing desk would. Nobody is calling the brokers back on your behalf.`,
       });
     }
-    const rent = leasingRentMult(rs);
+    const rent = leasingRentMult(priced);
     if (Math.abs(rent - 1) > 0.002) {
       lines.push({
         bad: rent < 1,
@@ -565,9 +567,11 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
 
   return (
     <div className="page-section">
-      <div className={"page-section-head" + (rs.slip > 0.15 ? " neg" : "")}>
+      <div className={"page-section-head" + (priced.slip > 0.15 ? " neg" : "")}>
         {ROLE_LABEL[role]} · {rs.load.toFixed(2)}× capacity
-        {rs.slip > 0 ? ` · ${(rs.slip * 100).toFixed(0)}% of the work slipping` : " · keeping up"}
+        {STAFF_CAPACITY_SHIPPED
+          ? (priced.slip > 0 ? ` · ${(priced.slip * 100).toFixed(0)}% of the work slipping` : " · keeping up")
+          : " · load parked"}
       </div>
       <LoadBar rs={rs} />
       <div className="hint">

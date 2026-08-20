@@ -58,6 +58,7 @@
     "spec-rent": "node test/spec-rent.mjs",
     "reo-books": "node test/reo-books.mjs",
     "loc-draw": "node test/loc-draw.mjs",
+    "far-envelope": "node test/far-envelope.mjs",
     "attrs": "node test/attrs.mjs",
     "principal": "node test/principal-phase12.mjs && node test/principal-mortality.mjs && node test/principal-estate.mjs",
     "fund": "node test/fund.mjs",

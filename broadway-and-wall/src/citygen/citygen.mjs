@@ -1334,6 +1334,9 @@ export function generateCity(cfg) {
     // 2× at the fringe — room for a mid-rise without variance — rising to ~6×
     // downtown so a tower can be legal where a walk-up stands today.
     const headroom = 2.0 + 4.5 * heat * heat;
+    // Fabric-anchored bulk. `build.mjs` stamps FAR_ENVELOPE_MULT (2×) onto
+    // farMaxComm/farMaxRes so the legal envelope is twice this; massing
+    // below still uses this figure, so existing buildings stay their size.
     return Math.round(Math.max(2.0, Math.min(38, typFar * headroom)) * 10) / 10;
   };
 

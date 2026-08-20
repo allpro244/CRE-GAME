@@ -140,7 +140,7 @@ const report = (name, ok, lines) => {
   const cashBefore = g.cash;
   E.refreshPool(g, true);
   const cand = g.hirePool.list.find((c) => c.role === "pm");
-  const r = E.hire(g, cand.id);
+  const r = E.hire(g, parcels, cand.id);
   if (r.err) { report("D. SALARIES REACH THE BOOKS", false, [`hire refused: ${r.err}`]); }
   else {
     g = r.s;
@@ -170,7 +170,7 @@ const report = (name, ok, lines) => {
   E.refreshPool(g, true);
   const roles = new Set(g.hirePool.list.map((c) => c.role));
   const hasCm = roles.has("construction");
-  const tier = E.setSearchTier(g, "recruiter");
+  const tier = E.setSearchTier(g, parcels, "recruiter");
   const bandOk = !tier.err && tier.s.hirePool.band === 11;
   // A performing PM desk must move renewal probability — stamp + intent.
   const officeBbl = bbls.find((b) => {

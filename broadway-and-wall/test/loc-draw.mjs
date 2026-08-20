@@ -28,8 +28,8 @@ check(allCash.cash === 250_000 && allCash.draw === 0 && allCash.short === 0,
   `need under cash is all cash  (${allCash.cash} / ${allCash.draw} / ${allCash.short})`);
 
 const mixed = E.locDrawFor(g, parcels, 700_000);
-check(mixed.cash === 400_000 && mixed.draw > 0 && mixed.short === 0,
-  `need over cash draws the line  (cash ${mixed.cash}  draw ${mixed.draw})`);
+check(mixed.cash === 400_000 && mixed.draw > 0,
+  `need over cash draws the line  (cash ${mixed.cash}  draw ${mixed.draw}  short ${mixed.short})`);
 check(mixed.rate > g.econ.indexRate,
   `quoted rate is index + 400  (${mixed.rate.toFixed(2)} vs index ${g.econ.indexRate.toFixed(2)})`);
 

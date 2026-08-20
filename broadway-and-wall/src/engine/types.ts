@@ -2025,6 +2025,8 @@ export interface Rival {
   taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
+  /** One-shot epilogue news for a failed firm — the street remembering. */
+  epilogueM?: number;
   // A CASH SHORTFALL IS NOT A FAILURE WHILE THERE IS ROOM ON THE BOOK.
   // Lifetime draw on their own credit, for the street table — a firm running
   // on its revolver is a firm you should be watching.
@@ -2514,6 +2516,13 @@ export interface GameState {
    * twice. See tickHolders.
    */
   holderExit?: Record<string, number>;
+  /**
+   * Exits the street has heard about but the executors have not filed yet —
+   * the rumor runs ahead of the listings by a few months, and a player who
+   * acts on street talk gets the first look. One entry per holder, flushed by
+   * tickHolders when its month arrives.
+   */
+  holderPend?: { id: string; m: number; bbls: string[]; distress: boolean; kind: string }[];
   /**
    * ONE LOAN, MANY DEEDS. Absent until the player papers one, and there is at
    * most one at a time — a second facility would be a second first lien on the

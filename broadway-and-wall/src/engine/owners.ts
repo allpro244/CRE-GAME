@@ -54,10 +54,11 @@
  * without anyone having to sort the city.
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState, SellerKind } from "./types";
+import type { GameState, Rival, SellerKind } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, holdingValue } from "./value";
 import { ownerOf } from "./rivals";
+import { makeRivalPrincipal } from "./people";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
 function hash01(str: string): number {
@@ -584,6 +585,16 @@ export function tickHolders(
   // once. What is an event is a holder with a BOOK leaving the market, and
   // there are about sixty of those in a town this size rather than two
   // hundred.
+  // FIRST, ANY RUMOR THAT HAS COME DUE. The street heard about this exit
+  // months ago; today the executors actually file and the listings appear.
+  if (s.holderPend?.length) {
+    const due = s.holderPend.findIndex((p) => p.m <= s.month);
+    if (due >= 0) {
+      const p = s.holderPend.splice(due, 1)[0];
+      const stillFree = p.bbls.filter((b) => !s.listings.some((l) => l.bbl === b) && !s.holdings[b] && !ownerOf(s, b));
+      if (stillFree.length) return { bbls: stillFree, distress: p.distress, kind: p.kind };
+    }
+  }
   const reg = register(s, parcels).filter((h) => h.tier !== "small");
   if (!reg.length) return { bbls: [], distress: false };
   // ONE CANDIDATE A MONTH, SCALED. Walking the whole register every month
@@ -604,6 +615,66 @@ export function tickHolders(
   if (rng(s) > hz) return { bbls: [], distress: false };
   const book = holdingsOf(s, parcels, h.id).filter((b) => !s.listings.some((l) => l.bbl === b));
   if (!book.length) return { bbls: [], distress: false, kind: h.kind };
+
+  // SOMETIMES THE HEIR DOES NOT SELL — THE REGISTER IS WHERE FIRMS COME FROM.
+  //
+  // Every operating firm on any real street started as somebody's buildings:
+  // an heir who decided to run the book instead of settling it, the surviving
+  // partner who bought his brother out. The register and the rival roster
+  // used to be sealed off from each other — a holder's exit could only ever
+  // be a sale, and the roster the town opened with was the roster it died
+  // with, minus failures. So the street only ever shrank, and every name on
+  // it was as old as the save.
+  //
+  // Now an estate or a split partnership sometimes seats an OPERATOR: the
+  // holder's book transfers whole to a new firm under the family's name, run
+  // by an heir with an age and a doctrine. Entry follows exit, as it does in
+  // life — the street's deal flow supports roughly the population it opened
+  // with, so a seat only opens when failures have thinned the field below the
+  // founding roster. The probabilities are demographic guesses stated as
+  // such: about a third of estates have an heir who wants the business,
+  // fewer partnerships survive their split.
+  const seats0 = (s.rivals ?? []).filter((r) => r.bornM === 0).length;
+  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined).length;
+  const heirOdds = h.kind === "estate" ? 0.35 : h.kind === "partnership" ? 0.25 : 0;
+  if (heirOdds > 0 && live < seats0 && rng(s) < heirOdds) {
+    const id = `h:${h.id}:${s.month}`;
+    const heirStyle = h.kind === "estate" ? "family" as const : "opportunistic" as const;
+    // Working capital, not a war chest: heirs inherit buildings, and the cash
+    // that comes with an estate is a few points of it after the executors and
+    // the taxes. 3% of book, and the book itself is the position.
+    let bookVal = 0;
+    for (const b of book) {
+      const rec = resolveRec(parcels, s, b);
+      if (rec) bookVal += holdingValue(rec, s.econ, {
+        bbl: b, tenants: [], occ: 0, condition: "standard", boughtM: 0, costBasis: 0, programsDone: {},
+      } as never, s.month);
+    }
+    const firm: Rival = {
+      id, name: h.name.replace(/ Estate$| Trust$/, "") + (h.kind === "estate" ? " & Heirs" : " Properties"),
+      style: heirStyle,
+      cash: Math.round(bookVal * 0.03),
+      debt: 0, bbls: [...book], targetLtv: heirStyle === "family" ? 0.30 : 0.62,
+      bornM: s.month, basis: Math.round(bookVal),
+      heldSince: Object.fromEntries(book.map((b) => [b, s.month])),
+    };
+    if (!s.rivals) s.rivals = [];
+    s.rivals.push(firm);
+    const heir = makeRivalPrincipal(s, id, firm.name, Math.round(28 + rng(s) * 20));
+    if (!s.rivalPrincipals) s.rivalPrincipals = {};
+    s.rivalPrincipals[id] = heir;
+    if (!s.holderExit) s.holderExit = {};
+    s.holderExit[h.id] = s.month;
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: h.kind === "estate"
+        ? `The ${h.name} succession is settled and nothing is coming to market: ${heir.name} is keeping the book — `
+          + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The street has a new landlord with an old name.`
+        : `${h.name} split, and one side bought the other out: ${heir.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
+          + `and is said to be looking for more. A holder has become a competitor.`,
+    });
+    return { bbls: [], distress: false, kind: h.kind };
+  }
   // Not the whole book at once in every case: an estate sells everything, a
   // fund trims. What comes is enough to be a story.
   const share = h.kind === "estate" ? 1 : h.kind === "institution" ? 0.7 : h.kind === "developer" ? 0.4 : 0.8;
@@ -617,6 +688,27 @@ export function tickHolders(
   const bbls = book.slice(0, take);
   if (!s.holderExit) s.holderExit = {};
   s.holderExit[h.id] = s.month;
+  // THE RUMOR RUNS AHEAD OF THE FILING, about half the time. Probate takes
+  // months and the street hears about a death long before the executors
+  // instruct agents; a fund's exit is decided in a committee whose minutes
+  // leak. A player who reads the tape learns which book is coming and can
+  // make the first call — which is the actual edge street talk confers in
+  // this business. The other half of exits arrive the way they used to:
+  // everyone reads the same headline on the same morning.
+  if (rng(s) < 0.5) {
+    if (!s.holderPend) s.holderPend = [];
+    s.holderPend.push({ id: h.id, m: s.month + 3 + Math.floor(rng(s) * 4), bbls, distress: h.kind === "estate" || h.kind === "partnership", kind: h.kind });
+    const whisper = h.kind === "estate"
+      ? `Word at the courthouse: the ${h.name} probate is moving, and the heirs are not keeping anything. `
+        + `${bbls.length} building${bbls.length === 1 ? "" : "s"} will reach the tape when the executors finish arguing.`
+      : h.kind === "institution"
+        ? `${h.name}'s local book is said to be under review — the committee met twice this quarter and nobody is renewing the management contracts. Watch the tape.`
+        : h.kind === "partnership"
+          ? `${h.name} are lawyered up against each other, and the only way that ends is with the buildings on the market.`
+          : `${h.name} is quietly shopping the book before it shops itself. The brokers already know; now so do you.`;
+    s.news.unshift({ q: s.month, kind: "info", text: whisper });
+    return { bbls: [], distress: false, kind: h.kind };
+  }
   s.news.unshift({ q: s.month, kind: "event", text: exitStory(h, bbls.length) });
   // WHO IS SELLING DECIDES WHETHER IT IS CHEAP. An estate and a split
   // partnership want it DONE and price it that way; a fund with a committee

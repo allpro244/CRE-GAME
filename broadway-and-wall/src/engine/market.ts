@@ -2453,6 +2453,14 @@ export function tickEcon(s: GameState) {
     e.industComp = e.secular.industrial.idx;
   }
 
+  // UNREAD AS OF THIS COMMIT. `unmet` is written once per class per month at
+  // the bottom of the demand block and consumed by nothing — it is a function
+  // local, so nothing outside can see it, and inside the file every other
+  // occurrence is prose. Rent pressure forms from `vacTerm + scarcity`, and
+  // scarcity reads `e.structTight`, not this. The long comment at its write
+  // site argues about which form the line should take; that argument is now
+  // moot until something reads it again. Left in place because the comment is
+  // the only record of the investigation — see there.
   const unmet: Record<string, number> = {};
   // ONE QUEUE SETTLES ONCE. Mixed-use projects arrive atomically and a stalled
   // or cancelled physical job cannot leak an anonymous leg into stock.
@@ -2464,9 +2472,17 @@ export function tickEcon(s: GameState) {
     // as the actual parcel desk, rather than a second optimism formula.
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
     e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
-    // The rate EMA remains a published market belief used by reports and old
-    // saves, but it no longer supplies a second, class-blind development
-    // hurdle. devPencils reads the shared class pro forma in value.ts.
+    // THE RATE EMA IS NOW READ BY NOTHING, and this comment used to claim it
+    // was "a published market belief used by reports". It is not: grep finds
+    // the write below, the reset in regime.ts, the declaration in types.ts, a
+    // comment in value.ts quoting the RETIRED `rateEma/100 + DEV_SPREAD`
+    // hurdle, and tools/econaudit.mjs perturbing it in the DEAD KNOB sweep —
+    // which is the repo's own tool already reporting it dead. recordHistory
+    // does not carry it, so it reaches no chart and no report.
+    // Kept because old saves carry the field and a regime reset writes it;
+    // it costs one EMA a month and no longer justifies itself as a belief
+    // anybody consults. devPencils reads the shared class pro forma in
+    // value.ts. If it is still unread next time somebody passes through, delete it.
     e.rateEma = (e.rateEma ?? e.indexRate) + 0.085 * (e.indexRate - (e.rateEma ?? e.indexRate));
 
     // ONE ORDER HURDLE. The class-level pro forma reads effective rent (and
@@ -3121,13 +3137,28 @@ export function tickEcon(s: GameState) {
   // RENTS MOVE ON AVAILABILITY. The gap between the space a tenant can
   // actually go and lease — empty floors plus everything on the sublet market
   // — and the natural rate is the whole of the landlord-tenant power balance.
-  // Five points of shortage moves rents about 2.7% a year; five points of
-  // excess takes them down about 6.5% and nine points about 14.7%, because
-  // the glut branch is superlinear and a capitulation is not a straight line.
-  // Those are the figures the code below actually delivers, checked against
-  // 1990-92 and 2020-23; an earlier version of this paragraph asserted three
-  // per cent on both sides and neither branch obeyed it. Phase drift and
-  // sector momentum ride on top as sentiment.
+  // Five points of EXCESS takes rents down about 6.5% a year and nine points
+  // about 14.7%, because the glut branch is superlinear and a capitulation is
+  // not a straight line. Those two are exact and were checked against 1990-92
+  // and 2020-23.
+  //
+  // THE SHORTAGE FIGURE IN THIS PARAGRAPH WAS STALE AND IS CORRECTED. It said
+  // "five points of shortage moves rents about 2.7% a year", which was true of
+  // `depth * 0.045` before `railSat` was introduced (the firm-near-rail fix in
+  // ECONOMY.md). With saturation the branch is
+  //     clamp(depth * 0.045 * railSat, 0, 0.0045),  railSat = room/(room+0.025)
+  // and at five points of office shortage vacancy is 6.5%, room above friction
+  // 2.8pp, railSat 0.53 — so it delivers 1.44%/yr, barely half the figure this
+  // comment claimed. The reachable MAXIMUM for office is 1.45%/yr (depth+room
+  // is fixed at NATURAL_VAC - frictionFloor = 7.82pp, and depth*railSat peaks
+  // at 0.0266 near room = 2.5pp); retail 0.91%, industrial 0.83%,
+  // multifamily 0.34%. The 0.0045 ceiling on that branch is consequently
+  // unreachable by 3.7x — it is a guard, and nothing rests on it.
+  //
+  // That asymmetry is deliberate and worth stating plainly: a glut can take
+  // rents down far faster than a shortage can push them up, because a market
+  // cannot get tighter than its frictional floor. Phase drift and sector
+  // momentum ride on top as sentiment.
   //
   // City class tracks build-out: a Landing that fills in earns more of the
   // primary rent channel; intensity is morphological FAR / REF at open,
@@ -3227,6 +3258,8 @@ export function tickEcon(s: GameState) {
     // THE SHORTAGE SIDE DISAGREED WITH THE PARAGRAPH ABOVE IT, and the
     // paragraph was right. The header on this block says five points of
     // shortage moves rents about three per cent a year; 0.090 delivered 5.5%,
+    // (that target predates `railSat`; the branch now tops out near 1.45%/yr
+    //  for office — see the corrected paragraph above the vacTerm definition),
     // and it is on the shortage branch that the whole of this loop's gain sits
     // — the glut coefficients were measured and halving either of them moved
     // amplitude by nothing. So this is a correction to a calibration RECORD,

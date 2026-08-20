@@ -7,6 +7,29 @@
 
 ---
 
+## Demand is no longer one hill (SAVE_VERSION unchanged)
+
+Lots did not move. The demand *surface* did. Station ridership no longer
+copies downtown heat; employment is three independently-normalised fields
+(office / mill / shop); park amenity is frontage rather than a civic-park
+bullseye; shore and corridor multiply the score (mean 1). `pnpm demandshape`
+on six islands: 2–3 peaks on five of six seeds, 2–3 top-decile clusters on
+every seed, peak district a different place each time (wharves, ropewalk,
+custom house, quays, counting house, the change). Correlation with distance
+to the single best lot is 0.27–0.90 against the old one-hill 0.61–0.94.
+
+Measured on the existing ruler (`ec10824` → `12937a8`). Not a silent regen.
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `land.p10` (+26%) · `land.med` (−7%) · `land.p90` (+9%) | Fringe lots are no longer the fade of one downtown circle; prime is several places | The land curve *moved*, it did not flatten |
+| `rentIdx.industrial` (+20%) | Mill jobs are their own field, so the port is a real location | Follows the sheds |
+| `rentIdx.retail` (−31%) · `vac.retail` (+49%) | Shop gravity is a block or two, not the civic-park Gaussian | Shops no longer inherit downtown heat |
+| `rentIdx.office` (−5%) · `vac.office` (+17%) | Office still wants the exchange; it is no longer the only hill | Modest |
+| `city.employed` / `population` / `floorAreaM` (+5–7%) | The street builds on a different surface over 300 months | Follows development, not a stock re-cut |
+
+---
+
 ## This ruler: the plat overhaul (SAVE_VERSION 39)
 
 The generator was cutting a town nobody would survey. Wedges where two

@@ -817,6 +817,26 @@ export const CONDITION_RENT_MULT: Record<Condition, number> = {
 };
 
 /**
+ * HOW WELL IT WAS BUILT, on the rent.
+ *
+ * Condition is the grade of the plant today. Specification is the bones —
+ * slab-to-slab, curtain wall, plant room — and it is permanent. Day-one rent
+ * used to ignore spec entirely: every new building opened "good", so the
+ * specification slider moved cost ±31% and rent not at all. That is not a
+ * quality decision, it is a tax on building well.
+ *
+ * Class A vs B asking-rent spreads in US office and multifamily run about
+ * 8–15% for comparable locations. Spec 0..1 maps onto that band around the
+ * mid-spec building: ±10% at the extremes. Cost still moves ±31%, so trophy
+ * still costs more than it rents — the slight advantage is this rent, a
+ * small cap tightener, and the slower wear already in `condCeiling`. It is
+ * not a YoC win for gold-plated bones, and it is not meant to be.
+ */
+export function specRentMult(spec = 0.5): number {
+  return 1 + 0.20 * (spec - 0.5);
+}
+
+/**
  * HOW FAST THE PLANT GOES OFF, per month, on a building of no particular age.
  *
  * Offices are the worst of it: lifts, air handling, risers, and a floorplate
@@ -984,14 +1004,16 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // ...and each of those markets pays for the floor plate it is getting. See
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
-  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u)) * condMult(condition);
+  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u))
+    * condMult(condition) * specRentMult(rec.buildSpec);
 }
 
 /** What one component of a building rents for, in its own market. */
 export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
   // EFFECTIVE, not asking: everything that prices a deal or values an asset
   // reads what deals actually sign at. The Economy page shows both lines.
-  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use) * condMult(condition);
+  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use)
+    * condMult(condition) * specRentMult(rec.buildSpec);
 }
 
 // A delivered development overrides the static record — resolve before use.
@@ -1415,7 +1437,10 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition):
   // move, because the buyer is pricing the capital they are about to spend, and
   // an obsolete one is priced as the capital plus a demolition risk
   const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : condition === "obsolete" ? 1.85 : 0;
-  return clamp(base + locSpread + qualSpread, 3.2, 13);
+  // Permanent bones, not today's paint. Class A trades 15–30 bp tighter than
+  // Class B on the same street; spec 0..1 is that band around mid-spec (±15 bp).
+  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.30;
+  return clamp(base + locSpread + qualSpread + specSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off

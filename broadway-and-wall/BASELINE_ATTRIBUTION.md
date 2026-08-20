@@ -7,7 +7,32 @@
 
 ---
 
-## This ruler: FAR doubled where towers go (SAVE_VERSION unchanged)
+## This ruler: the owner's mark carries the tenant's tax share (SAVE_VERSION unchanged)
+
+`holdingValue`'s stabilised leg and `leaseUpMarkAt` capitalised pre-tax NOI at
+`cap + TAX_RATE` — the FULL statutory rate — while `assetValue` and
+`planDevelopment`'s exit yield load only `TAX_RATE × taxBorneShare(rec)`, the
+share a net-leased roll does not bill to its tenants. One stabilised NNN retail
+building, two values ~14% apart depending on the desk asked (CLAUDE.md fake #3).
+Both sites now read `taxBorneShare`, same as `assetValue:1919` and `dev.ts:1077`.
+
+The moves in this ruler are almost entirely an RNG re-roll, not the repricing:
+the fix changes street values on lease-up-window and net-leased stock, which
+changes which deals close, which re-rolls the century (HANDOFF §4 — `rentIdx`
+and `land` carry a 3.4× cross-seed spread; a six-seed median cannot resolve
+under 2×). The tell: `rentIdx.multifamily` moved −23.4% although multifamily's
+`taxBorneShare` is 1.0 and its marks are bit-identical under this change.
+
+| Metric cluster | Driver | Direction |
+|----------------|--------|-----------|
+| `land.p90` (−53%), `land.med` (−12%), `rentIdx.multifamily` (−23%), `vac.retail` (+87%) | Re-roll via changed street decision paths | Within cross-seed spread |
+| `rail.vac.office.lo` (0.41 → 0.20) | Re-roll; the pin share is seed-shaped (80y campaign median is ~0.19) | Watch, do not tune |
+| lease-up-window and NNN street values | The actual repricing: ~+6–14% on retail/industrial stabilised legs | One-time, intended |
+
+Validated at the change: `pnpm gate` green (conserve 801 months, extleak,
+city-accept 3/3, invariants), `covenant`, `facility`, `legmatch` all pass.
+
+## Previous ruler: FAR doubled where towers go (SAVE_VERSION unchanged)
 
 `BASELINE.json` regenerated at the FAR change, so this ruler contains BOTH the
 demand-shape overhaul (#124, attributed in the section below against the old

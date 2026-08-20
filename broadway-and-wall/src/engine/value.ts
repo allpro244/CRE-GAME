@@ -2179,7 +2179,12 @@ export function leaseUpMarkAt(
   // building by definition has a roll; charging that spread here would price
   // the vacancy a second time, which is the mistake this whole function exists
   // to undo.
-  const stab = noiYr(rec, econ, condition, true) / (capNoRoll + TAX_RATE);
+  // The tax the OWNER carries, not the statutory rate — a net-leased roll
+  // bills its tax to the tenants. assetValue and planDevelopment's exit yield
+  // both load the cap this way (taxBorneShare); this leg loading the FULL rate
+  // was the third answer to one question, worth ~14% on stabilised retail.
+  const taxLoad = TAX_RATE * taxBorneShare(rec);
+  const stab = noiYr(rec, econ, condition, true) / (capNoRoll + taxLoad);
   if (!(stab > 0)) return null;
 
   const vacant = clamp(1 - letShare, 0, 1);
@@ -2195,7 +2200,7 @@ export function leaseUpMarkAt(
   // 2. The income it does not earn on the way there. Space lets in over the
   //    window rather than all at the end, so on average half of what is empty
   //    today is empty for the time that is left.
-  const forgone = stab * (capNoRoll + TAX_RATE) * vacant * left * 0.5;
+  const forgone = stab * (capNoRoll + taxLoad) * vacant * left * 0.5;
   // 3. And the part nobody underwrites away: it may not let. A wholly empty
   //    building is a project, and it is priced like one.
   const risk = stab * 0.08 * vacant;
@@ -2384,7 +2389,12 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // on top of it. One lease-up, counted twice, in the two legs that were
   // supposed to be measuring different things. Nothing older than four years
   // moves by a cent: leaseUpFactor is already 1 there.
-  const stabilized = noiYr(rec, econ, h.condition, true) / (cap + TAX_RATE);  // pre-tax NOI, tax-loaded cap
+  // Pre-tax NOI over the cap plus the tax the OWNER carries — the same
+  // taxBorneShare load assetValue uses at its own capitalisation line. This
+  // read the FULL rate while the street's answer read the pass-through share,
+  // so an identical stabilised net-leased building had two values ~14% apart
+  // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
+  const stabilized = noiYr(rec, econ, h.condition, true) / (cap + TAX_RATE * taxBorneShare(rec));
   const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   const floor = landValue(rec, econ) * 0.92;

@@ -300,6 +300,46 @@ function ParcelPanelInner({
           return <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
             v={(ip.occ * 100).toFixed(0) + "%"} bad={ip.disclosed && ip.occ < 0.75} />;
         })()}
+        {/* HOW BIG IT IS — the first question anyone asks about a building, and
+            the one number this panel never printed. You could read the count of
+            suites and their size and multiply, or read FAR built and multiply
+            that by a lot area printed further down, but the area itself was not
+            here.
+
+            It is the area LEASES ARE STRUCK AGAINST, which in this engine is
+            `bldgArea` — physicalOcc divides by it, the invariants refuse a roll
+            that exceeds it, and every rent psf on this panel is quoted against
+            it. There is a known wrinkle behind that (value.ts: the stored area
+            is gross times a plate efficiency capped at 1.0, where the honest
+            end state is gross times one minus core loss, about 17% smaller) and
+            this row deliberately does NOT apply a second, private deduction to
+            correct for it. One quantity, one answer: inventing a rentable
+            figure here that the NOI and the rents were not struck on would put
+            two different areas on the same card.
+
+            What IS netted out, for a building you own, is the remainder no
+            tenancy can be cut out of — a real modelled deduction with a rent
+            roll behind it, and the difference between the area you have and the
+            area you can let. */}
+        {isBuilt && (() => {
+          const area = rec.bldgArea || 0;
+          if (area <= 0) return null;
+          const rem = holding ? unlettableRemainderSf(rec, holding) : 0;
+          const split = isMixedUse(rec)
+            ? usesOf(rec).map((u) => `${sf(Math.round(useSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")
+            : null;
+          return (
+            <Row
+              k="Leasable area"
+              v={rem > 0 ? `${sf(area - rem)} of ${sf(area)}` : sf(area)}
+              title={split
+                ? `${split}${rem > 0 ? ` · ${sf(rem)} in demises too small to let` : ""}`
+                : rem > 0
+                  ? `${sf(rem)} of it sits in demises too small to let — see Occupancy`
+                  : "The area leases are struck against: rents, occupancy and NOI on this card are all quoted on it"}
+            />
+          );
+        })()}
         {isBuilt && !holding && (
           isMixedUse(rec)
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />

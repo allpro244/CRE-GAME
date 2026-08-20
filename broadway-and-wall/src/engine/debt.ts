@@ -1036,7 +1036,13 @@ export function tickLoan(
     // fails coverage would not be. When none clears, carry the BIGGEST cheque
     // anybody will write, because that is the number the gap is measured
     // against and the number the borrower is told.
-    const clears = sized.filter((x) => x.qd.principal >= loan.balance + fee);
+    // ON THE BALANCE, NOT THE BALANCE PLUS THE FEE — the same fault the facility
+    // had, in the same shape. The fee is funded separately a few lines below by
+    // `fundCashNeed`, so a desk that can advance the outstanding balance CAN
+    // renew this loan; asking it to advance the fee as well refuses the roll on
+    // any building whose debt was sized off the same underwriting, and drops it
+    // into retire-or-workout for want of one per cent.
+    const clears = sized.filter((x) => x.qd.principal >= loan.balance);
     const pick = clears.length
       ? clears.reduce((a, b) => (b.qd.ratePct < a.qd.ratePct ? b : a))
       : sized.length

@@ -638,7 +638,25 @@ function renewalMarket(s: GameState, parcels: ParcelTable): { best: FacilityQuot
   // What today's market will advance against this pool at all — the number the
   // gap is named against when nothing clears.
   const base = open.length ? Math.max(...open.map((x) => x.base)) : 0;
-  const clears = open.filter((x) => x.base >= f.balance + facilityFees(f.balance, x.points));
+  // A ROLL IS SIZED ON THE BALANCE, NOT ON THE BALANCE PLUS THE FEE.
+  //
+  // This asked each desk to advance the outstanding balance AND the cost of
+  // writing it, and refused the renewal when it could only manage the balance.
+  // But the fee is not advanced — the borrower writes that cheque, which is
+  // exactly what `takeFacilityRoll` does two lines later. So the test failed by
+  // its own fee on the commonest case there is: a pool whose balance was sized
+  // off this same underwriting, which therefore quotes at exactly the balance
+  // and never a dollar more.
+  //
+  // What that cost the owner was not a missed renewal, it was the whole firm.
+  // The refusal fell through to "retire it out of liquidity", so a performing
+  // pool with two desks bidding 4.74% and 4.93% against it emptied the
+  // operating account and drew the revolver to the floor — measured on a
+  // $5.631M facility: cash $2.000M to zero, $3.643M drawn on the line, term
+  // debt in the fives swapped for a callable line at index + 400. The owner
+  // reported it as "it draws my line of credit and the debt is still there",
+  // and from where they were sitting that is precisely what happened.
+  const clears = open.filter((x) => x.base >= f.balance);
   // Best-priced, not first-on-a-list: the borrower takes the lowest coupon that
   // will actually write the whole balance.
   return { best: clears.length ? clears.reduce((a, b) => (b.ratePct < a.ratePct ? b : a)) : null, base };
@@ -891,14 +909,28 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
   // the coupon and sweeping the surplus the whole time, which is what a real
   // standstill looks like.
   if (q >= f.maturityM && f.balance > 0) {
-    if (fundableNow(s, parcels) >= f.balance) {
-      const paid = fundCashNeed(s, parcels, f.balance);
-      out += paid;
-      f.balance = 0;
-      delete s.facility;
-      s.news.unshift({ q, kind: "deal", text: "The facility matured and you paid it off. The deeds are clear." });
-      return out;
-    }
+    // THE MARKET IS ASKED FIRST, AND IT USED NOT TO BE.
+    //
+    // This block opened with "can the firm raise the balance?" — counting the
+    // REVOLVER — and if it could, the pool was retired on the spot out of every
+    // dollar of cash and line the firm had. Nobody ever asked whether a lender
+    // would have rolled it. So a performing pool at maturity emptied the
+    // operating account, drew the line to the floor, and handed back deeds the
+    // bank would happily have kept lending against; from the owner's seat the
+    // liquidity simply vanished at maturity and the reason given was that it
+    // had been "paid off".
+    //
+    // It is also backwards on price. The revolver is index + 400 and callable;
+    // facility paper is term debt at a spread over the index. Retiring the
+    // cheap loan with the expensive one is the single worst trade available at
+    // a maturity, and the engine was making it automatically.
+    //
+    // The order is the ladder a sponsor actually walks: roll it if anyone will
+    // write it, retire it out of liquidity only if nobody will, and call the
+    // maturity when neither is possible. The renewal branch's own closing line
+    // — "a pool that covers its debt service gets renewed; that is what the
+    // payment history is for" — could not print at all before this, because
+    // solvency short-circuited it.
     const market = renewalMarket(s, parcels);
     const renewal = market.best;
     if (renewal) {
@@ -923,6 +955,25 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       });
       return out;
     }
+    // NOBODY WILL WRITE IT. Now liquidity is the question, and now spending it
+    // is the right answer rather than a reflex: paying the pool off here is what
+    // stops a called maturity, a swept pool and a receiver. The line is in scope
+    // for exactly that reason — it is a last resort against default, which is
+    // the one job it should be doing at a maturity.
+    if (fundableNow(s, parcels) >= f.balance) {
+      const paid = fundCashNeed(s, parcels, f.balance);
+      out += paid;
+      const cleared = f.balance;
+      f.balance = 0;
+      delete s.facility;
+      s.news.unshift({
+        q, kind: "deal",
+        text: `The facility matured, no desk would refinance the pool, and you retired the `
+          + `${dollars(cleared)} out of firm liquidity. The deeds are clear.`,
+      });
+      return out;
+    }
+
     // NOBODY WILL WRITE THE WHOLE BALANCE. Call the maturity and start the clock.
     const base = market.base;
     const gap = Math.max(0, f.balance - base);

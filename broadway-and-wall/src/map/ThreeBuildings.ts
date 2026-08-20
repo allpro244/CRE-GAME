@@ -2036,13 +2036,36 @@ float unpackDepth(vec4 c) {
 // town, which is the kind of fault that shows up as shadows detaching from
 // their buildings in one city and nowhere else.
 uniform float uShadowSpan;
-const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
+// HOW WIDE ONE SHADOW TEXEL IS ON THE GROUND, IN METRES, for THIS city and this
+// month. A uniform for exactly the reason uShadowSpan is one, and the reason is
+// now proven rather than anticipated.
+//
+// The two offsets below were calibrated as "about one texel", with the texel
+// worked out from a sun camera covering 4,400 m across a 3,072 map — 1.43 m. But
+// the frustum is FITTED TO THE CITY, so that number is a fact about a
+// two-kilometre island and nothing else. Manhattan below 59th Street is five by
+// eight kilometres and its light-space footprint runs 8-11 km, which puts the
+// texel at 2.6-3.6 m: two to two and a half times what these constants assume.
+// A 1.6 m bias against a 3 m texel does not clear the depth quantisation, and
+// what you get is acne — speckled dots, in bands, on whatever happens to sit
+// near edge-on to the sun. That is the speckled banding on the towers, and it
+// is why it survived being chased through the facade shader: it was never in
+// the facade at all. Averaging the whole wall away leaves it untouched, which
+// is the measurement that finally placed it.
+//
+// So the calibration stays and stops pretending to be a length. Both offsets
+// are expressed as the multiple of a texel they always were — 1.6/1.43 = 1.12
+// and 1.35/1.43 = 0.94 — so a city that already fitted inside 4,400 m gets
+// bit-identical numbers, and a bigger one gets offsets that grow with its own
+// texel instead of quietly falling behind it.
+uniform float uShadowTexelM;
+const float SHADOW_BIAS_TX = 1.12;    // was 1.6 m, sized against a 1.43 m texel
 // ~one texel, along the surface normal. The frustum fit stretches with the
 // season — a twelve-degree December sun shears the light-space footprint of
 // the same city wider than a thirty-one degree June one, so the texel grows
 // toward ~1.9 m at the winter solstice. Sized against that worst month, not
 // the summer one.
-const float SHADOW_NORMAL_M = 1.35;
+const float SHADOW_NORMAL_TX = 0.94;  // was 1.35 m, same texel
 
 // A SHADOW IS NOT ONE BLUR WIDE ALONG ITS WHOLE LENGTH.
 //
@@ -2086,10 +2109,10 @@ float shadowHash(vec2 v) {
 // texels one screen pixel spans; past a couple, a hard tap is the same image.
 float sunVis(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
-  vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
+  vec4 sc = uSunVP * vec4(p + n * (SHADOW_NORMAL_TX * uShadowTexelM), 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
-  float recv = ndc.z - SHADOW_BIAS_M / uShadowSpan;
+  float recv = ndc.z - (SHADOW_BIAS_TX * uShadowTexelM) / uShadowSpan;
 
   float shadowLod = max(fwidth(ndc.x), fwidth(ndc.y)) / SHADOW_TEXEL;
   if (shadowLod > 2.4) {
@@ -2154,6 +2177,37 @@ ${"" /* shadow sampling */}
 ` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+// A GRAIN YOU CANNOT RESOLVE IS NOT GRAIN, IT IS NOISE.
+//
+// The masonry textures below are hashed per CELL, and the cells are real
+// courses: brick at 22 x 7.5 cm, ashlar at 70 cm, rubble at 1.7 m. Up close
+// that is the material. At any distance where a pixel spans a whole course,
+// the hash returns whichever cell the pixel centre happened to land in, and
+// what a brick wall becomes is white noise at thirteen per cent amplitude.
+// That is the speckled banding on the towers.
+//
+// The lod dissolve further down does NOT save it, which is the part worth
+// stating: it mixes toward facadeAvg, and facadeAvg is built from the same
+// wall this grain has already been multiplied into. So the window
+// pattern averages away with distance and the noise rides straight through it
+// at full strength. There was never a guard on this, only one on the windows.
+//
+// The fix is the same one the sea's foam needed: hand the variance back to the
+// mean. Each term fades to its OWN average as its OWN cell drops below a
+// pixel, so the wall keeps its brightness exactly and only loses the part of
+// itself that had stopped carrying information. A single threshold cannot do
+// this — the window grid is 3 m and a brick course is 7.5 cm, so the brick is
+// forty times further into aliasing at the same distance, which is why one lod
+// number sized for windows left the masonry unprotected across the whole
+// establishing range.
+//
+// mpp is metres per pixel on this surface, computed ONCE in uniform control
+// flow: fwidth inside the style ladder would be a derivative taken in
+// divergent branches, which is undefined.
+float grainFade(float cellM, float mpp) {
+  return 1.0 - smoothstep(0.35, 1.0, mpp / max(cellM, 1e-4));
+}
 
 void main() {
   int s = int(vStyle + 0.5);
@@ -4146,6 +4200,9 @@ void main() {
   // how many pixels a floor spans: everything expensive below is skipped once
   // the facade is too small on screen for it to read
   float lod = clamp(max(fwidth(u), fwidth(v)) * 2.6 - 0.3, 0.0, 1.0);
+  // ...and how many METRES a pixel spans, which is what the masonry grain has
+  // to be judged against. Same question at a different scale; see grainFade.
+  float mpp = max(fwidth(vU), fwidth(vZ));
   float near = 1.0 - lod;
   // parallax: shift the opening against the view so glass sits behind the wall
   float par = revealM * near / facing;
@@ -4293,7 +4350,7 @@ void main() {
       // above each opening gets a ring of voussoirs a shade lighter.
       float course = fract(vZ / 0.92);
       wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.10, course));
-      wall *= 0.96 + 0.08 * hash(vec2(floor(vU / 1.7), floor(vZ / 0.92)));  // rubble
+      wall *= 1.0 + 0.08 * (hash(vec2(floor(vU / 1.7), floor(vZ / 0.92))) - 0.5) * grainFade(0.92, mpp);  // rubble
       if (inHole && oy > 0.80) wall *= 1.06;
     }
     if (s == 20) {
@@ -4314,7 +4371,7 @@ void main() {
       // it makes a ten-storey building read as one room.
       float baseTop = fh * 2.1, atticAt = vTop - fh * 1.5;
       if (vZ < baseTop) {
-        wall *= 0.94 + 0.10 * step(0.5, fract(vZ / 0.85));   // rusticated courses
+        wall *= 0.94 + 0.10 * mix(0.5, step(0.5, fract(vZ / 0.85)), grainFade(0.85, mpp));   // rusticated courses
       } else if (vZ < atticAt) {
         float colm = 1.0 - smoothstep(0.0, 0.16, min(f.x, 1.0 - f.x));
         wall = mix(wall, wall * 1.13, colm);
@@ -4511,7 +4568,7 @@ void main() {
       // and the column line showing through at every bay.
       float fy = fract(v);
       if (fy < 0.24) {
-        wall *= 0.94 + 0.11 * hash(vec2(floor(vU / 0.19), floor(vZ / 2.4)));
+        wall *= 0.995 + 0.11 * (hash(vec2(floor(vU / 0.19), floor(vZ / 2.4))) - 0.5) * grainFade(0.19, mpp);
         winMask = 0.0;
       }
       float cl = 1.0 - smoothstep(0.0, 0.07, min(f.x, 1.0 - f.x));
@@ -4581,7 +4638,7 @@ void main() {
       } else if (oy > 0.86 && abs(ox - 0.5) < 0.5) {
         wall *= 1.05;                                            // the old segmental head
       }
-      wall *= 0.96 + 0.08 * hash(vec2(floor(vU / 0.22), floor(vZ / 0.075)));
+      wall *= 1.0 + 0.08 * (hash(vec2(floor(vU / 0.22), floor(vZ / 0.075))) - 0.5) * grainFade(0.075, mpp);
     }
     if (s == 135) {
       // THE SKY LOBBY SEAM. The lift stacks change over a third of the way up
@@ -4648,7 +4705,7 @@ void main() {
                                 : vec3(0.62, 0.46, 0.12);
         wall = mix(wall, chain, s == 139 ? 0.55 : 0.80);
       }
-      if (s != 139) wall *= 0.96 + 0.07 * step(0.5, fract(vZ / 0.41));   // split-face block
+      if (s != 139) wall *= 0.96 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.41)), grainFade(0.41, mpp));   // split-face block
       // the gable parapet, once, in the middle of the frontage
       float g = abs(fract(vU / 46.0) - 0.5);
       if (s == 142 && g < 0.13 && vZ > vTop - fh * 1.5) {
@@ -4720,7 +4777,7 @@ void main() {
         if (vZ > vTop - fh * 0.9) { wall = mix(wall, wall * 0.88, 0.7); winMask = 0.0; }
         else winMask = step(0.10, fract(across * 5.0)) * step(fh * 0.35, vZ);
       } else {
-        wall *= 0.96 + 0.07 * hash(vec2(floor(vU / 0.22), floor(vZ / 0.075)));
+        wall *= 0.995 + 0.07 * (hash(vec2(floor(vU / 0.22), floor(vZ / 0.075))) - 0.5) * grainFade(0.075, mpp);
       }
     }
     if (s == 149) {
@@ -4834,7 +4891,7 @@ void main() {
       wall = mix(wall, wall * 0.62, j * 0.9);
       winMask *= 1.0 - j;
       // modules came off the line in batches and the batches do not match
-      wall *= 0.95 + 0.10 * hash(vec2(floor(u), floor(v)));
+      wall *= 1.0 + 0.10 * (hash(vec2(floor(u), floor(v))) - 0.5) * grainFade(min(colW, fh), mpp);
     }
     if (s == 119) {
       // THE CELL GRID. Photovoltaic laminate: a fine dark grid of cells with a
@@ -4915,7 +4972,7 @@ void main() {
         glassShade = 1.0 - 0.52 * (1.0 - smoothstep(0.0, 0.42, sunSide))
                          - 0.30 * smoothstep(0.55, 1.0, oy);
       }
-      wall *= 0.995 + 0.012 * hash(vec2(floor(vU / 2.5), floor(vZ / 2.5)));
+      wall *= 1.001 + 0.012 * (hash(vec2(floor(vU / 2.5), floor(vZ / 2.5))) - 0.5) * grainFade(2.5, mpp);
     }
     if (s == 125) {
       // THE SCREEN. A band of self-lit colour that owes nothing to the sun —
@@ -4960,8 +5017,8 @@ void main() {
       if (dr > 0.5 && ay <= 0.0) winMask *= step(0.055, fract(vU / 0.58));
       if (dr < 0.5) winMask = 0.0;
       if (rq > 2.20 && rq < 2.72) wall = mix(wall, wall * 0.84, 0.85);   // voussoir ring
-      wall *= 0.93 + 0.13 * hash(floor(vec2(vU / 0.23, vZ / 0.081)));
-      if (vZ > vTop - 1.4) wall = mix(wall, wall * 1.14, step(0.5, fract(vU / 0.58)));
+      wall *= 0.995 + 0.13 * (hash(floor(vec2(vU / 0.23, vZ / 0.081))) - 0.5) * grainFade(0.081, mpp);
+      if (vZ > vTop - 1.4) wall = mix(wall, wall * 1.14, mix(0.5, step(0.5, fract(vU / 0.58)), grainFade(0.58, mpp)));
     }
     if (s == 106) {
       // ONE DOOR, a dozen leaves. Every joint a hard shadow line full height,
@@ -4971,7 +5028,7 @@ void main() {
       winMask = step(dh + 1.20, vZ) * step(vZ, dh + 3.40);
       if (dr > 0.5) wall = mix(wall, wall * 0.86, 0.8);
       if (dr > 0.5 && fract(vU / 2.15) < 0.055) wall = mix(wall, wall * 0.52, 0.9);
-      if (dr < 0.5) wall *= 1.0 - 0.09 * step(0.5, fract(vU / 0.90));
+      if (dr < 0.5) wall *= 1.0 - 0.09 * mix(0.5, step(0.5, fract(vU / 0.90)), grainFade(0.90, mpp));
       if (abs(vZ - (dh + 0.35)) < 0.22) wall = mix(wall, vec3(0.340, 0.340, 0.330), 0.9);
     }
     if (s == 107) {
@@ -5007,10 +5064,10 @@ void main() {
       float cell = hash(vec2(floor(vZ / fh) * 1.7, floor(vU / colW) + vVar * 29.0));
       winMask = rec * step(0.52, cell) * step(fh * 1.2, vZ) * step(vZ, vTop - 2.4)
               * step(abs(f.x - 0.5), win.x * 0.5) * step(abs(f.y - 0.52), win.y * 0.5);
-      wall *= 0.92 + 0.14 * hash(floor(vec2(vU / 0.225, vZ / 0.081)));
+      wall *= 0.99 + 0.14 * (hash(floor(vec2(vU / 0.225, vZ / 0.081))) - 0.5) * grainFade(0.081, mpp);
       wall *= mix(1.06, 0.90, rec);
       if (vZ > vTop - 2.4 || vZ < 0.9) wall = mix(wall, vec3(0.700, 0.670, 0.600), 0.7);
-      if (rec > 0.5 && vZ > 1.0 && vZ < 2.0 && fract(vU / 0.18) > 0.5) wall = mix(wall, vec3(0.240, 0.230, 0.210), 0.8);
+      if (rec > 0.5 && vZ > 1.0 && vZ < 2.0) wall = mix(wall, vec3(0.240, 0.230, 0.210), 0.8 * mix(0.5, step(0.5, fract(vU / 0.18)), grainFade(0.18, mpp)));
     }
     if (s == 110) {
       // THE COMB. 155 mm louvre pitch over whole panels, lit on each blade face
@@ -5083,7 +5140,7 @@ void main() {
       if (inHole) winMask *= step(abs(ox - 0.5) * 2.0, hw);
       float ang = atan(max(oy - 0.60, 0.0) * 2.2, (ox - 0.5) * 2.0);
       if (oy > 0.58 && winMask < 0.5) wall *= 0.88 + 0.26 * step(0.5, fract(ang * 2.9));
-      wall *= 0.94 + 0.12 * step(0.5, fract(vZ / 0.62));
+      wall *= 0.94 + 0.12 * mix(0.5, step(0.5, fract(vZ / 0.62)), grainFade(0.62, mpp));
       vec2 rp2 = vec2((f.x - 0.5) * colW, vZ - (vTop - fh * 1.5));
       float rr2 = length(rp2);
       if (abs(floor(vU / colW) - (floor(vRand * 2.0) + 2.0)) < 0.5 && rr2 < 1.90) {
@@ -5099,7 +5156,7 @@ void main() {
         winMask = 1.0; glassShade = 0.30;
         float post = 1.0 - smoothstep(0.0, 0.06, abs(fract(vU / 2.15) - 0.5));
         if (post > 0.4 || vy < 0.34) { winMask = 0.0; wall = vec3(0.760, 0.740, 0.680); }
-        if (vy < 0.34) wall *= 0.92 + 0.10 * step(0.5, fract(vU / 0.18));
+        if (vy < 0.34) wall *= 0.92 + 0.10 * mix(0.5, step(0.5, fract(vU / 0.18)), grainFade(0.18, mpp));
       } else {
         wall *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.05, f.y - 0.63));
       }
@@ -5115,8 +5172,8 @@ void main() {
         float bar = fract((f.x - 0.5) * colW / 0.11);
         winMask *= smoothstep(0.0, 0.22, min(bar, 1.0 - bar));
       }
-      wall *= 0.97 + 0.06 * hash(vec2(floor(vU / 1.25), floor(vZ / 0.62)));
-      wall *= 1.0 - 0.16 * (1.0 - smoothstep(0.0, 0.05, fract(vZ / 0.62)));
+      wall *= 1.0 + 0.06 * (hash(vec2(floor(vU / 1.25), floor(vZ / 0.62))) - 0.5) * grainFade(0.62, mpp);
+      wall *= 1.0 - 0.16 * mix(0.025, 1.0 - smoothstep(0.0, 0.05, fract(vZ / 0.62)), grainFade(0.62, mpp));
     }
     if (s == 99) {
       // THE BATTLEMENT. Merlons and embrasures on a corbelled course, over a
@@ -5127,7 +5184,7 @@ void main() {
         wall = mix(wall * 1.06, wall * 0.42, gap * smoothstep(1.1, 0.75, topd));
         winMask = 0.0;
       }
-      if (topd > 1.6 && topd < 2.4) wall *= 0.72 + 0.34 * step(0.5, fract(vU / 0.62));
+      if (topd > 1.6 && topd < 2.4) wall *= 0.72 + 0.34 * mix(0.5, step(0.5, fract(vU / 0.62)), grainFade(0.62, mpp));
       wall *= 1.0 + 0.16 * smoothstep(fh * 1.6, 0.0, vZ);
       if (vZ < fh * 1.5) winMask = 0.0;
       if (inHole) winMask *= step(abs(ox - 0.5), 0.5 - 0.10 * smoothstep(0.75, 1.0, oy));
@@ -5158,8 +5215,8 @@ void main() {
       winMask *= smoothstep(0.0, 0.06, abs(abs(q.x) - 0.34));
       if (rq > 1.0 && rq < 1.20 && q.y > -0.02) wall *= 1.16;
       if (q.y < -0.03 && q.y > -0.14) wall *= 0.86;
-      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.025, fract(vU / 0.61)));
-      if (vZ < 1.1) wall *= 0.88 + 0.08 * step(0.5, fract(vU / 0.28));
+      wall *= 1.0 - 0.05 * mix(0.0125, 1.0 - smoothstep(0.0, 0.025, fract(vU / 0.61)), grainFade(0.61, mpp));
+      if (vZ < 1.1) wall *= 0.88 + 0.08 * mix(0.5, step(0.5, fract(vU / 0.28)), grainFade(0.28, mpp));
     }
     if (s == 102) {
       // BLIND, until the last metre. The galleries are lit from the roof, so
@@ -5167,8 +5224,8 @@ void main() {
       if (vZ < vTop - fh * 0.85) winMask = 0.0;
       float jj = fract(vU / 1.55);
       wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, min(jj, 1.0 - jj)));
-      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, fract(vZ / 1.05)));
-      if (vZ < fh * 1.15) wall *= 0.90 + 0.08 * step(0.5, fract(vZ / 0.55));
+      wall *= 1.0 - 0.05 * mix(0.01, 1.0 - smoothstep(0.0, 0.02, fract(vZ / 1.05)), grainFade(1.05, mpp));
+      if (vZ < fh * 1.15) wall *= 0.90 + 0.08 * mix(0.5, step(0.5, fract(vZ / 0.55)), grainFade(0.55, mpp));
       float cz = vTop - vZ;
       if (cz < 1.5 && cz > 0.9) { wall *= 0.66; winMask = 0.0; }
       else if (cz < 0.9) wall *= 1.10;
@@ -5187,7 +5244,7 @@ void main() {
         float sy = f.y - (0.52 - win.y * 0.5);
         if (sy < 0.0 && sy > -0.045 && abs(f.x - 0.5) < win.x * 0.62) wall *= 1.18;
       }
-      wall *= 0.97 + 0.05 * hash(vec2(floor(vU / 0.7), floor(vZ / 0.7)));
+      wall *= 0.995 + 0.05 * (hash(vec2(floor(vU / 0.7), floor(vZ / 0.7))) - 0.5) * grainFade(0.7, mpp);
     }
     if (s == 82) {
       // THE STACKED PORCHES. One per floor, the full width of the front, with
@@ -5204,14 +5261,14 @@ void main() {
         float pst = max(1.0 - smoothstep(0.12, 0.17, f.x), 1.0 - smoothstep(0.12, 0.17, 1.0 - f.x));
         if (pst > 0.0) wall = mix(wall, wall * 1.30, pst * 0.9);
       } else {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));    // clapboard beyond
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.22)), grainFade(0.22, mpp));    // clapboard beyond
       }
     }
     if (s == 83 || s == 90) {
       // CLAPBOARD, and one big opening. The shotgun puts its door and window
       // on a front one room wide; the ranch runs a picture window and a garage
       // door along a front five rooms long. Same siding, opposite proportion.
-      wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.21));
+      wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.21)), grainFade(0.21, mpp));
       if (s == 90 && vZ < fh * 0.95) {
         float t = fract(vU / 11.0);
         if (t > 0.58 && t < 0.92) { wall = mix(wall, wall * 0.60, 0.85); winMask = 0.0; }  // garage
@@ -5227,7 +5284,7 @@ void main() {
         winMask *= 0.4;
         if (head > fh * 0.80) wall = mix(wall, wall * 1.35, 0.7);   // the flare
       } else {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.22)), grainFade(0.22, mpp));
       }
     }
     if (s == 85 || s == 86) {
@@ -5298,7 +5355,7 @@ void main() {
         wall = mix(wall, vec3(0.180, 0.165, 0.150), cut * 0.95);
         if (cut > 0.4) winMask = 0.0;
       }
-      if (vZ < fh * 1.9) wall *= 0.95 + 0.06 * step(0.5, fract(vZ / 0.86));   // rustication
+      if (vZ < fh * 1.9) wall *= 0.95 + 0.06 * mix(0.5, step(0.5, fract(vZ / 0.86)), grainFade(0.86, mpp));   // rustication
     }
     if (s == 93) {
       // ONE ROOM PER FLOOR. Tight rhythm, tiny openings, a flat stone lintel
@@ -5375,7 +5432,7 @@ void main() {
       if (fy > 0.18 && fy < 0.86 && t > 0.10 && t < 0.90) {
         wall = mix(wall, wall * 0.72, 0.85);
         // the corrugations of the shutter itself
-        wall *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))));
+        wall *= 1.0 - 0.10 * mix(0.06, 1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))), grainFade(0.16, mpp));
       }
       if (vZ > vTop - fh * 0.5) {
         vec3 band = vec3(0.62 + 0.26 * vVar, 0.32 + 0.20 * fract(vVar * 4.3), 0.22 + 0.16 * fract(vVar * 7.1));
@@ -5401,7 +5458,7 @@ void main() {
       // pattern the style is named for.
       float upper = step(fh * 1.55, vZ);
       if (upper < 0.5) {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.24));      // clapboard
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.24)), grainFade(0.24, mpp));      // clapboard
       }
     if (s == 61) {
         vec2 sc = vec2(vU / 0.42, vZ / 0.30);                     // shingle courses
@@ -5478,7 +5535,7 @@ void main() {
       // columns running three floors, then a heavy entablature.
       float baseTop = fh * (s == 70 ? 2.0 : 1.35);
       if (vZ < baseTop) {
-        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.92));      // coursed ashlar
+        wall *= 0.955 + 0.055 * mix(0.5, step(0.5, fract(vZ / 0.92)), grainFade(0.92, mpp));      // coursed ashlar
         winMask = 0.0;
       } else if (vZ > vTop - fh * 0.85) {
         wall *= 1.06; winMask = 0.0;                              // the entablature
@@ -5499,7 +5556,7 @@ void main() {
       // THREE PARTS AND A CANOPY. Rusticated base, a banded middle of
       // identical bedroom windows, a cornice — and a canopy over the door,
       // which is the one asymmetric thing on the whole front.
-      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * step(0.5, fract(vZ / 0.88));
+      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.88)), grainFade(0.88, mpp));
       if (fract(vZ / fh) < 0.08) wall *= 0.93;                    // the sill band
       float dcan = 1.0 - smoothstep(0.0, 0.22, abs(fract(vU / 31.0) - 0.28));
       if (dcan > 0.0 && vZ > fh * 0.85 && vZ < fh * 1.12) {
@@ -5719,7 +5776,7 @@ void main() {
     if (s == 45) {
       // BIG BOX: split-face block coursing, and the tenant's colour on the
       // parapet band. The band is the only thing on the building.
-      wall *= 0.96 + 0.07 * step(0.5, fract(vZ / 0.41));
+      wall *= 0.96 + 0.07 * mix(0.5, step(0.5, fract(vZ / 0.41)), grainFade(0.41, mpp));
       if (vZ > vTop - fh * 0.75) {
         vec3 sign_ = vec3(0.30 + 0.50 * vVar, 0.26 + 0.30 * fract(vVar * 5.3), 0.24 + 0.36 * fract(vVar * 2.7));
         wall = mix(wall, sign_, 0.72);
@@ -5846,7 +5903,7 @@ void main() {
         } else if (dSpan < 0.58) {
           // cast bronze panel in the reveal: a different material, not a
           // darker course of the same one
-          wall = mix(wall, vec3(0.34, 0.27, 0.17) * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.34, abs(fract(vU / 0.72) - 0.5) * 2.0))), 0.62);
+          wall = mix(wall, vec3(0.34, 0.27, 0.17) * (1.0 + 0.9 * mix(0.17, 1.0 - smoothstep(0.0, 0.34, abs(fract(vU / 0.72) - 0.5) * 2.0), grainFade(0.72, mpp))), 0.62);
         } else if (dSpan < 0.82) {
           wall *= 0.94 + 0.11 * step(0.5, fract(vU / 0.62 + f.y * 3.0));   // patterned brick, the cheap version
         } else {
@@ -5987,7 +6044,7 @@ void main() {
       winMask *= 1.0 - pier * 0.90;
       if (fPar > 0.5 && vt > 1.7 && vt < 2.25) {
         // one polychrome tile band, and only where the ornament field allows it
-        wall = mix(wall, wall * vec3(1.22, 0.80, 0.60), 0.42 + 0.30 * step(0.5, fract(vU / 0.9)));
+        wall = mix(wall, wall * vec3(1.22, 0.80, 0.60), 0.42 + 0.30 * mix(0.5, step(0.5, fract(vU / 0.9)), grainFade(0.9, mpp)));
         winMask = 0.0;
       }
     }
@@ -6084,7 +6141,7 @@ void main() {
         if (f.y > m.y + 0.05 && f.y < 1.0 - m.y) winMask = 1.0;
         else wall *= 0.94;
       }
-      wall *= 0.975 + 0.05 * step(0.5, fract(vZ / 0.172));          // the field's own coursing
+      wall *= 0.975 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.172)), grainFade(0.172, mpp));          // the field's own coursing
     }
     if (s == 158) {
       // THE EYEBROW. A cast concrete hood standing off the wall over every
@@ -6267,7 +6324,7 @@ void main() {
         if (ribs < 0.16 || ring < 0.08) { winMask = 0.0; wall *= 1.16; }
         if (rr > rMax - 0.55) { winMask = 0.0; wall *= 1.14; }        // the arch ring itself
       } else {
-        wall *= 0.96 + 0.05 * step(0.5, fract(vZ / 0.92));           // coursed ashlar shoulder
+        wall *= 0.96 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.92)), grainFade(0.92, mpp));           // coursed ashlar shoulder
         winMask = 0.0;
       }
     }
@@ -6292,7 +6349,7 @@ void main() {
       }
       if (vZ < fh * 2.05) {
         wall = mix(wall, vec3(0.70, 0.69, 0.66), 0.55);               // the granite plinth, two storeys
-        wall *= 0.96 + 0.06 * step(0.5, fract(vZ / 0.78));
+        wall *= 0.96 + 0.06 * mix(0.5, step(0.5, fract(vZ / 0.78)), grainFade(0.78, mpp));
       }
       if (fPar > 0.5 && vTop - vZ < 2.4) {
         // THE FROZEN FOUNTAIN, documented as the signature of Merwanji Bana &
@@ -6361,7 +6418,7 @@ void main() {
         wall = mix(wall, wall * 1.22, 0.85); winMask = 0.0;
       } else if (vZ > bandTop) {
         wall = mix(wall, wall * 0.78 + vec3(0.16, 0.13, 0.11), 0.60); // the old brick, left alone
-        wall *= 0.97 + 0.05 * step(0.5, fract(vZ / 0.175));
+        wall *= 0.97 + 0.05 * mix(0.5, step(0.5, fract(vZ / 0.175)), grainFade(0.175, mpp));
       }
     }
     if (s == 166) {
@@ -6962,9 +7019,28 @@ void main() {
   vec3 light = SUN_COL * (ndl * vis * 0.92 * mix(0.72, 1.0, smoothstep(0.0, 1.9, vZ))) + hemiLight(n, ao);
   vec3 eyeV = normalize(uCam - vPos);
   // glass throws a specular back at the sun; masonry doesn't
+  //
+  // AND IT HAS TO STOP BEING PER-WINDOW WHEN THE WINDOWS STOP BEING RESOLVED.
+  // THIS IS THE SPECKLE. The lod dissolve above has already replaced the whole
+  // facade with facadeAvg by the time a window is a couple of pixels wide —
+  // and then this line stamped the raw window mask straight back onto it, at
+  // whatever phase the pixel grid happened to sample. A pow-48 lobe is a hard,
+  // bright term, so what came back was not a softened pattern but glass-
+  // coloured dots at single-pixel scale, riding on top of a correctly averaged
+  // wall. It reads in BANDS because a specular this tight only fires where the
+  // half-vector lines up, so it picks out particular facings and particular
+  // tiers of a stack and leaves the rest alone — which is exactly the shape of
+  // the artefact, and is why it looked like a material bug rather than a
+  // lighting one.
+  //
+  // Same answer as the sea's foam and the masonry grain: hand the variance to
+  // the mean. The average of winMask over a cell is the opening's own area
+  // fraction, win.x * win.y, so the glint keeps its strength on the building as
+  // a whole and loses only the per-window structure it could no longer draw.
   if (glassy) {
     vec3 H = normalize(SUN_DIR + eyeV);
-    light += SUN_COL * pow(max(dot(n, H), 0.0), 48.0) * 0.55 * vis * winMask;
+    light += SUN_COL * pow(max(dot(n, H), 0.0), 48.0) * 0.55 * vis
+           * mix(winMask, win.x * win.y, lod);
   }
   col *= light * edgeLift;
   col *= vTint;
@@ -8718,6 +8794,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private hasPonds = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
+  private shadowTexelM = 4400 / 3072;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
   private groundSheen: THREE.Mesh | null = null;
@@ -9607,7 +9684,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uShadow: { value: null as THREE.Texture | null },
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
-      uShadowSpan: { value: 5999 },
+      uShadowSpan: { value: 5999 }, uShadowTexelM: { value: 4400 / 3072 },
       uTime: this.timeUni,
     });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
@@ -10617,7 +10694,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
-        uShadowSpan: { value: this.shadowSpan },
+        uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
       },
       side: THREE.DoubleSide,
     });
@@ -10785,6 +10862,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cam.bottom = b - pad; cam.top = t + pad;
         cam.near = Math.max(1, n - pad); cam.far = f + pad;
         cam.updateProjectionMatrix();
+        // One texel on the ground, in metres, for the frustum we just fitted.
+        // The offsets in SHADOW_GLSL are multiples of this, not lengths.
+        this.shadowTexelM = Math.max(cam.right - cam.left, cam.top - cam.bottom) / 3072;
         // Keep the WORLD-space footprint too. The frustum above is fitted in
         // light space, which is right for a depth pass and useless for laying a
         // flat sheet on the ground. The shadow catcher is cut to the coastline
@@ -10850,6 +10930,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           mat.uniforms.uShadowOn.value = 1;
         }
         if (mat && mat.uniforms && mat.uniforms.uShadowSpan) mat.uniforms.uShadowSpan.value = this.shadowSpan;
+        if (mat && mat.uniforms && mat.uniforms.uShadowTexelM) mat.uniforms.uShadowTexelM.value = this.shadowTexelM;
       });
       for (const mat of [this.wallMat, this.roofMat]) {
         mat.uniforms.uShadow.value = target.texture;
@@ -10863,7 +10944,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           fragmentShader: CATCHER_FRAG,
           uniforms: {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
-            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
+            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
             uSeason: this.seasonUni, uWeather: this.weatherUni,
           },
           transparent: true,
@@ -10878,7 +10959,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           fragmentShader: GROUND_SHEEN_FRAG,
           uniforms: {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
-            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
+            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
             uSeason: this.seasonUni, uCam: this.camUni,
             uSunDir: this.sunDirUni, uSunCol: this.sunColUni, uWeather: this.weatherUni,
           },

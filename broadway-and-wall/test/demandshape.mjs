@@ -26,7 +26,7 @@ const corr=(a,b)=>{const m=(x)=>x.reduce((p,c)=>p+c,0)/x.length;const ma=m(a),mb
   let n=0,da=0,db=0;for(let i=0;i<a.length;i++){n+=(a[i]-ma)*(b[i]-mb);da+=(a[i]-ma)**2;db+=(b[i]-mb)**2;}
   return n/Math.sqrt(da*db);};
 console.log(`\nDEMAND SHAPE — ${N} generated islands\n`);
-console.log("  seed    peaks(R=250m)   corr(demand, -dist to best point)   top-decile clusters   median  p90   peak district");
+console.log("  seed    peaks(R=250m)   corr(demand, -dist to best point)   top-decile clusters   median  p90  ≥45   ≥70   peak district");
 for(let i=0;i<N;i++){
   const seed=(2166136261 ^ ((i+1)*2654435761))>>>0;
   const c=makeCity("somewhere",seed,{});
@@ -65,7 +65,8 @@ for(let i=0;i<N;i++){
   const cut=q(dd,0.9); const hot=pts.filter(p=>p.d>=cut); const cl=[];
   for(const h of hot) if(!cl.some(z=>(z.x-h.x)**2+(z.y-h.y)**2<(400*400))) cl.push(h);
   const peakName = raw.reduce((a,b)=>a.d>b.d?a:b).district || "—";
-  console.log(`  ${String(seed).slice(0,9).padStart(9)} ${String(pk.length).padStart(12)} ${corr(dd,dist).toFixed(3).padStart(32)} ${String(cl.length).padStart(20)} ${String(q(dd,0.5)).padStart(8)} ${String(q(dd,0.9)).padStart(4)}   ${peakName}`);
+  const share = (cut) => (dd.filter((x)=>x>=cut).length/dd.length*100).toFixed(0)+"%";
+  console.log(`  ${String(seed).slice(0,9).padStart(9)} ${String(pk.length).padStart(12)} ${corr(dd,dist).toFixed(3).padStart(32)} ${String(cl.length).padStart(20)} ${String(q(dd,0.5)).padStart(8)} ${String(q(dd,0.9)).padStart(4)}  ${share(45).padStart(4)}  ${share(70).padStart(4)}   ${peakName}`);
 }
 console.log("\n  A city of neighbourhoods has several separated peaks and a WEAK correlation");
 console.log("  with distance-to-the-single-best-point. One hill has r near -1 and one cluster.");

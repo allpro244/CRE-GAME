@@ -476,11 +476,13 @@ do. The clamp stays a guard, watched.
 **Finding 2 — industrial can be built (dev.ts `zonePermits`/`useForZone`).**
 Fringe C corridors (demand < 45) permit light industrial — the 2018–2024
 last-mile record: fulfilment went into dead malls and strip corridors, not new
-M districts. `mixmatch`: industrial 0.0% → 11.2% of orders; stock growth on
-the reference city 0.000 → +1% to +33% across seeds; `rail.vac.industrial.lo`
-0.7667 → 0.4167; sim:accept F industrial real rent +1.77%/yr (out of band) →
-**+1.04%/yr (in band)**. Still the tightest class; the shortage-queue regime
-(below) is why.
+M districts. Stock growth on the reference city: 0.000 on every seed → +1%
+to +33% across seeds (the sturdy measure — 80y × 6 seeds); `mixmatch` order
+share is roll-dependent, measured 0.9% and 11.2% on two runs of the fixed
+tree against a structural 0.0% before, so read it as "orders can now flow",
+not a level. `rail.vac.industrial.lo` 0.7667 → 0.4167; sim:accept F
+industrial real rent +1.77%/yr (out of band) → **+1.04%/yr (in band)**.
+Still the tightest class; the shortage-queue regime (below) is why.
 
 **Finding 3 — the tournament instrument (tools/econstress.mjs).** Bots fund
 equity from CASH, per their labels. Re-measured: 0/8 in the black → 2/8

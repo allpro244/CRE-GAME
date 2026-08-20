@@ -133,9 +133,11 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     "soft letter did not sit untouched on the open pile");
 }
 
-// Exclusive broker covers a building without the firm-wide agent toggle.
+// A listing exclusive works the phones. It does not take the pen.
 {
   g.agent = false;
+  g.teamLeasing = false;
+  g.renewalMgmt = false;
   g.holdings[boughtBbl].broker = true;
   g.holdings[boughtBbl].tenants = [];
   g.lois = [{
@@ -143,18 +145,22 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 0.84).toFixed(2),
     termM: 84, tiPsf: 8, freeM: 2, net: true, expiresM: g.month + 3, arrivedM: g.month,
   }];
-  // Covered paper must not interrupt — exclusive holds the pen without agent toggle.
-  check(!E.loiNeedsPrincipal(g, g.lois[0]),
-    "loiNeedsPrincipal is false while an exclusive covers the building");
-  check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
-    "exclusive-covered unreferred LOI does not stop Skip");
+  check(E.loiNeedsPrincipal(g, g.lois[0]),
+    "loiNeedsPrincipal stays true while only a listing exclusive is on the file");
+  check(E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
+    "exclusive-only LOI still stops Skip — the principal has the letter");
+  check(!E.deskCoverage(g, boughtBbl),
+    "deskCoverage is null for a listing exclusive");
+  check(!E.deskHoldsPen(g),
+    "deskHoldsPen is false when the only cover is a listing exclusive");
+  const beforeTenants = g.holdings[boughtBbl].tenants.length;
   E.runLeasingAgent(g, parcels, { onlyDelegated: true });
+  E.workLeasingDesk(g, parcels);
   const still = g.lois.find((l) => l.id === 401);
-  const news = (g.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
-  check(
-    !still || still.referred || still.countered || /exclusive|countered|walked/i.test(news),
-    "exclusive broker works soft paper without the firm agent toggle",
-  );
+  check(!!still && !still.referred && !still.countered,
+    "listing exclusive did not negotiate or sign the letter");
+  check(g.holdings[boughtBbl].tenants.length === beforeTenants,
+    "listing exclusive did not auto-sign");
   delete g.holdings[boughtBbl].broker;
 }
 

@@ -1907,11 +1907,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
-  // Firm agent takes the whole book at 6%. Without them, exclusives and (when
-  // you handed the book over) in-house leasing staff negotiate the buildings
-  // they cover. Renewal management is the narrow middle option for renewals.
-  // "Take leasing back" / teamLeasing off means the principal owns every letter
-  // that is not on an exclusive or the renewal desk.
+  // Firm agent takes the whole book at 6%. Without them, in-house leasing
+  // staff negotiate only after an explicit handoff. Renewal management is the
+  // narrow middle option for renewals. A listing exclusive works the phones
+  // and does not sign. "Take leasing back" means the principal owns every
+  // letter that is not on the renewal desk.
   if (s.agent) runAgent(s, parcels);
   else {
     runDelegatedLeasing(s, parcels);
@@ -1947,13 +1947,14 @@ export function hasLeasingTeam(s: GameState): boolean {
 
 /**
  * Somebody else holds the pen on at least part of the book — firm agent,
- * your team (when handed over), exclusive broker, or renewal management.
+ * your team (when handed over), or renewal management.
+ * A listing exclusive is not on this list: they work the phones.
  * Drives mandate UI and the quiet-desk scorecard.
  */
 export function deskHoldsPen(s: GameState): boolean {
   if (s.agent || s.renewalMgmt) return true;
   if (s.teamLeasing && hasLeasingTeam(s)) return true;
-  return Object.values(s.holdings).some((h) => !!h.broker);
+  return false;
 }
 
 /**
@@ -1963,9 +1964,9 @@ export function deskHoldsPen(s: GameState): boolean {
  * as its price: under the limit the desk signs, over it the letter goes to the
  * principal whatever the mandate says about the rent. This is an authority
  * limit on the FIRM, not a setting on one channel, so it sits above every
- * delegation — the firm agent, a building's covering exclusive, the renewal
- * desk — and it is the same test whether the question is "who signs this" or
- * "does this interrupt me".
+ * delegation — the firm agent, the team desk, the renewal desk — and it is
+ * the same test whether the question is "who signs this" or "does this
+ * interrupt me".
  *
  * It moves the pen and nothing else. The commission still follows the mandate
  * that is marketing the space (see `exclusiveFeeRate`): an authority limit that
@@ -1982,8 +1983,9 @@ export function overDeskAuthority(s: GameState, l: LOI): boolean {
  * Does this letter still need the principal — popup, Deals queue, Skip stop?
  *
  * Referred paper always does, and so does anything over the firm's signing
- * authority. Otherwise the firm agent, a covering exclusive / team hire, or
- * (for renewals) management already owns the decision.
+ * authority. Otherwise the firm agent, a covering team hire (after handoff),
+ * or (for renewals) management already owns the decision. A listing exclusive
+ * does not.
  */
 export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
   // Fee owner is not the landlord — never interrupt for the lessee's paper.
@@ -2396,6 +2398,36 @@ export function termIndifferenceShift(loi: LOI, askTermM: number): number {
 }
 
 /**
+ * Search / moving cost a new tenant will pay to avoid starting over.
+ * Anchors the indifference multiple at 6% over market in a balanced cycle
+ * before tightness, credit, term push or phase.
+ */
+export const TENANT_SWITCH = 0.06;
+/**
+ * Extra indifference on a sitting tenant — relocation, not just search.
+ * Real incumbents accept some above-market paper; 10pp on top of SWITCH made
+ * pushing renewals too easy to farm. Six points keeps the premium and cuts
+ * the exploit. Both the player path and the desk path read this one number.
+ */
+export const RENEWAL_STICK = 0.06;
+
+/**
+ * The multiple of market rent at which the tenant is indifferent.
+ * Same function for the principal's counter and the desk's, so one number
+ * cannot drift from the other.
+ */
+export function tenantIndifferenceMult(
+  s: GameState, loi: LOI, askTerm: number, tight: number,
+): number {
+  const stick = loi.kind === "renewal" ? RENEWAL_STICK : 0;
+  const softDrag = Math.max(0, -tight) * 0.12;
+  return 1 + TENANT_SWITCH + stick + tight * 0.35 - softDrag + loi.credit * 0.015
+    + termIndifferenceShift(loi, askTerm)
+    + (s.econ.phase === "expansion" ? 0.05
+      : s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.06 : 0);
+}
+
+/**
  * THE NUMBER THE TENANT IS ACTUALLY DECIDING ON.
  *
  * Face rent paid over the term (free months take a straight-line bite), plus
@@ -2701,18 +2733,19 @@ export function agentCounterTerms(
  * Who holds the pen on this deed.
  *
  * Three covers, one model:
- *   1. You (null) — default
+ *   1. You (null) — default. Every letter is yours.
  *   2. Staff — only after an explicit handoff (`teamLeasing`); float hires
  *      cover the unassigned book, pinned hires only their buildings
- *   3. Outside — firm agent or a building exclusive (vendors, mid competence)
+ *   3. Firm agent — only after an explicit hire (`agent`)
  *
- * Hiring staff alone does not take the pen.
+ * A listing exclusive (`Holding.broker`) works the phones and takes 6% of
+ * what you sign. It does not negotiate or sign. Hiring staff, owning a lot
+ * of feet, or putting the house on the file does not take the pen.
  */
 export function deskCoverage(
   s: GameState, bbl: string,
 ): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
   if (s.agent) return { kind: "agent", who: "Your agent" };
-  if (s.holdings[bbl]?.broker) return { kind: "exclusive", who: "Your exclusive" };
   if (!s.teamLeasing) return null;
   const leasing = (s.staff ?? []).filter((x) => x.role === "leasing");
   if (!leasing.length) return null;
@@ -2761,13 +2794,7 @@ function tenantCounterOutcome(
   const vacHere = (s.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
   const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
   const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
-  const SWITCH = 0.06;
-  const stick = loi.kind === "renewal" ? 0.10 : 0;
-  const softDrag = Math.max(0, -tight) * 0.12;
-  const fStar = 1 + SWITCH + stick + tight * 0.35 - softDrag + loi.credit * 0.015
-    + termIndifferenceShift(loi, askTerm)
-    + (s.econ.phase === "expansion" ? 0.05
-      : s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.06 : 0);
+  const fStar = tenantIndifferenceMult(s, loi, askTerm, tight);
   const W = 0.085;
   const pAccept = Math.max(0.04, Math.min(0.95, 1 / (1 + Math.exp((f - fStar) / W))));
   loi.countered = true;
@@ -2933,8 +2960,9 @@ function agentReferLoi(
  * clears the open pile immediately — waiting until next month left every
  * existing LOI still popping.
  *
- * `onlyDelegated`: when the firm agent is off, exclusives and (when handed
- * the book) in-house leasing staff still counter/sign on buildings they cover.
+ * `onlyDelegated`: when the firm agent is off, in-house leasing staff
+ * (after an explicit handoff) still counter/sign on buildings they cover.
+ * A listing exclusive is not a cover — they work the phones.
  */
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
@@ -3134,16 +3162,17 @@ function runAgent(s: GameState, parcels: ParcelTable) {
   runLeasingAgent(s, parcels);
 }
 
-/** Exclusives — negotiate without the firm-wide agent. */
+/** Staff desk — negotiate without the firm-wide agent, after a handoff. */
 function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
   runLeasingAgent(s, parcels, { onlyDelegated: true });
 }
 
 /**
  * Clear live letters under whoever currently holds the pen — hire path.
- * Same logic as the end of tickLeasing, so flipping agent / exclusive /
+ * Same logic as the end of tickLeasing, so flipping agent / team handoff /
  * renewal management does not leave a month of popups on the open pile.
- * Hiring leasing staff alone does not clear the pile.
+ * Hiring leasing staff, or listing a building exclusively, does not clear
+ * the pile.
  */
 export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
   if (s.agent) runLeasingAgent(s, parcels);
@@ -3651,19 +3680,15 @@ export function respondLOI(
     //   term     how far off their own term band you dragged them
     //
     // In a balanced market a new prospect countered AT the market signs about
-    // 70% of the time; 20% over market is under a fifth.
-    const SWITCH = 0.06;
-    const stick = loi.kind === "renewal" ? 0.10 : 0;
+    // 70% of the time; 20% over market is under a fifth. A sitting tenant
+    // still pays a relocation premium (`RENEWAL_STICK`) on top of SWITCH —
+    // real, but no longer a free 16% over-market farm.
     // Vacancy softens landlords in life AND stiffens tenants less — a soft
     // market also means the tenant has alternatives, so stickiness earns less.
     // The old curve only shifted fStar up in tight markets; a soft market now
     // pulls it down a notch so "push past market while half the block is empty"
     // is the losing ask it should be.
-    const softDrag = Math.max(0, -tight) * 0.12;
-    const fStar = 1 + SWITCH + stick + tight * 0.35 - softDrag + loi.credit * 0.015
-      + termIndifferenceShift(loi, askTerm)
-      + (next.econ.phase === "expansion" ? 0.05
-        : next.econ.phase === "recession" || next.econ.phase === "depression" ? -0.06 : 0);
+    const fStar = tenantIndifferenceMult(next, loi, askTerm, tight);
     const W = 0.085;
     const pAccept = Math.max(0.04, Math.min(0.95,
       1 / (1 + Math.exp((f - fStar) / W)) + (bestFinal ? 0.05 : 0)));

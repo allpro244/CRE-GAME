@@ -119,5 +119,27 @@ console.log("\nLOI COUNTER — what moves the needle\n");
   }
 }
 
+// --- 4. Renewal stick is real and shared, and no longer a 10pp farm -------
+{
+  const loiNew = {
+    id: 3, bbl: "x", kind: "new", name: "Acme", sector: "tech", credit: 1,
+    sf: 10000, rentPsf: 40, termM: 84, tiPsf: 0, freeM: 0, bumpPct: 2.5, net: true,
+  };
+  const loiRen = { ...loiNew, kind: "renewal" };
+  const s = { econ: { phase: "midcycle", cityVac: { office: 0.115 } } };
+  const n = E.tenantIndifferenceMult(s, loiNew, 84, 0);
+  const r = E.tenantIndifferenceMult(s, loiRen, 84, 0);
+  if (typeof E.RENEWAL_STICK !== "number") fail("RENEWAL_STICK is exported");
+  else if (!(E.RENEWAL_STICK > 0 && E.RENEWAL_STICK < 0.10)) {
+    fail(`RENEWAL_STICK ${E.RENEWAL_STICK} should be a real premium under the old 10pp farm`);
+  } else ok(`RENEWAL_STICK is ${E.RENEWAL_STICK} — real, dampened`);
+  if (Math.abs((r - n) - E.RENEWAL_STICK) > 1e-9) {
+    fail(`renewal indifference should sit ${E.RENEWAL_STICK} above new (new ${n.toFixed(4)} / ren ${r.toFixed(4)})`);
+  } else ok(`renewal fStar is +${((r - n) * 100).toFixed(0)}pp over a new letter at the same tightness`);
+  if (Math.abs(n - (1 + E.TENANT_SWITCH + 0.015)) > 1e-9) {
+    fail(`new-letter balanced fStar expected ${1 + E.TENANT_SWITCH + 0.015}, got ${n.toFixed(4)}`);
+  } else ok(`new-letter balanced indifference is ${(n * 100).toFixed(1)}% of market`);
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

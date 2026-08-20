@@ -862,7 +862,8 @@ export function refreshPool(s: GameState, force = false) {
  * does not. `HIRING_UI_SHIPPED` kept so older saves and comments still read.
  */
 export const HIRING_UI_SHIPPED = true;
-/** Load / slip / capacity ceilings. Off until the desk is redesigned. */
+/** Load / slip / capacity ceilings. Off until the desk is redesigned.
+ *  Capacity never takes the leasing pen — that is an explicit player choice. */
 export const STAFF_CAPACITY_SHIPPED = false;
 
 function assignedForBbl(s: GameState, bbl: string, role: StaffRole): Staff | undefined {

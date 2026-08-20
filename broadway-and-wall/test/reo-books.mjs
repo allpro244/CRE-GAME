@@ -68,5 +68,51 @@ check(taken >= 2, `at least two deeds conveyed (${taken} of ${pack.length})`);
 check(!E.attentionItems(g).some((a) => a.key === `street-book:${p.id}`),
   "attention clears once the book is bought");
 
+// A second book — the receiver talks. Take-it-or-leave-it at the ask is the
+// wrong market for a lender that just took the package.
+const pack2 = [];
+for (const b of bbls) {
+  const rec = parcels[b];
+  if (!rec || rec.class === "land" || !rec.bldgArea || rec.bldgArea < 12_000) continue;
+  if (g.holdings[b] || pack.includes(b) || pack2.includes(b)) continue;
+  pack2.push(b);
+  if (pack2.length >= 4) break;
+}
+check(pack2.length >= 4, "second REO fixture has four buildings");
+if (pack2.length >= 4) {
+  E.openReoPortfolio(g, parcels, "First Harbor", pack2, rival.name, 9_000_000);
+  const p2 = (g.portfolios ?? []).find((x) => x.reo && x.bbls.some((b) => pack2.includes(b)));
+  check(!!p2, "second REO package lists");
+  check(typeof E.offerStreetBook === "function" && typeof E.bookReservation === "function",
+    "offerStreetBook / bookReservation are exported");
+  if (p2) {
+    const reservation = E.bookReservation(p2);
+    check(reservation < p2.ask && reservation >= Math.round(p2.ask * 0.85),
+      `REO reservation is inside 88% of ask (${reservation} vs ask ${p2.ask})`);
+    const insult = E.offerStreetBook(g, parcels, p2.id, Math.round(p2.ask * 0.50));
+    check(!!insult.err, `insult is refused (${insult.err ?? "closed?"})`);
+    const mid = E.offerStreetBook(g, parcels, p2.id, Math.round(p2.ask * 0.86));
+    const still = (mid.s.portfolios ?? []).find((x) => x.id === p2.id);
+    if (still) {
+      check(!!still.talks, "86% of ask opens a counter (under the 88% reservation)");
+      check(still.talks.theirPrice <= p2.ask, "their number is at or under the ask");
+      mid.s.cash = Math.max(mid.s.cash, still.talks.theirPrice * 1.05);
+      const acc = E.acceptStreetBook(mid.s, parcels, p2.id);
+      check(!acc.err, `accepting their number closes (${acc.err ?? "ok"})`);
+      check(!(acc.s.portfolios ?? []).some((x) => x.id === p2.id), "book leaves the tape after the counter");
+    } else {
+      check(!mid.err, `86% of ask closed (${mid.err ?? "ok"})`);
+    }
+    // At or above the ask they take the ask — even if you overbid.
+    E.openReoPortfolio(g, parcels, "First Harbor", pack2.filter((b) => !g.holdings[b]).slice(0, 4), rival.name, 6_000_000);
+    const p3 = (g.portfolios ?? []).find((x) => x.reo && x.id !== p2.id);
+    if (p3) {
+      g.cash = Math.max(g.cash, p3.ask * 1.1);
+      const pay = E.offerStreetBook(g, parcels, p3.id, Math.round(p3.ask * 1.05));
+      check(!pay.err, `offer at the ask closes (${pay.err ?? "ok"})`);
+    }
+  }
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

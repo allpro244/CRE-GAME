@@ -213,6 +213,39 @@ const report = (name, ok, lines) => {
     ]);
 }
 
+// ---------------------------------------------------------------------------
+// F. CAPACITY PARKED — overload does not stamp
+// ---------------------------------------------------------------------------
+{
+  const parcels = clone();
+  const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
+  const holdings = {};
+  let acc = 0;
+  for (const b of bbls) {
+    const r = E.resolveRec(parcels, g, b);
+    if (!r || r.class === "land" || !r.bldgArea) continue;
+    holdings[b] = { bbl: b, tenants: [], condition: "fair" };
+    acc += r.bldgArea;
+    if (acc >= 2_400_000) break;
+  }
+  const probe = { ...g, holdings };
+  E.markStaff(probe, parcels);
+  const rs = E.roleState(probe, parcels, "pm");
+  const any = Object.values(probe.holdings)[0];
+  const stamped = any?.pmOpexMult ?? 1;
+  const slipping = E.pmOpexMult(rs);
+  const parked = E.pmOpexMult({ ...rs, slip: 0 });
+  report("F. CAPACITY PARKED — overload slip does not stamp the month",
+    E.STAFF_CAPACITY_SHIPPED === false
+      && rs.slip > 0.2
+      && Math.abs(stamped - parked) < 0.002
+      && slipping > parked + 0.02,
+    [
+      `flag ${E.STAFF_CAPACITY_SHIPPED}   slip ${(rs.slip * 100).toFixed(0)}%   stamped opex x${stamped.toFixed(3)}`,
+      `skill-only x${parked.toFixed(3)}   would-have-slipped x${slipping.toFixed(3)}`,
+    ]);
+}
+
 console.log(`\n${"=".repeat(64)}`);
-console.log(fails === 0 ? "5 of 5 payroll tests pass" : `${fails} payroll test(s) failed`);
+console.log(fails === 0 ? `${6 - fails} of 6 payroll tests pass` : `${fails} payroll test(s) failed`);
 process.exit(fails === 0 ? 0 : 1);

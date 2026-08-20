@@ -21,14 +21,38 @@
 // structurally, permanently almost free relative to what the city earns, and
 // nothing in the model can stop it.
 //
-// WHAT THE RECORD SAYS, and why "flat rent per square foot" is NOT the target:
-// office rent per SQUARE FOOT has been roughly flat in real terms over long
-// periods, but that is the NET of two forces — incomes rising (more and better
-// space demanded) and densification (less space per worker). This engine has
-// the densifying leg (the secular menu is weighted toward it) and not the
-// income leg. Housing is the cleanest witness: US floor space per person rose
-// from roughly 290 sf in 1950 to over 700 sf by 2020, about +1%/yr, and that
-// is the income effect made visible.
+// WHAT THE RECORD SAYS — AND THE FIRST VERSION OF THIS FILE GOT IT WRONG.
+//
+// This harness originally asserted that RENT PER SQUARE FOOT divided by wages
+// should be trendless. No realistic economy can pass that clause, which makes
+// it the same kind of fake as a test that cannot fail. Devaney (2010), "Trends
+// in office rents in the City of London: 1867-1959", Explorations in Economic
+// History 47(2):198-212, is a repeat-measures index over NINETY-THREE YEARS
+// and finds NO real growth in office rents over the period as a whole. So real
+// rent per square foot is trendless — and if real wages grow at all, rent per
+// square foot over wages must therefore FALL, by arithmetic, forever.
+// Demanding otherwise asks the model to beat the record.
+//
+// THE QUANTITY THAT IS ACTUALLY BOUNDED is occupancy cost per WORKER against
+// pay — what a tenant writes a cheque for, relative to what it earns:
+//
+//     payroll share  =  (real rent per sf  x  sf per worker) / real wage
+//
+// Rent per sf can be flat while rent per worker falls, because sf per worker
+// falls: that is what densification MEANS, and it is why the two look like a
+// contradiction and are not. The LEVEL anchor is JLL's 3-30-300 rule of thumb
+// ($3 utilities / $30 rent / $300 payroll per sf per year — office rent near a
+// tenth of payroll); cite it for the level only, as it is a 2010s heuristic
+// rather than a historical series. The TREND anchor is Brookfield (Feb 2024),
+// which puts occupancy cost as a share of corporate revenue as effectively
+// halved over three decades; read against payroll instead of revenue — pay per
+// worker grew far more slowly than revenue per worker — that is a fall of
+// roughly 30-40% over thirty years, about -1.2 to -1.7%/yr.
+//
+// So the band below is NOT "trendless". It is "may decline at the pace the
+// record shows a densification era declining, and may not collapse" — because
+// what the model must not do is extrapolate one thirty-year era across a
+// century as though it were a law.
 //
 // So the quantity this file measures is the PHYSICAL one: square feet of
 // demand per job (commercial) and per resident (housing). A model with no
@@ -76,10 +100,21 @@ for (let si = 0; si < SEEDS.length; si++) {
   const a = T[0], z = T[T.length - 1];
   const r = { seed: SEEDS[si] };
   r.wageReal = cagr(z.wage / z.cpi, a.wage / a.cpi, YRS);
-  // RENT-TO-INCOME: real rent per sf against real pay. Trendless is the claim.
+  // Reported for continuity: real rent per sf against real pay. The record says
+  // this SHOULD fall when wages grow (see the header) — it is not a clause.
   const rti = T.map((t) => (t.rent.office / E.RENT_BASE.office) / Math.max(0.35, t.wage));
   r.rtiStart = med(rti.slice(0, 60)); r.rtiEnd = med(rti.slice(-60));
   r.rtiTrend = cagr(r.rtiEnd, r.rtiStart, YRS);
+  // THE CLAUSE QUANTITY: occupancy cost per worker as a share of pay, indexed
+  // to 1.0 at the opening. rent/sf x sf/worker / wage — cpi cancels between
+  // rent and wage, so this is a pure quantity ratio.
+  const payShare = T.map((t) => {
+    const sfPerJob = (t.pool.office ?? 0) / Math.max(1, t.jobs);
+    return ((t.rent.office / E.RENT_BASE.office) * sfPerJob) / Math.max(0.35, t.wage);
+  });
+  const ps0 = med(payShare.slice(0, 60));
+  r.payShareEnd = med(payShare.slice(-60)) / Math.max(1e-9, ps0);
+  r.payShareTrend = cagr(r.payShareEnd, 1, YRS);
   // THE PHYSICAL QUANTITY: square feet of demand per job / per resident.
   for (const k of K) {
     const per = T.map((t) => t.pool[k] / Math.max(1, k === "multifamily" ? t.pop : t.jobs));
@@ -103,7 +138,9 @@ for (const k of K) console.log(`    ${k.padEnd(13)} ${pc(M(`sfPer.${k}`)).padSta
 console.log("\n  the affordability multiplier — the one channel income has");
 for (const k of K) console.log(`    ${k.padEnd(13)} median ${M(`affordMed.${k}`).toFixed(3)}   resting on its 1.12 ceiling ${pc(M(`affordCeil.${k}`), 0)} of months`);
 console.log(`\n  real wage growth        ${pc(M("wageReal"))}/yr`);
-console.log(`  rent-to-income          ${M("rtiStart").toFixed(2)} → ${M("rtiEnd").toFixed(2)}   drift ${pc(M("rtiTrend"))}/yr`);
+console.log(`  rent per sf / pay       ${M("rtiStart").toFixed(2)} → ${M("rtiEnd").toFixed(2)}   drift ${pc(M("rtiTrend"))}/yr   (reported; the record says this falls)`);
+console.log(`  OCCUPANCY COST PER WORKER as a share of pay, indexed 1.0 at the opening`);
+console.log(`                          1.00 → ${M("payShareEnd").toFixed(2)}   drift ${pc(M("payShareTrend"))}/yr`);
 console.log("");
 
 // ---- the clauses -----------------------------------------------------------
@@ -111,10 +148,17 @@ console.log("");
 // factor of 1.6. Real rent-to-income series are trendless over the long run
 // (US median rent / median income has no century trend); the band is that
 // fact with room for one city's weather.
-check(Math.abs(M("rtiTrend")) <= 0.005,
-  `rent-to-income drift ${pc(M("rtiTrend"))}/yr (need |drift| <= 0.50%/yr — a century-long one-way drift in what space costs relative to pay is not a market)`);
-check(M("rtiEnd") >= 0.45 && M("rtiEnd") <= 2.2,
-  `rent-to-income ends at ${M("rtiEnd").toFixed(2)} (need 0.45-2.2 — space may get cheap or dear, not free or impossible)`);
+// The observed FAST era is -1.2 to -1.7%/yr sustained for three decades
+// (Brookfield, read against payroll). A century is not one era — it contains
+// densifying and space-EXPANDING stretches, the latter well attested: central
+// air conditioning enlarged floor area per worker through the 1960s-70s. A
+// century-long average at or beyond the fastest observed thirty-year era means
+// the model has turned an era into a law. -1.0%/yr is that test, and it is
+// deliberately more permissive than the record's own fast trend.
+check(M("payShareTrend") >= -0.010,
+  `occupancy cost per worker, share of pay: ${pc(M("payShareTrend"))}/yr (need >= -1.00%/yr — the fastest densification era on record is -1.2 to -1.7%/yr over THREE DECADES; a century at that pace is an era mistaken for a law)`);
+check(M("payShareEnd") >= 0.30,
+  `occupancy cost per worker ends at ${M("payShareEnd").toFixed(2)} of its opening share of pay (need >= 0.30 — office rent runs near a tenth of payroll on JLL's 3-30-300; a two-thirds collapse in that share is space becoming free)`);
 // Housing floor space per person rose ~1%/yr in the US over 70 years. A model
 // with no income effect holds it flat; the claim is only that it is not
 // NEGATIVE while the city gets richer.

@@ -3383,7 +3383,60 @@ export function tickEcon(s: GameState) {
     const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "depression" ? 0.16
       : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
     const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
-    e.concIdx[k] += 0.25 * (concTarget - e.concIdx[k]);
+    // A CONCESSION IS GIVEN IN A MONTH AND TAKEN BACK OVER A LEASE.
+    //
+    // This chased its target at 0.25/month in BOTH directions, so the giveaway
+    // evaporated as fast as it arrived — and because `concTarget` is a level
+    // function of TODAY's availability, it returned to zero the moment vacancy
+    // normalised. Measured with `pnpm glut`: at a 10% office glut the dial is
+    // back to 0.00 by month 60 with availability still 5.7pp above the paired
+    // control, and effective rent has re-converged on asking exactly. The
+    // consequence is that the ASKING index ends up carrying 74-86% of the whole
+    // effective-rent adjustment at three years, across every class and every
+    // dose — twelve readings out of twelve — because `rentIdx` integrates the
+    // same pressure permanently while this dial forgets it.
+    //
+    // Real markets are not symmetric here and the record is unusually clear.
+    // Opening: US gateway free rent went 9.7 months (Q1 2020) to 12.5 (Q1 2021),
+    // +29% in four quarters. Closing: Manhattan went 13 months (2019) to 17
+    // (2022) to 16 (Q1 2023) and was still near 17 in Midtown in 2024 — five
+    // years and essentially nothing given back. Four years after the shock,
+    // Manhattan asking was -3.3% while net effective was -17.3%.
+    //
+    // The mechanism behind that asymmetry is not sentiment. A landlord can
+    // concede this month, but he cannot UN-concede until the paper rolls: the
+    // giveaway is written into leases that run for years, and the comparables
+    // the next tenant's broker points at are those same signed deals. So the
+    // market's concession level decays at the rate its leases turn over, not at
+    // the rate its vacancy does. These are the classes' own lease terms — the
+    // same numbers `rollRecovery`/term draws already work from, roughly five
+    // years of office and retail paper, three of industrial, one of housing.
+    const CONC_DECAY: Record<BuiltClass, number> = {
+      office: 1 / 60, retail: 1 / 60, multifamily: 1 / 12, industrial: 1 / 36,
+    };
+    //
+    // WHAT THIS DID AND DID NOT DO, measured with `pnpm glut`, office, 10% of
+    // stock, five paired seeds, nominal, at fixed horizons:
+    //   the dial now persists          m120 treatment 0.00 -> 0.17
+    //   the BALANCED market now has a package at all, which it did not:
+    //                                  control dial 0.00 -> 0.38 at the drop,
+    //                                  0.15 at five years
+    //   the concession lead improved    m6 3.03x -> 4.99x, m12 2.10x -> 2.27x
+    //   THE FAULT IT WAS AIMED AT DID NOT MOVE MUCH:
+    //     face's share of the adjustment  m36 84.1% -> 78.7%, m60 99.9% -> 90.6%
+    //     against a pre-registered <=35%, so this is not the fix for that.
+    //   and asking fell FURTHER          m36 -16.7% -> -23.5%, m60 -13.9% -> -33.2%
+    //
+    // Kept anyway, because the mechanism is right on its own terms and the
+    // balanced-market package is a separately measured fault it does close: a
+    // landlord cannot un-give a concession, and this engine had him doing it
+    // every month. The face-share fault has a different cause and needs a
+    // different mechanism — `rentIdx` INTEGRATES pressure permanently while
+    // this dial is bounded at 1, so once it saturates every further month of
+    // distress goes into the headline by construction. Slowing the decay
+    // cannot fix that, and the measurement above is the proof.
+    const opening = concTarget > e.concIdx[k];
+    e.concIdx[k] += (opening ? 0.25 : CONC_DECAY[k]) * (concTarget - e.concIdx[k]);
     // EMPTY SPACE IS NEVER FREE. This term was capped at -0.9%/month, so at
     // ten points over natural it saturated and EVERY FURTHER POINT OF VACANCY
     // COST NOTHING — a 45% glut was priced exactly like a 20% one, which is

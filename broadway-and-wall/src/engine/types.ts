@@ -1281,6 +1281,17 @@ export interface Econ {
   cycleDev: number;
   landIdx: number;
   capRate: Record<BuiltClass, number>;
+  /**
+   * Trailing realized crude return per class, EMA'd over ~4 years — rent
+   * growth plus yield, the number an allocator actually chases. It exists to
+   * drive the capital-flows term in the cap-rate target: a class that has
+   * been beating the others attracts money until its pricing no longer beats
+   * the others, which is the arbitrage that kept any one class from being the
+   * permanent answer in every real market (industrial caps went under 4% by
+   * 2021 BECAUSE industrial had won the decade). Measured before it existed:
+   * office won the 50-year crude return on every seed, by 3-4 points.
+   */
+  retExp?: Record<BuiltClass, number>;
   /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
   /**
@@ -1434,6 +1445,18 @@ export interface Econ {
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
     shockClusterM?: number;
+    /**
+     * The term premium as its own state — what the bond market charges over
+     * the policy rate for time and risk, and it WANDERS. The loan index used
+     * to be an EMA gliding toward policy-plus-constant, which made the next
+     * month's print readable from this one's: once policy pointed somewhere,
+     * the index ticked that way every month until it arrived (measured: 66-70%
+     * of monthly moves continued the previous direction, sd 7-8bp against
+     * ~20-25bp for a real index). A market rate is policy plus a premium that
+     * mean-reverts around its structural level while real noise hits it every
+     * month — that is where retracements inside a trend come from.
+     */
+    termPrem?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed
@@ -1633,6 +1656,25 @@ export interface Econ {
    * is opened, which is the least surprising migration.
    */
   industComp?: number;
+  /**
+   * SECULAR DEMAND ERAS, PER CLASS — the slow tide under the business cycle.
+   *
+   * `industComp` above was one era of history hardcoded into all of them: the
+   * 1970-2010 manufacturing exodus, applied to every seed, always downward —
+   * the same cities that lost their factories then saw sheds become the
+   * best-performing class in the country from 2015 (e-commerce logistics). A
+   * secular share that can only fall is a permanent thumb on one class.
+   *
+   * Each class now carries a compounding demand-composition index (`idx`, a
+   * multiplier on its demand driver) whose annual `drift` re-rolls every one
+   * to two decades from a class-specific menu of real eras: deindustrialization
+   * and the logistics boom for sheds, the e-commerce erosion and the high-street
+   * decades for shopfronts, densification and the telework thinning for desks,
+   * household-formation waves for flats. Which eras a half-century gets is the
+   * seed's own draw — so which class a RUN favours differs per run, which is
+   * the point.
+   */
+  secular?: Record<BuiltClass, { idx: number; drift: number; leftM: number }>;
   /**
    * WHAT SHARE OF THE CITY'S PAYROLL EACH TRADE IS. Published by the demand
    * model, which is the only thing that knows: a trade's size is its affinity

@@ -364,6 +364,39 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     // is real but it is not the market. Bound what one quarter can conclude.
     if (Number.isFinite(median)) pull.set(dist, Math.max(0.6, Math.min(1.7, median / town)));
   }
+  // SILENCE IS INFORMATION TOO — the no-bid decay.
+  //
+  // Everything above only learns from SALES: three prints in the window or the
+  // district's mark does not move. Write out what that does to a district
+  // whose asks have outrun its buyers — say the envelope doubled and every
+  // residual with it: the asks jump, the buyers stop, the prints stop, and the
+  // mark FREEZES at the number nobody will pay, forever, because the only
+  // teacher this wire had was a closing. An appraiser does not work that way.
+  // Dead volume with product sitting on the market IS evidence — the
+  // listing-to-sale ratio and days-on-market are standard adjustment inputs —
+  // and what it is evidence of is that the book is marked above the market.
+  //
+  // So: a district with NO land prints in the window and at least two land
+  // listings that have each sat unsold past a marketing period (nine months —
+  // land is slow, and one stale listing is an anecdote by the same rule as
+  // LAND_MIN_PRINTS) drifts its mark down at LAND_SPEED toward a 0.90 pseudo-
+  // ratio: about 0.7% a quarter, an appraiser conceding a few points a year to
+  // a market that will not answer, not a crash. The decay stops the moment a
+  // print arrives, because a real closing is better evidence than silence —
+  // prints always take precedence (a printed district never enters here).
+  {
+    const staleByDist = new Map<string, number>();
+    for (const li of s.listings ?? []) {
+      if (s.month - li.listedM < 9) continue;
+      const rec = resolveRec(parcels, s, li.bbl);
+      if (!rec || rec.class !== "land") continue;
+      const d = rec.district ?? "—";
+      staleByDist.set(d, (staleByDist.get(d) ?? 0) + 1);
+    }
+    for (const [d, n] of staleByDist) {
+      if (n >= 2 && !pull.has(d)) pull.set(d, 0.90);
+    }
+  }
   if (!pull.size) return;
 
   // Publish relative district heat for the residual land auction — builder-

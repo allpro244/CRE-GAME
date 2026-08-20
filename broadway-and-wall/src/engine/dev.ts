@@ -1340,6 +1340,22 @@ export function refreshDevelopmentFeasibility(
   // cut that mixed them filled all 144 slots with worn buildings (plentiful)
   // and zeroed the office pencil because those lots only cleared as housing.
   // Appetite is multiplicative on sitePencil; a zero pencil is a shut class.
+  // THE PENCIL MUST ASK THE SAME ZONING THE SHOVEL ASKS. This sampler scored
+  // all four uses on every lot, while the actual start path routes through
+  // useForZone — which only ever returns industrial on M-zoned dirt. In a
+  // town platted with no M zones at all (the standard city: 859 C, 439 R,
+  // 0 M) that split told two stories about one question: sitePencil said
+  // "sheds pencil here" every year while the crane could never once choose
+  // one. Downstream, supplyShut believed the pencil, so the scarcity mute
+  // stayed on and fifty years of 1.5% shed vacancy priced as if supply were
+  // coming — the vacancy rail went from guard to load-bearing (measured:
+  // 75% of months bound). A use a lot's zoning cannot host scores nothing.
+  const zonePermits = (zone: string | undefined, use: BuiltClass): boolean => {
+    const z = (zone ?? "C")[0];
+    if (z === "R") return use === "multifamily";
+    if (z === "M") return use === "industrial" || use === "multifamily";
+    return use !== "industrial";
+  };
   const LAND_N = 96;
   const REDEV_N = 72;
   const chosen = new Set<string>();
@@ -1360,6 +1376,7 @@ export function refreshDevelopmentFeasibility(
       chosen.add(bbl);
       landCount++;
       for (const use of BUILT_CLASSES) {
+        if (!zonePermits(rec.zoneDist, use)) continue;
         const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
         const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
         // Only clearing pencils. Pushing appetite-zero failures from densify
@@ -1385,6 +1402,7 @@ export function refreshDevelopmentFeasibility(
     // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
     const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
+      if (!zonePermits(rec.zoneDist, use)) continue;
       const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
       if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
       const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);

@@ -191,6 +191,26 @@ export function spendable(
   return { cash, line, total: cash + line };
 }
 
+/**
+ * HOW THE NEXT CHEQUE SPLITS between cash and the line.
+ *
+ * Same order as `fundCashNeed`: operating cash first, then the revolver, then
+ * a shortfall. The desks quote this so a close that draws the line says so
+ * before the button is pressed — "you can afford it" is not the same sentence
+ * as "you will be $X into the revolver at index+400".
+ */
+export function locDrawFor(
+  s: GameState, parcels: ParcelTable, need: number,
+  opts?: { allowLoc?: boolean },
+): { cash: number; draw: number; short: number; rate: number } {
+  const n = Math.max(0, Math.ceil(need));
+  const cash = Math.min(Math.max(0, Math.floor(s.cash)), n);
+  const rest = n - cash;
+  const line = (opts?.allowLoc ?? true) ? locAvailable(s, parcels) : 0;
+  const draw = Math.min(line, rest);
+  return { cash, draw, short: rest - draw, rate: locRate(s) };
+}
+
 /** How much the firm can fund right now (cash, plus undrawn line when allowed). */
 export function fundableNow(
   s: GameState, parcels: ParcelTable,

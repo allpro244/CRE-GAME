@@ -11,6 +11,7 @@ import type { OccRead } from "@/engine/leasing";
 import { blockReport } from "@/engine/demand";
 import { isMixedUse, uses as usesOf } from "@/engine/mix";
 import { usd, sf } from "@/ui/format";
+import { locDrawFor } from "@/engine/credit";
 
 /** What to call a building: its dominant use, or "Mixed-Use" when it has none. */
 export function useLabel(rec: { class: string; bbl: string; floors: number; unitsRes: number; bldgArea: number; mix?: Record<string, number> }): string {
@@ -309,4 +310,25 @@ export function Row({ k, v, strong, bad, title }: {
       <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "")} title={title}>{v}</div>
     </>
   );
+}
+
+/**
+ * HOW THE NEXT CHEQUE SPLITS — cash first, then the revolver. Hidden when
+ * the whole amount is sitting in the operating account; shown whenever the
+ * line is about to move, including a shortfall.
+ */
+export function LocSplitHint({
+  need, game, parcels, allowLoc = true,
+}: {
+  need: number;
+  game: GameState;
+  parcels: import("@/data/types").ParcelTable;
+  allowLoc?: boolean;
+}) {
+  const split = locDrawFor(game, parcels, need, { allowLoc });
+  if (split.draw <= 0 && split.short <= 0) return null;
+  const text = split.short > 0
+    ? `${usd(split.cash)} cash · ${usd(split.draw)} on the line · short ${usd(split.short)}`
+    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}% (index + 400)`;
+  return <div className="hint">{text}</div>;
 }

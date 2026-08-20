@@ -993,12 +993,12 @@ function ParcelPanelInner({
             <div className="btn-row">
               <button
                 className={"btn" + (holding.broker ? " btn-on" : "")}
-                title="A leasing exclusive: ~45% more tenant traffic while the space is vacant, and no retainer at all while it sits. The house is paid a commission instead — 6% of the base rent over the full term of every lease signed while they hold the file, due at the signing, in place of the 4% on a new lease and 2% on a renewal your own people cost. Cheap to hold, expensive when it works."
+                title="A listing exclusive: ~45% more tenant traffic while the space is vacant, and no retainer at all while it sits. They work the phones; you still take every letter. The house is paid 6% of the base rent over the full term of every lease signed while they hold the file, due at the signing, in place of the 4% on a new lease and 2% on a renewal your own people cost. Cheap to hold, expensive when it works."
                 onClick={() => useStore.getState().broker(selectedBBL, !holding.broker)}
               >
                 {holding.broker
-                  ? "✓ Broker engaged — 6% of everything they sign"
-                  : "Hire leasing broker · no retainer, 6% of the lease at signing"}
+                  ? "✓ Listing exclusive — they work the phones, you still sign · 6%"
+                  : "Hire listing exclusive · phones only, 6% when you sign"}
               </button>
             </div>
           )}

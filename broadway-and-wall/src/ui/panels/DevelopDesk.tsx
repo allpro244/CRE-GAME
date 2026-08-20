@@ -15,10 +15,10 @@ import {
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
-import { locAvailable } from "@/engine/credit";
+import { spendable } from "@/engine/credit";
 import { USE_WORD } from "@/engine/mix";
 import { usd, sf, pct } from "@/ui/format";
-import { useLabel, devUseLabel, Row } from "@/ui/panels/shared";
+import { useLabel, devUseLabel, Row, LocSplitHint } from "@/ui/panels/shared";
 
 /**
  * WHAT THE STACK BECOMES when the shops run into the two-storey cap.
@@ -126,13 +126,14 @@ export function ReuseSection({ bbl }: { bbl: string }) {
             <Row k="After conversion" v={`${sf(plan.sf)} · ${target}`} strong />
             <Row k="Conversion budget" v={usd(plan.costTotal)} />
             <Row k="Opportunity cost in basis" v={usd(plan.landBasis)} />
-            <Row k="Equity required" v={usd(equity)} strong bad={equity > game.cash + locAvailable(game, parcels)} />
+            <Row k="Equity required" v={usd(equity)} strong bad={equity > spendable(game, parcels).total} />
             <Row k="Delivery" v={`${plan.months} months`} />
             <Row k="Yield / hurdle" v={`${plan.yieldOnCost.toFixed(2)}% / ${plan.requiredYield.toFixed(2)}%`}
               strong bad={plan.hurdleRatio < 1} />
           </div>
+          <LocSplitHint need={equity} game={game} parcels={parcels} />
           <button className="btn btn-buy"
-            disabled={plan.hurdleRatio < 1 || equity > game.cash + locAvailable(game, parcels)}
+            disabled={plan.hurdleRatio < 1 || equity > spendable(game, parcels).total}
             onClick={() => useStore.getState().convertUse(bbl, target, mixed)}>
             Convert to {target === "multifamily" ? "apartments" : "mixed use"} · {usd(equity)}
           </button>
@@ -205,7 +206,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // is exactly what this card was accused of. Every equity read below goes
   // through these two: the whole cheque, and whether you can write it.
   const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
-  const canFund = equityRequired <= game.cash + locAvailable(game, parcels);
+  const canFund = equityRequired <= spendable(game, parcels).total;
   const closeCheque = plan ? plan.equityAtClose + plan.pointsCost : 0;
   const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
 
@@ -223,8 +224,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             k="Equity at closing"
             v={`${usd(closeCheque)} due the day you break ground`}
             strong
-            bad={closeCheque > game.cash}
-            title="The bank will not fund until this leaves your account, plus the origination fee."
+            bad={closeCheque > spendable(game, parcels).total}
+            title="The bank will not fund until this leaves your account, plus the origination fee. The line counts."
           />
           <Row
             k="Equity all-in"
@@ -248,6 +249,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           )}
         </div>
       )}
+      {plan && <LocSplitHint need={closeCheque} game={game} parcels={parcels} />}
 
       <div className="btn-row" style={{ marginBottom: 8 }} role="tablist" aria-label="Build desk">
         {BUILD_TABS.map((t) => (
@@ -662,7 +664,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               <div className="page-section" style={{ marginTop: 8 }}>
                 <div className="page-section-head">Equity</div>
                 <div className="grid">
-                  <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > game.cash} />
+                  <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > spendable(game, parcels).total} />
                   <Row
                     k="Drawn during build"
                     v={`${usd(plan.equity - plan.equityAtClose)} over ~${plan.months} months`}
@@ -677,9 +679,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   <Row k="Schedule" v={`${plan.months} months`} />
                   {(() => {
                     const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
-                    const fundable = game.cash + locAvailable(game, parcels);
+                    const fundable = spendable(game, parcels).total;
                     const shortAll = Math.max(0, commitCap - fundable);
-                    const shortClose = Math.max(0, closeCheque - game.cash);
+                    const shortClose = Math.max(0, closeCheque - fundable);
                     if (shortAll <= 0 && shortClose <= 0) return null;
                     return (
                       <Row
@@ -703,7 +705,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button type="button" className="btn" onClick={() => setTab("design")}>Back · Design</button>
                 <button
                   className="btn btn-buy"
-                  disabled={closeCheque > game.cash || !canFund}
+                  disabled={!canFund}
                   onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender, spec)}
                   title={!canFund
                     ? `Equity short — needs ${usd(equityRequired)} all-in`
@@ -711,7 +713,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 >
                   {canFund
                     ? `Break ground · ${usd(equityRequired)} equity all-in`
-                    : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - (game.cash + locAvailable(game, parcels))))}`}
+                    : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - spendable(game, parcels).total))}`}
                 </button>
               </div>
             </>

@@ -271,12 +271,27 @@ export function withdrawPortfolio(s: GameState, id: string): GameState {
   return s;
 }
 
+/**
+ * WHAT A RECEIVER WILL TAKE FOR THE BOOK.
+ *
+ * A bank that just took the package wants it off the books. The single-asset
+ * receiver desk already reserves at 88% of ask / loan basis; a book is the
+ * same animal, only larger. A fund winding down is less desperate — 92%.
+ * The floor is not published on the card.
+ */
+export function bookReservation(p: PortfolioListing): number {
+  const haircut = p.reo || p.sellerLender ? 0.88 : 0.92;
+  return Math.round(p.ask * haircut);
+}
+
 /** The player buying somebody else's book, in one transaction. */
 export function buyPortfolio(
-  s: GameState, parcels: ParcelTable, id: string,
+  s: GameState, parcels: ParcelTable, id: string, price?: number,
 ): { s: GameState; err?: string; msg?: string } {
   const p = (s.portfolios ?? []).find((x) => x.id === id);
   if (!p || p.player) return { s, err: "That package is no longer available." };
+  const struck = Math.round(price ?? p.ask);
+  if (struck <= 0) return { s, err: "Name a price." };
   // ONE CHEQUE, AND THERE IS NO FINANCING IT AT THE TABLE. That is the whole
   // reason a portfolio trades back from the sum of its parts, and making the
   // player raise the full amount in cash is what makes the discount earned
@@ -294,9 +309,9 @@ export function buyPortfolio(
   // a sponsor must not spend. Every individual deed inside the package is
   // still bought through `executePurchase`, which does reach the line — one
   // building at a time, at the sum-of-parts price, with no discount.
-  const closing = Math.round(p.ask * 0.02);
-  if (s.cash < p.ask + closing) {
-    return { s, err: `You are ${money(p.ask + closing - s.cash)} short. A package is one cheque — nobody lends against a book you do not own yet.` };
+  const closing = Math.round(struck * 0.02);
+  if (s.cash < struck + closing) {
+    return { s, err: `You are ${money(struck + closing - s.cash)} short. A package is one cheque — nobody lends against a book you do not own yet.` };
   }
   const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
   const sellerName = seller?.name ?? p.sellerLender ?? "a receiver";
@@ -313,7 +328,7 @@ export function buyPortfolio(
   let cur = s;
   const taken: string[] = [];
   for (const { b, v } of vals) {
-    const share = Math.max(1000, Math.round(p.ask * (v / tot)));
+    const share = Math.max(1000, Math.round(struck * (v / tot)));
     const r = executePurchase(cur, parcels, b, share, "cash", true, 1);
     if (r.err) {
       return {
@@ -328,11 +343,62 @@ export function buyPortfolio(
   cur.portfolios = (cur.portfolios ?? []).filter((x) => x.id !== id);
   cur.news.unshift({
     q: cur.month, kind: "deal",
-    text: `You have bought ${taken.length} buildings from ${sellerName} in one transaction at ${money(p.ask)}. `
-      + `The parts appraise at ${money(p.gross)} — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back. `
+    text: `You have bought ${taken.length} buildings from ${sellerName} in one transaction at ${money(struck)}. `
+      + `The parts appraise at ${money(p.gross)} — ${((1 - struck / Math.max(1, p.gross)) * 100).toFixed(0)}% back. `
       + `Nobody else in town could write that cheque this month.`,
   });
-  return { s: cur, msg: `${taken.length} buildings, one closing, ${money(p.ask)}.` };
+  return { s: cur, msg: `${taken.length} buildings, one closing, ${money(struck)}.` };
+}
+
+/**
+ * NAME A PRICE ON A STREET / REO BOOK.
+ *
+ * Take-it-or-leave-it at the posted ask is the wrong market for a lender that
+ * just took the package — they would love it off the books. Same shape as
+ * the single-asset receiver desk: at or above the ask they take the ask; at
+ * or above the reservation they take your number; inside the talking range
+ * they come back once; too low and they wait for the next quarterly cut.
+ */
+export function offerStreetBook(
+  s: GameState, parcels: ParcelTable, id: string, price: number,
+): { s: GameState; err?: string; msg?: string } {
+  const p = (s.portfolios ?? []).find((x) => x.id === id);
+  if (!p || p.player) return { s, err: "That package is no longer available." };
+  const px = Math.round(price);
+  if (px <= 0) return { s, err: "Name a price." };
+  const reservation = bookReservation(p);
+  const ask = p.ask;
+  if (px >= ask) return buyPortfolio(s, parcels, id, ask);
+  if (px >= reservation) return buyPortfolio(s, parcels, id, px);
+  if (p.talks?.final && px < p.talks.theirPrice) {
+    return { s, err: `They said ${money(p.talks.theirPrice)} was final.` };
+  }
+  const insult = Math.round(reservation * 0.82);
+  if (px < insult) {
+    return { s, err: "Too far from their number. They will wait for the next quarterly cut." };
+  }
+  const prev = p.talks?.theirPrice ?? ask;
+  const theirs = Math.max(reservation, Math.round((prev + px) / 2));
+  const next = cloneState(s);
+  const live = (next.portfolios ?? []).find((x) => x.id === id);
+  if (!live) return { s, err: "That package is no longer available." };
+  const final = !!p.talks;
+  live.talks = { yourPrice: px, theirPrice: theirs, openedM: s.month, final };
+  return {
+    s: next,
+    msg: final
+      ? `They will take ${money(theirs)} and that is the last number.`
+      : `They come back at ${money(theirs)}.`,
+  };
+}
+
+/** Take the receiver's last number. */
+export function acceptStreetBook(
+  s: GameState, parcels: ParcelTable, id: string,
+): { s: GameState; err?: string; msg?: string } {
+  const p = (s.portfolios ?? []).find((x) => x.id === id);
+  if (!p?.talks) return { s, err: "No counter on the table." };
+  return buyPortfolio(s, parcels, id, p.talks.theirPrice);
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +565,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         p.ask = Math.round(p.ask * (1 - cut) / 1000) * 1000;
         p.cuts++;
         p.expiresM = s.month + 12;
+        if (p.talks && p.talks.theirPrice > p.ask) p.talks.theirPrice = p.ask;
         if (p.cuts === 4 || p.cuts === 8) {
           s.news.unshift({
             q: s.month, kind: "warn",
@@ -529,6 +596,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       } else if (p.ask > p.gross * 0.72) {
         p.ask = Math.round(p.ask * 0.972 / 1000) * 1000;
         p.cuts++;
+        if (p.talks && p.talks.theirPrice > p.ask) p.talks.theirPrice = p.ask;
       }
     }
 

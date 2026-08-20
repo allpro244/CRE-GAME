@@ -144,7 +144,6 @@ export function gameLayers(): LayerSpecification[] {
         "fill-extrusion-color": [
           "case",
           selected, "#e3b95c",
-          owned, "#dcc389",
           hovered, "#ddd6c2",
           ["match", ["%", ["coalesce", ["get", "tone"], 0], 5],
             0, ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#efe9db", "#e9ebec"],
@@ -159,16 +158,18 @@ export function gameLayers(): LayerSpecification[] {
       },
     },
     {
-      // rooftop markers over player-owned buildings
+      // rooftop pin over player-owned buildings — the ownership mark. The
+      // mesh itself is not washed gold; this is how you tell a holding from
+      // the rest of the street without hiding the facade.
       id: "bw-owned-pts",
       type: "circle",
       source: "bw-owned",
       minzoom: 12.5,
       paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 3, 16, 5.5] as never,
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 3.6, 16, 6.2] as never,
         "circle-color": "#b07f1e",
         "circle-stroke-color": "#fdfbf4",
-        "circle-stroke-width": 1.4,
+        "circle-stroke-width": 1.6,
         "circle-pitch-alignment": "map",
       },
     },

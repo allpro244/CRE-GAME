@@ -3401,7 +3401,7 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed at ${rec.address} — the house works the phones for nothing and takes 6% of the base rent over the term of everything it signs, at the signing.`
+      ? `Leasing exclusive signed at ${rec.address} — the house works the phones and takes 6% of the base rent over the term of everything you sign while they hold the file. They do not negotiate or sign for you.`
       : `Broker dismissed at ${rec.address} — what you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
   });
   return { s: next };
@@ -3436,7 +3436,7 @@ export function setBrokerAll(s: GameState, parcels: ParcelTable, on: boolean): {
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed across the book — ${n} building${n === 1 ? "" : "s"} to the house, no retainer, 6% of the base rent over the term of everything they sign.`
+      ? `Leasing exclusive signed across the book — ${n} building${n === 1 ? "" : "s"} to the house. They work the phones; you still take every letter. 6% of the base rent over the term of everything signed while they hold the file.`
         + (skipped ? ` The ${skipped} residential building${skipped === 1 ? "" : "s"} ${skipped === 1 ? "is" : "are"} not on it: flats let themselves.` : "")
       : `Exclusives ended on ${n} building${n === 1 ? "" : "s"}. What you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
   });

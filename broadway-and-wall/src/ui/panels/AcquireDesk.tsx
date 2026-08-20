@@ -21,9 +21,10 @@ import { PRODUCTS } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { mixOf, uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
+import { spendable } from "@/engine/credit";
 import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
-import { useLabel, physicalOcc, band, apMid, annualPayment, Row } from "@/ui/panels/shared";
+import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint } from "@/ui/panels/shared";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -987,6 +988,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // earn. It is the disclosed roll now — the same roll the lender sizes on and
   // the same roll the deed conveys.
   const ip = rec ? inPlace(rec, game, bbl, offerPrice) : null;
+  const fromFund = !!(game.fundPay && game.fund && !game.fund.settled
+    && game.month <= game.fund.investEndM);
+  const closePurse = fromFund ? (game.fund?.cash ?? 0) : spendable(game, parcels).total;
   const noi = ip?.noi ?? 0;
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
@@ -1136,13 +1140,14 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
               </>
             )}
-            <Row k="Equity to close" v={usd(equity)} strong bad={equity > game.cash} />
+            <Row k="Equity to close" v={usd(equity)} strong bad={equity > closePurse} />
           </div>
+          {!fromFund && <LocSplitHint need={equity} game={game} parcels={parcels} />}
           <div className="btn-row">
             <button type="button" className="btn" onClick={() => setStage("structure")}>◂ Structure</button>
             <button
               className="btn btn-buy"
-              disabled={equity > game.cash}
+              disabled={equity > closePurse}
               onClick={() => {
                 const prod = principal <= 0 ? "cash" : picked;
                 const l = principal <= 0 ? 1 : lev;
@@ -1159,20 +1164,14 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               </button>
             )}
           </div>
-          {(() => {
-            const fromFund = !!(game.fundPay && game.fund && !game.fund.settled
-              && game.month <= game.fund.investEndM);
-            const purse = fromFund ? (game.fund?.cash ?? 0) : game.cash;
-            if (equity <= purse) return null;
-            return (
+          {equity > closePurse && (
               <div className="hint">
-                Short {usd(equity - purse)}
+                Short {usd(equity - closePurse)}
                 {fromFund
                   ? " — call more capital, or buy from firm cash on Capital → Debt."
-                  : " — the line of credit is on Capital → Debt."}
+                  : " — raise cash or free room on the line."}
               </div>
-            );
-          })()}
+            )}
         </div>
       )}
     </div>

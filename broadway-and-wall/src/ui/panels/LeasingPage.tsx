@@ -137,7 +137,7 @@ export function LeasingPage() {
       ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They sign inside your mandate, counter soft letters, pick clear tour winners, and refer expansions, dead heats and capital calls. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
       : teamOn
         ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
-        : "Default. Every letter lands on you unless a building has an exclusive, or you hand renewals to management below. Hire leasing on Staff, then hand them the book — or hire outside coverage at 6%.";
+        : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, hire leasing on Staff and hand them the book, or hire outside coverage at 6% — nothing takes the pen unless you say so.";
     return (
       <div className="agent-bar">
         <div>
@@ -265,7 +265,7 @@ export function LeasingPage() {
    * "good enough" means. Only shown when somebody else holds the pen.
    */
   function MandateBar() {
-    // Firm agent, renewal desk, or exclusive — same mandate dials.
+    // Firm agent, team handoff, or renewal desk — same mandate dials.
     if (!deskHoldsPen(game)) return null;
     const floor = agentFloor(game);
     const pass = agentPassBelow(game);
@@ -355,9 +355,8 @@ export function LeasingPage() {
             price. Everything above tells a desk what a good letter looks like;
             these two say how big a deal they may close without you. A real
             leasing mandate is bounded both ways, and it is a limit on the FIRM:
-            it overrides the outside agent, a building's exclusive and the
-            renewal desk alike, because the letter that matters is the one
-            nobody thought to ask you about. */}
+            it overrides the outside agent and the renewal desk alike, because
+            the letter that matters is the one nobody thought to ask you about. */}
         <div style={{ marginTop: 14 }}>
           <Slider
             label="Signing authority"
@@ -392,16 +391,15 @@ export function LeasingPage() {
         <div className="hint" style={{ marginTop: 8 }}>
           Shop letters are judged on shop market, office on office — not the building's blended average.
         </div>
-        {/* WHO SIGNS AND WHO ONLY MARKETS, said plainly. "Put it on the house"
-            reads like a listing and is not one: an exclusive holds the pen. */}
+        {/* WHO SIGNS AND WHO ONLY MARKETS, said plainly. A listing exclusive
+            works the phones. It does not take the pen. */}
         <div className="hint" style={{ marginTop: 8 }}>
-          <b>Who holds the pen.</b> An outside agent and a building's exclusive both market the space
-          <i> and sign it</i> inside this mandate — an exclusive is a leasing house working the phones for
-          6% of the base rent over the term, not a listing. Your own leasing hires sign only after you hand
-          them the book, at the in-house 4%/2%. Management signs renewals only. Everything else is yours: an
-          expansion that changes how the building is programmed, a tour dead heat, a credit or capital breach,
-          and anything over the authority above. A must-take — the remnant next door that is too small for
-          anybody else to lease — is housekeeping, not programming, and the desk signs it.
+          <b>Who holds the pen.</b> An outside agent signs inside this mandate after you hire them.
+          Your own leasing hires sign only after you hand them the book, at the in-house 4%/2%.
+          Management signs renewals only. A listing exclusive works the phones and is paid 6% of
+          what <i>you</i> sign — they do not negotiate. Everything else is yours: an expansion that
+          changes how the building is programmed, a tour dead heat, a credit or capital breach,
+          and anything over the authority above.
         </div>
       </div>
     );
@@ -515,7 +513,7 @@ export function LeasingPage() {
                       r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? "LEASE-UP" : null]
                       .filter(Boolean).join(" · ")}
                     {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                      <button className="btn btn-mini" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>hire</button>
+                      <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
                     )}
                   </td>
                 </tr>

@@ -91,10 +91,10 @@ export function HousePolicy() {
         </button>
       </div>
       <div className="hint">
-        No retainer and nothing while the space sits — they are paid 6% of the base rent over the term of
-        everything they sign, at the signing, against the 4% on a new lease and 2% on a renewal your own people
-        cost. Cheap to hold, expensive when it works, and the right answer changes with how much of the book is
-        empty.
+        No retainer and nothing while the space sits — they work the phones and are paid 6% of the base rent
+        over the term of everything signed while they hold the file, against the 4% on a new lease and 2% on a
+        renewal your own people cost. They do not negotiate or sign. Cheap to hold, expensive when it works,
+        and the right answer changes with how much of the book is empty.
       </div>
       <div className="hint">
         {off === 0

@@ -7,7 +7,31 @@
 
 ---
 
-## This ruler: the realism batch — exits, sheds, sweep rate, recessions, land floors (SAVE_VERSION unchanged)
+## This ruler: demand gets its income argument (SAVE_VERSION unchanged)
+
+`be6813a` split `burden = rent/wage` into two arguments — a real rent index and
+a damped real-income factor `incomeEff` — and `008aad4` made the secular
+composition bound asymptotic so nothing walks into a clamp. Both are mechanism
+changes with no new RNG draws, so every move below is a real repricing plus the
+century re-roll that follows from changed decisions.
+
+| Metric cluster | Driver | Direction |
+|---|---|---|
+| `rentIdx.*` (office +3.6%, retail +37%, multifamily +46%, industrial +77%) | THE INTENDED MOVE: demand now responds to income, so rents hold their real level instead of bleeding. `pnpm income`: occupancy cost per worker -2.15%/yr -> -0.49%/yr | One-time repricing, intended |
+| `vac.*` (office -16%, retail -15%, multifamily -47%) | Same — a live income argument raises the demand pool | Tighter markets |
+| `land.*` (p10 +33%, med +26%, p90 +75%) | Rents up, so the builder residual is up. Also `f7045ea`: the land harness had been double-deflating the index and reporting a crash that was the price level | Follows rent |
+| `city.employed` / `population` (+16%) | More space demanded -> more absorbed -> larger working city | Follows demand |
+| `dev.affordableLotShare` 0.094 -> 0.126 | Higher residual on the same dirt. Now just ABOVE the documented 8-12% honest band, having been inside it | WATCH — do not tune; re-read after supply answers |
+| **`rail.vac.office.lo` 0.063 -> 0.333**, `industrial` 0.42 -> 0.72, `multifamily` 0.04 -> 0.09 | **A REGRESSION, AND THE FINDING.** The income term added demand and SUPPLY CANNOT ANSWER IT, so the frictional vacancy floor binds a third of office months. The dead income effect had been masking a supply-response failure: with demand flat, supply never had to respond | Report, do not tune |
+
+That last row is the honest cost of this ruler and it is now the top open item.
+The mechanism is right — a richer city wants more space — and the model cannot
+build it. Per CLAUDE.md, that is a reason to find what the incorrect number was
+propping up, not a reason to revert the correction.
+
+---
+
+## Previous ruler: the realism batch — exits, sheds, sweep rate, recessions, land floors (SAVE_VERSION unchanged)
 
 Six mechanisms landed between this ruler and the last (see REALISM_AUDIT_2026-08.md
 "WHAT WAS FIXED"): the per-class surplus-exit valve, light industrial on fringe C

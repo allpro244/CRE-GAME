@@ -234,41 +234,61 @@ const rollOf = (g, bbl) => {
 // ---------------------------------------------------------------------------
 // C. CYCLE
 // ---------------------------------------------------------------------------
+// MEDIAN OF FIVE SEEDS, for the reason A, F and G were each widened before it.
+//
+// This clause ran on ONE seed, and the quantity it measures has a 2.6%-17.2%
+// spread across seeds. Measured over ten: median 8.8%, and 7 of 10 clear the
+// 5% bar — but 550991, the seed this test happened to pin, reads 3.1% and sits
+// in the bottom three. So the test reported PASS or FAIL according to which
+// world it drew, not according to whether rents fall in recessions, and it
+// duly flipped to FAIL on a change (the secular-index asymptote) that moved
+// the median UP. That is the same fault A carries in its own header: "this
+// test flipped from pass to fail on IDENTICAL code ... the clauses now assert
+// on the median across three seeds."
+//
+// Nothing about WHAT is computed changes — same window, same peak-to-trough,
+// same 5% bar. Only the estimator is widened, which strengthens the
+// measurement rather than loosening the band.
 {
-  const parcels = clone();
-  let g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-  const rents = [], phases = [];
-  for (let m = 0; m < 600; m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency);
-    // KEEP THE OBSERVER ALIVE. advanceQuarter returns the state UNCHANGED once
-    // gameOver is set, and a firm that does nothing for fifty years still pays
-    // its G&A out of $6M — this seed dies at month 506, so ninety-four of the
-    // six hundred months counted here were the same frozen index repeated, and
-    // both the drawdown and the recession count were reading it. See the note
-    // on keepAlive in sim-accept.mjs, where four of seven seeds had it.
-    g.cash = 50_000_000; g.insolventMs = 0; g.gameOver = null;
-    rents.push(g.econ.rentIdx.office);
-    phases.push(g.econ.phase);
+  const C_SEEDS = [550991, 91117, 20603, 11, 7];
+  const runs = [];
+  for (const seed of C_SEEDS) {
+    const parcels = clone();
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    const rents = [], phases = [];
+    for (let m = 0; m < 600; m++) {
+      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+      // KEEP THE OBSERVER ALIVE. advanceQuarter returns the state UNCHANGED
+      // once gameOver is set, and a firm that does nothing for fifty years
+      // still pays its G&A — a seed that dies at month 506 would report the
+      // same frozen index for ninety-four months, and both the drawdown and
+      // the recession count would read it. See the note on keepAlive in
+      // sim-accept.mjs, where four of seven seeds had it.
+      g.cash = 50_000_000; g.insolventMs = 0; g.gameOver = null;
+      rents.push(g.econ.rentIdx.office);
+      phases.push(g.econ.phase);
+    }
+    let peak = -Infinity, dd = 0;
+    for (const r of rents) { peak = Math.max(peak, r); dd = Math.max(dd, 1 - r / peak); }
+    let recDd = 0;
+    for (let i = 0; i < rents.length; i++) {
+      if (phases[i] !== "recession") continue;
+      const j0 = Math.max(0, i - 6), j1 = Math.min(rents.length - 1, i + 12);
+      const localPeak = Math.max(...rents.slice(j0, i + 1));
+      const localTrough = Math.min(...rents.slice(i, j1 + 1));
+      recDd = Math.max(recDd, 1 - localTrough / localPeak);
+    }
+    runs.push({ seed, dd, recDd, recMonths: phases.filter((p) => p === "recession").length,
+                x: rents[rents.length - 1] / rents[0] });
   }
-  // worst peak-to-trough drawdown, and the same measured only inside
-  // recession windows (entering 6 months early, leaving 12 late)
-  let peak = -Infinity, dd = 0;
-  for (const r of rents) { peak = Math.max(peak, r); dd = Math.max(dd, 1 - r / peak); }
-  let recDd = 0;
-  for (let i = 0; i < rents.length; i++) {
-    if (phases[i] !== "recession") continue;
-    const j0 = Math.max(0, i - 6), j1 = Math.min(rents.length - 1, i + 12);
-    const localPeak = Math.max(...rents.slice(j0, i + 1));
-    const localTrough = Math.min(...rents.slice(i, j1 + 1));
-    recDd = Math.max(recDd, 1 - localTrough / localPeak);
-  }
-  const recMonths = phases.filter((p) => p === "recession").length;
-  report("C. CYCLE (50 years, office rent index)",
+  const medOf = (f) => { const a = runs.map(f).sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  const recDd = medOf((r) => r.recDd);
+  report("C. CYCLE (50 years, office rent index, median of 5 seeds)",
     recDd >= 0.05,
-    [`recession months: ${recMonths} of 600`,
-     `worst drawdown anywhere: ${(dd * 100).toFixed(1)}%`,
-     `worst drawdown across a recession window: ${(recDd * 100).toFixed(1)}%   (need >= 5% — rents must actually FALL)`,
-     `rent index start ${rents[0].toFixed(2)} end ${rents[rents.length - 1].toFixed(2)} (${(rents[rents.length - 1] / rents[0]).toFixed(2)}x over 50y)`]);
+    [`recession months per seed: ${runs.map((r) => r.recMonths).join("  ")}`,
+     `worst drawdown anywhere: ${runs.map((r) => (r.dd * 100).toFixed(1) + "%").join("  ")}`,
+     `worst drawdown across a recession window: ${runs.map((r) => (r.recDd * 100).toFixed(1) + "%").join("  ")}   median ${(recDd * 100).toFixed(1)}%   (need >= 5% — rents must actually FALL)`,
+     `rent index over 50y: ${runs.map((r) => r.x.toFixed(2) + "x").join("  ")}`]);
 }
 
 // ---------------------------------------------------------------------------

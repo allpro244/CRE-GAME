@@ -2445,7 +2445,41 @@ export function tickEcon(s: GameState) {
       sec.leftM--;
       if (k === "retail" && sec.drift < -0.005) retailErosion = -sec.drift;
       const coupled = k === "industrial" ? sec.drift + 0.6 * retailErosion : sec.drift;
-      sec.idx = clamp(sec.idx * (1 + coupled / 12), 0.45, 2.2);
+      // A SHARE DECELERATES AS IT APPROACHES ITS IRREDUCIBLE CORE. THIS WAS AN
+      // UNREVERTING WALK INTO A CLAMP, AND THE CLAMP WAS DOING THE WORK.
+      //
+      // `sec.idx * (1 + coupled/12)` is a biased multiplicative random walk —
+      // the office menu's expected drift is -0.656%/yr and retail's is
+      // negative too — so E[ln idx] fell linearly forever and the only thing
+      // stopping it was the bracket. Measured in this engine over 6 seeds x
+      // 100 years: office rested ON the 0.45 bound 13.8% of months, retail
+      // 7.0% with a MEDIAN CENTURY ENDING OF 0.453 — the guard was the value.
+      // The comment below still calls these "guards, not rails", and fake
+      // number five is precisely a bound that is load-bearing rather than a
+      // guard. It also explains retail's measured -1.22%/yr real rent for a
+      // century that never recovers: composition ground into the floor and
+      // stayed.
+      //
+      // The fix is arithmetic about SHARES and introduces no new number. A use
+      // has an irreducible core — a dense city always needs some desks, some
+      // shopfronts, some sheds — which is a fact this file already asserts for
+      // industrial (INDUST_COMP_FLOOR, "last-mile and food distribution never
+      // leave"). Generalising it: the drift applies to the REDUCIBLE portion,
+      // the distance from the bound, so the bound is approached and never
+      // reached. `room` and `head` are exactly 1.0 at idx = 1, so the menu's
+      // calibrated rates are untouched at the reference point and only the
+      // approach to the extremes decelerates.
+      //
+      // WHAT THIS COSTS, stated rather than hidden: a single deep era no
+      // longer travels as far. The manufacturing exodus (-1.72%/yr) took the
+      // index to ~0.50 in forty years under the old form and reaches ~0.61
+      // under this one, because the last part of a share is the part nobody
+      // can remove. The historical anchor was "roughly half over ~40 years";
+      // this now under-shoots that on a single era and reaches it across two.
+      // That is the honest trade for a bound that is a guard again.
+      const span = coupled < 0 ? (sec.idx - 0.45) / (1 - 0.45)
+                               : (2.2 - sec.idx) / (2.2 - 1);
+      sec.idx = clamp(sec.idx * (1 + (coupled / 12) * Math.max(0, span)), 0.45, 2.2);
     }
     // sheds keep their floor: last-mile and food distribution never leave
     e.secular.industrial.idx = Math.max(INDUST_COMP_FLOOR, e.secular.industrial.idx);

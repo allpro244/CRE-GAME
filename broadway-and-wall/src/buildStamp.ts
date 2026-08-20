@@ -12,7 +12,7 @@
  * it is; a stamp that drifts from the constant is worse than no stamp.
  */
 export const BUILD_STAMP = {
-  commit: "manhattan-deco",
-  label: "nyc-artdeco-harbour",
+  commit: "far-doubled",
+  label: "nyc-far-doubled-demand-shape",
   rentBaseOffice: 35.5,
 } as const;

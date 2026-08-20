@@ -7,6 +7,31 @@
 
 ---
 
+## This ruler: FAR doubled where towers go (SAVE_VERSION unchanged)
+
+`BASELINE.json` regenerated at the FAR change, so this ruler contains BOTH the
+demand-shape overhaul (#124, attributed in the section below against the old
+ruler `ec10824`) and the FAR headroom change in `zoneFar`. The two were
+measured separately before the regen — bare trunk (#124 alone) vs trunk + FAR —
+so each delta below names its owner.
+
+FAR itself, measured on seeds 0/1/2 after #124: mean allowance 8.0–8.7 →
+12.2–13.3 (+52%), p90 18–21 → 33–37.5, fringe 2.0 → 2.4, cap-bind 0.0%.
+The 38 cap is untouched; the gradient (`2.4 + 9.4·heat^2.5`) does the work.
+The refusal of a true 2× mean is recorded in the `zoneFar` comment: every
+parameterisation that reached mean 17+ put 12–14% of the city flat on the
+ceiling — a load-bearing clamp, fake number five.
+
+| Metric | #124 alone | + FAR | Owner |
+|--------|-----------|-------|-------|
+| `land.med` | −6.9% | +3.1% | FAR adds ~+10% to the median — matches the D-arc prediction (+9%) with comps governance in place |
+| `land.p90` | +9.4% | +36% | FAR — the doubled allowance is in the core, so the prime tail is where it prices |
+| `rentIdx.retail` | −31.3% | −46.8% | Mostly #124 (shop employment its own field); FAR deepens it via more legal supply. Retail vac +49% → −2.3%: cheaper rents re-fill shops |
+| `rail.vac.office.lo` | 0.17 → 0.42 | 0.42 (unchanged) | **#124, not FAR.** Office vacancy resting on its low rail 42% of months is a watch item for the demand overhaul |
+| `city.demolished` | +24% | +29% | Both — more allowance is more redevelopment; city-accept K/L moved TOWARD their bands (aging median 45→41, demo rate 0.074→0.088%/yr) |
+
+---
+
 ## Demand is no longer one hill (SAVE_VERSION unchanged)
 
 Lots did not move. The demand *surface* did. Station ridership no longer

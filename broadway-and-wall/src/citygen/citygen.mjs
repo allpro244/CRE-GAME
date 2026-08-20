@@ -1331,10 +1331,54 @@ export function generateCity(cfg) {
     // Coverage of an ordinary building; towers cover less and are the reason
     // the core needs headroom rather than a bigger typical.
     const typFar = Math.max(0.7, typFloors * 0.68);
-    // 2× at the fringe — room for a mid-rise without variance — rising to ~6×
-    // downtown so a tower can be legal where a walk-up stands today.
-    const headroom = 2.0 + 4.5 * heat * heat;
-    return Math.round(Math.max(2.0, Math.min(38, typFar * headroom)) * 10) / 10;
+    // HEADROOM DOUBLED, AND WHERE IT IS DOUBLED IS THE POINT.
+    //
+    // This was 2.0 at the fringe rising to ~6.5x downtown, which produced a
+    // mean allowance of 8.7 FAR across the standard city — a town zoned about
+    // as generously as outer Queens, everywhere, including its Wall Street.
+    // Real zoning is far more lopsided than that: a downtown core carries
+    // 15-25 FAR as of right (midtown Manhattan's C5-3 is 15 plus bonuses;
+    // Chicago's Loop runs to 16 with premiums), while the fringe of the same
+    // city stays at 2-3 and does not move for a century. The gap between the
+    // two IS the redevelopment map.
+    //
+    // So the fringe barely moves (2.0 -> 2.4) and the core roughly doubles,
+    // landing the top decile in the low-to-mid 30s where a genuine tower is
+    // legal as of right. The exponent moves 2 -> 2.5 for the same reason:
+    // making the gradient steeper is what keeps a doubled allowance from
+    // becoming a uniform giveaway. The 38 cap is untouched and remains a guard.
+    //
+    // The land market was made ready for this first and deliberately, because
+    // a residual that underwrites the maximum envelope by fiat would simply
+    // double every prime ask overnight: see the size-aware lease-up carry in
+    // value.ts (a big scheme fills at the market's pace, not its own), the
+    // no-bid decay in comps.ts (silence is evidence), and the sales-comparison
+    // governance in landRead. Measured after those three, doubling here moves
+    // median land +9% rather than +100%.
+    // AND THE CAP MUST STAY A GUARD, WHICH IS WHY THE MEAN DID NOT QUITE
+    // DOUBLE. The brief was "double the average FAR limit". Three
+    // parameterisations that actually reach a mean of 17-18.6 were measured,
+    // and all three put 12-14% of every parcel in the city flat on the
+    // ceiling — 38, then 46, then 48. That is a clamp holding up the
+    // distribution rather than guarding its tail (fake number five), and it
+    // flattens the top of the gradient into one number exactly where the
+    // interesting variation should be. It is also past the record: the most
+    // generous as-of-right envelope in the US is Hudson Yards at ~33 FAR and
+    // midtown Manhattan's C5-3 at 15 before bonuses, so a CITYWIDE MEAN of 18
+    // is not a dense city, it is no city that has ever existed.
+    //
+    // So the gradient does the work and the ceiling stays untouched. Measured
+    // on seeds 0/1/2 AFTER the demand-shape overhaul (#124) that this headroom
+    // reads through `heat`: mean 8.0-8.7 -> 12.2-13.3 (+52%), p90 18-21 ->
+    // 33-37.5 (tower-legal as of right), fringe 2.0 -> 2.4 (which is what a
+    // real fringe does over a century). Bind rate: 0.0% on all three seeds.
+    //
+    // IF MORE IS WANTED, the honest lever is the CAP and the argument has to be
+    // about the cap: raising it is a claim about what this city's densest
+    // district is, and it should move with a named precedent rather than to
+    // make a mean come out right.
+    const headroom = 2.4 + 9.4 * Math.pow(heat, 2.5);
+    return Math.round(Math.max(2.4, Math.min(38, typFar * headroom)) * 10) / 10;
   };
 
   function zoningFor(name, heat) {

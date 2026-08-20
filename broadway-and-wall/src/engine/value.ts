@@ -11,9 +11,20 @@ import { industryStress, NATURAL_VAC, CAP_BASE } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/**
+ * Legal envelope vs the fabric the generator actually puts on the lot.
+ * Citygen still masses buildings against the fabric-anchored zoneFar
+ * (see citygen.mjs); `build.mjs` stamps this multiple onto `farMaxComm` /
+ * `farMaxRes` so the player has room to add storeys without restamping
+ * what already stands. Residual land still prices what the plate can
+ * physically carry (`envelopeRealisation`), so doubling the legal text
+ * does not double the dirt on a lot that could not use the old envelope.
+ */
+export const FAR_ENVELOPE_MULT = 2;
 /** The most envelope any ground in this city will ever carry, however it is
- *  rezoned and whatever the board grants. The generator's own maximum is 37. */
-export const FAR_CEILING = 40;
+ *  rezoned and whatever the board grants. Fabric-anchored zoneFar tops out
+ *  at 38; the stamped legal envelope is `FAR_ENVELOPE_MULT` times that. */
+export const FAR_CEILING = 80;
 
 /**
  * THE DEMAND SCORE IS A SCALE, NOT A PRICE.
@@ -1074,12 +1085,13 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
     out.farMaxComm = Math.min(rec.farMaxComm, builtFar);
     out.farMaxRes = Math.min(rec.farMaxRes, builtFar);
   } else if (zx !== 1 || vr) {
-    // AN ABSOLUTE CEILING ON THE ENVELOPE. The generator's densest ground is
-    // already 37 FAR; multiplying an upzoning on top of that produced 96, and
-    // then a variance on top of THAT. No city has ever been 96 FAR. Capping
-    // the resolved envelope means upzoning is worth a great deal where there
-    // is room for it and nothing at all downtown — which is exactly how a real
-    // rezoning works, and why the fights are always about the fringe.
+    // AN ABSOLUTE CEILING ON THE ENVELOPE. The generator's densest fabric is
+    // 38 FAR; the stamped legal envelope is twice that, and an upzoning on
+    // top used to produce 96. No city has ever been 96 FAR. Capping the
+    // resolved envelope means upzoning is worth a great deal where there is
+    // room for it and nothing at all on ground already at the ceiling —
+    // which is exactly how a real rezoning works, and why the fights are
+    // always about the fringe.
     out.farMaxComm = +Math.min(FAR_CEILING, rec.farMaxComm * zx + vr).toFixed(2);
     out.farMaxRes = +Math.min(FAR_CEILING, rec.farMaxRes * zx + vr).toFixed(2);
   }

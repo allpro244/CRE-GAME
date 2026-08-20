@@ -451,8 +451,20 @@ export function buildCityData(src) {
     const assessedPsf = assessLand / lotArea;
     const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
 
-    const farMaxComm = num(p.commfar) ?? 0;
-    const farMaxRes = num(p.resfar) ?? 0;
+    // LEGAL ENVELOPE, NOT THE FABRIC. citygen masses buildings against
+    // zoneFar (the typical storey count × coverage × a 2–6.5× headroom
+    // gradient). Stamping that number as farMax made the panel read
+    // "6.1 / 6.1" on a lot that still had air above it only because the
+    // building was short of the text. The owner asked for the legal cap
+    // to be twice whatever that text is — 6.1 → 12.2, 10.2 → 20.4 — so
+    // there is room to develop. The buildings themselves are not
+    // restamped. Residual land still prices what the plate can carry
+    // (value.ts envelopeRealisation), so unused legal FAR on a lot that
+    // cannot physically reach it does not inflate the dirt.
+    // Keep this in lockstep with FAR_ENVELOPE_MULT in src/engine/value.ts.
+    const FAR_ENVELOPE_MULT = 2;
+    const farMaxComm = (num(p.commfar) ?? 0) * FAR_ENVELOPE_MULT;
+    const farMaxRes = (num(p.resfar) ?? 0) * FAR_ENVELOPE_MULT;
     const kind = assetClass(cls, p.landuse, bldgArea);
     let { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl);
     // THE INVARIANT, ENFORCED AT THE DOOR. Whatever the source letters say, a

@@ -528,12 +528,26 @@ export function maxRetailShare(floors: number): number {
  * lobby, which is what a quiet residential block has.
  */
 const STREET_RETAIL_DEMAND = 38;   // below this a shop at grade has no trade
-export function withStreetRetail(mix: UseMix, floors: number, demand: number): UseMix {
+export function withStreetRetail(mix: UseMix, floors: number, demand: number, econ?: Econ): UseMix {
   const lead = dominantOf(mix);
   if (lead !== "office" && lead !== "multifamily") return mix;
   if ((mix.retail ?? 0) > 0) return mix;                 // already a mixed programme
   if (floors < 2 || demand < STREET_RETAIL_DEMAND) return mix;
-  const share = Math.min(maxRetailShare(floors), 1.25 / floors);
+  // ...AND IT IS NOT EVERY MARKET. This rule read footfall and never the
+  // retail market itself, so every tower stapled shops onto a street already
+  // drowning in them — measured over 80 years, retail stock grew five times
+  // faster than retail demand (+41% vs +8%), median retail vacancy ran 15.5%
+  // against an 8.5% natural rate, and real retail rents bled −2.6%/yr for
+  // fifty years while the by-product kept arriving. A developer facing a
+  // glutted street programmes a lobby, amenity space, or a bigger residential
+  // ground floor — not another vacant shopfront. The share fades linearly
+  // with retail slack and is gone 8pp over natural (shape parameter: the
+  // depth at which ground-floor retail visibly stops being programmed —
+  // post-2008 and post-2020 corridors — not a fitted number).
+  const natR = NATURAL_VAC.retail;
+  const slack = Math.max(0, (econ?.cityVac?.retail ?? natR) - natR);
+  const street = Math.max(0, 1 - slack / 0.08);
+  const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
   if (share <= 0.01) return mix;
   const out: UseMix = { retail: +share.toFixed(4) };
   const rest = 1 - share;
@@ -829,7 +843,7 @@ export function planDevelopment(
 
   // Shops at grade wherever the street will carry them — see withStreetRetail.
   // Applied before the cap, so the cap still has the last word.
-  const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50), fl);
+  const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50, s.econ), fl);
   const proposedBts = custom?.bts;
   const bts = proposedBts
     && proposedBts.use !== "multifamily"
@@ -1350,11 +1364,25 @@ export function refreshDevelopmentFeasibility(
   // stayed on and fifty years of 1.5% shed vacancy priced as if supply were
   // coming — the vacancy rail went from guard to load-bearing (measured:
   // 75% of months bound). A use a lot's zoning cannot host scores nothing.
-  const zonePermits = (zone: string | undefined, use: BuiltClass): boolean => {
+  // ...AND A COMMERCIAL CORRIDOR ON THE FRINGE HOSTS A SHED. A town platted
+  // with zero M zones (this one: 859 C, 439 R, 0 M) used to be a town where
+  // industrial could never be built AT ALL — sitePencil.industrial was
+  // structurally zero, starts never flowed, and the class spent 93% of an
+  // 80-year campaign welded to its 1.54% vacancy floor with the strongest
+  // real rent growth in the model and zero groundbreaks. That is not a
+  // market, and it is not zoning either: light industrial — last-mile
+  // depots, flex, self-storage-grade sheds — is an as-of-right or
+  // special-permit use on low-rent commercial corridors in life, which is
+  // exactly where 2018–2024 put its fulfilment build-out (dead malls and
+  // strip corridors, not new M districts). Fringe C land (demand < 45, the
+  // same tier useForZone treats as the corridor) permits it; prime C land
+  // still refuses — nobody permits a loading dock on the hundred block.
+  const zonePermits = (zone: string | undefined, use: BuiltClass, demand = 100): boolean => {
     const z = (zone ?? "C")[0];
     if (z === "R") return use === "multifamily";
     if (z === "M") return use === "industrial" || use === "multifamily";
-    return use !== "industrial";
+    if (use === "industrial") return demand < 45;
+    return true;
   };
   const LAND_N = 96;
   const REDEV_N = 72;
@@ -1376,7 +1404,7 @@ export function refreshDevelopmentFeasibility(
       chosen.add(bbl);
       landCount++;
       for (const use of BUILT_CLASSES) {
-        if (!zonePermits(rec.zoneDist, use)) continue;
+        if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
         const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
         const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
         // Only clearing pencils. Pushing appetite-zero failures from densify
@@ -1402,7 +1430,7 @@ export function refreshDevelopmentFeasibility(
     // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
     const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
-      if (!zonePermits(rec.zoneDist, use)) continue;
+      if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
       const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
       if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
       const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
@@ -2748,8 +2776,12 @@ export function cityInfillCap(
   const natural = NATURAL_VAC[use];
   const tight = clamp(
     (natural - (ez.cityVac?.[use] ?? natural)) / natural, -1, 1);
+  // EFFECTIVE, not asking — a tenant pays net of concessions, so scoring the
+  // envelope off the face rate read a concession-soaked market as dear and
+  // raised the cornice into a glut. Same fix as the rezoning trigger.
   const rentPress = clamp(
-    (ez.rentIdx[use] / RENT_BASE[use]) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
+    ((ez.effRentIdx?.[use] ?? ez.rentIdx[use]) / RENT_BASE[use])
+      / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
   // When vacancy is pinned, vacancy-tightness alone saturates — structural
   // capacity shortage (desired demand vs housable) still says "build taller."
   const struct = clamp(ez.structTight?.[use] ?? 0, 0, 0.45);
@@ -2904,7 +2936,15 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
   if (demand > 45) {
     return pick([["mixed", 0.40], ["multifamily", 0.40 + 0.20 * gone("retail")], ["retail", 0.20 * here("retail")]]);
   }
-  return pick([["multifamily", 0.70 + 0.30 * gone("retail")], ["retail", 0.30 * here("retail")]]);
+  // THE SHOVEL MUST ASK THE SAME ZONING THE PENCIL ASKS (the sitePencil
+  // comment above, in the other direction): fringe C corridors permit light
+  // industrial now, so the low-demand branch must be able to CHOOSE one, or
+  // the pencil says "sheds clear here" while the crane never once picks one —
+  // the exact split that kept supplyShut believing supply was coming. The
+  // weight only carries when the order book owes industrial (pick() multiplies
+  // by owed), so a town with no shed shortage builds exactly what it built.
+  return pick([["multifamily", 0.70 + 0.30 * gone("retail")], ["retail", 0.30 * here("retail")],
+               ["industrial", 0.25 * here("industrial")]]);
 }
 
 /**
@@ -3628,6 +3668,123 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   }
 }
 
+/**
+ * SURPLUS EXIT FOR EVERY CLASS — the down half of the cycle finally has a door.
+ *
+ * A building that stops paying its keep leaves the market in life: demolition
+ * with no replacement pro forma, abandonment, the land bank. US cities remove
+ * roughly half a per cent of stock a year all-cause; a city in genuine decline
+ * clears 1–2%/yr for decades (Detroit, Youngstown). This engine had that valve
+ * for industrial only (`tickIndustrialExit`), so a secular office or housing
+ * glut was an ABSORBING STATE: measured on the 80-year campaign, one seed sat
+ * ON the 0.45 cityVac clamp for 23 straight years with true vacancy ~56%,
+ * concessions pinned at their cap for 38 years, and the stock fell 3% while
+ * the demand pool fell 45%. The 0.45 clamp, the concession cap and the
+ * cap-rate ceiling were all load-bearing over exactly this hole (CLAUDE.md
+ * fake #5, three times over) — the rails were standing in for the wrecking
+ * ball.
+ *
+ * The decision here is the one an owner of a dead building actually makes —
+ * a carrying-cost decision, NOT a development hurdle. Demolition-for-
+ * replacement stays in `tickTeardowns`; this clears EMPTY surplus in a market
+ * that has been deep over natural for years, one worn old low-demand building
+ * at a time, on its own RNG channel so the main dice never re-roll.
+ *
+ * Gates, in order: the glut must be DEEP (5pp over natural — nobody clears a
+ * cyclical soft patch) and OLD (two years past the capitulation clock's last
+ * renewal — owners wait, then concede), and the surplus must survive the same
+ * occupied-demand envelope the industrial valve uses, so clearance can never
+ * cut into space tenants are using. The pace scales with how much of the
+ * stock is surplus — a 50%-empty market clears ~5–6 buildings a year, a
+ * marginally-soft one almost none — which is the historical range, cited
+ * above, not a balance choice.
+ */
+function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  const e = s.econ;
+  // ONE WRECKING BALL, CITY-WIDE — not one per glutted class. The first cut
+  // ran this loop per class with independent dice, and a seed whose office,
+  // retail AND housing were all in secular decline cleared ~8 buildings a
+  // year for decades: 2 of 5 procedural seeds lost 42-50% of their building
+  // count in 50 years (city:accept J), which is past the worst sustained
+  // record anywhere — Detroit's clearance peaked near 1%/yr of structures,
+  // with public land banks doing the work, and took sixty years to remove a
+  // third of the city. A month has one demolition story at most; the deepest
+  // class gets it. That caps distress clearance near ~6 buildings a year on
+  // this map — the historical worst case — as a consequence of the draw
+  // structure rather than a quota.
+  const cand: { use: BuiltClass; surplus: number; stock: number }[] = [];
+  for (const use of ["office", "retail", "multifamily"] as BuiltClass[]) {
+    const natural = NATURAL_VAC[use];
+    const vac = e.cityVac?.[use] ?? natural;
+    if (vac <= natural + 0.05) continue;                    // deep, not cyclical
+    if ((e.vacOverM?.[use] ?? 0) < 24) continue;            // old, not new
+    const stock = e.stock?.[use] ?? 0;
+    const occ = e.occupied?.[use] ?? 0;
+    // Stock that would put vacancy at natural given today's tenants — same
+    // envelope as the industrial valve. Clearance never touches occupied space.
+    const need = occ / Math.max(0.5, 1 - natural);
+    const empty = Math.max(0, stock - occ);
+    const surplus = Math.min(Math.max(0, stock - need * 1.03), empty);
+    if (surplus < 8000) continue;
+    cand.push({ use, surplus, stock });
+  }
+  if (!cand.length) return;
+  // Odds scale with the worst class's surplus share; the pick follows the
+  // surplus square footage, so the deepest glut clears first.
+  const worstShare = Math.max(...cand.map((c) => c.surplus / Math.max(1, c.stock)));
+  const p = Math.min(0.5, Math.max(0.06, worstShare * 2.2));
+  if (rng(s, "exit") > p) return;
+  const totSurplus = cand.reduce((a, c) => a + c.surplus, 0);
+  let roll = rng(s, "exit") * totSurplus;
+  let chosen = cand[0];
+  for (const c of cand) { roll -= c.surplus; if (roll <= 0) { chosen = c; break; } }
+  {
+    const { use, surplus } = chosen;
+
+    // The worst empty-ish anonymous building: old, worn, off the good corners.
+    let worst: { bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; score: number } | null = null;
+    for (let i = 0; i < 36; i++) {
+      const bbl = bbls[Math.floor(rng(s, "exit") * bbls.length)];
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec || rec.class !== use || !rec.bldgArea) continue;
+      if (rec.bldgArea > surplus * 1.05) continue;          // never overshoot into occupied
+      if (s.holdings[bbl] || s.developments[bbl]) continue;
+      if (s.cityGroundLeases?.[bbl]) continue;
+      if (s.landmarks?.[bbl] !== undefined) continue;
+      if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+      if (ownerOf(s, bbl)) continue;
+      const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+      if (age < 30) continue;
+      const cond = gradeOf(s, rec);
+      if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
+      const condW = cond === "obsolete" ? 1.4 : cond === "worn" ? 1.15 : 1.0;
+      const score = condW * age * (1.15 - Math.min(1, rec.demandScore / 80));
+      if (!worst || score > worst.score) worst = { bbl, rec, score };
+    }
+    if (!worst) return;
+    const { bbl, rec } = worst;
+    const oldSf = rec.bldgArea;
+    s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+    addStock(e, use, -rentableSf(rec));
+    const house = (e.stock[use] ?? 0) * (1 - frictionFloor(use));
+    if ((e.occupied?.[use] ?? 0) > house) e.occupied![use] = house;
+    s.demolished = (s.demolished ?? 0) + 1;
+    recordPropertyEvent(s, bbl, {
+      kind: "demolished",
+      sf: oldSf,
+      use,
+      outcome: `${rec.yearBuilt || "Older"} ${use} cleared empty — the market it was built for has left`,
+    });
+    if (rng(s, "exit") < 0.18) {
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `${rec.address} is coming down empty. ${use === "multifamily" ? "The flats" : "The floors"} `
+          + `have sat dark for years and nobody is coming back for them. The lot waits.`,
+      });
+    }
+  }
+}
+
 export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
@@ -3636,6 +3793,7 @@ export function tickCityGrowth(
   // the crew count this month reflects the queue they have been staring at.
   tickCrews(s, bbls);
   tickIndustrialExit(s, parcels, bbls);
+  tickSurplusExit(s, parcels, bbls);
   tickTeardowns(s, parcels, bbls);
   // Extra densify passes when the book is pinned short — one wrecking ball a
   // month cannot catch a multi-decade capacity shortfall.
@@ -3673,7 +3831,7 @@ export function tickCityGrowth(
     // player's handful — so a shops-at-grade rule the city did not follow
     // would supply almost no retail at all.
     const cmix = j.mix ?? capRetail(
-      withStreetRetail(devMix(j.use as DevUse), j.floors, rec.demandScore ?? 50), j.floors);
+      withStreetRetail(devMix(j.use as DevUse), j.floors, rec.demandScore ?? 50, s.econ), j.floors);
     s.built[j.bbl] = {
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: START_YEAR + Math.floor(s.month / 12),

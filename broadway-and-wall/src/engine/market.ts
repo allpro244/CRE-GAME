@@ -23,7 +23,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit";
 export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
@@ -1710,7 +1710,24 @@ export function tickEcon(s: GameState) {
     : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.
-  const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;
+  //
+  // ...AND IT HAS TO COST MORE THAN THE TREND GIVES. The old −0.0013/mo
+  // (−1.6%/yr) sat almost exactly on top of trend job growth (+1–2%/yr), so a
+  // national recession netted to ZERO here: measured over 3 seeds × 50y,
+  // 12-month city job growth in recession months ran +0.4% to +1.9% — the sign
+  // never turned — tenants never handed space back, and the deepest rent fall
+  // any recession window could produce was 3.9% while gluts alone did 17.7%
+  // (econ:accept C, the audit's [9] found effective rents falling in only
+  // 14.9% of recession months). Recessions were a label on rents, not an event
+  // in demand.
+  //
+  // The record (BLS payrolls, against ~+1.5%/yr trend): 1990–91 and 2001 shed
+  // ~1.5–2% net over ~a year — a gross cyclical shock near −3.5%/yr; 2008–09
+  // shed 6.3% net over two years; the deep-flag episodes here run 26–48
+  // months, the 1930s class, where −4 to −5%/yr gross for the duration is the
+  // measured shape. Sized so the trend PAUSES AND TURNS, which is what the
+  // word recession means on a payroll chart.
+  const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0045 : -0.0030) : 0.0002;
   // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
   // arrives. This is the only place a level event touches the aggregate
   // economy, and it is the one that has to exist: without it a trade could

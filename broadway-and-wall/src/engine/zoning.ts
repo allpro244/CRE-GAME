@@ -74,8 +74,13 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // which is exactly what `sim:accept` F was measuring.
   const ez = s.econ;
   const tight = NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office);   // + when short
+  // EFFECTIVE, not asking. Rent-to-income is a claim about what a tenant PAYS,
+  // and a tenant pays net of concessions. In a glut the asking index holds its
+  // face while concIdx maxes out — reading asking here scored the glutted
+  // market as ~14% dearer than it was and upzoned into the glut.
   const rentPress = clamp(
-    (ez.rentIdx.office / RENT_BASE.office) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
+    ((ez.effRentIdx?.office ?? ez.rentIdx.office) / RENT_BASE.office)
+      / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
   const scarcity = clamp(tight * 2.2 + rentPress * 0.30, -0.30, 0.45);
   // A rezoning is a multi-year political process — roughly one district every
   // four or five years across the whole town, and MORE OFTEN when the town

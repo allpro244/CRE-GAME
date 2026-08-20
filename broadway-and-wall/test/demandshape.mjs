@@ -26,7 +26,7 @@ const corr=(a,b)=>{const m=(x)=>x.reduce((p,c)=>p+c,0)/x.length;const ma=m(a),mb
   let n=0,da=0,db=0;for(let i=0;i<a.length;i++){n+=(a[i]-ma)*(b[i]-mb);da+=(a[i]-ma)**2;db+=(b[i]-mb)**2;}
   return n/Math.sqrt(da*db);};
 console.log(`\nDEMAND SHAPE — ${N} generated islands\n`);
-console.log("  seed    peaks(R=250m)   corr(demand, -dist to best point)   top-decile clusters   median  p90");
+console.log("  seed    peaks(R=250m)   corr(demand, -dist to best point)   top-decile clusters   median  p90  ≥45   ≥70   peak district");
 for(let i=0;i<N;i++){
   const seed=(2166136261 ^ ((i+1)*2654435761))>>>0;
   const c=makeCity("somewhere",seed,{});
@@ -37,7 +37,7 @@ for(let i=0;i<N;i++){
   // does. That is a bug in the ruler, not a finding about the city.
   const raw=Object.values(c.parcels).map(p=>{
     const xy=p.centroid ?? (p.cx!==undefined?[p.cx,p.cy]:null);
-    return xy?{lon:xy[0],lat:xy[1],d:p.demandScore}:null;}).filter(Boolean);
+    return xy?{lon:xy[0],lat:xy[1],d:p.demandScore,district:p.district??""}:null;}).filter(Boolean);
   const lat0=raw.length?raw.reduce((a,b)=>a+b.lat,0)/raw.length:0;
   const MPD=111_320; // metres per degree of latitude
   const pts=raw.map(p=>({x:p.lon*MPD*Math.cos(lat0*Math.PI/180), y:p.lat*MPD, d:p.d}));
@@ -64,7 +64,9 @@ for(let i=0;i<N;i++){
   // how many separate top-decile clusters are there?
   const cut=q(dd,0.9); const hot=pts.filter(p=>p.d>=cut); const cl=[];
   for(const h of hot) if(!cl.some(z=>(z.x-h.x)**2+(z.y-h.y)**2<(400*400))) cl.push(h);
-  console.log(`  ${String(seed).slice(0,9).padStart(9)} ${String(pk.length).padStart(12)} ${corr(dd,dist).toFixed(3).padStart(32)} ${String(cl.length).padStart(20)} ${String(q(dd,0.5)).padStart(8)} ${String(q(dd,0.9)).padStart(4)}`);
+  const peakName = raw.reduce((a,b)=>a.d>b.d?a:b).district || "—";
+  const share = (cut) => (dd.filter((x)=>x>=cut).length/dd.length*100).toFixed(0)+"%";
+  console.log(`  ${String(seed).slice(0,9).padStart(9)} ${String(pk.length).padStart(12)} ${corr(dd,dist).toFixed(3).padStart(32)} ${String(cl.length).padStart(20)} ${String(q(dd,0.5)).padStart(8)} ${String(q(dd,0.9)).padStart(4)}  ${share(45).padStart(4)}  ${share(70).padStart(4)}   ${peakName}`);
 }
 console.log("\n  A city of neighbourhoods has several separated peaks and a WEAK correlation");
 console.log("  with distance-to-the-single-best-point. One hill has r near -1 and one cluster.");

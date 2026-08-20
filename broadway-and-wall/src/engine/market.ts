@@ -1489,8 +1489,20 @@ export function tickEcon(s: GameState) {
     const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
     // Gradualism, except when it is not: a bank moves in quarter points at
     // eight meetings a year, and in three-quarter points when it is frightened.
-    const dist = Math.abs(want - n.policy);
-    let speed = dist > 7 ? 0.21 : dist > 4 ? 0.16 : dist > 1.5 ? 0.10 : 0.055;
+    //
+    // THE CODE USED TO BE A MONTHLY EMA. That is not how a central bank
+    // works, and it is why a player could read the next print from the last
+    // one: once the rule pointed up (or down) the rate ticked that way every
+    // month. Eight scheduled meetings, a hold when the gap is noise, a
+    // quarter-point ordinary move, a half when the gap is large, three
+    // quarters when the bank is frightened. Between meetings the policy rate
+    // does not move. The loan index still has a little market noise so the
+    // tape is not frozen.
+    //
+    // Calendar is month-of-year 0-indexed: Jan, Mar, Apr, Jun, Jul, Sep,
+    // Oct, Dec — close to the real FOMC year.
+    const FOMC = [0, 2, 3, 5, 6, 8, 9, 11];
+    const meeting = FOMC.includes(((s.month % 12) + 12) % 12);
     // ...unless it is not free to move. Under fiscal pressure the bank can
     // still cut freely and can barely tighten, which is the whole asymmetry
     // and the whole mechanism: money stays cheap into a real inflation, the
@@ -1499,14 +1511,25 @@ export function tickEcon(s: GameState) {
     if (n.pressureM === undefined) n.pressureM = 0;
     if (n.pressureM > 0) {
       n.pressureM--;
-      if (want > n.policy) speed *= 0.22;
       if (n.pressureM === 0) {
         pushNews(s, "event",
           "The central bank has its independence back. Whatever it does next, it is doing on its "
           + "own account — and it has a great deal of ground to make up.");
       }
     }
-    n.policy = Math.max(0.25, n.policy + speed * (want - n.policy));
+    if (meeting) {
+      const gap = want - n.policy;
+      const abs = Math.abs(gap);
+      let step = 0;
+      if (abs >= 0.15) {
+        const frightened = abs > 7 || restore > 0;
+        const unit = frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+        step = Math.sign(gap) * unit;
+        if (Math.abs(step) > abs) step = gap;
+      }
+      if (n.pressureM > 0 && step > 0) step = 0;
+      n.policy = Math.max(0.25, n.policy + step);
+    }
 
     // THE LOAN INDEX IS THE POLICY RATE PLUS A TERM PREMIUM. What a borrower
     // pays was never the central bank's rate; it is that rate plus what the

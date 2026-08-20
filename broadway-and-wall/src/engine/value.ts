@@ -772,7 +772,14 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // auction, not a weight in it: a lot with no income case still does not
   // trade at nothing. The comp wire (tickLandComps → s.landAdj) is what gets
   // tested against sales and multiplies this texture downstream via resolveRec.
-  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec);
+  // ...IN TODAY'S DOLLARS. `landIdx` is deliberately homogeneous-of-degree-0
+  // (market.ts — a real ratio, rent against cost), and `rec.landPsf` is
+  // stamped in opening-year dollars, so this floor never carried the price
+  // level: after decades of ordinary CPI the floor under no-income dirt had
+  // quietly dissolved to nothing in real terms (measured: fringe lots pricing
+  // at year-0 nominal dollars against a 6-7x price level). Dirt with no
+  // income case still trades in the dollars of the day it trades.
+  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1);
 
   // HIGHEST AND BEST USE, NOT THE MAX OF THREE APPRAISALS.
   //
@@ -820,12 +827,25 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // printing over book already reaches every parcel through `landAdj`, and a
   // second helping here would count the same evidence twice.
   const softDiscount = heat < 1 ? clamp((heat - 1) * 0.55, -0.25, 0) : 0;
+  // THE AUCTION IS A MAX, OR IT IS NOT AN AUCTION. The branch this replaces
+  // let a positive builder residual set the price OUTRIGHT — so a lot whose
+  // residual had thinned to $2/sf priced at $2/sf while the holder and the
+  // floor stood at $50 beside it. No owner sells to the low bidder. Measured
+  // over 100 years on the reference city, mid-city lots lost 99-100% of real
+  // value inside 12 months as the residual thinned, then gained +5,900% to
+  // +18,700% in 12 months off the near-zero base — arithmetic off a price no
+  // market would ever have printed. Land still falls HARD when development
+  // stops penciling — to its option value, fast, which is 1989-93 Manhattan
+  // (-50-60%) — it just no longer falls through the other two bids on the
+  // table. The holder's own bid stays honestly priced (through-cycle rents,
+  // wait-discounted), so a ready builder still outbids a speculator on any
+  // healthy site and the desk keeps finding sites it can win.
+  const builderBid = builder > 0 ? builder * (1 + softDiscount) : 0;
   let base: number;
   let winner: LandRead["winner"];
-  if (builder > 0) {
-    base = builder;
+  if (builderBid >= holder && builderBid >= floor && builderBid > 0) {
+    base = builderBid;
     winner = "builder";
-    if (softDiscount < 0) base = builder * (1 + softDiscount);
   } else if (holder >= floor) {
     base = holder;
     winner = "holder";

@@ -234,16 +234,50 @@ function ParcelPanelInner({
             </div>
           );
         }
+        // A FIRM READS LIKE A PERSON NOW, the way a holder already did: the
+        // doctrine a broker would lead with, who actually runs it, and what
+        // has passed between you — because "Owned by Kestrel Capital" is a
+        // label, and "opportunistic, run by a 61-year-old, they have beaten
+        // you to two deals" is the first three facts you need at the table.
+        const principal = game.rivalPrincipals?.[own.id];
+        const age = principal ? Math.floor((game.month - (principal.bornM ?? 0)) / 12) : undefined;
+        const tie = game.street?.[own.id];
+        const DOCTRINE: Record<string, string> = {
+          family: "They hold for generations and sell when a generation does — not when the market does.",
+          core: "Committee money. Stabilised income only, disciplined at the top, gone in a crunch.",
+          opportunistic: "They win the last three years of every cycle and pay for it in the next one.",
+          developer: "They buy dirt and put buildings on it. Watch which corners they are assembling.",
+          merchant: "They build to sell. Everything they own is for sale at the right number.",
+          pe: "An IRR clock is running. They must transact — patience is the one thing they cannot hold.",
+          reit: "Listed money: they buy when the stock is up and stop the day it is not.",
+          vulture: "They only appear when something is broken. If they are calling, check your covenants.",
+          owneruser: "They occupy what they own. Price is almost beside the point; the building is the business.",
+          foreign: "Offshore capital. Slow to decide, slower to sell, and they do not return calls in a crisis.",
+          slumlord: "Minimum in, maximum out. The buildings say so.",
+        };
         return (
           <div className="hint" style={{ cursor: "pointer" }}
             title="Open this firm's balance sheet on The street."
             onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}>
             Owned by <strong>{own.name}</strong>
+            {principal && <span> — {principal.name}{age !== undefined && age > 0 ? `, ${age}` : ""}</span>}
             {own.failedM !== undefined
-              ? " — in receivership. The book is being sold down."
+              ? ". In receivership — the book is being sold down."
               : (own.stressMs ?? 0) > 0
                 ? " — and they are selling under pressure."
                 : `. ${own.bbls.length} building${own.bbls.length === 1 ? "" : "s"} in town.`}
+            {own.failedM === undefined && DOCTRINE[own.style] && (
+              <div style={{ marginTop: 3 }}>{DOCTRINE[own.style]}</div>
+            )}
+            {tie && (tie.deals > 0 || tie.beats > 0 || tie.insults > 0) && (
+              <div className="dim" style={{ marginTop: 3 }}>
+                {[
+                  tie.deals > 0 ? `${tie.deals} deal${tie.deals === 1 ? "" : "s"} done between you` : "",
+                  tie.beats > 0 ? `they have beaten you to ${tie.beats}` : "",
+                  tie.insults > 0 ? `and they remember ${tie.insults} lowball${tie.insults === 1 ? "" : "s"}` : "",
+                ].filter(Boolean).join(" · ")}.
+              </div>
+            )}
           </div>
         );
       })()}

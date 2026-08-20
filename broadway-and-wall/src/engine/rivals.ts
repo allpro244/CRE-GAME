@@ -2665,6 +2665,22 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // sixty-cent buildings made the most reckless strategy in the audit the
     // best one again.
     if (r.failedM !== undefined) {
+      // THE NAME OUTLIVES THE FIRM. A receivership ends a balance sheet, not a
+      // family — the people who ran the shop are still in town, still known,
+      // and in every real market the interesting second act is the same one:
+      // a few years later the name turns up at the courthouse steps, bidding
+      // small, with whoever still trusts them. One line, once, years out —
+      // the street remembering — and it is how a demoted operator reads as a
+      // person rather than a deleted row.
+      if (r.epilogueM === undefined) r.epilogueM = s.month + 24 + Math.floor(rng(s, "rivals") * 48);
+      if (s.month === r.epilogueM) {
+        const p = s.rivalPrincipals?.[r.id];
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${p?.name ?? "The principal"} — late of ${r.name}, wound up in ${START_YEAR + Math.floor(r.failedM / 12)} — `
+            + `has been seen at the courthouse steps, bidding small and paying cash. The street has a long memory and so, apparently, does he.`,
+        });
+      }
       if (!r.bbls.length) continue;
       // WHAT THE RECEIVER IS CARRYING IT AT. The desks took the whole book
       // against what was still owed, so the basis in any one building is its

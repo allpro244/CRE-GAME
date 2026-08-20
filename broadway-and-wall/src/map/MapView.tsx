@@ -801,7 +801,9 @@ export default function MapView() {
     };
   }, [mapReady, city, paintSig, photoFrame]);
 
-  // mesh tints: gold selection/ownership, teal neighbors, warm hover
+  // mesh tints: gold selection, teal neighbors, warm hover. Ownership is the
+  // rooftop pin (`bw-owned-pts`), not a yellow wash — a building you own still
+  // shows the masonry or glass it was built with.
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   const mapFilter = useStore((s) => s.mapFilter);
   useEffect(() => {
@@ -819,7 +821,6 @@ export default function MapView() {
         for (const b of r.bbls) tints.set(b, c);
       }
     }
-    if (game) for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.28, 1.1, 0.72]);
     // Assembled plates get a soft teal lift on the mesh so the join is
     // readable in 3D, not only on the MapLibre lot lines.
     if (game) {

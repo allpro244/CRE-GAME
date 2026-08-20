@@ -264,6 +264,64 @@ const MOM_DEMAND = 4;
 const AFFORD_BAND: [number, number] = [0.76, 1.12];
 
 /**
+ * THE INCOME ELASTICITY OF DEMAND FOR SPACE — the argument this model did not have.
+ *
+ * `affordRaw` used to read ONE quantity, `burden = rent/wage`. Because rent and
+ * income entered only as a ratio, the specification forced the INCOME elasticity
+ * of space demand to equal the PRICE elasticity — a restriction the literature
+ * rejects (office price elasticity is reported at -0.19..-0.24 against an income
+ * elasticity near 0.67). And because they shared one expression, they shared one
+ * clamp: AFFORD_BAND is an honest bound on the substitution response, and it was
+ * silently bounding the income response too, which has no such bound. Measured
+ * with tools/rails.mjs, that clamp sat at its CEILING in 70-95% of calls and at
+ * its floor in 0.0% — a one-sided rail, pinned open, which is the fingerprint of
+ * the mis-specification rather than a coincidence.
+ *
+ * What it cost, measured over 6 seeds x 100y: the city enters a mild permanent
+ * glut around decade three (office vacancy parks ~4pp over natural and never
+ * leaves), demand growth decays from 1.4%/yr to ~0.2%/yr, and real office rent
+ * bleeds -0.2 to -2.1%/yr for seventy years. Feet per job is FLAT across the
+ * whole run, so this is not densification — it is the one feedback that should
+ * arrest a glut (space gets cheap relative to income, so firms take more of it)
+ * being dead against a ceiling.
+ *
+ * These are SHAPE PARAMETERS, not industry constants, and the evidence behind
+ * each is uneven — so each carries its own reasoning and its own doubt:
+ *
+ *  office 0.45 — the reported estimate is ~0.67 (Hendershott/MacGregor/Tse
+ *    family, City of London). That figure is UNVERIFIED against the primary
+ *    paper and rests on a single attribution, so it is a direction, not a point.
+ *    It also measures total OCCUPANCY demand, and the modern record puts much of
+ *    that on the QUALITY axis (prime rents ~84% over market average, up from
+ *    ~60% pre-pandemic) — an axis this engine does not have, carrying one rent
+ *    index per class. 0.45 is the quantity-only share of a 0.35-0.5 band.
+ *  retail 0.00 — the cross-country record is flatly against an income effect
+ *    here: retail floor space per capita is 23.5 sf in the US, 5.0 in France,
+ *    4.6 in the UK, under 5 in Germany and Japan (ICSC 2018). That ordering is
+ *    planning and land, not income.
+ *  multifamily 0.25 — the housing literature's income elasticity is the best
+ *    measured of any class (~0.7 short-run, ~1.0 long-run; Mulford, RAND
+ *    R-2449-HUD 1979) and this number is deliberately far below it, because US
+ *    floor space per HOUSEHOLD is roughly flat (~1,970 sf 1900 -> ~2,060 sf
+ *    today) — the doubling of space per PERSON is household shrinkage, and this
+ *    engine already carries that as the household-formation leg of the
+ *    multifamily secular menu. 0.25 is what is left after refusing to count it
+ *    twice, and it is the number here I trust least.
+ *  industrial 0.40 — US warehouse floor space per capita grew ~1.0%/yr against
+ *    real GDP per capita of ~1.5-1.6%/yr over the last three decades, implying
+ *    ~0.6; discounted because logistics rent is under 5% of the cost to supply
+ *    a good (Prologis: $1 rent per $5-7 labour per ~$10 transport), so space is
+ *    not the margin a shipper optimises.
+ *
+ * IF THESE MOVE, THEY MOVE BECAUSE THE EVIDENCE MOVED. They must never be
+ * turned until a harness passes: `pnpm income` reports the consequence, and a
+ * consequence outside its band is a finding about the rest of the model.
+ */
+const INCOME_ELAST: Record<BuiltClass, number> = {
+  office: 0.45, retail: 0.00, multifamily: 0.25, industrial: 0.40,
+};
+
+/**
  * INDUSTRIAL EMPLOYMENT SHARE — SECULAR DECLINE.
  *
  * New York, San Francisco and London each lost roughly half their manufacturing
@@ -973,6 +1031,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     industrial: econ.stock.industrial * (1 - NATURAL_VAC.industrial),
   };
   econ.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+  econ.incomeEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
   // the closed loops open at their neutral values; everything after this is
   // the economy deciding for itself
   econ.inflExp = 0.02;
@@ -995,6 +1054,12 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
+  // The opening REAL income per worker, stored so the income term is exactly
+  // 1.0 in month zero on every map. `wageIdx` opens at dens.wage (a density
+  // draw), NOT at 1.0, so an absolute form would shift opening demand on every
+  // town whose density is not the reference and re-baseline every standing
+  // number in the repo. cpi opens at exactly 1.
+  econ.wage0 = dens.wage;
   econ.industComp = 1;
   // City class for rent machinery — updated as stock grows (see rent formation).
   econ.cityIntensity = dens.intensity;
@@ -2687,7 +2752,16 @@ export function tickEcon(s: GameState) {
     // Lower-income share rises with unemployment (who is exposed); each tier
     // densifies / doubles up at its own rate. Commercial stays a single firm
     // footprint response.
-    const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
+    // TWO ARGUMENTS, NOT ONE RATIO. `burden = rent/wage` forced the income
+    // elasticity to equal the price elasticity and put both under one clamp —
+    // see INCOME_ELAST. The price argument is now a REAL RENT INDEX measured
+    // against this town's own opening print (rentAnchor, not RENT_BASE, so a
+    // dense map does not start off-parity), and income is its own argument.
+    // Both are exactly 1.0 in month zero on every seed and every map.
+    const cpiNow = Math.max(0.35, e.cpi ?? 1);
+    const anchor = e.rentAnchor?.[k] ?? RENT_BASE[k];
+    const relRent = (e.rentIdx[k] / Math.max(1e-6, anchor)) / cpiNow;
+    const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
       const u = e.unemployment ?? 0.055;
@@ -2703,6 +2777,32 @@ export function tickEcon(s: GameState) {
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
     e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
+
+    // THE INCOME ARGUMENT. A city that gets richer occupies more and better
+    // space; a city that gets poorer gives it back. Real income per worker
+    // against the town's opening real income — the INTENSIVE margin only,
+    // because headcount is already in `employIdx^elastic` above and counting it
+    // here would count the same workers twice.
+    //
+    // REAL, NOT NOMINAL, AND THIS IS NOT NEGOTIABLE. `wageIdx` is nominal (see
+    // its declaration in types.ts). Reading it raw would make physical square
+    // feet a function of the price level — a city needing more floor because
+    // prices rose — and would close a positive loop: prices up, nominal wage
+    // up, more space demanded, rent up, construction cost catch-up, prices up.
+    //
+    // ROLLED AT THE CLASS'S LEASE SPEED, for the same reason the price term is:
+    // feet per worker adjusts at lease events, not continuously (Hakfoort & Lie
+    // 1996). That damping also disarms a hazard this term would otherwise carry
+    // — real pay per SURVIVING worker RISES in a deflationary bust, because
+    // nominal wages are downward-rigid while cpi can fall, so an undamped term
+    // would hand a dying city extra office demand. At an eight-year roll a
+    // two-year deflation moves it by almost nothing.
+    if (!e.incomeEff) e.incomeEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+    const realWage = (e.wageIdx ?? 1) / cpiNow;
+    const w0 = e.wage0 ?? (e.wage0 = realWage);
+    const relWage = Math.max(0.25, realWage / Math.max(1e-6, w0));
+    const incomeRaw = Math.pow(relWage, INCOME_ELAST[k]);
+    e.incomeEff[k] += AFFORD_ROLL[k] * (incomeRaw - e.incomeEff[k]);
 
     // A SECTOR PRICED OUT OF A CITY DOES NOT PAY FOUR TIMES THE RENT. IT LEAVES.
     //
@@ -2904,6 +3004,7 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * e.affordEff[k]
+      * (e.incomeEff?.[k] ?? 1)   // the income argument — see INCOME_ELAST
       * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
     // that cannot be housed here stops looking here within months — the
@@ -3029,6 +3130,7 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * (1 + e.sectorMom[k] * MOM_DEMAND)
       * affordRaw
+      * incomeRaw   // the give-back reads the SAME two arguments targetRaw does
       * swanLvl;
     const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);
     const background = e.occupied[k] * (SUBLET_BG[k] ?? 0);

@@ -1353,6 +1353,10 @@ export interface Econ {
   /** Damped affordability multiplier (half-life ~6y). A three-year rent swing
    *  cannot conjure or destroy a fifth of the tenant base. */
   affordEff?: Record<BuiltClass, number>;
+  /** Damped income argument of space demand, per class. See INCOME_ELAST in market.ts. */
+  incomeEff?: Record<BuiltClass, number>;
+  /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
+  wage0?: number;
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;

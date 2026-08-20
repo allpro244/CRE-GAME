@@ -360,7 +360,18 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
           : E.assetValue?.(rec, e, E.initialCondition(rec)) ?? li.ask;
         if (li.ask > worth * st.maxPrice) continue;
         const prod = st.ltv <= 0.01 ? "cash" : "senior";
-        const r = E.executePurchase(g, parcels, li.bbl, li.ask, prod, false, st.ltv <= 0.01 ? 1 : st.ltv / 0.65);
+        const lev = st.ltv <= 0.01 ? 1 : st.ltv / 0.65;
+        // THE BOT PAYS CASH FOR ITS EQUITY, OR IT DOES NOT BUY. `executePurchase`
+        // closes off the balance sheet since c415d2c — cash AND the revolver —
+        // which is the right affordance for a player making a decision and a
+        // lie when a bot labelled "allcash" walks through it: every strategy
+        // in this table silently became max-the-line-at-index+400, all eight
+        // rows read bankrupt, and the tournament measured the revolver instead
+        // of the economy (0/8 in the black vs the 4/8 this file records).
+        // A strategy's label is its funding: the equity cheque comes from CASH.
+        const bq = E.buyQuote(g, parcels, li.bbl, li.ask, prod, lev);
+        if (!bq || g.cash < bq.equity) continue;
+        const r = E.executePurchase(g, parcels, li.bbl, li.ask, prod, false, lev);
         if (!r.err) { g = r.s; bought++; break; }
       }
     }

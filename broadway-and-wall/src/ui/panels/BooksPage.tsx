@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
-import { monthLabel, START_YEAR } from "@/engine/types";
+import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
@@ -630,7 +630,7 @@ export function IncomeStatement() {
               <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
               <L k="Property cash flow" v={opCf(cur)} strong rule />
               <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees, voluntary paydowns" />
-              <L k="Interest on cash" v={cur.interest ?? 0} sub note="1.0% on idle balances" />
+              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep at ${(sweepApy(game.econ) * 100).toFixed(1)}% — the policy rate less 0.4pt · taxable as ordinary income`} />
               <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refinance and facility draws" />
               <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
               <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />

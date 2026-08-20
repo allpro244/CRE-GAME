@@ -31,7 +31,7 @@
 // the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
-import { CASH_APY, monthLabel, START_YEAR } from "./types";
+import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
@@ -2742,11 +2742,10 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // thirty-year schedule; nobody gets pure interest-only forever.
     const interest = (r.debt * rate) / 100 / 12;
     const amort = r.debt > 0 ? (r.debt * AMORT_SHARE[r.style]) / (30 * 12) : 0;
-    // Their dry powder sits in the same bank yours does, at the same dull one
-    // per cent. It was earning nothing at all before, which meant every month a
-    // firm spent waiting for a cycle cost it something the player was not
-    // paying — and dry powder is a real position on this street.
-    const onDeposit = r.cash > 0 ? (r.cash * CASH_APY) / 12 : 0;
+    // Their dry powder sits in the same bank yours does, at the same sweep
+    // rate off the same policy rate — one deposit desk for the whole street,
+    // so a rate era the player can ride is an era the street rides too.
+    const onDeposit = r.cash > 0 ? (r.cash * sweepApy(s.econ)) / 12 : 0;
     r.cash += Math.round(noiYr / 12 - interest - amort + onDeposit);
     r.debt = Math.max(0, Math.round(r.debt - amort));
 

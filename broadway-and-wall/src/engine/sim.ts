@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { assetValue, ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -685,16 +685,18 @@ function tickMonth(
 
   // Idle balances sit in a bank account and earn what a bank account earns.
   //
-  // This used to float two and a half points under the loan index, which made
-  // the deposit rate a macro position: in a high-rate decade doing nothing
-  // compounded at five per cent and competed with underwriting buildings. It is
-  // a flat one per cent now and it is deliberately dull — cash is where you
-  // stand between decisions, not a strategy. It is also booked to its own line
-  // rather than into NOI, because bank interest is not property income and
-  // dressing it as such flattered every yield on the Books page.
+  // THE SWEEP RATE READS THE POLICY RATE — see sweepApy in types.ts. The flat
+  // one per cent it replaces was a balance decision wearing a monetary label
+  // (CLAUDE.md fake #4): deposits that ignore the rate the whole engine prices
+  // debt off. Booked to its own line rather than into NOI, because bank
+  // interest is not property income — and it joins January's taxable base
+  // below, because money-fund interest is ordinary income in life too.
   if (s.cash > 0) {
-    const interest = Math.round((s.cash * CASH_APY) / 12);
-    if (interest > 0) { s.cash += interest; logBooks(s, "interest", interest); }
+    const interest = Math.round((s.cash * sweepApy(s.econ)) / 12);
+    if (interest > 0) {
+      s.cash += interest; logBooks(s, "interest", interest);
+      s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;
+    }
   }
 
   // EXPIRE STALE OFF-MARKET ASKS — on time, and on price.
@@ -762,6 +764,12 @@ function tickMonth(
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       taxable += noi - interest - depr; // losses net against gains across the portfolio
     }
+    // Deposit interest is ordinary income — the money fund sends a 1099. It
+    // was invisible to the taxman when the deposit paid a flat 1%; now that
+    // the sweep reads the policy rate, the after-tax yield is the honest one:
+    // T-bills at 8% net 6% while a building's paper losses shelter its cash.
+    taxable += s.depositInterestYr ?? 0;
+    s.depositInterestYr = 0;
     // THE LOSS CARRIES. Netting happens in settleIncomeTax so the cheque, the
     // news line and the Books page are one answer — see tax.ts for the 80%
     // §172(a) cap and why there is no expiry.

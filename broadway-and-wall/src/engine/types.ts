@@ -2585,6 +2585,14 @@ export interface GameState {
    * unused loss. Absent on older saves and read as zero.
    */
   taxLossCarry?: number;
+  /**
+   * Deposit interest earned since the last January, in dollars. Money-fund
+   * interest is ordinary income; it joins the taxable base when the taxman
+   * makes his rounds and resets. Its own accumulator because the `interest`
+   * books bucket also carries note coupons and returned principal, which are
+   * not the same animal on a return. Absent on older saves and read as zero.
+   */
+  depositInterestYr?: number;
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
@@ -2889,18 +2897,34 @@ export const START_CASH = DEFAULT_START_CASH;
  */
 export const START_YEAR = 2000;
 /**
- * WHAT A BANK BALANCE EARNS. One per cent a year, on positive balances, for
- * everybody in this city — you and every firm on the street.
+ * WHAT A BANK BALANCE EARNS — the sweep rate, and it reads the policy rate.
  *
- * It used to float with the loan index, two and a half points under it, which
- * was defensible and wrong for what this game is about: in a high-rate decade
- * the safest position in the model quietly became one of the best, and the
- * player who did nothing compounded against the player who underwrote. A flat,
- * unexciting deposit rate is the point. Cash is a place to stand between
- * decisions, not a position — and the whole thesis of owning buildings is that
- * a bank account does not keep up.
+ * This was a flat one per cent, held there "because cash is a place to stand
+ * between decisions, not a position." That is a balance decision wearing a
+ * monetary label — CLAUDE.md's fake number #4, in so many words: a treasury
+ * desk sweeps idle balances into money funds and T-bills nightly, and those
+ * earn the short rate. In this engine's own Volcker-style eras the policy rate
+ * runs double digits while deposits paid one per cent; in its ZIRP eras one
+ * per cent was a gift. Neither is a market.
+ *
+ * The spread under the policy rate is a measured fact about the business:
+ * institutional sweep / government MMF yields run ~25–50bp under the fed funds
+ * rate (expense ratios plus the sweep bank's cut). 40bp, floored at zero —
+ * nobody pays you to hold your cash outside a deflation regime this engine
+ * does not model at the deposit desk.
+ *
+ * If T-bills at 8% then read "too strong", that is 1981 being 1981 — and the
+ * honest counterweights already exist: the CPI eating the real value, the
+ * deals not done, and (with this change) the taxman — deposit interest is
+ * ordinary income and joins January's taxable base in sim.ts, which a flat
+ * shelter-free 1% never did.
  */
-export const CASH_APY = 0.01;
+export const SWEEP_SPREAD_PCT = 0.40;
+export function sweepApy(econ: { nat?: { policy?: number } } | undefined): number {
+  const pol = econ?.nat?.policy;
+  if (!Number.isFinite(pol)) return 0.01; // no national block yet (turn 0 / old save mid-load)
+  return Math.max(0, ((pol as number) - SWEEP_SPREAD_PCT) / 100);
+}
 
 /**
  * THE CAPITAL PLAN, as a share of gross asset value a year.

@@ -463,11 +463,11 @@ if (ONLY.includes("2")) {
     const adv = usable.filter((r) => r.kind === kind).map((r) => { const p = pair(r); return p.hi.mult - p.lo.mult; });
     console.log(`                bought at the ${kind === "top" ? "TOP   " : "BOTTOM"}  n=${adv.length}  mean ${p2(mean(adv))}x  [${adv.map((x) => x.toFixed(2)).join(", ")}]`);
   }
-  console.log(`\n   NOTE ON THE DENOMINATOR: unspent equity earns CASH_APY, a flat 1.0%/yr`);
-  console.log(`   (src/engine/types.ts) regardless of a policy rate this engine runs from`);
-  console.log(`   0.25% to 23%. The low-leverage arm therefore carries a real cash drag of`);
-  console.log(`   roughly (1% - inflation) on its reserve in every rate environment. That is`);
-  console.log(`   a thumb on this comparison and it is reported, not corrected for.\n`);
+  console.log(`\n   NOTE ON THE DENOMINATOR: unspent equity earns the sweep rate — the policy`);
+  console.log(`   rate less 0.4pt, floored at zero (sweepApy, src/engine/types.ts), taxable`);
+  console.log(`   as ordinary income. The old thumb here (a flat 1.0%/yr in every rate`);
+  console.log(`   environment) is gone; what remains is the true after-tax real carry of a`);
+  console.log(`   reserve, which is the comparison a levered and an unlevered arm deserve.\n`);
 }
 
 // =============================================================================

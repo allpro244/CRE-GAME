@@ -837,6 +837,12 @@ export interface PortfolioListing {
   reo?: boolean;
   reoBorrower?: string;
   reason: string;
+  /**
+   * Talks on a street / REO book. A lender that just took the package wants
+   * it off the books — take-it-or-leave-it at the posted ask is the wrong
+   * market. One counter, then they name a last number.
+   */
+  talks?: { yourPrice: number; theirPrice: number; openedM: number; final?: boolean };
 }
 
 

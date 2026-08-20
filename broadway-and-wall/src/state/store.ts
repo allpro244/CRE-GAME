@@ -25,7 +25,7 @@ import {
 } from "@/engine/privateCredit";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
-import { buyPortfolio } from "@/engine/portfoliosale";
+import { buyPortfolio, offerStreetBook, acceptStreetBook } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -288,6 +288,10 @@ interface AppState {
   declinePrivateBorrowQuote: (id: string) => void;
   /** Buy a street / REO book off Marketplace — see engine/portfoliosale.buyPortfolio. */
   buyStreetBook: (id: string) => void;
+  /** Name a price on a street / REO book. At or above reservation, it closes. */
+  offerStreetBook: (id: string, price: number) => void;
+  /** Take the receiver's last number. */
+  acceptStreetBook: (id: string) => void;
   bidAuction: (bids: Record<string, number>) => void;
   payOffAtDiscount: (bbl: string) => void;
   handBackKeys: (bbl: string) => void;
@@ -1221,6 +1225,29 @@ export const useStore = create<AppState>((set, get) => ({
     const { game, parcels } = get();
     if (!game || !parcels) return;
     const r = buyPortfolio(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s, page: "portfolio" });
+    toast(r.msg ?? "Bought the book.");
+    void persist(r.s);
+  },
+  offerStreetBook: (id, price) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = offerStreetBook(game, parcels, id, price);
+    if (r.err) { toast(r.err, "err"); return; }
+    if ((r.s.portfolios ?? []).some((x) => x.id === id)) {
+      set({ game: r.s });
+      toast(r.msg ?? "They came back.");
+    } else {
+      set({ game: r.s, page: "portfolio" });
+      toast(r.msg ?? "Bought the book.");
+    }
+    void persist(r.s);
+  },
+  acceptStreetBook: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptStreetBook(game, parcels, id);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s, page: "portfolio" });
     toast(r.msg ?? "Bought the book.");

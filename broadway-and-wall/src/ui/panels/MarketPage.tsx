@@ -225,6 +225,7 @@ export function MarketPage() {
   // null = follow the docket (open when one is live), true/false = you decided.
   const [distressOpen, setDistressOpen] = useState<boolean | null>(null);
   const [expandedBook, setExpandedBook] = useState<string | null>(null);
+  const [bookOffers, setBookOffers] = useState<Record<string, number>>({});
   // YOUR OWN SIGN IN THE WINDOW. A building you have listed is for sale in the
   // same town, on the same tape, and leaving it off meant the one screen that
   // answers "what is on the market" was answering it incompletely — and you
@@ -239,7 +240,7 @@ export function MarketPage() {
   // books banks put out after a seizure; they used to raise an alert with no desk.
   const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
   const bankFcls = game.bankFcls ?? [];
-  const { buyStreetBook } = useStore.getState();
+  const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
   return (
     <div>
       <div className="stat-strip">
@@ -279,7 +280,7 @@ export function MarketPage() {
 
       {/* BOOKS FOR SALE — the desk the seizure alert always pointed at and never reached.
           Packages live on game.portfolios (REO / fund wind-down). They are pulled off the
-          single-asset tape on purpose; buying them is one cash cheque via buyStreetBook. */}
+          single-asset tape on purpose; the close is one cash cheque. A receiver will talk. */}
       <div className="page-section" style={{ marginTop: 10 }}>
         Books for sale · {streetBooks.length}
       </div>
@@ -293,7 +294,8 @@ export function MarketPage() {
         <div style={{ marginBottom: 12 }}>
           <div className="hint" style={{ marginBottom: 8 }}>
             One cheque, all cash, no financing at the table — that is why a package trades back from the sum of its
-            parts. Rivals are looking at the same books; a quiet month is how you lose them.
+            parts. A lender that just took the book wants it off the books: name a price. Rivals are looking at the
+            same packages; a quiet month is how you lose them.
           </div>
           {streetBooks.map((p) => {
             const disc = p.gross > 0 ? (1 - p.ask / p.gross) * 100 : 0;
@@ -411,7 +413,39 @@ export function MarketPage() {
                     </tbody>
                   </table>
                 )}
-                <div className="btn-row" style={{ marginTop: 8 }}>
+                {p.talks && (
+                  <div className="hint" style={{ marginTop: 6 }}>
+                    They will take {usd(p.talks.theirPrice)}
+                    {p.talks.final ? " — that is the last number." : "."}
+                  </div>
+                )}
+                <div className="btn-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+                  <label className="dim" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    Offer
+                    <input
+                      type="number"
+                      min={0}
+                      step={10000}
+                      value={bookOffers[p.id] ?? Math.round(p.ask * 0.94)}
+                      onChange={(e) => setBookOffers((m) => ({ ...m, [p.id]: Number(e.target.value) }))}
+                      style={{ width: 140 }}
+                    />
+                  </label>
+                  <button
+                    className="btn"
+                    onClick={() => offerStreetBook(p.id, bookOffers[p.id] ?? Math.round(p.ask * 0.94))}
+                  >
+                    Offer {usd(bookOffers[p.id] ?? Math.round(p.ask * 0.94))}
+                  </button>
+                  {p.talks && (
+                    <button
+                      className="btn btn-buy"
+                      disabled={game.cash < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02)}
+                      onClick={() => acceptStreetBook(p.id)}
+                    >
+                      Take {usd(p.talks.theirPrice)}
+                    </button>
+                  )}
                   <button
                     className="btn btn-buy"
                     disabled={short > 0}
@@ -421,14 +455,14 @@ export function MarketPage() {
                         + (st.yieldOnAsk !== null ? ` · ${pct(st.yieldOnAsk * 100)} going-in` : "")}
                     onClick={() => buyStreetBook(p.id)}
                   >
-                    Buy the book · {usd(p.ask)}
+                    Pay ask · {usd(p.ask)}
                     {st.yieldOnAsk !== null ? ` · ${pct(st.yieldOnAsk * 100)}` : ""}
                   </button>
                   <button className="btn" onClick={() => setExpandedBook(open ? null : p.id)}>
                     {open ? "Hide schedule" : "See the schedule"}
                   </button>
                   {short > 0 && (
-                    <span className="dim">Short {usd(short)} of the {usd(need)} cheque.</span>
+                    <span className="dim">Short {usd(short)} of the ask cheque.</span>
                   )}
                 </div>
               </div>

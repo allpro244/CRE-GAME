@@ -46,6 +46,7 @@
     "extleak": "node test/extleak.mjs",
     "swanfork": "node test/swanfork.mjs",
     "conserve": "node test/conserve.mjs",
+    "rentable": "node test/rentable.mjs",
     "econ:report": "node test/econ-accept.mjs",
     "sim:report": "node test/sim-accept.mjs",
     "city:report": "CITY_SEEDS=1 node test/city-accept.mjs",

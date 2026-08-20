@@ -110,10 +110,12 @@ is set. Any probe running past ~year 30 without a player must resurrect:
 in how many firms a city supports turned out to be the game being over.
 
 **The conservation identity and debt principal.** `pnpm conserve` asserts
-`Δcash == books + Δloc.balance + Δdeposits`, and `borrowed` is now a books
+`Δcash == books + Δloc.balance + Δdeposits`, and `borrowed` is a books
 inflow for cash-out refinance and facility draws. Voluntary paydowns book to
-`debtSvc`. The conserve bot refinances so the bucket is exercised. Purchase
-still books equity only (`bought`) — the loan goes to the seller at closing.
+`debtSvc`. The conserve bot buys at half Harbor's advance and cash-out
+refinances after the stepdown so `borrowed` is in REQUIRED, not a silent
+exemption. Purchase still books equity only (`bought`) — the loan goes to
+the seller at closing.
 
 **One quantity, two answers.** The most productive bug class in this repo.
 `managedRentPsfYr(rec, econ, h)` with no `use` returns the area-weighted BLEND
@@ -200,7 +202,9 @@ roughly 8–12%. #47.
 
 **3. ~~The conservation identity's debt gap~~ — CLOSED.** Cash-out refinance and
 facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
-bot refinances so the identity is exercised.
+bot buys at half leverage and refinances so the identity is exercised, and
+`borrowed` is in REQUIRED. The first close left the bucket dead: the bot
+bought at max LTV and called Alden ($2.5M minimum) on small deeds.
 
 **4. ~~CPI is non-monotonic~~ — CLOSED (floor).** Monthly CPI change floors at
 −0.05%/mo (~−0.6%/yr) while national inflation is non-negative; only a national
@@ -255,6 +259,24 @@ retirement, #33 sellers, #36 zoning, #48/#49 firms, optional graphics). Phase 1
 
 1. **~~Unify city-supply vs desk delivery~~ — CLOSED (settle moment).**
    See `SKYLINE_CYCLES_PLAN.md` Phase 8.
+1a. **~~Conserve `borrowed` was dead~~ — CLOSED.** Bot draws land-loan /
+   cash-out principal; `borrowed` is in REQUIRED. `pnpm conserve`.
+1b. **~~Income quoted on gross~~ — CLOSED.** `bldgArea` stays GSF; rent,
+   NOI, cap, stock and lease-up read `rentableSf` = gross × (1 − coreLoss),
+   0.72–0.92. `pnpm rentable`.
+1c. **City renewal.** Anonymous fabric never starts `obsolete`. After
+   rentable, merchant teardown (`clears` = YoC ≥ exit × 1.17, land in the
+   basis) almost never fired on the single highest-score lot (largest unused
+   FAR, least likely to pencil). Two decisions now: merchant densify still
+   needs the full developer hurdle; owner-recycle (age ≥ 60, the commercial
+   economic life, or obsolete) is YoC on build cost ≥ exit. The sample is
+   the candidate set; they are
+   underwritten in score order and the first that clears is the
+   groundbreaking. Measured `CITY_SEEDS=1` × 5 × 50y: K passes (median
+   age +42, need < 43). L median demo 0.097%/yr (need ≥ 0.100; was
+   ~0.036 after rentable, ~0.098 before). The ~0.5% anchor is not a
+   birthday: median replacement YoC ex-land is ~3.2% against a ~6.1%
+   exit. Do not invent a coefficient to close that.
 2. **~~Holder memory beyond approaches~~ — CLOSED.** `pnpm holder`.
 3. **Retire load-bearing rails** — `NO_PLAYTEST_PLAN.md` Phase 3; measure with
    `pnpm rails` first. (3.1–3.2 largely done; see `RAIL_AUDIT.md`.)

@@ -80,5 +80,26 @@ for (const [name, x] of [["rates", rate], ["costs", cost], ["vacancy", vacancy],
   check(x.median <= control.median + 1e-9, `higher ${name} do not improve median project economics`);
 }
 
+{
+  // Owner-recycle reads yield on build cost. If this identity slips, the
+  // wrecking ball either free-builds or stays a museum again.
+  let checked = 0, badId = 0, inverted = 0;
+  for (const bbl of sites.slice(0, 40)) {
+    const rec = parcels[bbl];
+    const floors = Math.min(8, E.maxFloorsFor(rec, 0.62, "office"));
+    const u = E.underwriteDevelopment(base, parcels, bbl, "office", floors, 0.62);
+    if (!u) continue;
+    const p = u.plan;
+    const noi = p.yieldOnCost / 100 * p.basisTotal;
+    const rebuild = p.basisTotal - p.landBasis;
+    const noiEx = p.yieldOnCostExLand / 100 * rebuild;
+    checked++;
+    if (Math.abs(noi - noiEx) > 1) badId++;
+    if (p.landBasis > 0 && p.yieldOnCostExLand + 1e-9 < p.yieldOnCost) inverted++;
+  }
+  check(checked > 0 && badId === 0, `yieldOnCostExLand is NOI / (basis − land) (${checked} plans)`);
+  check(inverted === 0, "ex-land yield is never below land-inclusive yield");
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

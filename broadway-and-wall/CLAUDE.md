@@ -185,7 +185,7 @@ balance-sheet movements that are cash without being income or expense — the
 revolver and tenant deposits — must show up in `s.loc.balance` or in a
 holding's `tenants[].deposit`. `pnpm conserve` asserts exactly that identity:
 
-    Dcash == (noi + sold + interest)
+    Dcash == (noi + sold + interest + borrowed)
            - (debtSvc + leasing + capex + dev + taxes + bought + ga)
            + Dloc.balance + Ddeposits
 

@@ -8,7 +8,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead } from "@/engine/value";
+import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
@@ -300,43 +300,35 @@ function ParcelPanelInner({
           return <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
             v={(ip.occ * 100).toFixed(0) + "%"} bad={ip.disclosed && ip.occ < 0.75} />;
         })()}
-        {/* HOW BIG IT IS — the first question anyone asks about a building, and
-            the one number this panel never printed. You could read the count of
-            suites and their size and multiply, or read FAR built and multiply
-            that by a lot area printed further down, but the area itself was not
-            here.
-
-            It is the area LEASES ARE STRUCK AGAINST, which in this engine is
-            `bldgArea` — physicalOcc divides by it, the invariants refuse a roll
-            that exceeds it, and every rent psf on this panel is quoted against
-            it. There is a known wrinkle behind that (value.ts: the stored area
-            is gross times a plate efficiency capped at 1.0, where the honest
-            end state is gross times one minus core loss, about 17% smaller) and
-            this row deliberately does NOT apply a second, private deduction to
-            correct for it. One quantity, one answer: inventing a rentable
-            figure here that the NOI and the rents were not struck on would put
-            two different areas on the same card.
-
-            What IS netted out, for a building you own, is the remainder no
-            tenancy can be cut out of — a real modelled deduction with a rent
-            roll behind it, and the difference between the area you have and the
-            area you can let. */}
-        {isBuilt && (() => {
-          const area = rec.bldgArea || 0;
-          if (area <= 0) return null;
+        {/* HOW BIG IT IS — two quantities, because they are two facts.
+            #116 put a "Leasable area" row on `bldgArea` and refused a private
+            haircut: income was still struck on gross. Income now reads
+            `rentableSf`. Quoting gross as leasable would be the lie that row
+            was written to prevent. The owned-building remainder (demises too
+            small to let) is still a real deduction, on rentable feet. */}
+        {isBuilt && rec.bldgArea > 0 && (
+          <Row
+            k="Gross area"
+            v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`}
+            title="Zoning, construction cost and the map. You pay for the core; you do not let it."
+          />
+        )}
+        {isBuilt && rec.bldgArea > 0 && (() => {
+          const letSf = Math.round(rentableSf(rec));
           const rem = holding ? unlettableRemainderSf(rec, holding) : 0;
+          const ratio = rentableRatio(plateOf(rec));
           const split = isMixedUse(rec)
-            ? usesOf(rec).map((u) => `${sf(Math.round(useSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")
+            ? usesOf(rec).map((u) => `${sf(Math.round(useRentableSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")
             : null;
           return (
             <Row
-              k="Leasable area"
-              v={rem > 0 ? `${sf(area - rem)} of ${sf(area)}` : sf(area)}
+              k="Rentable area"
+              v={rem > 0 ? `${sf(letSf - rem)} of ${sf(letSf)}` : `${sf(letSf)} · ${(ratio * 100).toFixed(0)}% of gross`}
               title={split
                 ? `${split}${rem > 0 ? ` · ${sf(rem)} in demises too small to let` : ""}`
                 : rem > 0
                   ? `${sf(rem)} of it sits in demises too small to let — see Occupancy`
-                  : "The area leases are struck against: rents, occupancy and NOI on this card are all quoted on it"}
+                  : "BOMA rentable — core, stairs and risers out. Rent, NOI and cap rate are struck on these feet. Same function the engine uses."}
             />
           );
         })()}
@@ -410,7 +402,6 @@ function ParcelPanelInner({
         })()}
         {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
-        {omFull && isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
         <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />

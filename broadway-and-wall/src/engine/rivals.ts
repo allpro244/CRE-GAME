@@ -34,7 +34,7 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
-import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
+import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
@@ -1840,7 +1840,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const oldCls = rec.class as BuiltClass;
     s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
     if ((CITY_STOCK as Record<string, number>)[oldCls] !== undefined) {
-      addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -oldSf);
+      addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -rentableSf(rec));
     }
     s.demolished = (s.demolished ?? 0) + 1;
     recordPropertyEvent(s, bbl, {
@@ -1869,7 +1869,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // Into the one delivery queue the day the hole is dug, exactly like the city.
-  const rivalProgramme = programmeSf(sf, prog);
+  const rivalProgramme = programmeSf(rentableFromSpec(sf, floors), prog);
   queueSupplyProject(s, {
     bbl,
     source: "rival",

@@ -16,6 +16,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, SupplyProject, SupplySource, UseMix } from "./types";
+import { rentableFromSpec } from "./value";
 
 const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
@@ -236,7 +237,7 @@ export function clawbackSlippedDeliveries(s: GameState): void {
   for (const bbl of settled) {
     const d = s.developments[bbl];
     if (!d || d.deliverM <= s.month) continue;
-    const sfByUse = programmeSf(d.sf, d.mix);
+    const sfByUse = programmeSf(rentableFromSpec(d.sf, d.floors), d.mix);
     for (const k of CLASSES) {
       const sf = Math.max(0, Math.round(sfByUse[k] ?? 0));
       if (!sf || !s.econ.stock) continue;

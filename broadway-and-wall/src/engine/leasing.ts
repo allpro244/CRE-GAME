@@ -11,7 +11,7 @@ import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, IN
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc } from "./value";
+  physicalOcc, rentableSf, useRentableSf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
@@ -114,7 +114,7 @@ export function isCommercial(rec: ParcelRecord): boolean {
 
 /** The commercial part of a building: the square feet with named tenants. */
 export function commercialSf(rec: ParcelRecord): number {
-  return (rec.bldgArea || 0) * commercialShare(rec);
+  return rentableSf(rec) * commercialShare(rec);
 }
 
 /** Which uses in this building lease to named tenants. */
@@ -422,8 +422,8 @@ export interface OccRead {
 export function occupancyRead(rec: ParcelRecord, h: Holding): OccRead {
   const remainderSf = unlettableRemainderSf(rec, h);
   const occ = physicalOcc(rec, h);
-  const lettable = Math.max(1, rec.bldgArea - remainderSf);
-  const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + useSf(rec, "multifamily") * (h.occ ?? 0);
+  const lettable = Math.max(1, rentableSf(rec) - remainderSf);
+  const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + useRentableSf(rec, "multifamily") * (h.occ ?? 0);
   const lettableOcc = Math.min(1, leased / lettable);
   return { occ, lettableOcc, remainderSf, fullyLet: remainderSf > 0 && lettableOcc >= 0.9995 };
 }
@@ -674,7 +674,7 @@ export function vacantSf(rec: ParcelRecord, h: Holding): number {
 export function useVacantSf(rec: ParcelRecord, h: Holding, use: BuiltClass, month?: number): number {
   const taken = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
   const turning = month === undefined ? 0 : notReadySf(h, month, use);
-  return Math.max(0, useSf(rec, use) - taken - turning);
+  return Math.max(0, useRentableSf(rec, use) - taken - turning);
 }
 
 // Space a departing tenant just left isn't leasable on day one — it's in

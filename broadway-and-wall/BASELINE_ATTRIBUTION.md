@@ -7,7 +7,44 @@
 
 ---
 
-## This ruler: demand gets its income argument (SAVE_VERSION unchanged)
+## This ruler: supply answers price (SAVE_VERSION unchanged)
+
+`9bb975e` removed the third answer to one question. The legal envelope said
+27-56 floors, `cityInfillCap` let a shovel reach 5-8, and the land residual
+priced a 14-floor scheme in between — so dirt was sold on a building nobody
+would be permitted to build. `residualScheme` now multiplies the legal FAR by
+`econ.infillShare`, the median buildable-over-legal ratio published by the
+sampler that already walks these lots, and the feasibility sampler asks its
+question at the same cornice.
+
+Measured on the tip: `sitePencil.office` in pinned months 0.000 -> 1.004,
+office starts 0.0 -> 6.3k sf/mo, vacancy-floor pinning 27.7% -> 25.5%.
+No new `rng()` draws, so every move below is a real repricing plus the century
+re-roll that follows from changed decisions.
+
+| Metric cluster | Driver | Direction |
+|---|---|---|
+| `land.p10` -20%, `land.med` -14%, **`land.p90` +37%** | THE INTENDED MOVE, and the spread is the point. A smaller buildable envelope cuts the residual on ordinary dirt; on the sites that can still build, scarcity concentrates the value. Ricardian, and the right sign | One-time repricing, intended |
+| `dev.affordableLotShare` 0.126 -> 0.158 | Cheaper ordinary dirt. Now ~4pp ABOVE the documented 8-12% honest band | WATCH — do not tune |
+| `city.buildings` +0.7%, `floorAreaM` +2.6% | More sites pencil, so more of them get built | Follows the residual |
+| **`rail.vac.office.lo` 0.333 -> 0.247** | The regression the last ruler recorded, partly repaid: the office frictional-vacancy floor binds a quarter of months instead of a third, because supply can now answer the income term | The finding, closing |
+| `rail.vac.multifamily.lo` 0.09 -> 0.16 | Went the other way. Flats are the use the residual most often picks, so the extra starts concentrate there and the floor binds more | REPORT — the open half of the same item |
+| `vac.*` (office +14%, retail +37%, multifamily +21%) | More delivered stock against the same demand | Follows supply |
+| `rentIdx.industrial` -9.1% | Industrial is now permittable on fringe C corridors and has an exit valve; more of it exists | Intended, from #11 and #10 |
+| `city.employed` / `population` (-2.7% / -1.3%) | Century re-roll on a changed decision path; inside seed noise at a 300-month snapshot | Not attributed further |
+
+Land was re-measured against three outside facts after this ruler, because the
+change moves land directly: land is **32.6%** of improved value (the city's own
+assessment roll, stamped from real NYC data, says 43.7%; the literature band is
+25-50%), **22.9%** of total development cost (ULI practice: 15-25% ordinary,
+30-50% gateway), and a prime site prices at **$151/buildable sf** (strong
+non-gateway CBD runs $60-150). Single-lot annual real returns have sd **21.9%**
+against a real-world 20-25%. The $9,624-per-square-foot-of-land reading that
+localised this fault is gone; the prime lot now runs $700-$4,600 real.
+
+---
+
+## Previous ruler: demand gets its income argument (SAVE_VERSION unchanged)
 
 `be6813a` split `burden = rent/wage` into two arguments — a real rent index and
 a damped real-income factor `incomeEff` — and `008aad4` made the secular

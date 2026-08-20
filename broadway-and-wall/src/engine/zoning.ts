@@ -73,7 +73,18 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // stayed tight for fifty years, and rent took the whole adjustment forever —
   // which is exactly what `sim:accept` F was measuring.
   const ez = s.econ;
-  const tight = NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office);   // + when short
+  // TIGHTNESS, THE SAME WAY `cityInfillCap` MEASURES IT. This was a raw
+  // percentage-point difference while dev.ts divided the same difference by
+  // the natural rate — one quantity with two answers, and the two were an
+  // order of magnitude apart. Measured over 3 seeds x 50 years the raw form
+  // gave a median `scarcity` of -0.067 against a cap of 0.45, so the term
+  // that is supposed to represent "the city cannot house what wants to be in
+  // it" was contributing essentially nothing even when the market was short.
+  // Normalised, a market 1.6pp inside its natural rate reads 0.14 rather than
+  // 0.016, which is a signal a planning board would actually hear.
+  const tight = clamp(
+    (NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office,
+    -1, 1);   // + when short
   // EFFECTIVE, not asking. Rent-to-income is a claim about what a tenant PAYS,
   // and a tenant pays net of concessions. In a glut the asking index holds its
   // face while concIdx maxes out — reading asking here scored the glutted
@@ -157,7 +168,26 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // the allowance it already has. A district that has built out asks for more
   // and gets it; a district sitting on unused envelope does not, which is what
   // makes the process self-limiting instead of a ratchet.
-  const up = clamp(NEUTRAL_P + (usedUp - 0.45) * 1.1 + (demand - 50) / 150 + scarcity, 0.05, 0.95);
+  // WHERE "BUILT OUT" ACTUALLY SITS. This pivoted at 0.45 — a district was
+  // judged to be asking for more envelope only once it had built to nearly
+  // half of the one it had. No American city is near that. Built floor area
+  // runs about 20-40% of zoned capacity across US cities, and the ratio is low
+  // precisely because envelope is granted in places and shapes that nobody
+  // builds: the paper allowance is not a queue of projects waiting.
+  //
+  // At a 0.45 pivot the term contributed -0.22 at this city's median of 0.25
+  // and the process ran 26 downzonings to 3 upzonings over fifty years, with
+  // `zoneAdj` walking down to p10 0.73 against a 0.72 floor. The comment above
+  // states the fact — "CITIES DENSIFY. Over a century upzonings comfortably
+  // outnumber downzonings" — and the arithmetic below it did the opposite.
+  //
+  // 0.30 is the middle of the documented 20-40% band, NOT this model's own
+  // median of 0.25. Fitting the pivot to the number the engine happens to
+  // produce would make the term measure the engine; anchoring it to the real
+  // ratio leaves the engine free to sit above or below, and today it sits
+  // slightly below, which is honest.
+  const BUILT_OUT_PIVOT = 0.30;
+  const up = clamp(NEUTRAL_P + (usedUp - BUILT_OUT_PIVOT) * 1.1 + (demand - 50) / 150 + scarcity, 0.05, 0.95);
   const isUp = rng(s) < up;
   const step = isUp ? rrange(s, 1.12, 1.45) : rrange(s, 0.86, 0.96);
   const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);

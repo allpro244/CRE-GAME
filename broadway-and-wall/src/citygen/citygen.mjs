@@ -2680,14 +2680,19 @@ export function generateCity(cfg) {
   const jobsByBlock = new Map();
   for (const f of parcels.features) {
     const p = f.properties;
-    const jobs = p.bldgclass[0] === "O" ? p.bldgarea / 230
-      : p.bldgclass === "E9" ? p.bldgarea / 550
-      : p.bldgclass === "K2" ? p.bldgarea / 400
-      : p.bldgclass === "RM" || p.bldgclass === "S1" ? p.bldgarea / 700 : 0;
+    const L = (p.bldgclass ?? "")[0];
+    const office = L === "O" ? p.bldgarea / 230 : 0;
+    const industrial = (L === "E" || L === "F") ? p.bldgarea / 550 : 0;
+    const retail = L === "K" ? p.bldgarea / 400
+      : (p.bldgclass === "RM" || p.bldgclass === "S1") ? p.bldgarea / 700 : 0;
+    const jobs = office + industrial + retail;
     if (!jobs) continue;
-    const cur = jobsByBlock.get(p.block) ?? { jobs: 0, x: 0, y: 0, n: 0 };
+    const cur = jobsByBlock.get(p.block) ?? { jobs: 0, office: 0, industrial: 0, retail: 0, x: 0, y: 0, n: 0 };
     const ring = f.geometry.coordinates[0];
     cur.jobs += jobs;
+    cur.office += office;
+    cur.industrial += industrial;
+    cur.retail += retail;
     cur.x += ring.reduce((s, q) => s + q[0], 0) / ring.length;
     cur.y += ring.reduce((s, q) => s + q[1], 0) / ring.length;
     cur.n++;
@@ -2698,7 +2703,12 @@ export function generateCity(cfg) {
     features: [...jobsByBlock.values()].map((b, i) => ({
       type: "Feature", id: i + 1,
       geometry: { type: "Point", coordinates: [b.x / b.n, b.y / b.n] },
-      properties: { jobs: Math.round(b.jobs) },
+      properties: {
+        jobs: Math.round(b.jobs),
+        office: Math.round(b.office),
+        industrial: Math.round(b.industrial),
+        retail: Math.round(b.retail),
+      },
     })),
   };
 

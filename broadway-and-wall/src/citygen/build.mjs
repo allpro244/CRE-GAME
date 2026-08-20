@@ -179,23 +179,44 @@ export function buildCityData(src) {
       s.xy[0] > lotsMinX - 1500 && s.xy[0] < lotsMaxX + 1500 &&
       s.xy[1] > lotsMinY - 1500 && s.xy[1] < lotsMaxY + 1500);
 
-  // A SECOND CENTRE THAT IS ACTUALLY A CENTRE. Transit and jobs both piled on
-  // downtown because ridership was a restatement of core heat. The second-best
-  // station that sits more than 400 m from the first is millside, the ferry,
-  // or the belt — a different reason for ground to be good.
+  // A SECOND CENTRE THAT IS ACTUALLY A CENTRE. One distant platform is not
+  // enough if its weight is a restatement of downtown — the mill, the ferry
+  // and the belt only register when they carry ridership of their own.
   const rankedSt = [...stationPts].sort((a, b) => b.w - a.w);
   const topSt = rankedSt[0];
-  const secondSt = rankedSt.find((s) => topSt && Math.hypot(s.xy[0] - topSt.xy[0], s.xy[1] - topSt.xy[1]) > 400)
-    ?? null;
+  const farStops = rankedSt.filter((s) => topSt && Math.hypot(s.xy[0] - topSt.xy[0], s.xy[1] - topSt.xy[1]) > 450);
+  const secondSt = farStops[0] ?? null;
+  const thirdSt = farStops.find((s) => secondSt && Math.hypot(s.xy[0] - secondSt.xy[0], s.xy[1] - secondSt.xy[1]) > 400)
+    ?? farStops[1] ?? null;
 
+  const jobKind = (p) => {
+    const L = (p.bldgclass ?? "")[0];
+    const area = num(p.bldgarea) ?? 0;
+    if (L === "O") return { office: area / 230, industrial: 0, retail: 0 };
+    if (L === "E" || L === "F") return { office: 0, industrial: area / 550, retail: 0 };
+    if (L === "K") return { office: 0, industrial: 0, retail: area / 400 };
+    if (p.bldgclass === "RM" || p.bldgclass === "S1") return { office: 0, industrial: 0, retail: area / 700 };
+    return { office: 0, industrial: 0, retail: 0 };
+  };
   let jobPts;
   if (employment?.features?.length) {
-    jobPts = employment.features.map((f) => ({ xy: proj.toXY(f.geometry.coordinates), jobs: num(f.properties.jobs) ?? 0 }));
+    jobPts = employment.features.map((f) => {
+      const office = num(f.properties.office);
+      const industrial = num(f.properties.industrial);
+      const retail = num(f.properties.retail);
+      const jobs = num(f.properties.jobs) ?? 0;
+      // Generated cities stamp the split. Older LODES dumps only have `jobs`;
+      // treat that mass as office so the mill field stays empty rather than
+      // inventing a port from a downtown total.
+      return {
+        xy: proj.toXY(f.geometry.coordinates),
+        office: office ?? jobs,
+        industrial: industrial ?? 0,
+        retail: retail ?? 0,
+      };
+    });
   } else {
-    // fallback proxy: jobs from commercial built area
-    jobPts = lots
-      .filter((l) => ["O", "K", "S", "R", "M"].includes((l.p.bldgclass ?? "")[0]))
-      .map((l) => ({ xy: l.c, jobs: (num(l.p.bldgarea) ?? 0) / 300 }));
+    jobPts = lots.map((l) => ({ xy: l.c, ...jobKind(l.p) }));
     console.warn("No LODES employment file — using built-area employment proxy for demandScore.");
   }
 
@@ -221,38 +242,27 @@ export function buildCityData(src) {
       return acc;
     };
   }
-  const nearStations = bucketIndex(stationPts, 350);
-  const nearJobs = bucketIndex(jobPts, 300);
-  // A THIRD REASON FOR GROUND TO BE GOOD, AND THE FIRST ONE THAT IS NOT JOBS.
+  const nearStations = bucketIndex(stationPts, 240);
+  const nearJobs = bucketIndex(jobPts, 280);
+  // PARK FRONTAGE, NOT A CIVIC-PARK BULLSEYE.
   //
-  // Demand was 45% transit gravity and 55% employment gravity, and the two were
-  // the same field wearing two hats: employment is proxied by built floor area,
-  // which is tallest downtown, and a station's ridership was `22 + 54 * heat`,
-  // where heat is proximity to downtown. Measured across six generated islands,
-  // the result had exactly ONE local peak and ONE top-decile cluster on every
-  // one, correlating 0.61 to 0.94 with distance from a single best point. That
-  // is the owner's "all the demand surrounding one specific place", measured.
+  // Demand was transit gravity plus employment gravity, and the two were the
+  // same field wearing two hats: employment is tallest downtown, and a
+  // station's ridership was `22 + 54 * heat`. Amenity then sat on the same
+  // square — parks are placed on hot ground — with a reach up to 520 m, so
+  // the civic green painted a circle over half the island. That is the
+  // owner's screenshot: one dark point on the park and concentric fade.
   //
-  // Green frontage is the oldest independent driver of urban land value there
-  // is, and it is independent in the way that matters here: it is somewhere
-  // else. The Fifth Avenue addresses face the park, not the exchange; Bloomsbury
-  // and Bath are worth what they are worth because of squares. It is also
-  // strongest for HOUSING rather than offices, which is exactly why it makes a
-  // different KIND of good neighbourhood rather than a second downtown.
-  //
-  // Big parks reach further than small ones — the pull scales with the square
-  // root of the area, which is the park's own radius — so this composes with the
-  // park programme rather than flattening it: a city of twelve squares gets
-  // twelve modest bumps spread through its districts, and a city with one great
-  // park gets one prestige quarter beside it.
+  // Green frontage is still the oldest independent driver of urban land
+  // value. Fifth Avenue faces the park; Bloomsbury is the squares. It is
+  // also a FRONTAGE, one or two blocks, not a city-scale Gaussian. Each
+  // park is a local bump of similar height; a great park reaches a little
+  // further, it does not become the demand surface.
   const parkPts = (parks ?? []).map((pk) => ({
-    xy: pk.xy,
-    // the reach of a green, in metres: its own half-diagonal, floored so a
-    // pocket square still registers and capped so a great park is not the
-    // whole island.
-    r: Math.max(90, Math.min(520, Math.sqrt(Math.max(1, pk.w * pk.h)) * 0.8)),
+    xy: pk.xy ?? [pk.cx, pk.cy],
+    r: Math.max(55, Math.min(140, Math.sqrt(Math.max(1, (pk.w ?? 80) * (pk.h ?? 80))) * 0.28)),
   }));
-  const nearParks = bucketIndex(parkPts, 300);
+  const nearParks = bucketIndex(parkPts.filter((pk) => pk.xy?.[0] != null), 160);
   // THE WATER AND THE HIGH STREET, measured perpendicular rather than radially.
   //
   // Every term above is an isotropic kernel around a point, and two of the
@@ -271,18 +281,22 @@ export function buildCityData(src) {
   // shore, because nobody pays to overlook a container yard. Same water,
   // opposite sign.
   const raws = lots.map((l) => ({
-    transit: nearStations(l.c, 1050, (s, d) => s.w * gauss(d, 350)),
-    emp: nearJobs(l.c, 900, (j, d) => j.jobs * gauss(d, 300)),
-    // Frontage, not proximity: the premium is on the blocks that FACE it and
-    // falls away fast behind them.
-    amen: nearParks(l.c, 900, (pk, d) => pk.r * gauss(d, pk.r * 0.75)),
+    transit: nearStations(l.c, 720, (s, d) => s.w * gauss(d, 240)),
+    office: nearJobs(l.c, 780, (j, d) => j.office * gauss(d, 260)),
+    mill: nearJobs(l.c, 900, (j, d) => j.industrial * gauss(d, 340)),
+    shop: nearJobs(l.c, 480, (j, d) => j.retail * gauss(d, 160)),
+    // Frontage, not proximity: the blocks that FACE the green, one street back.
+    amen: nearParks(l.c, 280, (pk, d) => gauss(d, pk.r)),
     shore: (l.p?.shoreamen ?? 1) ? Math.exp(-(num(l.p?.shorem) ?? 9999) / 300) : 0,
     corridor: Math.exp(-(num(l.p?.corridorm) ?? 9999) / 90),
-    second: secondSt ? secondSt.w * gauss(Math.hypot(l.c[0] - secondSt.xy[0], l.c[1] - secondSt.xy[1]), 320) : 0,
+    second: (secondSt ? secondSt.w * gauss(Math.hypot(l.c[0] - secondSt.xy[0], l.c[1] - secondSt.xy[1]), 280) : 0)
+      + (thirdSt ? thirdSt.w * gauss(Math.hypot(l.c[0] - thirdSt.xy[0], l.c[1] - thirdSt.xy[1]), 260) : 0),
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
   const t95 = p95(raws.map((r) => r.transit));
-  const e95 = p95(raws.map((r) => r.emp));
+  const o95 = p95(raws.map((r) => r.office)) || 1;
+  const m95 = p95(raws.map((r) => r.mill)) || 1;
+  const k95 = p95(raws.map((r) => r.shop)) || 1;
   const a95 = p95(raws.map((r) => r.amen)) || 1;
   // NORMALISED THE SAME WAY THE OTHER THREE ARE, and that is not a detail.
   // Un-normalised, an exponential decay sits far higher for the median lot
@@ -391,14 +405,21 @@ export function buildCityData(src) {
     // The ORDER is untouched — the same ground is still the best ground — so
     // every district reads the same, it just stops flattering the fringe.
     const DEMAND_GAMMA = 1.9;
-    // 38 / 44 / 18 — the two original terms keep their ratio to each other, so
-    // the ground that was best is still best, and the amenity term is given the
-    // weight that changes the SHAPE without rewriting the order.
+    // Access is still the skeleton. It is no longer one hill wearing three
+    // hats. Transit is a necklace of platforms (walk-shed sigma, ridership
+    // from the platform). Employment is three independently-normalised
+    // fields, so millside can score a 1.0 on sheds without being a rounding
+    // error against downtown office SF. Amenity is park frontage. Distant
+    // stops keep a voice of their own. The water and the high street
+    // multiply after this, mean-normalised, so they reshape rather than
+    // inflate.
     const blend = Math.min(1,
-      (36 * Math.min(1, dem.transit / t95)
-        + 34 * Math.min(1, dem.emp / e95)
+      (30 * Math.min(1, dem.transit / t95)
+        + 22 * Math.min(1, dem.office / o95)
+        + 16 * Math.min(1, dem.mill / m95)
+        + 8 * Math.min(1, dem.shop / k95)
         + 14 * Math.min(1, dem.second / n95)
-        + 16 * Math.min(1, dem.amen / a95)) / 100);
+        + 10 * Math.min(1, dem.amen / a95)) / 100);
     // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
     //
     // Gravity fields cannot produce this and it is most of what a city actually
@@ -442,11 +463,14 @@ export function buildCityData(src) {
     const cornerK = (num(p.corner) ?? 0) === 1 ? 1.18 : 1;
     const shoreK = 1 + 0.15 * Math.min(1, dem.shore / s95);
     const corridorK = 1 + 0.25 * Math.min(1, dem.corridor / c95);
-    // Record the hedonic premium for desk/renderer. Not applied to demandScore
-    // or landPsf — both feed the sim and a spatial premium decouples development
-    // from the order book (see test/orderbook.mjs).
+    // Mean-normalised so the three multipliers redistribute: a waterfront
+    // high-street corner is a premium ON TOP OF its access, and an inland
+    // mid-block lot pays for it. Applied to the score — a premium that is
+    // only painted on the desk is not a premium. The order book is a
+    // citywide composition queue (test/orderbook.mjs); a spatial reshape
+    // that keeps the demand distribution's shape does not fill it.
     const locPremium = (cornerK * shoreK * corridorK) / premMean;
-    const rawDemand = Math.min(1, blend * cachet);
+    const rawDemand = Math.min(1, blend * cachet * locPremium);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
     const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
@@ -482,8 +506,8 @@ export function buildCityData(src) {
       assessedTotal: assessTot,
       demandScore,
       // The three geometric facts citygen measures at the moment the lot is
-      // cut. `locPremium` is the hedonic multiplier (mean 1); not yet applied
-      // to landPsf — see the note above.
+      // cut. `locPremium` is the hedonic multiplier (mean 1), already in
+      // demandScore; landPsf follows the score.
       shoreM: num(p.shorem) ?? 9999,
       corridorM: num(p.corridorm) ?? 9999,
       corner: (num(p.corner) ?? 0) === 1,

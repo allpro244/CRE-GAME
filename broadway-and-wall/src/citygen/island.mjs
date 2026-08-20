@@ -2826,32 +2826,19 @@ export function islandConfig(seed) {
 
   // --- 9. the railway --------------------------------------------------------
   /**
-   * A STATION'S WEIGHT IS ITS RIDERSHIP, and ridership is the people who get on
-   * plus the people who get off: the residents in its catchment plus the jobs
-   * in it. The job surface is the core heat, which is the same surface the
-   * whole generator prices land off. The residential base is very nearly flat
-   * across a built-up island — everybody lives somewhere — so ridership is a
-   * constant plus a multiple of the heat. That is the shape; the two numbers
-   * are measured, not chosen.
+   * A STATION'S WEIGHT IS ITS RIDERSHIP. The authored New Alden / Kestrel
+   * tables regress on core heat (w ≈ 22 + 54·heat, R² 0.67) because those
+   * tables already encoded downtown primacy. Copying that regression onto a
+   * generated railway restates the same hill employment already is — and
+   * parks sit on the same heat — so demand became one circle. Measured: one
+   * local peak and one top-decile cluster on every island, r 0.61–0.94 with
+   * distance from a single best point.
    *
-   * MEASURED, on all sixteen hand-set stations across New Alden and Kestrel
-   * Point: regressing the authored weight on the core heat under each station
-   * gives w = 21.6 + 53.8*heat, RMS residual 15.3 against a spread of 26.4 —
-   * R2 = 0.67. So the heat surface explains two thirds of what the two authored
-   * tables say, and the line below is that regression rounded.
-   *
-   * It is not a better fit than that and it should not pretend to be. The
-   * remaining third is deliberate hand-authoring the surface cannot see: on
-   * Kestrel Point "Custom House" is weighted 44 and "Battery" 100 with the same
-   * heat under both, because one of them is a minor stop two hundred metres
-   * from the principal one. A generated railway has no such history to encode.
-   *
-   * The heat used here is the RAW sum, not generateCity's version of it, which
-   * clamps at 1. The clamp costs the fit a fifth of its R2 (0.60 against 0.67)
-   * because it flattens every downtown station onto the same value — and this
-   * is ranking stations against each other, which is exactly what the clamp
-   * destroys. Nothing downstream reads the absolute number: build.mjs
-   * normalises the transit kernel against its own 95th percentile.
+   * A generated stop is busy for reasons the platform itself has: how many
+   * lines meet, whether it is a terminus, a ferry, a mill wharf, or a
+   * residential origin. Those are different places. Heat is not one of them.
+   * build.mjs still normalises the transit kernel against its own p95, so
+   * only the RANKING of stations matters.
    */
   const Ds = dice(stream(s, 0x57a71));
   const Drl = dice(stream(s, 0x5a11));
@@ -2870,35 +2857,39 @@ export function islandConfig(seed) {
   const addStation = (xy, name) => {
     if (!xy) return;
     if (stations.some((q) => dist(q.xy, xy) < 210)) return;
-    const heat = rawHeat(xy);
     const lines = [];
     if (Math.abs(across(xy)) < 300) lines.push("1");
     if (along(xy) > quantile(0.45)) lines.push("2");
     if (along(xy) < quantile(0.55)) lines.push("A");
     if (leafOf(xy) === kInd) lines.push("W");
-    // WHAT MAKES A STATION BUSY, and it was only ever one thing.
+    // WHAT MAKES A STATION BUSY — the platform, not the heat under it.
     //
-    // Ridership was `22 + 54 * heat`, and heat is proximity to the core — so
-    // every station's weight was a restatement of the same downtown, and the
-    // transit half of the demand surface said exactly what the employment half
-    // said. Measured across six generated islands, demand came out with ONE
-    // local peak and ONE top-decile cluster on every single one, correlating
-    // 0.61 to 0.94 with distance from a single best point. That is the owner's
-    // "all the demand surrounding one specific place", and this is half its
-    // cause.
-    //
-    // An interchange is busy on its own account. Two lines crossing is a reason
-    // to change trains, a reason to open a shop, and a reason for an office
-    // that is not downtown — Shinjuku and Clapham Junction are not central and
-    // are not quiet. So lines served counts, and it counts most where the core
-    // heat is least, because an interchange in the middle of downtown adds
-    // nothing you did not already have.
+    // An interchange is busy on its own account. Two lines crossing is a
+    // reason to change trains and a reason for a shop that is not downtown.
+    // Shinjuku and Clapham Junction are not central and are not quiet. A
+    // mill wharf, a ferry, and a residential origin are each a different
+    // reason, and they sit in different districts. Downtown still gets a
+    // modest terminus bump because it is the head of the spine — not
+    // because rawHeat said so, which is the term that painted the circle.
     const nLines = Math.max(1, (lines.length ? lines : ["1"]).length);
-    const junction = (nLines - 1) * 26 * (1 - 0.55 * heat);
+    const leaf = leafOf(xy);
+    const downtown = cores[0] && dist(xy, cores[0].xy) < 200;
+    const mill = leaf === kInd || /wharf|mill|works|yard/i.test(name);
+    const home = leaf === kResi || (kResi2 && leaf === kResi2);
+    const oldTown = leaf === kOld;
+    const ferryStop = /ferry/i.test(name);
+    const weight = 30
+      + (nLines - 1) * 20
+      + (downtown ? 12 : 0)
+      + (mill ? 16 : 0)
+      + (home ? 12 : 0)
+      + (oldTown ? 10 : 0)
+      + (ferryStop ? 14 : 0)
+      + (railProg.key === "belt" && !downtown ? 8 : 0);
     stations.push({
       name, lines: (lines.length ? lines : ["1"]).join(" "),
       xy: [Math.round(xy[0]), Math.round(xy[1])],
-      weight: Math.round(22 + 54 * heat + junction),
+      weight: Math.round(weight),
     });
   };
   // THE RAILWAY STOPS AT THE PARKS THAT EXIST, whatever they turned out to be.

@@ -73,7 +73,17 @@ for (const seed of SEEDS) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     const e = g.econ, cpi = e.cpi || 1;
-    series.idx.push(e.landIdx / cpi);
+    // NOT DEFLATED, AND THIS LINE USED TO BE. `landIdx` is already a REAL
+    // ratio: its target is (effRentIdx/RENT_BASE) / costIdx, and market.ts
+    // says so in its own comment — "Homogeneous of degree 0 under a pure
+    // nominal scale: rent and cost both x lambda leave the ratio unchanged".
+    // Dividing it by cpi again deflated a real series a second time, so this
+    // harness reported the city land index compounding away to 0.10x over a
+    // century when what it had actually measured was 0.10 x the price level.
+    // The two series below ARE nominal — a building priced off rentIdx, and
+    // landPsfNow, which carries the price level through its texture floor —
+    // so they are correctly deflated and are untouched.
+    series.idx.push(e.landIdx);
     agg.months++;
     if (e.landIdx <= 0.2501) agg.railLo++;
     if (e.landIdx >= 39.99) agg.railHi++;

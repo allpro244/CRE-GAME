@@ -13,6 +13,27 @@
 // A real metro office market spends most of its life within a few points of its
 // natural rate and visits the tails in cycles. If this one is bimodal — pinned
 // or flooded — then the vacancy series is not a market, it is two states.
+//
+// WHAT IT FOUND, at the commit that added it (8 seeds x 60y):
+//   office       median 6.8% against a natural 11.5%. On the frictional floor
+//                27.6% of months, within 2pp of natural only 15.2%.
+//   industrial   median 1.5% against 7.0%. On the floor 89.3% of months, near
+//                natural 2.4%.
+//   retail       median 8.4% against 8.5%, near natural 39.1% — this is what a
+//                market looks like, and it is in the same engine.
+//   multifamily  median 3.3% against 4.5%, near natural 48.5%.
+// US office vacancy has been at or above 12% for most of forty years; national
+// industrial ran 4-7% through the 2010s. A city that spends a quarter of its
+// life at 3.7% office and nine tenths at 1.5% industrial is not visiting the
+// tight tail, it is living in it.
+//
+// The mechanism, and why it is a rail rather than a rate: the frictional floor
+// is imposed as a clamp on cityVac. A real frictional vacancy is a RESIDENCE
+// TIME — space stands empty because leases end and re-letting takes months of
+// marketing, negotiation and fit-out — so it falls out of the roll and the
+// latency instead of being asserted underneath them. Imposed as a floor, it
+// becomes the answer whenever demand outruns what the city can build, and the
+// shortage escalator then runs off it.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";

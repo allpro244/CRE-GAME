@@ -104,7 +104,8 @@
     "vactape": "node test/vac-tape.mjs",
     "tape": "node test/tape.mjs",
     "liquidity": "node test/liquidity.mjs",
-    "glut": "node test/glut.mjs"
+    "glut": "node test/glut.mjs",
+    "vacdist": "node test/vacdist.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

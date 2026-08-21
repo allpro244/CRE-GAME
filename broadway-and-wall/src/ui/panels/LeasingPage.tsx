@@ -8,7 +8,7 @@ import {
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN,
   AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
-  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy,
 } from "@/engine/leasing";
 import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
@@ -115,11 +115,14 @@ export function LeasingPage() {
     );
   }
   // Portfolio occupancy over LETTABLE feet, the same denominator every row
-  // uses. Totalling raw floor area here while the rows quoted lettable area
-  // would put two answers to one question on one screen.
+  // uses — from the SAME function the top bar reads, because two surfaces
+  // doing their own arithmetic is how this screen totalled gross-minus-
+  // remainder while its own rows quoted rentable-minus-remainder, and the
+  // top bar quoted a third answer over gross. One function, one answer.
   const totRemainder = rows.reduce((a, r) => a + r.or.remainderSf, 0);
-  const totSf = rows.reduce((a, r) => a + r.rec.bldgArea, 0) - totRemainder;
-  const totLeased = rows.reduce((a, r) => a + r.leased, 0);
+  const po = portfolioOccupancy(game, parcels);
+  const totSf = po?.lettableSf ?? 0;
+  const totLeased = po?.leasedSf ?? 0;
   const totRoll = rows.reduce((a, r) => a + r.rentRoll, 0);
   const totRolling = rows.reduce((a, r) => a + r.rolling, 0);
 

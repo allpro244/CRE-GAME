@@ -27,6 +27,7 @@
     "econ": "node test/run.mjs --econ",
     "stats": "node test/run.mjs --stats",
     "playthrough": "node test/playthrough.mjs",
+    "playtest": "node test/playtest.mjs",
     "playdev": "node test/run.mjs --playdev",
     "devyield": "node test/run.mjs --devyield",
     "leaseup": "node test/run.mjs --leaseup",

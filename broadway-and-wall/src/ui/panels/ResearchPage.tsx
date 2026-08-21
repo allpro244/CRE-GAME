@@ -7,7 +7,7 @@ import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { sf, pct } from "@/ui/format";
 import { CompsSheet } from "@/ui/panels/CompsSheet";
 import { TheStreet } from "@/ui/panels/StreetDesk";
-import { Landlords } from "@/ui/panels/LandlordsDesk";
+import { Owners } from "@/ui/panels/OwnersDesk";
 import { BuildingDatabase } from "@/ui/panels/MarketPage";
 import { creditWord, pendingRTab, clearPendingRTab, Big, Row } from "@/ui/panels/shared";
 import { resolveRec } from "@/engine/value";
@@ -26,10 +26,18 @@ export function ResearchPage() {
   // SUB-TABS, NOT A SCROLL. Research had eight collapsible sections stacked in
   // one column, and finding the banks meant scrolling past everything above
   // them. Each section is a tab now; one is on screen at a time.
-  // The register came out of this list because The street already answers who
-  // owns what — firm by firm, every deed, inside the firm's own balance sheet
-  // — and two lists of the same deeds is one list the player has to choose
-  // between. "Stock" became "Properties" because the word meant the standing
+  // THE REGISTER IS BACK, AND IT IS THE WHOLE REGISTER. It came off this list
+  // once, on the argument that The street already answered who owns what —
+  // "firm by firm, every deed, inside the firm's own balance sheet — and two
+  // lists of the same deeds is one list the player has to choose between".
+  // That was right about the duplication and wrong about the coverage: the
+  // street's dozen-odd firms hold a tenth of this city, so the list it
+  // answered for was never the list of owners. `Owners` is every name in town
+  // now, firms and families in one table, and they are not two lists of the
+  // same deeds because no deed appears twice. The street stays because a
+  // competitor has things a landlord does not — dry powder, a covenant, a
+  // fund being raised — but both tabs open the same drawer.
+  // "Stock" became "Properties" because the word meant the standing
   // building stock and reads as equities; the `stock` key is left alone
   // because nothing persists it and renaming it would only give one tab two
   // names in one file.
@@ -52,7 +60,7 @@ export function ResearchPage() {
   const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
   useEffect(() => { clearPendingRTab(); }, []);
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["districts", "Districts"], ["trades", "Trades"],
-    ["people", "People"], ["street", "The street"], ["landlords", "Landlords"], ["stock", "Properties"], ["comps", "Prints"]];
+    ["people", "People"], ["street", "The street"], ["owners", "Owners"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -299,8 +307,8 @@ export function ResearchPage() {
           <TheStreet />
         </div>)}
         {rtab === "people" && (<PeopleLookup />)}
-        {rtab === "landlords" && (<div>
-          <Landlords />
+        {rtab === "owners" && (<div>
+          <Owners />
         </div>)}
         {rtab === "stock" && (<div>
           <BuildingDatabase />

@@ -21,7 +21,7 @@ export { TheStreet, rivalEquity, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@
 export { FundDesk } from "@/ui/panels/FundDesk";
 export { CreditLine } from "@/ui/panels/CreditLineDesk";
 export { HousePolicy } from "@/ui/panels/HousePolicyDesk";
-export { Landlords } from "@/ui/panels/LandlordsDesk";
+export { Owners, OwnerStatement } from "@/ui/panels/OwnersDesk";
 
 /**
  * The saves page. The slot manager used to live at the bottom of the Books

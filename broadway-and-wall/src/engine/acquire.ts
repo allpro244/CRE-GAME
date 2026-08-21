@@ -172,6 +172,14 @@ export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kin
   // own more than one building and remember what you did on the last one.
   const held = holderOf(s, parcels, bbl);
   if (held) return { kind: held.kind, name: held.name, holderId: held.id };
+  // AND THIS LINE IS NOW A GUARD RATHER THAN A CASE. The register covers every
+  // deed in the city — the dirt included, since engine/ownership.ts — so the
+  // only ways to reach an archetype with no name behind it are a town with no
+  // built stock to build a register from, and land the city itself has taken.
+  // It stays because a seller kind must always exist for the negotiation to
+  // read; it should never be what the player is shown. If an ordinary
+  // building starts printing "a local family owner" with nobody attached,
+  // this is the line that is firing and something upstream has broken.
   const kind = anonymousOwner(resolveRec(parcels, s, bbl), s.month, r);
   return { kind, name: SELLERS[kind].label };
 }

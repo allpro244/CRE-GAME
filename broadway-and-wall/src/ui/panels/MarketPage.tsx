@@ -3,10 +3,10 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { assetValue, marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
 import { streetBookStats } from "@/engine/portfoliosale";
-import { holderOf, isCold } from "@/engine/owners";
+import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
 import { LineChart } from "@/ui/Chart";
-import { marketAppetite, ownerOf, gradeOf } from "@/engine/rivals";
+import { marketAppetite, gradeOf } from "@/engine/rivals";
 import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engine/broker";
 import { usd, sf, pct } from "@/ui/format";
 import { BrokerCalls } from "@/ui/panels/broker";
@@ -29,11 +29,13 @@ export function BuildingDatabase() {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
       const h = game.holdings[bbl];
-      // NOBODY IS CALLED "PRIVATE". Rival firms have names and so, now, does
-      // every private holder in the register — which is the whole point of it:
-      // a list of the fifty biggest buildings in town used to be fifty rows of
-      // the same word.
-      const own = h ? "You" : (ownerOf(game, bbl)?.name ?? holderOf(game, parcels, bbl)?.name ?? "private");
+      // NOBODY IS CALLED "PRIVATE". Rival firms have names and so does every
+      // private holder in the register — which is the whole point of it: a
+      // list of the fifty biggest buildings in town used to be fifty rows of
+      // the same word. The fallback is gone rather than merely unlikely:
+      // `ownerAt` answers for every deed in the city, so a row that cannot
+      // name an owner is a bug to be seen and not a word to be printed.
+      const own = h ? "You" : (ownerAt(game, parcels, bbl)?.name ?? "—");
       // Your own buildings price on the condition you have actually let them
       // drift to; everyone else's on the street's grade, as before.
       const cond = h?.condition ?? gradeOf(game, rec);
@@ -711,8 +713,8 @@ export function MarketPage() {
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
                 const yours = "mine" in li;
                 const h = yours ? game.holdings[li.bbl] : null;
-                const held = yours ? null : holderOf(game, parcels, li.bbl);
-                const notToYou = !!held && isCold(game, held.id);
+                const held = yours ? null : ownerAt(game, parcels, li.bbl);
+                const notToYou = !!held && held.cold;
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}
                     onKeyDown={(e) => { if (e.key === "Enter") go(li.bbl); }}

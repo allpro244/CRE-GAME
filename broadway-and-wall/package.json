@@ -69,7 +69,7 @@
     "zoning": "node test/zoning.mjs",
     "cycle-dev": "node test/cycle-dev.mjs",
     "orderbook": "node test/orderbook.mjs",
-    "no-playtest": "node test/attention-route.mjs && node tools/rng-audit.mjs && node test/holder-listing.mjs && node test/seller-stats.mjs && node test/zoning.mjs && node test/firms.mjs && node test/variance.mjs && node test/cycle-dev.mjs && node test/orderbook.mjs",
+    "no-playtest": "node test/attention-route.mjs && node tools/rng-audit.mjs && node test/holder-listing.mjs && node test/seller-stats.mjs && node test/zoning.mjs && node test/firms.mjs && node test/variance.mjs && node test/cycle-dev.mjs && node test/orderbook.mjs && node test/ownership.mjs",
     "firms": "node test/firms.mjs",
     "rates": "node test/rate-stress.mjs",
     "audit": "node tools/econaudit.mjs",
@@ -105,7 +105,8 @@
     "tape": "node test/tape.mjs",
     "liquidity": "node test/liquidity.mjs",
     "glut": "node test/glut.mjs",
-    "vacdist": "node test/vacdist.mjs"
+    "vacdist": "node test/vacdist.mjs",
+    "ownership": "node test/ownership.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

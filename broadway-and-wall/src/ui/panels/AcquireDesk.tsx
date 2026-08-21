@@ -16,6 +16,7 @@ import {
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
+import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
@@ -848,8 +849,25 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
         </div>
       )}
+      {/* ACROSS THE TABLE — and now with their accounts on it. The blurb says
+          what kind of counterparty this is, which is what decides how the
+          conversation goes; the line under it says what they own, what they
+          owe on it and whether the book pays for itself, which is what decides
+          whether they need this deal. Both halves used to exist only for the
+          dozen firms on the street. */}
       <div className="hint" style={{ marginTop: 6 }}>
         Across the table: <strong>{seller.name}</strong>. {sellerProfile(seller.kind).blurb}
+        {(() => {
+          const o = ownerAt(game, parcels, bbl);
+          if (!o || o.publicOwner) return null;
+          return (
+            <div className="dim mono" style={{ marginTop: 3 }}>
+              {o.book.length} deed{o.book.length === 1 ? "" : "s"} · {usd(o.sheet.assets)} of property ·{" "}
+              {o.sheet.debt > 0 ? `${(o.sheet.ltv * 100).toFixed(0)}% LTV` : "no debt"} ·{" "}
+              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)} a year after debt</span>
+            </div>
+          );
+        })()}
       </div>
       {talks && (
         <>

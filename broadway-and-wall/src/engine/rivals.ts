@@ -1082,7 +1082,7 @@ export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: numbe
 // How hard each kind of firm works its buildings. An institution runs a
 // leasing team and a capital plan; a levered opportunistic shop defers the
 // roof because the roof is not in this year's model.
-const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
+export const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
   family:        { lease: 0.9,  capex: 1.15 },
   core:          { lease: 1.15, capex: 1.2 },
   opportunistic: { lease: 0.85, capex: 0.45 },

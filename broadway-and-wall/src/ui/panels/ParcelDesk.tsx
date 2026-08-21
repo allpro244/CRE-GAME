@@ -11,22 +11,20 @@ import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec,
 import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
-import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf } from "@/engine/leasing";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
-import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { fundableNow } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
-import { ownerOf } from "@/engine/rivals";
+import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
-import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -37,6 +35,23 @@ export {
 export { RefiSection } from "@/ui/panels/RefiDesk";
 export { DevelopSection, ReuseSection, capStack } from "@/ui/panels/DevelopDesk";
 export type { Stack } from "@/ui/panels/DevelopDesk";
+
+// WHAT EACH KIND OF SHOP WANTS, which is what decides whether they are your
+// competition on this building or your buyer for it next year. Lifted out of
+// the ownership block above when that block stopped having three branches.
+const DOCTRINE: Record<string, string> = {
+  family: "They hold for generations and sell when a generation does — not when the market does.",
+  core: "Committee money. Stabilised income only, disciplined at the top, gone in a crunch.",
+  opportunistic: "They win the last three years of every cycle and pay for it in the next one.",
+  developer: "They buy dirt and put buildings on it. Watch which corners they are assembling.",
+  merchant: "They build to sell. Everything they own is for sale at the right number.",
+  pe: "An IRR clock is running. They must transact — patience is the one thing they cannot hold.",
+  reit: "Listed money: they buy when the stock is up and stop the day it is not.",
+  vulture: "They only appear when something is broken. If they are calling, check your covenants.",
+  owneruser: "They occupy what they own. Price is almost beside the point; the building is the business.",
+  foreign: "Offshore capital. Slow to decide, slower to sell, and they do not return calls in a crisis.",
+  slumlord: "Minimum in, maximum out. The buildings say so.",
+};
 
 function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
   // Closed card: do not subscribe to `game` at all — every LOI/cash write used
@@ -182,100 +197,64 @@ function ParcelPanelInner({
         );
       })()}
 
-      {/* WHO OWNS IT. Every building in this city has an owner and for most of
-          them that owner is a named firm with a balance sheet you can read —
-          and there was nowhere on the record that said so. Knowing that the
-          corner you want belongs to the shop that is three points over its
-          covenant is the difference between a cold call and a bid. */}
+      {/* WHO OWNS IT, AND WHAT THEIR ACCOUNTS LOOK LIKE.
+          Every deed in this city has an owner and now every one of them has a
+          balance sheet you can read. This block used to have three branches: a
+          named firm got a doctrine and a link to its books, a named private
+          holder got a note and a relationship, and everything else — the dirt,
+          and anything the register did not reach — got an ARCHETYPE. "It sits
+          in an estate" is a good sentence and it is not an owner: there was
+          nobody behind it to look up, nothing they owned elsewhere, and no way
+          to find out what they could afford or what they already owed. One
+          branch now, because there is one kind of owner. See
+          engine/ownership.ts. */}
       {on("summary") && (() => {
         if (holding) return null;
-        const own = ownerOf(game, selectedBBL);
-        // AND WHEN THERE IS NO NAME ON IT. Most of this city belongs to nobody
-        // you can look up, and the record answered that with silence — which is
-        // not what a broker would tell you. He would tell you it is an estate,
-        // or a family that has had it since the war, or a fund three states
-        // away, because the building itself says so: its age, its size, its lot
-        // and the block it stands on. That is also the first thing you learn
-        // about how hard the door is to open, which is why it belongs up here
-        // beside the address and not inside a negotiation you have not opened.
-        if (!own) {
-          // ...AND MOST OF THE TIME THERE IS A NAME ON IT NOW. The archetype is
-          // still what a broker leads with — it is the first thing you learn
-          // about how hard the door is — but it belongs to somebody, that
-          // somebody owns other buildings, and how you have treated them
-          // before is the most important fact in the room. See engine/owners.ts.
-          const held = holderOf(game, parcels, selectedBBL);
-          const kind = sellerOf(game, parcels, selectedBBL).kind;
-          if (!held) return <div className="hint">{sellerProfile(kind).holds}</div>;
-          const book = holdingsOf(game, parcels, held.id);
-          const rel = relOf(game, held.id);
-          const cold = isCold(game, held.id);
-          return (
-            <div className="hint">
-              Owned by <strong>{held.name}</strong>
-              {book.length > 1 && <span> — {book.length} buildings in town</span>}.
-              <div style={{ marginTop: 3 }}>{held.note}</div>
-              <div style={{ marginTop: 3 }} className={cold ? "neg" : (rel.deals ?? 0) > 0 ? "" : "dim"}>
-                {standingWith(game, held.id)}
-              </div>
-              {book.length > 1 && (
-                <div className="dim" style={{ marginTop: 3 }}>
-                  {book.filter((b) => b !== selectedBBL).slice(0, 4).map((b) => (
-                    <span key={b}>
-                      <a className="lnk" onClick={(e) => { e.stopPropagation(); useStore.getState().focus(b, true); }}>
-                        {parcels[b]?.address ?? b}
-                      </a>
-                      {" · "}
-                    </span>
-                  ))}
-                  {book.length > 5 ? `and ${book.length - 5} more` : ""}
-                </div>
-              )}
-            </div>
-          );
-        }
-        // A FIRM READS LIKE A PERSON NOW, the way a holder already did: the
-        // doctrine a broker would lead with, who actually runs it, and what
-        // has passed between you — because "Owned by Kestrel Capital" is a
-        // label, and "opportunistic, run by a 61-year-old, they have beaten
-        // you to two deals" is the first three facts you need at the table.
-        const principal = game.rivalPrincipals?.[own.id];
-        const age = principal ? Math.floor((game.month - (principal.bornM ?? 0)) / 12) : undefined;
-        const tie = game.street?.[own.id];
-        const DOCTRINE: Record<string, string> = {
-          family: "They hold for generations and sell when a generation does — not when the market does.",
-          core: "Committee money. Stabilised income only, disciplined at the top, gone in a crunch.",
-          opportunistic: "They win the last three years of every cycle and pay for it in the next one.",
-          developer: "They buy dirt and put buildings on it. Watch which corners they are assembling.",
-          merchant: "They build to sell. Everything they own is for sale at the right number.",
-          pe: "An IRR clock is running. They must transact — patience is the one thing they cannot hold.",
-          reit: "Listed money: they buy when the stock is up and stop the day it is not.",
-          vulture: "They only appear when something is broken. If they are calling, check your covenants.",
-          owneruser: "They occupy what they own. Price is almost beside the point; the building is the business.",
-          foreign: "Offshore capital. Slow to decide, slower to sell, and they do not return calls in a crisis.",
-          slumlord: "Minimum in, maximum out. The buildings say so.",
-        };
+        const o = ownerAt(game, parcels, selectedBBL);
+        if (!o) return null;
+        if (o.publicOwner) return <div className="hint">{o.note}</div>;
+        const others = o.book.filter((b) => b !== selectedBBL);
         return (
-          <div className="hint" style={{ cursor: "pointer" }}
-            title="Open this firm's balance sheet on The street."
-            onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}>
-            Owned by <strong>{own.name}</strong>
-            {principal && <span> — {principal.name}{age !== undefined && age > 0 ? `, ${age}` : ""}</span>}
-            {own.failedM !== undefined
-              ? ". In receivership — the book is being sold down."
-              : (own.stressMs ?? 0) > 0
-                ? " — and they are selling under pressure."
-                : `. ${own.bbls.length} building${own.bbls.length === 1 ? "" : "s"} in town.`}
-            {own.failedM === undefined && DOCTRINE[own.style] && (
-              <div style={{ marginTop: 3 }}>{DOCTRINE[own.style]}</div>
+          <div className="hint">
+            <div style={{ cursor: "pointer" }}
+              title="Open this owner's balance sheet and income statement on the register."
+              onClick={() => { openResearchOn("owners"); useStore.getState().setPage("research"); }}>
+              Owned by <strong>{o.name}</strong>
+              <span className="dim"> · {o.operator && o.style ? STYLE_WORD[o.style] ?? o.style : o.kind}</span>
+              {o.book.length > 1 && <span> — {o.book.length} deeds in town</span>}.
+              {o.failedM !== undefined
+                ? " In receivership — the book is being sold down."
+                : o.stressed ? " They are selling under pressure." : ""}
+            </div>
+            {/* THE THREE NUMBERS THAT DECIDE HOW THE CONVERSATION GOES: what
+                they are worth, how much of it is the bank's, and whether the
+                book pays for itself. An owner whose cash flow is negative is
+                an owner with a reason to talk, and that was invisible on nine
+                buildings in ten. */}
+            <div className="dim mono" style={{ marginTop: 3 }}>
+              {usd(o.sheet.assets)} of property ·{" "}
+              {o.sheet.debt > 0 ? `${usd(o.sheet.debt)} of debt at ${(o.sheet.ltv * 100).toFixed(0)}% LTV` : "owned free and clear"} ·{" "}
+              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)} a year after debt</span>
+            </div>
+            {(o.note || (o.operator && o.style && DOCTRINE[o.style])) && (
+              <div style={{ marginTop: 3 }}>
+                {o.operator && o.style ? DOCTRINE[o.style] ?? o.note : o.note}
+              </div>
             )}
-            {tie && (tie.deals > 0 || tie.beats > 0 || tie.insults > 0) && (
+            <div style={{ marginTop: 3 }} className={o.cold ? "neg" : o.rel.deals > 0 ? "" : "dim"}>
+              {o.standing}
+            </div>
+            {others.length > 0 && (
               <div className="dim" style={{ marginTop: 3 }}>
-                {[
-                  tie.deals > 0 ? `${tie.deals} deal${tie.deals === 1 ? "" : "s"} done between you` : "",
-                  tie.beats > 0 ? `they have beaten you to ${tie.beats}` : "",
-                  tie.insults > 0 ? `and they remember ${tie.insults} lowball${tie.insults === 1 ? "" : "s"}` : "",
-                ].filter(Boolean).join(" · ")}.
+                {others.slice(0, 4).map((b) => (
+                  <span key={b}>
+                    <a className="lnk" onClick={(e) => { e.stopPropagation(); useStore.getState().focus(b, true); }}>
+                      {parcels[b]?.address ?? b}
+                    </a>
+                    {" · "}
+                  </span>
+                ))}
+                {others.length > 4 ? `and ${others.length - 4} more` : ""}
               </div>
             )}
           </div>

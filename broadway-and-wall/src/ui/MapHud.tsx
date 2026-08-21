@@ -3,7 +3,7 @@ import { useStore, type MapFilter } from "@/state/store";
 import { mapHudSnapshot } from "@/ui/mapHudData";
 import { developableSites } from "@/ui/developable";
 import { sf } from "@/ui/format";
-import { FIRM_TINT } from "@/map/MapView";
+import { FIRM_TINT, HOLDER_TINT } from "@/map/MapView";
 import "./mapHudLegend.css";
 
 /**
@@ -24,6 +24,17 @@ const tintCss = (t: [number, number, number]): string => {
 // effect. Copied because MapView exports only the firm palette; if the gold
 // there moves, this swatch is a month behind until it moves too.
 const HOLDINGS_TINT: [number, number, number] = [1.28, 1.1, 0.72];
+
+// What each private tint means, in the order a reader wants them: the ones
+// with a clock on them first. Words rather than the engine's `SellerKind`
+// values, because "an estate" is what a broker says and "estate" is a type.
+const HOLDER_KEY: [string, string][] = [
+  ["estate", "an estate — heirs and a clock"],
+  ["institution", "a fund or insurer"],
+  ["partnership", "a partnership"],
+  ["local", "an old local family"],
+  ["developer", "whoever built it"],
+];
 // Lots on the market read teal off the LOT, not the massing — the listed
 // case in gameLayers (src/map/style.ts) — and at legend zoom the lot is
 // what carries. Same copy caveat as the gold.
@@ -132,6 +143,23 @@ export default function MapHud() {
                 </span>
               )}
             </button>
+          ))}
+          {/* AND THE PRIVATE STOCK, which is most of the map. The firms above
+              get a colour each because you compete with them by name; two
+              hundred families cannot, so they are keyed by what KIND of hand
+              a block is in — which is the question a city-wide ownership
+              picture is actually read for. Where the estates are is a map
+              worth having. */}
+          <div className="map-hud-label" style={{ marginTop: 6 }}>Private holders</div>
+          {HOLDER_KEY.map(([kind, label]) => (
+            <div className="map-hud-legend-row" key={kind}>
+              <span
+                className="map-hud-swatch"
+                style={{ background: tintCss(HOLDER_TINT[kind]) }}
+                aria-hidden="true"
+              />
+              <span className="map-hud-legend-name">{label}</span>
+            </div>
           ))}
           <div className="map-hud-legend-row">
             <span

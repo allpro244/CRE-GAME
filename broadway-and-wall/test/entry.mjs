@@ -45,6 +45,9 @@ export const MODULES = [
   // owners carries the register of named private holders: who owns what, what
   // they think of you, and when they leave the market.
   "owners",
+  // ownership is the merged view over both registers — every deed in town, its
+  // owner, and that owner's balance sheet and income statement.
+  "ownership",
   // supply is the one project queue shared by map deliveries and the economy.
   "supply",
   // tax carries property-assessment appeals and board decisions.

@@ -332,3 +332,32 @@ export function LocSplitHint({
     : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}% (index + 400)`;
   return <div className="hint">{text}</div>;
 }
+
+// where each style stops borrowing — mirrored from the engine so the sheet can
+// say what their own covenant is, not just where they are against it
+export const STYLE_MAX: Record<string, number> = {
+  family: 0.50, core: 0.65, opportunistic: 0.88, developer: 0.78,
+  merchant: 0.80, pe: 0.75, reit: 0.58, vulture: 0.60,
+  owneruser: 0.55, foreign: 0.35, slumlord: 0.72,
+};
+
+export const CONDITION_WORD: Record<string, string> = {
+  good: "well kept", standard: "adequate", worn: "run down", obsolete: "finished",
+};
+
+// What the street calls each kind of shop. The point of the phrasing is that
+// it tells you what they WANT, because that is what decides whether they are
+// your competition on this building or your buyer for it next year.
+export const STYLE_WORD: Record<string, string> = {
+  family: "old money",
+  core: "institutional",
+  opportunistic: "opportunistic",
+  developer: "developer",
+  merchant: "merchant builder",
+  pe: "private equity · IRR clock",
+  reit: "listed REIT",
+  vulture: "distressed specialist",
+  owneruser: "owner-occupier",
+  foreign: "offshore capital",
+  slumlord: "milking the stock",
+};

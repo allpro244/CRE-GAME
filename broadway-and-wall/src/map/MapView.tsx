@@ -9,6 +9,8 @@ import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
+import { ownerIndex } from "@/engine/ownership";
+import { holderOf } from "@/engine/owners";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 import Badges from "./Badges";
@@ -74,6 +76,35 @@ export const FIRM_TINT: [number, number, number][] = [
   [1.20, 0.92, 0.70],   // clay
   [0.86, 0.86, 0.86],   // grey
 ];
+
+/**
+ * ...AND ONE COLOUR PER KIND OF PRIVATE HOLDER, for the other nine buildings
+ * in ten.
+ *
+ * The Owners lens was called the Owners lens and painted the firms: a dozen
+ * books, a tenth of the floor area, and the rest of the city left blank. That
+ * blankness was the map telling you the same thing the parcel card used to —
+ * that most of this town belongs to nobody in particular — and it was never
+ * true. The register names every deed (engine/ownership.ts), so the lens can
+ * fill the map in.
+ *
+ * BY KIND RATHER THAN BY NAME, because there are two hundred private holders
+ * and eight colours, and a map with two hundred colours on it is a map with
+ * none. What a player actually reads off a city-wide ownership picture is
+ * where the ESTATES are, which blocks a fund has been quietly accumulating,
+ * and which corners have been in one family since the war — and that is a
+ * question about kind, not about which particular family. Deliberately paler
+ * than FIRM_TINT: a competitor's book has to stay the loudest thing on the
+ * map after your own gold.
+ */
+export const HOLDER_TINT: Record<string, [number, number, number]> = {
+  estate: [1.10, 0.96, 0.94],        // faded rose — the ones that are coming to market
+  institution: [0.94, 0.98, 1.10],   // cold blue — committees and mandates
+  partnership: [1.06, 1.00, 0.92],   // sand
+  local: [0.96, 1.06, 0.96],         // pale green — the families
+  developer: [1.08, 1.04, 0.90],     // pale ochre — they built it
+  lender: [1.00, 0.94, 0.94],        // ash — a servicer holding a file
+};
 
 // The two cameras are READ FROM THE DATA, not written down here. The pipeline
 // puts the city's bounding box and its demand-weighted core into the manifest,
@@ -813,12 +844,29 @@ export default function MapView() {
     const tints = new Map<string, [number, number, number]>();
     if (game) for (const l of game.listings) tints.set(l.bbl, [1.24, 0.9, 0.84]);   // on the market
     // THE OWNERS LENS. Who holds what, across the whole town, in one look —
-    // a firm's book is a shape on a map, and reading that shape is how you
-    // work out what somebody is assembling and where they will not sell.
-    if (game && lens === "owners") {
-      for (const r of game.rivals ?? []) {
-        const c = FIRM_TINT[(game.rivals ?? []).indexOf(r) % FIRM_TINT.length];
-        for (const b of r.bbls) tints.set(b, c);
+    // a book is a shape on a map, and reading that shape is how you work out
+    // what somebody is assembling and where they will not sell.
+    //
+    // EVERY DEED, NOT JUST THE FIRMS'. This painted `game.rivals` and stopped,
+    // which left nine buildings in ten uncoloured under a lens named for
+    // ownership — the map making the same claim the parcel card used to make,
+    // that most of the city belongs to nobody worth naming. The register
+    // answers for all of it now, so the lens does too: firms keep their
+    // per-firm tints because they are who you compete with, and the private
+    // stock is painted by KIND, which is what a city-wide ownership picture is
+    // actually read for.
+    if (game && parcels && lens === "owners") {
+      const idx = ownerIndex(game, parcels);
+      for (const [id, book] of idx.books) {
+        const r = idx.rivals.get(id);
+        if (r) {
+          const c = FIRM_TINT[(game.rivals ?? []).indexOf(r) % FIRM_TINT.length];
+          for (const b of book) tints.set(b, c);
+          continue;
+        }
+        const h = holderOf(game, parcels, book[0]);
+        const c = h ? HOLDER_TINT[h.kind] : undefined;
+        if (c) for (const b of book) tints.set(b, c);
       }
     }
     // Assembled plates get a soft teal lift on the mesh so the join is
@@ -857,7 +905,7 @@ export default function MapView() {
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens, mapFilter]);
+  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //

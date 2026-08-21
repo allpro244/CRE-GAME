@@ -2876,6 +2876,16 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // irrelevant outside the original approach.
   const related: string[] = [];
   for (const bbl of bbls) {
+    // BUILDINGS ONLY, and the filter is not an optimisation. The pitch loop
+    // below already refuses to ring anybody about dirt, so a vacant lot in
+    // this pool is a draw that can only be thrown away — and worse, it is a
+    // draw that lands on a DIFFERENT building than it would have. The
+    // register covers land now (engine/ownership.ts), so without this line
+    // closing one deal with a family that also owns a car park would quietly
+    // change which of their buildings your broker rang you about. Matching
+    // the pitch loop's own test keeps the channel about what it is about.
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     const held = holderOf(s, parcels, bbl);
     if (!held || isCold(s, held.id) || (relOf(s, held.id).deals ?? 0) <= 0) continue;
     related.push(bbl);

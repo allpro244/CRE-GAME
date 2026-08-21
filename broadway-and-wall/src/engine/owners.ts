@@ -58,6 +58,7 @@ import type { GameState, Rival, SellerKind } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, holdingValue } from "./value";
 import { ownerOf } from "./rivals";
+import { isCivicLand } from "./demand";
 import { makeRivalPrincipal } from "./people";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
@@ -316,7 +317,7 @@ function tierOf(rec: ParcelRecord, r: number): HolderTier {
 // is immutable and identity-stable for the run, so a WeakMap is the exact key
 // and lets abandoned towns be collected without a manual size cap.
 const REGISTRY = new WeakMap<ParcelTable, Map<number, Holder[]>>();
-const TIER_POOLS = new WeakMap<Holder[], Record<HolderTier, Holder[]>>();
+const TIER_POOLS = new WeakMap<Holder[], { all: Record<HolderTier, Holder[]>; dirt: Record<HolderTier, Holder[]> }>();
 export function register(s: GameState, parcels: ParcelTable): Holder[] {
   let bySeed = REGISTRY.get(parcels);
   if (!bySeed) {
@@ -332,25 +333,66 @@ export function register(s: GameState, parcels: ParcelTable): Holder[] {
 }
 
 /**
+ * WHICH TIER OF HOLDER SITS ON A LOT OF THIS SIZE.
+ *
+ * Dirt is not banded the way buildings are, because there is no floor area to
+ * band it by — what makes a vacant parcel a major holding is that it is a
+ * SITE: big enough that somebody is waiting on it deliberately. A quarter-acre
+ * downtown is an assemblage in progress and belongs to whoever can afford to
+ * wait; a 2,000-foot gap between two walk-ups is the corner shop's yard.
+ */
+function landTierOf(rec: ParcelRecord, r: number): HolderTier {
+  const lot = rec.lotArea ?? 0;
+  if (lot >= 40_000) return r < 0.70 ? "major" : "middle";
+  if (lot >= 12_000) return r < 0.25 ? "major" : r < 0.80 ? "middle" : "small";
+  if (lot >= 4_000) return r < 0.08 ? "major" : r < 0.45 ? "middle" : "small";
+  return r < 0.12 ? "middle" : "small";
+}
+
+/**
  * WHO HOLDS THIS DEED. Null for a lot the player or a named firm owns, and for
- * bare land — dirt is held by somebody waiting for something, and the game
- * already says so without needing a family attached to it.
+ * land the city has taken — a park site belongs to the public and is not for
+ * sale by anybody.
+ *
+ * DIRT USED TO RETURN NULL TOO, and that was the last anonymous corner of the
+ * map. The reasoning was that "dirt is held by somebody waiting for something,
+ * and the game already says so without needing a family attached to it" — but
+ * a player looking at a vacant lot got an archetype and no name, no book and
+ * no way to find out who else that person owns, which is precisely the fact
+ * that decides whether the site next door can ever be assembled. A land bank
+ * is not anonymous in any real town; it is the most talked-about holding on
+ * the block, because everybody knows who is sitting on it and roughly what
+ * they are waiting for.
+ *
+ * INSTITUTIONS ARE FILTERED OUT OF THE DIRT POOL, which is the one real
+ * difference between holding a building and holding a site. A life company
+ * does not carry non-earning land in a portfolio it has to report a yield on;
+ * families, partnerships and builders do, and between them they are who owns
+ * the vacant frontage in every city that has any.
  */
 export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
   const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) return null;
+  if (!rec) return null;
   if (s.holdings[bbl] || ownerOf(s, bbl)) return null;
+  if (isCivicLand(s, bbl)) return null;
   const reg = register(s, parcels);
   if (!reg.length) return null;
+  const dirt = rec.class === "land" || !(rec.bldgArea > 0);
   const r = hash01(bbl + ":t");
-  const tier = tierOf(rec, r);
+  const tier = dirt ? landTierOf(rec, r) : tierOf(rec, r);
   let pools = TIER_POOLS.get(reg);
   if (!pools) {
-    pools = { major: [], middle: [], small: [] };
-    for (const h of reg) pools[h.tier].push(h);
+    const all: Record<HolderTier, Holder[]> = { major: [], middle: [], small: [] };
+    for (const h of reg) all[h.tier].push(h);
+    const dirtPools: Record<HolderTier, Holder[]> = { major: [], middle: [], small: [] };
+    for (const t of ["major", "middle", "small"] as HolderTier[]) {
+      dirtPools[t] = all[t].filter((h) => h.kind !== "institution");
+      if (!dirtPools[t].length) dirtPools[t] = all[t];
+    }
+    pools = { all, dirt: dirtPools };
     TIER_POOLS.set(reg, pools);
   }
-  const pool = pools[tier];
+  const pool = (dirt ? pools.dirt : pools.all)[tier];
   if (!pool.length) return reg[Math.floor(hash01(bbl) * reg.length)];
   // AND CONCENTRATED WITHIN THE TIER TOO. A uniform pick makes every holder in
   // a band the same size, which is the one shape ownership never has: inside
@@ -372,20 +414,15 @@ export function holdingsOf(s: GameState, parcels: ParcelTable, id: string): stri
   return out;
 }
 
-/** What a holder's book is worth, for the panel and for the life events. */
-export function bookOf(s: GameState, parcels: ParcelTable, id: string): { bbls: string[]; value: number; sf: number } {
-  const bbls = holdingsOf(s, parcels, id);
-  let value = 0, sf = 0;
-  for (const b of bbls) {
-    const rec = resolveRec(parcels, s, b);
-    if (!rec) continue;
-    sf += rec.bldgArea ?? 0;
-    value += holdingValue(rec, s.econ, {
-      bbl: b, tenants: [], occ: 0, condition: "standard", boughtM: 0, costBasis: 0, programsDone: {},
-    } as never, s.month);
-  }
-  return { bbls, value, sf };
-}
+// `bookOf` used to sit here: what a holder's book was worth, walked with
+// `holdingValue` against a synthetic empty Holding. It has gone, and it went
+// for a reason worth writing down rather than for tidiness. The register has
+// real accounts now (engine/ownership.ts) and it marks a book with
+// `assetValue` at `gradeOf` — the same appraisal the parcel card shows the
+// player. Two functions answering "what is this holder's book worth" with two
+// different valuation calls is the fault CLAUDE.md names third: the same
+// quantity with two answers, and the player shown a decision that is not the
+// decision they are taking. Nothing read it once the panel moved over.
 
 // ---------------------------------------------------------------- the memory
 
@@ -613,7 +650,27 @@ export function tickHolders(
   if (s.holderExit?.[h.id] !== undefined) return { bbls: [], distress: false };
   const hz = (EXIT_HAZARD[h.kind] ?? 0.03 / 12) * (h.tier === "major" ? 0.7 : 1) * reg.length;
   if (rng(s) > hz) return { bbls: [], distress: false };
-  const book = holdingsOf(s, parcels, h.id).filter((b) => !s.listings.some((l) => l.bbl === b));
+  // BUILDINGS, NOT THE DIRT. The register covers vacant lots now — every deed
+  // in town has a name on it — and an exit event must not silently start
+  // counting them. Two reasons, and the second is the serious one.
+  //
+  // The story is about buildings: "the executors have instructed agents on
+  // four buildings" is a sentence about a book, and a car park in the middle
+  // of it makes the tape a liar.
+  //
+  // And the RNG stream is downstream of this line. Whether a holder has a book
+  // decides whether this function returns early or goes on to draw again, so
+  // widening what counts as a book would change how many draws a month costs
+  // and re-roll every campaign that has ever been saved — which is the exact
+  // fault the header of this file warns about for the register itself.
+  // Measured when it was first written this way: land values moved 66%,
+  // office rents 53% and the city lost 5% of its population, none of it an
+  // economic effect and all of it a re-rolled century.
+  const book = holdingsOf(s, parcels, h.id).filter((b) => {
+    if (s.listings.some((l) => l.bbl === b)) return false;
+    const rec = resolveRec(parcels, s, b);
+    return !!rec && rec.class !== "land" && rec.bldgArea > 0;
+  });
   if (!book.length) return { bbls: [], distress: false, kind: h.kind };
 
   // SOMETIMES THE HEIR DOES NOT SELL — THE REGISTER IS WHERE FIRMS COME FROM.

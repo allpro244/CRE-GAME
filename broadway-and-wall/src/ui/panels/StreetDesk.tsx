@@ -1,13 +1,15 @@
 import { useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, initialCondition, resolveRec, netWorth } from "@/engine/value";
+import { resolveRec, netWorth } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firmEntryPitch } from "@/engine/rivals";
 import { rivalPrincipalOf } from "@/engine/people";
+import { ownerById } from "@/engine/ownership";
+import { OwnerStatement } from "@/ui/panels/OwnersDesk";
 import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
-import { useLabel, Row } from "@/ui/panels/shared";
+import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -165,127 +167,107 @@ export function TheStreet() {
                     : "Fully invested"}
                 </td>
               </tr>
-              {isOpen && (
+              {isOpen && (() => {
+                // ONE DRAWER FOR EVERY OWNER IN TOWN. This used to be a
+                // hand-built balance sheet that only firms had, and it is the
+                // reason the register beside it could not show one: the
+                // arithmetic lived in a panel rather than in the engine, so a
+                // private holder had nowhere to get it from. It is
+                // `OwnerStatement` now, shared with the Owners page, fed by
+                // engine/ownership.ts — which means the number the street
+                // table prints and the number the register prints cannot come
+                // apart, and a family office is read exactly the way a fund is.
+                const view = ownerById(game, parcels, r.id);
+                if (!view) return null;
+                return (
                 <tr>
                   <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
-                    {/* THE BALANCE SHEET, the same one you are judged on. Gross
-                        assets less debt is their equity; NOI over assets is what
-                        the book yields; distributions are what they have already
-                        taken off the table, which is why a firm with modest
-                        equity is not necessarily a firm that did badly. */}
-                    {principal && !dead && (
-                      <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
-                    )}
-                    {principal && !dead && (() => {
-                      const tw = rivalTemperamentWeight(game, r);
-                      const pace = tw > 1.12 ? "Contests the tape hard"
-                        : tw < 0.88 ? "Patient bidder — slower on contested asks"
-                          : "Ordinary pace on the tape";
-                      return (
-                        <div className="hint" style={{ marginBottom: 6 }} title="Bandwidth × Access — temperament, not their balance sheet">
-                          {pace}
-                        </div>
-                      );
-                    })()}
-                    <div className="grid" style={{ margin: "8px 0" }}>
-                      <Row k="Gross assets" v={usd(m.aum)} />
-                      <Row k="Debt" v={usd(r.debt)} bad={m.ltv > 0.8} />
-                      <Row k="Equity in property" v={usd(m.aum - r.debt)} bad={m.aum - r.debt < 0} />
-                      <Row k="Cash" v={usd(r.cash)} bad={r.cash < 0} />
-                      {/* the number the league table ranks on, and the same one
-                          your own Books page calls net worth */}
-                      <Row k="Net worth" v={usd(rivalEquity(m, r))} strong bad={rivalEquity(m, r) < 0} />
-                      <Row k="Leverage" v={`${(m.ltv * 100).toFixed(0)}% LTV · they stop at ${(STYLE_MAX[r.style] * 100).toFixed(0)}%`} bad={m.ltv > STYLE_MAX[r.style]} />
-                      <Row k="NOI / yr" v={usd(m.noiYr)} />
-                      <Row k="Yield on assets" v={m.aum > 0 ? `${((m.noiYr / m.aum) * 100).toFixed(2)}%` : "—"} />
-                      {/* THE PART OF A COMPETITOR YOU COULD NEVER SEE. Their
-                          buildings fill and empty and wear out like yours do,
-                          and a firm running 74% full with a deferred capital
-                          plan is a seller waiting for a reason. */}
-                      {r.occ !== undefined && (
-                        <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
-                      )}
-                      <Row k="Condition of the book"
-                        v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} of capital spent this year`}
-                        bad={(r.condIdx ?? 1) < 0.55} />
-                      {game.street?.[r.id] && (
-                        <Row k="Between you"
-                          v={[
-                            game.street[r.id].deals ? `${game.street[r.id].deals} deal${game.street[r.id].deals === 1 ? "" : "s"}` : null,
-                            game.street[r.id].beats ? `outbid you ${game.street[r.id].beats}×` : null,
-                            game.street[r.id].insults ? `${game.street[r.id].insults} conversation${game.street[r.id].insults === 1 ? "" : "s"} you ended badly` : null,
-                          ].filter(Boolean).join(" · ") || "nothing yet"}
-                          bad={(game.street[r.id].insults ?? 0) > 0} />
-                      )}
-                      <Row k="Debt service / yr" v={`−${usd((r.debt * (game.econ.indexRate + 1.9)) / 100 + r.debt / 30)}`} />
-                      {/* realised, and no longer on this balance sheet — which
-                          is why modest equity is not the same as a bad century */}
-                      <Row k="Taken out to date" v={usd(r.distributed ?? 0)} />
-                      <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
-                      {r.spawnedFrom && (
-                        <Row k="Raised out of"
-                          v={`${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}`} />
-                      )}
-                    </div>
-                    {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are the
-                        part of its balance sheet that is pure risk: money spent,
-                        debt drawn, nothing earning. It is also the space that is
-                        coming for your tenants in two years. */}
-                    {(() => {
-                      const jobs = (game.cityJobs ?? []).filter((j) => j.firmId === r.id);
-                      if (!jobs.length) return null;
-                      return (
+                    <OwnerStatement
+                      o={view}
+                      onFocus={(b) => focus(b, true)}
+                      extra={
                         <>
-                          <div className="page-section" style={{ marginTop: 4 }}>
-                            Under construction · {jobs.length}
-                          </div>
-                          <div className="mini-list">
-                            {jobs.map((j) => {
-                              const rec = resolveRec(parcels, game, j.bbl);
-                              const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
-                              return (
-                                <button key={j.bbl} className="neighbor"
-                                  onClick={(ev) => { ev.stopPropagation(); focus(j.bbl, true); }}>
-                                  <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
-                                  <span className="neighbor-meta">
-                                    {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
-                                    {j.orphaned ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
-                                    {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          {principal && !dead && (
+                            <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
+                          )}
+                          {principal && !dead && (() => {
+                            const tw = rivalTemperamentWeight(game, r);
+                            const pace = tw > 1.12 ? "Contests the tape hard"
+                              : tw < 0.88 ? "Patient bidder — slower on contested asks"
+                                : "Ordinary pace on the tape";
+                            return (
+                              <div className="hint" style={{ marginBottom: 6 }} title="Bandwidth × Access — temperament, not their balance sheet">
+                                {pace}
+                              </div>
+                            );
+                          })()}
                         </>
-                      );
-                    })()}
-                    <div className="page-section" style={{ marginTop: 4 }}>
-                      What they own · {r.bbls.length}
-                    </div>
-                    {r.bbls.length === 0 && <div className="hint">Nothing. All cash, looking.</div>}
-                    {/* EVERY DEED, not the first sixty. A truncated list of a
-                        competitor's holdings is worse than none: it looks
-                        complete and it is not, and you cannot see what somebody
-                        is quietly assembling from a page that stops early.
-                        Sorted by value, because that is how a book is read. */}
-                    <div className="mini-list">
-                      {r.bbls.map((b) => {
-                        const rec = resolveRec(parcels, game, b);
-                        if (!rec) return null;
-                        return { b, rec, v: assetValue(rec, game.econ, initialCondition(rec)) };
-                      }).filter(Boolean).sort((a, b2) => b2!.v - a!.v).map((row) => (
-                        <button key={row!.b} className="neighbor"
-                          onClick={(ev) => { ev.stopPropagation(); focus(row!.b, true); }}>
-                          <span className="neighbor-addr">{row!.rec.address}</span>
-                          <span className="neighbor-meta">
-                            {row!.rec.class === "land" ? "vacant land" : `${useLabel(row!.rec)} · ${sf(row!.rec.bldgArea)}`} · {usd(row!.v)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                      }
+                      extraLate={
+                        <>
+                          {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant
+                              it is running against, a book that fills and
+                              empties, a capital plan it can be short of the
+                              cash for, and partners it has already paid. */}
+                          <div className="grid" style={{ margin: "6px 0" }}>
+                            <Row k="They stop borrowing at" v={`${(STYLE_MAX[r.style] * 100).toFixed(0)}% LTV`} bad={m.ltv > STYLE_MAX[r.style]} />
+                            {r.occ !== undefined && (
+                              <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
+                            )}
+                            {/* The run-rate above says what a capital plan
+                                COSTS; this says what they actually spent. A
+                                firm far under its own plan is a firm whose
+                                buildings are sliding, and the gap is the tell. */}
+                            <Row k="Condition of the book"
+                              v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} actually spent this year`}
+                              bad={(r.condIdx ?? 1) < 0.55} />
+                            <Row k="Taken out to date" v={usd(r.distributed ?? 0)}
+                              title="Realised and no longer on this balance sheet — modest equity is not the same as a bad century." />
+                            <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
+                            {r.spawnedFrom && (
+                              <Row k="Raised out of" v={`${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}`} />
+                            )}
+                          </div>
+                          {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are
+                              the part of its balance sheet that is pure risk:
+                              money spent, debt drawn, nothing earning. It is also
+                              the space that is coming for your tenants in two
+                              years. */}
+                          {(() => {
+                            const jobs = (game.cityJobs ?? []).filter((j) => j.firmId === r.id);
+                            if (!jobs.length) return null;
+                            return (
+                              <>
+                                <div className="page-section" style={{ marginTop: 4 }}>
+                                  Under construction · {jobs.length}
+                                </div>
+                                <div className="mini-list">
+                                  {jobs.map((j) => {
+                                    const rec = resolveRec(parcels, game, j.bbl);
+                                    const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
+                                    return (
+                                      <button key={j.bbl} className="neighbor"
+                                        onClick={(ev) => { ev.stopPropagation(); focus(j.bbl, true); }}>
+                                        <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
+                                        <span className="neighbor-meta">
+                                          {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
+                                          {j.orphaned ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
+                                          {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </>
+                      }
+                    />
                   </td>
                 </tr>
-              )}
+                );
+              })()}
               </Fragment>
             );
           })}
@@ -302,31 +284,9 @@ export function TheStreet() {
 // credit crunch; if the engine's window moves, this must move with it.
 const FOUNDER_WINDOW_M = 18;
 
-// where each style stops borrowing — mirrored from the engine so the sheet can
-// say what their own covenant is, not just where they are against it
-export const STYLE_MAX: Record<string, number> = {
-  family: 0.50, core: 0.65, opportunistic: 0.88, developer: 0.78,
-  merchant: 0.80, pe: 0.75, reit: 0.58, vulture: 0.60,
-  owneruser: 0.55, foreign: 0.35, slumlord: 0.72,
-};
-
-export const CONDITION_WORD: Record<string, string> = {
-  good: "well kept", standard: "adequate", worn: "run down", obsolete: "finished",
-};
-
-// What the street calls each kind of shop. The point of the phrasing is that
-// it tells you what they WANT, because that is what decides whether they are
-// your competition on this building or your buyer for it next year.
-export const STYLE_WORD: Record<string, string> = {
-  family: "old money",
-  core: "institutional",
-  opportunistic: "opportunistic",
-  developer: "developer",
-  merchant: "merchant builder",
-  pe: "private equity · IRR clock",
-  reit: "listed REIT",
-  vulture: "distressed specialist",
-  owneruser: "owner-occupier",
-  foreign: "offshore capital",
-  slumlord: "milking the stock",
-};
+// The three label tables that used to live here moved to shared.tsx when the
+// register and the street table started rendering the same drawer: StreetDesk
+// imports OwnerStatement from OwnersDesk, so OwnersDesk cannot import labels
+// back from here without a cycle. Re-exported because DebtPage re-exports them
+// from this file and half a dozen call sites read them through that door.
+export { STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";

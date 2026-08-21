@@ -15,7 +15,10 @@ import { join } from "node:path";
 const URL_ = process.argv[2] ?? "http://127.0.0.1:5210/";
 const OUT = process.argv[3] ?? "/tmp/styleboard";
 mkdirSync(OUT, { recursive: true });
-const W = 2400, H = 1500;
+// The size shoot.mjs runs at, which is the size this browser stack is PROVEN
+// to cut a city at — 2400x1500 crashed the tab under SwiftShader once the
+// board actually had to generate a town rather than sit on the start screen.
+const W = 1600, H = 1000;
 
 // names, straight out of the registry
 const bd = mkdtempSync(join(tmpdir(), "sb-"));
@@ -50,13 +53,32 @@ const sock = new WebSocket(wsu);
 await new Promise((r) => { sock.onopen = r; });
 let id = 0; const pend = new Map();
 sock.onmessage = (m) => { const x = JSON.parse(m.data); if (x.id && pend.has(x.id)) { pend.get(x.id)(x); pend.delete(x.id); } };
+// A crashed tab answers nothing, which without these two lines turns every
+// later await into a silent forever — this probe hung for twenty minutes that
+// way once. A probe that can hang is a probe nobody runs.
+sock.onclose = () => { console.error("CDP socket closed — the tab crashed or chrome died"); ch.kill("SIGKILL"); process.exit(1); };
+const watchdog = setTimeout(() => { console.error("WATCHDOG: no board after 6 min — chrome hung"); ch.kill("SIGKILL"); process.exit(1); }, 360000);
 const send = (method, params = {}) => new Promise((res) => { const n = ++id; pend.set(n, res); sock.send(JSON.stringify({ id: n, method, params })); });
 const evalJs = async (expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value;
 
 await send("Runtime.enable"); await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 await send("Page.navigate", { url: URL_ });
-await sleep(38000);
+await sleep(20000);
+
+// A fresh profile lands on the start screen, not in a town — click through the
+// same way playerslate.js does (Resume if an autosave exists, Break ground if
+// not), then wait for the buildings layer rather than for a fixed clock.
+await evalJs(`(()=>{const b=[...document.querySelectorAll("button")];
+  const t=b.find(x=>/Continue|Resume|Pick it back up/i.test(x.textContent||""))||
+          b.find(x=>/Break ground/.test(x.textContent||""));
+  if(t)t.click(); return "clicked";})()`);
+for (let i = 0; i < 90; i++) {
+  const ok = await evalJs(`!!(window.__map && window.__map.getLayer && window.__map.getLayer("bw-three-buildings"))`);
+  if (ok) break;
+  await sleep(1000);
+}
+await sleep(14000);
 
 const place = `(()=>{
   const m=window.__map,l=m.getLayer("bw-three-buildings"),impl=l&&(l.implementation||l);
@@ -87,12 +109,15 @@ const res = await evalJs(place);
 if (typeof res !== "string" || res[0] !== "[") { console.error("PLACE FAILED:", res); process.exit(1); }
 await sleep(9000);
 const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-const png = Buffer.from(shot.data, "base64");
+// send() resolves with the whole CDP envelope — the image is under .result.
+const b64 = shot?.result?.data ?? shot?.data;
+if (!b64) { console.error("NO SCREENSHOT:", JSON.stringify(shot?.error ?? shot ?? null).slice(0, 300)); ch.kill("SIGKILL"); process.exit(1); }
+const png = Buffer.from(b64, "base64");
 writeFileSync(join(OUT, "board.png"), png);
 const pts = JSON.parse(res);
 writeFileSync(join(OUT, "points.json"), JSON.stringify({ W, H, pts, NAME }, null, 1));
 console.log(`board.png ${(png.length / 1024).toFixed(0)} KB   ${pts.length} styles placed`);
 if (png.length < 200000) console.error("WARNING: frame looks black — check the dev server is actually up");
-sock.close(); ch.kill("SIGKILL");
+clearTimeout(watchdog); sock.onclose = null; sock.close(); ch.kill("SIGKILL");
 try { rmSync(profile, { recursive: true, force: true, maxRetries: 4 }); } catch { /* temp */ }
 process.exit(0);

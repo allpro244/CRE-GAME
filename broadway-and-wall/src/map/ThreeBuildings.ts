@@ -18,6 +18,7 @@ import {
   S_MEGAPANEL,
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_MODULAR, S_PVCLAD, S_LABBLDG, S_MEDIAFACE, S_PRECAST, S_BALCONY, S_FRIT,
+  S_FINRIB, S_CHECKER, S_WAVEDECK,
   T_MODERN, T_STONE, T_OLDROOF, T_CAPPED_PLAIN, T_TRADE,
   // THE CROWN LADDER ASKS BY TRAIT NOW. `isDeco` says "its crown comes out of
   // the deco kit" and covers all seventeen deco families; `isStreamline` is the
@@ -4034,6 +4035,122 @@ void main() {
     else                { wall = vec3(0.77, 0.74, 0.68); } // cream cast stone
     glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.44, 0.52, 0.59);
   }
+  if (s == 168) {
+    // THE BAY-BOX MID-RISE. A flat fibre-cement wall with some of its window
+    // cells popped outward in metal-clad boxes — the pattern staggers because
+    // a design-review board asked for "modulation" and this is what the pro
+    // forma could afford. The boxes themselves are drawn in the detail half.
+    colW = 3.4; win = vec2(0.50, 0.62);
+    wall = mix(vec3(0.585, 0.575, 0.550), vec3(0.520, 0.530, 0.545), step(0.55, vVar));
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.45, 0.54, 0.61);
+  }
+  if (s == 169) {
+    // STANDING-SEAM METAL. Matte zinc grey-blue, or the near-black the
+    // architects prefer on a third of them — the rib is the whole texture and
+    // it lives in the detail half, because it is 430 mm wide.
+    colW = 3.1; win = vec2(0.44, 0.58);
+    wall = mix(vec3(0.430, 0.465, 0.505), vec3(0.365, 0.385, 0.415), step(0.55, vVar));
+    if (vVar > 0.86) wall = vec3(0.285, 0.265, 0.240);
+    glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.42, 0.50, 0.57);
+  }
+  if (s == 170) {
+    // STACK BOND. Thin brick on a rainscreen, so the joints are free to line
+    // up — and they do, which no laid wall would dare. Landscape-format
+    // openings with a flush head, because the lintel is a steel angle nobody
+    // can see. Iron-spot charcoal, buff Norman, or waterstruck red.
+    colW = 3.6; win = vec2(0.74, 0.44);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.38)      wall = vec3(0.360, 0.335, 0.315);
+    else if (pk < 0.70) wall = vec3(0.640, 0.560, 0.470);
+    else                wall = vec3(0.545, 0.395, 0.330);
+    glassA = vec3(0.24, 0.30, 0.36); glassB = vec3(0.40, 0.48, 0.55);
+  }
+  if (s == 171) {
+    // THE TOWNHOME ROW. One deed per bay, and the cladding changes at every
+    // party wall — the far view gets one hue per building, the near view gets
+    // the per-unit strips from the detail half.
+    colW = 5.6; win = vec2(0.42, 0.55);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.33)      wall = vec3(0.545, 0.390, 0.325);
+    else if (pk < 0.66) wall = vec3(0.435, 0.430, 0.435);
+    else                wall = vec3(0.625, 0.600, 0.555);
+    glassA = vec3(0.27, 0.33, 0.39); glassB = vec3(0.44, 0.53, 0.60);
+  }
+  if (s == 172) {
+    // THE WAVE DECK. Aqua, Chicago 2009: the architecture is entirely in the
+    // slab edge, which swells and thins with a different phase at every floor.
+    // The wall colour IS the slab nose; the glass hides behind the balconies.
+    glassy = true; colW = 2.6; win = vec2(0.94, 0.80);
+    wall = vec3(0.720, 0.715, 0.700);
+    glassA = vec3(0.36, 0.44, 0.50); glassB = vec3(0.56, 0.66, 0.72);
+  }
+  if (s == 173) {
+    // THE PIXEL FACADE. A panel per cell, coloured per cell from a short
+    // palette — student housing's skin, and the cheapest architecture money
+    // can buy: the colour is the cladding order, not a design.
+    colW = 3.0; win = vec2(0.46, 0.52);
+    wall = vec3(0.600, 0.595, 0.580);
+    glassA = vec3(0.27, 0.33, 0.39); glassB = vec3(0.44, 0.53, 0.60);
+  }
+  if (s == 174) {
+    // THE FIN WALL. A blade every 600 mm, normal to the glass. Face-on you
+    // see between them and the building is a glass building; from an angle
+    // they close like a louvre and it is a metal one. Aluminium mostly, and
+    // a third in the bronze-anodised the developers upgrade to.
+    glassy = true; colW = 2.8; win = vec2(0.92, 0.88);
+    wall = mix(vec3(0.560, 0.570, 0.585), vec3(0.500, 0.420, 0.330), step(0.66, vVar));
+    glassA = vec3(0.38, 0.48, 0.54); glassB = vec3(0.58, 0.70, 0.76);
+  }
+  if (s == 175) {
+    // THE NEW ARCH. 130 William, 2020: hand-cast concrete pigmented nearly
+    // black, and the head of every opening turned — the one thing no other
+    // building of its decade does. The arch is cut in the detail half; the
+    // reveal ladder gives it the half-metre of depth the type is about.
+    colW = 4.3; win = vec2(0.60, 0.82);
+    wall = mix(vec3(0.270, 0.250, 0.235), vec3(0.335, 0.315, 0.295), step(0.55, vVar));
+    glassA = vec3(0.22, 0.27, 0.32); glassB = vec3(0.38, 0.45, 0.52);
+  }
+  if (s == 176) {
+    // THE PALE GRID. A flat polished frame — GFRC or precast, one cell per
+    // module — with the glass set back into its own shadow. Crisp, bright,
+    // and completely regular; the grid is drawn in the detail half.
+    colW = 3.0; win = vec2(0.78, 0.74);
+    wall = mix(vec3(0.755, 0.750, 0.735), vec3(0.700, 0.700, 0.690), step(0.55, vVar));
+    glassA = vec3(0.25, 0.31, 0.37); glassB = vec3(0.42, 0.50, 0.57);
+  }
+  if (s == 177) {
+    // THE SELECT-SERVICE HOTEL. The franchise prototype: EIFS in a warm field
+    // tone with darker accent stacks, a porte-cochere, and a plan the brand
+    // has built two thousand times from the same drawings.
+    colW = 3.8; win = vec2(0.42, 0.50);
+    wall = mix(vec3(0.665, 0.620, 0.545), vec3(0.615, 0.565, 0.485), step(0.55, vVar));
+    glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.43, 0.52, 0.59);
+  }
+  if (s == 178) {
+    // THE COLD BOX. Insulated metal panel, white because the sun is a heat
+    // load, blind because a freezer has nothing to look at. The joints and
+    // the battered dado are in the detail half.
+    colW = 4.0; win = vec2(0.0);
+    wall = mix(vec3(0.740, 0.745, 0.750), vec3(0.700, 0.710, 0.720), step(0.55, vVar));
+    glassA = wall; glassB = wall;
+  }
+  if (s == 179) {
+    // THE CHECKERBOARD. Vision glass and shadow-box spandrel alternating cell
+    // by cell, offset a cell every floor — the spec curtain wall of the
+    // 2000s, in the blue, the silver or the green every city bought.
+    glassy = true; colW = 1.6; win = vec2(0.95, 0.90);
+    if (vVar < 0.45)      { glassA = vec3(0.40, 0.54, 0.62); glassB = vec3(0.62, 0.76, 0.82); wall = vec3(0.30, 0.40, 0.47); }
+    else if (vVar < 0.80) { glassA = vec3(0.46, 0.52, 0.56); glassB = vec3(0.68, 0.74, 0.78); wall = vec3(0.36, 0.40, 0.43); }
+    else                  { glassA = vec3(0.34, 0.44, 0.40); glassB = vec3(0.54, 0.66, 0.60); wall = vec3(0.26, 0.34, 0.31); }
+  }
+  if (s == 180) {
+    // WEATHERING STEEL. Barclays Center, 2012: a material that is its own
+    // paint job, and no two panels the same rust. The panel field and the
+    // sill streaks are in the detail half.
+    colW = 3.3; win = vec2(0.52, 0.60);
+    wall = mix(vec3(0.470, 0.295, 0.195), vec3(0.400, 0.255, 0.180), step(0.55, vVar));
+    glassA = vec3(0.23, 0.28, 0.33); glassB = vec3(0.39, 0.46, 0.52);
+  }
   if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
 
@@ -4194,6 +4311,17 @@ void main() {
   if (s == 153) revealM = 0.50;
   if (s == 154) revealM = 0.55;
   if (s == 159) revealM = 0.62;
+  // The modern-fabric batch. The curtain walls are flush; the panel skins are
+  // a stud wall's depth; the new arch is the deep end on purpose — a punched
+  // hole in half a metre of cast concrete is the whole argument of the type.
+  if (s == 174 || s == 179) revealM = 0.035;
+  if (s == 172 || s == 178) revealM = 0.05;
+  if (s == 169) revealM = 0.10;
+  if (s == 173 || s == 176) revealM = 0.14;
+  if (s == 168 || s == 177) revealM = 0.16;
+  if (s == 170 || s == 171) revealM = 0.20;
+  if (s == 180) revealM = 0.24;
+  if (s == 175) revealM = 0.50;
 
   float u = vU / colW;
   float v = vZ / fh;
@@ -4989,6 +5117,199 @@ void main() {
       } else if (vZ <= fh * 1.15) {
         winMask = step(0.08, fract(vU / 2.4)); glassShade = 0.70;
       }
+    }
+    if (s == 168) {
+      // THE POPPED BAY. A window cell chosen per cell stands proud in its own
+      // metal box: a bright rim where the box edge catches the sky, a lit
+      // flank on the sun side, and a hard shadow dropped on the course below.
+      // The stagger is the signature — no two floors pop the same cells.
+      float box = step(0.55, hash(vec2(floor(u) * 7.0 + 3.0, floor(v))));
+      if (box > 0.5) {
+        vec3 bx = vVar < 0.5 ? vec3(0.305, 0.285, 0.265) : vec3(0.615, 0.580, 0.520);
+        float rim = max(1.0 - smoothstep(0.0, 0.05, min(f.x, 1.0 - f.x)),
+                        1.0 - smoothstep(0.0, 0.06, min(f.y, 1.0 - f.y)));
+        wall = mix(bx, bx * 1.35, rim);
+        float k = sign(dot(SUN_DIR, T));
+        if ((k > 0.0 ? f.x : 1.0 - f.x) < 0.10) wall *= 1.28;   // the lit flank
+        winMask *= 1.0 - rim;
+        glassShade = 1.05;
+      } else if (fract(v) < 0.06) wall *= 0.94;
+      // the shadow a box drops on the wall under it
+      float boxAbove = step(0.55, hash(vec2(floor(u) * 7.0 + 3.0, floor(v) + 1.0)));
+      if (boxAbove > 0.5 && f.y > 0.90) wall *= 0.66;
+    }
+    if (s == 169) {
+      // THE SEAM. A rib every 430 mm, and it only exists when the light runs
+      // along the wall — a standing seam face-on is invisible, which is why
+      // these buildings change so much as the sun moves. The openings skip
+      // cells on an architect's whim rather than a grid's.
+      float rp = fract(vU / 0.43);
+      float rib = 1.0 - smoothstep(0.04, 0.16, min(rp, 1.0 - rp));
+      float along = clamp(abs(dot(SUN_DIR, T)), 0.0, 1.0);
+      wall *= 1.0 + 0.16 * rib * along * grainFade(0.43, mpp);
+      winMask *= step(0.34, hash(vec2(floor(u) + floor(v) * 13.0, 5.0)));
+      if (fract(v) < 0.05) wall *= 0.96;
+    }
+    if (s == 170) {
+      // THE ALIGNED JOINT. Stack bond reads as a fine grid because every
+      // vertical joint lines through — the one thing a load-bearing wall must
+      // never do, worn as proof the wall carries nothing. Dark anodised frames
+      // hold the glass; there is no sill and no lintel to see.
+      float bx = fract(vU / 0.203), by = fract(vZ / 0.068);
+      float joint = max(1.0 - smoothstep(0.06, 0.18, min(bx, 1.0 - bx)),
+                        1.0 - smoothstep(0.12, 0.30, min(by, 1.0 - by)));
+      wall *= 1.0 - 0.10 * joint * grainFade(0.203, mpp);
+      if (inHole && max(abs(ox - 0.5), abs(oy - 0.5)) > 0.46) glassShade = 0.30;
+      if (fract(v) < 0.05) wall *= 0.95;
+    }
+    if (s == 171) {
+      // ONE DEED PER BAY. The cladding changes at every party wall, the joint
+      // between units is a hard dark line, half the units keep a garage door
+      // at grade, and the head of the wall is a roof-deck rail — a rhythm of
+      // ownership, not of structure.
+      float unit = floor(vU / 5.6);
+      float h1 = hash(vec2(unit, vRand * 29.0));
+      vec3 mat = h1 < 0.30 ? vec3(0.545, 0.390, 0.325)
+               : h1 < 0.55 ? vec3(0.335, 0.335, 0.350)
+               : h1 < 0.80 ? vec3(0.655, 0.630, 0.580)
+                           : vec3(0.520, 0.470, 0.395);
+      wall = mix(wall, mat, 0.90);
+      float pw = 1.0 - smoothstep(0.0, 0.018, min(f.x, 1.0 - f.x));
+      wall *= 1.0 - 0.24 * pw;
+      if (vZ < fh * 0.98 && abs(f.x - 0.5) < 0.30 && fract(h1 * 7.1) > 0.5) {
+        wall = mix(wall, vec3(0.300, 0.300, 0.310), 0.85);   // the garage leaf
+        winMask = 0.0;
+      }
+      if (vZ > vTop - 0.75) {
+        float tick = step(0.5, fract(vU / 0.14));
+        wall = mix(wall, wall * mix(1.30, 0.78, tick), 0.7); // the deck rail
+        winMask = 0.0;
+      }
+    }
+    if (s == 172) {
+      // THE WAVE. The slab nose swells and thins along the front with a
+      // different phase at every floor, so the horizontals drift instead of
+      // stacking — from across the water the building is a set of curves and
+      // nothing else. Under each deck, the glass sits in its shadow.
+      float ph = floor(v) * 2.39996;                      // golden-angle phase
+      float amp = 0.10 + 0.10 * (0.5 + 0.5 * sin(vU * 0.16 + ph));
+      float fy = fract(v);
+      if (fy < amp) {
+        wall = vec3(0.720, 0.715, 0.700) * (0.86 + 0.28 * (1.0 - fy / amp));
+        winMask = 0.0;
+      } else if (fy < amp + 0.12) {
+        wall *= 0.62; glassShade = 0.72;                  // the deck's shade
+      }
+    }
+    if (s == 173) {
+      // THE PIXEL. One coloured panel per cell, hashed — most cells stay in
+      // the field tone so the colour reads as an accent scatter, the way the
+      // cladding actually arrives on site. A joint closes round every cell.
+      float h1 = hash(vec2(floor(u) + 11.0, floor(v) * 3.0 + floor(vRand * 60.0)));
+      vec3 tile = h1 < 0.44 ? wall
+                : h1 < 0.62 ? vec3(0.330, 0.340, 0.360)
+                : h1 < 0.75 ? vec3(0.620, 0.500, 0.185)
+                : h1 < 0.86 ? vec3(0.275, 0.420, 0.460)
+                : h1 < 0.95 ? vec3(0.610, 0.330, 0.240)
+                            : vec3(0.425, 0.520, 0.330);
+      wall = mix(wall, tile, 0.92);
+      float j = max(1.0 - smoothstep(0.0, 0.020, min(f.x, 1.0 - f.x)),
+                    1.0 - smoothstep(0.0, 0.025, min(f.y, 1.0 - f.y)));
+      wall *= 1.0 - 0.12 * j;
+    }
+    if (s == 174) {
+      // THE LOUVRE THAT IS A BUILDING. Face-on the fins vanish and the wall
+      // is glass; obliquely they close, and the facade becomes the fin metal.
+      // Nothing else in the city changes this much as you move past it.
+      float across = clamp(abs(dot(Vw, T)) / max(facing, 0.05), 0.0, 2.2);
+      float closed = smoothstep(0.35, 1.7, across);
+      vec3 fin = vVar > 0.66 ? vec3(0.505, 0.425, 0.335) : vec3(0.600, 0.610, 0.625);
+      // fins lit when the sun comes from the viewer's side of the wall
+      fin *= 1.0 + 0.22 * clamp(dot(SUN_DIR, T) * sign(dot(Vw, T)), 0.0, 1.0);
+      wall = mix(wall, fin, closed * 0.85);
+      glassShade *= 1.0 - 0.50 * closed;
+      winMask *= 1.0 - closed * 0.80;
+      float fp = fract(vU / 0.60);
+      float fl = 1.0 - smoothstep(0.06, 0.22, min(fp, 1.0 - fp));
+      wall *= 1.0 + 0.10 * fl * grainFade(0.60, mpp) * (1.0 - closed);
+    }
+    if (s == 175) {
+      // THE ARCH, TURNED AGAIN. Every head is a semicircle cut in the cast —
+      // no voussoirs, no keystone, no spring line, because the wall is one
+      // pour pretending to be none. The glass falls into shadow toward the
+      // head the way glass under a deep soffit does.
+      if (inHole) {
+        float spring = 0.62;
+        float wyA = (oy - spring) / 0.38;
+        if (wyA > 0.0) {
+          float rad = sqrt(max(0.0, 1.0 - wyA * wyA));
+          winMask *= 1.0 - smoothstep(rad - 0.10, rad + 0.02, abs(ox - 0.5) * 2.0);
+        }
+        glassShade *= 1.0 - 0.25 * smoothstep(0.5, 1.0, oy);
+      }
+      if (fract(v) < 0.05) wall *= 1.08;   // the polished band at the pour line
+    }
+    if (s == 176) {
+      // THE GRID. A flat pale frame closing round every cell, thin and crisp,
+      // with the glass a hand's depth behind it — the frame is the facade and
+      // the shadow it casts into its own openings is the ornament.
+      float fr = max(1.0 - smoothstep(0.0, 0.055, min(f.x, 1.0 - f.x)),
+                     1.0 - smoothstep(0.0, 0.065, min(f.y, 1.0 - f.y)));
+      wall = mix(wall, vec3(0.765, 0.760, 0.745), fr * 0.9);
+      winMask *= 1.0 - fr;
+      if (inHole) glassShade *= 0.90 - 0.18 * smoothstep(0.6, 1.0, oy);
+    }
+    if (s == 177) {
+      // THE PROTOTYPE. Accent stacks of bays in the brand's darker tone, an
+      // EIFS control joint at every floor, a porte-cochere fascia over the
+      // entrance bay with the lobby glass under it, and a light trim band at
+      // the parapet. Every one of these is on the franchise drawings.
+      float acc = step(0.70, hash(vec2(floor(u), vRand * 31.0)));
+      if (acc > 0.5) wall = mix(wall, vec3(0.480, 0.335, 0.270), 0.80);
+      if (fract(v) < 0.045) wall *= 0.93;
+      if (vZ < fh * 1.1 && abs(fract(vU / 42.0) - 0.30) < 0.075) {
+        if (vZ > fh * 0.80) { wall = mix(wall, vec3(0.360, 0.330, 0.310), 0.85); winMask = 0.0; }
+        else { winMask = step(0.10, fract(vU / 2.0)); glassShade = 0.95; }
+      }
+      if (vZ > vTop - 0.55) { wall = mix(wall, wall * 1.14, 0.8); winMask = 0.0; }
+    }
+    if (s == 178) {
+      // THE FREEZER. Horizontal panel joints, a battered frost-grey dado
+      // taking the forklift hits, and a short row of dock leaves — the wall
+      // is 150 mm of foam and it looks like exactly that.
+      float pz = fract(vZ / 1.0);
+      wall *= 1.0 - 0.07 * (1.0 - smoothstep(0.03, 0.10, min(pz, 1.0 - pz))) * grainFade(1.0, mpp);
+      float px = fract(vU / 11.0);
+      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.004, 0.012, min(px, 1.0 - px)));
+      if (vZ < 1.35) wall = mix(wall, vec3(0.480, 0.500, 0.520), 0.85);
+      float dd = fract(vU / 9.5);
+      if (vZ < 3.0 && dd < 0.30) {
+        wall = mix(wall, vec3(0.415, 0.425, 0.440), 0.9);   // the dock leaf
+        if (vZ > 2.70) wall *= 0.70;                        // its shelter's shadow
+      }
+    }
+    if (s == 179) {
+      // THE CHECKER. Vision and shadow-box alternating on cell parity, which
+      // offsets a cell every floor — so the wall weaves, and the reflection
+      // never assembles into one sheet. The shadow-box cells are the flat
+      // dark ones; the vision cells carry the sky.
+      float par2 = mod(floor(u) + floor(v), 2.0);
+      if (par2 < 0.5) { glassShade = 0.55; wall = mix(wall, wall * 0.80, 0.6); }
+      else glassShade = 1.08;
+      float mull = 1.0 - smoothstep(0.008, 0.026, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.25, mull);
+    }
+    if (s == 180) {
+      // THE RUST. Every panel weathered its own way — a field of oranges and
+      // umbers no paint chart sells — with a dark joint closing round each,
+      // and the rain streaking the wall darker under every sill.
+      float px2 = floor(vU / 2.4), py2 = floor(vZ / 1.2);
+      wall *= 0.84 + 0.30 * hash(vec2(px2, py2 + vRand * 19.0));
+      float jx2 = fract(vU / 2.4), jy2 = fract(vZ / 1.2);
+      float j2 = max(1.0 - smoothstep(0.006, 0.020, min(jx2, 1.0 - jx2)),
+                     1.0 - smoothstep(0.012, 0.040, min(jy2, 1.0 - jy2)));
+      wall *= 1.0 - 0.18 * j2 * grainFade(1.2, mpp);
+      if (f.y < m.y + 0.02 && abs(f.x - 0.5) < win.x * 0.45) wall *= 0.90;
     }
     if (s == 104) {
       // ONE ARCH, and every glazing bar radiating from its single centre. That
@@ -7280,6 +7601,19 @@ void main() {
   if (s == 165) roof = vec3(0.545, 0.535, 0.520); // re-clad front: the sign band's metal top
   if (s == 166) roof = vec3(0.400, 0.385, 0.390); // 1980s neo-deco: polished granite coping
   if (s == 167) roof = vec3(0.585, 0.575, 0.545); // the revival: limestone coping on a membrane
+  if (s == 168) roof = vec3(0.545, 0.540, 0.525); // bay box: grey TPO
+  if (s == 169) roof = vec3(0.420, 0.445, 0.475); // standing seam, over the parapet and on
+  if (s == 170) roof = vec3(0.530, 0.520, 0.500); // stack bond: pale membrane
+  if (s == 171) roof = vec3(0.495, 0.485, 0.465); // townhomes: deck boards and membrane
+  if (s == 172) roof = vec3(0.615, 0.610, 0.595); // wave deck: the top slab
+  if (s == 173) roof = vec3(0.560, 0.555, 0.540); // pixel: membrane
+  if (s == 174) roof = vec3(0.585, 0.590, 0.595); // fin wall: pale ballast
+  if (s == 175) roof = vec3(0.330, 0.315, 0.300); // the new arch: dark, like the cast
+  if (s == 176) roof = vec3(0.640, 0.635, 0.620); // pale grid: white TPO
+  if (s == 177) roof = vec3(0.575, 0.555, 0.520); // select-service: tan membrane
+  if (s == 178) roof = vec3(0.680, 0.685, 0.690); // cold box: white TPO over a freezer
+  if (s == 179) roof = vec3(0.575, 0.590, 0.605); // checker
+  if (s == 180) roof = vec3(0.335, 0.260, 0.215); // corten: the rust takes the coping too
 
   roof *= 0.92 + 0.16 * vRand;
 
@@ -13104,14 +13438,14 @@ export const TOWER_FAMILIES = [
  * function. If it has ten answers, the skyline has ten buildings in it.
  */
 const TOWER_SKINS: Record<string, number[]> = {
-  vanderbilt: [S_TERRAPIER, S_TERRAPIER, S_CHEVRON, S_UNITGLASS, S_PMOD],
+  vanderbilt: [S_TERRAPIER, S_TERRAPIER, S_CHEVRON, S_UNITGLASS, S_PMOD, S_FINRIB],
   spiral: [S_SKYGARDEN, S_SKYGARDEN, S_UNITGLASS, S_BALCONY, S_PLEATED],
   exo: [S_DIAGRID, S_MEGABRACE, S_MEGABRACE, S_DOUBLESKIN],
-  stack: [S_CRYSTAL, S_MODULAR, S_UNITGLASS, S_SHINGLED, S_MEGAPANEL],
+  stack: [S_CRYSTAL, S_MODULAR, S_UNITGLASS, S_SHINGLED, S_MEGAPANEL, S_CHECKER],
   carve: [S_CRYSTAL, S_PLEATED, S_CHEVRON, S_SHINGLED],
-  blade: [S_TERRAPIER, S_TERRAPIER, S_UNITGLASS, S_PVCLAD, S_FRIT],
+  blade: [S_TERRAPIER, S_TERRAPIER, S_UNITGLASS, S_PVCLAD, S_FRIT, S_FINRIB],
   shelf: [S_STEELSHELF, S_STEELSHELF, S_LABBLDG, S_DOUBLESKIN],
-  curveslab: [S_UNITGLASS, S_SHINGLED, S_DOUBLESKIN, S_FRIT, S_MEDIAFACE],
+  curveslab: [S_UNITGLASS, S_SHINGLED, S_DOUBLESKIN, S_FRIT, S_MEDIAFACE, S_WAVEDECK, S_WAVEDECK],
   deepframe: [S_DEEPFRAME, S_DEEPFRAME, S_PRECAST, S_LABBLDG, S_PVCLAD],
   twist: [S_MEGAPANEL, S_PLEATED, S_CHEVRON, S_UNITGLASS, S_SHINGLED],
 };

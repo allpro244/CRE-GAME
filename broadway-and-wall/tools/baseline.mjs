@@ -124,6 +124,49 @@ function rolls(g, base) {
   };
 }
 
+/**
+ * THE ONE THAT WOULD HAVE CAUGHT THE 2026-08 PLAYTEST FAULT.
+ *
+ * How full this city's buildings are has two answers in this engine and nothing
+ * ever asked them to agree. `econ.cityVac[k]` is a city-level scalar with its
+ * own absorption process; `useOccupancy(rec, econ, use)` is what every valuation
+ * — assetValue, noiYr, the ask on every listing — believes about an individual
+ * building. They are the same quantity, and CLAUDE.md fake number 3 says one of
+ * two answers to it is fiction.
+ *
+ * Measured when this was added, sf-weighted over the built stock: the building
+ * model ran 9-16pp under `1 - cityVac` depending on class and seed. Nothing was
+ * out of balance, no band moved, `pnpm gate` was green, and the city was simply
+ * quietly wrong everywhere — which is the exact fault class the header of this
+ * file describes and the reason it exists.
+ *
+ * Reported as the GAP in points, stabilised so the lease-up calendar is not in
+ * it: a building mid-lease-up is honestly emptier than the market and that is
+ * not a disagreement. Near zero is the identity holding.
+ */
+function occIdentity(g, base) {
+  const acc = {};
+  for (const bbl of base.bbls) {
+    const r = E.resolveRec(base.parcels, g, bbl);
+    if (!r || r.class === "land" || !(r.bldgArea > 0)) continue;
+    for (const u of Object.keys(E.mixOf(r))) {
+      const leg = E.useSf(r, u);
+      if (leg < 400) continue;
+      (acc[u] ??= { sf: 0, occ: 0 });
+      acc[u].sf += leg;
+      acc[u].occ += leg * E.useOccupancy(r, g.econ, u, true);
+    }
+  }
+  const out = {};
+  for (const k of ["office", "retail", "multifamily", "industrial"]) {
+    const a = acc[k];
+    if (!a || !a.sf) continue;
+    const city = 1 - (g.econ.cityVac?.[k] ?? 0);
+    out[`occGap.${k}`] = +((city - a.occ / a.sf) * 100).toFixed(2);
+  }
+  return out;
+}
+
 /** Land, across the whole city. A distribution, not a mean — the spread is the story. */
 function land(g, base) {
   const psf = base.bbls.map((b) => {
@@ -258,7 +301,7 @@ function measure() {
       // out, few enough that regenerating every rent roll in the city stays
       // cheap.
       if (m >= MONTHS - WINDOW && (MONTHS - 1 - m) % 12 === 0) {
-        const row = { ...rolls(g, base), ...land(g, base), ...pencils(g, base), ...space(g) };
+        const row = { ...rolls(g, base), ...land(g, base), ...pencils(g, base), ...space(g), ...occIdentity(g, base) };
         for (const [k, v] of Object.entries(row)) (samples[k] ??= []).push(v);
       }
     }

@@ -1235,7 +1235,14 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
 //              not lease well and never have; the hash keeps each one's
 //              trouble consistent across the whole game, so a 68% building
 //              is a 68% building every time you look at it.
-const OCC_BASE: Record<BuiltClass, number> = { office: 0.84, retail: 0.89, multifamily: 0.94, industrial: 0.87 };
+// RETIRED. This was the level occupancy sat at, and it disagreed with
+// 1 - NATURAL_VAC by 1.5-6.0pp per class — see the derivation at `base` in
+// useOccupancy. The level now comes from NATURAL_VAC, which is the same number
+// the city's own vacancy model is calibrated to, so there is one answer to
+// "how full is this class" instead of two. Kept only as a record of what the
+// numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
+// 0.87, against 0.885 / 0.915 / 0.955 / 0.930.
+
 function occHash(key: string): number {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -1279,7 +1286,20 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // which feeds the submarket table, so fringe neighbourhoods read looser and
   // the local-vacancy channel REINFORCES the arrival gradient instead of
   // fighting it.
-  const loc = 0.22 * (demandIdx(rec.demandScore) - 0.62);
+  // PIVOTED ON THIS CITY'S OWN MEAN, not on a constant from another map.
+  //
+  // This read a hardcoded 0.62. `econ.locIdxMeanBy` is the sf-weighted mean
+  // demandIdx of the built stock PER CLASS, measured once at init, and its own
+  // doc comment says it exists to keep the location curves "mean-neutral on any
+  // map" — it was simply never wired to the curve it was made for. Measured on
+  // the reference town: the real pivots are office 0.562, retail 0.478,
+  // multifamily 0.414, industrial 0.416, so against 0.62 this term was not a
+  // location premium at all, it was a flat -1.3pp on office, -3.1pp on retail
+  // and -4.5pp on multifamily and industrial, applied to the whole stock.
+  // A shed competes with sheds, which is why the per-class pivot is the right
+  // one and the town-wide `locIdxMean` is only the fallback.
+  const locPivot = econ.locIdxMeanBy?.[use] ?? econ.locIdxMean ?? 0.62;
+  const loc = 0.22 * (demandIdx(rec.demandScore) - locPivot);
   // the building's own character, ±11pp commercial, ±6pp residential — and
   // skewed downward, because the tail of this distribution is a tail of pain
   const u = occHash(rec.bbl + use);
@@ -1321,7 +1341,32 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
     const vintage = Math.min(1.7, Math.max(0.5, 0.5 + age / 80));
     mktDelta *= vintage / (econ.vintageMean ?? 1.0);
   }
-  const base = clamp(OCC_BASE[use] + mktDelta + loc + idio - trouble, 0.28, 0.99);
+  // THE LEVEL IS 1 - NATURAL VACANCY, AND THE SHAPE TERMS DO NOT MOVE IT.
+  //
+  // `mktDelta` is deliberately written as a DIFFERENCE from natural vacancy so
+  // that at the natural rate it is exactly zero and the calibration underneath
+  // is untouched. That intent was defeated by the thing it is a difference
+  // from: OCC_BASE was a free constant sitting 1.5-6.0pp BELOW 1 - NATURAL_VAC
+  // (office 0.84 against 0.885, industrial 0.87 against 0.930), so at the very
+  // moment the city model said a class was exactly at its natural rate, this
+  // function said its buildings were several points emptier than that.
+  //
+  // On top of it both shape terms have non-zero means and were spending the
+  // level rather than describing a spread: E[idio] = k*(0.5-0.62) = -0.12k and
+  // E[trouble] = k*0.06 (integrating k*(1-u/0.12) over u in [0,0.12]), so
+  // together they cost commercial 4.32pp and residential 2.28pp of LEVEL for
+  // shape nobody asked to pay for. They are still exactly as skewed as they
+  // were — one building in eight is still troubled, the tail is still a tail of
+  // pain — the mean is simply added back so the skew describes the spread
+  // around the market rather than pulling the market down with it.
+  //
+  // Measured before, sf-weighted over the built stock at month 300: the model
+  // ran 9-16pp under 1 - cityVac depending on class and seed, with no mechanism
+  // between the two and nothing asserting they should agree. They are the same
+  // quantity — how full this city's buildings are — and CLAUDE.md fake number 3
+  // says one of two answers to that is fiction.
+  const shapeMean = -0.12 * (apt ? 0.12 : 0.22) - 0.06 * (apt ? 0.14 : 0.28);
+  const base = clamp((1 - NATURAL_VAC[use]) + mktDelta + loc + idio - trouble - shapeMean, 0.28, 0.99);
   // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
   // asks for the occupancy this building runs at once it is no longer new —
   // which is what an appraiser means by the phrase, and what the stabilised

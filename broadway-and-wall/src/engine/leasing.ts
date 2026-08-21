@@ -175,7 +175,37 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // and most of why merchant development is supposed to be frightening.
     default:            raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12)); break;  // office
   }
-  return Math.min(a, Math.max(1, raw));
+  const target = Math.min(a, Math.max(1, raw));
+  // A LEG IS DEMISED INTO WHOLE EVEN SPACES, NOT INTO TARGET-SIZED SUITES PLUS
+  // A DEAD REMNANT.
+  //
+  // `raw` is the size of suite this market wants. Returning it directly meant a
+  // leg that is not a whole multiple of it stranded the leftover, and if that
+  // leftover fell under the tenancy floor NOTHING COULD EVER LET IT — toSuites
+  // refuses a remnant below `floor`, so the space sat dark for the whole game
+  // and the building was structurally capped below its own model occupancy.
+  //
+  // Measured before this, on legs of 1.5-2.5 suites (13% of the city's
+  // commercial floor area): the model asked for 75.4% occupancy, the inventory
+  // could only reach 89.0%, and 62% of those legs could not reach 100% at all —
+  // mean ceiling 82%. Worked example, 3,402 sf of shops with a 2,000 ft
+  // tenancy floor: one shop of 2,000 and 1,402 ft that nobody may lease, so the
+  // leg is welded at 59% while useOccupancy asks for 88%.
+  //
+  // No landlord does that. You cut the floor into whole even spaces of about
+  // the size the market wants — one 3,402 ft shop here, or two of 1,701 if the
+  // floor allowed it. So: round to the nearest whole number of spaces and back
+  // off while a space would fall under the tenancy floor. The leg divides
+  // exactly, there is no remnant, and `raw` becomes the size a space is AIMED
+  // at rather than a cut that leaves rubble.
+  //
+  // This is the same quantity the ceiling comments above are about and it does
+  // not disturb them: a 614k sf office still cuts to ~15k (41 spaces, ~30 deals
+  // to fill), and a 9,371 ft shed is still one bay the size of the shed.
+  const floorSf = use === "multifamily" ? 450 : Math.min(COMMERCIAL_SUITE_MIN, a);
+  let n = Math.max(1, Math.round(a / target));
+  while (n > 1 && a / n < floorSf) n--;
+  return a / n;
 }
 
 /**
@@ -566,15 +596,43 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, d
   // The private stream, keyed on the parcel and on whether this is the
   // distressed reading of it — a receiver's building is a different roll, and
   // it has to be a STABLE different roll.
+  // THE PRIVATE STREAM HAD STOPPED BEING PRIVATE, AND BOTH CLAIMS ABOVE WERE
+  // FALSE WHEN THIS WAS WRITTEN.
+  //
+  // This saved and restored `s.rng` only. Every draw inside buildRentRoll goes
+  // through the NAMED "leasing" channel — rng(s, "leasing"), and the same in
+  // pickSector, pickName, rollCredit, rollRecovery and depositFor — and a named
+  // draw reads and writes `s.streams[channel]`, never `s.rng`. So the parcel
+  // hash seeded a stream nothing in here used, and the restore put back a
+  // stream nothing in here had moved.
+  //
+  // Both documented invariants were therefore untrue. Measured directly:
+  // calling genRentRoll twice on the same building in the same month returned
+  // two DIFFERENT rolls, and each call advanced `s.streams.leasing` — so
+  // asking what is in a building changed the world, and "what the preview
+  // shows" and "what the deed conveys" were only ever the same object if
+  // nobody looked twice. That is the exact hazard the comment above says this
+  // design exists to remove, and it is CLAUDE.md's fake number 3 with a
+  // render path for a trigger.
+  //
+  // Snapshot ALL the streams rather than naming the ones buildRentRoll happens
+  // to use today. Enumerating channels correctly is the kind of thing that is
+  // right when written and wrong two commits later; a whole-object snapshot is
+  // true by construction and stays true when somebody adds a draw.
   const saved = s.rng;
+  const savedStreams = s.streams ? { ...s.streams } : undefined;
   let hsh = 2166136261 ^ (s.seed >>> 0);
   const key = rec.bbl + (distressed ? "#d" : "");
   for (let i = 0; i < key.length; i++) { hsh ^= key.charCodeAt(i); hsh = Math.imul(hsh, 16777619); }
   s.rng = hsh >>> 0;
+  // Seed the channel the roll actually draws from, so the roll is a function of
+  // the parcel and the seed and nothing else.
+  if (s.streams) s.streams = { ...s.streams, leasing: (hsh >>> 0) || 1 };
   try {
     buildRentRoll(s, rec, holding, distressed, settle);
   } finally {
     s.rng = saved;
+    if (savedStreams) s.streams = savedStreams;
   }
 }
 
@@ -619,14 +677,86 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
   // fill. It is the CHANCE that the space is let, which is what it always meant
   // — and it gives a small building the honest binary outcome a small building
   // has, instead of an average nothing in the class can actually be.
-  const whole = legSf < useSuiteSf(rec, use) * 1.5;
-  const target = whole ? (rng(s, "leasing") < targetOcc ? legSf : 0) : legSf * targetOcc;
+  const suite = useSuiteSf(rec, use);
+  const whole = legSf < suite * 1.5;
+  // ...AND THE LAST PARTIAL SUITE IS A COIN TOO. THIS WAS THE BIG ONE.
+  //
+  // The divisible branch asked for `legSf * targetOcc` and then filled it with
+  // WHOLE suites, so the loop below took floor(N*p) of them and dropped the
+  // remainder — every time, never rounding up. Realised occupancy was
+  // floor(N*p)/N, which is a systematically downward-biased estimator of the
+  // occupancy this function was aiming at, and the bias is worst where N is
+  // smallest.
+  //
+  // Measured before the fix, every commercial leg in the city, roll-side, no
+  // player, 3 seeds x month 300 — occupancy sloped monotonically with how many
+  // suites a leg demises into, which is not a thing that happens in life:
+  //
+  //     leg demises into    share of city sf    median occupancy   zero-let
+  //     1 suite                        7.1%     100%/0% bimodal         26%
+  //     1.5-3 suites                  13.0%                 57%          7%
+  //     3-6 suites                    21.7%                 62%          0%
+  //     6-12 suites                   24.4%                 70%          0%
+  //     12+ suites                    33.8%                 81%          0%
+  //
+  // and floor(N*p)/N predicted what the roll achieved to within 1-7pp in every
+  // bucket while both fell away from the model target as the leg got smaller.
+  // That is the whole of the 16-31 point disagreement between the Economy
+  // page's cityVac and the rent rolls of the same buildings, and most of why
+  // nothing a player owned ever looked stabilised.
+  //
+  // The answer was already in this function, one branch up: for an indivisible
+  // leg the target is not a fraction of floor to fill, it is the CHANCE the
+  // space is let. That is exactly the right treatment of the last partial
+  // suite of a DIVISIBLE leg as well, and it was never generalised. Fill
+  // floor(N*p) suites and take one more with probability frac(N*p), so the
+  // fill is unbiased in expectation at every N.
+  //
+  // Drawn only in the divisible branch so the indivisible one keeps its exact
+  // stream position. Safe for the shared world PRNG regardless: buildRentRoll
+  // is called only from genRentRoll, which swaps in a private stream keyed on
+  // the parcel and restores s.rng in a finally — so this costs the century
+  // nothing and cannot re-roll it (HANDOFF section 4).
+  let target: number;
+  if (whole) {
+    target = rng(s, "leasing") < targetOcc ? legSf : 0;
+  } else {
+    // Walk the leg's ACTUAL demisable inventory rather than a suite count.
+    //
+    // A first cut stochastically rounded N*p to a whole number of suites, which
+    // is unbiased only when the leg divides evenly. It does not: a leg of 1.8
+    // suites that draws "2" gets clamped back to 1.8, so the upper outcome is
+    // short and the mean lands under the target again. Measured on that cut,
+    // the smallest divisible legs still ran 13.4pp under what the model asked
+    // for while the largest ran 4.6pp under (which is just the listing skew).
+    //
+    // So walk the spaces the building really has — whole suites, then whatever
+    // remnant is large enough that somebody would lease it — take every space
+    // that fits under the target, and take the one that straddles it with
+    // probability equal to the fraction of it still wanted. That is exactly
+    // unbiased at every N: E[leased] = legSf * targetOcc whenever the inventory
+    // can reach it, and where it cannot, the shortfall is real unlettable
+    // remainder rather than a rounding artefact.
+    const wantSf = legSf * targetOcc;
+    const floorSf = minTenancySf(rec, use);
+    let acc = 0, remain = legSf;
+    while (remain > 0.5) {
+      const unit = Math.min(suite, remain);
+      // A sliver under the tenancy floor is not space — same rule toSuites
+      // applies, kept in step with it deliberately.
+      if (unit < floorSf && unit < suite * 0.65) break;
+      if (acc + unit <= wantSf) { acc += unit; remain -= unit; continue; }
+      if (rng(s, "leasing") < (wantSf - acc) / unit) acc += unit;
+      break;
+    }
+    target = acc;
+  }
   let leased = 0;
   let guard = 0;
   while (leased < target && guard++ < 40) {
     // whole suites only: a tenant takes one space, or knocks a few together
     const free = target - leased;
-    const want = useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8, "leasing")));
+    const want = suite * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8, "leasing")));
     const sf = toSuites(rec, want, free, use);
     if (!sf) break;
     const sector = pickSector(s, use);

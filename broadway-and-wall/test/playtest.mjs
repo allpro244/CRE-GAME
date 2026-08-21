@@ -215,7 +215,16 @@ for (const c of CL) {
   const city = q(s.map(x=>x.city),.5), roll = q(s.map(x=>x.roll),.5), legs = q(s.map(x=>x.legs),.5);
   console.log(`   ${c.padEnd(13)}${pad(city,12)}%${pad(roll,17)}%${pad(city-roll,9)}pp        ${pad(q(s.map(x=>x.dead),.5),7)}%${pad(legs,13,0)}${legs < 30 ? "  <- thin, read with care" : ""}`);
 }
-console.log("   Prices are set on the first column. Income arrives from the second.\n");
+console.log("   Prices are set on the first column. Income arrives from the second.");
+// HONESTY ABOUT WHAT THIS ROW IS. genRentRoll is only ever called on a building
+// COMING TO MARKET — stampListing, an approach, a closing, an auction, a note —
+// and it deliberately skews ~4.5pp under the market because a building for sale
+// is disproportionately one with a leasing problem. That selection is correct
+// where the engine uses it and this harness applies it to the whole stock, so a
+// residual gap of a few points here is the harness, not the engine. What the
+// row is for is the LARGE gap: it read 16-31pp when it was written.
+console.log("   A few points of residual is this harness imposing the for-sale skew on the whole");
+console.log("   stock. It was written to catch the 16-31pp version.\n");
 
 console.log("C. WHAT YOU OWN, HELD THREE YEARS OR MORE");
 const REALSTAB = { office: "88-92%", retail: "92-96%", multifamily: "94-96%", industrial: "96-98%" };

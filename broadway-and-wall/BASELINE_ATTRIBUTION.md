@@ -7,7 +7,67 @@
 
 ---
 
-## This ruler: a concession cannot be un-given (SAVE_VERSION unchanged)
+## This ruler: height stops being a rule (SAVE_VERSION unchanged)
+
+Four commits — `01a8c11`, `54bec9d`, `3c2ea3b` and the densify wiring — took
+the last hard rule out of the supply response. Measured first, because FAR was
+not the binding constraint: the block datum ran p50 3 floors against a legal
+envelope of p50 11, and the CORNICE rather than the zoning bound 72.2% of
+lots. Deleting FAR would have moved almost nothing.
+
+THE HEADLINE IS THE ONE THAT WAS BROKEN. `vac.office` 0.0488 -> 0.1035 against
+a natural rate of 0.115, and `rail.vac.office.lo` 0.35 -> 0.107. The city had
+been a permanent landlord's market sitting at 4.9% vacancy with the frictional
+floor holding a third of its months up; it now sits essentially at its natural
+rate with the floor binding a ninth. That was the target and it is met.
+
+| Metric cluster | Driver | Direction |
+|---|---|---|
+| **`vac.office` +112%, `rail.vac.office.lo` -69.5%** | **THE INTENDED MOVE.** Supply can answer price, so vacancy is a market outcome rather than a clamp | Report — this is the fix |
+| `rentIdx.*` (office -37.5%, retail -20.5%, multifamily -17.2%, industrial -16.7%) | Follows directly: more stock, higher vacancy, lower rent. The downside the model did not have | One-time repricing, intended |
+| `land.*` (p10 -41%, med -46%, p90 -27%) | Land is a residual and a difference, so a rent fall shows up geared on the dirt | Follows rent |
+| `dev.affordableLotShare` 0.158 -> 0.112 | Back INSIDE the documented 8-12% honest band, having been 4pp above it | Improvement |
+| `roll.commercialOcc` -3.5%, `deadLegShare` +9.8% | Buildings are emptier because there are more of them | Follows supply |
+| `city.demolished` 26 -> 22, `buildings` -1.1%, `population` -3.5% | Fewer, taller buildings carry the same city | Follows the skyline |
+| **`vac.multifamily` -28.9%, `rail.vac.multifamily.lo` +15.6%** | **WENT THE WRONG WAY.** Flats got tighter, not looser, and their floor binds more | Report, do not tune |
+| `vac.industrial` unchanged at 0.0154, rail 0.7267 | Untouched. 0.07 x 0.22 = 0.0154 — the reported vacancy IS the clamp, to four decimals | THE WORST RAIL IN THE ENGINE |
+
+### The cost, stated plainly
+
+**`sim:accept` F now breaches on THREE classes where it breached on one.**
+Real rent growth: office -1.43%/yr, retail -1.83%, multifamily -1.30%, all
+below the -1.0 floor; before this ruler only retail was outside. Fifty years
+at -1.4%/yr ends at 0.6x real, and Devaney's 1867-1959 series says real rent
+per square foot is roughly TRENDLESS over the long run. Part of this is a
+one-time level drop reading as a trend inside a 50-year CAGR — asking rents
+fell 4-11% for the concession memory and again here — but it is not all of
+that, and it is not resolved. Either the supply response is now too elastic or
+demand is not growing into the new stock. This is the open item.
+
+**`city:accept` L breaches on `delivered/demolished` (0.49 against 0.60).**
+Read the whole test before believing it: the clause conflates greenfield with
+replacement, which the test's own comment says. The clause in L with a
+real-world anchor went the other way — the demolition rate was documented as
+pinned near its 0.1% floor at a median 0.105%/yr against a stated ~0.5%/yr
+anchor, with 1 of 5 seeds BELOW the floor; it now reads 0.434%/yr with 0 of 5
+under the floor.
+
+The one alarming town (209 demolished, 10 delivered) was checked against the
+pre-change engine and was ALREADY hollowing out at 186/17. Run to 100 years it
+completes the cycle: 916 buildings down to 505, office vacancy peaking at 45%
+in year 60, then clearing to 3.7% by year 100 with deliveries resuming. An
+overbuilt town clears by removing stock. L's 50-year window lands in the
+trough.
+
+`econ:accept` A slipped to a 1.90x location spread against a 2.0x floor,
+because the WORST location now lets space (58/75/67% occupancy against
+50/75/0% before) rather than because the best one got worse.
+
+Conservation green throughout: 813, 997 and 1,027 months.
+
+---
+
+## Previous ruler: a concession cannot be un-given (SAVE_VERSION unchanged)
 
 `ad0a156` made the concession dial asymmetric. It chased its target at
 0.25/month in both directions, so the giveaway evaporated as fast as it

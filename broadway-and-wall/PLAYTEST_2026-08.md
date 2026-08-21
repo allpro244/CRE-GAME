@@ -5,6 +5,15 @@ number below is printed by it, so it can be argued with rather than believed.
 Cross-checks quoted from `pnpm rails`, `pnpm pencils`, `pnpm devyield`,
 `pnpm vacdist` and `BASELINE.json`.
 
+**Follow-up:** `PLAYTEST_FIX_PLAN.md` carries the fix plan, and it revises the
+diagnosis this report left open. §1.2's question — *which side of the occupancy
+disagreement is wrong* — now has an answer with arithmetic behind it: most of
+the gap is one bug, `buildRentRoll` filling a leg with whole suites and dropping
+the last partial one, so realised occupancy is `floor(N·p)/N` and the bias is
+worst in the smallest buildings. §4 of this report ordered the work with the ask
+first; **the plan reverses that** — the occupancy identity comes first, because
+several findings below are its consequences rather than separate faults.
+
 **Method.** I played the game rather than testing a channel: buy income and
 dirt off the tape at market, answer every letter, price a development on every
 lot held, and then look at what the screen said against what the world did. The
@@ -134,7 +143,14 @@ What the player owns, held three years or more:
 
 Median office 54%, retail 62%. And look at the p10/p90: **0% and 100%.** Your
 buildings are not at an occupancy, they are in one of two states — empty or
-full. `pnpm vacdist` says the same thing about the city and says it plainly:
+full.
+
+*(Root cause found after this was written — see `PLAYTEST_FIX_PLAN.md`. It is
+not that the leasing engine empties buildings: traced individually, a 44k sf
+office ran 27 letters over 20 years, signed 25, and finished at 87%. It is that
+occupancy slopes with how many suites a leg demises into — 57% at two suites,
+81% at twelve — which is whole-suite fill quantisation, and it hits small
+buildings hardest.)* `pnpm vacdist` says the same thing about the city and says it plainly:
 office sits within 2pp of natural only **14.0%** of the time, on the friction
 floor **24.2%**, more than 10pp over **16.8%**. *"The vacancy series is two
 states rather than a market."*

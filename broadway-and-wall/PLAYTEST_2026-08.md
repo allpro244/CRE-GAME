@@ -5,6 +5,13 @@ number below is printed by it, so it can be argued with rather than believed.
 Cross-checks quoted from `pnpm rails`, `pnpm pencils`, `pnpm devyield`,
 `pnpm vacdist` and `BASELINE.json`.
 
+> **ALL SEVEN STEPS OF THE FIX PLAN HAVE SINCE BEEN EXECUTED.** Read
+> `PLAYTEST_FIX_PLAN.md` §OUTCOME before acting on anything below — several of
+> these findings are fixed, one was measured wrong here, and the thing that
+> matters most now (real rents falling) is not in this document at all. Section
+> A's instrument in particular could not answer its own question; the correction
+> is recorded in the plan and in `test/playtest.mjs`.
+
 **Follow-up:** `PLAYTEST_FIX_PLAN.md` carries the fix plan, and it revises the
 diagnosis this report left open. §1.2's question — *which side of the occupancy
 disagreement is wrong* — now has an answer with arithmetic behind it: most of

@@ -75,7 +75,8 @@ Recent additions worth knowing about:
 | `pnpm gate` | ~3 min | a violated identity, a broken city invariant. **Must pass before committing anything that moves money.** |
 | `pnpm baseline:check` | ~50s | a standing number that moved without anybody noticing |
 | `pnpm report` | 10–30 min | the lettered tests A–M. Report, not gate — the owner's explicit call, twice. Do not re-promote them. |
-| `pnpm inflation` | ~2 min | the price level and real rent growth against observed bands |
+| `pnpm playtest` | ~6 min | the economy from the player's chair: what an empty building costs, whether the ask reads the roll, whether anything stabilises, whether the labour market has a cycle |
+| `pnpm inflation` | ~2 min | the price level and real rent growth against observed bands. **Two of its bands fail today and did before the Aug-2026 work — see PLAYTEST_FIX_PLAN §"what is left".** |
 | `pnpm facility` | ~2 min | the portfolio loan, both sides — it must work AND it must bite |
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
@@ -103,6 +104,23 @@ over six seeds, individual moves ran +60% to −56% in both directions with a
 if you must, re-roll before you diagnose. Rule of thumb: `rentIdx` and `land`
 have a 3.4× spread ACROSS SEEDS, so a six-seed median cannot resolve anything
 smaller than a factor of two.
+
+**A PRIVATE STREAM THAT ONLY GUARDS `s.rng` IS NOT PRIVATE.** This one is new
+and it is the same shape as the re-roll above, wearing a fix as a disguise.
+`genRentRoll` swapped `s.rng` for a parcel-keyed hash and restored it in a
+`finally`, and its comment claimed two invariants: the roll is deterministic per
+building, and asking for one costs the shared world PRNG nothing. **Both were
+false.** Every draw inside it goes through a NAMED channel — `rng(s, "leasing")`
+— and a named draw reads and writes `s.streams[channel]`, never `s.rng`. So the
+hash seeded a stream nothing used and the restore put back a stream nothing had
+moved. Measured: two calls on the same building in the same month returned two
+different rolls, and each call advanced `s.streams.leasing`, so a render path
+that peeked at a building moved the world.
+
+If you wrap anything in a private stream, snapshot **`s.streams` as a whole**,
+not the channels you believe the callee uses. Enumerating them is right when
+written and wrong two commits later. And when you read a comment asserting an
+invariant, test the invariant — that is how this was found.
 
 **The frozen world.** `advanceMonth` returns state UNCHANGED once `gameOver`
 is set. Any probe running past ~year 30 without a player must resurrect:
@@ -182,7 +200,20 @@ another. Grep before you add another.
 
 ## 6. OPEN FAULTS, RANKED
 
-**1. ~~The industrial vacancy floor is load-bearing~~ — CLOSED.** Shed demand
+**1. The industrial vacancy floor — RE-OPENED, then improved. Read this before
+trusting any "CLOSED" below.** This entry said CLOSED and `BASELINE.json` said
+`rail.vac.industrial.lo = 0.7267` — the floor binding 73% of months — for an
+unknown number of commits. `pnpm vacdist` agreed with the baseline, not with
+this file. The Aug-2026 playtest found the disagreement; see
+`PLAYTEST_2026-08.md` §1.6.
+
+It is much better now and it was not fixed directly: the occupancy work in
+`PLAYTEST_FIX_PLAN` steps 1-2 moved it. Measured 8 seeds x 60y, industrial on
+its friction floor **73.3% -> 55.9%** of months, within 2pp of natural
+4.9% -> 10.3%, and p95 vacancy 5.6% -> 30.8% — the class finally has a bad
+market sometimes. It is still the worst rail in the repo and it is still open.
+
+The original entry, kept because its mechanism is still the live one: shed demand
 tracked total `jobIdx` while manufacturing's share of employment/floor space
 falls secularly. `econ.industComp` now declines at the NY/SF/London rate (~half
 over ~40y ≈ −1.72%/yr), floor 0.35 for residual logistics; industrial driver is

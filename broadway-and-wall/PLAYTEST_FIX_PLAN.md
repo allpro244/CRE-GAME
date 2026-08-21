@@ -298,3 +298,143 @@ change.
 - **Do not fix `tickLeasing`'s quantisation in the same commit as
   `genRentRoll`'s.** One is RNG-safe and one re-rolls the century; landing them
   together makes the re-roll indistinguishable from the fix.
+
+---
+
+# OUTCOME — all seven steps executed
+
+Written after the work, against the plan above. Two of the plan's calls were
+wrong and are marked as such; the measurements are the record either way.
+
+## What each step actually did
+
+| step | verdict |
+|---|---|
+| 0 · baseline metric | **Done.** `occGap.{class}` in `BASELINE.json`. Reads −0.71 / 1.57 / 0.40 / 0.42pp; would have read 9–16pp. |
+| 1 · last suite is a probability | **Done, and it found two more faults** — see below. |
+| 2 · anchor the two layers | **Done.** `OCC_BASE` retired; the level is `1 − NATURAL_VAC`, the pivot is the city's own `locIdxMeanBy`, the shape means are added back. |
+| 3 · scope the listing skew | **DROPPED — premise wrong.** `genRentRoll` is only ever called on a building coming to market or changing hands. The skew was correctly scoped; the harness was over-applying it. |
+| 4 · the ask reads the roll | **Done**, and needed rivals too — 59% of listings come from firms, not from `refreshListings`. |
+| 5 · re-measure development | **Done. Most of it WAS the occupancy bug.** What remains is not a development fault. |
+| 6 · labour cycle | **Met with no labour-market change.** It was downstream of the space market all along. |
+| 7 · reconcile the documents | **Done.** `HANDOFF.md` open fault #1 re-opened and re-measured. |
+
+## The headline numbers
+
+| | before | after |
+|---|---|---|
+| `roll.commercialOcc` | 0.6801 | **0.8236** |
+| `roll.deadLegShare` | 0.1116 | 0.0758 |
+| cityVac vs the rolls, office | 16.0pp | **−0.0pp** |
+| what a player owns, office median occ (3y+) | 54% | **79%** |
+| retail dev clearing a +75bp hurdle | 0.0% of months | **18.7%** |
+| industrial on its friction floor | 73.3% | **55.9%** |
+| unemployment, recession vs expansion | 2.80% vs 2.80% | **5.33% vs 3.12%** |
+| unfilled positions, median | 2.50% | **0.00%** |
+| `market:1911` ceiling bind | 46.3% | 36.5% |
+| load-bearing rails | 66 | 62 |
+| gate band L (cranes answer teardowns) | outside, 0.49 | **passes** |
+| breakeven best-decile buildable | office 33%, one class at 100% everywhere | office 54%, all four classes, none in the worst decile |
+
+## Three faults the plan did not know about, found by executing it
+
+1. **The private stream was not private.** `genRentRoll` guarded `s.rng` while
+   every draw inside it used the named `"leasing"` channel. Both documented
+   invariants were false — the roll was not deterministic per parcel, and
+   asking for one moved the world. Now in `HANDOFF.md` §4 as a trap.
+2. **A leg was cut into suites plus rubble.** `useSuiteSf` returned the size the
+   market wants and stranded the leftover; a leftover under the tenancy floor
+   can never be let by anybody, so 62% of small legs were welded below 100%
+   occupancy for the life of the game. Landlords demise to fit.
+3. **Two `pnpm inflation` bands were already failing** before any of this work —
+   controlled against the pre-change engine with an explicit rebuild. Nobody had
+   written that down.
+
+## Two corrections to `PLAYTEST_2026-08.md`
+
+**The report's section A used an instrument that could not answer its own
+question.** It divided the ask by `assetValue` and read 0.99x flat across every
+occupancy bucket. A structurally-empty building is worth its DIRT, so both the
+ask and `assetValue` collapse onto the same land floor and the ratio is 1.0 by
+construction. Measured in dollars per rentable foot — no model in the
+denominator — the tape was already discounting emptiness before any fix, $92/sf
+empty against $185/sf full. The ask was never blind to a building being empty.
+It was blind to the DRAW around the model's expectation, which is a real fault
+and is what step 4 fixed: ask/assetValue now runs 0.93x where the roll came in
+30pp worse than the model to 1.51x where it came in better, against a flat
+0.98–1.05x before.
+
+**And the negative going-in caps the report led on are mostly not a fault.** A
+building trading at its dirt with negative operating income has a negative
+going-in cap by arithmetic. No broker would quote a cap rate on it — it is a
+lease-up story priced per foot. `test/playtest.mjs` section A is rewritten into
+A1 (dollars per foot, the honest level) and A2 (the divergence test, the honest
+question).
+
+## What is left, and it is one thing
+
+**Real rents fall, and that is now the dominant economic fault.**
+
+`test/inflation.mjs` fails two bands — real office rent −1.35%/yr against a
+−1.0% to 2.0% band, real retail −3.19%/yr against −1.5% to 2.5%. Controlled
+against the pre-change engine: −1.32% and −2.42%. **Pre-existing, not caused by
+this work, and nobody had recorded it.**
+
+It is the dominant fault because it explains what is left of everything else.
+Developments held 8 years or more, 4 seeds:
+
+```
+  pro forma promised value/basis        MED 1.16x
+  actually worth                        MED 0.65x
+  its class's REAL rent over the hold   MED 0.62x  (nominal 0.97x)
+
+    real rent fell 30%+   n=66   value/basis MED 0.57x
+    fell 5-30%            n=14                    0.45x
+    roughly flat          n= 5                    0.83x
+    rose 20%+             n= 5                    1.03x
+```
+
+**The pro forma is not lying.** Where real rent held flat, a development
+delivered what it promised. The rent path falls out from under it. Nominal rents
+are 0.97x over eight-plus years while CPI compounds — in a city whose population
+grows 1.1%/yr, nominal rents should at least track the price level.
+
+The same fault is why `pnpm stress` reports the median strategy losing money in
+real terms. Controlled: **−$1.1M real before this work and −$1.1M real after**,
+`WEAK` both times, 3 of 8 strategies in the black before and 2 of 8 after. The
+tournament was not broken by this work and is not fixed by it. Individual
+archetypes reshuffled (core +$42.4M → −$1.3M, valueadd −$8.7M → +$18.4M), which
+across six worlds with a documented 3.4x cross-seed spread is re-roll noise, not
+signal.
+
+**Do not close this with a coefficient on rent.** The next question is which of
+the four inputs to rent formation is falling — the income anchor
+(`burden`/`affordEff`), the vacancy pressure path, the scarcity term, or the
+supply response — and the instrument is `pnpm inflation` plus a per-term walk of
+`rentIdx` the way `PLAYTEST_FIX_PLAN` walked occupancy. It is a whole piece of
+work and it should be measured before it is touched.
+
+## One thing that got worse, and why it is probably right
+
+Office vacancy runs a **19.1% median against an 11.5% natural rate**, and sits
+more than 10pp over natural in 44.9% of months — against 10.6% and 16.8% before.
+That is not overbuilding: measured, city office starts fall 6,677 → 2,456 → 989
+→ **0** per month as the glut deepens, and floor area grew 47% against
+population 35% over 45 years. It is the labour cycle arriving. Traced on one
+seed, year 25 → 30: jobs −9%, unemployment 2.8% → 10.6%, office demand −11%
+while the pipeline still delivered +9% of stock, vacancy 10.9% → 21.9%, then a
+twenty-year workout back to 7.3%. Before this work unemployment never moved, so
+office demand never fell and the market never had a downturn to have.
+
+A 19% median is on the high side of the record (US office ran 12–19% for
+decades, ~19–20% post-2020) and it is a band question, not an identity. It is
+also entangled with the rent fault above — chronic vacancy is half of why real
+rents fall — so measure them together and do not tune either alone.
+
+## Difficulty moved, and it is an output
+
+`test/play50.mjs`, same bot and same six seeds: median net worth $54.4M → $43.8M
+over fifty years, worst $5.8M → −$0.9M, best $173.6M → $205.1M, insolvencies
+0 → 1. The world is harder and more honest. Per `CLAUDE.md` that is a
+measurement, not a regression, and the answer to it is never to re-break
+occupancy.

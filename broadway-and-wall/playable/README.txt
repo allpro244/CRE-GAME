@@ -1,11 +1,11 @@
 BROADWAY & WALL — PLAYABLE
 ======================================
-Build id:  far-doubled
+Build id:  occupancy-identity
 Office:    $35.5 base (secondary market)
 
 HOW TO KNOW YOU HAVE THIS BUILD
   On the start screen footer you should see:
-    build far-doubled · office base $35.5
+    build occupancy-identity · office base $35.5
   The start screen asks WHICH CITY first:
     Somewhere else - a generated island, a new one every run
     Manhattan      - the written-down one, with an extent picker

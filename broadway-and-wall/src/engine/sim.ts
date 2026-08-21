@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
@@ -26,7 +26,7 @@ import { tickPlayerMortality, lifeForCash } from "./estate";
 import { tickFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
-import { initRivals, tickRivals, fundJobs, gradeOf } from "./rivals";
+import { initRivals, tickRivals, fundJobs } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -720,7 +720,14 @@ function tickMonth(
     if (a.refused || !a.ask) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const v = assetValue(rec, s.econ, gradeOf(s, rec));
+    // STRUCK ON WHAT THE DEED CONVEYS, like everything else that guards an
+    // ask. This read `assetValue` — the class model — while the invariant and
+    // the listing floor both read `conveyedValue`, the roll the deed actually
+    // hands over. A building whose roll came in far ABOVE its model slipped
+    // the withdraw test on the model's low number and then sat as a stale
+    // quote at half its real appraisal: the same quantity with two different
+    // answers, which is fake number three. One quantity now, everywhere.
+    const v = conveyedValue(s, rec, bbl);
     if (v > 0 && a.ask < v * 0.85) {
       delete s.approaches[bbl];
       s.news.unshift({

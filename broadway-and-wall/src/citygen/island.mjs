@@ -301,21 +301,59 @@ function bufferAsCapsules(path, width) {
   if (!path || path.length < 2) return [];
   const hw = width / 2;
   const rings = [];
-  for (let i = 0; i < path.length - 1; i++) {
-    const a = path[i], b = path[i + 1];
+  // ONE CUT PER REACH, NOT ONE PER SEGMENT. The path arrives Chaikin-smoothed,
+  // so a segment is eight to eleven metres and a creek is seventy of them at
+  // slightly different bearings — and the obstacle subtraction downstream
+  // carves one piece per FACE it is handed. Seventy near-parallel rectangles
+  // shredded every cell along the bank into a radial fan of sliver blocks,
+  // which is the "weird thing where streets meet the creek" exactly.
+  //
+  // A plat meets a winding river the way a surveyor does: each block ends at
+  // ONE straight line roughly parallel to the bank, and the line's bearing
+  // changes reach by reach. So merge the fine polyline into straight reaches —
+  // extend the chord while every interior point stays within DEV of it — and
+  // emit one rectangle per reach, widened by twice the deviation so the true
+  // wet corridor stays inside the cut. The slack between the straight cut and
+  // the curved bank becomes apron asphalt, which is what a riverside street
+  // looks like. The painted ribbon is untouched; only the lot-cutting
+  // geometry coarsens.
+  const DEV = Math.min(6, width * 0.4);
+  const emit = (a, b, dev) => {
     const L = dist(a, b);
-    if (L < 4) continue;
+    if (L < 4) return;
     const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
     const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
-    const snapped = snapRing(rect(cx, cy, L + width * 0.55, width, deg));
+    const snapped = snapRing(rect(cx, cy, L + width * 0.55, width + 2 * dev, deg));
     if (snapped) {
       const hull = convexHull(snapped);
       rings.push(hull.length >= 3 ? hull : snapped);
     }
+  };
+  let i0 = 0;
+  while (i0 < path.length - 1) {
+    let j = i0 + 1, keptDev = 0;
+    for (; j < path.length; j++) {
+      const a = path[i0], b = path[j];
+      const L = dist(a, b) || 1;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      let d = 0;
+      for (let k = i0 + 1; k < j; k++) {
+        const dd = Math.abs(-(path[k][0] - a[0]) * uy + (path[k][1] - a[1]) * ux);
+        if (dd > d) d = dd;
+      }
+      if (d > DEV) break;
+      keptDev = d;
+    }
+    const end = Math.max(i0 + 1, j - 1);
+    emit(path[i0], path[end], keptDev);
+    i0 = end;
   }
-  const capN = Math.max(14, Math.min(24, Math.round(hw + 8)));
+  // The ribbon's round end caps stick half a width past the last point; the
+  // reach rectangle overhangs 0.275 of one. An octagon CIRCUMSCRIBED about the
+  // cap (radius over cos pi/8) covers it in eight faces where the old disc
+  // spent fourteen to twenty-four — every face is a piece downstream.
   for (const i of [0, path.length - 1]) {
-    const d = discRing(path[i][0], path[i][1], hw, capN);
+    const d = discRing(path[i][0], path[i][1], hw * 1.09, 8);
     if (d) rings.push(d);
   }
   return rings;
@@ -2557,6 +2595,48 @@ export function islandConfig(seed) {
     let nextGap = Dwat.f(150, 230);
     const runs = [];
     let run = [path[0]];
+    // A RESERVATION CROSSES ON A DECK, NOT ON A FORD. The boulevards are laid
+    // before the water, and a creek that crossed one kept its ribbon painted
+    // straight over the roadway — no gap, no rails, a street driving into the
+    // water and out the far bank. Track when the path is inside a diagonal's
+    // reservation; those segments leave the run (a dry corridor the boulevard
+    // already paves), and the whole span gets one pair of rails at its banks.
+    const inReservation = (px, py) => diagonals.findIndex((d) => {
+      const t = (d.deg * Math.PI) / 180;
+      const dx = px - d.cx, dy = py - d.cy;
+      const u = dx * Math.cos(t) + dy * Math.sin(t);
+      const v = -dx * Math.sin(t) + dy * Math.cos(t);
+      return Math.abs(u) <= d.w / 2 + 4 && Math.abs(v) <= d.h / 2 + 9;
+    });
+    let crossDiag = -1, crossFrom = null, crossTo = null;
+    const sideOf = (k, p) => {
+      const d = diagonals[k];
+      const t = (d.deg * Math.PI) / 180;
+      return -(p[0] - d.cx) * Math.sin(t) + (p[1] - d.cy) * Math.cos(t);
+    };
+    const flushCrossing = () => {
+      if (crossDiag < 0) return;
+      const mx = (crossFrom[0] + crossTo[0]) / 2, my = (crossFrom[1] + crossTo[1]) / 2;
+      // A deck only where the water actually gets to the OTHER SIDE of the
+      // roadway. A creek that slides into the reservation and back out on the
+      // same bank — or runs along inside it for a hundred metres at a grazing
+      // angle — is culverted under the road margin, the way cities have always
+      // buried a stream that argues with a street; rails on that would be a
+      // hundred-metre skew bridge over nothing.
+      const crossed = sideOf(crossDiag, crossFrom) * sideOf(crossDiag, crossTo) < 0;
+      if (crossed && inRing([mx, my], inner)) {
+        const span = dist(crossFrom, crossTo);
+        const cdeg = (Math.atan2(crossTo[1] - crossFrom[1], crossTo[0] - crossFrom[0]) * R2D + 360) % 360;
+        localBridges.push({
+          cx: Math.round(mx), cy: Math.round(my),
+          w: Math.round(Math.max(14, Math.min(64, span + 8))),
+          h: Math.round(Math.min(36, (diagonals[crossDiag].h ?? 11) + 6)),
+          deg: +cdeg.toFixed(1),
+          name: `${name.replace(/\s+(Creek|River|Canal|Race|Brook)$/, "")} Bridge`,
+        });
+      }
+      crossDiag = -1; crossFrom = null; crossTo = null;
+    };
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i], b = path[i + 1];
       const L = dist(a, b);
@@ -2565,6 +2645,15 @@ export function islandConfig(seed) {
       const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
       acc += L;
       const inland = inRing([cx, cy], inner);
+      const dHit = inland ? inReservation(cx, cy) : -1;
+      if (dHit >= 0) {
+        if (crossDiag < 0) crossFrom = a;
+        crossDiag = dHit; crossTo = b;
+        if (run.length >= 2) runs.push(run);
+        run = [b];
+        continue;
+      }
+      flushCrossing();
       if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
         localBridges.push({
           cx: Math.round(cx), cy: Math.round(cy),
@@ -2582,19 +2671,38 @@ export function islandConfig(seed) {
       }
       run.push(b);
     }
+    flushCrossing();
     if (run.length >= 2) runs.push(run);
     for (const seg of runs) {
       const ribbon = strokeRibbon(seg, width);
       if (ribbon) rings.push({ ring: ribbon, name, kind });
+      // `cut: true` — this geometry exists to recut lots, and it is wider than
+      // the painted water on a bend. Marked so inWater downstream can stay the
+      // truth (the ribbon) rather than the clearance.
       for (const ring of bufferAsCapsules(seg, width)) {
-        rings.push({ ring, name, kind, paint: false });
+        rings.push({ ring, name, kind, paint: false, cut: true });
       }
     }
     if ((forcePond || (kind !== "canal" && Dwat.chance(0.42))) && path.length > 5) {
       const end = path[path.length - 1];
       if (inRing(end, inner) && distToRing(end, inner) > width + 28) {
-        const r = Dwat.f(width * 1.6, width * 2.3);
-        const pond = ellipseRing(end[0], end[1], r, r, 64);
+        let r = Dwat.f(width * 1.6, width * 2.3);
+        // A POND DOES NOT SIT UNDER A BOULEVARD. The reservations are laid
+        // first, and a stream head that wanders near one used to cap itself
+        // with a disc straight across the roadway. Shrink until it clears
+        // every reservation, and give the pond up rather than flood the road.
+        // Deterministic — the radius draw above is already taken either way.
+        const clearOf = (rr) => diagonals.every((d) => {
+          const t = (d.deg * Math.PI) / 180;
+          const dx = end[0] - d.cx, dy = end[1] - d.cy;
+          const u = dx * Math.cos(t) + dy * Math.sin(t);
+          const v = -dx * Math.sin(t) + dy * Math.cos(t);
+          const du = Math.max(0, Math.abs(u) - d.w / 2);
+          const dv = Math.max(0, Math.abs(v) - d.h / 2);
+          return Math.hypot(du, dv) > rr + 8;
+        });
+        while (r >= width * 1.1 && !clearOf(r)) r -= 4;
+        const pond = r >= width * 1.1 && clearOf(r) ? ellipseRing(end[0], end[1], r, r, 64) : null;
         if (pond) {
           rings.push({
             ring: pond,

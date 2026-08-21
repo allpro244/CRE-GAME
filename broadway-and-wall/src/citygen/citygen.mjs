@@ -496,9 +496,13 @@ export function generateCity(cfg) {
     .filter((st) => st.paint === false || st.kind === "pond" || st.kind === "slip")
     .map((st) => st.ring)
     .filter((r) => r && r.length >= 3);
-  // Painted ribbons AND lot-cut capsules. Trees and dashes use this so a
-  // creek through a park is water, not a lawn with willows in it.
-  const WATER_M = (cfg.streams ?? []).map((st) => st.ring).filter((r) => r && r.length >= 3);
+  // Painted ribbons, ponds and slips. The lot-cut reaches are excluded on
+  // purpose: they are wider than the water on a bend (the straight cut plus
+  // the chord deviation), and dashes, sidewalks and trees should answer to
+  // the water that is actually painted, not to the surveyor's clearance.
+  const WATER_M = (cfg.streams ?? [])
+    .filter((st) => !st.cut)
+    .map((st) => st.ring).filter((r) => r && r.length >= 3);
   const inWater = (p) => WATER_M.some((r) => inRing(p, r));
   const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
   // Every obstacle is subtracted from any cell that meets it, so a cell never
@@ -511,10 +515,32 @@ export function generateCity(cfg) {
       : rect(p.cx, p.cy, p.w + 2 * PARK_CLEAR, p.h + 2 * PARK_CLEAR, p.deg ?? 0))),
     ...(cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w + 2 * DIAG_CLEAR, d.h + 2 * DIAG_CLEAR, d.deg)),
   ];
+  // EVERY FACE HANDED TO THE SUBTRACTION IS A PIECE IT WILL CARVE. A round
+  // green is a 28-36-gon and a pond is a 64-gon, and cutting cells with one
+  // half-plane per vertex shredded every block around a circle into a radial
+  // fan of sliver lots — the second face of the "weird thing at the creek".
+  // A circle in a street grid is fronted the way Columbus Circle is: the
+  // blocks around it end on a handful of TANGENT lines, and the ground
+  // between tangent and curve is the circle's frontage road. So an obstacle
+  // with more than ten vertices cuts as its circumscribed eight-tangent
+  // polygon — the support plane of the ring in eight fixed bearings — and
+  // only the PAINT keeps the full curve.
+  const cutFaces = (ring, grow) => {
+    if (ring.length <= 10) return insideFaces(ring, grow);
+    const faces = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4;
+      const nx = Math.cos(a), ny = Math.sin(a);
+      let d = -Infinity;
+      for (const p of ring) { const s = p[0] * nx + p[1] * ny; if (s > d) d = s; }
+      faces.push([nx, ny, d + grow]);
+    }
+    return faces;
+  };
   const OBSTACLES = [
-    ...PARKS_M.map((p) => ({ ring: p, faces: insideFaces(p, PARK_CLEAR) })),
+    ...PARKS_M.map((p) => ({ ring: p, faces: cutFaces(p, PARK_CLEAR) })),
     ...DIAG_M.map((p) => ({ ring: p, faces: insideFaces(p, DIAG_CLEAR) })),
-    ...STREAMS_M.map((p) => ({ ring: p, faces: insideFaces(p, STREAM_CLEAR) })),
+    ...STREAMS_M.map((p) => ({ ring: p, faces: cutFaces(p, STREAM_CLEAR) })),
   ];
 
   // THE DOUBLE CHARGE, PAID ONCE. A cell that meets a diagonal is clipped at
@@ -2224,24 +2250,37 @@ export function generateCity(cfg) {
     const [bx0, by0, bx1, by1] = bboxOfRing(green);
     const pw = bx1 - bx0, ph = by1 - by0;
     if (Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
-      const pcx = c[0] + pw * 0.14, pcy = c[1] - ph * 0.1;
-      const pond = [];
       const rA = Math.min(pw, ph) * rr(0.16, 0.2), rB = rA * rr(0.6, 0.78), tilt = rr(0, Math.PI);
+      const rel = [];
       for (let k = 0; k < 18; k++) {
         const a2 = (k / 18) * Math.PI * 2;
         const wob = 1 + 0.14 * Math.sin(a2 * 3 + tilt * 5);
         const ex = rA * Math.cos(a2) * wob, ey = rB * Math.sin(a2) * wob;
-        pond.push([pcx + ex * Math.cos(tilt) - ey * Math.sin(tilt), pcy + ex * Math.sin(tilt) + ey * Math.cos(tilt)]);
+        rel.push([ex * Math.cos(tilt) - ey * Math.sin(tilt), ex * Math.sin(tilt) + ey * Math.cos(tilt)]);
       }
-      // Same rr() count either way. A pond that the race already occupies is
-      // the mill pond with a triangular bite taken out of it — do not paint
-      // a second water body on top of the channel.
-      const onRace = pond.some((p) => inWater(p)) || WATER_M.some((w) => ringsOverlap(pond, w));
-      if (!onRace) pondFeatures.push(pond);
+      const ringAt = (q) => rel.map(([ex, ey]) => [q[0] + ex, q[1] + ey]);
+      // Same rr() count on every path. A pond that the race already occupies
+      // is the mill pond with a triangular bite taken out of it, and a pond
+      // under a boulevard is a flooded roadway — the diagonal through a big
+      // park keeps its carriageway. The water yields: first to the mirrored
+      // spot across the green, and if both are taken it is not dug at all.
+      const clearAt = (q) => {
+        const ring = ringAt(q);
+        if (ring.some((p) => inWater(p)) || WATER_M.some((w) => ringsOverlap(ring, w))) return false;
+        if (DIAG_M.some((dr) => ringsOverlap(ring, dilateConvex(dr, 4) ?? dr))) return false;
+        return true;
+      };
+      const cA = [c[0] + pw * 0.14, c[1] - ph * 0.1];
+      const cB = [c[0] - pw * 0.14, c[1] + ph * 0.1];
+      const pc = clearAt(cA) ? cA
+        : inRing(cB, green) && !inWater(cB) && clearAt(cB) ? cB : null;
+      const pond = ringAt(pc ?? cA);
+      const pcx = (pc ?? cA)[0], pcy = (pc ?? cA)[1];
+      if (pc) pondFeatures.push(pond);
       // willows at the water's edge
       for (let k = 0; k < 18; k += 3) {
         const tw = [pond[k][0] + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14];
-        if (!onRace && inRing(tw, green)) plant(tw);
+        if (pc && inRing(tw, green)) plant(tw);
       }
     }
     // corner groves, an open lawn in the middle

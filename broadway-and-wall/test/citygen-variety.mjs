@@ -161,8 +161,31 @@ if (topShare > 0.72) {
       if (st.paint === false) {
         nCut++;
         if (!isConvex(ring)) folded++;
-        const [x0, y0, x1, y1] = bboxOfRing(ring);
-        if ((x1 - x0) > 180 || (y1 - y0) > 180) huge++;
+        // RECALIBRATED WITH THE REACH CUTS. The old bound was bbox span >180 m,
+        // written when cut geometry was one capsule per path segment — and one
+        // rectangle per segment is exactly what shredded every block along a
+        // creek into a radial fan of slivers (one piece per face downstream).
+        // A reach cut is LONG on purpose: a straight canal is one rectangle.
+        // What is never right is a FAT one — the cut may only be a little
+        // wider than the water it serves (max canal 32 m + 2x6 m chord
+        // deviation + rounding). Rotating-calipers width over the hull edges
+        // catches a runaway blob strictly better than a length cap did.
+        let wid = Infinity;
+        for (let e = 0; e < ring.length; e++) {
+          const a = ring[e], b = ring[(e + 1) % ring.length];
+          const ex = b[0] - a[0], ey = b[1] - a[1];
+          const L = Math.hypot(ex, ey);
+          if (L < 1e-9) continue;
+          const nx = -ey / L, ny = ex / L;
+          let lo = Infinity, hi = -Infinity;
+          for (const p of ring) {
+            const d = p[0] * nx + p[1] * ny;
+            if (d < lo) lo = d;
+            if (d > hi) hi = d;
+          }
+          if (hi - lo < wid) wid = hi - lo;
+        }
+        if (wid > 48) huge++;
         continue;
       }
       nPaint++;
@@ -183,7 +206,7 @@ if (topShare > 0.72) {
     process.exit(1);
   }
   if (huge) {
-    console.error(`\nFAIL  ${huge} lot-cut rings span >180 m — a capsule should be one segment`);
+    console.error(`\nFAIL  ${huge} lot-cut rings are over 48 m wide — a cut is a little wider than its water, never fatter`);
     process.exit(1);
   }
   if (nPond && coarsePond) {

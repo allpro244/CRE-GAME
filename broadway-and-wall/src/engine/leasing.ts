@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
+import type { Approach, BuiltClass, Condition, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange } from "./market";
@@ -11,7 +11,7 @@ import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, IN
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
@@ -522,6 +522,64 @@ export function occupancyRead(rec: ParcelRecord, h: Holding): OccRead {
  * deterministic per building and drawn from a private stream, so this costs
  * the shared world PRNG nothing.
  */
+/**
+ * WHAT THE DEED IS WORTH, AS THE DEED CONVEYS IT.
+ *
+ * The ask on every building in this town was anchored to `assetValue`, which
+ * prices at MODEL occupancy and structurally cannot see a rent roll. Measured
+ * over 8,750 ordinary listings across 6 seeds x 40 years, bucketed by each
+ * building's OWN disclosed occupancy:
+ *
+ *     roll occupancy      ask / appraisal      going-in cap the buyer gets
+ *     0-24% let            0.99x                     -5.4%
+ *     50-74% let           0.99x                      3.5%
+ *     90-100% let          0.99x                      8.2%
+ *
+ * The ask is FLAT to the fourth decimal across the whole range, so the entire
+ * difference between an empty building and a full one arrived as the buyer's
+ * yield rather than as the price. A tenth-let building asked the same ninety-
+ * nine cents on the appraisal as a full one, and 20% of ordinary multifamily
+ * listings were offered at a NEGATIVE going-in cap. In life a 15%-let office
+ * trades as a lease-up story, often near land value, and the buyer prices the
+ * years and the capital it takes to fill.
+ *
+ * This is the same fault as the lender's — `buyQuote` records it, "over 3,195
+ * listings that estimate ran 89% occupancy against a real roll of 69%" — and
+ * the desk display's, which `shared.tsx` fixed with `goingIn`/`inPlace`. Both
+ * were fixed in ONE CONSUMER EACH and the thing that sets the price was never
+ * touched.
+ *
+ * So the ask is struck with `holdingValue` on the roll the deed will actually
+ * convey — the SAME function, on the SAME roll, that marks the building once
+ * the player owns it. That matters beyond the ask: `refreshListings` carries a
+ * long note about the money pump in the other direction (buy at the ask, mark
+ * at the appraisal, richer every time). One function on one roll is what closes
+ * it, rather than two opinions that have to be kept in step by hand.
+ *
+ * Free to call: `genRentRoll` is deterministic per parcel and runs on a private
+ * stream, so asking for the roll before the listing exists returns exactly the
+ * roll `stampListing` will write, and costs the shared world PRNG nothing.
+ */
+export function conveyedValue(
+  s: GameState, rec: ParcelRecord, bbl: string, distress = false,
+  // A RIVAL'S BUILDING CONVEYS THE RIVAL'S GRADE. `assetGrade(r, rec)` is how
+  // hard that firm has been running the plant, and it is not the same as the
+  // anonymous default — an institution's tower and a merchant's are different
+  // deeds. Callers that know the owner pass it; the tape's own listings do not
+  // have one and fall back to the building's age-derived grade.
+  grade?: Condition,
+): number {
+  // holdingValue already answers land and unbuilt lots with landValue.
+  const base = grade ?? condGrade(initialCondIdx(rec, s.month));
+  const cond = distress
+    ? condGrade(Math.max(0.30, (initialCondIdx(rec, s.month) ?? 0.7) - 0.10))
+    : base;
+  const vessel = { bbl, boughtM: s.month, costBasis: 0, loan: null,
+    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  if (rec.class !== "land" && rec.bldgArea) genRentRoll(s, rec, vessel, distress, false);  // no closing, no settlement
+  return holdingValue(rec, s.econ, vessel, s.month);
+}
+
 export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): Listing {
   if (rec.class === "land" || !rec.bldgArea || li.roll) return li;
   const distress = !!li.distress;

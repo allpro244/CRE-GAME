@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { assetValue, ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
@@ -266,7 +266,10 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl] || isCivicLand(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const value = assetValue(rec, s.econ, gradeOf(s, rec));
+    // THE ROLL THE DEED CONVEYS, not the class model's opinion of a building
+    // like this one. See conveyedValue — the ask was flat at 0.99x appraisal
+    // whether the building was a tenth let or fully let.
+    const value = conveyedValue(s, rec, bbl, distress);
     if (value <= 0) continue;
     const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
     // Only a true estate holder (or a rival-principal death in people.ts) may
@@ -343,7 +346,9 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   const withdrawn: string[] = [];
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
-    const v = rec ? assetValue(rec, s.econ, gradeOf(s, rec)) : 0;
+    // Struck on the same quantity the ask itself is struck on, so the floor and
+    // the withdraw test cannot drift away from the number they are guarding.
+    const v = rec ? conveyedValue(s, rec, li.bbl, !!li.distress) : 0;
     const floor = v * ASK_FLOOR;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
     if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]?.agreed) {
@@ -392,11 +397,14 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     }
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) { rejects++; continue; }
-    const value = assetValue(rec, s.econ, gradeOf(s, rec));
+    // Distress is drawn BEFORE the value, because a receiver's building conveys
+    // a different roll and a notched grade — so the ask has to be struck on the
+    // deed this seller is actually offering, not on the healthy version of it.
+    const distress = rng(s) < pDistress;
+    const value = conveyedValue(s, rec, bbl, distress);
     if (value <= 0) { rejects++; continue; }
     if (value > 60_000_000 && rng(s) > 0.12) { rejects++; continue; }
     rejects = 0;
-    const distress = rng(s) < pDistress;
     // THE BID-ASK GAP. A seller under no pressure does not mark their building
     // to the new cap rate; they hold last year's number and wait. So in a
     // downturn the honest asks vanish and the tape fills with either dreamers

@@ -18,14 +18,13 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, assetValue, FAR_CEILING } from "./value";
+import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING } from "./value";
 // ONE FUNCTION, ONE MEANING. Every price in the game now appraises at the grade
 // the building is actually IN — its year, moved by whoever has been running it —
 // so an invariant that appraises at its BIRTH grade is measuring a different
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
-import { gradeOf } from "./rivals";
-import { leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse } from "./leasing";
+import { conveyedValue, leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { FAR_FLOOR, FAR_CEIL } from "./zoning";
@@ -354,8 +353,23 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     // markdown with no floor under it. A little slack below the 70% floor for
     // a market that moved inside the month.
     {
+      // MEASURED AGAINST WHAT THE DEED CONVEYS, not against the class model.
+      //
+      // This read `assetValue`, which prices at MODEL occupancy. Asks are now
+      // struck on the roll the deed actually hands over (see conveyedValue),
+      // so a building whose roll came in far under its model — a one-space shop
+      // whose coin landed empty — legitimately asks 60% under the model price
+      // and is not being given away at all. It is being priced. Left pointing
+      // at the model, this fired on five ordinary listings the moment the ask
+      // started telling the truth.
+      //
+      // The intent is unchanged and so is the bite: refreshListings floors an
+      // ask at 0.70x this same quantity, so 0.60x still catches everything the
+      // check was written for — static records priced as dirt, and a stale
+      // markdown compounding with no floor under it — because those drive the
+      // ask through the floor of whatever it is measured against.
       const lr = resolveRec(parcels, s, li.bbl);
-      const v = lr ? assetValue(lr, s.econ, gradeOf(s, lr)) : 0;
+      const v = lr ? conveyedValue(s, lr, li.bbl, !!li.distress) : 0;
       if (v > 0 && li.ask < v * 0.60) {
         bad("listing", `listing ${li.bbl}`, `asking ${(li.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal — ${((1 - li.ask / v) * 100).toFixed(0)}% under`);
       }
@@ -375,7 +389,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [bbl, a] of Object.entries(s.approaches)) {
     if (a.refused || !a.ask) continue;
     const ar = resolveRec(parcels, s, bbl);
-    const v = ar ? assetValue(ar, s.econ, gradeOf(s, ar)) : 0;
+    const v = ar ? conveyedValue(s, ar, bbl) : 0;
     if (v > 0 && a.ask < v * 0.60) {
       bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
     }

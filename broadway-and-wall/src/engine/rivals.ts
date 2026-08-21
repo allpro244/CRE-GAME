@@ -39,7 +39,7 @@ import type { DevPlan } from "./dev";
 import { cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
-import { stampApproach } from "./leasing";
+import { stampApproach, conveyedValue } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
@@ -2918,7 +2918,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (forcedBbl) {
       const rec = resolveRec(parcels, s, forcedBbl);
       if (rec) {
-        const v = assetValue(rec, s.econ, assetGrade(r, rec));
+        // The roll this deed conveys, at this firm's operating grade — the
+        // same quantity the tape's own asks use. See conveyedValue.
+        const v = conveyedValue(s, rec, forcedBbl, false, assetGrade(r, rec));
         // QUIET TREATY. Patient capital and offshore money often sell without
         // ever hitting the tape — the century report found 0/57k deeds flagged
         // off-market while the weighting branch sat dead. About two in five
@@ -3002,7 +3004,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (!bbl) bbl = r.bbls[Math.floor(rng(s, "rivals") * r.bbls.length)];
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
-        const v = assetValue(rec, s.econ, assetGrade(r, rec));
+        const v = conveyedValue(s, rec, bbl, false, assetGrade(r, rec));
         // THE CORNER COMES BACK. If this is a building they took out from
         // under a live negotiation of yours, it does not hit the tape — they
         // ring you first, because a firm that knows you wanted it once knows
@@ -3466,7 +3468,7 @@ function debtReleasedOnSale(r: Rival, price: number): number {
 /** What a rival will take for a building of theirs, and why. */
 export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): { ask: number; note: string } {
   const rec = resolveRec(parcels, s, bbl);
-  const v = rec ? assetValue(rec, s.econ, assetGrade(r, rec)) : 0;
+  const v = rec ? conveyedValue(s, rec, bbl, false, assetGrade(r, rec)) : 0;
   const { ltv } = markRival(s, parcels, r);
   // AND THEY QUOTE YOU, NOT A STRANGER. A principal who has closed with you
   // twice prices the certainty of closing with you a third time; one you have

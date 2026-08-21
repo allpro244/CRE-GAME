@@ -64,6 +64,24 @@ const pad = (n, w, d = 1) => (isFinite(n) ? n.toFixed(d) : "  -  ").padStart(w);
 // ---------------------------------------------------------------- collectors
 const OCC_BUCKETS = [[0, 25], [25, 50], [50, 75], [75, 90], [90, 101]];
 const tapeByOcc = OCC_BUCKETS.map(() => []);
+// AND BY HOW FAR THE REALISED ROLL CAME IN FROM THE MODEL'S EXPECTATION.
+//
+// The first cut of section A divided the ask by assetValue and concluded the
+// ask was blind to tenancy because the ratio was flat at 0.99x. That was the
+// wrong instrument twice over. A structurally-empty building is worth its
+// DIRT, and both the ask and assetValue collapse onto the same land floor, so
+// the ratio is 1.0 by construction and says nothing. And the roll's own target
+// comes from useOccupancy, so the model and the roll are correlated and the
+// model already discounts a building that is empty for structural reasons.
+//
+// What the model genuinely cannot see is the DRAW around that target — the
+// coin that lands 0% on a one-space building the model scored at 80%. So the
+// honest test is whether the ask follows the realisation or the expectation,
+// and the honest denominator for level is dollars per rentable foot, which has
+// no model in it at all.
+const DIV_BUCKETS = [[-101, -30], [-30, -10], [-10, 10], [10, 30], [30, 101]];
+const DIV_LABEL = ["roll 30pp+ worse than model", "10-30pp worse", "within 10pp", "10-30pp better", "30pp+ better"];
+const tapeByDiv = DIV_BUCKETS.map(() => []);
 const cityVsRoll = [];                       // section B
 const spread = {}, conc = {}, held = {}, devSpread = {};
 for (const c of CL) { spread[c] = []; conc[c] = []; held[c] = []; devSpread[c] = []; }
@@ -144,7 +162,12 @@ for (const SEED of SEEDS) {
       const occ = (ip.occ ?? 0) * 100;
       const av = E.assetValue(rec, e, E.gradeOf(g, rec));
       const i = OCC_BUCKETS.findIndex(([lo, hi]) => occ >= lo && occ < hi);
-      if (i >= 0) tapeByOcc[i].push({ ao: l.ask / Math.max(1, av), gi: ip.noi / l.ask * 100 });
+      const rsf = E.rentableSf(rec) || 1;
+      const land = E.landValue(rec, e);
+      if (i >= 0) tapeByOcc[i].push({ psf: l.ask / rsf, overLand: l.ask / Math.max(1, land), gi: ip.noi / l.ask * 100 });
+      const d = occ - E.occupancy(rec, e) * 100;
+      const j = DIV_BUCKETS.findIndex(([lo, hi]) => d >= lo && d < hi);
+      if (j >= 0) tapeByDiv[j].push({ ao: l.ask / Math.max(1, av), gi: ip.noi / l.ask * 100 });
     }
 
     // --- C/D/E: cap spread, concessions, rent path ---------------------------
@@ -192,16 +215,25 @@ const N = SEEDS.length, MO = N * YRS * 12;
 console.log(`\nPLAYTEST — ${N} seeds x ${YRS} years, one player buying income and dirt at market`);
 console.log(`${bought} acquisitions · ${devPriced} development plans priced · ${devStarted} started\n`);
 
-console.log("A. DOES THE TAPE PRICE THE RENT ROLL?  (ordinary listings, distress excluded)");
-console.log("   this building's own roll      n      ask / appraisal       going-in cap the buyer gets");
-console.log("   occupancy                            p25   MED   p75        p25     MED     p75");
+console.log("A1. WHAT DOES AN EMPTY BUILDING COST?  (ordinary listings, distress excluded)");
+console.log("   this building's own roll      n     ask $/rentable sf     ask / land value    going-in cap");
 OCC_BUCKETS.forEach(([lo, hi], i) => {
   const s = tapeByOcc[i]; if (!s.length) return;
-  console.log(`   ${(lo + "-" + (hi - 1) + "% let").padEnd(28)}${String(s.length).padStart(5)}   ${pad(q(s.map(x=>x.ao),.25),4,2)}  ${pad(q(s.map(x=>x.ao),.5),4,2)}  ${pad(q(s.map(x=>x.ao),.75),4,2)}     ${pad(q(s.map(x=>x.gi),.25),6)}  ${pad(q(s.map(x=>x.gi),.5),6)}  ${pad(q(s.map(x=>x.gi),.75),6)}`);
+  console.log(`   ${(lo + "-" + (hi - 1) + "% let").padEnd(28)}${String(s.length).padStart(5)}   ${pad(q(s.map(x=>x.psf),.5),12,0)}        ${pad(q(s.map(x=>x.overLand),.5),9,2)}x     ${pad(q(s.map(x=>x.gi),.5),8)}%`);
 });
-const flat = Math.abs(q(tapeByOcc[0].map(x=>x.ao),.5) - q(tapeByOcc[4].map(x=>x.ao),.5));
-console.log(`   A tenth-let building asks ${pad(q(tapeByOcc[0].map(x=>x.ao),.5),0,2)}x appraisal; a full one asks ${pad(q(tapeByOcc[4].map(x=>x.ao),.5),0,2)}x. Difference: ${(flat*100).toFixed(0)}pp.`);
-console.log(`   ${flat < 0.05 ? "THE ASK DOES NOT READ THE ROLL." : "the ask moves with the roll."} The going-in column is the emptiness, passed to the buyer at full price.\n`);
+console.log("   Dollars per foot has no model in the denominator. It should FALL as buildings empty:");
+console.log("   an empty building is worth its dirt, and its going-in cap is negative because it is a");
+console.log("   lease-up story, not an income deal. That is the right answer, not a fault.\n");
+
+console.log("A2. DOES THE ASK FOLLOW THE ROLL, OR THE MODEL'S EXPECTATION?");
+console.log("   realised roll vs model        n     ask / assetValue    going-in cap");
+DIV_BUCKETS.forEach((_, i) => {
+  const s = tapeByDiv[i]; if (!s.length) { console.log(`   ${DIV_LABEL[i].padEnd(30)} none`); return; }
+  console.log(`   ${DIV_LABEL[i].padEnd(30)}${String(s.length).padStart(5)}      ${pad(q(s.map(x=>x.ao),.5),6,2)}x      ${pad(q(s.map(x=>x.gi),.5),9)}%`);
+});
+const lo0 = q(tapeByDiv[0].map(x=>x.ao),.5), hi0 = q(tapeByDiv[4].map(x=>x.ao),.5);
+console.log(`   assetValue is the MODEL's price. Spread across the range: ${((hi0-lo0)*100).toFixed(0)}pp.`);
+console.log(`   ${hi0 - lo0 > 0.10 ? "The ask prices the deed that is actually conveyed." : "FLAT — the ask is pricing the expectation and handing the buyer the draw."}\n`);
 
 console.log("B. THE ECONOMY PAGE AGAINST THE RENT ROLLS OF THE SAME BUILDINGS (month " + YRS * 12 + ")");
 console.log("   class          cityVac says occupied    the rolls say    GAP      no tenant at all    legs/seed");

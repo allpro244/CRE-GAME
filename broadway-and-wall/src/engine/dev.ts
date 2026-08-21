@@ -3651,6 +3651,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
     let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * 0.62)));
     const infill = cityInfillCap(s, parcels, rec, 1, lead);
+    const wantedFl = nfl;   // what the envelope asked for, before the cornice
     if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
     const ucap = MAX_FLOORS_BY_USE[nextUse];
     if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
@@ -3677,8 +3678,26 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // opportunity cost; demo is inside the shared plan. Rival-owned densify
     // keeps the discounted as-is bid in startOwnJob.
     const opportunityCost = landValue(rec, e);
+    // ...AND A REPLACEMENT CAN BUY HEIGHT TOO. The greenfield and rival paths
+    // could go over the cornice by paying for the permission and this one
+    // could not, which would have made a teardown the one trade in the city
+    // that still met a wall. Same rule: the taller scheme stands only if it
+    // clears the same hurdle carrying the premium, and the premium ADDS to
+    // the opportunity cost of what is standing rather than replacing it.
+    let densifyBasis = opportunityCost;
+    {
+      const ceilFl = ucap !== undefined ? Math.min(wantedFl, ucap) : wantedFl;
+      if (ceilFl > nfl) {
+        const tallSf = Math.max(3000, Math.round((rec.lotArea * 0.62 * ceilFl) / 100) * 100);
+        const premium = entitlementPremium(ceilFl, infill, tallSf, opportunityCost, e.costIdx ?? 1);
+        const tall = premium > 0
+          ? underwriteDevelopment(s, parcels, bbl, nextUse, ceilFl, 0.62, opportunityCost + premium)
+          : null;
+        if (tall?.clears) { nfl = ceilFl; nsf = tallSf; densifyBasis = opportunityCost + premium; }
+      }
+    }
     const underwriting = underwriteDevelopment(
-      s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
+      s, parcels, bbl, nextUse, nfl, 0.62, densifyBasis,
     );
     if (!underwriting) continue;
     const ownerRecycle = recycle

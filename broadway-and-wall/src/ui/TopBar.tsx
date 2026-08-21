@@ -5,10 +5,9 @@ import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { availability } from "@/engine/space";
-import { isLeasedFee, netWorth, resolveRec } from "@/engine/value";
-import { useSf } from "@/engine/mix";
+import { netWorth } from "@/engine/value";
 import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
-import { loiNeedsPrincipal } from "@/engine/leasing";
+import { loiNeedsPrincipal, portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 import DeltaChip from "@/ui/vitals/DeltaChip";
@@ -167,7 +166,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occSf: 0, occLeased: 0, vacDpp: null as number | null,
+        nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
         line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
@@ -192,19 +191,12 @@ export default function TopBar() {
         ?? now;
       vacDpp = (now - then) * 100;
     }
-    // Same book Leasing totals: operated deeds only (not coupon-only ground
-    // fees), commercial tenants plus multifamily physical occupancy.
-    let occSf = 0, occLeased = 0;
-    if (parcels) {
-      for (const h of Object.values(deferredGame.holdings)) {
-        if (isLeasedFee(h)) continue;
-        const rec = resolveRec(parcels, deferredGame, h.bbl);
-        if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-        occSf += rec.bldgArea;
-        const resSf = useSf(rec, "multifamily");
-        occLeased += h.tenants.reduce((a, t) => a + t.sf, 0) + Math.round((h.occ ?? 0) * resSf);
-      }
-    }
+    // THE ENGINE'S NUMBER, NOT A SECOND OPINION. This used to sum rentable
+    // tenant feet over GROSS building area — its own haircut, which value.ts
+    // explicitly forbids — so a fully-let building could never print 100%
+    // here while Leasing called it full. One function now, shared with the
+    // Leasing total: leased over lettable, operated deeds only.
+    const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
@@ -272,7 +264,7 @@ export default function TopBar() {
     const dRateBp = rateThen === undefined ? null
       : Math.round((deferredGame.econ.indexRate - rateThen) * 100);
     return {
-      nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+      nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
@@ -280,7 +272,7 @@ export default function TopBar() {
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+    nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
     debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp,
   } = vitals;
 
@@ -547,12 +539,12 @@ export default function TopBar() {
             </span>
             <Stat
               label="Occupancy"
-              value={occSf ? ((100 * occLeased) / occSf).toFixed(1) + "%" : "—"}
-              bad={occSf > 0 && occLeased / occSf < 0.8}
+              value={occ !== null ? (100 * occ).toFixed(1) + "%" : "—"}
+              bad={occ !== null && occ < 0.8}
               keep
               w={80}
-              title={occSf
-                ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
+              title={occ !== null
+                ? `Portfolio occupancy: ${(100 * occ).toFixed(1)}% of lettable feet leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
             <span className="vital-pair">

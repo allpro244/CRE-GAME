@@ -371,6 +371,54 @@ export const S_PMODDECO = 166;     // 1980s neo-deco: reflective blue glass, pol
 export const S_NEODECO = 167;      // the revival: limestone, punched windows, stacked bays, a lit lantern
 
 // ---------------------------------------------------------------------------
+// THE LAST TWENTY YEARS, BESIDES THE TOWERS.
+//
+// The modern end of this registry has had two rounds of work and both went to
+// the same place: the tall building. What was left is the fabric — and the
+// pools said so. Measured before this batch: an office finished in 2005 at
+// three floors drew from {glass, EIFS, brick, mediaface}, four families, while
+// the same building finished in 1970 had eleven; the office-product families
+// (medical, office park, professional block, build-to-suit, back office) were
+// gated OUT of both post-1998 branches even though every one of them is still
+// being built; and a 2015 low-rise apartment block had no low-rise types at
+// all. "The modern buildings all look the same" is a complaint about the
+// POOLS, not about the palettes.
+//
+// These are the ordinary buildings America has actually put up since the late
+// nineties, and each is here for the reason everything in this file is: it is
+// a different BUILDING, not a different colour. The bay box is a zoning
+// artefact (facade-modulation rules in every design-review city, so the flats
+// pop outward in metal-clad boxes); the stack bond is a construction fact (a
+// rainscreen carries no load, so its joints are free to line up — the one
+// thing a laid wall must never do); the townhome row is a deed pattern (one
+// party wall per unit, and the cladding changes at every deed line); the
+// select-service hotel is a franchise prototype built from the same drawings
+// two thousand times; the checkerboard spandrel was the spec curtain wall of
+// the 2000s (Tschumi's Blue, 2007, is the art version of a thing every city
+// got the cheap version of); the wave deck is Aqua, Chicago 2009, whose
+// architecture is entirely in the slab edge; the fin wall is the 2010s
+// solar-control facade that opens and closes as you walk past it (the Edith
+// Green-Wendell Wyatt retrofit, Portland 2013 — unverified this session); the
+// new arch is 130 William, 2020, hand-cast pigmented concrete turning its
+// heads again after a century of steel lintels; weathering steel is Barclays
+// Center, 2012, a material that is its own paint job. The cold box is what
+// the cold-chain boom actually builds — insulated metal panel, blind, white —
+// where S_COLDSTORE is its brick great-grandfather.
+export const S_BAYSTACK = 168;   // the bay-box mid-rise: staggered projecting window boxes on a flat panel wall
+export const S_ZINCSEAM = 169;   // standing-seam metal infill: a rib every 430 mm, openings that skip cells
+export const S_STACKBOND = 170;  // thin-brick rainscreen in stack bond: aligned joints, landscape openings
+export const S_TOWNHOME = 171;   // the townhome row: cladding changes at every party wall, roof-deck rail on top
+export const S_WAVEDECK = 172;   // curved slab-edge balconies, a different phase each floor — the Aqua family
+export const S_PIXEL = 173;      // the pixel facade: one coloured panel per cell, hashed — student housing's skin
+export const S_FINRIB = 174;     // vertical fins at 600 mm: open face-on, closed like a louvre from an angle
+export const S_NEOARCH = 175;    // the new arch: dark hand-cast concrete, arched heads at every bay — 130 William
+export const S_WHITEGRID = 176;  // the crisp pale grid frame with the glass in its own shadow behind it
+export const S_SELECTHTL = 177;  // the select-service hotel prototype: tri-tone EIFS, accent stacks, porte-cochere
+export const S_COLDBOX = 178;    // modern cold storage: white insulated metal panel, blind, a battered dado
+export const S_CHECKER = 179;    // the 2000s checkerboard curtain wall: vision and shadow-box, offset per floor
+export const S_CORTEN = 180;     // weathering steel: every panel its own rust, streaked darker under the sills
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -429,6 +477,12 @@ export const T_GLASSY = [
   S_PVCLAD, S_CREATIVE, S_MEDIAFACE,
   S_OFFICEPARK, S_CAMPUSBLOCK, S_SKYLOBBY, S_PROFBLDG, S_LOFTOFFICE,
   S_SHOWROOM, S_CORNERRETAIL,
+  // Of the last-twenty-years batch only the three that are actually glass
+  // reflect: the checker and the fin wall are curtain walls, and the wave
+  // deck is a window wall behind its balconies. Zinc, corten and fibre
+  // cement are panel skins but MATTE — a standing seam catches a line of
+  // light, it does not throw the sky back.
+  S_CHECKER, S_FINRIB, S_WAVEDECK,
   // FOUR DECO FAMILIES REFLECT AND THE OTHER THIRTEEN DO NOT. Glass block went
   // into mass production in 1932 and "most buildings that utilized it [were] of
   // the Streamline Moderne or Art Deco styles", which is Tropical Deco's
@@ -451,6 +505,13 @@ export const T_TRADE = [
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
   S_DEPOT, S_PUMPHOUSE,
   S_PODIUMWRAP, S_CREATIVE, S_MEDIAFACE, S_LABBLDG,
+  // The urban members of the modern batch meet the pavement as shops — a bay
+  // -box or stack-bond mid-rise is an infill building on a retail street, and
+  // a checker or fin tower has a glazed podium. The townhome row does not
+  // (its ground floor is doors and garages), the hotel's ground floor is its
+  // own lobby, and the cold box meets the pavement as a dock.
+  S_BAYSTACK, S_ZINCSEAM, S_STACKBOND, S_PIXEL, S_FINRIB, S_NEOARCH,
+  S_WHITEGRID, S_CHECKER, S_CORTEN, S_WAVEDECK,
   S_MEDOFFICE, S_OFFICEPARK, S_PROFBLDG, S_BOUTIQUEOFF, S_LOFTOFFICE, S_BTSHQ,
   S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_AUTOPARTS, S_FASTFOOD, S_BANKBRANCH,
   S_PHARMACY, S_GROCERY, S_RESTAURANT, S_SHOWROOM, S_OUTLET, S_CORNERRETAIL,
@@ -479,6 +540,13 @@ export const T_FLOORLINE = [
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
   S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
   S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_LABBLDG, S_CREATIVE, S_MODULAR,
+  // The panel-and-punched members of the modern batch express their floors;
+  // the three whose horizontals ARE the signature (the checker's spandrel
+  // cells, the fin wall's verticality, the wave deck's own slab noses) stay
+  // out so the shared floor shadow does not fight the family's one device,
+  // and the cold box is blind.
+  S_BAYSTACK, S_ZINCSEAM, S_STACKBOND, S_TOWNHOME, S_PIXEL, S_SELECTHTL,
+  S_CORTEN, S_WHITEGRID, S_NEOARCH,
   S_MEDOFFICE, S_OFFICEPARK, S_GARDENOFF, S_INSURANCE, S_GOVLEASE, S_SKYLOBBY,
   S_PROFBLDG, S_BOUTIQUEOFF, S_BTSHQ, S_LOFTOFFICE, S_CAMPUSBLOCK,
   S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_BANKBRANCH, S_PHARMACY, S_GROCERY,
@@ -517,6 +585,11 @@ export const T_CAPPED_PLAIN = [
   S_MODULAR, S_PVCLAD, S_PODIUMWRAP, S_LABBLDG, S_CREATIVE, S_MEDIAFACE,
   S_BACKOFFICE, S_CARRIERHTL, S_GOVLEASE, S_CAMPUSBLOCK,
   S_MALLANCHOR, S_AUTOPARTS, S_FASTFOOD, S_JRBOX, S_OUTLET,
+  // Every family of the last-twenty-years batch caps in metal coping — even
+  // the stack-bond brick, because a rainscreen parapet is an extrusion, not
+  // a laid course.
+  S_BAYSTACK, S_ZINCSEAM, S_STACKBOND, S_TOWNHOME, S_WAVEDECK, S_PIXEL,
+  S_FINRIB, S_NEOARCH, S_WHITEGRID, S_SELECTHTL, S_COLDBOX, S_CHECKER, S_CORTEN,
   // NO DECO FAMILY IS IN EITHER OF THESE LISTS, and that is the point. These
   // say "the parapet is made of something other than the wall" — a metal coping
   // or a stone cap over glass. A deco parapet IS the wall carried up with the
@@ -533,6 +606,14 @@ export const T_MODERN = [
   S_SCREEN, S_BALCONY, S_PRECAST, S_BRUTAL, S_TIMBER, S_WHITEBRICK, S_PROJECT,
   S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
   S_TILTUP, S_DISTCENTER, S_FLEX, S_DATACENTER,
+  // The modern-fabric batch reads modern to the crown chooser — a mech screen
+  // or an amenity deck, never a cornice — and, just as important, T_MODERN is
+  // what keeps a 1920s fire escape off a building finished in 2015. Three sit
+  // out on purpose: the townhome row and the select-service hotel really do
+  // end in a plain coping (which is what NOT being here buys), and the cold
+  // box takes the industrial crown ladder before style is ever asked.
+  S_BAYSTACK, S_ZINCSEAM, S_STACKBOND, S_WAVEDECK, S_PIXEL, S_FINRIB,
+  S_NEOARCH, S_WHITEGRID, S_CHECKER, S_CORTEN,
   // The 1980s neo-deco tower is a modern building quoting an old one. Its
   // fallback crown is a louvred mech screen and its roof is a membrane, not
   // lead — One Liberty Place was finished in 1988. The chevron cascade it
@@ -796,6 +877,15 @@ export function stylePool(v: BuildingVolume): number[] {
       rare(0.30, 23, S_SUBSTATION, S_HANGAR, S_BUSCANOPY, S_CONTROLTWR);
       if (f >= 2) p.push(S_DATACENTER);
       if (f >= 3) p.push(S_COLDSTORE, S_DATACENTER);
+      // THE COLD CHAIN BUILDS BOXES NOW, NOT BRICK. A modern cold store is a
+      // high-bay insulated-metal-panel freezer, and it is TALL for its class
+      // the way a silo is — the racking runs twelve metres whether or not
+      // anyone calls that a storey. The brick S_COLDSTORE above stays for the
+      // stock that predates it; nobody has built one since the fifties.
+      if (y >= 1995) {
+        p.push(S_COLDBOX);
+        if (f >= 2) p.push(S_COLDBOX, S_COLDBOX);
+      }
     }
     if (f >= 4 && y >= 1955) p.push(S_GARAGE);
     return p;
@@ -1175,6 +1265,13 @@ export function stylePool(v: BuildingVolume): number[] {
       S_JRBOX, S_JRBOX, S_POWERINLINE, S_POWERINLINE, S_FASTFOOD, S_PHARMACY, S_PHARMACY,
       S_AUTOPARTS, S_BANKBRANCH, S_GROCERY, S_OUTLET, S_MALLANCHOR, S_RESTAURANT);
     if (!resi) p.push(S_HOTEL);
+    // THE PROTOTYPE HOTEL ARRIVES WITH THE FRANCHISE BOOM. Hampton Inn's
+    // first prototype opened 1984 and the limited-service segment was the
+    // fastest-growing hotel product of the nineties — four floors, 80 to 120
+    // keys, built from the brand's own drawings beside every interchange in
+    // the country. By this era a new hotel is more often this than a downtown
+    // block with a canopy, which is what S_HOTEL is.
+    if (!resi && y >= 1990 && f <= 6) p.push(S_SELECTHTL, S_SELECTHTL);
     if (!resi) rare(0.40, 7, S_SCHOOL, S_MUSEUM, S_HOSPITAL);
     if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_GARDENAPT, S_GARDENAPT);
     if (f >= 4) p.push(S_GARAGE);
@@ -1185,13 +1282,38 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 6) p.push(S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK,
       S_UNITGLASS, S_UNITGLASS, S_DEEPFRAME, S_MEGAPANEL,
       S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_CHEVRON, S_LABBLDG, S_CREATIVE);
+    // THE CHECKERBOARD IS THE SPEC WALL OF THIS DECADE. Alternating vision and
+    // shadow-box cells, offset a cell per floor — Tschumi's Blue, 2007, is the
+    // famous one and every city got a dozen anonymous ones. It reaches both
+    // classes because the condo boom and the office boom bought the same wall.
+    if (office && f >= 6) p.push(S_CHECKER, S_CHECKER);
     if (office && f >= 12) p.push(S_MEGABRACE, S_PLEATED, S_DOUBLESKIN);
+    // THE OFFICE PRODUCTS DID NOT STOP IN 1998, AND THE POOL SAID THEY DID. A
+    // medical building, a suburban office park, a professional block, a
+    // build-to-suit and a leased-government box are all still being delivered
+    // in this decade — the product is the same, the skin is a decade newer —
+    // and gating them to the eighties left a 2005 three-floor office drawing
+    // from four families while its 1970 twin drew from eleven.
+    if (office && f <= 4) p.push(S_OFFICEPARK, S_OFFICEPARK, S_MEDOFFICE, S_MEDOFFICE,
+      S_PROFBLDG, S_BTSHQ, S_GOVLEASE, S_ZINCSEAM);
+    if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK, S_CARRIERHTL, S_LOFTOFFICE);
     if (resi) p.push(S_PODIUMWRAP, S_PODIUMWRAP, S_MICROUNIT);
     if (!resi) p.push(S_MEDIAFACE);
+    if (!resi && f <= 6) p.push(S_SELECTHTL, S_SELECTHTL);
     if (office && f >= 14) p.push(S_TERRAPIER, S_MEGAPANEL);
     if (office && f >= 20) p.push(S_DIAGRID, S_CRYSTAL);
     if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
-    if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL);
+    if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL, S_CHECKER);
+    // The low-rise members of the modern-fabric batch, as they arrive: metal
+    // infill through the whole branch, the pixel panel with the student-housing
+    // boom, the bay box with the design-review cities' modulation rules, stack
+    // bond with the rainscreen, the wave deck with Aqua (Chicago, 2009).
+    if (resi) p.push(S_ZINCSEAM);
+    if (resi && y >= 2004) p.push(S_PIXEL);
+    if (resi && y >= 2008) p.push(S_BAYSTACK, S_BAYSTACK);
+    if (resi && y >= 2010) p.push(S_STACKBOND);
+    if (resi && f <= 4) p.push(S_TOWNHOME, S_TOWNHOME);
+    if (resi && f >= 8 && y >= 2009) p.push(S_WAVEDECK, S_WAVEDECK);
     // THE REVIVAL OPENS IN 2008, WITH A BUILDING. 15 Central Park West (Robert
     // A. M. Stern) completed that year, clad in Indiana limestone, set a $3,300
     // per square foot average — the highest in New York at the time — and sold
@@ -1218,13 +1340,33 @@ export function stylePool(v: BuildingVolume): number[] {
     S_UNITGLASS, S_TERRAPIER, S_TERRAPIER, S_MEGAPANEL, S_STEELSHELF,
     S_PLEATED, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_CHEVRON, S_PVCLAD,
     S_LABBLDG, S_LABBLDG, S_CREATIVE, S_SKYGARDEN);
-  if (office && f >= 12) p.push(S_MEGABRACE, S_SKYGARDEN, S_PVCLAD, S_DOUBLESKIN);
+  // The present decade's own walls: the fin that opens and closes as you walk
+  // past it, the pale grid frame, the checker still being built, and the arch
+  // turned again in pigmented precast — 130 William finished 2020.
+  if (office && f >= 6) p.push(S_FINRIB, S_FINRIB, S_WHITEGRID, S_CHECKER, S_NEOARCH);
+  if (office && f >= 12) p.push(S_MEGABRACE, S_SKYGARDEN, S_PVCLAD, S_DOUBLESKIN, S_FINRIB);
   if (!resi) p.push(S_MEDIAFACE, S_CREATIVE);
+  if (!resi && f <= 6) p.push(S_SELECTHTL, S_SELECTHTL);
+  // The office products, still: nobody stopped building medical offices or
+  // build-to-suits in 2012, and the low modern office is also where corten,
+  // stack bond and the metal seam do their commercial work.
+  if (office && f <= 4) p.push(S_OFFICEPARK, S_MEDOFFICE, S_MEDOFFICE, S_PROFBLDG,
+    S_BTSHQ, S_WHITEGRID, S_CORTEN, S_STACKBOND, S_ZINCSEAM);
+  if (office) p.push(S_BACKOFFICE, S_CARRIERHTL, S_LOFTOFFICE, S_GOVLEASE);
   if (office && f >= 14) p.push(S_TERRAPIER, S_STEELSHELF, S_DEEPFRAME);
   if (office && f >= 20) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
   if (resi) p.push(S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK,
     S_PODIUMWRAP, S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_MODULAR);
-  if (resi && f >= 10) p.push(S_SKYGARDEN, S_SKYGARDEN, S_MODULAR, S_PLEATED);
+  // The modern low-rise and mid-rise fabric, which this branch simply did not
+  // have: a 2015 apartment block below six floors could reach nothing that was
+  // not also a 2015 tower. The bay box and stack bond carry the most weight
+  // because they are what the design-review cities actually approve.
+  if (resi) p.push(S_BAYSTACK, S_BAYSTACK, S_STACKBOND, S_STACKBOND, S_ZINCSEAM, S_PIXEL);
+  if (resi && f <= 4) p.push(S_TOWNHOME, S_TOWNHOME);
+  if (resi && f <= 3) p.push(S_GARDENAPT);
+  if (resi && f >= 6) p.push(S_NEOARCH, S_WHITEGRID);
+  if (resi && f >= 8) p.push(S_WAVEDECK, S_WAVEDECK, S_CHECKER);
+  if (resi && f >= 10) p.push(S_SKYGARDEN, S_SKYGARDEN, S_MODULAR, S_PLEATED, S_WAVEDECK);
   // DECO IN MODERN TIMES, AND THE HONEST VERSION OF IT.
   //
   // Neo-deco is a real, named, continuous practice with buildings you can point

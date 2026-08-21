@@ -28,6 +28,7 @@ import { gradeOf } from "./rivals";
 import { leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
+import { FAR_FLOOR, FAR_CEIL } from "./zoning";
 import { SECTORS } from "./market";
 import { saleTaxQuote } from "./actions";
 import { PROPERTY_HISTORY_CAP } from "./history";
@@ -62,8 +63,16 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   // ----------------------------------------------------------------- planning
   // The envelope is the land value. A multiplier that runs away, or a variance
   // on a lot you do not own, is net worth invented out of nothing.
+  // The band is the rezoning process's own, imported rather than restated: this
+  // read `x > 3` while zoning.ts clamped to 3.8, so a densifying city could
+  // walk a district past the number its gate called impossible. A little slack
+  // either side of the clamp, because what this is for is a multiplier that
+  // has RUN AWAY — NaN, a sign flip, a compounding loop — not one sitting on a
+  // rail the process is entitled to put it on.
   for (const [d, x] of Object.entries(s.zoneAdj ?? {})) {
-    if (!fin(x) || x < 0.4 || x > 3) bad("zoning", `district ${d}`, `envelope multiplier ${x}`);
+    if (!fin(x) || x < FAR_FLOOR * 0.9 || x > FAR_CEIL * 1.05) {
+      bad("zoning", `district ${d}`, `envelope multiplier ${x}`);
+    }
   }
   for (const [bbl, x] of Object.entries(s.variance ?? {})) {
     if (!fin(x) || x < 0 || x > FAR_CEILING) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);

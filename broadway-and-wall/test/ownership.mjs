@@ -156,6 +156,64 @@ console.log("\nOWNERSHIP — EVERY DEED HAS A LEGIBLE OWNER\n");
     `median levered owner covers debt service ${medDscr.toFixed(2)}x out of NOI`);
 }
 
+// ---------------------------------------------------------------- one answer
+{
+  const g = run(E.newGame(77_009, parcels), 120);
+  const owners = E.allOwners(g, parcels);
+
+  // THE STREET TABLE AND THE REGISTER MUST NOT COME APART. Both print a firm's
+  // net worth; the street table computes it as markRival's gross assets less
+  // debt plus cash, and the register reads engine/ownership.ts. If those two
+  // ever disagree the player is being shown one firm with two balance sheets —
+  // the fault the street table itself had to fix once, when the league table,
+  // the column and the drawer each derived equity their own way.
+  let worst = 0, worstName = "";
+  for (const o of owners.filter((x) => x.operator)) {
+    const r = (g.rivals ?? []).find((x) => x.id === o.id);
+    if (!r) continue;
+    const m = E.markRival(g, parcels, r);
+    const street = m.aum - r.debt + r.cash;
+    const d = Math.abs(street - o.sheet.equity);
+    if (d > worst) { worst = d; worstName = o.name; }
+  }
+  check(worst <= 2, `every firm's net worth is the same number on the street table and the register (worst gap $${worst.toFixed(2)}${worstName ? " on " + worstName : ""})`);
+
+  // ...and the three doors onto an owner are the same owner.
+  let mismatch = 0, missing = 0;
+  for (const o of owners) {
+    if (!E.ownerById(g, parcels, o.id)) { missing++; continue; }
+    for (const b of o.book.slice(0, 4)) {
+      const at = E.ownerAt(g, parcels, b);
+      if (!at || at.id !== o.id) mismatch++;
+    }
+  }
+  check(missing === 0, `every owner in the register can be looked up by id (${missing} could not)`);
+  check(mismatch === 0, `every deed in a book resolves back to the owner holding it (${mismatch} did not)`);
+
+  // A book that is all dirt is a real condition and it must not print as a
+  // building portfolio: nothing to lease, no roof to fund.
+  //
+  // READ OFF THE DEEDS, not off the NOI. The first cut of this check called an
+  // owner land-only when their NOI was zero or less, and six owners failed it
+  // — every one of them holding real buildings whose operating costs and tax
+  // exceed their rent, which is a marginal building and not a vacant lot. The
+  // check was wrong, not the statement; a predicate that infers what somebody
+  // owns from what it earns cannot tell a car park from a failing walk-up.
+  const isDirt = (b) => {
+    const rec = E.resolveRec(parcels, g, b);
+    return !rec || rec.class === "land" || !(rec.bldgArea > 0);
+  };
+  const dirtOnly = owners.filter((o) => o.sheet.assets > 0 && o.book.every(isDirt));
+  const wrong = dirtOnly.filter((o) => o.income.leasing > 1 || o.income.capex > 1);
+  check(dirtOnly.length > 0 && wrong.length === 0,
+    `the ${dirtOnly.length} land-only owners are charged no leasing and no capital plan (${wrong.length} were)`);
+
+  // ...and the mirror of it: an owner holding buildings that lose money is a
+  // real thing this city contains, and it is not the same condition.
+  const marginal = owners.filter((o) => o.income.noi <= 0 && o.book.some((b) => !isDirt(b)));
+  console.log(`        ${dirtOnly.length} owners hold nothing but dirt · ${marginal.length} hold buildings that do not cover their own costs`);
+}
+
 // ---------------------------------------------------------------- determinism
 {
   const a = E.newGame(77_005, parcels);

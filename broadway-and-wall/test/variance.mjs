@@ -11,9 +11,23 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 let g = E.newGame(44119, parcels, 50_000_000);
-const lots = bbls.filter((b) =>
-  parcels[b]?.lotArea > 2_000 && !g.landmarks?.[b]).slice(0, 2);
-if (lots.length < 2) throw new Error("Need two sites for variance harness.");
+// SITES WITH ROOM TO TRIPLE, which is what this file is about.
+//
+// This took the first two lots over 2,000 sf, and after the generator's
+// envelopes were widened the first of those came out at 29.6 FAR against a
+// city ceiling of 40. Every ask — plus a third, double, treble — clamped to
+// the same 40, so the quotes were identical and "larger FAR asks cost more and
+// take longer" failed on a site where a larger FAR ask does not exist. The
+// assertion was right and the sample was wrong: a curve cannot be measured
+// where it is flat against a rail. A third of the ceiling leaves room for the
+// 3x ask the test actually makes.
+const roomy = (b) => {
+  const rec = parcels[b];
+  if (!rec?.lotArea || rec.lotArea <= 2_000 || g.landmarks?.[b]) return false;
+  return Math.max(rec.farMaxComm, rec.farMaxRes, 2) * 3 <= E.FAR_CEILING;
+};
+const lots = bbls.filter(roomy).slice(0, 2);
+if (lots.length < 2) throw new Error("Need two sites with envelope headroom for the variance harness.");
 
 for (const bbl of lots) {
   const rec = parcels[bbl];

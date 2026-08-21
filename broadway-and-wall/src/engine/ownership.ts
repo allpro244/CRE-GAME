@@ -431,17 +431,32 @@ export function rivalAccounts(
 //
 // KEYED ON AN EPOCH RATHER THAN ON THE STATE, because state is cloned on every
 // action and a per-object cache would never hit. Deeds move when the player
-// buys or sells, when a firm does, or when the city takes a lot — so the epoch
-// is the month plus the two deed counts, which changes exactly when the answer
-// does and costs one walk of two small arrays to compute.
+// buys or sells, when a firm does, or when the city takes a lot, so the epoch
+// carries the month, the player's deed count, the civic count, and EVERY
+// FIRM'S BOOK LENGTH — the last of those individually rather than summed.
+//
+// The sum was not enough and the case is a real one. Two firms trading a
+// building between them in the same month leaves the total unchanged, so a
+// summed epoch would go on serving a book that has already moved. Per-firm
+// lengths catch that, and the walk is over a few dozen small numbers.
+//
+// WHAT IT STILL DOES NOT CATCH, stated rather than glossed: a same-month
+// exchange in which two firms swap one deed each, so both counts hold. That
+// leaves a panel naming last month's owner for one building until the month
+// ticks. This index serves DISPLAY — the register, the parcel card, the map
+// lens — and the engine's own decisions go through `ownerOf` and `holderOf`
+// directly, which are exact. A stale name on a card for a few weeks is a cost
+// worth paying to keep those two functions uncached; a cache on the path that
+// decides who owns a deed would trade a wrong answer for a fast one, and this
+// engine's whole contract is the other way round.
 interface OwnerIndex { books: Map<string, string[]>; rivals: Map<string, Rival> }
 const INDEX = new WeakMap<ParcelTable, Map<string, OwnerIndex>>();
 
 function epochOf(s: GameState): string {
   const rs = s.rivals ?? [];
-  let deeds = 0;
-  for (const r of rs) deeds += r.bbls.length;
-  return `${s.seed}|${s.month}|${Object.keys(s.holdings).length}|${rs.length}|${deeds}`
+  let books = "";
+  for (const r of rs) books += r.bbls.length + ".";
+  return `${s.seed}|${s.month}|${Object.keys(s.holdings).length}|${rs.length}|${books}`
     + `|${Object.keys(s.civicLand ?? {}).length}`;
 }
 

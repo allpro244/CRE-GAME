@@ -1,6 +1,19 @@
 {
-  "sim.ts": { "rng": 4, "rrange": 9 },
-  "market.ts": { "rng": 23, "rrange": 37 },
-  "rivals.ts": { "rng": 34, "rrange": 27 },
-  "dev.ts": { "rng": 29, "rrange": 8 }
+  "_note": "Measured with the CORRECTED counter (tools/rng-audit.mjs), which strips comments before counting. The previous numbers were prose plus code \u2014 every comment that discussed rng() was counted as a draw \u2014 so they are not comparable to these and the audit had been failing for months on drift that did not exist. Two of these figures are genuine increases the old baseline never recorded (market.ts rrange 37->38, dev.ts rng 29->31) and they belong to the planning-board and cornice commits, which document their draws. Re-stated here so the NEXT comparison is the first one that means anything. Bump only with a measured re-roll note.",
+  "sim.ts": {
+    "rng": 4,
+    "rrange": 9
+  },
+  "market.ts": {
+    "rng": 21,
+    "rrange": 38
+  },
+  "rivals.ts": {
+    "rng": 33,
+    "rrange": 25
+  },
+  "dev.ts": {
+    "rng": 31,
+    "rrange": 8
+  }
 }

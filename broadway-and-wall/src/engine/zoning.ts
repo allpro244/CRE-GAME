@@ -36,9 +36,17 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // A district can be held down but not gutted: repeated downzonings were
 // taking whole neighbourhoods to 57% of their original envelope, which is not
 // planning, it is demolition by paperwork.
-const FAR_FLOOR = 0.72;
+export const FAR_FLOOR = 0.72;
 /** District envelope can reach ~gen cap as the city densifies — was 2.6× (~year 50 plateau). */
-const FAR_CEIL = 3.8;
+// EXPORTED BECAUSE TWO OTHER FILES BOUND THIS QUANTITY AND BOTH HAD GONE
+// STALE. When the ceiling moved 2.6 -> 3.8 the invariant in invariants.ts went
+// on refusing anything over 3 — so the engine could legally reach a state its
+// own gate called impossible, and only a run longer than the gate's 120-month
+// horizon would have found it — and test/zoning.mjs went on asserting a 2.6
+// band that the engine had stopped promising. A bound restated in three places
+// is the same number with three answers; there is one now, and it lives here
+// with the process that enforces it.
+export const FAR_CEIL = 3.8;
 /**
  * The probability at which the rezoning walk neither grows nor shrinks the
  * city's envelope, derived from the two step sizes rather than chosen:

@@ -4,7 +4,7 @@ import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost } from "@/engine/debt";
 import { fundableNow, locRate } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, FACILITY_CURE_M, RELEASE_PREMIUM } from "@/engine/facility";
@@ -359,7 +359,7 @@ export function DebtPage() {
 
       {/* ---- the facility ---------------------------------------------- */}
       <div className="page-section">Borrowing against the whole book</div>
-      {fac ? (
+      {fac && !building ? (
         <>
           <div className="grid">
             <Row k="Status" v={facilityStatus(game, parcels)} bad={fac.breachedSince !== undefined || fac.accelM !== undefined || fac.noticedM !== undefined} strong />
@@ -381,6 +381,14 @@ export function DebtPage() {
             <button className={"btn" + (refiFac ? " btn-on" : "")} disabled={fac.accelM !== undefined}
               onClick={() => setRefiFac(!refiFac)}>
               Refinance the pool
+            </button>
+            <button className="btn" disabled={fac.accelM !== undefined}
+              title="Keep the crossed deeds, add free-and-clear or separately mortgaged ones, and replace the paper in one closing."
+              onClick={() => {
+                setBuilding(true);
+                setPool([...new Set([...fac.bbls, ...candidates.map((c) => c.bbl)])]);
+              }}>
+              Refinance the book
             </button>
           </div>
           {/* THE POOL'S REFINANCING DESK. There was no way to refinance a
@@ -576,7 +584,7 @@ export function DebtPage() {
               <div className="btn-row">
                 <button className="btn btn-buy" disabled={!qt.available || pool.length < FACILITY_MIN_ASSETS}
                   onClick={() => { useStore.getState().openFacility(pool, qt.productId, lev); setBuilding(false); }}>
-                  Sign it · {usd(Math.floor(qt.base * lev))}
+                  {fac ? "Replace the facility" : "Sign it"} · {usd(Math.floor(qt.base * lev))}
                 </button>
                 <button className="btn" onClick={() => setBuilding(false)}>Cancel</button>
               </div>
@@ -643,6 +651,15 @@ export function DebtPage() {
                       >
                         Pay off{crumb ? ` · ${usd(due.due)}` : ""}
                       </button>
+                      {(l.floating ?? l.product === "float") && !l.cap && (
+                        <button
+                          className="btn btn-sm"
+                          title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for three years.`}
+                          onClick={() => useStore.getState().rateCap(h.bbl)}
+                        >
+                          Cap · {usd(rateCapCost(l))}
+                        </button>
+                      )}
                       <button
                         className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
                         title={near

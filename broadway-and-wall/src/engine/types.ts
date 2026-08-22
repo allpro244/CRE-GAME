@@ -1424,6 +1424,24 @@ export interface Econ {
    *  Market pressure forms instantly; landlords adjust asking rents only after
    *  trailing vacancy and unmet demand have sat on the quote sheet for months. */
   rentPress?: Record<BuiltClass, number>;
+  /**
+   * LAST MONTH'S RENT PATH, per class — vacTerm, EMA, clamp, drift pieces.
+   * Instrumentation for the vacancy-response harness. Not a price; not saved
+   * as a decision. A test that cannot see the rail cannot say whether the
+   * rail is load-bearing.
+   */
+  rentPath?: Record<BuiltClass, {
+    gap: number;
+    vacTerm: number;
+    instant: number;
+    pressEma: number;
+    pressClamped: number;
+    clampBound: boolean;
+    escalation: number;
+    anchor: number;
+    drift: number;
+    nomCh: number;
+  }>;
   /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
    *  deal or VALUES an asset reads this; everything that reports the market
    *  headline reads rentIdx. */

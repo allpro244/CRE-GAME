@@ -1,0 +1,78 @@
+// WHICH TEST SIZES THE LOAN — DSCR, debt yield, or LTV.
+//
+//   pnpm engine && pnpm refi-bind
+//
+// REPORT, not a gate. OWNER_PLAYTEST_NOTES: at 2% coupon, 5.0x DSCR, LTV
+// printed 23%. If the appraisal is small because it reads effective rent
+// (CONC_DEPTH = 0.30), the sizing rules are not the fault. This logs the
+// three legs in dollars against the mark, so the binding name is not a
+// guess.
+//
+// STANDING FACT: no playtest in this repo is based on Manhattan. Every
+// harness run and number here is a GENERATED city.
+import { assertFreshBundle } from "./fresh.mjs";
+assertFreshBundle();
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+const HERE = dirname(fileURLToPath(import.meta.url));
+const E = await import(join(HERE, ".engine.mjs"));
+const { loadCity } = await import(join(HERE, "city.mjs"));
+
+const { parcels, bbls } = loadCity(0, E.normalizeParcels);
+
+function buySome(seed, n = 6, cash = 250_000_000) {
+  const out = [];
+  let g = E.firstListings(E.newGame(seed, parcels, cash), parcels, bbls);
+  for (const L of g.listings ?? []) {
+    if (out.length >= n) break;
+    const rec = E.resolveRec(parcels, g, L.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    if (L.ask < 3_000_000 || L.ask > 40_000_000) continue;
+    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+    if (r.err) continue;
+    g = r.s;
+    out.push(L.bbl);
+  }
+  return { g, bbls: out };
+}
+
+const { g, bbls: owned } = buySome(77011);
+console.log("\nREFI BINDING — generated city, cash purchases, month 0\n");
+console.log(`index ${g.econ.indexRate.toFixed(2)}%  creditIdx ${(g.econ.creditIdx ?? 1).toFixed(2)}`);
+console.log(`owned ${owned.length} deeds\n`);
+
+const counts = { "debt yield": 0, coverage: 0, "advance rate": 0, "their hold size": 0, "stabilised plan": 0, other: 0 };
+let n = 0;
+
+for (const bbl of owned) {
+  const h = g.holdings[bbl];
+  const rec = E.resolveRec(parcels, g, bbl);
+  const v = E.ownedHoldingValue(g, parcels, h);
+  const noi = E.ownedHoldingNoiYr(g, parcels, h);
+  const cap = v > 0 ? (noi / v) * 100 : 0;
+  const { quotes } = E.refiQuotes(g, parcels, bbl);
+  const open = quotes.filter((q) => q.available && q.maxProceeds > 0);
+  console.log(`${rec?.address ?? bbl}  ${rec?.class}  value $${(v / 1e6).toFixed(2)}M  NOI $${(noi / 1e6).toFixed(2)}M  implied cap ${cap.toFixed(2)}%`);
+  for (const q of open.slice(0, 5)) {
+    const raw = E.quote(g, E.productById(q.id), v, noi, rec?.class);
+    const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
+    console.log(
+      `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `
+      + `LTV ${ltvPct.toFixed(0)}%  DSCR ${q.dscrAtMax.toFixed(2)}  DY ${(q.debtYieldAtMax * 100).toFixed(1)}%  `
+      + `binds ${q.binding}`
+      + (raw.byLtv != null
+        ? `  legs LTV $${(raw.byLtv / 1e6).toFixed(2)}M / DSCR $${(raw.byDscr / 1e6).toFixed(2)}M / DY $${(raw.byDebtYield / 1e6).toFixed(2)}M`
+        : ""),
+    );
+    counts[q.binding] = (counts[q.binding] ?? 0) + 1;
+    n++;
+  }
+}
+
+console.log("\nBinding counts across fundable quotes");
+for (const [k, v] of Object.entries(counts)) {
+  if (v) console.log(`  ${k}: ${v}  (${n ? ((v / n) * 100).toFixed(0) : 0}%)`);
+}
+console.log("\nIf LTV at max is far below the desk's advance rate and the DY/DSCR");
+console.log("legs are the small ones, the sizing rules bound — not a small appraisal.");
+console.log("If proceeds/value is small AND the LTV leg is the smallest, the mark is small.\n");

@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, isVacantLandLoanCollateral } from "@/engine/value";
-import { refiQuotes, prepayPenalty, mezzQuote } from "@/engine/debt";
+import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
 import { annualPayment, Row } from "@/ui/panels/shared";
 
@@ -101,6 +101,15 @@ export function RefiSection({ bbl }: { bbl: string }) {
   return (
     <div className="refi">
       <div className="deal-head">Refinance</div>
+      {cur && (cur.floating ?? cur.product === "float") && !cur.cap && (
+        <div className="hint" style={{ marginBottom: 8 }}>
+          This paper floats and has no cap.
+          <button type="button" className="btn-mini" style={{ marginLeft: 8 }}
+            onClick={() => useStore.getState().rateCap(bbl)}>
+            Buy a three-year cap · {usd(rateCapCost(cur))}
+          </button>
+        </div>
+      )}
       {quotes.length > fundableQuotes.length && (
         <div className="hint" style={{ marginBottom: 6 }}>
           {fundableQuotes.length} of {quotes.length} desks will quote this building.

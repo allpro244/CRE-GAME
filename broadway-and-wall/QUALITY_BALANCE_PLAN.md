@@ -126,6 +126,16 @@ what is not billable). Model that, and let the arm land where it lands.
 the market controllable bill. The extra 12% on institutional service is an
 unrecovered amenity. `OPS_SERVICE` multipliers untouched.
 
+Measured on a generated city (`pnpm quality-arms`): market opex $5.90/sf,
+institutional $6.40/sf (+8.5% of the total bill — the +12% in `OPS_SERVICE`
+is on the controllable half only), NNN recovers $5.90, landlord eats $0.50/sf.
+The owner's "~80% of office LOIs draw net" is the legacy `net` flag in
+`leasing.ts` (`rng < 0.8`). `recoveryOf` reads `recovery` first, and
+`rollRecovery` for office is 30% nnn / 58% base / 12% gross. The unrecovered
+component still matters: every NNN clause used to bill the full institutional
+opex; base-year stops that freeze the stop on the institutional bill would
+have done the same to growth. Both now freeze and recover the market bill.
+
 ## Do not
 
 - Do not tune any coefficient until the arms come out level. They are not

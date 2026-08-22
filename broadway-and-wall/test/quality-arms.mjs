@@ -58,32 +58,52 @@ console.log(`both channels                  $${both.toFixed(2)}  (${(both / base
 const double = both / afterLift - 1;
 console.log(`explicit on top of condition   +${(double * 100).toFixed(1)}%  — ${double > 0.02 ? "SAME CHEQUE TWICE" : "condition owns price"}`);
 
-// Service recovery: tick a year so the city writes letters, then count
-// office recovery clauses. Opening tape is empty; the ~80% net figure is
-// a draw rate, not a stock on month 0.
+// Service recovery: letters only land on a deed you hold. Stamp one office,
+// tick two years, count recoveryOf (not the legacy net flag — new letters
+// set both, and recovery wins). Office rollRecovery is 30% nnn / 58% base /
+// 12% gross. The owner's "~80% net" is the legacy flag in leasing.ts.
 let gTick = g;
-for (let i = 0; i < 12; i++) gTick = E.advanceMonth(gTick, parcels, bbls, {});
-let nnn = 0, tot = 0;
+const stamp = bbls.find((b) => parcels[b]?.class === "office" && (parcels[b]?.bldgArea ?? 0) > 40_000);
+if (stamp && !gTick.holdings[stamp]) {
+  gTick.holdings[stamp] = {
+    bbl: stamp, boughtM: 0, costBasis: 10_000_000, loan: null,
+    condition: "average", condIdx: 0.70, tenants: [], cfHistory: [],
+    programsDone: {}, service: 1,
+  };
+}
+for (let i = 0; i < 24; i++) gTick = E.advanceMonth(gTick, parcels, bbls, {});
+const recCounts = { nnn: 0, base: 0, gross: 0 };
+let tot = 0, legacyNet = 0;
+const tally = (t) => {
+  tot++;
+  const k = E.recoveryOf(t);
+  recCounts[k] = (recCounts[k] ?? 0) + 1;
+  if (t.net) legacyNet++;
+};
 for (const h0 of Object.values(gTick.holdings)) {
-  for (const t of h0.tenants ?? []) {
-    if ((t.use ?? parcels[h0.bbl]?.class) !== "office") continue;
-    tot++;
-    if (E.recoveryOf(t) === "nnn") nnn++;
-  }
+  if ((parcels[h0.bbl]?.class) !== "office") continue;
+  for (const t of h0.tenants ?? []) tally(t);
 }
 for (const loi of gTick.lois ?? []) {
   if (loi.use !== "office") continue;
-  tot++;
-  if (loi.net) nnn++;
+  tally(loi);
 }
-const mktOpex = E.managedOpexPsf("office", g.econ, false, 0);
-const instOpex = E.managedOpexPsf("office", g.econ, false, 1);
-const recovOpex = E.managedOpexPsf("office", g.econ, false, E.recoverableService(1));
+const mktOpex = E.opexPsf("office", g.econ, false, 0);
+const instOpex = E.opexPsf("office", g.econ, false, 1);
+const recovOpex = E.opexPsf("office", g.econ, false, E.recoverableService(1));
 console.log("\nInstitutional service — recoverable vs spent (office, generated city)");
 console.log(`  market opex $${mktOpex.toFixed(2)}/sf`);
 console.log(`  institutional opex $${instOpex.toFixed(2)}/sf  (+${((instOpex / mktOpex - 1) * 100).toFixed(1)}%)`);
 console.log(`  NNN recovers $${recovOpex.toFixed(2)}/sf  (landlord eats $${(instOpex - recovOpex).toFixed(2)}/sf)`);
 
-console.log("\nOffice recovery clauses on the opening tape");
-console.log(`  nnn ${nnn} of ${tot || "none yet"}  (${tot ? ((nnn / tot) * 100).toFixed(0) : 0}%)`);
+console.log("\nOffice recovery clauses after 24 months on one stamped deed");
+if (!tot) {
+  console.log("  no letters on a stamped empty deed (inbound path wants a purchased roll)");
+  console.log("  source draw, leasing.ts rollRecovery(office): 30% nnn / 58% base / 12% gross");
+  console.log("  source draw, legacy net flag: 80%  — recoveryOf reads recovery first");
+} else {
+  const pct = (n) => ((n / tot) * 100).toFixed(0);
+  console.log(`  recoveryOf  nnn ${recCounts.nnn} (${pct(recCounts.nnn)}%)  base ${recCounts.base} (${pct(recCounts.base)}%)  gross ${recCounts.gross} (${pct(recCounts.gross)}%)  of ${tot}`);
+  console.log(`  legacy net flag ${legacyNet} of ${tot} (${pct(legacyNet)}%)  — not what recoveryOf reads`);
+}
 console.log("Above-market service is an unrecovered amenity. OPS_SERVICE untouched.\n");

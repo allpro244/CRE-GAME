@@ -53,10 +53,10 @@ console.log("\nQUALITY ARMS — rent decomposition (generated city)\n");
 console.log(`parcel ${rec.address}  ${rec.yearBuilt}  ${rec.bldgArea} sf  index $${idx.toFixed(2)}`);
 console.log(`baseline managed rent          $${base.toFixed(2)}  (${(base / idx).toFixed(3)}× index)`);
 console.log(`condition lift only            $${afterLift.toFixed(2)}  (${(afterLift / base).toFixed(3)}× baseline)  grade ${condHi}`);
-console.log(`explicit lobby×1.04 facade×1.08 $${afterExplicit.toFixed(2)}  (${(afterExplicit / base).toFixed(3)}× baseline)`);
+console.log(`programmes flag, no cond lift  $${afterExplicit.toFixed(2)}  (${(afterExplicit / base).toFixed(3)}× baseline)  (1.000× after dropping the explicit multipliers)`);
 console.log(`both channels                  $${both.toFixed(2)}  (${(both / base).toFixed(3)}× baseline)`);
 const double = both / afterLift - 1;
-console.log(`explicit on top of condition   +${(double * 100).toFixed(1)}%  — ${double > 0.05 ? "SAME CHEQUE TWICE" : "small"}`);
+console.log(`explicit on top of condition   +${(double * 100).toFixed(1)}%  — ${double > 0.02 ? "SAME CHEQUE TWICE" : "condition owns price"}`);
 
 // Service recovery: walk live office tenants / LOIs if any, else the quote path.
 let nnn = 0, tot = 0;

@@ -405,8 +405,12 @@ purpose — the leasing comparison is `pnpm desk-vs-principal`.
 
 `pnpm report` finished after Phase 5: no new band. Econ **B** (supply-shock
 rent 1.4% vs need ≥10%) and sim **F** (office −1.04%/yr, retail −1.41%/yr)
-stay REPORTED, NOT GATED. City-accept J–M all hold. See
-`PHASE6_MEASUREMENT.md`.
+stay REPORTED, NOT GATED. City-accept J–M all hold.
+
+`pnpm run audit` finished: experiments 1–6 WIRED. No BACKWARDS on a
+leasing wire. 7 housing→retail BACKWARDS, 8 contradiction BROKEN, 9/11/13
+WEAK (`rateEma` dead; age +42 vs the audit's <40 cut — city-accept K
+still holds). See `PHASE6_MEASUREMENT.md`.
 
 Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
 `pnpm plan-ui`, `pnpm plates-blocks`. Rebuild `pnpm engine` before every probe.

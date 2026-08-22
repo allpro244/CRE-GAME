@@ -91,22 +91,33 @@ strictly dominant either.
 
 ## Audit (`pnpm run audit`)
 
-Experiments 1–6 (local demand, negative demand, glut, rate shock,
-construction cost, population ±18%) all **WIRED**. No BACKWARDS on a
-leasing wire. The block-premium term is separately gated in `pnpm plan-desk`
-(tightening widens the full-floor premium).
+Full battery wrote `ECONOMY_AUDIT.md`. Experiments 1–6 (local demand,
+negative demand, glut, rate shock, construction cost, population ±18%)
+all **WIRED**. No BACKWARDS on a leasing wire. The block-premium term is
+separately gated in `pnpm plan-desk` (tightening widens the full-floor
+premium).
 
-Pre-existing, not a Phase 6 finding:
-
-| experiment | verdict | why it is not this overhaul |
-|------------|---------|-----------------------------|
-| 7 housing → nearby retail | BACKWARDS | nearby retail rent falls on a housing add; local-over-far premium still yes |
+| experiment | verdict | note |
+|------------|---------|------|
+| 1–6 shocks | WIRED | distance decay, effective-led-asking, supply echo all fire |
+| 7 housing → nearby retail | BACKWARDS | nearby retail rent falls on a housing add; local-over-far premium still yes. Cross-use spillover, not the desk |
 | 7 office → street retail | WIRED | lunch-trade wire still fires |
-| 8 contradiction scan | BROKEN | 8.67% of use-months show negative absorption with rising effective rent — a market.ts / rent-index question |
+| 8 contradiction scan | BROKEN | 8.67% of use-months show negative absorption with rising effective rent — a `market.ts` / rent-index question |
 | 9 cycle coherence | WEAK | recession-month rent-fall 25.8% (need >50%); deliveries into peak/recession 12.2% (need >20%) |
+| 11 dead knobs | WEAK | 1 real dead field: `econ.rateEma`. Derived knobs (`vacOverM`, `supplyPress`, `slackEma`) are untestable by design |
+| 13 50-year stability | WEAK | age rose 42 years (WIRED cut is <40). City-accept **K** still holds (median +39, band <43). Three seeds vs the stub's two |
+| 12 narrative | — | millside office rent is NaN (no office stock in that district). Not a leasing wire |
 
-Later experiments (dead knobs, narrative, 50-year stability) append when
-the running battery finishes.
+Elasticity-table BACKWARDS marks (late-window peaks at 71–179 months on
+starts / effective rent / stock) sit on the same shocks whose
+experiment-level verdicts are WIRED. They are not a new leasing band.
+
+The stub `ECONOMY_AUDIT.md` on this branch only had experiment 13 from a
+2-seed partial run (age +39, WIRED). This file replaces it with the
+full 3-seed battery. Do not read the verdict change on 13 as a Phase 6
+desk finding.
+
+None of these are a reason to retune the desk.
 
 ## What this overhaul did not do
 

@@ -10,7 +10,7 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
@@ -3880,7 +3880,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // Vacancy accounting: we cleared empty surplus. Keep occupied; next market
   // tick recomputes cityVac from occ/stock. Clamp occupied into housable if
   // a large shed somehow overshot (guard only).
-  const house = (e.stock.industrial ?? 0) * (1 - frictionFloor("industrial"));
+  const house = housableStock(e, "industrial");
   if ((e.occupied?.industrial ?? 0) > house) {
     e.occupied!.industrial = house;
   }
@@ -3998,7 +3998,7 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const oldSf = rec.bldgArea;
     s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
     addStock(e, use, -rentableSf(rec));
-    const house = (e.stock[use] ?? 0) * (1 - frictionFloor(use));
+    const house = housableStock(e, use);
     if ((e.occupied?.[use] ?? 0) > house) e.occupied![use] = house;
     s.demolished = (s.demolished ?? 0) + 1;
     recordPropertyEvent(s, bbl, {

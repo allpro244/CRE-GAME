@@ -213,7 +213,7 @@ function booksSum(g, key) {
 }
 
 function runArm(g0, owned, spec, years) {
-  let g = E.cloneState(g0);
+  let g = structuredClone(g0);
   g = E.setOpsPolicy(g, { service: spec.service, plan: spec.plan, stance: 0 });
   const rents = [], occs = [];
   for (let m = 0; m < years * 12; m++) {

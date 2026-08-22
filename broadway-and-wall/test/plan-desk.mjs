@@ -287,6 +287,18 @@ const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN
   ok("hold-out holds the ask before holdM", Math.abs(darkAt(12) - 1.08) < 1e-9, `got ${darkAt(12)}`);
   ok("hold-out steps 2pp per quarter after holdM", Math.abs(darkAt(24) - 1.04) < 1e-9, `got ${darkAt(24)}`);
   ok("hold-out never steps below floorPct", Math.abs(darkAt(90) - 0.95) < 1e-9, `got ${darkAt(90)}`);
+
+  // Backwards-wire: a tighter market must WIDEN the full-floor premium.
+  const loose = E.blockPremAdj(-0.2, "floors");
+  const tight = E.blockPremAdj(0.3, "floors");
+  ok("tightening widens the full-floor premium",
+    tight > loose + 0.01,
+    `tight ${tight.toFixed(3)} vs loose ${loose.toFixed(3)}`);
+  const remLoose = E.blockPremAdj(-0.2, "remnant");
+  const remTight = E.blockPremAdj(0.3, "remnant");
+  ok("tightening shrinks the remnant discount (less negative)",
+    remTight > remLoose + 0.01,
+    `tight ${remTight.toFixed(3)} vs loose ${remLoose.toFixed(3)}`);
 }
 
 // ---------------------------------------------------------------------------

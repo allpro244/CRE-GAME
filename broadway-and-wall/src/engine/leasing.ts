@@ -2607,10 +2607,19 @@ function blockShapeMult(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): 
   const odd = kind === "remnant" || (plate > 0 && remnantSf(loi.sf, plate, use));
   // Full-floor premium scales with tightness (block-scarcity at cycle peaks).
   // Remnants clear at a discount. Both ends are guards, not policy.
+  return 1 + blockPremAdj(tight, full ? "floors" : odd ? "remnant" : "partial");
+}
+
+/**
+ * Block-shape rent adjustment before the 1+. Tightening must WIDEN the
+ * full-floor premium (scarcity of contiguous plates). If a tighter market
+ * narrows it, the wire is backwards. Exported for the Phase 6 audit.
+ */
+export function blockPremAdj(tight: number, kind: "floors" | "remnant" | "partial"): number {
   let adj = 0;
-  if (full) adj = 0.05 * (1 + tight);
-  else if (odd) adj = -0.08 + 0.04 * tight;
-  return 1 + clamp(adj, -BLOCK_DISC_GUARD, BLOCK_PREM_GUARD);
+  if (kind === "floors") adj = 0.05 * (1 + tight);
+  else if (kind === "remnant") adj = -0.08 + 0.04 * tight;
+  return clamp(adj, -BLOCK_DISC_GUARD, BLOCK_PREM_GUARD);
 }
 
 function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {

@@ -509,7 +509,10 @@ for (const dose of DOSES) {
     return post.filter((p) => (p.conc ?? 0) >= 0.99).length / Math.max(1, post.length); });
   console.log(`\n  THE CONCESSION DIAL`);
   console.log(`   months resting on its 1.00 ceiling, after the drop: ${pct(med(bind))}   (per pair ${bind.map(pct).join("  ")})`);
-  console.log(`   maximum giveaway the index can express: 14% of face (market.ts effRentIdx)`);
+  // Read from the engine rather than restated here: this line said 14% for as
+  // long as CONC_DEPTH said 0.14, and kept saying it after the constant was
+  // measured against the package this very harness prints two blocks above.
+  console.log(`   maximum giveaway the index can express: ${((E.CONC_DEPTH ?? 0.14) * 100).toFixed(0)}% of face (market.ts CONC_DEPTH)`);
   console.log(`   real world: net effective rent runs 25-40% under face in a bad office glut`);
 
   console.log(`\n  DEAL FLOW OVER THE FIRST FIVE YEARS  (median per pair)`);

@@ -1199,8 +1199,38 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
   return out;
 }
 
+/**
+ * THE FACE/EFFECTIVE GROSS-UP — how far a QUOTE sits above what a deal nets.
+ *
+ * `effRentIdx` is the net-effective index: asking less the concession package
+ * a tenant can extract at today's dial (market.ts). Valuation reads it, which
+ * is right — an asset is worth what deals actually net.
+ *
+ * A QUOTE is not a net number. A landlord names the face rate and pays for the
+ * deal in free rent and fit-out, and the leasing desk in this engine then
+ * writes exactly that package on every letter. Quoting the effective index and
+ * ALSO writing the package charged the concession twice: measured over four
+ * seeds through a 35%-of-stock glut, letters signed at a straight-line net
+ * effective 27% under the line the Economy page draws as "effective", and the
+ * asking line was a rate nobody in the game was ever quoted (buildings quoted
+ * 11-13% under it). This grosses the quote back to face so that the two lines
+ * on the chart mean what the caption says: asking is quoted, effective is
+ * struck.
+ */
+export function faceGrossUp(econ: Econ, use: BuiltClass): number {
+  const eff = econ.effRentIdx?.[use] ?? 0;
+  const ask = econ.rentIdx?.[use] ?? 0;
+  if (!(eff > 0) || !(ask > 0)) return 1;
+  return ask / eff;
+}
+
 // Achievable rent for NEW leases in a managed building: capital programs and
 // the owner's rent stance move it off the pure market number.
+//
+// FACE, NOT EFFECTIVE. This is the number the parcel card prints, the letter
+// arrives at, the renewal is scored against and the rent roll is marked to —
+// every one of them a FACE rent, because the concession package is written
+// separately on the deal itself. See faceGrossUp.
 export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?: BuiltClass): number {
   // A landmarked building is one people care about, and it lets a little
   // better than the market for the rest of its life. That premium is the
@@ -1208,7 +1238,9 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   // With a use, the rent of that component in its own market. Without one, the
   // blended number the whole building is worth — which is the right answer for
   // an appraisal and the wrong one for a lease.
-  let m = use ? useRentPsfYr(rec, econ, h.condition, use) : marketRentPsfYr(rec, econ, h.condition);
+  let m = use
+    ? useRentPsfYr(rec, econ, h.condition, use) * faceGrossUp(econ, use)
+    : blendBy(rec, (u) => useRentPsfYr(rec, econ, h.condition, u) * faceGrossUp(econ, u));
   const done = h.programsDone ?? {};
   if (done.lobby !== undefined) m *= 1.04;
   if (done.facade !== undefined) m *= 1.08;

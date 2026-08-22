@@ -806,9 +806,12 @@ export function EconomyPage() {
               <div className="chart-title" style={{ marginTop: 12 }}>The concession gap</div>
               <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
                 yFmt={pctFmt} zeroBase xLabels={xl} />
-              {/* WHAT THE OWNER WAS LOOKING AT. This is the line that sits flat
-                  at 14, falls to nothing, and climbs back — and until now the
-                  page assumed the reader already knew what a concession is. */}
+              {/* WHAT THE OWNER WAS LOOKING AT. This is the line that opens to
+                  about a third, falls to nothing, and climbs back — and until
+                  now the page assumed the reader already knew what a concession
+                  is. It used to top out at 14% because the index said so and
+                  the index had not been measured against the leasing desk; see
+                  CONC_DEPTH in engine/market.ts. */}
               <div className="chart-note">
                 A landlord advertises a face rent — the number in the brochure. What a lease actually strikes
                 at is that number minus everything thrown in to get it signed: months of free rent at the
@@ -818,9 +821,10 @@ export function EconomyPage() {
               <div className="chart-note">
                 At <strong>0%</strong> nobody is discounting. Space lets at the quoted rate, the tenant pays
                 every month of the term, and asking rent means what it says. That is a landlord's market.
-                At <strong>14%</strong> — as wide as this market goes — the brochure is fiction: a year free
-                on a ten-year deal with the landlord buying the carpet, and a building whose asking rent has
-                not moved is earning a seventh less than it claims. That is a tenant's market.
+                At <strong>30%</strong> — as wide as this market goes — the brochure is fiction: eighteen
+                months free on a ten-year deal with the landlord buying the carpet, and a building whose
+                asking rent has not moved is earning barely two thirds of what it claims. That is a tenant's
+                market.
               </div>
               <div className="chart-note">
                 It turns before asking rent does, in both directions, and that is not a quirk of the chart.

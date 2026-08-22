@@ -2441,6 +2441,13 @@ export interface GameState {
   // hearing on one site, an application waiting on the board, and the
   // buildings nobody is allowed to knock down. See engine/zoning.ts.
   zoneAdj?: Record<string, number>;          // district -> FAR multiplier
+  /**
+   * USE REZONING, lot by lot. The plat ships zero M districts; when
+   * industrial is chronically short the board maps leftover fringe C to M
+   * so a shed is the permitted use and the residual stops pricing the dirt
+   * as housing. Absent on old saves — those lots stay C.
+   */
+  zoneUse?: Record<string, string>;          // bbl -> zoneDist overlay
   /** the last rezoning each district saw — month, direction, and where the envelope landed. A value event you can read, not just a news line that scrolled away. */
   zoneLog?: Record<string, { m: number; dir: 1 | -1; adj: number }>;
   variance?: Record<string, number>;         // bbl -> extra FAR granted

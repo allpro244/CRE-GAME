@@ -770,6 +770,18 @@ export function frictionFloor(k: BuiltClass): number {
 }
 
 /**
+ * A CLASS THE CITY CANNOT HOUSE, on the same instruments densify already
+ * reads. Vacancy on the frictional rail, or `structTight` saying desired
+ * demand is already past housable. Used by the zoning map — a planning
+ * board rezones land for a use that is short, not for one that is empty.
+ */
+export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
+  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
+  if (vac <= frictionFloor(k) + slack) return true;
+  return (e.structTight?.[k] ?? 0) > 0.06;
+}
+
+/**
  * NAMED TENANTS TOUCH THE CITY POOL. Micro lease events used to live in a
  * separate universe from `econ.pool` / absorption — a 20k sf default on your
  * floor never showed up in the city looking queue. Material signed changes

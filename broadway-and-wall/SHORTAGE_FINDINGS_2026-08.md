@@ -106,9 +106,13 @@ do it.
 ## Proposed order
 
 1. **This harness.** Done. `pnpm shortage`.
-2. **Let land answer industrial shortage.** `tickZoning` must see
-   industrial scarcity, or the residual must be allowed to pick a shed
-   anywhere it outbids. No coefficient.
+2. **Let land answer industrial shortage.** Done on
+   `cursor/industrial-land-answers-171d`. After: industrial stock **×1.16**
+   over 60y (was ×1.01); growing-seed stock ×1.16–1.80; office near-nat
+   5.5% → 15.4%; jobs-shock overshoot 0.7% → 10.4%. Industrial still
+   spends 63% of months on the floor — that is the clamp (step 3), not
+   missing land. The plat still prints 0 M; the board overlay is on
+   `s.zoneUse` (180 lots on seed 91117).
 3. **Frictional vacancy as residence time.** Generate it from lease roll
    and re-let latency. Retire the clamp as a load-bearing rail.
 4. **Starts underwrite `rentExp` at delivery.** The number already exists.

@@ -116,10 +116,11 @@ function snap(e) {
   return out;
 }
 
-function zoneCensus(parcels) {
+function zoneCensus(parcels, g) {
   let m = 0, fringeC = 0, c = 0;
-  for (const rec of Object.values(parcels)) {
-    if (!rec) continue;
+  for (const raw of Object.values(parcels)) {
+    if (!raw) continue;
+    const rec = g ? E.resolveRec(parcels, g, raw.bbl) ?? raw : raw;
     const z = rec.zoneDist ?? "";
     if (z.startsWith("M")) m++;
     else if (z.startsWith("C")) {
@@ -135,7 +136,7 @@ function walk(seed, months, shockAt, dose) {
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
   const jobs0 = g.econ.jobs;
   const stock0 = Object.fromEntries(CLASSES.map((k) => [k, g.econ.stock[k]]));
-  const zones = zoneCensus(parcels);
+  let zones = zoneCensus(parcels, g);
   const months_ = [];
   let starts = Object.fromEntries(CLASSES.map((k) => [k, 0]));
   let fillOnGrowth = [];
@@ -174,6 +175,7 @@ function walk(seed, months, shockAt, dose) {
   }
   const last = months_[months_.length - 1];
   const first = months_[Math.min(SETTLE, months_.length - 1)];
+  zones = zoneCensus(parcels, g);
   return {
     seed,
     zones,

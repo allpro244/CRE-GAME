@@ -10,12 +10,12 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf } from "./value";
+  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -1377,13 +1377,6 @@ export function refreshDevelopmentFeasibility(
   // strip corridors, not new M districts). Fringe C land (demand < 45, the
   // same tier useForZone treats as the corridor) permits it; prime C land
   // still refuses — nobody permits a loading dock on the hundred block.
-  const zonePermits = (zone: string | undefined, use: BuiltClass, demand = 100): boolean => {
-    const z = (zone ?? "C")[0];
-    if (z === "R") return use === "multifamily";
-    if (z === "M") return use === "industrial" || use === "multifamily";
-    if (use === "industrial") return demand < 45;
-    return true;
-  };
   const LAND_N = 96;
   const REDEV_N = 72;
   const infillRatios: number[] = [];
@@ -1405,7 +1398,7 @@ export function refreshDevelopmentFeasibility(
       chosen.add(bbl);
       landCount++;
       for (const use of BUILT_CLASSES) {
-        if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
+        if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
         // THE PENCIL TEST MUST PRICE THE SCHEME THE LAND IS PRICED FOR.
         //
         // This read `Math.min(14, maxFloorsFor(...))` — a flat fourteen-floor
@@ -1471,7 +1464,7 @@ export function refreshDevelopmentFeasibility(
     // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
     const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
-      if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
+      if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
       const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
       if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
       const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
@@ -4176,10 +4169,24 @@ export function tickCityGrowth(
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 
+  // THE CRANE FILLS THE BOOK'S COMPOSITION, NOT JUST ITS TOTAL.
+  // useForZone already weights the programme by startOwed, but it only
+  // sees the lot the surplus contest already picked — and that contest
+  // prefers high-residual dirt, which is never a bay. Industrial was a
+  // third of every order and 3% of every groundbreak (mixmatch).
+  //
+  // Same 36 draws. After the sample: if a SHORT class is owed and we
+  // found a legal lot for it, that lot wins. Office can be built on
+  // most C dirt; a shed can only be built on the M the board just
+  // mapped. Leaving those lots empty while office takes every crew
+  // slot is how stock stayed frozen after the map existed.
+  const owedBook = s.econ.startOwed;
+
   while (n-- > 0) {
     // sample a handful of candidates, build on the most in-demand of them
     let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
     let bestScore = -1;
+    const bestBy: Partial<Record<BuiltClass, { bbl: string; rec: (typeof parcels)[string]; score: number }>> = {};
     for (let i = 0; i < 36; i++) {
       const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
@@ -4231,6 +4238,33 @@ export function tickCityGrowth(
       const read = landRead(rec, s.econ);
       const score = read.builder - read.psf + rng(s, "dev") * 12;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
+      for (const k of BUILT_CLASSES) {
+        if ((owedBook?.[k] ?? 0) <= 0 && !classPinnedOwed(s.econ, k)) continue;
+        if (!zonePermits(rec.zoneDist, k, rec.demandScore, s.econ)) continue;
+        const cur = bestBy[k];
+        if (!cur || score > cur.score) bestBy[k] = { bbl, rec, score };
+      }
+    }
+    {
+      let pick: { bbl: string; rec: (typeof parcels)[string]; score: number } | null = null;
+      let pickAmt = -1;
+      for (const k of BUILT_CLASSES) {
+        const cand = bestBy[k];
+        if (!cand) continue;
+        if (!classPinnedOwed(s.econ, k) && !classIsShort(s.econ, k)) continue;
+        const amt = owedBook?.[k] ?? 0;
+        if (amt > pickAmt) { pickAmt = amt; pick = cand; }
+      }
+      if (!pick) {
+        pickAmt = -1;
+        for (const k of BUILT_CLASSES) {
+          const cand = bestBy[k];
+          if (!cand) continue;
+          const amt = owedBook?.[k] ?? 0;
+          if (amt > pickAmt) { pickAmt = amt; pick = cand; }
+        }
+      }
+      if (pick) best = pick;
     }
     if (!best) continue;
     const { bbl, rec } = best;

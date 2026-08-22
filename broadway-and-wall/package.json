@@ -91,6 +91,7 @@
     "streetpaint": "node test/street-paint.mjs",
     "delivery-notice": "node test/delivery-notice.mjs",
     "delivery-appraisal": "node test/delivery-appraisal.mjs",
+    "desk-vs-principal": "node test/desk-vs-principal.mjs",
     "suite-occ": "node test/suite-occ.mjs",
     "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",

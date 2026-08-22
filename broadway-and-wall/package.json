@@ -80,6 +80,7 @@
     "styles": "node tools/styleaudit.mjs",
     "repudiate": "node test/repudiate.mjs",
     "pencils": "node test/pencils.mjs",
+    "rentexp-pencils": "node test/rentexp-pencils.mjs",
     "breakeven": "node test/breakeven.mjs",
     "leadlag": "node test/leadlag.mjs",
     "legmatch": "node test/legmatch.mjs",

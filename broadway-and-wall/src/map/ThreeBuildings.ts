@@ -42,6 +42,7 @@ import {
 // no access to it, so they had a coverage inset and nothing else while the
 // stock around them had twenty plan families.
 import { massingStack } from "@/citygen/massing.mjs";
+import { playerSkylineLayerSig } from "./skylineSig.mjs";
 import { OPEN_SEA } from "./sea";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
@@ -9089,20 +9090,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   propsByBBL = new Map<string, { mesh: THREE.InstancedMesh; i: number }[]>();
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
+  // Finished deliveries stay put. Live frames live in dynJobs. One Group.clear
+  // used to throw both away every month a crane moved, which on Great City is
+  // every month from the first delivery onward.
+  private dynStock = new THREE.Group();
+  private dynJobs = new THREE.Group();
+  private stockSig = "";
+  private jobsSig = "";
+  private kitGeoms: Set<THREE.BufferGeometry> | null = null;
   private civicGroup = new THREE.Group();
   private civicSig = "";
   // The pivoting jib assemblies of live construction cranes: render() swings
   // each Group's rotation.z off the shared clock, so the slew costs one
-  // property write per crane per frame, and a dynGroup rebuild clears the
-  // list wholesale alongside the meshes it points into.
+  // property write per crane per frame. Rebuilding dynJobs clears this list
+  // alongside the meshes it points into; a stock-only rebuild leaves it alone.
   private cranes: { g: THREE.Group; bear: number; w: number; phase: number }[] = [];
-  // The last occupancy and retail maps the game handed over. Kept because
-  // setPlayerBuildings rebuilds the dynamic group wholesale, and by the time
-  // it does, this month's occupancy pass has already run — MapView's
-  // occupancy effect is declared before its skyline effect, and both key on
-  // the same paint signature — so a tower rebuilt this tick would sit
-  // dataless (no dusk warmth, no papered bays) until the NEXT month moved
-  // the signature again. The rebuild re-applies these instead.
+  // The last occupancy and retail maps the game handed over. Kept because a
+  // stock rebuild replaces those meshes, and by the time it does, this month's
+  // occupancy pass has already run — MapView's occupancy effect is declared
+  // before its skyline effect, and both key on the same paint signature — so a
+  // tower rebuilt this tick would sit dataless (no dusk warmth, no papered
+  // bays) until the NEXT month moved the signature again. The rebuild
+  // re-applies these instead. Job frames do not register occupancy slots.
   private lastOcc = new Map<string, number>();
   private lastRet = new Map<string, number>();
   private shadowTex: THREE.Texture | null = null;
@@ -9165,7 +9174,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
      * geometry changed and the skin did not.
      */
     private citySeed = 1,
-  ) {}
+  ) {
+    this.dynGroup.add(this.dynStock);
+    this.dynGroup.add(this.dynJobs);
+  }
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
     this.map = map;
@@ -11335,24 +11347,48 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
   }
 
-  // Player construction and deliveries: a small dynamic mesh set rebuilt on
-  // change (a handful of buildings — cheap), sharing the facade materials.
+  // Player construction and deliveries, sharing the facade materials.
+  // Finished stock is rebuilt when a building is delivered, demolished,
+  // restyled, or wears opening bunting. Live frames are their own group, so a
+  // crane rising 2 m does not remesh twenty years of downtown. Group.clear()
+  // does not dispose; twenty years of monthly full rebuilds is how Great City
+  // died around 2035 — every tower and every crane that had ever been drawn
+  // still sat in GPU memory.
+  private sharedKitGeoms(): Set<THREE.BufferGeometry> {
+    return (this.kitGeoms ??= new Set(propKit().map((p) => p.geom)));
+  }
+
   /**
-   * `styleOverride` exists for the style board — a development view that puts
-   * every facade family on the map at once at identical height and plate. The
-   * distribution audit can prove a family is CHOSEN; only looking at it can
-   * prove it is distinguishable from the family beside it, which is a different
-   * question and one no counter can answer.
+   * Drop a group's children and the BufferGeometries they own. Shared kit
+   * geoms, wallMat, roofMat and the prop-material cache stay alive.
+   * `disposeMats` is for civic works, which allocate MeshLambertMaterials
+   * per rebuild and would leak those too.
    */
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
-    this.dynGroup.clear();
-    this.cranes.length = 0;
+  private disposeGroupContents(group: THREE.Group, disposeMats = false) {
+    const kit = this.sharedKitGeoms();
+    const mats = new Set<THREE.Material>();
+    group.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const g = o.geometry;
+      if (g && !kit.has(g)) g.dispose();
+      if (!disposeMats) return;
+      const list = (Array.isArray(o.material) ? o.material : [o.material]) as THREE.Material[];
+      for (const m of list) {
+        if (m && (m as THREE.MeshLambertMaterial).isMeshLambertMaterial) mats.add(m);
+      }
+    });
+    group.clear();
+    for (const m of mats) m.dispose();
+  }
+
+  private resetDynStateSlots() {
     // THE MESHES JUST CLEARED GIVE BACK THEIR STATE SLOTS. The two static
     // sheets own attribute slots 0 (wall) and 1 (roof); every slot above
-    // belongs to a dynamic mesh, registered in mk() below, and after clear()
-    // those attributes point at geometry that is no longer in the scene.
-    // Ranges are pruned too, or setOccupancy would index attribute arrays
-    // that were truncated out from under it.
+    // belongs to a dynamic stock mesh, registered in mk() below, and after
+    // those meshes go those attributes point at geometry that is no longer
+    // in the scene. Ranges are pruned too, or setOccupancy would index
+    // attribute arrays that were truncated out from under it. Job frames
+    // never register slots.
     if (this.litAttrs.length > 2) {
       this.tintAttrs.length = 2; this.baseTints.length = 2;
       this.litAttrs.length = 2; this.retAttrs.length = 2;
@@ -11362,6 +11398,31 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         if (keep.length) this.rangesByBBL.set(bbl, keep);
         else this.rangesByBBL.delete(bbl);
       }
+    }
+  }
+
+  /**
+   * `styleOverride` exists for the style board — a development view that puts
+   * every facade family on the map at once at identical height and plate. The
+   * distribution audit can prove a family is CHOSEN; only looking at it can
+   * prove it is distinguishable from the family beside it, which is a different
+   * question and one no counter can answer.
+   */
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
+    const stockSig = playerSkylineLayerSig(items, false);
+    const jobsSig = playerSkylineLayerSig(items, true);
+    const rebuildStock = stockSig !== this.stockSig;
+    const rebuildJobs = jobsSig !== this.jobsSig;
+    if (!rebuildStock && !rebuildJobs) return;
+    if (rebuildStock) {
+      this.disposeGroupContents(this.dynStock);
+      this.resetDynStateSlots();
+      this.stockSig = stockSig;
+    }
+    if (rebuildJobs) {
+      this.disposeGroupContents(this.dynJobs);
+      this.cranes.length = 0;
+      this.jobsSig = jobsSig;
     }
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
@@ -11379,6 +11440,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // means nought: the original mesh is already flattened by the line above,
       // and now nothing replaces it.
       if (!(item.heightM > 0) || item.cls === "land") continue;
+      if (item.construction ? !rebuildJobs : !rebuildStock) continue;
+      const host = item.construction ? this.dynJobs : this.dynStock;
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
@@ -11578,7 +11641,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           mesh.name = "prop:" + pr.kind;
           mesh.rotation.z = pr.rot; mesh.scale.setScalar(pr.s ?? 1);
           mesh.position.set(pr.x, pr.y, pr.z);
-          this.dynGroup.add(mesh);
+          host.add(mesh);
         }
       }
       // The only ornament the ladder places itself: balustrade urns along a
@@ -11587,7 +11650,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (crownProps.length) {
         const urns = crownProps.filter((p) => p.kind === 39).map((p) =>
           urnGeom().scale(p.s, p.s, p.s).translate(p.x, p.y, p.z));
-        if (urns.length) this.dynGroup.add(new THREE.Mesh(mergeGeoms(urns), this.propMaterial(0xa9a293, false)));
+        if (urns.length) host.add(new THREE.Mesh(mergeGeoms(urns), this.propMaterial(0xa9a293, false)));
       }
       const mk = (D: typeof T) => {
         const g = new THREE.BufferGeometry();
@@ -11642,8 +11705,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aRet", retA);
         return g;
       };
-      this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
-      this.dynGroup.add(new THREE.Mesh(mk(R2), this.roofMat));
+      host.add(new THREE.Mesh(mk(T), this.wallMat));
+      host.add(new THREE.Mesh(mk(R2), this.roofMat));
       // A NEW TOWER'S DECK IS NOT BARE. The static stock grew a machine deck
       // this week — bulkheads, overruns, plant — and a building delivered in
       // 2014 with an empty roof next to a 1920s walk-up with a full one reads
@@ -11678,7 +11741,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // one mesh per colour keeps it to four draws for the whole party
           FLAG.forEach((col, ci) => {
             const mine = pens.filter((_, i2) => i2 % FLAG.length === ci);
-            if (mine.length) this.dynGroup.add(new THREE.Mesh(mergeGeoms(mine), this.propMaterial(col, false)));
+            if (mine.length) host.add(new THREE.Mesh(mergeGeoms(mine), this.propMaterial(col, false)));
           });
         }
       }
@@ -11727,7 +11790,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const m = new THREE.Mesh(g.geom, this.propMaterial(g.color, false));
           m.name = "prop:" + p.kind;
           m.rotation.z = p.rot; m.scale.setScalar(p.s ?? 1); m.position.set(p.x, p.y, p.z);
-          this.dynGroup.add(m);
+          host.add(m);
         }
         // The rail round the edge. Not part of the deck budget — it stands on
         // the parapet rather than in the middle, so it competes with nothing.
@@ -11753,7 +11816,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (rails.length) {
             const rail = new THREE.Mesh(mergeGeoms(rails), this.propMaterial(KIT[20].color, false));
             rail.name = "prop:20";
-            this.dynGroup.add(rail);
+            host.add(rail);
           }
         }
       }
@@ -11787,7 +11850,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (panels.length) {
             const HOARD = [0x2e6b5e, 0x35547a, 0x6b4a2e];
             const hc = HOARD[keyOf(item.bbl) % 3];
-            this.dynGroup.add(new THREE.Mesh(mergeGeoms(panels), this.propMaterial(hc, false)));
+            host.add(new THREE.Mesh(mergeGeoms(panels), this.propMaterial(hc, false)));
           }
           if (bestLen > 6) {
             const bAng = Math.atan2(bny, bnx) + Math.PI / 2;
@@ -11796,7 +11859,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
               new THREE.BoxGeometry(0.14, 0.14, 2.0).translate(-1.5, 0, 1.0),
               new THREE.BoxGeometry(0.14, 0.14, 2.0).translate(1.5, 0, 1.0),
             ]).rotateZ(bAng).translate(bx + bnx * 0.9, by + bny * 0.9, 0);
-            this.dynGroup.add(new THREE.Mesh(board, this.propMaterial(0xe6e1d4, false)));
+            host.add(new THREE.Mesh(board, this.propMaterial(0xe6e1d4, false)));
           }
         }
         // A TOWER CRANE, AND NOT THE SAME ONE TWICE.
@@ -11827,7 +11890,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const hook = mastH - 4 - hash01(k ^ 0xcd, this.citySeed) * (mastH - h * 0.4 - 6);
         const at = (g: THREE.BufferGeometry, x: number, y: number, z: number) =>
           g.rotateZ(bear).translate(x, y, z);
-        this.dynGroup.add(
+        host.add(
           // mast, on a wider foot so it does not look balanced on a pin
           new THREE.Mesh(at(new THREE.CylinderGeometry(0.42, 0.55, mastH, 6).rotateX(Math.PI / 2), mx, my, mastH / 2), orange),
           new THREE.Mesh(at(new THREE.BoxGeometry(3.2, 3.2, 1.0), mx, my, 0.5), grey),
@@ -11852,7 +11915,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2).translate(jib * tro, 0, (mastH - 1.4 + hook) / 2), grey),
           new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(jib * tro, 0, hook), grey),
         );
-        this.dynGroup.add(slew);
+        host.add(slew);
         // One lazy sweep every 22-38 seconds, period and phase hashed off the
         // deed like everything else about this crane, so two sites never move
         // in lockstep and a reload finds each crane mid-gesture, not reset.
@@ -11867,7 +11930,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const dx = b2[0] - a2[0], dy = b2[1] - a2[1];
           const L = Math.hypot(dx, dy);
           if (L < 3) continue;
-          this.dynGroup.add(new THREE.Mesh(
+          host.add(new THREE.Mesh(
             new THREE.BoxGeometry(L, 0.22, 2.2)
               .rotateZ(Math.atan2(dy, dx))
               .translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, 1.1),
@@ -11880,9 +11943,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // cadence is a month too late). Idempotent on the static sheets, and a
     // building delivered THIS tick gets its value here too, because the
     // occupancy pass that just ran computed it against a registry the bbl
-    // already stood in.
-    if (this.lastOcc.size) this.setOccupancy(this.lastOcc);
-    if (this.lastRet.size) this.setRetail(this.lastRet);
+    // already stood in. Job frames have no occupancy slots, so a crane-only
+    // month leaves the last maps alone.
+    if (rebuildStock) {
+      if (this.lastOcc.size) this.setOccupancy(this.lastOcc);
+      if (this.lastRet.size) this.setRetail(this.lastRet);
+    }
     this.sunDirty = true;
     this.map.triggerRepaint();
   }
@@ -11911,7 +11977,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (const bbl of works.flatten) {
       if (!this.flattened.has(bbl)) this.flattenLot(bbl);
     }
-    this.civicGroup.clear();
+    this.disposeGroupContents(this.civicGroup, true);
     const lawn = new THREE.MeshLambertMaterial({ color: 0x7e9e5c });
     const dirt = new THREE.MeshLambertMaterial({ color: 0x8a7a55 });
     const stone = new THREE.MeshLambertMaterial({ color: 0x6e6758 });
@@ -12076,7 +12142,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private noticeGroup = new THREE.Group();
   setNotices(bbls: string[]) {
     if (!this.noticeGroup.parent) this.scene.add(this.noticeGroup);
-    this.noticeGroup.clear();
+    this.disposeGroupContents(this.noticeGroup);
     for (const bbl of bbls) {
       const v = this.volumes.find((x) => x.b === bbl && !x.d && x.r.length >= 3);
       if (!v) continue;

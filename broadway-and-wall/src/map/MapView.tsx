@@ -1058,7 +1058,10 @@ export default function MapView() {
         if (p) items.push({ ...p, bbl: child });
       }
     }
-    // meshes are rebuilt only when the skyline actually changed
+    // meshes are rebuilt only when the skyline actually changed. Construction
+    // height is in this string so a rising frame still updates; setPlayerBuildings
+    // keeps finished stock on its own layer so that monthly growth does not
+    // remesh every delivered tower.
     const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "") + (i.fresh ? "f" : "")).join("|");
     if (sig !== dynSigRef.current) {
       dynSigRef.current = sig;

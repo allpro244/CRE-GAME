@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Condition, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
@@ -1413,8 +1413,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         : s.econ.phase === "recovery" ? 1.3 : s.econ.phase === "peak" ? 0.95 : 0.8;
       // Downtime is a property of the SPACE, not the building: a shop relets
       // faster than a floor, and each turns on its own clock.
-      const lagFor = (u: BuiltClass | undefined) =>
-        u === "office" ? 5.5 : u === "industrial" ? 2.5 : 3.5;
+      const lagFor = (u: BuiltClass | undefined) => reletMonths(u ?? dominantUse(rec));
       const entries = movedOut.map((mo) => ({
         sf: mo.sf,
         use: mo.use,

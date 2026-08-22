@@ -34,6 +34,7 @@
     "banks": "node test/run.mjs --banks",
     "crews": "node test/crews.mjs",
     "vactails": "node test/vactails.mjs",
+    "rent-chart": "node test/rent-chart.mjs",
     "sectorexit": "node test/sectorexit.mjs",
     "land": "node test/land.mjs",
     "variety": "node test/citygen-variety.mjs",

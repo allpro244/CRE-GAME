@@ -712,6 +712,41 @@ export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, ind
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.
+/**
+ * HOW FAR A NET-EFFECTIVE DEAL SITS UNDER THE FACE RENT, per unit of the
+ * concession dial. The effective index is asking x (1 - CONC_DEPTH x concIdx).
+ *
+ * This was 0.14, and 0.14 was not measured against anything — the leasing desk
+ * writes its own free-rent and fit-out package on every letter (leasing.ts:
+ * `freeM`, `tiPsf`, both driven by the SAME dial), and that package, not a
+ * constant, is what a deal actually nets. Measured over four seeds x 15 years,
+ * tight markets and a 35%-of-stock glut, 779 deal-months and ~1,400 signed
+ * letters, the realised straight-line net effective of signed leases runs, as
+ * a discount to the face quote:
+ *
+ *   median depth by dial   0.06 at conc<0.15   0.18 at 0.35-0.60
+ *                          0.24 at 0.60-0.85   0.29 at conc>0.85
+ *   deal-weighted fit      depth = 0.075 + 0.212 x conc
+ *   through the origin     depth = 0.302 x conc
+ *
+ * 0.30 is the through-origin fit: it lands the saturated glut on the nose
+ * (0.287 against a measured 0.288) and errs by 3pp of rent in a squeeze, where
+ * the measured depth is 0.06 and the index says 0.03. That is the right place
+ * to spend the error. An intercept would fit the squeeze better and would also
+ * mark every asset in the city down 6% in a boom for something that is deal
+ * dispersion — growth tenants bidding over the quote, stale space signing
+ * under it — rather than a concession the market is granting.
+ *
+ * A 30% net-effective gap at a saturated dial is not extreme: US office gluts
+ * take free rent from ~6 months to 15-20 on a ten-year lease and TI from ~$60
+ * to $100-150/sf, which is where the trade quotes 30-40% off face. See the
+ * sources in test/glut.mjs.
+ *
+ * Anything that moves the package in leasing.ts moves this number. `pnpm
+ * rent-chart` measures it and fails when the two drift apart.
+ */
+export const CONC_DEPTH = 0.30;
+
 export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 
 /**
@@ -3736,7 +3771,7 @@ export function tickEcon(s: GameState) {
     // digit. Left in place because a guard that never fires is a guard.
     const beforeRent = e.rentIdx[k];
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
-    e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
+    e.effRentIdx[k] = +(e.rentIdx[k] * (1 - CONC_DEPTH * e.concIdx[k])).toFixed(4);
     // EXPLAIN THE MOVE. Defaults, tenant exits and district shifts already
     // write a cause. Asking rent did not — the Economy page showed a chart
     // with no sentence tying the month's move to vacancy, incomes or jobs.

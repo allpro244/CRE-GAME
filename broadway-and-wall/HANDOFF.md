@@ -403,6 +403,11 @@ Hands-off-with-plan is not strictly dominated by grinding (deals 67.4 vs
 wins NE and NOI; fees are real). `pnpm stress` holds leasing constant on
 purpose — the leasing comparison is `pnpm desk-vs-principal`.
 
+`pnpm report` finished after Phase 5: no new band. Econ **B** (supply-shock
+rent 1.4% vs need ≥10%) and sim **F** (office −1.04%/yr, retail −1.41%/yr)
+stay REPORTED, NOT GATED. City-accept J–M all hold. See
+`PHASE6_MEASUREMENT.md`.
+
 Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
 `pnpm plan-ui`, `pnpm plates-blocks`. Rebuild `pnpm engine` before every probe.
 

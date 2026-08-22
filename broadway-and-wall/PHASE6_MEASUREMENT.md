@@ -1,95 +1,117 @@
-# Phase 6 — adversarial measurement
+# Phase 6 — measurement (do not tune)
 
-Re-run after Phase 5 deletions. No coefficients were tuned.
+Phases 0–5 shipped the floorplate inventory and the posted leasing plan.
+This file is the Phase 6 record. Numbers come from the committed engine.
+Do not retune coefficients because a column is “too high” or “too low.”
 
-## Desk vs patient principal (`pnpm desk-vs-principal`)
+## Block-premium wire
 
-5 seeds, 10 years, same ~102-suite gifted commercial book.
+`blockPremAdj(tight, kind)` is exported so the formula can be audited.
 
-```
-                  desk        plan        principal   princ − plan
-  signed NE%         94.7%      104.7%      111.5%    +6.8%
-  tight NE%          97.3%      109.2%      115.9%    +6.8%
-  soft NE%           91.9%      104.2%      107.9%    +3.8%
-  deals / seed        83.0        67.4        67.0    -0.4
-  vac-months          2964        3022        3080    +58
-  10y NOI          $75.37M     $66.75M     $70.21M    +$3.47M
-```
+Tightening **widens** the full-floor premium and **shrinks** the remnant
+discount. Softening does the reverse.
 
-- desk = firm agent + `starterPlan()` (quote 90%)
-- plan = firm agent + `playerEquivalentPlan()` (quote 1.08, holdM 18)
-- principal = no desk; counters every letter to `tenantIndifferenceMult`
+| tightness | full-floor office | remnant office |
+|-----------|-------------------|----------------|
+| 0.55      | +0.040            | −0.088         |
+| 0.85      | +0.065            | −0.068         |
 
-Phase 0 gap was +17.7 NE points (legacy bands). Phase 3 closed it to +6.8.
-Phase 6 is the same +6.8. The leftover is a posted number vs the tenant
-indifference function (tightness / credit / phase), plus 6% vs 4% fees on
-NOI. The schema as written cannot track the cycle. Do not twist coefficients.
+`pnpm plan-desk` asserts this wire. Passing.
 
-Hands-off-with-plan is **not strictly dominated** by grinding: deal count
-matches, vacant-months are slightly better. It is **not strictly dominant**:
-the bot still wins signed NE and NOI. Fees are real.
+## Desk vs principal (same 102-suite book, 5 seeds × 10 years)
 
-4% `pAccept` floor bind rate remains 0.0% on this bot.
+Three arms: leftover Phase-0 desk (90-cent first-letter), posted plan
+(`playerEquivalentPlan`: quote 1.08, hold 18, step 0.02, floor 0.95),
+and the patient principal bot.
 
-## Plan monotonicity (`pnpm plan-desk`)
+|                    | desk     | plan      | principal | princ − plan |
+|--------------------|----------|-----------|-----------|--------------|
+| signed NE%         | 94.7%    | 104.7%    | 111.5%    | **+6.8**     |
+| tight NE%          | 97.3%    | 109.2%    | 115.9%    | +6.8         |
+| soft NE%           | 91.9%    | 104.2%    | 107.9%    | +3.8         |
+| deals / seed       | 83.0     | 67.4      | 67.0      | −0.4         |
+| vacant-months      | 2,964    | 3,022     | 3,080     | +58          |
+| 10y NOI            | $75.37M  | $66.75M   | $70.21M   | +$3.47M      |
 
-```
-  quote 1.00  deals 61.3   NE 98.0%
-  quote 1.12  deals 52.0   NE 104.8%
-  hold 18     vac-mo 2677   NE 89.4%
-  hold 0      vac-mo 2707   NE 89.1%
-```
+Phase 3 residual was +6.8. Phase 6 residual is +6.8. The leftover desk
+still dumps first letters at 90 cents; the plan quotes 1.08 and holds
+out. The bot still beats the posted number because it prices each letter
+to indifference. That is residual (a) from Phase 3 — a posted number vs
+an indifference function — not a desk with a private rule.
 
-Raising `quotePct` lowers deals and raises NE%. Hold-out still raises NE%.
-Vacant-months on an empty 8-year book is a weak signal after even-cut
-removal; the load-bearing check is the `darkMs` schedule (12 → 1.08, 24 →
-1.04, 90 → 0.95).
+Hands-off-with-a-plan is **not strictly dominated**: deals match the bot
+and vacant-months are slightly better. It is **not strictly dominant**:
+the bot still wins signed NE and 10-year NOI. Fees (6% vs 4%) show up
+in NOI, not in signed NE%.
 
-Block-premium wire: tightening widens the full-floor premium (0.040 → 0.065)
-and shrinks the remnant discount (−0.088 → −0.068). Not backwards.
+**Do not tune.** Closing the 6.8 would mean either teaching the sheet to
+price like the bot (that is a different product) or clipping the bot
+(that is a fake number).
 
-## Demise (`pnpm demise`)
+## Vacancy (8 × 60 years, months 60+)
 
-26 deals in 4.3y to 81% occ, 0 whales. 10y identity holds. Remnant 5.3% of
-vacant sf.
+`pnpm vacdist`. Same regime as Phase 1 after even-cut removal.
 
-## Vacancy distribution (`pnpm vacdist`)
+| kind        | median | p10   | p90    |
+|-------------|--------|-------|--------|
+| office      | 5.5%   | 2.7%  | 11.4%  |
+| retail      | 5.8%   | 2.9%  | 13.2%  |
+| multifamily | 3.6%   | 2.3%  | 6.0%   |
+| industrial  | 2.5%   | 1.3%  | 5.5%   |
 
-8 seeds × 60y, months 60+. Same regime as Phase 1.
+Office median 5.5% is the post-Phase-1 number (closet slivers no longer
+count as tenants). It is not a Phase 6 movement.
 
-```
-  class          natural   MEDIAN
-  office         11.5%      5.5%
-  retail          8.5%      5.8%
-  multifamily     4.5%      3.6%
-  industrial      7.0%      2.5%
-```
+## Demise / remnant (`pnpm demise`)
 
-## Baseline (`pnpm baseline`)
+26 deals in 4.3 years to 81% occupancy. 0 whales. Identity holds
+(leased + vacant = plate). Remnant vacant 5.3% of vacant sf. Passing.
 
-Second sanctioned century re-roll. **No standing number moved** vs the
-Phase 1 file. World-stream draw count unchanged.
+## Report (`pnpm report`)
 
-## Gate / conserve
+No **new** band from this overhaul. The two outside-band rows were already
+REPORTED, NOT GATED before Phases 0–5.
 
-`pnpm gate` and `pnpm conserve` (1,135 months) green. $0 unexplained.
+| battery | inside band | outside | note |
+|---------|-------------|---------|------|
+| econ-accept A–E | 4 of 5 | **B** supply-shock rent 1.4% vs need ≥10% | vacancy did move +12.8pp; rent clause is the known glut-study gap |
+| sim-accept F–I | 3 of 4 | **F** office −1.04%/yr, retail −1.41%/yr vs −1.0 floor | income-anchor floor; named in `ECONOMY.md` |
+| city-accept J–M | 3 of 3 + identity | — | stock, age, cranes, map all hold |
 
-## Report (`pnpm report`, in progress)
+City-accept (CITY_SEEDS=1, five market seeds in J–L): median building-count
++8.0%, age +39 years, delivered/demolished 2.04, 0 bad parcels.
 
-Econ-accept A–E: 4 of 5 inside band. Outside: **B** (supply-shock rent vs
-counterfactual 1.4% vs need ≥10%) — marked REPORTED, NOT GATED; pre-existing.
-Sim-accept **F** (income anchor): office −1.04%/yr and retail −1.41%/yr sit
-just under the −1.0 floor — also REPORTED, NOT GATED; pre-existing. No new
-band from the leasing deletions.
+## Stress (`pnpm stress`)
 
-## Audit (`pnpm run audit`, in progress)
+The existing strategy tournament holds leasing constant (`leaseAtMarket` in
+`test/leasepolicy.mjs`). It compares acquisition and capital, not the desk.
+The leasing-dominance question **is** `pnpm desk-vs-principal` above: the
+posted plan is not strictly dominated by the principal bot and is not
+strictly dominant either.
 
-Experiments 1–6 all **WIRED** (local demand, negative demand, glut, rate
-shock, construction cost, population ±18%). No BACKWARDS verdict on a
-leasing wire. The block-premium direction check lives in `pnpm plan-desk`.
+## Audit (`pnpm run audit`)
 
-## What `pnpm stress` is not
+Experiments 1–6 (local demand, negative demand, glut, rate shock,
+construction cost, population ±18%) all **WIRED**. No BACKWARDS on a
+leasing wire. The block-premium term is separately gated in `pnpm plan-desk`
+(tightening widens the full-floor premium).
 
-The strategy tournament holds leasing constant (`leaseAtMarket`) so it
-compares acquisition and capital, not the desk. The leasing dominance
-question is the table at the top of this file.
+Pre-existing, not a Phase 6 finding:
+
+| experiment | verdict | why it is not this overhaul |
+|------------|---------|-----------------------------|
+| 7 housing → nearby retail | BACKWARDS | nearby retail rent falls on a housing add; local-over-far premium still yes |
+| 7 office → street retail | WIRED | lunch-trade wire still fires |
+| 8 contradiction scan | BROKEN | 8.67% of use-months show negative absorption with rising effective rent — a market.ts / rent-index question |
+| 9 cycle coherence | WEAK | recession-month rent-fall 25.8% (need >50%); deliveries into peak/recession 12.2% (need >20%) |
+
+Later experiments (dead knobs, narrative, 50-year stability) append when
+the running battery finishes.
+
+## What this overhaul did not do
+
+- Multifamily demising.
+- Glut / market-balance via leasing constants.
+- Stacking-plan graphics.
+- A broker marketing layer.
+- Teaching the sheet to price like the bot.

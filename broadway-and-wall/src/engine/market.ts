@@ -770,6 +770,41 @@ export function frictionFloor(k: BuiltClass): number {
 }
 
 /**
+ * MONTHS A SUITE SITS BETWEEN TENANTS. Same clock the player's make-ready
+ * uses in leasing.ts — a shop relets faster than a floor, a shed faster
+ * than either. The city stock has to sit on this clock too, or frictional
+ * vacancy is a clamp in one place and a residence time in the other.
+ */
+export function reletMonths(k: BuiltClass): number {
+  return k === "office" ? 5.5 : k === "industrial" ? 2.5 : 3.5;
+}
+
+/** Ordinary commercial term. Sector exit and between-tenants both roll on it. */
+export const LEASE_TERM_YR = 8;
+
+/**
+ * Space that is standing but not yet a suite: new deliveries in lease-up.
+ * One function so the pool cap, the occupancy cap and a demolition all
+ * read the same remaining capacity.
+ */
+export function darkSfOf(e: Econ, k: BuiltClass): number {
+  return Math.max(0, e.darkSf?.[k] ?? 0);
+}
+
+export function housableStock(e: Econ, k: BuiltClass): number {
+  return Math.max(0, (e.stock?.[k] ?? 0) - darkSfOf(e, k));
+}
+
+/**
+ * Expected vacant sf from ordinary turnover × re-let latency. Not a floor
+ * under vacancy — the months a moved-out suite is dark. Scales with the
+ * occupied book, because only occupied space can roll.
+ */
+export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
+  return Math.max(0, occupied) * (1 / LEASE_TERM_YR / 12) * reletMonths(k);
+}
+
+/**
  * A CLASS THE CITY CANNOT HOUSE, on the same instruments densify already
  * reads. Vacancy on the frictional rail, or `structTight` saying desired
  * demand is already past housable. Used by the zoning map — a planning
@@ -794,7 +829,7 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
   const e = s.econ;
   if (!e.pool) e.pool = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   const stk = Math.max(1, e.stock?.[use] ?? 1);
-  const housable = stk * (1 - frictionFloor(use));
+  const housable = housableStock(e, use);
   const fringe = stk * (NATURAL_VAC[use] ?? 0.1) * 0.25;
   const cap = housable + fringe;
   const occ = e.occupied?.[use] ?? 0;
@@ -2967,7 +3002,7 @@ export function tickEcon(s: GameState) {
         // been rolled forward yet, which is also what a landlord can see.
         const stk = Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
         // Physical unhousable looking demand — not the absorption queue.
-        const house = stk * (1 - frictionFloor(k));
+        const house = housableStock(e, k);
         const queue = Math.max(0, ((e.pool?.[k] ?? 0) - house - (e.sublet?.[k] ?? 0)) / stk);
         const net = Math.max(0, goes - queue);
         if (net > 0) e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * (1 - net));
@@ -3072,8 +3107,13 @@ export function tickEcon(s: GameState) {
     // searchers — about a quarter of natural vacancy, the share between leases.
     // Beyond that, unhousable demand has already left for the mainland; it does
     // not keep refilling from a headcount that assumes infinite floors.
-    const friction = frictionFloor(k);
-    const housable = e.stock[k] * (1 - friction);
+    // Housable is standing floor that is actually a suite — not new
+    // deliveries still in lease-up. Capping the pool on `stock × (1 -
+    // friction)` made every delivery raise the cap and occupy the same
+    // month. Dark floor keeps the looking book from counting a crane's
+    // last pour as already let.
+    if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
     const poolTarget = Math.min(targetRaw, housable + searchFringe);
     if (!e.pool) e.pool = { ...e.occupied };
@@ -3105,23 +3145,13 @@ export function tickEcon(s: GameState) {
       : 1;
     const absorb = clamp(0.055 * matchFrict * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
-    // FRICTIONAL VACANCY IS A FLOOR, and it is not zero. Some share of every
-    // market is empty purely because tenants are moving in and out of it —
-    // roughly a third of the natural rate. A flat half-a-percent clamp was a
-    // numerical guard pretending to be economics; this is the real thing, and
-    // it differs by class because moving costs differ by class.
-    // Frictional vacancy is space empty purely because tenants are moving in
-    // and out, so it scales with how often that happens — and it does not
-    // happen at the same rate in every class. A shed is let whole to one
-    // operator who stays for a decade; an office floor is carved into suites
-    // that churn constantly. Running one ratio across all four put the
-    // industrial clamp above where that market actually clears, and it sat on
-    // it a tenth of the century.
-    // THE 0.55 x STOCK FLOOR IS DELETED — an occupancy floor that scales with
-    // supply is a tenant printer, and it was the named leak in the acceptance
-    // run. The honest floor on how fast a market can empty is the -0.006 x
-    // occupied absorb bound above; the only hard floor is zero.
-    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, housable);
+    // FRICTIONAL VACANCY IS RESIDENCE TIME, not a rail. Suites sit dark
+    // between tenants for `reletMonths`; new floor sits dark until it
+    // has been a suite. Occupied cannot eat either. The hard floor on how
+    // fast a market can empty is still the -0.006 × occupied absorb bound;
+    // vacancy itself is 1 − occ/stock, allowed to print what the flows did.
+    const inTransit = betweenTenantsSf(e.occupied[k], k);
+    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(0, housable - inTransit));
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
     // is contractually sitting in — and the difference goes on the market at
@@ -3185,7 +3215,10 @@ export function tickEcon(s: GameState) {
     e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
-    e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], friction, 0.45);
+    e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0, 0.45);
+    // New deliveries age out of lease-up on the same clock a vacated suite
+    // does. No draw: the months are a property of the use, already named.
+    e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, reletMonths(k))));
     // Demand that cannot be housed nets off the sublet market first, because a
     // tenant who needs space this year takes a sublease — that is what the
     // sublet market is FOR, and it is why a shortage with sublet inventory
@@ -4133,6 +4166,13 @@ export function tickEcon(s: GameState) {
 export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
   if (!e.stock) e.stock = { ...CITY_STOCK };
   e.stock[k] = Math.max(0, (e.stock[k] ?? CITY_STOCK[k]) + sf);
+  if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  if (sf > 0) e.darkSf[k] = (e.darkSf[k] ?? 0) + sf;
+  else if (sf < 0) {
+    const dark = e.darkSf[k] ?? 0;
+    const fromDark = Math.min(dark, -sf);
+    e.darkSf[k] = dark - fromDark;
+  }
 }
 
 /**

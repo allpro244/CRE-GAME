@@ -132,7 +132,7 @@ const scoreOf = (loi, market, terms) => {
  * not ticked twice.
  */
 const takeBook = (g0, parcels, target) => {
-  const g = E.cloneState(g0);
+  const g = structuredClone(g0);
   g.cash = Math.max(g.cash, OPERATING_CASH);
   let suites = 0;
   const buildings = [];
@@ -165,7 +165,7 @@ const takeBook = (g0, parcels, target) => {
       service: 0,
       stance: 0,
       plan: 1,
-      svcIdx: E.SVC_START,
+      svcIdx: 0.55, // SVC_START — types.ts is not on the harness bundle
       tenants: [],
       cfHistory: [],
     };
@@ -301,13 +301,13 @@ const freshStats = () => ({
 });
 
 const runArm = (g0, parcels, adj, policy) => {
-  let g = E.cloneState(g0);
+  let g = structuredClone(g0);
   const stats = freshStats();
   if (policy === "desk") {
     g.agent = true;
     delete g.agentFloor;
     delete g.agentPassBelow;
-    g = E.cloneState(g);
+    g = structuredClone(g);
     E.workLeasingDesk(g, parcels);
   } else {
     g.agent = false;

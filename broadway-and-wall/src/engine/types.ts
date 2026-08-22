@@ -2179,6 +2179,20 @@ export interface PlanRow {
   holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
 }
 
+/** Last-closed or in-progress quarter of desk activity. See GameState.deskDigest. */
+export interface DeskDigest {
+  startM: number;
+  signed: number;
+  signedNeSum: number;
+  walked: number;
+  declined: number;
+  referred: number;
+  vacMonths: number;
+  capitalOut: number;
+  sheetQuoteSum: number;
+  sheetQuoteN: number;
+}
+
 export interface LeasingPlan {
   /** Class rows; `byBbl` wins when present. */
   sheet: Partial<Record<BuiltClass, PlanRow>> & { byBbl?: Record<string, PlanRow> };
@@ -2713,6 +2727,13 @@ export interface GameState {
     walked: number;
     countered: number;
   };
+  /**
+   * QUARTERLY DESK DIGEST — Phase 4. Accumulates while a plan is live;
+   * rolled into `deskDigestPrev` every three months so Leasing can show
+   * the last closed quarter. Absent on older saves.
+   */
+  deskDigest?: DeskDigest;
+  deskDigestPrev?: DeskDigest;
   /**
    * PROPERTY MANAGEMENT HAS THE RENEWALS, at the 2% the roll already pays.
    *

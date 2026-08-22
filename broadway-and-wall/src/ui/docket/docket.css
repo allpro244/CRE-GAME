@@ -72,6 +72,11 @@
   gap: 7px;
   align-items: baseline;
 }
+.docket-lease-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
 
 /* The tag text is the category; color is only ever the second voice. */
 .docket-tag {

@@ -5,7 +5,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal } from "@/engine/leasing";
+import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
@@ -535,7 +535,8 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   if (g.portfolioSale?.bids?.[0]) return true;
   // Desk-covered letters stay quiet (agent / exclusive / renewals).
   // Ground-leased fees never wake the modal — the lessee is the landlord.
-  if (g.lois.some((l) => loiNeedsPrincipal(g, l))) return true;
+  // A live plan works exceptions on the docket, not a per-letter modal stream.
+  if (g.lois.some((l) => loiNeedsPrincipal(g, l)) && !planIsLive(g)) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
     // Live bids only — a best-and-final where everyone walked left bids.length

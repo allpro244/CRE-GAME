@@ -13,7 +13,7 @@ import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
-  agentFloor, agentPassBelow, type LOIAction,
+  agentFloor, agentPassBelow, patchPlanRow, setPlanAuthority as writePlanAuthority, type LOIAction,
 } from "@/engine/leasing";
 import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -322,6 +322,10 @@ interface AppState {
   /** Take the pen back entirely — no delegation signs anything. */
   setSignOwnAll: (on: boolean) => void;
   setAgentFloor: (f: number) => void;
+  setPlanRow: (key: import("@/engine/types").BuiltClass | { bbl: string }, patch: Partial<import("@/engine/types").PlanRow>) => void;
+  setPlanAuthority: (n: number) => void;
+  setLoiFocus: (id: number | null) => void;
+  loiFocusId: number | null;
   /** Auto-pass below this share; between pass and floor is referred back. */
   setAgentPassBelow: (f: number) => void;
   setAgentMinCredit: (c: Credit) => void;
@@ -528,6 +532,7 @@ export const useStore = create<AppState>((set, get) => ({
   prevForDigest: null,
   deliveryCeremony: null,
   auctionOpen: false,
+  loiFocusId: null,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
@@ -1566,6 +1571,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: next });
     void persist(next);
   },
+  setPlanRow: (key, patch) => {
+    const { game } = get();
+    if (!game) return;
+    const next = structuredClone(game);
+    patchPlanRow(next, key, patch);
+    set({ game: next });
+    void persist(next);
+  },
+  setPlanAuthority: (n) => {
+    const { game } = get();
+    if (!game) return;
+    const next = structuredClone(game);
+    writePlanAuthority(next, n);
+    set({ game: next });
+    void persist(next);
+  },
+  setLoiFocus: (id) => set({ loiFocusId: id }),
 
   setAgentPassBelow: (f) => {
     const { game } = get();

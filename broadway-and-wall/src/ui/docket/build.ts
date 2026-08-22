@@ -17,6 +17,7 @@ import { monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { attentionItems, MILESTONES } from "@/engine/sim";
 import { netWorth } from "@/engine/value";
+import { planIsLive } from "@/engine/leasing";
 import { usd } from "@/ui/format";
 import type { Page } from "@/state/store";
 
@@ -35,6 +36,8 @@ export interface DocketItem {
   page?: Page;
   /** Tail row only: how many rows the cap folded away. */
   more?: number;
+  /** Plan-desk exception — Sign / Counter / Decline on the rail. */
+  leaseId?: number;
 }
 
 /** How many rows the rail shows before folding the rest into a tail line. */
@@ -95,12 +98,18 @@ export function buildDocket(
   // principal. The label is the engine's, verbatim; Open routes through the
   // same key openAttention already understands.
   for (const a of attentionItems(game, parcels)) {
+    const leaseId = a.key.startsWith("loi:") ? Number(a.key.slice(4)) : undefined;
+    const letter = leaseId !== undefined ? game.lois.find((l) => l.id === leaseId) : undefined;
     items.push({
       key: a.key,
       cat: catForKey(a.key),
-      urgent: urgentKey(a.key) || undefined,
+      urgent: urgentKey(a.key) || (letter?.referred ? true : undefined),
       title: a.label,
+      sub: letter?.docketReason,
       attnKey: a.key,
+      leaseId: planIsLive(game) && letter ? leaseId : undefined,
+      bbl: letter?.bbl,
+      page: letter ? "deals" : undefined,
     });
   }
 

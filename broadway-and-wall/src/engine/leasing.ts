@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Approach, BuiltClass, Condition, Credit, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
+import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
@@ -1035,6 +1035,7 @@ function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRe
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
+  if (planIsLive(s)) rollDeskDigest(s);
   // The paper goes out on every open off-market conversation, including the
   // ones tickRivals opened earlier in this same tick. See stampApproaches.
   stampApproaches(s, parcels);
@@ -1797,6 +1798,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // a tenant leaving does not tell you when the FLOOR came free.
     if (vac >= minTenancySf(rec, dominantUse(rec)) && !h.leasingHold && !renovating) {
       h.darkMs = (h.darkMs ?? 0) + 1;
+      if (planIsLive(s)) digestOf(s).vacMonths += 1;
     } else if (h.darkMs) {
       h.darkMs = 0;
     }
@@ -2943,6 +2945,63 @@ export function ensureLeasingPlan(s: GameState): LeasingPlan | undefined {
   return s.leasingPlan;
 }
 
+/** A posted plan is executing — desk holds the pen and a sheet exists. */
+export function planIsLive(s: GameState): boolean {
+  return !!(s.leasingPlan && deskHoldsPen(s));
+}
+
+export function emptyDeskDigest(startM: number): DeskDigest {
+  return {
+    startM, signed: 0, signedNeSum: 0, walked: 0, declined: 0, referred: 0,
+    vacMonths: 0, capitalOut: 0, sheetQuoteSum: 0, sheetQuoteN: 0,
+  };
+}
+
+export function rollDeskDigest(s: GameState): void {
+  const cur = s.deskDigest;
+  if (!cur) {
+    s.deskDigest = emptyDeskDigest(s.month);
+    return;
+  }
+  if (s.month > 0 && s.month % 3 === 0 && cur.startM < s.month) {
+    s.deskDigestPrev = cur;
+    s.deskDigest = emptyDeskDigest(s.month);
+  }
+}
+
+function digestOf(s: GameState): DeskDigest {
+  if (!s.deskDigest || s.deskDigest.startM > s.month) s.deskDigest = emptyDeskDigest(s.month);
+  return s.deskDigest;
+}
+
+export function patchPlanRow(
+  s: GameState,
+  key: BuiltClass | { bbl: string },
+  patch: Partial<PlanRow>,
+): void {
+  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = synthesizeFromDials(s));
+  if (typeof key === "string") {
+    const row = plan.sheet[key] ?? { ...PLAYER_EQUIVALENT_ROW, quotePct: agentFloor(s), floorPct: agentFloor(s) };
+    plan.sheet[key] = { ...row, ...patch };
+    return;
+  }
+  const use = "office" as BuiltClass;
+  const fallback = plan.sheet.byBbl?.[key.bbl] ?? plan.sheet[use] ?? plan.sheet.office
+    ?? { ...PLAYER_EQUIVALENT_ROW, quotePct: agentFloor(s), floorPct: agentFloor(s) };
+  plan.sheet.byBbl = { ...(plan.sheet.byBbl ?? {}), [key.bbl]: { ...fallback, ...patch } };
+}
+
+export function setPlanAuthority(s: GameState, authority: number): void {
+  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = synthesizeFromDials(s));
+  plan.authority = Math.max(0, authority);
+}
+
+/** Referred / docketed letters the principal still owns under a live plan. */
+export function leaseDocketLois(s: GameState): LOI[] {
+  if (!planIsLive(s)) return [];
+  return s.lois.filter((l) => l.referred || !!l.docketReason);
+}
+
 export function planRowFor(plan: LeasingPlan, loi: LOI): PlanRow | undefined {
   const byBbl = plan.sheet.byBbl?.[loi.bbl];
   if (byBbl) return byBbl;
@@ -3079,6 +3138,7 @@ function planDocketLoi(
   s: GameState, loi: LOI, rec: { address?: string }, why: string, who: string,
 ) {
   loi.docketReason = why;
+  digestOf(s).referred += 1;
   agentReferLoi(s, loi, rec, why, who);
 }
 
@@ -3086,6 +3146,7 @@ function planDeclineLoi(
   s: GameState, loi: LOI, rec: { address?: string }, who: string,
 ) {
   bumpDeskMonth(s, "passed");
+  digestOf(s).declined += 1;
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   s.news.unshift({
     q: s.month, kind: "info",
@@ -3113,6 +3174,18 @@ function planTrySign(
     return false;
   }
   bumpDeskMonth(s, "signed");
+  {
+    const d = digestOf(s);
+    d.signed += 1;
+    const market = loiMarket(s, rec, h, loi);
+    d.signedNeSum += loiMandateScore(loi, market);
+    const row = s.leasingPlan ? planRowFor(s.leasingPlan, loi) : undefined;
+    if (row) {
+      d.sheetQuoteSum += effectiveQuotePct(s, loi, row, rec, h);
+      d.sheetQuoteN += 1;
+    }
+    d.capitalOut += loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  }
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   return true;
 }
@@ -3156,6 +3229,7 @@ function executePlanLetter(
   }
   if (outcome === "walked") {
     bumpDeskMonth(s, "walked");
+    digestOf(s).walked += 1;
     s.lois = s.lois.filter((l) => l.id !== loi.id);
     s.news.unshift({
       q: s.month, kind: "info",

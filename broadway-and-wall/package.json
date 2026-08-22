@@ -93,6 +93,7 @@
     "delivery-appraisal": "node test/delivery-appraisal.mjs",
     "desk-vs-principal": "node test/desk-vs-principal.mjs",
     "plan-desk": "node test/plan-desk.mjs",
+    "plan-ui": "node test/plan-ui.mjs",
     "suite-occ": "node test/suite-occ.mjs",
     "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",

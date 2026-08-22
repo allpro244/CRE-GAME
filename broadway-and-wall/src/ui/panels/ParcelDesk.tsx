@@ -12,7 +12,8 @@ import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsf
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf, planIsLive } from "@/engine/leasing";
+import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
@@ -493,6 +494,9 @@ function ParcelPanelInner({
         );
       })()}
 
+      {on("leasing") && holding && commercial && (
+        <StackingList rec={rec} holding={holding} game={game} canHold={planIsLive(game)} />
+      )}
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
           <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0))))} commercial</div>

@@ -21,7 +21,7 @@ export interface ParcelRecord {
    * HOW THE BUILDING IS CUT UP, in square feet per leasable space.
    *
    * Absent for everything the generator produced — those fall back to the
-   * class defaults in leasing.useSuiteSf, which is what a building of that
+   * class defaults in plates.typicalSuiteSf, which is what a building of that
    * size and use is normally demised into. It is present on buildings YOU
    * developed, because deciding whether a 200,000 sf tower is eight big floors
    * or ninety small suites is a real programming decision with real

@@ -1,7 +1,8 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
-import type { GameState } from "./types";
+import type { Credit, GameState, PlanRow } from "./types";
 import { clearStyleOverrides, ensurePeople } from "./people";
+import { ensureLeasingPlan, starterPlan } from "./leasing";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -130,6 +131,51 @@ const GROUND_MOVED_AT: Record<string, number> = {
  */
 const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
 
+/**
+ * Phase 5 of the leasing overhaul. Old saves stored four mandate dials on
+ * GameState (`agentFloor`, `agentPassBelow`, `agentMinCredit`,
+ * `agentMaxTiMonths`, `agentMaxSigningMonths`). Those fields are gone.
+ * If a desk is live and no plan is posted, seed a starter sheet from the
+ * leftover numbers (quote = the old sign line; package from the TI-months
+ * cap), then drop the fields so they cannot come back.
+ */
+function migrateLegacyMandateDials(state: GameState): void {
+  const raw = state as GameState & {
+    agentFloor?: number;
+    agentPassBelow?: number;
+    agentMinCredit?: Credit;
+    agentMaxTiMonths?: number;
+    agentMaxSigningMonths?: number;
+  };
+  if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
+    const floor = raw.agentFloor === undefined || !Number.isFinite(raw.agentFloor)
+      ? 0.90
+      : Math.min(1.00, Math.max(0.70, raw.agentFloor));
+    const tiMonths = raw.agentMaxTiMonths === undefined || !Number.isFinite(raw.agentMaxTiMonths)
+      ? 9
+      : Math.min(18, Math.max(0, raw.agentMaxTiMonths));
+    const credit: Credit = raw.agentMinCredit === 1 || raw.agentMinCredit === 2 ? raw.agentMinCredit : 0;
+    const row: PlanRow = {
+      quotePct: floor,
+      maxTiPsf: Math.max(20, Math.round(tiMonths * 80 / 12)),
+      maxFreeM: Math.min(12, Math.max(3, Math.round(tiMonths * 0.7))),
+      minBumpPct: 2.5,
+      termLoM: 36,
+      termHiM: 180,
+      minCredit: credit,
+      holdM: 0,
+      stepPct: 0.02,
+      floorPct: floor,
+    };
+    state.leasingPlan = starterPlan(row);
+  }
+  delete raw.agentFloor;
+  delete raw.agentPassBelow;
+  delete raw.agentMinCredit;
+  delete raw.agentMaxTiMonths;
+  delete raw.agentMaxSigningMonths;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -151,6 +197,15 @@ export function migrateSaveState(state: GameState): GameState {
   // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
   clearStyleOverrides(state);
   ensurePeople(state);
+  // Floorplate inventory (LEASING_OVERHAUL Phase 1): Tenant.floorLo/floorHi
+  // and Holding.blocks are optional. Old saves stamp lazily on first
+  // blocksOf / assignTenantFloors — largest tenant, lowest floor, stable by
+  // index, no RNG. Do not bump SAVE_VERSION for this.
+  // Phase 5: leftover mandate dials seed a starter sheet once, then drop.
+  migrateLegacyMandateDials(state);
+  if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
+    ensureLeasingPlan(state);
+  }
   // Older campaigns bump forward once shape migrations have run — EXCEPT
   // across a break the migration cannot repair. This is the "future hard
   // break" the note above anticipated: no rearrangement of the save's fields

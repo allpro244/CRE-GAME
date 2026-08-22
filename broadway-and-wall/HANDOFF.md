@@ -372,3 +372,49 @@ they dominate. Two of the last three fault reports were exactly that.
 
 **Do not merge #85** as stacked — last commit breaks century firms. Use the
 balances-only PR from `GROK_QUEUE.md` G3 instead.
+
+---
+
+## 10. THE LEASING OVERHAUL (Phases 0–6)
+
+See `LEASING_OVERHAUL_PLAN.md`. Two systems shipped together:
+
+1. **Floorplate inventory** (`src/engine/plates.ts`). A building is a stack of
+   plates, not a pre-cut of N equal suites. Tenants arrive with a size;
+   demise/merge are events with cost. Vacant inventory is contiguous blocks
+   (`blocksOf`). The physical lettable floor is `minLettableSf` — a remnant
+   under the city norm stays vacant; a whole shop smaller than the norm is
+   still the shop.
+2. **One clearing engine.** The four mandate dials and the desk-that-imitates
+   the player are gone. A posted `leasingPlan` (asking sheet, hold-out,
+   package, dollar authority) is what both the desk and the principal clear
+   against (`clearAgainstPlan`). No desk → letters land on the player. A desk
+   without a sheet gets `starterPlan()` (quote 90%, the old default sign line).
+   Old saves that still carry leftover dial fields are migrated in `save.ts`.
+
+**Phase 6 measured, do not tune.** The Phase 0 gap (principal +17.7 NE points
+over the old desk) closed to +6.8 under the player-equivalent sheet and
+stayed +6.8 after Phase 5 deletions. Residual is a posted number vs the
+tenant indifference function, plus fees. That is (a) in the plan's language
+— the schema cannot track the cycle — not a coefficient to twist.
+
+Hands-off-with-plan is not strictly dominated by grinding (deals 67.4 vs
+67.0; vac-months 3022 vs 3080) and is not strictly dominant (principal still
+wins NE and NOI; fees are real). `pnpm stress` holds leasing constant on
+purpose — the leasing comparison is `pnpm desk-vs-principal`.
+
+`pnpm report` finished after Phase 5: no new band. Econ **B** (supply-shock
+rent 1.4% vs need ≥10%) and sim **F** (office −1.04%/yr, retail −1.41%/yr)
+stay REPORTED, NOT GATED. City-accept J–M all hold.
+
+`pnpm run audit` finished: experiments 1–6 WIRED. No BACKWARDS on a
+leasing wire. 7 housing→retail BACKWARDS, 8 contradiction BROKEN, 9/11/13
+WEAK (`rateEma` dead; age +42 vs the audit's <40 cut — city-accept K
+still holds). See `PHASE6_MEASUREMENT.md`.
+
+Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
+`pnpm plan-ui`, `pnpm plates-blocks`. Rebuild `pnpm engine` before every probe.
+
+Phase 1 and Phase 5 are the two sanctioned `pnpm baseline` re-rolls. Phase 5
+moved no standing number. Do not add world-stream draws. `pAccept` and
+`drawRequirementSf` stay on `rng(s)`. See `PHASE6_MEASUREMENT.md`.

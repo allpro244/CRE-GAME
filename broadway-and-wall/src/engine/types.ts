@@ -131,6 +131,13 @@ export interface Tenant {
    * do relationships.
    */
   strainedM?: number;
+  /**
+   * Floors this tenancy occupies, 1-indexed from grade, inclusive.
+   * Absent on old saves — plates.assignTenantFloors stamps them deterministically
+   * (largest tenant, lowest floor, stable by index; no RNG).
+   */
+  floorLo?: number;
+  floorHi?: number;
 }
 
 /**
@@ -231,6 +238,12 @@ export interface LOI {
    * interrupt modal shows these even while the agent holds the book.
    */
   referred?: boolean;
+  /** Vacant block this letter is written on. Absent on old letters. */
+  blockId?: number;
+  /** Feet cut off the matched block to fit this letter. Zero if it takes the block whole. */
+  demiseSf?: number;
+  /** Demising capex at signing — DEMISE_PSF × demiseSf × costIdx. Booked as capex. */
+  demiseCost?: number;
   /**
    * THE TERM THEY CAME IN ASKING FOR, once the term itself is negotiable.
    * `termM` doubled as both "what they want" and "what is on the paper", which
@@ -242,6 +255,12 @@ export interface LOI {
   openTermM?: number;
   /** The term the landlord last asked for, for the final-conversation grid. */
   askedTermM?: number;
+  /**
+   * Why the plan desk left this letter for the principal (Phase 3).
+   * Phase 4 renders these on the docket. Absent on letters the desk signed,
+   * declined, or never saw.
+   */
+  docketReason?: string;
 }
 
 /**
@@ -462,7 +481,9 @@ export interface Holding {
   lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
-  makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
+  /** Cached vacant blocks from plates.blocksOf. Derived; restamped on read. */
+  blocks?: import("./plates").SpaceBlock[];
+  makeReady?: { sf: number; readyM: number; use?: BuiltClass; blockId?: number }[]; // vacated space being turned; unleasable until ready
   /**
    * WHAT YOUR MANAGEMENT IS DOING TO THIS BUILDING'S CONTROLLABLE COSTS.
    * Stamped once a month by tickStaff so the operating functions can read a
@@ -505,7 +526,7 @@ export interface Holding {
   // for them: the fastest-leasing product in the market, because a tenant who
   // can move in next month does not need six months of drawings and a fit-out
   // allowance. It costs the fit-out up front on space that may sit.
-  specSuites?: { sf: number; readyM: number; use: BuiltClass };
+  specSuites?: { sf: number; readyM: number; use: BuiltClass; blockId?: number };
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
@@ -2130,7 +2151,54 @@ export interface Beat {
 /** Who is on the other side of the table, and therefore what they want. */
 export type SellerKind = "estate" | "institution" | "partnership" | "developer" | "local" | "lender";
 
+/**
+ * POSTED LEASING PLAN — LEASING_OVERHAUL_PLAN.md Phase 3.
+ *
+ * One sheet the desk and the principal clear against. `quotePct` is an ask
+ * versus model market and is NOT capped at par; the cost of a high sheet is
+ * time-on-market, priced by the same indifference model as a counter.
+ */
+export interface PlanRow {
+  /** Ask versus current model market, e.g. 1.08. No cap at par. */
+  quotePct: number;
+  /** Extra on quotePct by block shape. The market already prices shape via
+   *  `blockShapeMult`; this is the player's further hold. */
+  bandAdj?: { fullFloor?: number; remnant?: number };
+  maxTiPsf: number;
+  maxFreeM: number;
+  minBumpPct: number;
+  termLoM: number;
+  termHiM: number;
+  minCredit: Credit;
+  /** Hold the posted ask for this many vacant months (`Holding.darkMs`),
+   *  then step quote down `stepPct` per quarter, never below `floorPct`. */
+  holdM: number;
+  stepPct: number;
+  floorPct: number;
+  /** Floors kept whole for a block user. A letter that breaks one dockets. */
+  holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
+}
 
+/** Last-closed or in-progress quarter of desk activity. See GameState.deskDigest. */
+export interface DeskDigest {
+  startM: number;
+  signed: number;
+  signedNeSum: number;
+  walked: number;
+  declined: number;
+  referred: number;
+  vacMonths: number;
+  capitalOut: number;
+  sheetQuoteSum: number;
+  sheetQuoteN: number;
+}
+
+export interface LeasingPlan {
+  /** Class rows; `byBbl` wins when present. */
+  sheet: Partial<Record<BuiltClass, PlanRow>> & { byBbl?: Record<string, PlanRow> };
+  /** Total lease value ($) the desk may sign without the principal. */
+  authority: number;
+}
 
 export interface GameState {
   /** Which desk the firm banks with. See bankOf in lenders.ts. */
@@ -2660,6 +2728,13 @@ export interface GameState {
     countered: number;
   };
   /**
+   * QUARTERLY DESK DIGEST — Phase 4. Accumulates while a plan is live;
+   * rolled into `deskDigestPrev` every three months so Leasing can show
+   * the last closed quarter. Absent on older saves.
+   */
+  deskDigest?: DeskDigest;
+  deskDigestPrev?: DeskDigest;
+  /**
    * PROPERTY MANAGEMENT HAS THE RENEWALS, at the 2% the roll already pays.
    *
    * Narrower than `agent` above and deliberately so. The agent takes the whole
@@ -2679,21 +2754,20 @@ export interface GameState {
    */
   renewalMgmt?: boolean;
   /**
-   * THE MANDATE YOU GAVE THE DESK — see agentPolicy in leasing.ts.
+   * THE POSTED LEASING PLAN — see LEASING_OVERHAUL_PLAN.md Phase 3.
    *
-   * `agentFloor` is the lowest net-effective share of market they may AUTO-
-   * SIGN. Below that and above `agentPassBelow` they refer the letter back to
-   * you; under the pass line they kill it. Undefined fields keep the defaults
-   * in leasing.ts so older saves stay coherent.
+   * Asking sheet + hold-out + dollar authority. When this is present and a
+   * desk holds the pen, `clearAgainstPlan` is the one clearing engine for
+   * desk and (via the same tenant reaction) the principal. A save that loads
+   * with `agent` / `teamLeasing` / `renewalMgmt` and no plan gets a starter
+   * sheet (`quotePct` 0.90, the old default sign line).
    */
-  agentFloor?: number;
-  /** Auto-pass (kill) letters scoring under this share of market. */
-  agentPassBelow?: number;
+  leasingPlan?: LeasingPlan;
   /**
    * SIGNING AUTHORITY, IN SQUARE FEET. A leasing manager's mandate in life is
    * bounded by the size of the deal, not only by its price: under the limit
    * the desk signs, over it the letter goes to the principal whatever the
-   * mandate says. Applies to EVERY delegation — the firm agent, a building's
+   * sheet says. Applies to EVERY delegation — the firm agent, a building's
    * covering exclusive, renewal management — because it is an authority limit
    * on the firm, not a setting on one channel. Undefined = no size limit,
    * which is how every save before it behaved.
@@ -2706,19 +2780,6 @@ export interface GameState {
    * they lose is the pen.
    */
   signOwnAll?: boolean;
-  /** Minimum tenant credit the desk may auto-sign (0 any · 1 solid · 2 strong). */
-  agentMinCredit?: Credit;
-  /**
-   * Cap on fit-out the desk may fund, as months of face rent
-   * (`tiPsf / rentPsf * 12`). Undefined = generous default in leasing.ts.
-   */
-  agentMaxTiMonths?: number;
-  /**
-   * Cap on total upfront leasing cash (TI + commission), expressed as months
-   * of the letter's face rent. Prevents long-term commission plus TI packages
-   * from clearing a TI-only mandate.
-   */
-  agentMaxSigningMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

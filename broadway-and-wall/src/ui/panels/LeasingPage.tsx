@@ -1,22 +1,17 @@
-import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
-  agentFloor, agentPassBelow, agentMinCredit, agentMaxTiMonths, agentMaxSigningMonths, agentCashReserve,
-  AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN,
-  AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
-  AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
   deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy,
 } from "@/engine/leasing";
+import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
-import type { Credit } from "@/engine/types";
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -24,9 +19,7 @@ export function LeasingPage() {
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const {
-    setAgent, setTeamLeasing, setRenewalMgmt, setAgentFloor, setAgentPassBelow,
-    setAgentMinCredit, setAgentMaxTiMonths, setAgentMaxSigningMonths, broker,
-    setDeskMaxSf, setSignOwnAll,
+    setAgent, setTeamLeasing, setRenewalMgmt, broker,
   } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
@@ -100,7 +93,8 @@ export function LeasingPage() {
         <AgentBar />
         <RenewalBar />
         <DeskActivity />
-        <MandateBar />
+        <PlanEditor />
+        <PlanDigest />
         <LeasedFeeStrip />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
         <button className="btn btn-buy" onClick={() => setPage("market")}>
@@ -137,7 +131,7 @@ export function LeasingPage() {
         ? "Your leasing desk holds the pen."
         : "You hold the pen.";
     const sub = game.agent
-      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They sign inside your mandate, counter soft letters, pick clear tour winners, and refer expansions, dead heats and capital calls. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They work the posted plan: counter to the sheet, docket exceptions, decline junk. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
       : teamOn
         ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
         : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, hire leasing on Staff and hand them the book, or hire outside coverage at 6% — nothing takes the pen unless you say so.";
@@ -259,161 +253,13 @@ export function LeasingPage() {
     );
   }
 
-  /**
-   * THE MANDATE — policy, not micromanagement.
-   *
-   * Three bands (sign / refer / pass), judged on net effective to the landlord
-   * (face after free rent, less amortised TI), plus a credit floor and a TI
-   * months cap. The desk decides which letters to work; you decide what
-   * "good enough" means. Only shown when somebody else holds the pen.
-   */
-  function MandateBar() {
-    // Firm agent, team handoff, or renewal desk — same mandate dials.
-    if (!deskHoldsPen(game)) return null;
-    const floor = agentFloor(game);
-    const pass = agentPassBelow(game);
-    const minCred = agentMinCredit(game);
-    const tiM = agentMaxTiMonths(game);
-    const signingM = agentMaxSigningMonths(game);
-    const cashReserve = agentCashReserve(game);
-    // 0 is "no limit", not "nobody may sign" — that reading is the switch below.
-    const authSf = game.deskMaxSf ?? 0;
-    const creditLabel = (c: Credit) => (c === 2 ? "A only" : c === 1 ? "B or better" : "any credit");
-    return (
-      <div className="agent-bar" style={{ display: "block" }}>
-        <div className="agent-title">Your mandate to the desk</div>
-        <div className="hint" style={{ marginBottom: 8 }}>
-          They score each letter on <b>net effective</b> — face rent after free months, minus the fit-out
-          amortised over the term — against the market for that use. Face rent alone was how a desk
-          filled buildings twenty points cheap while looking busy.
-        </div>
-        <Slider
-          label="Auto-sign at or above"
-          value={Math.round(floor * 100)}
-          min={Math.round(AGENT_FLOOR_MIN * 100)}
-          max={Math.round(AGENT_FLOOR_MAX * 100)}
-          step={1}
-          onChange={(v) => setAgentFloor(v / 100)}
-          marks={[{ at: 85, label: "85%" }, { at: 90, label: "usual" }, { at: 95, label: "95%" }, { at: 100, label: "par" }]}
-          format={(v) => `${v}% of market, net effective`}
-          hint={floor >= 0.97
-            ? "At the market or nothing. Soft letters get a hard counter; most still come back if the tenant will not move."
-            : floor >= 0.90
-              ? "Tight. Good letters clear; soft ones they counter toward this line before bothering you."
-              : floor <= 0.80
-                ? "Wide. They will fill space, and some of what they sign will be cheap paper for a decade."
-                : "A working mandate: a few points under market they close; worse they kill or bring back once."}
-        />
-        <Slider
-          label="Auto-pass below"
-          value={Math.round(pass * 100)}
-          min={Math.round(AGENT_PASS_MIN * 100)}
-          max={Math.round((floor - 0.02) * 100)}
-          step={1}
-          onChange={(v) => setAgentPassBelow(v / 100)}
-          marks={[{ at: 70, label: "70%" }, { at: 78, label: "usual" }, { at: Math.round((floor - 0.02) * 100), label: "just under sign" }]}
-          format={(v) => `${v}% of market — kill it, do not bother you`}
-          hint={`Between ${Math.round(pass * 100)}% and ${Math.round(floor * 100)}% they counter and negotiate — you only see the letter if the tenant's final still needs a principal.`}
-        />
-        <Slider
-          label="Maximum fit-out they may fund"
-          value={tiM}
-          min={AGENT_TI_MONTHS_MIN}
-          max={AGENT_TI_MONTHS_MAX}
-          step={1}
-          onChange={(v) => setAgentMaxTiMonths(v)}
-          marks={[{ at: 0, label: "none" }, { at: 6, label: "6 mo" }, { at: 9, label: "usual" }, { at: 12, label: "12 mo" }]}
-          format={(v) => v === 0 ? "no TI without you" : `${v} months of face rent`}
-          hint="Letters over the cap come back even if the rent clears — capital is a principal decision."
-        />
-        <Slider
-          label="Maximum upfront signing cash"
-          value={signingM}
-          min={AGENT_SIGNING_MONTHS_MIN}
-          max={AGENT_SIGNING_MONTHS_MAX}
-          step={1}
-          onChange={(v) => setAgentMaxSigningMonths(v)}
-          marks={[{ at: 6, label: "6 mo" }, { at: 12, label: "usual" }, { at: 18, label: "18 mo" }]}
-          format={(v) => `${v} months of face rent · TI + commission`}
-          hint={`The desk also preserves ${usd(cashReserve)} of treasury reserve (six months of debt service, minimum $250K). Anything that breaches either limit comes back to you.`}
-        />
-        <div style={{ marginTop: 10 }}>
-          <div className="slider-label" style={{ marginBottom: 4 }}>Minimum credit to auto-sign</div>
-          <div className="btn-row">
-            {([0, 1, 2] as Credit[]).map((c) => (
-              <button
-                key={c}
-                className={"btn" + (minCred === c ? " btn-on" : "")}
-                onClick={() => setAgentMinCredit(c)}
-              >
-                {creditLabel(c)}
-              </button>
-            ))}
-          </div>
-          <div className="hint">
-            Weaker covenants than this are referred — you can still take them; the desk will not do it alone.
-          </div>
-        </div>
-        {/* SIGNING AUTHORITY — the pen, which is a different question from the
-            price. Everything above tells a desk what a good letter looks like;
-            these two say how big a deal they may close without you. A real
-            leasing mandate is bounded both ways, and it is a limit on the FIRM:
-            it overrides the outside agent and the renewal desk alike, because
-            the letter that matters is the one nobody thought to ask you about. */}
-        <div style={{ marginTop: 14 }}>
-          <Slider
-            label="Signing authority"
-            value={authSf}
-            min={0}
-            max={100_000}
-            step={1_000}
-            onChange={(v) => setDeskMaxSf(v)}
-            marks={[{ at: 0, label: "no limit" }, { at: 20_000, label: "20k" }, { at: 50_000, label: "50k" }]}
-            format={(v) => v <= 0
-              ? "no size limit — the mandate above is the only test"
-              : `letters over ${sf(v)} come to you`}
-            hint={authSf > 0
-              ? `Anything larger is referred with the reason, whichever desk was covering it. The commission does not change: an exclusive is owed its 6% on every lease signed while it holds the file, so taking the pen back moves who decides and not who is paid.`
-              : "A desk can sign your largest tenancy without asking. Set a ceiling and the whole-floor deals come to you while the small paper keeps moving."}
-          />
-          <div className="btn-row" style={{ marginTop: 6 }}>
-            <button
-              className={"btn" + (game.signOwnAll ? " btn-on" : "")}
-              onClick={() => setSignOwnAll(!game.signOwnAll)}
-              title="Every letter in the book comes to you, whatever the mandate says"
-            >
-              {game.signOwnAll ? "You sign everything · on" : "Nobody signs but you"}
-            </button>
-          </div>
-          <div className="hint">
-            {game.signOwnAll
-              ? "Every letter comes to you unnegotiated. The desks still market the space and bring the tenants through it — and are still paid for the ones they bring — but nobody else touches the terms."
-              : "One switch for a principal who wants the whole rent roll in their own hand."}
-          </div>
-        </div>
-        <div className="hint" style={{ marginTop: 8 }}>
-          Shop letters are judged on shop market, office on office — not the building's blended average.
-        </div>
-        {/* WHO SIGNS AND WHO ONLY MARKETS, said plainly. A listing exclusive
-            works the phones. It does not take the pen. */}
-        <div className="hint" style={{ marginTop: 8 }}>
-          <b>Who holds the pen.</b> An outside agent signs inside this mandate after you hire them.
-          Your own leasing hires sign only after you hand them the book, at the in-house 4%/2%.
-          Management signs renewals only. A listing exclusive works the phones and is paid 6% of
-          what <i>you</i> sign — they do not negotiate. Everything else is yours: an expansion that
-          changes how the building is programmed, a tour dead heat, a credit or capital breach,
-          and anything over the authority above.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <AgentBar />
       <RenewalBar />
       <DeskActivity />
-      <MandateBar />
+      <PlanEditor />
+      <PlanDigest />
       <div className="stat-strip">
         <Big
           label="Portfolio occupancy"

@@ -127,7 +127,20 @@ export default function Docket() {
                     {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
                   </span>
                 )}
-                {(it.attnKey || it.bbl || it.page) ? (
+                {it.leaseId !== undefined ? (
+                  <span className="docket-lease-actions">
+                    <button type="button" className="year-rail-go" title="Sign the letter as written"
+                      onClick={() => useStore.getState().respondLoi(it.leaseId!, "accept")}>Sign</button>
+                    <button type="button" className="year-rail-go" title="Open a counter on Deals"
+                      onClick={() => {
+                        useStore.getState().setLoiFocus(it.leaseId!);
+                        if (it.bbl) useStore.getState().focus(it.bbl);
+                        useStore.getState().setPage("deals");
+                      }}>Counter</button>
+                    <button type="button" className="year-rail-go" title="Turn the letter away"
+                      onClick={() => useStore.getState().respondLoi(it.leaseId!, "decline")}>Decline</button>
+                  </span>
+                ) : (it.attnKey || it.bbl || it.page) ? (
                   <button type="button" className="year-rail-go" onClick={() => openItem(it)}>
                     Open
                   </button>

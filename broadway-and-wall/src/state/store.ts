@@ -11,11 +11,8 @@ import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMark
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
-  AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
-  AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
-  agentFloor, agentPassBelow, type LOIAction,
+  patchPlanRow, setPlanAuthority as writePlanAuthority, type LOIAction,
 } from "@/engine/leasing";
-import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
@@ -321,12 +318,10 @@ interface AppState {
   setDeskMaxSf: (sf: number) => void;
   /** Take the pen back entirely — no delegation signs anything. */
   setSignOwnAll: (on: boolean) => void;
-  setAgentFloor: (f: number) => void;
-  /** Auto-pass below this share; between pass and floor is referred back. */
-  setAgentPassBelow: (f: number) => void;
-  setAgentMinCredit: (c: Credit) => void;
-  setAgentMaxTiMonths: (m: number) => void;
-  setAgentMaxSigningMonths: (m: number) => void;
+  setPlanRow: (key: import("@/engine/types").BuiltClass | { bbl: string }, patch: Partial<import("@/engine/types").PlanRow>) => void;
+  setPlanAuthority: (n: number) => void;
+  setLoiFocus: (id: number | null) => void;
+  loiFocusId: number | null;
   /** Paper a cross-collateralised facility over a pool of buildings. */
   openFacility: (bbls: string[], productId: string, lev: number) => void;
   /** Pay the facility down out of cash. */
@@ -528,6 +523,7 @@ export const useStore = create<AppState>((set, get) => ({
   prevForDigest: null,
   deliveryCeremony: null,
   auctionOpen: false,
+  loiFocusId: null,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
@@ -1556,59 +1552,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: next });
     void persist(next);
   },
-  setAgentFloor: (f) => {
+  setPlanRow: (key, patch) => {
     const { game } = get();
     if (!game) return;
-    const floor = Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f));
-    // Keep the pass line under the sign line when the principal tightens up.
-    const pass = Math.min(agentPassBelow({ ...game, agentFloor: floor }), floor - 0.02);
-    const next = { ...game, agentFloor: floor, agentPassBelow: pass };
+    const next = structuredClone(game);
+    patchPlanRow(next, key, patch);
     set({ game: next });
     void persist(next);
   },
-
-  setAgentPassBelow: (f) => {
+  setPlanAuthority: (n) => {
     const { game } = get();
     if (!game) return;
-    const floor = agentFloor(game);
-    const pass = Math.min(floor - 0.02, Math.max(AGENT_PASS_MIN, f));
-    const next = { ...game, agentPassBelow: pass };
+    const next = structuredClone(game);
+    writePlanAuthority(next, n);
     set({ game: next });
     void persist(next);
   },
-
-  setAgentMinCredit: (c) => {
-    const { game } = get();
-    if (!game) return;
-    const next = { ...game, agentMinCredit: c };
-    set({ game: next });
-    void persist(next);
-  },
-
-  setAgentMaxTiMonths: (m) => {
-    const { game } = get();
-    if (!game) return;
-    const next = {
-      ...game,
-      agentMaxTiMonths: Math.min(AGENT_TI_MONTHS_MAX, Math.max(AGENT_TI_MONTHS_MIN, Math.round(m))),
-    };
-    set({ game: next });
-    void persist(next);
-  },
-
-  setAgentMaxSigningMonths: (m) => {
-    const { game } = get();
-    if (!game) return;
-    const next = {
-      ...game,
-      agentMaxSigningMonths: Math.min(
-        AGENT_SIGNING_MONTHS_MAX,
-        Math.max(AGENT_SIGNING_MONTHS_MIN, Math.round(m)),
-      ),
-    };
-    set({ game: next });
-    void persist(next);
-  },
+  setLoiFocus: (id) => set({ loiFocusId: id }),
 
   setAgent: (on) => {
     const { game, parcels } = get();
@@ -1629,7 +1589,7 @@ export const useStore = create<AppState>((set, get) => ({
           ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back; the rest are signed or passed. Routine LOIs no longer interrupt.`
           : tally
             ? `Your agent has the book — ${tally.signed} signed, ${tally.passed} passed this month. Routine LOIs no longer interrupt.`
-            : "Your agent has the book. They sign inside your mandate, counter the soft ones, pass the junk — 6% on what they sign. Routine LOIs no longer interrupt.");
+            : "Your agent has the book. They work the posted plan — 6% on what they sign. Routine LOIs no longer interrupt.");
       }
     } else {
       toast(next.teamLeasing
@@ -1660,7 +1620,7 @@ export const useStore = create<AppState>((set, get) => ({
       const referred = next.lois.filter((l) => l.referred).length;
       toast(referred
         ? `Your team has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back. Routine LOIs no longer interrupt.`
-        : "Your team has the book. They sign inside your mandate at the usual 4%/2% — no LOI popups unless they refer something.");
+        : "Your team has the book. They work the posted plan at the usual 4%/2% — no LOI popups unless they refer something.");
     } else {
       toast("You're handling leasing yourself again.");
     }

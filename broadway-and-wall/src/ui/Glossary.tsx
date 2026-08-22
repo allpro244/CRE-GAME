@@ -57,6 +57,21 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
   spinout: {
     def: "A senior hire leaving an established shop to raise their own vehicle. The new firm starts small and knows its old employer's book — sometimes yours too.",
   },
+  suite: {
+    def: "A tenancy cut from a floorplate — the size the tenant asked for, not a pre-cut equal bite. A remnant under the lettable floor is not a suite.",
+  },
+  demise: {
+    def: "The event of cutting (or merging) space to fit a tenant. A cut costs real capex; taking a wall down when a neighbour leaves costs the same per foot.",
+  },
+  floorplate: {
+    def: "One floor of one use — the physical inventory. A building is a stack of plates; vacant space is contiguous blocks, not N equal suites.",
+  },
+  remnant: {
+    def: "A leftover bite of a plate too small for a standard suite. Priced at a discount; often a must-take for the sitting neighbour, because nobody else can lease it.",
+  },
+  "leasing plan": {
+    def: "The posted asking sheet the desk and you both clear against — quote, hold-out, package, dollar authority. Not four mandate bands.",
+  },
 };
 
 export function Gloss({

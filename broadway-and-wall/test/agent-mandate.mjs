@@ -1,4 +1,4 @@
-// LEASING MANDATE — sign / refer / pass bands on net effective.
+// LEASING PLAN — desk works a posted sheet, not four mandate bands.
 //
 //   pnpm exec node test/agent-mandate.mjs
 import { assertFreshBundle } from "./fresh.mjs";
@@ -12,7 +12,7 @@ let bad = 0;
 const fail = (m) => { bad++; console.log(`  FAIL  ${m}`); };
 const ok = (m) => console.log(`  OK    ${m}`);
 
-console.log("\nLEASING MANDATE\n");
+console.log("\nLEASING PLAN\n");
 
 // Score: fat TI pulls net effective down vs face-only.
 {
@@ -26,15 +26,14 @@ console.log("\nLEASING MANDATE\n");
   else ok(`fat TI lowers mandate score (${score.toFixed(3)} vs face 1.00)`);
 }
 
-// Defaults: floor 90%, pass under it.
+// Starter sheet: quote 90%, no par cap.
 {
-  const g = { agentFloor: undefined, agentPassBelow: undefined };
-  const floor = E.agentFloor(g);
-  const pass = E.agentPassBelow(g);
-  if (Math.abs(floor - 0.90) > 0.001) fail(`default floor should be 90% (got ${(floor * 100).toFixed(0)}%)`);
-  else ok(`default auto-sign floor is ${(floor * 100).toFixed(0)}% (was 82%)`);
-  if (!(pass < floor - 0.015)) fail(`pass (${pass}) must sit under floor (${floor})`);
-  else ok(`default counter band ${(pass * 100).toFixed(0)}%–${(floor * 100).toFixed(0)}% (desk negotiates)`);
+  const plan = E.starterPlan();
+  const quote = plan.sheet.office.quotePct;
+  if (Math.abs(quote - 0.90) > 0.001) fail(`starter quote should be 90% (got ${(quote * 100).toFixed(0)}%)`);
+  else ok(`starter sheet quote is ${(quote * 100).toFixed(0)}%`);
+  if (quote > 1) fail(`starter quote should not sit above par`);
+  else ok("starter quote is at the old default sign line, not a hold-above-par ask");
 }
 
 // Total upfront cash includes commission, not only the line labelled TI.
@@ -47,8 +46,8 @@ console.log("\nLEASING MANDATE\n");
   const allM = E.loiSigningMonths(loi, E.AGENT_FEE);
   if (Math.abs(tiM - 6) > 0.01) fail(`TI should be 6.0 months (got ${tiM.toFixed(1)})`);
   else ok("TI is measured proportionately to face rent");
-  if (!(allM > E.agentMaxSigningMonths({}) && allM > tiM)) {
-    fail(`TI + commission should breach the default total cap (${allM.toFixed(1)} months)`);
+  if (!(allM > tiM + 1)) {
+    fail(`TI + commission should exceed TI-only (${allM.toFixed(1)} vs ${tiM.toFixed(1)} months)`);
   } else ok(`total upfront cash catches what TI-only misses (${allM.toFixed(1)} months)`);
 }
 
@@ -72,19 +71,19 @@ console.log("\nLEASING MANDATE\n");
   const { loadCity } = await import(join(HERE, "city.mjs"));
   const { parcels, bbls } = loadCity(2, E.normalizeParcels);
   let g = E.firstListings(E.newGame(77001, parcels), parcels, bbls);
-  g = { ...g, cash: 200e6, agent: true, agentFloor: 0.95, agentPassBelow: 0.80 };
+  g = { ...g, cash: 200e6, agent: true, leasingPlan: E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.95, floorPct: 0.95 }) };
 
   // Buy something and wait for an LOI.
   let loi = null;
   for (let m = 0; m < 90 && !loi; m++) {
     g = E.advanceQuarter(g, parcels, bbls, null);
-    g = { ...g, cash: Math.max(g.cash, 200e6), agent: true, agentFloor: 0.95, agentPassBelow: 0.80 };
+    g = { ...g, cash: Math.max(g.cash, 200e6), agent: true, leasingPlan: E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.95, floorPct: 0.95 }) };
     for (const L of g.listings ?? []) {
       if (g.holdings[L.bbl]) continue;
       const rec = E.resolveRec(parcels, g, L.bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
       const r = E.executePurchase(g, parcels, L.bbl, L.ask, null, false, 0);
-      if (r?.s?.holdings[L.bbl]) { g = { ...r.s, cash: 200e6, agent: true, agentFloor: 0.95, agentPassBelow: 0.80 }; break; }
+      if (r?.s?.holdings[L.bbl]) { g = { ...r.s, cash: 200e6, agent: true, leasingPlan: E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.95, floorPct: 0.95 }) }; break; }
     }
     loi = (g.lois ?? []).find((l) => l.kind === "new") ?? null;
   }
@@ -103,8 +102,7 @@ console.log("\nLEASING MANDATE\n");
     target.referred = false;
     // One month of agent desk.
     mid.agent = true;
-    mid.agentFloor = 0.95;
-    mid.agentPassBelow = 0.80;
+    mid.leasingPlan = E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.95, floorPct: 0.95 });
     // tickLeasing runs the agent — advance one month via advanceQuarter's internals
     // by calling through a month of sim if exported; else re-run via advanceQuarter.
     const after = E.advanceQuarter(mid, parcels, bbls, null);
@@ -129,10 +127,7 @@ console.log("\nLEASING MANDATE\n");
     const rival = { ...structuredClone(base), id: Math.max(...choice.lois.map((l) => l.id)) + 1, name: "Competing Tenant" };
     choice.lois = [base, rival];
     choice.agent = true;
-    choice.agentFloor = 0.70;
-    choice.agentPassBelow = 0.55;
-    choice.agentMaxTiMonths = 18;
-    choice.agentMaxSigningMonths = 24;
+    choice.leasingPlan = E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.70, floorPct: 0.70, maxTiPsf: 120 });
     const afterChoice = E.advanceQuarter(choice, parcels, bbls, null);
     const decided = afterChoice.lois.filter((l) => l.id === base.id || l.id === rival.id);
     if (decided.length === 2 && decided.every((l) => l.referred)) {
@@ -147,9 +142,7 @@ console.log("\nLEASING MANDATE\n");
     ex.tiPsf = 0;
     expansion.lois = [ex];
     expansion.agent = true;
-    expansion.agentFloor = 0.70;
-    expansion.agentPassBelow = 0.55;
-    expansion.agentMaxSigningMonths = 24;
+    expansion.leasingPlan = E.starterPlan({ ...E.STARTER_PLAN_ROW, quotePct: 0.70, floorPct: 0.70, maxTiPsf: 120 });
     const afterExpansion = E.advanceQuarter(expansion, parcels, bbls, null);
     if (afterExpansion.lois[0]?.referred) ok("incumbent expansion is referred to the principal");
     else fail("agent auto-signed an incumbent expansion");

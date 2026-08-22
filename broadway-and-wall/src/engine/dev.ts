@@ -20,7 +20,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, depositsOn, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf, toSuites } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, useSf } from "./mix";
@@ -1750,7 +1750,6 @@ export function startDevelopment(
     spec: plan.spec,
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     coverage: plan.coverage,
-    suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
     landBasis: plan.landBasis,
     contingency: plan.contingency, contingencyUsed: 0,
@@ -2315,13 +2314,18 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     // the space that gets let after the building opens — which is the lease-up
     // risk the developer is being paid to carry, and the thing this model
     // exists to make real.
+    const mix = d.mix ?? devMix(d.use);
+    const asBuilt = {
+      ...rec,
+      class: dominantOf(mix),
+      bldgArea: d.sf,
+      floors: d.floors,
+      mix,
+    };
     const openSf = Math.round(leasable * pre.ceiling) - takenSf;
     // Same floor delivery uses when it converts `signed` into a rent-roll row.
-    // This used to accept 1,500 sf deals that genAnchorTenant then silently
-    // dropped at C of O (commercial minimum 2,000) — news said the building
-    // was spoken for, the roll opened empty.
-    const floor = COMMERCIAL_SUITE_MIN;
-    if (openSf < floor) continue;
+    const floorSf = minLettableSf(asBuilt, lead);
+    if (openSf < floorSf) continue;
 
     // a tight market lets a building before it opens; a glut does not
     const appetite = classAppetite(s, lead);
@@ -2332,22 +2336,12 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     const p = clamp(0.055 * pre.rate * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
     if (rng(s, "dev") >= p) continue;
 
-    // THE PROGRAMME IS THE DEMISE, even while the lot is still dirt.
-    // `rec` is the vacant parcel; without the job's mix and suite cut, a
-    // one-space 26,000 ft office pre-let as a 2,000 ft bite of the 32%
-    // spec-office ceiling — 1/1 spaces at 8% occupancy on opening day.
-    const mix = d.mix ?? devMix(d.use);
-    const asBuilt = {
-      ...rec,
-      class: dominantOf(mix),
-      bldgArea: d.sf,
-      floors: d.floors,
-      mix,
-      suites: d.suites,
-    };
+    // The building is plates. A construction letter is a size, not a bite of
+    // a pre-cut suite — rounding a 4,000 ft letter up to a 26,000 ft HQ was
+    // the 1/1-at-8% bug. Want is already drawn on the "dev" stream.
     const want = Math.round(openSf * rrange(s, 0.16, 0.5, "dev"));
-    const sfLet = toSuites(asBuilt, want, openSf, lead);
-    if (!sfLet) continue;
+    if (want < floorSf) continue;
+    const sfLet = Math.min(openSf, want);
     // The delivery-risk discount: steep when the building is a frame and a
     // promise, nearly gone by the time the scaffolding comes down.
     const discount = clamp(1 - (0.16 * (months / Math.max(1, span))), 0.86, 0.99);
@@ -2373,7 +2367,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // Buildings you have put up. The city notices a developer.
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: d.coverage };
   const dBlock = demandModel(parcels).ofBbl.get(d.bbl);
   if (dBlock) nudgeBlockDemand(s, dBlock, Math.min(4, 1 + d.sf / 150_000));
   recordPropertyEvent(s, d.bbl, {
@@ -2495,23 +2489,17 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
 
   // TENANTS WHO SIGNED WHILE IT WAS GOING UP. They took delivery risk on a
   // hole in the ground and were paid for it in rent; now the building exists
-  // and they move in. A job that let well during construction opens part-full
-  // and covers its mini-perm; one that let nothing opens empty, which is the
-  // developer's real risk and always was.
-  //
-  // Conversion used to call genAnchorTenant and ignore a void return — any
-  // pre-let under the commercial floor, or against a leg that would not
-  // demise, vanished without a word. Surface it, and try the floor size when
-  // the vacancy can still take a real suite.
+  // and they move in. Place them on the stack at the size they signed. A job
+  // that let well during construction opens part-full and covers its mini-perm;
+  // one that let nothing opens empty, which is the developer's real risk.
   let placed = 0, lostSf = 0;
   for (const sg of d.signed ?? []) {
     const built = resolveRec(parcels, s, d.bbl);
     if (!built) { lostSf += sg.sf; continue; }
     const use = sg.use as BuiltClass;
     if (genAnchorTenant(s, built, h, sg.sf, sg.discount, use)) { placed++; continue; }
-    const floor = minTenancySf(built, use);
     const vac = useVacantSf(built, h, use, s.month);
-    if (vac >= floor && genAnchorTenant(s, built, h, Math.min(vac, Math.max(floor, sg.sf)), sg.discount, use)) {
+    if (vac >= 1 && genAnchorTenant(s, built, h, vac, sg.discount, use)) {
       placed++;
       continue;
     }

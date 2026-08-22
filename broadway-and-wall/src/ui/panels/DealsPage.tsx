@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
@@ -20,9 +20,16 @@ import { leasingDeskName, loiRead, saleOfferRead } from "@/ui/advisor";
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const { respondLoi } = useStore.getState();
+  const loiFocusId = useStore((s) => s.loiFocusId);
+  const { respondLoi, setLoiFocus } = useStore.getState();
   const rec = parcels[loi.bbl];
-  const [countering, setCountering] = useState(false);
+  const [countering, setCountering] = useState(loiFocusId === loi.id);
+  useEffect(() => {
+    if (loiFocusId === loi.id) {
+      setCountering(true);
+      setLoiFocus(null);
+    }
+  }, [loiFocusId, loi.id, setLoiFocus]);
   const h = game.holdings[loi.bbl];
   const market = loiMarketPsf(game, parcels, loi);
   const fee = exclusiveFeeRate(h);
@@ -446,7 +453,7 @@ export function DealsPage() {
               {quiet
                 ? (tally
                   ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
-                  : "Your desk has the book — nothing referred back right now. They sign inside the mandate on Leasing; the monthly tally lives there too.")
+                  : "Your desk has the book — nothing referred back right now. They work the posted plan on Leasing; the quarterly digest lives there too.")
                 : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
             </div>
             {Object.keys(game.holdings).length === 0 ? (
@@ -455,7 +462,7 @@ export function DealsPage() {
               </button>
             ) : (
               <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
-                Open Leasing mandate →
+                Open Leasing plan →
               </button>
             )}
           </div>

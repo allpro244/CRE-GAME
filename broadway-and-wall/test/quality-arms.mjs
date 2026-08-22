@@ -264,7 +264,8 @@ function printArmTable(title, bySeed) {
       if (a.id === "baseline") continue;
       const d = (row[a.id].noi - row[a.id].capex) / 1e6 - base;
       if (d > 0) wins[a.id]++;
-      line += (d >= 0 ? "+" : "") + d.toFixed(1).padStart(13);
+      const tok = (d >= 0 ? "+" : "") + d.toFixed(1);
+      line += tok.padStart(14);
     }
     console.log(line);
   }

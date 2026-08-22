@@ -924,6 +924,21 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
   return rec.lotArea * landPsfNow(rec, econ);
 }
 
+/**
+ * WHAT A STANDING BUILDING CANNOT FALL BELOW.
+ *
+ * Vacant dirt is the residual. A completed building is at least that dirt —
+ * nobody demolishes a new tower to sell a lot. The 0.92 haircut is a
+ * demolition allowance for old empty fabric, and it was also how a
+ * just-delivered office marked below the land it sat on and called the
+ * revolver. Lease-up uses the full residual; older stock still pays the
+ * demo haircut.
+ */
+export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean): number {
+  const land = landValue(rec, econ);
+  return inLeaseUp ? land : land * 0.92;
+}
+
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
   obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
@@ -2090,8 +2105,9 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
     rec, econ, condition, sinceM, occupancy(rec, econ),
     clamp(capRateFor(rec, econ, condition), 2.8, 13) / 100,
   );
-  // an underbuilt lot is worth the greater of its income or its dirt
-  return Math.max(asIs === null ? income : Math.max(income, asIs), land * 0.92);
+  // an underbuilt lot is worth the greater of its income or its dirt.
+  // A building still in lease-up is never worth less than the lot.
+  return Math.max(asIs === null ? income : Math.max(income, asIs), landAppraisalFloor(rec, econ, asIs !== null));
 }
 
 /**
@@ -2346,7 +2362,12 @@ export function leaseUpMarkAt(
   if (!(stab > 0)) return null;
 
   const vacant = clamp(1 - letShare, 0, 1);
-  const vacantSf = vacant * rec.bldgArea;
+  // THE CHEQUE IS ON RENTABLE FEET. planDevelopment reserves TI and LC on
+  // rentable, and this used `bldgArea` — the core, the risers and the lobby
+  // being fitted out as if they were suites. On a 400k sf tower that is
+  // another 15–25% of fill cost, and it is how a just-delivered building
+  // marked below its own dirt.
+  const vacantSf = vacant * rentableSf(rec);
 
   // THE THREE DEDUCTIONS.
   // 1. The cheque to fill it: fit-out and the commissions on the space still
@@ -2362,7 +2383,11 @@ export function leaseUpMarkAt(
   // 3. And the part nobody underwrites away: it may not let. A wholly empty
   //    building is a project, and it is priced like one.
   const risk = stab * 0.08 * vacant;
-  return stab - fill - forgone - risk;
+  // A COMPLETED BUILDING IS NOT WORTH LESS THAN THE LOT. The residual already
+  // prices the dirt as what a builder would pay to put this tower up; the
+  // tower, empty, is that lot plus a shell. The deductions can eat the
+  // improvement. They cannot eat the land.
+  return Math.max(landValue(rec, econ), stab - fill - forgone - risk);
 }
 
 /**
@@ -2555,13 +2580,15 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   const stabilized = noiYr(rec, econ, h.condition, true) / (cap + TAX_RATE * taxBorneShare(rec));
   const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
-  const floor = landValue(rec, econ) * 0.92;
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
   // Inside the window the as-is-on-completion mark governs, and it retires on
   // its own as the space lets and the calendar runs out — see leaseUpMark. It
   // never marks BELOW the ordinary blend, so a job that fills fast keeps the
-  // upside the roll has earned it.
+  // upside the roll has earned it. And it never marks below the dirt: the
+  // 0.92 floor is a demolition allowance for old empty fabric, not a haircut
+  // on a tower that opened this month.
   const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll);
+  const floor = landAppraisalFloor(rec, econ, asIs !== null);
   if (asIs !== null) return Math.max(floor, Math.max(blended, asIs) - abate);
   return Math.max(floor, blended - abate);
 }

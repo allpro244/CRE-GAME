@@ -107,6 +107,7 @@
     "liquidity": "node test/liquidity.mjs",
     "glut": "node test/glut.mjs",
     "vacdist": "node test/vacdist.mjs",
+    "shortage": "node test/shortage.mjs",
     "ownership": "node test/ownership.mjs"
   },
   "dependencies": {

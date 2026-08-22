@@ -44,8 +44,12 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "550991,12007,11,4242,91117,73303,22,33").split(",").map(Number);
 const HZ = Number(process.env.YRS ?? 60) * 12;
-const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };
-const FLOOR_RATIO = { office: 0.32, retail: 0.30, multifamily: 0.22, industrial: 0.32 };
+const NAT = E.NATURAL_VAC;
+// ONE FLOOR, THE ENGINE'S. This used to hardcode FLOOR_RATIO with industrial
+// 0.32 and multifamily 0.22 — the swap of frictionFloor (industrial 0.22,
+// multifamily 0.30). A watcher that mirrors the number it is watching is the
+// third kind of fake. Read the function.
+const FLOOR = Object.fromEntries(Object.keys(NAT).map((k) => [k, E.frictionFloor(k)]));
 const q = (xs, p) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : NaN; };
 const pct = (v) => (v * 100).toFixed(1) + "%";
 
@@ -68,7 +72,7 @@ for (const seed of SEEDS) {
 console.log(`WHERE THE CITY SITS — ${SEEDS.length} seeds x ${HZ / 12}y, no player, no shock, months 60+\n`);
 console.log(`  class          natural   friction floor    p5      p25   MEDIAN     p75      p95`);
 for (const k of Object.keys(bag)) {
-  const fl = NAT[k] * FLOOR_RATIO[k];
+  const fl = FLOOR[k];
   console.log(`  ${k.padEnd(13)} ${pct(NAT[k]).padStart(6)}   ${pct(fl).padStart(12)}`
     + `   ${pct(q(bag[k], .05)).padStart(6)}  ${pct(q(bag[k], .25)).padStart(6)}  ${pct(q(bag[k], .5)).padStart(6)}`
     + `  ${pct(q(bag[k], .75)).padStart(6)}  ${pct(q(bag[k], .95)).padStart(6)}`);
@@ -76,7 +80,7 @@ for (const k of Object.keys(bag)) {
 console.log(`\n  HOW OFTEN IS IT NEAR NATURAL, AND HOW OFTEN AT AN EXTREME`);
 console.log(`  class          within 2pp of natural   on the friction floor (<0.5pp above)   more than 10pp over`);
 for (const k of Object.keys(bag)) {
-  const fl = NAT[k] * FLOOR_RATIO[k];
+  const fl = FLOOR[k];
   const near = bag[k].filter((v) => Math.abs(v - NAT[k]) <= 0.02).length / bag[k].length;
   const pinned = bag[k].filter((v) => v <= fl + 0.005).length / bag[k].length;
   const flooded = bag[k].filter((v) => v - NAT[k] > 0.10).length / bag[k].length;

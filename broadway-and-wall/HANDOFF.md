@@ -80,6 +80,7 @@ Recent additions worth knowing about:
 | `pnpm facility` | ~2 min | the portfolio loan, both sides — it must work AND it must bite |
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
+| `pnpm shortage` | ~2 min | shortage-side mirror of `glut`/`vacdist`: growing vs declining seeds, jobs-shock overshoot. Report, not gate. |
 | `pnpm test` | ~22 min | states the engine should never reach |
 
 `pnpm engine` rebuilds `test/.engine.mjs`. **Do it before every probe.**

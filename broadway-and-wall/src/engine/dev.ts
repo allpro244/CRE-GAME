@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf } from "./value";
+  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -1377,13 +1377,6 @@ export function refreshDevelopmentFeasibility(
   // strip corridors, not new M districts). Fringe C land (demand < 45, the
   // same tier useForZone treats as the corridor) permits it; prime C land
   // still refuses — nobody permits a loading dock on the hundred block.
-  const zonePermits = (zone: string | undefined, use: BuiltClass, demand = 100): boolean => {
-    const z = (zone ?? "C")[0];
-    if (z === "R") return use === "multifamily";
-    if (z === "M") return use === "industrial" || use === "multifamily";
-    if (use === "industrial") return demand < 45;
-    return true;
-  };
   const LAND_N = 96;
   const REDEV_N = 72;
   const infillRatios: number[] = [];
@@ -1405,7 +1398,7 @@ export function refreshDevelopmentFeasibility(
       chosen.add(bbl);
       landCount++;
       for (const use of BUILT_CLASSES) {
-        if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
+        if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
         // THE PENCIL TEST MUST PRICE THE SCHEME THE LAND IS PRICED FOR.
         //
         // This read `Math.min(14, maxFloorsFor(...))` — a flat fourteen-floor
@@ -1471,7 +1464,7 @@ export function refreshDevelopmentFeasibility(
     // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
     const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
-      if (!zonePermits(rec.zoneDist, use, rec.demandScore)) continue;
+      if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
       const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
       if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
       const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
@@ -4176,10 +4169,28 @@ export function tickCityGrowth(
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 
+  // THE CRANE FILLS THE BOOK'S COMPOSITION, NOT JUST ITS TOTAL.
+  // useForZone already weights the programme by startOwed, but it only
+  // sees the lot the surplus contest already picked — and that contest
+  // prefers high-residual dirt, which is never fringe C. Industrial was
+  // a third of every order and 3% of every groundbreak (mixmatch) because
+  // the site search could not find a legal bay. Same 36 draws. If any
+  // sampled lot can host the class the book is most owed, that lot wins.
+  let leadOwed: BuiltClass | null = null;
+  let leadAmt = 0;
+  if (s.econ.startOwed) {
+    for (const k of BUILT_CLASSES) {
+      const v = s.econ.startOwed[k] ?? 0;
+      if (v > leadAmt) { leadAmt = v; leadOwed = k; }
+    }
+  }
+
   while (n-- > 0) {
     // sample a handful of candidates, build on the most in-demand of them
     let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
     let bestScore = -1;
+    let bestFit: { bbl: string; rec: (typeof parcels)[string] } | null = null;
+    let bestFitScore = -1;
     for (let i = 0; i < 36; i++) {
       const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
@@ -4231,7 +4242,13 @@ export function tickCityGrowth(
       const read = landRead(rec, s.econ);
       const score = read.builder - read.psf + rng(s, "dev") * 12;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
+      if (leadOwed && zonePermits(rec.zoneDist, leadOwed, rec.demandScore, s.econ)
+          && score > bestFitScore) {
+        bestFitScore = score;
+        bestFit = { bbl, rec };
+      }
     }
+    if (bestFit) best = bestFit;
     if (!best) continue;
     const { bbl, rec } = best;
     const dNow = demandNow(s, rec);

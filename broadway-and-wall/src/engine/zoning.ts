@@ -25,7 +25,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
-import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, classIsShort } from "./market";
 import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
@@ -218,6 +218,41 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
       : `${dist} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
         + `The neighbourhood fought it and won${yours ? `, and you are holding ${yours} lots there` : ""}.`,
   });
+
+  // A SHORTAGE OF BAYS IS A MAP, NOT AN ENVELOPE. Warehouses are one or two
+  // storeys; upzoning FAR does not house them. The plat shipped zero M
+  // districts, fringe C still prices dirt as housing (the residual's highest
+  // and best), and sitePencil.industrial sat at 0 for forty years on a
+  // growing seed while 150 vacant corridor lots sat there — measured,
+  // stock frozen, vacancy on the 1.5% floor, zero industrial starts.
+  //
+  // So when industrial is the class the city cannot house, the same hearing
+  // that already fired maps leftover vacant fringe C in THIS district to M.
+  // No new draw: the board, the district and the step are already decided.
+  // Housing keeps the conversion path on M once the shortage lifts
+  // (zonePermits).
+  if (classIsShort(ez, "industrial")) {
+    if (!s.zoneUse) s.zoneUse = {};
+    let mapped = 0;
+    for (const bbl of bbls) {
+      const rec = parcels[bbl];
+      if (!rec || rec.district !== dist) continue;
+      const live = resolveRec(parcels, s, bbl);
+      if (!live || live.class !== "land" || (live.bldgArea ?? 0) > 0) continue;
+      if ((live.zoneDist ?? "C")[0] !== "C") continue;
+      if ((live.demandScore ?? 100) >= 45) continue;
+      if (s.zoneUse[bbl]) continue;
+      s.zoneUse[bbl] = "M";
+      mapped++;
+    }
+    if (mapped) {
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `${dist} has been mapped for manufacturing — ${mapped} vacant corridor `
+          + `lot${mapped === 1 ? "" : "s"} ${mapped === 1 ? "is" : "are"} M now, because there is nowhere to put a shed.`,
+      });
+    }
+  }
 }
 
 // ------------------------------------------------------------------ variance

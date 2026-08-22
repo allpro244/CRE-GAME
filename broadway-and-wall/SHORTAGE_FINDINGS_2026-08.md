@@ -106,9 +106,12 @@ do it.
 ## Proposed order
 
 1. **This harness.** Done. `pnpm shortage`.
-2. **Let land answer industrial shortage.** `tickZoning` must see
-   industrial scarcity, or the residual must be allowed to pick a shed
-   anywhere it outbids. No coefficient.
+2. **Let land answer industrial shortage.** In progress on
+   `cursor/industrial-land-answers-171d`: the board maps vacant fringe C
+   to M when industrial is short; dirt on M is residualled as a shed
+   (housing cannot outbid while the class is short); the crane prefers a
+   sampled lot that can host the class the book is most owed. No new
+   RNG draws. No coefficient.
 3. **Frictional vacancy as residence time.** Generate it from lease roll
    and re-let latency. Retire the clamp as a load-bearing rail.
 4. **Starts underwrite `rentExp` at delivery.** The number already exists.

@@ -7,13 +7,40 @@ import { serviceSpec, START_YEAR } from "./types";
 export { START_YEAR };
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 /** The most envelope any ground in this city will ever carry, however it is
  *  rezoned and whatever the board grants. The generator's own maximum is 37. */
 export const FAR_CEILING = 40;
+
+/**
+ * WHAT A LOT'S ZONING WILL HOST. One function, because the pencil, the
+ * shovel, the residual and the planning board were each restating this
+ * and drifting.
+ *
+ * R is housing. M is sheds, and housing only as the conversion path once
+ * industry has left — while industrial is short the map that was drawn
+ * for bays does not get taken by flats. C hosts everything except sheds
+ * on prime ground: light industrial is an as-of-right or special-permit
+ * use on low-rent commercial corridors (demand < 45), which is where
+ * 2018–2024 put last-mile build-out. Nobody permits a loading dock on
+ * the hundred block.
+ */
+export function zonePermits(
+  zone: string | undefined, use: BuiltClass, demand = 100, econ?: Econ,
+): boolean {
+  const z = (zone ?? "C")[0];
+  if (z === "R") return use === "multifamily";
+  if (z === "M") {
+    if (use === "industrial") return true;
+    if (use === "multifamily") return !(econ && classIsShort(econ, "industrial"));
+    return false;
+  }
+  if (use === "industrial") return demand < 45;
+  return true;
+}
 
 /**
  * THE DEMAND SCORE IS A SCALE, NOT A PRICE.
@@ -534,6 +561,7 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
   let best: ResidualScheme | null = null;
   const all: { use: BuiltClass; psf: number }[] = [];
   for (const use of RESIDUAL_USES) {
+    if (!zonePermits(rec.zoneDist, use, rec.demandScore, econ)) continue;
     const choices = residualFloorChoices(use, far);
     if (!choices.length) continue;
 
@@ -1149,8 +1177,10 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
   const zx = s.zoneAdj?.[rec.district] ?? 1;
   const vr = s.variance?.[bbl] ?? 0;
   const marked = s.landmarks?.[bbl] !== undefined;
-  if (!b && !adj && !dd && zx === 1 && !vr && !marked) return rec;
+  const zu = s.zoneUse?.[bbl];
+  if (!b && !adj && !dd && zx === 1 && !vr && !marked && !zu) return rec;
   const out = { ...rec };
+  if (zu) out.zoneDist = zu;
   if (marked) {
     // A landmark's envelope is what is standing on it. The redevelopment
     // option is gone and every reader of FAR below this line sees that.

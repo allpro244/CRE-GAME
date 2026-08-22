@@ -42,7 +42,7 @@ import {
 // no access to it, so they had a coverage inset and nothing else while the
 // stock around them had twenty plan families.
 import { massingStack } from "@/citygen/massing.mjs";
-import { playerSkylineLayerSig } from "./skylineSig.mjs";
+import { playerSkylineLayerSig } from "@/map/skylineSig.mjs";
 import { OPEN_SEA } from "./sea";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */

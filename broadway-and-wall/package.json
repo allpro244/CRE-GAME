@@ -104,6 +104,7 @@
     "check": "node test/fresh.mjs && node test/playable-fresh.mjs && node test/conserve.mjs && node tools/baseline.mjs --check",
     "plate": "node test/plate.mjs",
     "plates-blocks": "node test/plates-blocks.mjs",
+    "gut-reno": "node test/gut-reno.mjs",
     "demise": "node test/demise.mjs",
     "plat": "node test/plat.mjs",
     "mh:shape": "node tools/mh-shape.mjs",

@@ -1821,6 +1821,13 @@ export interface Econ {
   // behaviour exactly.
   baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
+  /**
+   * New floor that has been delivered but is not yet a suite — marketing,
+   * demise, fit-out. Occupied cannot eat it and the looking pool cannot
+   * count it as housable. Optional so a save from before this field loads
+   * with nothing in lease-up, which is the old picture of standing stock.
+   */
+  darkSf?: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
   /**
    * Month the "vacancy up 2pp YoY" broker tell last fired. Debounces the news

@@ -1,5 +1,7 @@
 # BUILDING QUALITY — WHAT THE MEASUREMENT SAYS AND WHAT TO DO ABOUT IT
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 Handoff plan. Written 2026-08 off a six-seed probe on branch
 `claude/rent-graph-accuracy-check-5zpd5d`. Read CLAUDE.md first: the rules
 below are downstream of it, and two of them exist to stop the obvious "fix"

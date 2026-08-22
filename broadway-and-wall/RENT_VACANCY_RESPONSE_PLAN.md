@@ -1,5 +1,7 @@
 # DOES THE CITY'S RENT ANSWER ITS VACANCY? — FINDINGS AND PLAN
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 Handoff plan. Written 2026-08 off two read-only probes on branch
 `claude/rent-graph-accuracy-check-5zpd5d` (`scratchpad/vacrent.mjs`,
 `scratchpad/vacrent2.mjs` — port them, step 0). Six seeds x 50 years, no
@@ -99,17 +101,24 @@ Worth one probe before step 3: is the tightness real scarcity (jobs outrunning
 floors) or a pipeline that never delivers? `sitePencil`, `structTight` and the
 `supplyShut` branch in `market.ts` already exist to answer it.
 
-**Measurement recorded (2026-08, generated city, 2 seeds × 12 years,
-`pnpm vac-rent`):** the soft rail (−0.008/mo) is **not** load-bearing on
-office (6% of soft months) or retail (0%). Multifamily binds more (21%) and
-is the class that already deepens. Office vacTerm ≈ EMA ≈ clamped press
-(−0.246 / −0.237 / −0.235 %/mo) — the 8-month EMA is not averaging the
-spike away. Deep-bucket nominal (−1.82%/yr) is *weaker* than all-soft
-(−3.38%/yr): that is composition (deep months sit late in an episode, after
-`capitulation` has decayed), not the rail. Do **not** widen or delete the
-clamp on this evidence; a change that makes the nominal cut look dramatic
-while breaking the duration path would be the wrong fix. Re-run at 6×50
-before touching `RENT_PRESS_TAU` or the CPI mute.
+**Measurement recorded (2026-08, generated city, `pnpm vac-rent`):** the
+soft rail (−0.008/mo) is **not** load-bearing on office or retail.
+
+| sample | class | soft-mo | rail% | nom%/yr | real%/yr | deep nom | rising% |
+|---|---|---|---|---|---|---|---|
+| 2 seeds × 12y | office | 276 | 6 | −3.38 | −5.53 | −1.82 | 22 |
+| 2 seeds × 15y | office | 348 | 5 | −2.86 | −4.77 | −1.40 | 27 |
+| 2 seeds × 15y | retail | 217 | 0 | −2.91 | −4.87 | −3.15 | 25 |
+| 2 seeds × 15y | multifamily | 138 | 13 | −5.42 | −6.64 | −3.34 | 7 |
+| 2 seeds × 15y | industrial | 220 | 0 | −2.25 | −4.22 | −2.99 | 23 |
+
+Office vacTerm ≈ EMA ≈ clamped press (15y: −0.195 / −0.188 / −0.186 %/mo) —
+the 8-month EMA is not averaging the spike away. Deep-bucket nominal is
+*weaker* than all-soft: that is composition (deep months sit late in an
+episode, after `capitulation` has decayed), not the rail. Do **not** widen
+or delete the clamp on this evidence; a change that makes the nominal cut
+look dramatic while breaking the duration path would be the wrong fix.
+Re-run at 6×50 before touching `RENT_PRESS_TAU` or the CPI mute.
 
 ## Order of work
 

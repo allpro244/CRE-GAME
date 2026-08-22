@@ -238,8 +238,9 @@ coefficient here should be touched until someone assembles a panel conditioned
 on the things that plainly differ across those episodes — depth of the move,
 market tier, and whether the landlord cohort was financially intact.
 
-**Nobody has run the shortage-side mirror of this harness.** Every audit in this
-repo has been a glut harness. Finding 2 says the engine's default state is a
-chronic landlord's market, and the shortage escalator running off that floor —
-worth +17% of face over five years in the control arms — has never been scored
-against anything.
+**The shortage-side mirror now exists: `pnpm shortage`.** It splits vacdist's
+pile into growing vs declining seeds and injects a jobs shock as the inverse
+of this file's building dump. The clauses are a report, not a gate — they
+print FAIL on the current engine. Findings and the four causes are in
+`SHORTAGE_FINDINGS_2026-08.md`. Do not silence a clause by retuning a
+coefficient.

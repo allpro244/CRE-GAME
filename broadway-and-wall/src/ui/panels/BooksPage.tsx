@@ -307,17 +307,14 @@ function BalanceSheet() {
       {!showingHistory && sheet.cipN > 0 && (
         <div className="page-section">
           <div className="page-section-head">Construction in progress · {sheet.cipN} job{sheet.cipN === 1 ? "" : "s"}</div>
-          <div style={{ overflowX: "auto" }}>
+          <div>
             <table className="tbl">
               <thead>
                 <tr>
                   <th>Site</th>
-                  <th>Use</th>
                   <th className="num">Sunk</th>
-                  <th className="num">Loan bal</th>
+                  <th className="num">Loan</th>
                   <th className="num">Budget</th>
-                  <th className="num">Drawn / commit</th>
-                  <th className="num">Delivery</th>
                 </tr>
               </thead>
               <tbody>
@@ -326,13 +323,16 @@ function BalanceSheet() {
                   const sunk = Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
                   return (
                     <tr key={d.bbl} style={{ cursor: "pointer" }} onClick={() => focus(d.bbl, true)}>
-                      <td>{rec?.address ?? d.bbl}</td>
-                      <td className="dim">{d.use}</td>
+                      <td>
+                        <div>{rec?.address ?? d.bbl}</div>
+                        <div className="dim" style={{ fontSize: 11 }}>{d.use} · delivers {monthLabel(d.deliverM)}</div>
+                      </td>
                       <td className="num">{usd(sunk)}</td>
                       <td className="num">{d.loanBalance ? usd(d.loanBalance) : "—"}</td>
-                      <td className="num dim">{usd(d.costTotal)}</td>
-                      <td className="num dim">{usd(d.drawn)} / {usd(d.commitment)}</td>
-                      <td className="num dim">{monthLabel(d.deliverM)}</td>
+                      <td className="num dim">
+                        {usd(d.costTotal)}
+                        <div className="dim" style={{ fontSize: 11 }}>{usd(d.drawn)} / {usd(d.commitment)}</div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -345,17 +345,14 @@ function BalanceSheet() {
       {!showingHistory && (
         <div className="page-section">
           <div className="page-section-head">Holdings detail · {holdings.length} deed{holdings.length === 1 ? "" : "s"}</div>
-          <div style={{ overflowX: "auto" }}>
+          <div>
             <table className="tbl">
               <thead>
                 <tr>
                   <th>Address</th>
-                  <th>Class</th>
                   <th className="num">Value</th>
                   <th className="num">Debt</th>
                   <th className="num">Equity</th>
-                  <th className="num">LTV</th>
-                  <th className="num">Basis</th>
                 </tr>
               </thead>
               <tbody>
@@ -368,18 +365,21 @@ function BalanceSheet() {
                   const ltv = v > 0 ? debt / v : 0;
                   return (
                     <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
-                      <td>{rec.address ?? h.bbl}</td>
-                      <td className="dim">{rec.class}</td>
+                      <td>
+                        <div>{rec.address ?? h.bbl}</div>
+                        <div className="dim" style={{ fontSize: 11 }}>{rec.class} · basis {usd(h.costBasis ?? 0)}</div>
+                      </td>
                       <td className="num">{usd(v)}</td>
-                      <td className="num">{debt ? usd(debt) : "—"}</td>
+                      <td className={"num" + (ltv > 0.75 ? " neg" : "")}>
+                        {debt ? usd(debt) : "—"}
+                        {debt ? <div className="dim" style={{ fontSize: 11 }}>{(ltv * 100).toFixed(0)}% LTV</div> : null}
+                      </td>
                       <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
-                      <td className={"num" + (ltv > 0.75 ? " neg" : "")}>{debt ? (ltv * 100).toFixed(0) + "%" : "—"}</td>
-                      <td className="num dim">{usd(h.costBasis ?? 0)}</td>
                     </tr>
                   );
                 })}
                 {!holdings.length && (
-                  <tr><td colSpan={7} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
+                  <tr><td colSpan={4} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
                 )}
               </tbody>
             </table>
@@ -439,13 +439,16 @@ function IncomeStatementTab() {
       <IncomeStatement />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year — every line, side by side</div>
-        <div style={{ overflowX: "auto" }}>
+        <div>
           <table className="tbl">
             <thead>
               <tr>
-                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Borrowed</th><th className="num">Debt svc</th><th className="num">Leasing</th>
-                <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
-                <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
+                <th>Year</th>
+                <th className="num">NOI</th>
+                <th className="num">Debt</th>
+                <th className="num">Spend</th>
+                <th className="num">Trades</th>
+                <th className="num">Net</th>
               </tr>
             </thead>
             <tbody>
@@ -454,22 +457,42 @@ function IncomeStatementTab() {
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
                     <td className="mono">{START_YEAR + b.yr}</td>
-                    <td className="num">{usd(b.noi)}</td>
-                    <td className="num dim" title="1.0% a year on positive cash balances">{b.interest ? usd(b.interest) : "—"}</td>
-                    <td className="num dim" title="Cash-out refinance and facility draws">{b.borrowed ? usd(b.borrowed) : "—"}</td>
+                    <td className="num">
+                      {usd(b.noi)}
+                      {(b.interest || b.borrowed) ? (
+                        <div className="dim" style={{ fontSize: 11 }}>
+                          {b.interest ? `int ${usd(b.interest)}` : ""}
+                          {b.interest && b.borrowed ? " · " : ""}
+                          {b.borrowed ? `drew ${usd(b.borrowed)}` : ""}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
-                    <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
-                    <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
-                    <td className="num">{b.ga ? "−" + usd(b.ga) : "—"}</td>
-                    <td className="num">{b.dev ? "−" + usd(b.dev) : "—"}</td>
-                    <td className="num">{b.taxes ? "−" + usd(b.taxes) : "—"}</td>
-                    <td className="num">{b.bought ? "−" + usd(b.bought) : "—"}</td>
-                    <td className="num">{b.sold ? usd(b.sold) : "—"}</td>
+                    <td className="num">
+                      {usd((b.leasing ?? 0) + (b.capex ?? 0) + (b.ga ?? 0) + (b.dev ?? 0) + (b.taxes ?? 0))}
+                      <div className="dim" style={{ fontSize: 11 }}>
+                        {[
+                          b.leasing ? `lease ${usd(b.leasing)}` : null,
+                          b.capex ? `capex ${usd(b.capex)}` : null,
+                          b.ga ? `g&a ${usd(b.ga)}` : null,
+                          b.dev ? `dev ${usd(b.dev)}` : null,
+                          b.taxes ? `tax ${usd(b.taxes)}` : null,
+                        ].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </td>
+                    <td className="num">
+                      {b.bought || b.sold ? (
+                        <>
+                          {b.bought ? "−" + usd(b.bought) : "—"}
+                          {b.sold ? <div className="dim" style={{ fontSize: 11 }}>sold {usd(b.sold)}</div> : null}
+                        </>
+                      ) : "—"}
+                    </td>
                     <td className={"num" + (net < 0 ? " neg" : "")}>{usd(net)}</td>
                   </tr>
                 );
               })}
-              {!years.length && <tr><td colSpan={13} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+              {!years.length && <tr><td colSpan={6} className="dim">Nothing on the books yet — advance a month.</td></tr>}
             </tbody>
           </table>
         </div>

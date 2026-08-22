@@ -159,12 +159,13 @@ export function CompsSheet() {
       )}
 
       <div className="page-section" style={{ marginTop: 14 }}>Recent prints</div>
-      <div style={{ overflowX: "auto" }}>
+      <div>
         <table className="tbl">
           <thead>
             <tr>
-              <th>Closed</th><th>Property</th><th>Class</th><th className="num">Built</th><th className="num">Price</th>
-              <th className="num">$/sf</th><th className="num">Cap</th><th>Buyer</th><th>Seller</th>
+              <th>Property</th>
+              <th className="num">Price</th>
+              <th>Parties</th>
             </tr>
           </thead>
           <tbody>
@@ -172,15 +173,23 @@ export function CompsSheet() {
               <tr key={c.bbl + c.m + i} className={c.distress ? "dim" : ""}
                 style={{ cursor: "pointer" }}
                 onClick={() => { setPage("none"); select(c.bbl); }}>
-                <td className="mono">{monthLabel(c.m)}</td>
-                <td>{c.address}{c.distress ? " · distressed" : ""}</td>
-                <td className="dim">{CLASS_LABEL[c.cls as keyof typeof CLASS_LABEL] ?? c.cls}</td>
-                <td className="num">{vintage(c)}</td>
-                <td className="num">{usd(c.price)}</td>
-                <td className="num">{c.sf > 0 ? `$${c.psf.toFixed(0)}` : `$${c.psf.toFixed(0)} land`}</td>
-                <td className="num">{c.capRate > 0 ? `${c.capRate.toFixed(2)}%` : "—"}</td>
-                <td className={c.buyer === firmShort(game) ? "" : "dim"}>{c.buyer}</td>
-                <td className={c.seller === firmShort(game) ? "" : "dim"}>{c.seller}</td>
+                <td>
+                  <div>{c.address}{c.distress ? " · distressed" : ""}</div>
+                  <div className="dim" style={{ fontSize: 11 }}>
+                    {monthLabel(c.m)} · {CLASS_LABEL[c.cls as keyof typeof CLASS_LABEL] ?? c.cls} · {vintage(c)}
+                  </div>
+                </td>
+                <td className="num">
+                  {usd(c.price)}
+                  <div className="dim" style={{ fontSize: 11 }}>
+                    {c.sf > 0 ? `$${c.psf.toFixed(0)}/sf` : `$${c.psf.toFixed(0)} land`}
+                    {c.capRate > 0 ? ` · ${c.capRate.toFixed(2)}%` : ""}
+                  </div>
+                </td>
+                <td>
+                  <div className={c.buyer === firmShort(game) ? "" : "dim"}>{c.buyer}</div>
+                  <div className={c.seller === firmShort(game) ? "" : "dim"} style={{ fontSize: 11 }}>from {c.seller}</div>
+                </td>
               </tr>
             ))}
           </tbody>

@@ -54,43 +54,56 @@ function buySome(seed, n = 6, cash = 250_000_000) {
   return { g, bbls: out };
 }
 
-const { g, bbls: owned } = buySome(77011);
-console.log("\nREFI BINDING — generated city, cash purchases, month 0\n");
-console.log(`index ${g.econ.indexRate.toFixed(2)}%  creditIdx ${(g.econ.creditIdx ?? 1).toFixed(2)}`);
-console.log(`owned ${owned.length} deeds\n`);
-
-const counts = { "debt yield": 0, coverage: 0, "advance rate": 0, "their hold size": 0, "stabilised plan": 0, other: 0 };
-let n = 0;
-
-for (const bbl of owned) {
-  const h = g.holdings[bbl];
-  const rec = E.resolveRec(parcels, g, bbl);
-  const v = E.ownedHoldingValue(g, parcels, h);
-  const noi = E.ownedHoldingNoiYr(g, parcels, h);
-  const cap = v > 0 ? (noi / v) * 100 : 0;
-  const { quotes } = E.refiQuotes(g, parcels, bbl);
-  const open = quotes.filter((q) => q.available && q.maxProceeds > 0);
-  console.log(`${rec?.address ?? bbl}  ${rec?.class}  value $${(v / 1e6).toFixed(2)}M  NOI $${(noi / 1e6).toFixed(2)}M  implied cap ${cap.toFixed(2)}%`);
-  for (const q of open.slice(0, 5)) {
-    const raw = E.quote(g, E.productById(q.id), v, noi, rec?.class);
-    const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
-    console.log(
-      `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `
-      + `LTV ${ltvPct.toFixed(0)}%  DSCR ${q.dscrAtMax.toFixed(2)}  DY ${(q.debtYieldAtMax * 100).toFixed(1)}%  `
-      + `binds ${q.binding}`
-      + (raw.byLtv != null
-        ? `  legs LTV $${(raw.byLtv / 1e6).toFixed(2)}M / DSCR $${(raw.byDscr / 1e6).toFixed(2)}M / DY $${(raw.byDebtYield / 1e6).toFixed(2)}M`
-        : ""),
-    );
-    counts[q.binding] = (counts[q.binding] ?? 0) + 1;
-    n++;
+function quoteBook(g, owned, label) {
+  console.log(`\n${label}`);
+  console.log(`index ${g.econ.indexRate.toFixed(2)}%  creditIdx ${(g.econ.creditIdx ?? 1).toFixed(2)}  month ${g.month}\n`);
+  const counts = { "debt yield": 0, coverage: 0, "advance rate": 0, "their hold size": 0, "stabilised plan": 0, other: 0 };
+  let n = 0;
+  for (const bbl of owned) {
+    const h = g.holdings[bbl];
+    const rec = E.resolveRec(parcels, g, bbl);
+    const v = E.ownedHoldingValue(g, parcels, h);
+    const noi = E.ownedHoldingNoiYr(g, parcels, h);
+    const cap = v > 0 ? (noi / v) * 100 : 0;
+    const { quotes } = E.refiQuotes(g, parcels, bbl);
+    const open = quotes.filter((q) => q.available && q.maxProceeds > 0);
+    console.log(`${rec?.address ?? bbl}  ${rec?.class}  value $${(v / 1e6).toFixed(2)}M  NOI $${(noi / 1e6).toFixed(2)}M  implied cap ${cap.toFixed(2)}%`);
+    for (const q of open.slice(0, 5)) {
+      const raw = E.quote(g, E.productById(q.id), v, noi, rec?.class);
+      const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
+      console.log(
+        `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `
+        + `LTV ${ltvPct.toFixed(0)}%  DSCR ${q.dscrAtMax.toFixed(2)}  DY ${(q.debtYieldAtMax * 100).toFixed(1)}%  `
+        + `binds ${q.binding}`
+        + (raw.byLtv != null
+          ? `  legs LTV $${(raw.byLtv / 1e6).toFixed(2)}M / DSCR $${(raw.byDscr / 1e6).toFixed(2)}M / DY $${(raw.byDebtYield / 1e6).toFixed(2)}M`
+          : ""),
+      );
+      counts[q.binding] = (counts[q.binding] ?? 0) + 1;
+      n++;
+    }
   }
+  console.log("Binding counts");
+  for (const [k, v] of Object.entries(counts)) {
+    if (v) console.log(`  ${k}: ${v}  (${n ? ((v / n) * 100).toFixed(0) : 0}%)`);
+  }
+  return { counts, n };
 }
 
-console.log("\nBinding counts across fundable quotes");
-for (const [k, v] of Object.entries(counts)) {
-  if (v) console.log(`  ${k}: ${v}  (${n ? ((v / n) * 100).toFixed(0) : 0}%)`);
-}
+const bought = buySome(77011);
+console.log("\nREFI BINDING — generated city, cash purchases\n");
+console.log(`owned ${bought.bbls.length} deeds`);
+quoteBook(bought.g, bought.bbls, "Month 0 — opening credit window");
+
+let later = bought.g;
+for (let i = 0; i < 60; i++) later = E.advanceMonth(later, parcels, bbls, {});
+quoteBook(later, bought.bbls, "Month 60 — same deeds, five years on");
+
+let late = later;
+for (let i = 0; i < 60; i++) late = E.advanceMonth(late, parcels, bbls, {});
+quoteBook(late, bought.bbls, "Month 120 — same deeds, ten years on");
+
 console.log("\nIf LTV at max is far below the desk's advance rate and the DY/DSCR");
 console.log("legs are the small ones, the sizing rules bound — not a small appraisal.");
-console.log("If proceeds/value is small AND the LTV leg is the smallest, the mark is small.\n");
+console.log("If proceeds/value is small AND the LTV leg is the smallest, the mark is small.");
+console.log("A 23% advance at 5.0x / 2% on a later, looser window would be a sizing bug.\n");

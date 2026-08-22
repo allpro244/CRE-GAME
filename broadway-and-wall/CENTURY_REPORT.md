@@ -1,5 +1,7 @@
 # A Hundred Years of New Alden
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 *Thirty-four centuries of a city that does not exist, and what its ledgers say
 about the one that does.*
 

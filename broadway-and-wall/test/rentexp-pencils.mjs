@@ -26,18 +26,21 @@ console.log("\nDEVELOPER OPTIMISM ON THE PENCIL\n");
 check(typeof E.developerOptimism === "function", "developerOptimism is exported");
 check(typeof E.devPencils === "function", "devPencils is exported");
 
+// Read the live pro forma, then move only the spot/EMA gap. A synthetic
+// $100 rent pins the response on the guard rail and hides the mechanism.
+const spot = g.econ.effRentIdx?.office ?? g.econ.rentIdx.office;
 const flat = structuredClone(g.econ);
-flat.rentIdx = { ...flat.rentIdx, office: 100 };
-flat.rentExp = { ...flat.rentExp, office: 100 };
-flat.effRentIdx = { ...flat.effRentIdx, office: 100 };
+flat.rentIdx = { ...flat.rentIdx, office: spot };
+flat.rentExp = { ...flat.rentExp, office: spot };
+flat.effRentIdx = { ...flat.effRentIdx, office: spot };
 
 const boom = structuredClone(flat);
-boom.rentIdx = { ...flat.rentIdx, office: 120 };
-boom.effRentIdx = { ...flat.effRentIdx, office: 120 };
+boom.rentIdx = { ...flat.rentIdx, office: spot * 1.20 };
+boom.effRentIdx = { ...flat.effRentIdx, office: spot * 1.20 };
 
 const slump = structuredClone(flat);
-slump.rentIdx = { ...flat.rentIdx, office: 80 };
-slump.effRentIdx = { ...flat.effRentIdx, office: 80 };
+slump.rentIdx = { ...flat.rentIdx, office: spot * 0.80 };
+slump.effRentIdx = { ...flat.effRentIdx, office: spot * 0.80 };
 
 const optFlat = E.developerOptimism(flat, "office");
 const optBoom = E.developerOptimism(boom, "office");

@@ -78,12 +78,12 @@ export function HousePolicy() {
           a mixed book is the normal case and the engine already says a broker
           does not work multifamily. */}
       <div className="grid" style={{ marginTop: 8 }}>
-        <Row k="Leasing exclusive" v={`${onHouse} of ${commercialN} commercial building${commercialN === 1 ? "" : "s"} with the house`} />
+        <Row k="Leasing exclusive" v={`${onHouse} of ${commercialN} commercial building${commercialN === 1 ? "" : "s"} under exclusive`} />
       </div>
       <div className="btn-row">
         <button className="btn" disabled={commercialN === 0 || onHouse === commercialN}
           onClick={() => useStore.getState().brokerAll(true)}>
-          Put the whole book on the house
+          Put a listing exclusive on every building
         </button>
         <button className="btn" disabled={onHouse === 0}
           onClick={() => useStore.getState().brokerAll(false)}>

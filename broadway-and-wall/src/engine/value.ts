@@ -7,7 +7,7 @@ import { serviceSpec, START_YEAR } from "./types";
 export { START_YEAR };
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -729,7 +729,10 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   const where = e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
   const locMult = Math.min(shape.max, Math.max(shape.min, Math.pow(where / Math.max(0.01, pivot), shape.exp)));
 
-  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult;
+  // Developers chase the trend; the residual does not. developerOptimism
+  // already said so and was unused. A jobs shock (spot above rentExp) now
+  // underwrites above today's rent, which is how a pipeline overshoots.
+  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   const occ = k === "multifamily" ? 0.95 : 0.90;
   const opex = opexPsf(k, e, false);

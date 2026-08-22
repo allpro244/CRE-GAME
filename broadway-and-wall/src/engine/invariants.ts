@@ -24,8 +24,9 @@ import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING
 // so an invariant that appraises at its BIRTH grade is measuring a different
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
-import { conveyedValue, leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse } from "./leasing";
+import { conveyedValue, leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse, isCommercial } from "./leasing";
 import { mixOf, useSf } from "./mix";
+import { blockIdentity } from "./plates";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { FAR_FLOOR, FAR_CEIL } from "./zoning";
 import { SECTORS } from "./market";
@@ -392,6 +393,20 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     const v = ar ? conveyedValue(s, ar, bbl) : 0;
     if (v > 0 && a.ask < v * 0.60) {
       bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
+    }
+  }
+  // FLOORPLATE IDENTITY. Per commercial component, vacant blocks plus sitting
+  // tenants must equal the component's floor area, to the foot. This replaces
+  // the equal-suite demise checks: the building is plates, not a pre-cut.
+  for (const h of Object.values(s.holdings)) {
+    const recB = resolveRec(parcels, s, h.bbl);
+    if (!recB || !isCommercial(recB)) continue;
+    for (const row of blockIdentity(recB, h)) {
+      if (!row.ok) {
+        bad("blocks", `${h.bbl} ${row.use}`,
+          `tenants ${Math.round(row.tenantSf)} + blocks ${Math.round(row.blockSf)} `
+          + `!= useSf ${Math.round(row.useSf)}`);
+      }
     }
   }
   // NOBODY LEASES A CLOSET — BUT A SMALL BUILDING IS NOT A CLOSET.

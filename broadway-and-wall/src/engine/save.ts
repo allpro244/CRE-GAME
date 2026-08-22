@@ -151,6 +151,10 @@ export function migrateSaveState(state: GameState): GameState {
   // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
   clearStyleOverrides(state);
   ensurePeople(state);
+  // Floorplate inventory (LEASING_OVERHAUL Phase 1): Tenant.floorLo/floorHi
+  // and Holding.blocks are optional. Old saves stamp lazily on first
+  // blocksOf / assignTenantFloors — largest tenant, lowest floor, stable by
+  // index, no RNG. Do not bump SAVE_VERSION for this.
   // Older campaigns bump forward once shape migrations have run — EXCEPT
   // across a break the migration cannot repair. This is the "future hard
   // break" the note above anticipated: no rearrangement of the save's fields

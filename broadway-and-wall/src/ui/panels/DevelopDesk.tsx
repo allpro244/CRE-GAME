@@ -6,12 +6,12 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { BuiltClass, Contract, DevUse } from "@/engine/types";
+import type { Contract, DevUse } from "@/engine/types";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF } from "@/engine/value";
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes,
-  farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, unitRange, suiteSfForUnits,
-  SUITE_BOUNDS, specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE,
+  farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
+  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -167,8 +167,6 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [split, setSplit] = useState<{ retail: number; office: number; multifamily: number }>(
     { retail: 15, office: 45, multifamily: 40 },
   );
-  // ...and so is how it is cut up. `null` means the class default.
-  const [units, setUnits] = useState<Partial<Record<BuiltClass, number>>>({});
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -186,18 +184,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
   const btsOffer = game.holdings[bbl]?.btsOffer;
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank, spec);
-  // Turn the chosen unit counts into sf-per-space, against the programme that
-  // is actually going to be built.
-  const suiteChoice: Partial<Record<BuiltClass, number>> = {};
-  if (planMax) {
-    for (const u of Object.keys(planMax.mix) as BuiltClass[]) {
-      const n = units[u];
-      if (!n) continue;
-      suiteChoice[u] = suiteSfForUnits(planMax.sf * (planMax.mix[u] ?? 0), u, n);
-    }
-  }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice, bts }, bank, spec);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts }, bank, spec);
   const nb = blockReport(game, parcels, rec.block);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
@@ -477,33 +465,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             </>
           )}
           {planMax && (
-            <>
-              <div className="page-section" style={{ marginTop: 6 }}>How it is cut up</div>
-              {(Object.keys(planMax.mix) as BuiltClass[]).filter((u) => (planMax.mix[u] ?? 0) > 0.02).map((u) => {
-                const legSf = planMax.sf * (planMax.mix[u] ?? 0);
-                const r = unitRange(legSf, u);
-                const n = units[u] ?? r.typical;
-                const per = suiteSfForUnits(legSf, u, n);
-                return (
-                  <Slider
-                    key={u}
-                    label={`${USE_WORD[u]} spaces · ${sf(Math.round(legSf))}`}
-                    value={Math.max(r.min, Math.min(r.max, n))}
-                    min={r.min}
-                    max={r.max}
-                    step={1}
-                    onChange={(v) => setUnits((p) => ({ ...p, [u]: v }))}
-                    format={(v) => `${v} ${v === 1 ? "space" : "spaces"} · ${sf(per)} each`}
-                    marks={[{ at: r.typical, label: "typical" }, { at: r.max, label: `max ${r.max}` }]}
-                    hint={legSf > SUITE_BOUNDS[u].min && per <= SUITE_BOUNDS[u].min * 1.15
-                      ? `${sf(SUITE_BOUNDS[u].min)} is the floor for ${USE_WORD[u].toLowerCase()} — below that it is not a space, it is a cupboard.`
-                      : per >= SUITE_BOUNDS[u].max * 0.85
-                        ? "Spaces this big mean one tenant, or none. Single-tenant buildings are a real product and a slow let."
-                        : "Small spaces lease faster and cost far more to fit out and to run. Big ones sit empty longer and almost never turn."}
-                  />
-                );
-              })}
-            </>
+            <div className="hint" style={{ marginTop: 6 }}>
+              The building is plates, not a pre-cut of equal suites. Tenants arrive with their own size; you demise to fit.
+            </div>
           )}
           <div className="btn-row" style={{ marginTop: 8 }}>
             <button type="button" className="btn" onClick={() => setTab("design")}>Next · Design</button>
@@ -706,7 +670,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts }, plan.lender, spec)}
                   title={!canFund
                     ? `Equity short — needs ${usd(equityRequired)} all-in`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}

@@ -19,6 +19,7 @@ import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
+import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, SIZE_DIST, marketNormSuiteSf, stackForUse } from "./plates";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -136,76 +137,14 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 export const COMMERCIAL_SUITE_MIN = 2_000;
 
 export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
-  // Sized off the COMPONENT, not the building. Ground-floor retail under a
-  // tower demises into shops, not into floors — sizing it off the tower gave
-  // a 400,000 sf building 30,000 sf "shops", which is a department store.
+  // MARKET NORM, not a pre-cut. The building is a stack of plates
+  // (plates.ts); this number is what the demand distribution is aimed at.
+  // The even-cut that used to live here forced N equal suites at development
+  // and is deleted — remnants and contiguous blocks are now real.
   const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
-  // A building you programmed yourself is cut the way you cut it — but never
-  // into a suite larger than the leg. A 9,371 ft warehouse programmed (or
-  // defaulted) as a 12,000 ft bay is a number the building does not contain.
-  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
-  if (chosen && chosen > 0) return Math.min(a, chosen);
-  let raw: number;
-  switch (use) {
-    case "multifamily": raw = 900; break;                              // an apartment
-    // A warehouse bay is large — twelve thousand feet is a typical single
-    // tenancy — but a 9,000 ft shed is one bay the size of the shed, not a
-    // 12,000 ft suite in a building that does not have 12,000 feet. Playtest
-    // on 54 Packet St: 9,371 sf industrial, 1/1 spaces, ParcelDesk "12,000 sf
-    // each". Same class of lie as the 26,100 ft office that read 1/1 at 8%.
-    case "industrial":  raw = Math.max(12_000, Math.min(90_000, a / 2.2)); break;
-    // TWO THOUSAND FEET IS THE FLOOR FOR A COMMERCIAL TENANCY.
-    //
-    // Shops were demising to 1,400 and offices to 2,500, which produced towers
-    // cut into forty tiny suites and a rent roll that read like a market stall.
-    // Below about two thousand feet a commercial tenancy is not an asset —
-    // it is a serviced office or a kiosk, and neither is what this game is
-    // about. Flats keep their own floor, because a flat is a flat.
-    case "retail":      raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(14_000, a / 6)); break;
-    // ...AND TWENTY-EIGHT THOUSAND WAS THE WRONG CEILING AT THE OTHER END.
-    //
-    // The cap binds on everything sizeable: any office building over about
-    // 340,000 sf could only be cut into 28,000 ft blocks, so a tower had no
-    // small tenants at all. Measured on a 614,000 sf delivery, that is what
-    // made a huge new building fill in fourteen leases averaging 36,000 ft and
-    // reach 80% let inside two years — a whale-only rent roll and a lease-up
-    // no real tower has ever had. Fifteen thousand is a large suite, not an
-    // anchor floor: the same tower now needs the better part of thirty deals
-    // and three to four years, which is what leasing a tower actually costs
-    // and most of why merchant development is supposed to be frightening.
-    default:            raw = Math.max(Math.min(COMMERCIAL_SUITE_MIN, a), Math.min(15_000, a / 12)); break;  // office
-  }
-  const target = Math.min(a, Math.max(1, raw));
-  // A LEG IS DEMISED INTO WHOLE EVEN SPACES, NOT INTO TARGET-SIZED SUITES PLUS
-  // A DEAD REMNANT.
-  //
-  // `raw` is the size of suite this market wants. Returning it directly meant a
-  // leg that is not a whole multiple of it stranded the leftover, and if that
-  // leftover fell under the tenancy floor NOTHING COULD EVER LET IT — toSuites
-  // refuses a remnant below `floor`, so the space sat dark for the whole game
-  // and the building was structurally capped below its own model occupancy.
-  //
-  // Measured before this, on legs of 1.5-2.5 suites (13% of the city's
-  // commercial floor area): the model asked for 75.4% occupancy, the inventory
-  // could only reach 89.0%, and 62% of those legs could not reach 100% at all —
-  // mean ceiling 82%. Worked example, 3,402 sf of shops with a 2,000 ft
-  // tenancy floor: one shop of 2,000 and 1,402 ft that nobody may lease, so the
-  // leg is welded at 59% while useOccupancy asks for 88%.
-  //
-  // No landlord does that. You cut the floor into whole even spaces of about
-  // the size the market wants — one 3,402 ft shop here, or two of 1,701 if the
-  // floor allowed it. So: round to the nearest whole number of spaces and back
-  // off while a space would fall under the tenancy floor. The leg divides
-  // exactly, there is no remnant, and `raw` becomes the size a space is AIMED
-  // at rather than a cut that leaves rubble.
-  //
-  // This is the same quantity the ceiling comments above are about and it does
-  // not disturb them: a 614k sf office still cuts to ~15k (41 spaces, ~30 deals
-  // to fill), and a 9,371 ft shed is still one bay the size of the shed.
-  const floorSf = use === "multifamily" ? 450 : Math.min(COMMERCIAL_SUITE_MIN, a);
-  let n = Math.max(1, Math.round(a / target));
-  while (n > 1 && a / n < floorSf) n--;
-  return a / n;
+  if (use === "multifamily") return Math.min(a, 900);
+  const plate = stackForUse(rec, use)?.plateSf ?? a;
+  return marketNormSuiteSf(use, plate);
 }
 
 /**
@@ -295,21 +234,19 @@ export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): U
   for (const use of uses(rec)) {
     const sf = useSf(rec, use);
     if (sf <= 0) continue;
-    const sfPer = useSuiteSf(rec, use);
-    const total = Math.max(1, Math.round(sf / sfPer));
     if (use === "multifamily") {
+      const sfPer = useSuiteSf(rec, use);
+      const total = Math.max(1, Math.round(sf / sfPer));
       const leased = Math.min(total, Math.round((h.occ ?? 0) * total));
       out.push({ use, total, leased, vacant: total - leased, notReady: 0, sfPer });
       continue;
     }
-    const leasedSf = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
-    // Round to whole suites. A 2,000 ft tenant in a 26,000 ft single-tenant
-    // office is on the roll, but they have not let the space — counting any
-    // positive sf as 1 of 1 made occupancy 8% next to a full building.
-    // A remnant in a multi-suite building still occupies a suite (it would
-    // otherwise round to zero and hide a real tenant).
-    let leased = Math.min(total, Math.max(0, Math.round(leasedSf / sfPer)));
-    if (leased === 0 && leasedSf > 0 && total > 1) leased = 1;
+    const stack = stackForUse(rec, use);
+    const sfPer = stack?.plateSf ?? useSuiteSf(rec, use);
+    const vacantBlocks = blocksOf(rec, h).filter((b) => b.use === use);
+    const leasedN = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).length;
+    const total = Math.max(1, leasedN + vacantBlocks.length);
+    const leased = leasedN;
     // WHAT IS TURNING IN THIS LEG, ASKED DIRECTLY.
     //
     // This used to take the WHOLE building's make-ready and apportion it across
@@ -745,136 +682,67 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     s.month + Math.round(rrange(s, 9, 36, "leasing")),
     s.month + Math.round(rrange(s, 39, 90, "leasing")),
   ];
-  for (const use of leasableUses(rec)) {
-  const legSf = useSf(rec, use);
-  if (legSf < 400) continue;
-  // wider than the market model on the downside: a building coming to market
-  // is disproportionately one with a leasing problem
-  const targetOcc = Math.max(0, Math.min(0.98,
-    useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
-  const market = useRentPsfYr(rec, s.econ, holding.condition, use);
-  // A LEG THAT IS ONE SPACE IS LET, OR IT IS NOT.
-  //
-  // Nobody leases 88% of a single shop. Where the whole leg demises to one
-  // suite — the bay under a walk-up, a small office building — the loop below
-  // asked for 88% of it, could not fit a whole suite inside that, and left the
-  // space EMPTY; and since neither the leg nor the demise ever changes, it
-  // stayed empty for the length of the game.
-  //
-  // For an indivisible space the target occupancy is not a fraction of floor to
-  // fill. It is the CHANCE that the space is let, which is what it always meant
-  // — and it gives a small building the honest binary outcome a small building
-  // has, instead of an average nothing in the class can actually be.
-  const suite = useSuiteSf(rec, use);
-  const whole = legSf < suite * 1.5;
-  // ...AND THE LAST PARTIAL SUITE IS A COIN TOO. THIS WAS THE BIG ONE.
-  //
-  // The divisible branch asked for `legSf * targetOcc` and then filled it with
-  // WHOLE suites, so the loop below took floor(N*p) of them and dropped the
-  // remainder — every time, never rounding up. Realised occupancy was
-  // floor(N*p)/N, which is a systematically downward-biased estimator of the
-  // occupancy this function was aiming at, and the bias is worst where N is
-  // smallest.
-  //
-  // Measured before the fix, every commercial leg in the city, roll-side, no
-  // player, 3 seeds x month 300 — occupancy sloped monotonically with how many
-  // suites a leg demises into, which is not a thing that happens in life:
-  //
-  //     leg demises into    share of city sf    median occupancy   zero-let
-  //     1 suite                        7.1%     100%/0% bimodal         26%
-  //     1.5-3 suites                  13.0%                 57%          7%
-  //     3-6 suites                    21.7%                 62%          0%
-  //     6-12 suites                   24.4%                 70%          0%
-  //     12+ suites                    33.8%                 81%          0%
-  //
-  // and floor(N*p)/N predicted what the roll achieved to within 1-7pp in every
-  // bucket while both fell away from the model target as the leg got smaller.
-  // That is the whole of the 16-31 point disagreement between the Economy
-  // page's cityVac and the rent rolls of the same buildings, and most of why
-  // nothing a player owned ever looked stabilised.
-  //
-  // The answer was already in this function, one branch up: for an indivisible
-  // leg the target is not a fraction of floor to fill, it is the CHANCE the
-  // space is let. That is exactly the right treatment of the last partial
-  // suite of a DIVISIBLE leg as well, and it was never generalised. Fill
-  // floor(N*p) suites and take one more with probability frac(N*p), so the
-  // fill is unbiased in expectation at every N.
-  //
-  // Drawn only in the divisible branch so the indivisible one keeps its exact
-  // stream position. Safe for the shared world PRNG regardless: buildRentRoll
-  // is called only from genRentRoll, which swaps in a private stream keyed on
-  // the parcel and restores s.rng in a finally — so this costs the century
-  // nothing and cannot re-roll it (HANDOFF section 4).
-  let target: number;
-  if (whole) {
-    target = rng(s, "leasing") < targetOcc ? legSf : 0;
-  } else {
-    // Walk the leg's ACTUAL demisable inventory rather than a suite count.
-    //
-    // A first cut stochastically rounded N*p to a whole number of suites, which
-    // is unbiased only when the leg divides evenly. It does not: a leg of 1.8
-    // suites that draws "2" gets clamped back to 1.8, so the upper outcome is
-    // short and the mean lands under the target again. Measured on that cut,
-    // the smallest divisible legs still ran 13.4pp under what the model asked
-    // for while the largest ran 4.6pp under (which is just the listing skew).
-    //
-    // So walk the spaces the building really has — whole suites, then whatever
-    // remnant is large enough that somebody would lease it — take every space
-    // that fits under the target, and take the one that straddles it with
-    // probability equal to the fraction of it still wanted. That is exactly
-    // unbiased at every N: E[leased] = legSf * targetOcc whenever the inventory
-    // can reach it, and where it cannot, the shortfall is real unlettable
-    // remainder rather than a rounding artefact.
-    const wantSf = legSf * targetOcc;
-    const floorSf = minTenancySf(rec, use);
-    let acc = 0, remain = legSf;
-    while (remain > 0.5) {
-      const unit = Math.min(suite, remain);
-      // A sliver under the tenancy floor is not space — same rule toSuites
-      // applies, kept in step with it deliberately.
-      if (unit < floorSf && unit < suite * 0.65) break;
-      if (acc + unit <= wantSf) { acc += unit; remain -= unit; continue; }
-      if (rng(s, "leasing") < (wantSf - acc) / unit) acc += unit;
-      break;
+  for (const stack of stacksOf(rec)) {
+    const use = stack.use;
+    const legSf = useSf(rec, use);
+    if (legSf < 400) continue;
+    const targetOcc = Math.max(0, Math.min(0.98,
+      useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
+    const market = useRentPsfYr(rec, s.econ, holding.condition, use);
+    // A ONE-FLOOR LEG IS LET OR IT IS NOT. Same binary a single shop has always
+    // had. Multi-floor legs fill toward the occupancy target with log-normal
+    // sizes (plates.SIZE_DIST — CompStak / JLL median, p95 one large plate).
+    // Private stream: genRentRoll snapshots s.streams and restores it.
+    let target: number;
+    if (stack.floors === 1) {
+      target = rng(s, "leasing") < targetOcc ? legSf : 0;
+    } else {
+      target = legSf * targetOcc;
     }
-    target = acc;
+    let leased = 0;
+    let guard = 0;
+    const floorSf = minTenancySf(rec, use);
+    while (leased < target - 0.5 && guard++ < 40) {
+      const free = Math.min(target - leased, legSf - leased);
+      if (free < 1) break;
+      // A remnant of a bigger leg is vacant, not a closet tenancy. A whole
+      // leg under the city norm is the shop — that is what minTenancySf is for.
+      if (free < floorSf) {
+        if (leased > 0) break;
+      }
+      let sf = free < floorSf
+        ? Math.round(free)
+        : drawTenantSf(s, use, stack.plateSf, free);
+      if (sf > free + 0.5) {
+        if (free >= floorSf && rng(s, "leasing") < free / sf) sf = Math.round(free);
+        else break;
+      }
+      if (sf < 1) break;
+      if (leased > 0 && sf < floorSf) break;
+      const sector = pickSector(s, use);
+      const endM = rng(s, "leasing") < 0.6
+        ? anchors[Math.floor(rng(s, "leasing") * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3, "leasing"))
+        : s.month + Math.round(rrange(s, 6, 96, "leasing"));
+      holding.tenants.push({
+        name: pickName(s, sector),
+        use,
+        sector,
+        credit: rollCredit(s, demandLinear(rec.demandScore)),
+        sf,
+        rentPsf: +(market * rrange(s, 0.82, 1.04, "leasing")).toFixed(2),
+        net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
+        recovery: rollRecovery(s, use),
+        baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98, "leasing")).toFixed(2),
+        startM: s.month - Math.round(rrange(s, 0, 48, "leasing")),
+        endM: Math.max(s.month + 1, endM),
+        deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
+      });
+      if (settle) s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
+      leased += sf;
+    }
   }
-  let leased = 0;
-  let guard = 0;
-  while (leased < target && guard++ < 40) {
-    // whole suites only: a tenant takes one space, or knocks a few together
-    const free = target - leased;
-    const want = suite * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8, "leasing")));
-    const sf = toSuites(rec, want, free, use);
-    if (!sf) break;
-    const sector = pickSector(s, use);
-    const endM = rng(s, "leasing") < 0.6
-      ? anchors[Math.floor(rng(s, "leasing") * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3, "leasing"))
-      : s.month + Math.round(rrange(s, 6, 96, "leasing"));
-    holding.tenants.push({
-      name: pickName(s, sector),
-      use,
-      sector,
-      credit: rollCredit(s, demandLinear(rec.demandScore)),
-      sf,
-      rentPsf: +(market * rrange(s, 0.82, 1.04, "leasing")).toFixed(2),
-      net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
-      recovery: rollRecovery(s, use),
-      // Signed in the past, so the stop is frozen at the cheaper expense level
-      // of that year — the older the lease, the bigger the gap the owner eats.
-      baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98, "leasing")).toFixed(2),
-      startM: s.month - Math.round(rrange(s, 0, 48, "leasing")),
-      endM: Math.max(s.month + 1, endM),
-      // The in-place deposits come across on the settlement statement — cash
-      // in, liability up, no effect on net worth. What it does mean is that
-      // buying a fully let building hands you real money you will have to
-      // give back, which is exactly how the closing works.
-      deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
-    });
-    if (settle) s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
-    leased += sf;
-  }
-  }
+  assignTenantFloors(rec, holding.tenants);
+  blocksOf(rec, holding);
 }
 
 export function vacantSf(rec: ParcelRecord, h: Holding): number {
@@ -937,27 +805,30 @@ export function genAnchorTenant(
   // put more square feet under lease than the building had.
   const use = (forUse && leasableUses(rec).includes(forUse) ? forUse : leasableUses(rec)[0]) ?? "office";
   const vacant = useVacantSf(rec, h, use, s.month);
-  const sfPer = useSuiteSf(rec, use);
-  // A letter for a fraction of an indivisible suite is not a tenancy. Do not
-  // round it UP to the whole HQ — that would gift 24,000 ft to a 2,000 ft
-  // construction bite. Refuse; the space lets after opening, in whole suites.
-  if (sfWanted < sfPer * 0.65 && sfWanted < vacant * 0.65) return false;
-  const sfAnchor = toSuites(rec, sfWanted, vacant, use);
-  if (!sfAnchor) return false;
+  const stack = stackForUse(rec, use);
+  // Place the size they signed. Do not round a bite up to a pre-cut suite —
+  // the building is plates, and a 2,000 ft construction letter is 2,000 ft.
+  const sfAnchor = Math.round(Math.min(Math.max(0, sfWanted), vacant));
+  if (sfAnchor < 1) return false;
+  const floor = minTenancySf(rec, use);
+  if (sfAnchor < floor && vacant < floor) return false;
   const sector = pickSector(s, use);
   const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
-  h.tenants.push({
+  const t: Tenant = {
     name: pickName(s, sector),
     use,
     sector,
     credit: rng(s, "leasing") > 0.4 ? 2 : 1, // anchors are credit tenants
-    sf: Math.round(sfAnchor),
+    sf: sfAnchor,
     rentPsf: +(market * rrange(s, 0.9, 0.97, "leasing")).toFixed(2),
     net: true,
     recovery: "nnn",
     startM: s.month,
     endM: s.month + Math.round(rrange(s, 120, 180, "leasing")),
-  });
+  };
+  if (stack && !placeOnStack(rec, h.tenants, t, stack)) return false;
+  h.tenants.push(t);
+  blocksOf(rec, h);
   return true;
 }
 
@@ -1418,6 +1289,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         sf: mo.sf,
         use: mo.use,
         readyM: q + Math.max(1, Math.round(lagFor(mo.use ?? dominantUse(rec)) * soft * rrange(s, 0.7, 1.4, "leasing"))),
+        blockId: blockIdForSf(rec, h, (mo.use ?? dominantUse(rec)) as BuiltClass, mo.sf),
       }));
       const down = Math.max(...entries.map((e) => e.readyM - q));
       h.makeReady = [...(h.makeReady ?? []), ...entries];
@@ -1518,7 +1390,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // being released rather than an asset arriving.
       if (kept > 0) logBooks(s, "noi", kept);
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
-      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
+      h.makeReady = [...(h.makeReady ?? []), {
+        sf: t.sf, readyM: q + down, use: t.use,
+        blockId: blockIdForSf(rec, h, (t.use ?? dominantUse(rec)) as BuiltClass, t.sf),
+      }];
       noteTenantSfChange(s, (t.use ?? dominantUse(rec)) as BuiltClass, t.sf);
       // TENURE IS THE STORY. "A tenant failed" is a statistic; "the firm that
       // has been on your fourth floor since 2004 failed" is a month you
@@ -2314,7 +2189,10 @@ export function buildSpecSuites(
   }
   const next: GameState = cloneState(s);
   fundAndBook(next, parcels, q.cost, "leasing");
-  next.holdings[bbl].specSuites = { sf: q.sf, readyM: q.readyM, use };
+  next.holdings[bbl].specSuites = {
+    sf: q.sf, readyM: q.readyM, use,
+    blockId: blockIdForSf(rec, next.holdings[bbl], use, q.sf),
+  };
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Pre-building ${(q.sf / 1000).toFixed(0)}k sf of ${use} at ${rec.address} — $${(q.cost / 1e6).toFixed(2)}M, ready ${monthLabel(q.readyM)}. `
@@ -2380,10 +2258,13 @@ export function answerAsk(
     }
     fundAndBook(next, parcels, legal, "leasing");
     const use = (t.use ?? (rec.class as BuiltClass)) as BuiltClass;
-    h.makeReady = [...(h.makeReady ?? []), { sf: freed, readyM: next.month + 3, use: t.use }];
     noteTenantSfChange(next, use, freed);
     const oldSf = t.sf;
     t.sf -= freed;
+    h.makeReady = [...(h.makeReady ?? []), {
+      sf: freed, readyM: next.month + 3, use: t.use,
+      blockId: blockIdForSf(rec, h, use, freed),
+    }];
     // they now fit what they hold — the same headcount over less space
     t.staff = Math.min(1.05, (t.staff ?? 1) * oldSf / t.sf);
     delete t.strainedM;
@@ -3601,10 +3482,13 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // turns like any other giveback before anybody can be shown it.
     if (l.sf < t.sf) {
       const freed = t.sf - l.sf;
-      h.makeReady = [...(h.makeReady ?? []), { sf: freed, readyM: s.month + 3, use: t.use }];
       noteTenantSfChange(s, (t.use ?? dominantUse(rec)) as BuiltClass, freed);
       t.sf = l.sf;
       t.staff = Math.min(t.staff ?? 1, 1);
+      h.makeReady = [...(h.makeReady ?? []), {
+        sf: freed, readyM: s.month + 3, use: t.use,
+        blockId: blockIdForSf(rec, h, (t.use ?? dominantUse(rec)) as BuiltClass, freed),
+      }];
     } else if (l.sf > t.sf) {
       // A MUST-TAKE ON THE RENEWAL. The only letter that grows a sitting tenant
       // at the roll is the dead-remnant one written in tickLeasing, and it is
@@ -3674,7 +3558,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
     s.cash += deposit;
-    h.tenants.push({
+    const signed: Tenant = {
       name: l.name, use, sector: l.sector, credit: l.credit,
       sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
@@ -3682,7 +3566,11 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       startM: s.month, endM: s.month + l.termM,
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
       deposit,
-    });
+    };
+    const stack = stackForUse(rec, use);
+    if (stack) placeOnStack(rec, h.tenants, signed, stack);
+    h.tenants.push(signed);
+    blocksOf(rec, h);
     noteTenantSfChange(s, use, -sf);
   }
   // Say what the roll looks like NOW. "Lease signed" with a free-rent period

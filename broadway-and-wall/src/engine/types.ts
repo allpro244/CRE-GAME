@@ -131,6 +131,13 @@ export interface Tenant {
    * do relationships.
    */
   strainedM?: number;
+  /**
+   * Floors this tenancy occupies, 1-indexed from grade, inclusive.
+   * Absent on old saves — plates.assignTenantFloors stamps them deterministically
+   * (largest tenant, lowest floor, stable by index; no RNG).
+   */
+  floorLo?: number;
+  floorHi?: number;
 }
 
 /**
@@ -231,6 +238,8 @@ export interface LOI {
    * interrupt modal shows these even while the agent holds the book.
    */
   referred?: boolean;
+  /** Vacant block this letter is written on. Absent on old letters. */
+  blockId?: number;
   /**
    * THE TERM THEY CAME IN ASKING FOR, once the term itself is negotiable.
    * `termM` doubled as both "what they want" and "what is on the paper", which
@@ -462,7 +471,9 @@ export interface Holding {
   lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
-  makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
+  /** Cached vacant blocks from plates.blocksOf. Derived; restamped on read. */
+  blocks?: import("./plates").SpaceBlock[];
+  makeReady?: { sf: number; readyM: number; use?: BuiltClass; blockId?: number }[]; // vacated space being turned; unleasable until ready
   /**
    * WHAT YOUR MANAGEMENT IS DOING TO THIS BUILDING'S CONTROLLABLE COSTS.
    * Stamped once a month by tickStaff so the operating functions can read a
@@ -505,7 +516,7 @@ export interface Holding {
   // for them: the fastest-leasing product in the market, because a tenant who
   // can move in next month does not need six months of drawings and a fit-out
   // allowance. It costs the fit-out up front on space that may sit.
-  specSuites?: { sf: number; readyM: number; use: BuiltClass };
+  specSuites?: { sf: number; readyM: number; use: BuiltClass; blockId?: number };
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**

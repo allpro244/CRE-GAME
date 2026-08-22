@@ -12,7 +12,8 @@ import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsf
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf } from "@/engine/leasing";
+import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
@@ -345,11 +346,20 @@ function ParcelPanelInner({
             />
           );
         })()}
-        {isBuilt && !holding && (
-          isMixedUse(rec)
-            ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
-            : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />
-        )}
+        {isBuilt && !holding && (() => {
+          const stacks = stacksOf(rec);
+          if (stacks.length) {
+            return (
+              <Row
+                k="Floorplates"
+                v={stacks.map((p) => `${p.floors} × ${sf(Math.round(p.plateSf))} ${USE_WORD[p.use]}`).join(" · ")}
+              />
+            );
+          }
+          return isMixedUse(rec)
+            ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / suiteSf(rec)))} ${USE_WORD[u]}`).join(" · ")} />
+            : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />;
+        })()}
         {/* The leasing read, and it names the loss factor rather than burying it
             in a percentage. The appraisal's number — feet let over feet built —
             is still what the value and the buyer's quote above are struck on;

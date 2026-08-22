@@ -524,7 +524,7 @@ export default function TopBar() {
                 bad={cf < 0}
                 keep
                 w={88}
-                title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
+                title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility and the revolver. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
               />
               {dCf !== null && (
                 <span className="vital-extra">

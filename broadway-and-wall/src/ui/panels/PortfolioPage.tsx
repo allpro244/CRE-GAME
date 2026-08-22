@@ -83,8 +83,18 @@ export function PortfolioPage() {
     const noi = ownedHoldingNoiYr(game, parcels, h);
     // Facility replaces the deed mortgage — allocated share is the lien that
     // still sits on this row once the pool is papered.
-    const debt = (h.loan?.balance ?? 0) + allocatedAmount(game, parcels, h.bbl);
-    const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
+    const facBal = allocatedAmount(game, parcels, h.bbl);
+    const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + facBal;
+    // Same walk as portfolioPropertyMonthlyCF, plus this row's share of a
+    // facility payment. The header CF / yr also subtracts construction
+    // interest, the whole facility and the revolver — those are firm lines,
+    // not a deed's. A row that skipped mezz or a pooled facility printed
+    // NOI as cash flow on the buildings that actually carry that paper.
+    const facPmt = game.facility && game.facility.balance > 0
+      ? game.facility.monthlyPmt * (facBal / game.facility.balance)
+      : 0;
+    const dsMo = (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt;
+    const cf = noi / 12 - dsMo;
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
     totV += v; totD += debt;
@@ -121,7 +131,7 @@ export function PortfolioPage() {
       gain: v - h.costBasis,
       debt,
       equity: v - debt,
-      ds: h.loan?.monthlyPmt ?? 0,
+      ds: dsMo,
     };
   });
   type PRow = (typeof rows)[number];

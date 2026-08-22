@@ -11,7 +11,7 @@ import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, IN
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
@@ -456,6 +456,36 @@ export function occupancyRead(rec: ParcelRecord, h: Holding): OccRead {
   const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + useRentableSf(rec, "multifamily") * (h.occ ?? 0);
   const lettableOcc = Math.min(1, leased / lettable);
   return { occ, lettableOcc, remainderSf, fullyLet: remainderSf > 0 && lettableOcc >= 0.9995 };
+}
+
+/**
+ * THE PORTFOLIO'S ONE OCCUPANCY NUMBER — occupancyRead, summed. The figure at
+ * the top of the screen and the total on Leasing must be the same answer to
+ * the same question, and they were not: the top bar divided rentable tenant
+ * feet by GROSS building area with gross residential feet in the numerator
+ * (its own haircut, uncapped — a fully-let building could never print 100%),
+ * and Leasing's total divided by gross-minus-remainder while its rows quoted
+ * lettable. Three answers across two screens is the fault value.ts names:
+ * "a panel that computed its own haircut would be a second opinion."
+ *
+ * Same book as Leasing's rows: operated deeds only — coupon-only ground-leased
+ * fees have no roll of yours to count. Null when nothing operated has a
+ * lettable foot, so the panel can show an em dash instead of a fake zero.
+ */
+export function portfolioOccupancy(
+  s: GameState, parcels: ParcelTable,
+): { leasedSf: number; lettableSf: number; occ: number } | null {
+  let leased = 0, lettable = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (isLeasedFee(h)) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    const or = occupancyRead(rec, h);
+    lettable += Math.max(0, rentableSf(rec) - or.remainderSf);
+    leased += h.tenants.reduce((a, t) => a + t.sf, 0) + useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  }
+  if (lettable <= 0) return null;
+  return { leasedSf: Math.round(leased), lettableSf: Math.round(lettable), occ: Math.min(1, leased / lettable) };
 }
 
 // In-place rent roll at acquisition. Expirations cluster around a couple of

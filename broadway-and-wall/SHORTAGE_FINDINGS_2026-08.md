@@ -9,24 +9,39 @@ Harness: `pnpm shortage` (`test/shortage.mjs`). Report, not a gate.
 
 ## Measurement
 
-Claude Code, 8 seeds × 60 years (`pnpm vacdist` set) plus a per-seed probe:
+Re-run on this tip, `pnpm shortage`, 8 seeds × 60 years, `E.frictionFloor`
+(vacdist had been using a swapped ratio — industrial 0.32 vs the engine's
+0.22). Claude's all-seed office pile is bit-identical; industrial floor-share
+moves 3pp because the floor is the engine's.
 
-| | |
-|---|---|
-| office within 2pp of natural | **5.5%** of months |
-| office on the frictional floor | **13.6%** |
-| office more than 10pp over natural | **44.9%** |
-| industrial on its friction floor | **55.9%** of months |
-| industrial stock over 59 years | **×1.01** |
+| | all seeds | growing (3) | declining (5) |
+|---|---|---|---|
+| office within 2pp of natural | **5.5%** | 12.2% | 1.5% |
+| office on the frictional floor | **13.6%** | 22.9% | 8.1% |
+| office more than 10pp over natural | **44.9%** | 12.9% | **64.2%** |
+| office stock | ×1.07 | **×1.77** | ×1.05 |
+| industrial on its friction floor | **52.2%** | **87.9%** | 30.8% |
+| industrial stock | **×1.01** | ×1.01 | ×1.00 |
 
-Two states, not a market. Declining seeds live in glut; growing seeds live
-in shortage. Re-run `pnpm shortage` on this tip before believing the table —
-the census reprints the split, and the jobs-shock block is new.
+Two states, not a market — but the split is not "growing office lives on
+the floor." Growing office **does** build. Growing industrial does not
+(87.9% pinned, stock ×1.01, zero M lots). Declining office lives in glut
+(64.2% of months more than 10pp over natural).
 
-`test/vacdist.mjs` was reading a swapped floor-ratio table (industrial 0.32,
-multifamily 0.22). The engine's `frictionFloor` is the other way around
-(industrial 0.22, multifamily 0.30). The shortage harness and vacdist both
-read `E.frictionFloor` now.
+Jobs shock, 15% of headcount at month 60, paired control, 12 years:
+
+- Month 36: both arms on the 3.7% office floor. Treatment stock −0.4%.
+- Months from year 3 on with vacancy above natural: **0.7%**.
+- Face +10.5% by month 143; extra starts +102k sf. No overshoot.
+
+New office floor the month it opens is already at the friction fill only
+9.2% of the time (median occ/stock 90.5%). The pool cap does not
+instant-fill deliveries; it is why a jobs boom never leaves a queue a
+crane could overbuild.
+
+Plat: **0 M-zoned lots**, 403 fringe-C lots that may take a shed. Industrial
+starts on declining seeds median 26k sf over 60 years; on growing seeds
+411k — and stock still ×1.01. The fringe-C permit is not reaching the map.
 
 ## Four causes, read from source
 

@@ -9,6 +9,15 @@ import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/** Bare clamp so tools/rails.mjs can see the block-premium guards. */
+function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
+
+/** Same tightness the counter path uses — do not invent a second one. */
+function vacancyTight(s: GameState, use?: BuiltClass): number {
+  const vacHere = (s.econ.cityVac?.[use ?? "office"] ?? 0.1);
+  const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
+  return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
+}
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee } from "./value";
@@ -19,7 +28,7 @@ import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
-import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, SIZE_DIST, marketNormSuiteSf, stackForUse } from "./plates";
+import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, marketNormSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -787,6 +796,17 @@ export function notReadySf(h: Holding, month: number, use?: BuiltClass): number 
 
 export const MAKE_READY_PSF = 3.9; // turn cost, $/sf before cost inflation
 
+/** Taking a demising wall down when adjacent space frees — same $/sf as a cut. */
+function recombinationCost(rec: ParcelRecord, t: Tenant, costIdx: number): number {
+  const use = (t.use ?? dominantUse(rec)) as BuiltClass;
+  const stack = stackForUse(rec, use);
+  if (!stack) return 0;
+  const span = Math.max(1, (t.floorHi ?? stack.floorLo) - (t.floorLo ?? stack.floorLo) + 1);
+  const per = t.sf / span;
+  if (per + 0.5 >= stack.plateSf) return 0;
+  return Math.round(DEMISE_PSF * Math.min(per, stack.plateSf - per) * span * costIdx);
+}
+
 // Anchor pre-lease for a development: one large credit tenant signed before
 // delivery, long paper at a small discount to market for taking the risk.
 /**
@@ -1268,7 +1288,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     h.tenants = h.tenants.filter((t) => t.endM > q);
     if (movedOut.length) {
       const outSf = movedOut.reduce((sum, t) => sum + t.sf, 0);
-      const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx);
+      const mergeCost = movedOut.reduce((n, mo) => n + recombinationCost(rec, mo, s.econ.costIdx), 0);
+      const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx) + mergeCost;
       s.cash -= turnCost;
       logBooks(s, "capex", turnCost);
       // THE DEPOSIT GOES BACK. It was never yours: it arrived as cash at
@@ -1389,6 +1410,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // and it shows up as money APPEARING, which is the tell for a liability
       // being released rather than an asset arriving.
       if (kept > 0) logBooks(s, "noi", kept);
+      const merge = recombinationCost(rec, t, s.econ.costIdx);
+      if (merge > 0) {
+        s.cash -= merge;
+        logBooks(s, "capex", merge);
+      }
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
       h.makeReady = [...(h.makeReady ?? []), {
         sf: t.sf, readyM: q + down, use: t.use,
@@ -1843,24 +1869,22 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // ceiling kept losing. When what is left of the pool will not fill
         // the smallest thing this building demises, nobody tours.
         if (poolSf < minTenancySf(rec, use)) continue;
-        const want = Math.min(legVac, poolSf, drawRequirementSf(s, use));
-        const sf = toSuites(rec, want, legVac, use);
-        if (!sf) continue;
-        // toSuites rounds to whole suites, and round() goes UP — a pool with
-        // 8.4k sf left was minting 10k letters, which is the ceiling losing by
-        // a suite every time it was tested. A demised ask may overshoot the
-        // pool only by a sliver, never by the better part of a suite.
-        //
-        // THE LAST SUITE IS NOT A SLIVER. A building cut as one tenancy is
-        // empty or let — there is no 15% vacancy inside a space that will not
-        // demise. The ceiling is about not jumping a multi-suite fringe
-        // building from 67% to 92% in one signing. Applied to a 12,600 ft
-        // single-tenant office it compared the whole building against ~85% of
-        // itself and refused every tour, for ever. A player who programmed
-        // one suite and waited a decade was hitting this, not a soft market.
-        const suite = useSuiteSf(rec, use);
-        const lastSuite = sf >= legVac - suite * 0.15;
-        if (!lastSuite && sf > poolSf + suite * 0.15) continue;
+        // Consume the city's requirement draw so the world stream does not
+        // re-roll (Phase 1 was the sanctioned extra draw). The letter's SIZE
+        // is the class log-normal on the leasing channel — same SIZE_DIST
+        // inherited rolls use (office median 5k / p95 one large plate).
+        drawRequirementSf(s, use);
+        const plate = stackForUse(rec, use)?.plateSf ?? legVac;
+        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf)));
+        if (want < minTenancySf(rec, use)) continue;
+        const fit = matchBlock(rec, h, use, want);
+        if (!fit) continue;
+        const sf = fit.sf;
+        const lastBlock = fit.block.sf >= legVac - 1;
+        if (!lastBlock && sf > poolSf + minTenancySf(rec, use) * 0.15) continue;
+        const demiseCost = fit.demiseSf > 0
+          ? Math.round(DEMISE_PSF * fit.demiseSf * s.econ.costIdx)
+          : 0;
         // A TOUR, NOT A LETTER.
         //
         // Measured over 945 arriving letters across four fifty-year runs:
@@ -1928,6 +1952,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           sector,
           credit,
           sf,
+          blockId: fit.block.id,
+          demiseSf: fit.demiseSf,
+          demiseCost,
           // A wide spread on purpose. If every prospect offers within a few
           // per cent of asking, the accept/counter/pass modal is a formality.
           // Some of these should be worth refusing, and refusing should hurt.
@@ -2677,8 +2704,26 @@ export function loiMandateScore(loi: LOI, market: number): number {
  * number is how a hired desk passed every prospect on a building empty for
  * years — the same ratchet `leasepolicy.mjs` already named for the bots.
  */
+function blockShapeMult(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  const use = loi.use ?? leasableUses(rec)[0];
+  const tight = vacancyTight(s, use);
+  const stack = stackForUse(rec, use);
+  const plate = stack?.plateSf ?? 0;
+  const kind = loi.blockId != null
+    ? (h.blocks ?? blocksOf(rec, h)).find((b) => b.id === loi.blockId)?.kind
+    : undefined;
+  const full = kind === "floors" || (plate > 0 && loi.sf + 0.5 >= plate);
+  const odd = kind === "remnant" || (plate > 0 && remnantSf(loi.sf, plate, use));
+  // Full-floor premium scales with tightness (block-scarcity at cycle peaks).
+  // Remnants clear at a discount. Both ends are guards, not policy.
+  let adj = 0;
+  if (full) adj = 0.05 * (1 + tight);
+  else if (odd) adj = -0.08 + 0.04 * tight;
+  return 1 + clamp(adj, -BLOCK_DISC_GUARD, BLOCK_PREM_GUARD);
+}
+
 function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
-  return currentAskPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]);
+  return currentAskPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]) * blockShapeMult(s, rec, h, loi);
 }
 
 type DeskVerdict = "sign" | "counter" | "refer" | "pass";
@@ -2778,7 +2823,7 @@ function deskVerdict(
  * and let an agent sign the firm into an over-advance nobody authorised.
  */
 function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE): boolean {
-  return s.cash - loiSigningCost(loi, feeRate) >= agentCashReserve(s);
+  return s.cash - loiSigningCost(loi, feeRate) - Math.max(0, Math.round(loi.demiseCost ?? 0)) >= agentCashReserve(s);
 }
 
 /**
@@ -2891,12 +2936,10 @@ function tenantCounterOutcome(
   const view: LOI = { ...loi, termM: askTerm };
   const neAsk = netEffectivePsf(view, askRent, askTi, askFree, askBump);
   const f = neAsk / Math.max(1, market);
-  const vacHere = (s.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
-  const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
-  const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
+  const tight = vacancyTight(s, loi.use);
   const fStar = tenantIndifferenceMult(s, loi, askTerm, tight);
   const W = 0.085;
-  const pAccept = Math.max(0.04, Math.min(0.95, 1 / (1 + Math.exp((f - fStar) / W))));
+  const pAccept = Math.max(0.005, Math.min(0.95, 1 / (1 + Math.exp((f - fStar) / W))));
   loi.countered = true;
   loi.askedRentPsf = askRent;
   loi.askedTiPsf = askTi;
@@ -3440,6 +3483,13 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   const cost = loiSigningCost(l, feeRate);
   s.cash -= cost;
   logBooks(s, "leasing", cost);
+  // Demising walls are construction. $9/sf of the smaller piece × costIdx,
+  // booked as capex so conserve can see it.
+  const demise = Math.max(0, Math.round(l.demiseCost ?? 0));
+  if (demise > 0) {
+    s.cash -= demise;
+    logBooks(s, "capex", demise);
+  }
   if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     // THE SPACE NEXT DOOR. The old floor keeps its rent and the new floor takes
     // today's, so what the row shows afterwards is the blend — which is what a
@@ -3644,7 +3694,7 @@ export function respondLOI(
   // term instead of the 4%/2% your own leasing department costs.
   const fee = exclusiveFeeRate(h);
   const sign = (l: LOI): string | null => {
-    const cost = loiSigningCost(l, fee);
+    const cost = loiSigningCost(l, fee) + Math.max(0, Math.round(l.demiseCost ?? 0));
     if (next.cash < cost) {
       const short = Math.ceil((cost - next.cash) / 1000) * 1000;
       const avail = locAvailable(next, parcels);
@@ -3769,9 +3819,7 @@ export function respondLOI(
     const years = Math.max(1, askTerm / 12);
     const neAsk = netEffectivePsf(termView, askRent, askTi, askFree, askBump);
     const f = neAsk / Math.max(1, market);                   // aggression vs the market
-    const vacHere = (next.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
-    const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
-    const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
+    const tight = vacancyTight(next, loi.use);
     // BEST AND FINAL. Saying the number is firm is itself information: it
     // converts some hagglers, because a credible take-it-or-leave-it within
     // reach is easier to sign than to shop — and it hardens the rest, because
@@ -3797,7 +3845,7 @@ export function respondLOI(
     // is the losing ask it should be.
     const fStar = tenantIndifferenceMult(next, loi, askTerm, tight);
     const W = 0.085;
-    const pAccept = Math.max(0.04, Math.min(0.95,
+    const pAccept = Math.max(0.005, Math.min(0.95,
       1 / (1 + Math.exp((f - fStar) / W)) + (bestFinal ? 0.05 : 0)));
     loi.askedRentPsf = askRent;
     loi.askedTiPsf = askTi;

@@ -240,6 +240,10 @@ export interface LOI {
   referred?: boolean;
   /** Vacant block this letter is written on. Absent on old letters. */
   blockId?: number;
+  /** Feet cut off the matched block to fit this letter. Zero if it takes the block whole. */
+  demiseSf?: number;
+  /** Demising capex at signing — DEMISE_PSF × demiseSf × costIdx. Booked as capex. */
+  demiseCost?: number;
   /**
    * THE TERM THEY CAME IN ASKING FOR, once the term itself is negotiable.
    * `termM` doubled as both "what they want" and "what is on the paper", which

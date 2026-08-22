@@ -335,6 +335,46 @@ export function blockIdForSf(
   return (cover[0] ?? blocks[0]).id;
 }
 
+/**
+ * Demising cost, $/sf of the smaller resulting space, before cost inflation.
+ * Anchor $5–15/sf (partition, corridor, split HVAC/metering). $9 is the
+ * middle of that band — construction work, multiplies econ.costIdx.
+ */
+export const DEMISE_PSF = 9;
+
+/** Guards on the size/shape rent term — not policy. Rails watch these. */
+export const BLOCK_PREM_GUARD = 0.12;
+export const BLOCK_DISC_GUARD = 0.15;
+
+export interface BlockMatch {
+  block: SpaceBlock;
+  sf: number;
+  demiseSf: number;
+}
+
+/**
+ * Smallest vacant block that can take `want`. Multi-floor requirements
+ * (larger than one plate) match only `floors` blocks. A cut leaves a remnant;
+ * demiseSf is the smaller of the two resulting pieces.
+ */
+export function matchBlock(
+  rec: ParcelRecord, h: Holding, use: BuiltClass, want: number,
+): BlockMatch | null {
+  if (!(want > 0)) return null;
+  const stack = stackForUse(rec, use);
+  const blocks = blocksOf(rec, h).filter((b) => b.use === use && b.sf + 0.5 >= want);
+  if (!blocks.length) return null;
+  const multi = stack ? want > stack.plateSf * 1.05 : false;
+  const fit = (multi ? blocks.filter((b) => b.kind === "floors") : blocks)
+    .sort((a, b) => a.sf - b.sf || a.floorLo - b.floorLo);
+  const block = fit[0];
+  if (!block) return null;
+  const sf = Math.min(Math.round(want), Math.round(block.sf));
+  const leftover = Math.max(0, Math.round(block.sf) - sf);
+  const demiseSf = leftover >= 1 ? Math.min(sf, leftover) : 0;
+  return { block, sf, demiseSf };
+}
+
 /** Place a tenant on the lowest floors of a stack that still have room. */
 export function placeOnStack(
   rec: ParcelRecord, tenants: Tenant[], t: Tenant, stack: PlateStack,

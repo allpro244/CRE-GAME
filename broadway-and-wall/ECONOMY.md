@@ -155,13 +155,24 @@ vacOverM[k]  months vacancy has sat >1.5pp over natural — the capitulation clo
 ASKING       rentIdx: shortage pushes it up immediately; cuts ramp in only as
              min(1, vacOverM/6) — the landlord stares at the empty floor for
              half a year before touching the face rate.
-EFFECTIVE    effRentIdx = rentIdx · (1 − 0.14·concIdx)
+EFFECTIVE    effRentIdx = rentIdx · (1 − CONC_DEPTH·concIdx), CONC_DEPTH = 0.30
 ```
 
-**The consumer rule, stated once:** everything that *prices a deal or values
-an asset* reads **effective** (LOI draws, NOI, appraisals, DSCR sizing, dev
-pro-formas, rival underwriting). Everything that *reports the market* reads
-**asking**. A grep-audited checklist of every `rentIdx` read ships with the
+**The consumer rule, stated once:** everything that *values an asset* reads
+**effective** (NOI, appraisals, DSCR sizing, dev pro-formas, rival
+underwriting). Everything that *quotes or reports the market* reads **asking**
+— the parcel card, the letting panel, the arriving letter, the renewal mark
+(`managedRentPsfYr`, which grosses the effective index back to face; see
+`faceGrossUp`). A LOI's FACE rent is a quote and reads asking; what it NETS,
+after the free rent and fit-out the same dial writes, is the effective index —
+that identity is the whole point and `pnpm rent-chart` measures it.
+
+*Corrected 2026-08.* Quotes read `effRentIdx` and the desk then wrote the
+concession package on top, charging the concession twice: measured over four
+playthroughs, buildings quoted 11–13% under the ASKING line the page draws and
+deals struck 18–27% under the EFFECTIVE line that claims to be where deals
+strike. CONC_DEPTH was 0.14 and unmeasured; 0.30 is the deal-weighted fit to
+the package the leasing desk actually writes. A grep-audited checklist of every `rentIdx` read ships with the
 change, plus an invariant asserting `effRentIdx ≤ rentIdx`.
 
 **Player-visible (load-bearing, not polish):** the Economy tab's rent chart
@@ -249,7 +260,7 @@ project after the market it would be a residual *of* demonstrably works.
 | Rivals | Inherit via shared functions; fringe-heavy books run structurally worse | If rival attrition doubles, raise their bid discipline — never soften the market |
 | Lenders | DSCR sees effective NOI → more breaches in gluts (intended) | Haircut *generated* rival-loan LTVs ~5pts; live sizing rules untouched |
 | Note desk | Fringe collateral marks honestly lower; spreads widen | Re-measure the earned-return band |
-| play50 gate | Run LAST: worst >$1M, median $30–150M, bankruptcies possible | Arc levers: RENT_BASE ±5%, concession max 0.14→0.12. The conservation machinery and location curves are **not** arc levers |
+| play50 gate | Run LAST: worst >$1M, median $30–150M, bankruptcies possible | Arc levers: RENT_BASE ±5%, CONC_DEPTH ±0.02 (re-measure with `pnpm rent-chart`). The conservation machinery and location curves are **not** arc levers |
 
 **Implementation order** (each phase ends with the four tests + invariants):
 

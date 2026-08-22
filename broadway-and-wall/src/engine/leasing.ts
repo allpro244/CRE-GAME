@@ -974,7 +974,9 @@ export const TI_ASK: Record<string, [number, number]> = {
 export function concessionPressure(e: GameState["econ"], use: string): number {
   // ONE SOURCE OF TRUTH (ECONOMY.md): the market tick maintains the
   // concession dial (concIdx, chased at 0.25/mo off the vacancy gap and the
-  // phase), the effective rent index is asking x (1 - 0.14 x concIdx), and
+  // phase), the effective rent index is asking x (1 - CONC_DEPTH x concIdx)
+  // where CONC_DEPTH is measured against the package this function's own
+  // output writes (market.ts, and test/rent-chart.mjs measures it), and
   // this function maps the SAME dial onto its historical 0.22..2.1 output
   // range — so the LOI terms, the tour depth, and the Economy tab can never
   // disagree about how much a tenant can extract this month.

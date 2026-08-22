@@ -158,18 +158,28 @@ const rollOf = (g, bbl) => {
     for (let m = 0; m < POST; m++) {
       cg = E.advanceQuarter(cg, cp, bbls, adjacency);
       cg = acceptAll(cg, cp);
-      out.push(cg.econ.rentIdx.office);
+      out.push({ ask: cg.econ.rentIdx.office, eff: cg.econ.effRentIdx?.office ?? cg.econ.rentIdx.office });
     }
     return out;
   })();
   let vacPeak = vac0, rentTrough = rent0, to80 = null, occAfter = occBefore;
-  let worstGap = 0;
+  let worstGap = 0, worstEffGap = 0;
   for (let m = 0; m < POST; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     g = acceptAll(g, parcels);
     vacPeak = Math.max(vacPeak, g.econ.cityVac.office);
     rentTrough = Math.min(rentTrough, g.econ.rentIdx.office);
-    worstGap = Math.max(worstGap, 1 - g.econ.rentIdx.office / Math.max(1, ctlPath[m]));
+    worstGap = Math.max(worstGap, 1 - g.econ.rentIdx.office / Math.max(1, ctlPath[m].ask));
+    // AND THE SAME MEASUREMENT ON THE PRICE DEALS ACTUALLY STRIKE AT. Face
+    // rent is half of a price in this engine and, in a glut, the smaller half:
+    // concessions carry the rest, which is why the effective index moves
+    // further and sooner. Reported beside the face number rather than instead
+    // of it — the clause below still asserts on face, unchanged. Added 2026-08
+    // with the quote/strike fix (engine/value.ts faceGrossUp, market.ts
+    // CONC_DEPTH); before it, face carried 78-90% of the whole adjustment,
+    // against a pre-registered <=35%.
+    worstEffGap = Math.max(worstEffGap, 1 - (g.econ.effRentIdx?.office ?? g.econ.rentIdx.office)
+      / Math.max(1, ctlPath[m].eff));
     if (to80 === null && rollOf(g, site.bbl).sf >= 0.8 * addSf) to80 = m + 1;
     // the WOUND is the trough, not the end state — over a ten-year window the
     // market is allowed (expected, even) to heal; it is not allowed to never bleed
@@ -226,6 +236,8 @@ const rollOf = (g, bbl) => {
      `citywide office vacancy ${(vac0 * 100).toFixed(1)}% -> peak ${(vacPeak * 100).toFixed(1)}%   (need +5pp)`,
      `office rents vs the same city WITHOUT the building: ${(rentCut * 100).toFixed(1)}% below the counterfactual at the worst   (need >= 10%)`,
      `   (nominal path ${rent0.toFixed(0)} -> trough ${rentTrough.toFixed(0)}; rents carry a wage-driven trend now, so the counterfactual is the only honest measure)`,
+     `effective rents vs the same counterfactual: ${(worstEffGap * 100).toFixed(1)}% below at the worst   (reported, not gated — face carries the clause)`,
+     `   face's share of the whole adjustment: ${worstEffGap > 0 ? (100 * rentCut / worstEffGap).toFixed(0) : "—"}%   (real gluts: concessions move first and further)`,
      `new building to 80% let: ${to80 === null ? "never, inside the " + POST + "-month window" : to80 + " months"}   (need >= 24 and inside the window: years, not forever)`,
      `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> trough ${(occAfter * 100).toFixed(1)}%`,
      `   = ${implied.toFixed(3)} x the vacancy move. NOT A CLAUSE — it is the vacancy line above through an affine wire; see the note in this file.`]);

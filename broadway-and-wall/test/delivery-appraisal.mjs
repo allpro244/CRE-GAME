@@ -15,12 +15,24 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 const g = E.firstListings(E.newGame(88117, parcels), parcels, bbls);
 const owned = new Set(Object.keys(g.holdings ?? {}));
-const rec = bbls.map((b) => parcels[b]).filter((r) => r?.class === "office" && r.bldgArea > 80_000 && !owned.has(r.bbl))
-  .sort((a, b) => b.bldgArea - a.bldgArea)[0];
-if (!rec) {
-  console.error("no large office parcel");
+const site = bbls.map((b) => parcels[b])
+  .filter((r) => r && !owned.has(r.bbl) && (r.lotArea ?? 0) > 12_000)
+  .sort((a, b) => b.lotArea - a.lotArea)[0];
+if (!site) {
+  console.error("no large lot");
   process.exit(1);
 }
+// THE BUILDING THAT TRIPPED THE LINE. The plat's biggest office is ~72k sf.
+// The fault was a 400k sf empty tower: TI-on-gross ate 15–25% extra fill
+// and the 0.92 floor printed below residual dirt. Build that building on
+// a real lot so the harness is the case, not the stock that happens to ship.
+const rec = {
+  ...site,
+  class: "office",
+  bldgArea: 400_000,
+  floors: 32,
+  mix: undefined,
+};
 
 let bad = 0;
 const check = (ok, msg) => {

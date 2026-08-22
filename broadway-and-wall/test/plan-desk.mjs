@@ -101,6 +101,22 @@ const takeBook = (g0, parcels, target) => {
   return { g, suites };
 };
 
+/** Empty the gifted book so darkMs can age. Occupied buildings reset the
+ *  clock as they fill; hold-out is a time-on-market rule and needs sitting
+ *  space to measure. */
+const emptyBook = (g0) => {
+  const g = structuredClone(g0);
+  for (const h of Object.values(g.holdings ?? {})) {
+    h.tenants = [];
+    h.occ = 0;
+    h.darkMs = 0;
+    delete h.blocks;
+    h.makeReady = [];
+  }
+  g.lois = [];
+  return g;
+};
+
 const baseRow = (over = {}) => ({
   quotePct: 1.08,
   maxTiPsf: 80,
@@ -238,10 +254,11 @@ const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN
   const cred = E.clearAgainstPlan(g, letter({ credit: 0 }), creditPlan, { rec, h });
   ok("credit below sheet declines", cred.verdict === "decline", cred.verdict);
 
+  const quotePsf = E.planQuotePsf(g, letter(), baseRow(), rec, h);
   const fat = E.clearAgainstPlan(g, letter({
-    rentPsf: market * 1.12, tiPsf: 200, freeM: 18,
+    rentPsf: quotePsf + 1, tiPsf: 200, freeM: 18,
   }), plan, { rec, h });
-  ok("off-package at quote dockets", fat.verdict === "docket", fat.verdict);
+  ok("off-package at quote dockets", fat.verdict === "docket", `${fat.verdict} quote=${quotePsf.toFixed(2)}`);
 
   const fair = E.clearAgainstPlan(g, letter({ rentPsf: market * 1.10, tiPsf: 10, freeM: 1 }), plan, { rec, h });
   ok("at-quote in-package signs", fair.verdict === "sign", fair.verdict);
@@ -260,6 +277,16 @@ const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN
   const player = E.playerEquivalentPlan();
   ok("player-equivalent quote is above par",
     player.sheet.office.quotePct > 1.0, `quotePct=${player.sheet.office.quotePct}`);
+
+  // Hold-out schedule reads darkMs. Do not add a second clock.
+  const row = baseRow({ quotePct: 1.08, holdM: 18, stepPct: 0.02, floorPct: 0.95 });
+  const darkAt = (ms) => {
+    const probe = { ...h, darkMs: ms };
+    return E.effectiveQuotePct(g, letter(), row, rec, probe);
+  };
+  ok("hold-out holds the ask before holdM", Math.abs(darkAt(12) - 1.08) < 1e-9, `got ${darkAt(12)}`);
+  ok("hold-out steps 2pp per quarter after holdM", Math.abs(darkAt(24) - 1.04) < 1e-9, `got ${darkAt(24)}`);
+  ok("hold-out never steps below floorPct", Math.abs(darkAt(90) - 0.95) < 1e-9, `got ${darkAt(90)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,8 +308,9 @@ for (const seed of SEEDS) {
   }
   const low = runPlan(book.g, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.00, holdM: 0, floorPct: 0.90 })));
   const high = runPlan(book.g, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.12, holdM: 0, floorPct: 0.95 })));
-  const patient = runPlan(book.g, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.08, holdM: 18, stepPct: 0.02, floorPct: 0.95 })));
-  const now = runPlan(book.g, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.08, holdM: 0, stepPct: 0.02, floorPct: 0.95 })));
+  const vacant = emptyBook(book.g);
+  const patient = runPlan(vacant, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.08, holdM: 18, stepPct: 0.02, floorPct: 0.95 })));
+  const now = runPlan(vacant, parcels, adjacency, sheetOf(baseRow({ quotePct: 1.08, holdM: 0, stepPct: 0.02, floorPct: 0.95 })));
   quoteLow.push(low);
   quoteHigh.push(high);
   holdPatient.push(patient);

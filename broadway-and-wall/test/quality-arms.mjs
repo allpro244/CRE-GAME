@@ -75,8 +75,14 @@ for (const loi of g.lois ?? []) {
   tot++;
   if (loi.net) nnn++;
 }
+const mktOpex = E.managedOpexPsf("office", g.econ, false, 0);
+const instOpex = E.managedOpexPsf("office", g.econ, false, 1);
+const recovOpex = E.managedOpexPsf("office", g.econ, false, E.recoverableService(1));
+console.log("\nInstitutional service — recoverable vs spent (office, generated city)");
+console.log(`  market opex $${mktOpex.toFixed(2)}/sf`);
+console.log(`  institutional opex $${instOpex.toFixed(2)}/sf  (+${((instOpex / mktOpex - 1) * 100).toFixed(1)}%)`);
+console.log(`  NNN recovers $${recovOpex.toFixed(2)}/sf  (landlord eats $${(instOpex - recovOpex).toFixed(2)}/sf)`);
+
 console.log("\nOffice recovery clauses on the opening tape");
 console.log(`  nnn ${nnn} of ${tot || "none yet"}  (${tot ? ((nnn / tot) * 100).toFixed(0) : 0}%)`);
-console.log("If ~80% of office LOIs are net, above-market service is reimbursed");
-console.log("and the landlord keeps the occupancy / rent benefit. The fix is an");
-console.log("unrecovered component, not a smaller OPS_SERVICE multiplier.\n");
+console.log("Above-market service is an unrecovered amenity. OPS_SERVICE untouched.\n");

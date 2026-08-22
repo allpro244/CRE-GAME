@@ -99,6 +99,18 @@ Worth one probe before step 3: is the tightness real scarcity (jobs outrunning
 floors) or a pipeline that never delivers? `sitePencil`, `structTight` and the
 `supplyShut` branch in `market.ts` already exist to answer it.
 
+**Measurement recorded (2026-08, generated city, 2 seeds × 12 years,
+`pnpm vac-rent`):** the soft rail (−0.008/mo) is **not** load-bearing on
+office (6% of soft months) or retail (0%). Multifamily binds more (21%) and
+is the class that already deepens. Office vacTerm ≈ EMA ≈ clamped press
+(−0.246 / −0.237 / −0.235 %/mo) — the 8-month EMA is not averaging the
+spike away. Deep-bucket nominal (−1.82%/yr) is *weaker* than all-soft
+(−3.38%/yr): that is composition (deep months sit late in an episode, after
+`capitulation` has decayed), not the rail. Do **not** widen or delete the
+clamp on this evidence; a change that makes the nominal cut look dramatic
+while breaking the duration path would be the wrong fix. Re-run at 6×50
+before touching `RENT_PRESS_TAU` or the CPI mute.
+
 ## Order of work
 
 0. Port the probes to `test/vac-rent-response.mjs` (`pnpm vac-rent`): the

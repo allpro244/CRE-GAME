@@ -3804,7 +3804,7 @@ export function tickEcon(s: GameState) {
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);
-    const clampBound = pressEma < -0.008 + 1e-9 || pressEma > 0.0075 - 1e-9;
+    const clampBound = pressEma <= -0.008 + 1e-12;
     // Phase / job / sector sentiment must not LIFT asking while soft, on/near
     // the frictional rail, or once rent is already near earned pay. Soft:
     // empty floors on the shelf. Rail-bound: availability is saturated (same

@@ -100,6 +100,12 @@ re-bought — and delete the explicit rent multiplier, leaving the arrival facto
 alone. If it turns out they are not the same cheque (systems has no rent
 multiplier at all), say so and close it.
 
+**Decision recorded (2026-08, `pnpm quality-arms` on a generated city):**
+same cheque twice. 1940 office, spec-as-is: condition lift 1.20× baseline,
+explicit lobby×facade 1.12×, both 1.35× (+12.3% on top of the condition
+channel). Explicit multipliers deleted from `managedRentPsfYr`. Arrival
+factor in absorption.ts left alone. Systems never had a rent multiplier.
+
 ### 3. Institutional service looks free, and under net leases it may literally be
 
 The arm costs 12% more opex and returns +2pp occupancy and +$9M of NOI, i.e. it
@@ -114,6 +120,11 @@ fix is not a smaller `opex` multiplier in `OPS_SERVICE` — it is that a service
 level above market should have an unrecovered component (the part a landlord
 spends to keep a building better than the lease requires, which is precisely
 what is not billable). Model that, and let the arm land where it lands.
+
+**Decision recorded (2026-08):** `recoveryFor` now bills `recoverableService`
+— `min(service, 0)`. Lean recovers lean. Market and institutional recover
+the market controllable bill. The extra 12% on institutional service is an
+unrecovered amenity. `OPS_SERVICE` multipliers untouched.
 
 ## Do not
 

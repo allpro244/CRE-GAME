@@ -23,15 +23,33 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 function buySome(seed, n = 6, cash = 250_000_000) {
   const out = [];
   let g = E.firstListings(E.newGame(seed, parcels, cash), parcels, bbls);
+  const errs = [];
   for (const L of g.listings ?? []) {
     if (out.length >= n) break;
     const rec = E.resolveRec(parcels, g, L.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    if (L.ask < 3_000_000 || L.ask > 40_000_000) continue;
+    if (L.ask < 2_000_000 || L.ask > 80_000_000) continue;
     const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
-    if (r.err) continue;
+    if (r.err) { errs.push(r.err); continue; }
     g = r.s;
     out.push(L.bbl);
+  }
+  // Closing a listing can refuse for reasons that are not about sizing.
+  // Stamp unencumbered deeds so the quote path is still measured.
+  if (out.length === 0) {
+    for (const bbl of bbls) {
+      if (out.length >= n) break;
+      const rec = parcels[bbl];
+      if (!rec || rec.class === "land" || !rec.bldgArea || rec.bldgArea < 20_000) continue;
+      g.holdings[bbl] = {
+        bbl, boughtM: 0, costBasis: 8_000_000, loan: null,
+        condition: rec.yearBuilt < 1960 ? "worn" : "average",
+        condIdx: rec.yearBuilt < 1960 ? 0.45 : 0.70,
+        tenants: [], cfHistory: [],
+      };
+      out.push(bbl);
+    }
+    if (errs[0]) console.log(`(executePurchase refused: ${errs[0]} — stamped ${out.length} deeds to quote)\n`);
   }
   return { g, bbls: out };
 }

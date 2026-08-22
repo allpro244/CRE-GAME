@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Approach, BuiltClass, Condition, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
+import type { Approach, BuiltClass, Condition, Credit, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
@@ -2033,7 +2033,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // narrow middle option for renewals. A listing exclusive works the phones
   // and does not sign. "Take leasing back" means the principal owns every
   // letter that is not on the renewal desk.
-  if (s.agent) runAgent(s, parcels);
+  if (ensureLeasingPlan(s)) {
+    runPlanDesk(s, parcels);
+  } else if (s.agent) runAgent(s, parcels);
   else {
     runDelegatedLeasing(s, parcels);
     if (s.renewalMgmt) runRenewalDesk(s, parcels);
@@ -2875,6 +2877,365 @@ export function agentCounterTerms(
 }
 
 /**
+ * PLAYER-EQUIVALENT PLAN — the sheet a patient principal would post.
+ *
+ * quotePct 1.08 is a hold-above-par ask (the old AGENT_FLOOR_MAX = 1.00
+ * forbade this). holdM 18 then step 2pp/quarter down to 0.95 is time-on-market
+ * instead of a first-letter grab. Authority is unbounded so the Phase 0
+ * residual is fees, not a dollar clamp. Package matches typical inbound
+ * letters so off-package is the exception, not the rule.
+ */
+export const PLAYER_EQUIVALENT_ROW: PlanRow = {
+  quotePct: 1.08,
+  maxTiPsf: 80,
+  maxFreeM: 9,
+  minBumpPct: DEFAULT_BUMP_PCT,
+  termLoM: 24,
+  termHiM: 180,
+  minCredit: 0,
+  holdM: 18,
+  stepPct: 0.02,
+  floorPct: 0.95,
+};
+
+export function playerEquivalentPlan(): LeasingPlan {
+  const row = { ...PLAYER_EQUIVALENT_ROW };
+  return {
+    sheet: { office: row, retail: row, industrial: row },
+    authority: 1e15,
+  };
+}
+
+const COMMERCIAL_PLAN_USES: BuiltClass[] = ["office", "retail", "industrial"];
+
+/** Starter sheet from the legacy mandate dials. Phase 5 deletes the dials. */
+export function synthesizeFromDials(s: GameState): LeasingPlan {
+  const floor = agentFloor(s);
+  const tiMonths = agentMaxTiMonths(s);
+  // Months-of-rent cap → $/sf at a typical commercial face. Generous on
+  // purpose: a migrated save should not docket every inbound letter.
+  const maxTiPsf = Math.round(tiMonths * 80 / 12);
+  const row: PlanRow = {
+    quotePct: floor,
+    maxTiPsf: Math.max(20, maxTiPsf),
+    maxFreeM: Math.min(12, Math.max(3, Math.round(tiMonths * 0.7))),
+    minBumpPct: DEFAULT_BUMP_PCT,
+    termLoM: 36,
+    termHiM: 180,
+    minCredit: agentMinCredit(s),
+    holdM: 0,
+    stepPct: 0.02,
+    floorPct: floor,
+  };
+  const sheet: LeasingPlan["sheet"] = {};
+  for (const u of COMMERCIAL_PLAN_USES) sheet[u] = { ...row };
+  return { sheet, authority: 1e15 };
+}
+
+/**
+ * Attach a plan when a desk holds the pen and the save has none.
+ * No desk → no plan; letters land on the player as today.
+ */
+export function ensureLeasingPlan(s: GameState): LeasingPlan | undefined {
+  if (s.leasingPlan) return s.leasingPlan;
+  if (!deskHoldsPen(s)) return undefined;
+  s.leasingPlan = synthesizeFromDials(s);
+  return s.leasingPlan;
+}
+
+export function planRowFor(plan: LeasingPlan, loi: LOI): PlanRow | undefined {
+  const byBbl = plan.sheet.byBbl?.[loi.bbl];
+  if (byBbl) return byBbl;
+  const use = loi.use ?? "office";
+  return plan.sheet[use] ?? plan.sheet.office;
+}
+
+/**
+ * Posted ask as a share of the letter's market, after hold-out and band.
+ * Reads `Holding.darkMs` — do not add a second vacancy clock.
+ */
+export function effectiveQuotePct(
+  _s: GameState, loi: LOI, row: PlanRow, rec: ParcelRecord, h: Holding,
+): number {
+  const dark = h.darkMs ?? 0;
+  let pct = row.quotePct;
+  if (dark > row.holdM && row.stepPct > 0) {
+    const steps = Math.floor((dark - row.holdM) / 3);
+    pct = Math.max(row.floorPct, row.quotePct - steps * row.stepPct);
+  }
+  const blocks = h.blocks ?? blocksOf(rec, h);
+  const block = loi.blockId != null ? blocks.find((b) => b.id === loi.blockId) : undefined;
+  if (block?.kind === "floors" && row.bandAdj?.fullFloor) pct += row.bandAdj.fullFloor;
+  else if (block?.kind === "remnant" && row.bandAdj?.remnant) pct += row.bandAdj.remnant;
+  return pct;
+}
+
+export function planQuotePsf(
+  s: GameState, loi: LOI, row: PlanRow, rec: ParcelRecord, h: Holding,
+): number {
+  return loiMarket(s, rec, h, loi) * effectiveQuotePct(s, loi, row, rec, h);
+}
+
+function planDealValue(loi: LOI, quotePsf: number): number {
+  return quotePsf * loi.sf * (Math.max(12, loi.termM) / 12);
+}
+
+function holdBlocksConflict(
+  s: GameState, loi: LOI, row: PlanRow, rec: ParcelRecord, h: Holding,
+): boolean {
+  if (!row.holdBlocks?.length) return false;
+  const blocks = h.blocks ?? blocksOf(rec, h);
+  const block = loi.blockId != null ? blocks.find((b) => b.id === loi.blockId) : undefined;
+  if (!block) return false;
+  return row.holdBlocks.some((hold) =>
+    block.floorLo <= hold.floorHi
+    && block.floorHi >= hold.floorLo
+    && (hold.untilM == null || s.month < hold.untilM));
+}
+
+export type PlanClear = "sign" | "docket" | "decline";
+
+/**
+ * ONE CLEARING ENGINE. Desk and principal face the same gates. Does not
+ * mutate the letter — the caller signs, dockets, or declines.
+ *
+ * pAccept stays on `rng(s)` (world stream) inside `tenantCounterOutcome`,
+ * same as the player path in `respondLOI`. Do not switch that draw to
+ * `"leasing"` — it would drop a world roll and re-roll the century.
+ */
+export function clearAgainstPlan(
+  s: GameState,
+  loi: LOI,
+  plan: LeasingPlan,
+  ctx: { rec: ParcelRecord; h: Holding; ignoreTour?: boolean; feeRate?: number },
+): { verdict: PlanClear; why?: string; quotePsf: number; row?: PlanRow } {
+  const { rec, h } = ctx;
+  const row = planRowFor(plan, loi);
+  if (!row) return { verdict: "decline", why: "no sheet for this use", quotePsf: 0 };
+
+  const quotePsf = planQuotePsf(s, loi, row, rec, h);
+  const feeRate = ctx.feeRate ?? AGENT_FEE;
+  const atQuote = loi.rentPsf + 0.005 >= quotePsf;
+  const offPackage = (loi.tiPsf ?? 0) > row.maxTiPsf + 0.05
+    || (loi.freeM ?? 0) > row.maxFreeM + 0.05;
+
+  if (loi.kind === "expansion" && !isMustTake(loi, rec)) {
+    return { verdict: "docket", why: "an incumbent expansion changes how you program the building", quotePsf, row };
+  }
+  if (
+    !ctx.ignoreTour
+    && loi.tourId !== undefined
+    && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
+  ) {
+    return { verdict: "docket", why: "multiple tenants are competing for the same space; you choose the winner", quotePsf, row };
+  }
+  if (holdBlocksConflict(s, loi, row, rec, h)) {
+    return { verdict: "docket", why: "the letter breaks a contiguity hold on the sheet", quotePsf, row };
+  }
+  if (loi.termM < row.termLoM - 0.5 || loi.termM > row.termHiM + 0.5) {
+    return { verdict: "docket", why: `term ${loi.termM} mo is outside the sheet's ${row.termLoM}–${row.termHiM} band`, quotePsf, row };
+  }
+  if (overDeskAuthority(s, loi)) {
+    return { verdict: "docket", why: authorityWhy(s, loi), quotePsf, row };
+  }
+  if (planDealValue(loi, quotePsf) > plan.authority + 0.5) {
+    return { verdict: "docket", why: `lease value is over the ${money(plan.authority)} authority on the sheet`, quotePsf, row };
+  }
+  if (loi.credit < row.minCredit) {
+    return { verdict: "decline", why: `credit below the sheet's ${CREDIT_LABEL[row.minCredit]} minimum`, quotePsf, row };
+  }
+  if (offPackage && atQuote) {
+    return {
+      verdict: "docket",
+      why: "clears the sheet's ask but wants more TI / free months than the row allows",
+      quotePsf, row,
+    };
+  }
+  if (!agentCanFund(s, { ...loi, rentPsf: Math.max(loi.rentPsf, quotePsf), tiPsf: Math.min(loi.tiPsf ?? 0, row.maxTiPsf) }, feeRate)) {
+    return {
+      verdict: "docket",
+      why: `signing would leave less than the ${money(agentCashReserve(s))} treasury reserve`,
+      quotePsf, row,
+    };
+  }
+  // Workable — already at the ask, or the desk will counter to it through
+  // the same indifference / pAccept path the principal uses.
+  return { verdict: "sign", quotePsf, row };
+}
+
+function planCounterTerms(
+  loi: LOI, row: PlanRow, quotePsf: number,
+): { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; termM: number } {
+  return {
+    rentPsf: +Math.max(1, quotePsf).toFixed(2),
+    tiPsf: Math.min(loi.tiPsf ?? 0, row.maxTiPsf),
+    freeM: Math.min(loi.freeM ?? 0, row.maxFreeM),
+    bumpPct: Math.max(bumpOf(loi), row.minBumpPct),
+    termM: loi.termM,
+  };
+}
+
+function planDocketLoi(
+  s: GameState, loi: LOI, rec: { address?: string }, why: string, who: string,
+) {
+  loi.docketReason = why;
+  agentReferLoi(s, loi, rec, why, who);
+}
+
+function planDeclineLoi(
+  s: GameState, loi: LOI, rec: { address?: string }, who: string,
+) {
+  bumpDeskMonth(s, "passed");
+  s.lois = s.lois.filter((l) => l.id !== loi.id);
+  s.news.unshift({
+    q: s.month, kind: "info",
+    text: `${who} declined ${loi.name} at ${rec.address} — the letter cannot reach the sheet.`,
+  });
+}
+
+function planTrySign(
+  s: GameState, rec: ParcelRecord, h: Holding, loi: LOI, feeRate: number, who: string,
+): boolean {
+  if (!agentCanFund(s, loi, feeRate)) {
+    planDocketLoi(s, loi, rec,
+      `signing needs ${money(loiSigningCost(loi, feeRate))} against the ${money(agentCashReserve(s))} treasury reserve`,
+      who);
+    return false;
+  }
+  delete (s as GameState & { _signFailed?: string })._signFailed;
+  const before = h.tenants.length;
+  signLoi(s, rec, h, loi, feeRate);
+  const failed = (s as GameState & { _signFailed?: string })._signFailed
+    || (loi.kind === "new" && h.tenants.length <= before);
+  delete (s as GameState & { _signFailed?: string })._signFailed;
+  if (failed) {
+    planDocketLoi(s, loi, rec, "the desk tried to sign and could not demise the space", who);
+    return false;
+  }
+  bumpDeskMonth(s, "signed");
+  s.lois = s.lois.filter((l) => l.id !== loi.id);
+  return true;
+}
+
+/**
+ * Counter to the sheet through the same tenant reaction the player uses,
+ * then sign / docket / decline from the outcome. No 1.14× par cap.
+ */
+function executePlanLetter(
+  s: GameState, rec: ParcelRecord, h: Holding, loi: LOI,
+  plan: LeasingPlan, feeRate: number, who: string,
+  ignoreTour?: boolean,
+): void {
+  const cleared = clearAgainstPlan(s, loi, plan, { rec, h, feeRate, ignoreTour });
+  if (cleared.verdict === "decline") {
+    planDeclineLoi(s, loi, rec, who);
+    return;
+  }
+  if (cleared.verdict === "docket" || !cleared.row) {
+    planDocketLoi(s, loi, rec, cleared.why ?? "the sheet left this for you", who);
+    return;
+  }
+  const row = cleared.row;
+  const quotePsf = cleared.quotePsf;
+  if (loi.rentPsf + 0.005 >= quotePsf) {
+    planTrySign(s, rec, h, loi, feeRate, who);
+    return;
+  }
+  const terms = planCounterTerms(loi, row, quotePsf);
+  bumpDeskMonth(s, "countered");
+  const outcome = tenantCounterOutcome(s, rec, h, loi, terms);
+  if (outcome === "took") {
+    planTrySign(s, rec, h, loi, feeRate, who);
+    if (!s.lois.some((l) => l.id === loi.id)) {
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `${who} countered ${loi.name} at ${rec.address} to the sheet ($${loi.rentPsf.toFixed(2)}/sf) and they took it.`,
+      });
+    }
+    return;
+  }
+  if (outcome === "walked") {
+    bumpDeskMonth(s, "walked");
+    s.lois = s.lois.filter((l) => l.id !== loi.id);
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${who} held the sheet at ${rec.address} and ${loi.name} walked.`,
+    });
+    return;
+  }
+  // Tenant's final: take it at or above the walk-away; otherwise it cannot
+  // reach the sheet. Docketing every counter-back would hand the book back
+  // to the principal and recreate the old referral desk.
+  const market = loiMarket(s, rec, h, loi);
+  const score = loiMandateScore(loi, market);
+  if (score + 0.005 >= row.floorPct && agentCanFund(s, loi, feeRate)) {
+    if (planTrySign(s, rec, h, loi, feeRate, who)) {
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `${who} took ${loi.name}'s final at ${rec.address}: $${loi.rentPsf.toFixed(2)}/sf `
+          + `(${(score * 100).toFixed(0)}% of market) — inside the sheet's floor.`,
+      });
+    }
+    return;
+  }
+  planDeclineLoi(s, loi, rec, who);
+}
+
+function planCoverOf(
+  s: GameState, bbl: string, loi: LOI, onlyDelegated: boolean,
+): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
+  if (!onlyDelegated && s.agent) return { kind: "agent", who: "Your agent" };
+  const c = deskCoverage(s, bbl);
+  if (c) return c;
+  if (s.renewalMgmt && loi.kind === "renewal") return { kind: "exclusive", who: "Management" };
+  return null;
+}
+
+/**
+ * Execute the posted plan on every letter a desk covers. Multi-party tours
+ * docket as a group — the principal picks. `runRenewalDesk` folds in via
+ * `planCoverOf` (renewal management is a cover, not a second engine).
+ */
+function runPlanDesk(
+  s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
+) {
+  const plan = s.leasingPlan;
+  if (!plan) return;
+  const onlyDelegated = !!opts?.onlyDelegated;
+
+  const tourIds = [...new Set(
+    s.lois.filter((l) => !l.referred && l.tourId !== undefined).map((l) => l.tourId!),
+  )];
+  for (const tid of tourIds) {
+    const party = s.lois.filter((l) => l.tourId === tid && !l.referred);
+    if (party.length <= 1) continue;
+    const cover = planCoverOf(s, party[0].bbl, party[0], onlyDelegated);
+    if (!cover) continue;
+    for (const l of party) {
+      const r = resolveRec(parcels, s, l.bbl);
+      if (r) planDocketLoi(s, l, r, "multiple tenants are competing for the same space; you choose the winner", cover.who);
+    }
+  }
+
+  for (const loi of [...s.lois]) {
+    if (loi.referred) continue;
+    if (
+      loi.tourId !== undefined
+      && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
+    ) continue;
+    const cover = planCoverOf(s, loi.bbl, loi, onlyDelegated);
+    if (!cover) continue;
+    const h = s.holdings[loi.bbl];
+    const rec = resolveRec(parcels, s, loi.bbl);
+    if (!h || !rec) continue;
+    const feeRate = cover.kind === "exclusive" && loi.kind === "renewal"
+      ? RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE
+      : deskFee(cover.kind, loi);
+    executePlanLetter(s, rec, h, loi, plan, feeRate, cover.who);
+  }
+}
+
+/**
  * Who holds the pen on this deed.
  *
  * Three covers, one model:
@@ -3110,6 +3471,10 @@ function agentReferLoi(
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
 ) {
+  if (ensureLeasingPlan(s)) {
+    runPlanDesk(s, parcels, opts);
+    return;
+  }
   const onlyDelegated = !!opts?.onlyDelegated;
   const coverOf = (bbl: string) => {
     if (!onlyDelegated) return { kind: "agent" as const, who: "Your agent" };
@@ -3318,6 +3683,10 @@ function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
  * the pile.
  */
 export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
+  if (ensureLeasingPlan(s)) {
+    runPlanDesk(s, parcels);
+    return;
+  }
   if (s.agent) runLeasingAgent(s, parcels);
   else {
     runDelegatedLeasing(s, parcels);

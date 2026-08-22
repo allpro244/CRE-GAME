@@ -2,6 +2,7 @@
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { GameState } from "./types";
 import { clearStyleOverrides, ensurePeople } from "./people";
+import { ensureLeasingPlan } from "./leasing";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -155,6 +156,11 @@ export function migrateSaveState(state: GameState): GameState {
   // and Holding.blocks are optional. Old saves stamp lazily on first
   // blocksOf / assignTenantFloors — largest tenant, lowest floor, stable by
   // index, no RNG. Do not bump SAVE_VERSION for this.
+  // Leasing plan (Phase 3): a save that already has a desk and the old
+  // mandate dials gets a starter sheet. Dials stay on the save until Phase 5.
+  if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
+    ensureLeasingPlan(state);
+  }
   // Older campaigns bump forward once shape migrations have run — EXCEPT
   // across a break the migration cannot repair. This is the "future hard
   // break" the note above anticipated: no rearrangement of the save's fields

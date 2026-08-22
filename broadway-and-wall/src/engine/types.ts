@@ -255,6 +255,12 @@ export interface LOI {
   openTermM?: number;
   /** The term the landlord last asked for, for the final-conversation grid. */
   askedTermM?: number;
+  /**
+   * Why the plan desk left this letter for the principal (Phase 3).
+   * Phase 4 renders these on the docket. Absent on letters the desk signed,
+   * declined, or never saw.
+   */
+  docketReason?: string;
 }
 
 /**
@@ -2145,7 +2151,40 @@ export interface Beat {
 /** Who is on the other side of the table, and therefore what they want. */
 export type SellerKind = "estate" | "institution" | "partnership" | "developer" | "local" | "lender";
 
+/**
+ * POSTED LEASING PLAN — LEASING_OVERHAUL_PLAN.md Phase 3.
+ *
+ * One sheet the desk and the principal clear against. `quotePct` is an ask
+ * versus model market and is NOT capped at par; the cost of a high sheet is
+ * time-on-market, priced by the same indifference model as a counter.
+ */
+export interface PlanRow {
+  /** Ask versus current model market, e.g. 1.08. No cap at par. */
+  quotePct: number;
+  /** Extra on quotePct by block shape. The market already prices shape via
+   *  `blockShapeMult`; this is the player's further hold. */
+  bandAdj?: { fullFloor?: number; remnant?: number };
+  maxTiPsf: number;
+  maxFreeM: number;
+  minBumpPct: number;
+  termLoM: number;
+  termHiM: number;
+  minCredit: Credit;
+  /** Hold the posted ask for this many vacant months (`Holding.darkMs`),
+   *  then step quote down `stepPct` per quarter, never below `floorPct`. */
+  holdM: number;
+  stepPct: number;
+  floorPct: number;
+  /** Floors kept whole for a block user. A letter that breaks one dockets. */
+  holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
+}
 
+export interface LeasingPlan {
+  /** Class rows; `byBbl` wins when present. */
+  sheet: Partial<Record<BuiltClass, PlanRow>> & { byBbl?: Record<string, PlanRow> };
+  /** Total lease value ($) the desk may sign without the principal. */
+  authority: number;
+}
 
 export interface GameState {
   /** Which desk the firm banks with. See bankOf in lenders.ts. */
@@ -2694,12 +2733,25 @@ export interface GameState {
    */
   renewalMgmt?: boolean;
   /**
+   * THE POSTED LEASING PLAN — see LEASING_OVERHAUL_PLAN.md Phase 3.
+   *
+   * Asking sheet + hold-out + dollar authority. When this is present and a
+   * desk holds the pen, `clearAgainstPlan` is the one clearing engine for
+   * desk and (via the same tenant reaction) the principal. Absent: legacy
+   * mandate dials still run, so older saves keep working until Phase 5
+   * deletes the dials. A save that loads with `agent` / `teamLeasing` /
+   * `renewalMgmt` and no plan gets a starter sheet synthesised from the
+   * dials (`quotePct: agentFloor`).
+   */
+  leasingPlan?: LeasingPlan;
+  /**
    * THE MANDATE YOU GAVE THE DESK — see agentPolicy in leasing.ts.
    *
-   * `agentFloor` is the lowest net-effective share of market they may AUTO-
-   * SIGN. Below that and above `agentPassBelow` they refer the letter back to
-   * you; under the pass line they kill it. Undefined fields keep the defaults
-   * in leasing.ts so older saves stay coherent.
+   * DEPRECATED once `leasingPlan` is set (Phase 3). Phase 5 deletes these
+   * fields. `agentFloor` is the lowest net-effective share of market they may
+   * AUTO-SIGN. Below that and above `agentPassBelow` they refer the letter
+   * back to you; under the pass line they kill it. Undefined fields keep the
+   * defaults in leasing.ts so older saves stay coherent.
    */
   agentFloor?: number;
   /** Auto-pass (kill) letters scoring under this share of market. */

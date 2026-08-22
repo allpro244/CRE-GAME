@@ -304,16 +304,19 @@ const freshStats = () => ({
 const runArm = (g0, parcels, adj, policy) => {
   let g = structuredClone(g0);
   const stats = freshStats();
-  if (policy === "desk") {
+  if (policy === "desk" || policy === "plan") {
     g.agent = true;
     delete g.agentFloor;
     delete g.agentPassBelow;
+    if (policy === "plan") g.leasingPlan = E.playerEquivalentPlan();
+    else delete g.leasingPlan;
     g = structuredClone(g);
     E.workLeasingDesk(g, parcels);
   } else {
     g.agent = false;
     delete g.teamLeasing;
     delete g.renewalMgmt;
+    delete g.leasingPlan;
   }
 
   let prevTenants = snapTenants(g);
@@ -329,7 +332,7 @@ const runArm = (g0, parcels, adj, policy) => {
     if (officeTight > 0.02) stats.tightMonths += 1;
     else stats.softMonths += 1;
 
-    if (policy === "desk") {
+    if (policy === "desk" || policy === "plan") {
       const card = E.deskMonthNow(g);
       if (card) {
         stats.deskSigned += card.signed;
@@ -338,8 +341,8 @@ const runArm = (g0, parcels, adj, policy) => {
         stats.deskWalked += card.walked;
         stats.deskCountered += card.countered;
       }
-      // Referred letters are the principal's remaining job under the current
-      // product. Handle them with the same indifference rule so the desk arm
+      // Referred / docketed letters are the principal's remaining job.
+      // Handle them with the same indifference rule so the desk arm
       // measures "desk + exceptions", not "desk plus three months of rot".
       const referred = (g.lois ?? []).filter((l) => l.referred);
       if (referred.length) {
@@ -396,9 +399,10 @@ const summarise = (label, start, end, stats) => {
   };
 };
 
-console.log("\nDESK VS PATIENT PRINCIPAL — Phase 0, no engine change");
+console.log("\nDESK VS PATIENT PRINCIPAL — Phase 3 re-run (player-equivalent plan)");
 console.log(`  seeds ${SEEDS.join(", ")} · ${HZ} months · target ${TARGET_SUITES} commercial suites`);
-console.log("  desk = default mandate (floor 90%, cap at par)");
+console.log("  desk  = agent + synthesised-from-dials plan (quotePct = agentFloor 0.90)");
+console.log("  plan  = agent + player-equivalent sheet (quote 1.08, holdM 18, no par cap)");
 console.log("  principal = counter every letter to tenantIndifferenceMult");
 console.log("  signed NE% is face after free months and the bump; TI is not on the tenant\n");
 
@@ -413,10 +417,12 @@ for (const seed of SEEDS) {
   }
   const startVac = vacantSuites(book.g, parcels);
   const desk = runArm(book.g, parcels, adjacency, "desk");
+  const plan = runArm(book.g, parcels, adjacency, "plan");
   const princ = runArm(book.g, parcels, adjacency, "principal");
   const d = summarise("desk", book.g, desk.g, desk.stats);
+  const pl = summarise("plan", book.g, plan.g, plan.stats);
   const p = summarise("principal", book.g, princ.g, princ.stats);
-  rows.push({ seed, suites: book.suites, buildings: book.buildings, startVac, desk: d, princ: p });
+  rows.push({ seed, suites: book.suites, buildings: book.buildings, startVac, desk: d, plan: pl, princ: p });
 
   console.log(`SEED ${seed}  ${book.buildings} bldgs / ${book.suites} suites`
     + `  start vacant ${startVac.vacant}/${startVac.total}`
@@ -430,14 +436,19 @@ for (const seed of SEEDS) {
     + `  vac ${pct(s.vacRate).padStart(6)}`
     + `  NOI ${money(s.noi).padStart(9)}`;
   console.log(line("desk", d));
+  console.log(line("plan", pl));
   console.log(line("principal", p)
     + (Number.isFinite(p.letterNe) ? `  letter-NE(with TI) ${pct(p.letterNe)}` : ""));
   const gapNe = p.ne - d.ne;
   const gapNoi = p.noi - d.noi;
   const gapVac = p.vacMonths - d.vacMonths;
+  const planGapNe = p.ne - pl.ne;
   console.log(`  gap        principal − desk   NE ${gapNe >= 0 ? "+" : ""}${pct(gapNe)}`
     + `   vac-mo ${gapVac >= 0 ? "+" : ""}${Math.round(gapVac)}`
     + `   NOI ${gapNoi >= 0 ? "+" : ""}${money(gapNoi)}`);
+  console.log(`  gap        principal − plan   NE ${planGapNe >= 0 ? "+" : ""}${pct(planGapNe)}`
+    + `   vac-mo ${p.vacMonths - pl.vacMonths >= 0 ? "+" : ""}${Math.round(p.vacMonths - pl.vacMonths)}`
+    + `   NOI ${p.noi - pl.noi >= 0 ? "+" : ""}${money(p.noi - pl.noi)}`);
   if (p.countered) {
     const lift = p.pFloor - p.pNoFloor;
     const share = p.pFloor > 0 ? lift / p.pFloor : 0;
@@ -461,16 +472,22 @@ if (!rows.length) {
 
 const col = (pick) => rows.map(pick).filter((x) => Number.isFinite(x));
 const deskNe = mean(col((r) => r.desk.ne));
+const planNe = mean(col((r) => r.plan.ne));
 const princNe = mean(col((r) => r.princ.ne));
 const deskTight = mean(col((r) => r.desk.tightNe));
+const planTight = mean(col((r) => r.plan.tightNe));
 const princTight = mean(col((r) => r.princ.tightNe));
 const deskSoft = mean(col((r) => r.desk.softNe));
+const planSoft = mean(col((r) => r.plan.softNe));
 const princSoft = mean(col((r) => r.princ.softNe));
 const deskVac = mean(col((r) => r.desk.vacMonths));
+const planVac = mean(col((r) => r.plan.vacMonths));
 const princVac = mean(col((r) => r.princ.vacMonths));
 const deskNoi = mean(col((r) => r.desk.noi));
+const planNoi = mean(col((r) => r.plan.noi));
 const princNoi = mean(col((r) => r.princ.noi));
 const deskSigned = mean(col((r) => r.desk.signed));
+const planSigned = mean(col((r) => r.plan.signed));
 const princSigned = mean(col((r) => r.princ.signed));
 const pFloor = mean(col((r) => r.princ.pFloor));
 const pNoFloor = mean(col((r) => r.princ.pNoFloor));
@@ -480,13 +497,13 @@ const bind = mean(col((r) => r.princ.floorBindRate));
 
 console.log("PAIRED MEANS");
 console.log("────────────────────────────────────────────────────────────────────────");
-console.log("                  desk        principal   principal − desk");
-console.log(`  signed NE%      ${pct(deskNe).padStart(8)}    ${pct(princNe).padStart(8)}    ${((princNe - deskNe) >= 0 ? "+" : "") + pct(princNe - deskNe)}`);
-console.log(`  tight NE%       ${pct(deskTight).padStart(8)}    ${pct(princTight).padStart(8)}    ${((princTight - deskTight) >= 0 ? "+" : "") + pct(princTight - deskTight)}`);
-console.log(`  soft NE%        ${pct(deskSoft).padStart(8)}    ${pct(princSoft).padStart(8)}    ${((princSoft - deskSoft) >= 0 ? "+" : "") + pct(princSoft - deskSoft)}`);
-console.log(`  deals / seed    ${deskSigned.toFixed(1).padStart(8)}    ${princSigned.toFixed(1).padStart(8)}    ${(princSigned - deskSigned >= 0 ? "+" : "") + (princSigned - deskSigned).toFixed(1)}`);
-console.log(`  vac-months      ${deskVac.toFixed(0).padStart(8)}    ${princVac.toFixed(0).padStart(8)}    ${(princVac - deskVac >= 0 ? "+" : "") + (princVac - deskVac).toFixed(0)}`);
-console.log(`  10y NOI         ${money(deskNoi).padStart(8)}    ${money(princNoi).padStart(8)}    ${(princNoi - deskNoi >= 0 ? "+" : "") + money(princNoi - deskNoi)}`);
+console.log("                  desk        plan        principal   princ − plan");
+console.log(`  signed NE%      ${pct(deskNe).padStart(8)}    ${pct(planNe).padStart(8)}    ${pct(princNe).padStart(8)}    ${((princNe - planNe) >= 0 ? "+" : "") + pct(princNe - planNe)}`);
+console.log(`  tight NE%       ${pct(deskTight).padStart(8)}    ${pct(planTight).padStart(8)}    ${pct(princTight).padStart(8)}    ${((princTight - planTight) >= 0 ? "+" : "") + pct(princTight - planTight)}`);
+console.log(`  soft NE%        ${pct(deskSoft).padStart(8)}    ${pct(planSoft).padStart(8)}    ${pct(princSoft).padStart(8)}    ${((princSoft - planSoft) >= 0 ? "+" : "") + pct(princSoft - planSoft)}`);
+console.log(`  deals / seed    ${deskSigned.toFixed(1).padStart(8)}    ${planSigned.toFixed(1).padStart(8)}    ${princSigned.toFixed(1).padStart(8)}    ${(princSigned - planSigned >= 0 ? "+" : "") + (princSigned - planSigned).toFixed(1)}`);
+console.log(`  vac-months      ${deskVac.toFixed(0).padStart(8)}    ${planVac.toFixed(0).padStart(8)}    ${princVac.toFixed(0).padStart(8)}    ${(princVac - planVac >= 0 ? "+" : "") + (princVac - planVac).toFixed(0)}`);
+console.log(`  10y NOI         ${money(deskNoi).padStart(8)}    ${money(planNoi).padStart(8)}    ${money(princNoi).padStart(8)}    ${(princNoi - planNoi >= 0 ? "+" : "") + money(princNoi - planNoi)}`);
 console.log("");
 console.log("4% pAccept FLOOR — on the principal's actual counters (not an engine patch)");
 console.log(`  E[pAccept] with 0.04 floor     ${pct(pFloor)}`);
@@ -498,11 +515,14 @@ console.log("");
 
 const princBeatsDeskTight = Number.isFinite(princTight) && Number.isFinite(deskTight) && princTight > deskTight + 0.005;
 const princBeatsDesk = Number.isFinite(princNe) && Number.isFinite(deskNe) && princNe > deskNe + 0.005;
+const planGap = Math.abs(princNe - planNe);
 const exploitShare = pFloor > 0 ? (pFloor - pNoFloor) / pFloor : 0;
-console.log("READ AGAINST THE PLAN'S EXPECTED FINDING");
-console.log(`  bot beats desk on signed NE%                 ${princBeatsDesk ? "YES" : "NO"}  (${pct(princNe)} vs ${pct(deskNe)})`);
-console.log(`  bot beats desk in tight months               ${princBeatsDeskTight ? "YES" : "NO"}  (${pct(princTight)} vs ${pct(deskTight)})`);
-console.log(`  a large share of that edge is the 4% floor   ${exploitShare > 0.15 ? "YES" : "NO"}  (exploit share of E[p] ${pct(exploitShare)})`);
+console.log("READ AGAINST PHASE 3");
+console.log(`  synthesised desk still trails the bot on NE%  ${princBeatsDesk ? "YES" : "NO"}  (${pct(princNe)} vs ${pct(deskNe)})`);
+console.log(`  bot beats synthesised desk in tight months    ${princBeatsDeskTight ? "YES" : "NO"}  (${pct(princTight)} vs ${pct(deskTight)})`);
+console.log(`  player-equivalent plan within a few NE points ${planGap <= 0.04 ? "YES" : "NO"}  (${pct(planNe)} vs ${pct(princNe)}, gap ${pct(planGap)})`);
+console.log(`  residual is fees/hold-out, not a par clamp    quote 1.08 is legal; AGENT_FLOOR_MAX is unused on this path`);
+console.log(`  a large share of any edge is the 4% floor     ${exploitShare > 0.15 ? "YES" : "NO"}  (exploit share of E[p] ${pct(exploitShare)})`);
 if (exploitShare <= 0.15) {
   console.log("  The patient-principal bot counters TO indifference, where the");
   console.log("  logistic is ~0.50 and the 0.04 floor does not bind. The floor's");

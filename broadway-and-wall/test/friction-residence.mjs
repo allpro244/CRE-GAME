@@ -45,5 +45,14 @@ check(E.housableStock(e, "office") > house0 + 4_000, "housable rises as the floo
 
 check(E.frictionFloor("office") > 0, "frictionFloor remains the watcher the shortage harness reads");
 
+const filled = {
+  stock: { office: 100_000, retail: 0, multifamily: 0, industrial: 0 },
+  occupied: { office: 100_000 - 5_156, retail: 0, multifamily: 0, industrial: 0 },
+  darkSf: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
+};
+const res = E.residenceVac(filled, "office");
+const printed = 1 - filled.occupied.office / filled.stock.office;
+check(Math.abs(res - printed) < 1e-4, `residence vacancy is the printed vacancy when every suite that can be let, is (${(res * 100).toFixed(2)}%)`);
+
 console.log("");
 process.exit(bad ? 1 : 0);

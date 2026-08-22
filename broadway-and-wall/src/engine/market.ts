@@ -805,6 +805,16 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
 }
 
 /**
+ * How empty the city is when every suite that can be let, is. Dark new
+ * floor plus turnover still in re-let. The rent mute and tightEma used to
+ * treat `frictionFloor` as that point; that number is now only a watcher.
+ */
+export function residenceVac(e: Econ, k: BuiltClass): number {
+  const stk = Math.max(1, e.stock?.[k] ?? 0);
+  return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k)) / stk;
+}
+
+/**
  * A CLASS THE CITY CANNOT HOUSE, on the same instruments densify already
  * reads. Vacancy on the frictional rail, or `structTight` saying desired
  * demand is already past housable. Used by the zoning map — a planning
@@ -2500,7 +2510,7 @@ export function tickEcon(s: GameState) {
     const availNow = (e.cityVac?.office ?? NATURAL_VAC.office)
       + (e.sublet?.office ?? 0) / stock;
     const tightNow = (NATURAL_VAC.office - availNow) / NATURAL_VAC.office;
-    const friction = frictionFloor("office");
+    const friction = residenceVac(e, "office");
     const pinned = (e.cityVac?.office ?? NATURAL_VAC.office) <= friction + 1e-6;
     const target = pinned ? 0 : tightNow;
     const gain = pinned ? 0.012 : 0.004;
@@ -3602,7 +3612,7 @@ export function tickEcon(s: GameState) {
     // Near the floor, saturation also bites: the last points of tightening
     // cannot pretend to add the same pressure as the first — a market that
     // cannot get any tighter stops minting a constant shortage tax.
-    const friction = frictionFloor(k);
+    const friction = residenceVac(e, k);
     const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
     const pinned = vacNow <= friction + 1e-6;
     // Room above the frictional rail — 0 on the pin, rising as the market has

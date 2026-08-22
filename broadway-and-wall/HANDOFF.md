@@ -375,7 +375,7 @@ balances-only PR from `GROK_QUEUE.md` G3 instead.
 
 ---
 
-## 10. THE LEASING OVERHAUL (Phases 0–5)
+## 10. THE LEASING OVERHAUL (Phases 0–6)
 
 See `LEASING_OVERHAUL_PLAN.md`. Two systems shipped together:
 
@@ -392,14 +392,20 @@ See `LEASING_OVERHAUL_PLAN.md`. Two systems shipped together:
    without a sheet gets `starterPlan()` (quote 90%, the old default sign line).
    Old saves that still carry leftover dial fields are migrated in `save.ts`.
 
-**Do not tune the desk** until Phase 6's adversarial number is in. The Phase 0
-gap (principal +17.7 NE points over the old desk) closed to +6.8 under the
-player-equivalent sheet. Residual is a posted number vs the tenant
-indifference function, plus fees. That is (a) in the plan's language — the
-schema cannot track the cycle — not a coefficient to twist.
+**Phase 6 measured, do not tune.** The Phase 0 gap (principal +17.7 NE points
+over the old desk) closed to +6.8 under the player-equivalent sheet and
+stayed +6.8 after Phase 5 deletions. Residual is a posted number vs the
+tenant indifference function, plus fees. That is (a) in the plan's language
+— the schema cannot track the cycle — not a coefficient to twist.
+
+Hands-off-with-plan is not strictly dominated by grinding (deals 67.4 vs
+67.0; vac-months 3022 vs 3080) and is not strictly dominant (principal still
+wins NE and NOI; fees are real). `pnpm stress` holds leasing constant on
+purpose — the leasing comparison is `pnpm desk-vs-principal`.
 
 Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
 `pnpm plan-ui`, `pnpm plates-blocks`. Rebuild `pnpm engine` before every probe.
 
-Phase 1 and Phase 5 are the two sanctioned `pnpm baseline` re-rolls. Do not
-add world-stream draws. `pAccept` and `drawRequirementSf` stay on `rng(s)`.
+Phase 1 and Phase 5 are the two sanctioned `pnpm baseline` re-rolls. Phase 5
+moved no standing number. Do not add world-stream draws. `pAccept` and
+`drawRequirementSf` stay on `rng(s)`. See `PHASE6_MEASUREMENT.md`.

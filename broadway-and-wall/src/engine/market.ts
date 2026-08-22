@@ -780,7 +780,6 @@ export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   if (vac <= frictionFloor(k) + slack) return true;
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
-}
 
 /**
  * NAMED TENANTS TOUCH THE CITY POOL. Micro lease events used to live in a

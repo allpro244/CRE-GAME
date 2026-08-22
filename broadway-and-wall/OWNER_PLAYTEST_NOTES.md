@@ -174,7 +174,16 @@ attached.
 
 ---
 
-## 3. Already done on this branch, for context
+## 3. Closed on `cursor/playtest-notes-171d`
+
+Every numbered note in §1 except the unfinished sentence (1.10) is done:
+stock-vs-leased graph, no horizontal scroll, persisted development scheme,
+portfolio-wide refi, deals desk, construction loans on Debt, refi path
+measured (not retuned), rate caps, CF/YR reconciled, gut `condIdx`,
+programme double-count, unrecovered institutional service, rent-path
+instrumented. 1.10 is a cut-off thought — do not guess it.
+
+## 4. Already done on the leasing tip, for context
 
 - **The asking/effective rent chart was wrong in level** and is fixed:
   `faceGrossUp` (value.ts) so desks quote a face rent, `CONC_DEPTH = 0.30`

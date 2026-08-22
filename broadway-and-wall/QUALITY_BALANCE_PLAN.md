@@ -163,8 +163,35 @@ have done the same to growth. Both now freeze and recover the market bill.
    `pnpm rent-chart`. Regenerate `BASELINE.json` and say in the commit which
    moves were intended.
 
-## Known open question, worth one paragraph in whatever you write
+## Re-measure after the wiring (2026-08, `pnpm quality-arms`)
 
-Everything above is unlevered. Leverage multiplies the NOI differences into the
-equity return and could reorder the middle four arms outright. A levered arm
-(say 60% LTV, held to maturity) is the obvious follow-up run and was not done.
+Six seeds × 25 years × 8 offices, unlevered, every letter signed at asking,
+generated city. Rank on NOI − capex. Never terminal net worth.
+
+| arm | rent ÷ index | occ | cum NOI | capex | NOI − capex | beats base |
+|---|---|---|---|---|---|---|
+| strip — defer, lean | 0.77 | 60% | $79M | $4M | $75M | 0 / 6 |
+| baseline — fund, market | 1.25 | 71% | $124M | $8M | $116M | — |
+| institutional service | 1.26 | 72% | $130M | $8M | $122M | **5 / 6** |
+| reposition plan | 1.31 | 72% | $143M | $15M | $127M | **6 / 6** |
+| capital programs | 1.31 | 70% | $137M | $33M | $105M | 2 / 6 |
+| gut when eligible | 1.23 | 69% | $123M | $12M | $111M | 0 / 6 |
+
+What the wiring changed: programmes no longer print 1.40× rent for middle
+capex. They sit with reposition on rent (1.31×) and **lose** on NOI − capex
+because the cheque is paid once. That is the double-count coming out.
+Stripping still loses on every seed. The reserve dial still pays (reposition
++11M net, 6/6). Institutional still beats baseline on 5/6 after the
+unrecovered amenity — occupancy and covenant, not a recovered opex bill.
+`OPS_SERVICE` stays.
+
+Gut: four of six seeds print **exactly** baseline (the 35% roll-burn gate
+never opened). The two that fired are behind. Remaining suspect is the gate
+plus six months of zero income, as the plan said — not `condIdx`. Do not
+fix that with a multiplier, and do not remove the gate on this merge.
+
+Levered follow-up (3 seeds × 15 years, max advance the desk actually wrote,
+not a forced 60%): no 5-of-6 reorder of the middle arms. Institutional 2/3,
+reposition 1/3, programmes 0/3. Leverage amplified the capex hole on
+programmes; it did not crown a new winner on this sample. Three seeds is
+not six — treat that as a read, not a close.

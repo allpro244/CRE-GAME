@@ -108,17 +108,31 @@ soft rail (−0.008/mo) is **not** load-bearing on office or retail.
 |---|---|---|---|---|---|---|---|
 | 2 seeds × 12y | office | 276 | 6 | −3.38 | −5.53 | −1.82 | 22 |
 | 2 seeds × 15y | office | 348 | 5 | −2.86 | −4.77 | −1.40 | 27 |
-| 2 seeds × 15y | retail | 217 | 0 | −2.91 | −4.87 | −3.15 | 25 |
-| 2 seeds × 15y | multifamily | 138 | 13 | −5.42 | −6.64 | −3.34 | 7 |
-| 2 seeds × 15y | industrial | 220 | 0 | −2.25 | −4.22 | −2.99 | 23 |
+| **6 seeds × 50y** | **office** | **1549** | **5** | **−3.66** | **−5.04** | **−3.45** | **20** |
+| 6 seeds × 50y | retail | 1316 | 1 | −2.71 | −3.75 | −2.60 | 16 |
+| 6 seeds × 50y | multifamily | 1336 | 4 | −0.88 | −3.00 | +0.73 | 31 |
+| 6 seeds × 50y | industrial | 779 | 0 | −2.05 | −2.92 | −1.25 | 12 |
 
-Office vacTerm ≈ EMA ≈ clamped press (15y: −0.195 / −0.188 / −0.186 %/mo) —
-the 8-month EMA is not averaging the spike away. Deep-bucket nominal is
-*weaker* than all-soft: that is composition (deep months sit late in an
-episode, after `capitulation` has decayed), not the rail. Do **not** widen
-or delete the clamp on this evidence; a change that makes the nominal cut
-look dramatic while breaking the duration path would be the wrong fix.
-Re-run at 6×50 before touching `RENT_PRESS_TAU` or the CPI mute.
+6×50 gap buckets, asking %/yr:
+
+| class | tight | +3–6pp | +6–10pp | >+10pp | depth buys |
+|---|---|---|---|---|---|
+| office | +5.49 | −3.42 | −5.35 | −3.45 | **−0.03** |
+| retail | +5.33 | −2.53 | −3.41 | −2.60 | −0.07 |
+| multifamily | 0.00 | −2.48 | −4.67 | +0.73 | +3.21 |
+| industrial | +4.37 | −3.18 | −3.21 | −1.25 | +1.93 |
+
+Office episodes: yr1 −3.0%, yr2 −8.8%, yr3 −9.0%, yr4+ −3.0%. Tight real
++1.36%/yr. Sign, monotonicity, duration and the real-terms path still stand.
+
+Office vacTerm ≈ EMA ≈ clamped press. The 8-month EMA is not averaging the
+spike away. Deep-bucket nominal is not a deeper cut: composition after
+`capitulation`, not the rail. The original fault (office depth buys ~0)
+**survives the 6×50**. Do **not** widen or delete the clamp. Do **not**
+touch `RENT_PRESS_TAU` or the CPI mute on this merge — a change that makes
+the nominal cut look dramatic while breaking the duration path would be
+the wrong fix. The remaining throttle is still downstream of an honest
+curve; finding it is a new piece of work, not a retune of `DEEP_RATE`.
 
 ## Order of work
 

@@ -273,6 +273,11 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
     payoff += stack.balance;
     penalties += stack.penalty;
   }
+  // Replacing a live facility pays the whole pool off at the table, then the
+  // new paper attaches. Allocated shares would double-count nothing — pledged
+  // deeds have no mortgage — but omitting the facility balance would quote a
+  // cash-out that is not there.
+  if (s.facility) payoff += s.facility.balance;
   const st = sponsorStanding(s);
   for (const id of FACILITY_DESKS) {
     const p = PRODUCTS.find((x) => x.id === id);
@@ -343,7 +348,9 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
 export function openFacility(
   s: GameState, parcels: ParcelTable, bbls: string[], productId: string, lev = 1,
 ): { s: GameState; err?: string } {
-  if (s.facility) return { s, err: "You already have a facility. Repay it before you paper another." };
+  // A live facility is not a wall — the player refinances the book: keep the
+  // crossed deeds, add free-and-clear or separately mortgaged ones, and the
+  // old paper is repaid at the table. That is how a portfolio refinance works.
   const pool = bbls.filter((b) => s.holdings[b]);
   if (pool.length < FACILITY_MIN_ASSETS) return { s, err: `Pledge at least ${FACILITY_MIN_ASSETS} buildings.` };
   const quotes = facilityQuotes(s, parcels, pool);
@@ -359,6 +366,8 @@ export function openFacility(
     return { s, err: `The proceeds do not clear the existing paper — $${((cost - draw) / 1e6).toFixed(2)}M short after $${(qt.penalties / 1e6).toFixed(2)}M of prepayment penalties.` };
   }
   const next: GameState = cloneState(s);
+  const replacing = !!next.facility;
+  if (next.facility) next.facility = undefined;
   // Clear the deeds. The mortgages are repaid at the closing table out of the
   // facility's proceeds, which is why the principal does not touch the ledger:
   // it is one lender's balance replacing another's, and no expense happens.
@@ -408,9 +417,9 @@ export function openFacility(
   else if (cashOut < 0) logBooks(next, "debtSvc", -cashOut);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${qt.lender} has papered a $${(draw / 1e6).toFixed(1)}M facility across ${pool.length} buildings at `
+    text: `${qt.lender} has ${replacing ? "refinanced the book with" : "papered"} a $${(draw / 1e6).toFixed(1)}M facility across ${pool.length} buildings at `
       + `${qt.ratePct.toFixed(2)}% — ${qt.quality.why}. `
-      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of mortgages repaid` + (qt.penalties > 0 ? ` and $${(qt.penalties / 1e6).toFixed(2)}M of penalties to break them. ` : ". ") : "")
+      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of existing paper repaid` + (qt.penalties > 0 ? ` and $${(qt.penalties / 1e6).toFixed(2)}M of penalties to break it. ` : ". ") : "")
       + `The pool is crossed: every deed in it stands behind the whole balance, and you have signed personally.`,
   });
   return { s: next };

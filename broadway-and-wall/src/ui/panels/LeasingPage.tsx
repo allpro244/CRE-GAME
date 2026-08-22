@@ -326,45 +326,42 @@ export function LeasingPage() {
 
       <div className="page-section">
         <div className="page-section-head">By building</div>
-        <div style={{ overflowX: "auto" }}>
+        <div>
           <table className="tbl">
             <thead>
               <tr>
-                <th>Property</th><th>Class</th><th className="num">Size</th><th className="num">Occupancy</th>
-                <th className="num">Rent roll / yr</th><th className="num">Avg rent</th><th className="num">WALT</th>
-                <th className="num">Rolling 12mo</th><th>Ask</th><th>Service</th><th>Plan</th><th>Leasing</th>
+                <th>Property</th>
+                <th className="num">Occ</th>
+                <th className="num">Rent / yr</th>
+                <th className="num">WALT</th>
+                <th className="num">Rolling</th>
               </tr>
             </thead>
             <tbody>
               {rows.sort((a, b) => a.occ - b.occ).map((r) => (
                 <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
-                  <td>{r.rec.address}</td>
-                  <td>{useLabel(r.rec)}</td>
-                  <td className="num">{sf(r.rec.bldgArea)}</td>
+                  <td>
+                    <div>{r.rec.address}</div>
+                    <div className="dim" style={{ fontSize: 11 }}>
+                      {useLabel(r.rec)} · {sf(r.rec.bldgArea)}
+                      {r.leased ? ` · $${(r.rentRoll / r.leased).toFixed(0)}/sf` : ""}
+                    </div>
+                    <div className="dim" style={{ fontSize: 11 }}>
+                      {(r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market"}
+                      {" · "}{serviceSpec(r.h.service).label}
+                      {" · "}{planSpec(r.h.plan).label}
+                      {r.h.broker ? " · broker" : ""}
+                      {r.notReady ? " · turning" : ""}
+                      {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
+                      {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
+                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
+                      )}
+                    </div>
+                  </td>
                   <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
                   <td className="num">{usd(r.rentRoll)}</td>
-                  <td className="num">{r.leased ? "$" + (r.rentRoll / r.leased).toFixed(0) : "—"}</td>
                   <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
                   <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>
-                  {/* THE THREE STANDING DECISIONS, so a book that has drifted off
-                      the house policy shows it here rather than one card at a time. */}
-                  <td className={(r.h.stance ?? 0) !== (game.opsPolicy?.stance ?? 0) ? "" : "dim"}>
-                    {(r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market"}
-                  </td>
-                  <td className={(r.h.service ?? 0) !== (game.opsPolicy?.service ?? 0) ? "" : "dim"}>
-                    {serviceSpec(r.h.service).label}
-                  </td>
-                  <td className={(r.h.plan ?? 1) !== (game.opsPolicy?.plan ?? 1) ? "" : "dim"}>
-                    {planSpec(r.h.plan).label}
-                  </td>
-                  <td className="dim">
-                    {[r.h.broker ? "BROKER" : null, r.notReady ? "TURNING" : null,
-                      r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? "LEASE-UP" : null]
-                      .filter(Boolean).join(" · ")}
-                    {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                      <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -374,34 +371,45 @@ export function LeasingPage() {
 
       <div className="page-section">
         <div className="page-section-head">The rent roll</div>
-        <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
           <table className="tbl">
             <thead>
-              <tr><th>Tenant</th><th>Sector</th><th>Credit</th><th>Property</th><th className="num">Size</th><th className="num">Rent</th><th>Recovery</th><th className="num">Stop $/sf</th><th className="num">vs mkt</th><th className="num">Expires</th></tr>
+              <tr>
+                <th>Tenant</th>
+                <th>Property</th>
+                <th className="num">sf</th>
+                <th className="num">Rent</th>
+                <th className="num">Expires</th>
+              </tr>
             </thead>
             <tbody>
               {rows.flatMap((r) => r.h.tenants.map((t, i) => ({ t, r, i })))
                 .sort((a, b) => a.t.endM - b.t.endM)
-                .map(({ t, r, i }) => (
+                .map(({ t, r, i }) => {
+                  const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition);
+                  const d = mkt > 0 ? t.rentPsf / mkt - 1 : 0;
+                  const recov = recoveryOf(t);
+                  return (
                   <tr key={r.h.bbl + ":" + i} onClick={() => go(r.h.bbl)}>
-                    <td>{t.name}</td>
-                    <td className="dim">{t.sector}</td>
-                    <td className="mono">{CREDIT_LABEL[t.credit]}</td>
+                    <td>
+                      <div>{t.name}</div>
+                      <div className="dim" style={{ fontSize: 11 }}>
+                        {t.sector} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
+                        {recov === "base" ? ` · stop $${(t.baseStopPsf ?? 0).toFixed(2)}` : ""}
+                      </div>
+                    </td>
                     <td className="dim">{r.rec.address}</td>
                     <td className="num">{sf(t.sf)}</td>
-                    <td className="num">${t.rentPsf.toFixed(2)}</td>
-                    <td className="dim">{recoveryOf(t) === "nnn" ? "NNN" : recoveryOf(t) === "base" ? "base yr" : "gross"}</td>
-                    <td className="num dim">{recoveryOf(t) === "base" ? `$${(t.baseStopPsf ?? 0).toFixed(2)}` : "—"}</td>
-                    {(() => {
-                      const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition);
-                      const d = mkt > 0 ? t.rentPsf / mkt - 1 : 0;
-                      return <td className={"num" + (d < -0.12 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
-                    })()}
+                    <td className={"num" + (d < -0.12 ? " neg" : "")}>
+                      ${t.rentPsf.toFixed(2)}
+                      <div className="dim" style={{ fontSize: 11 }}>{(d * 100).toFixed(0)}% vs mkt</div>
+                    </td>
                     <td className={"num" + (t.endM - q <= 12 ? " neg" : "")}>{monthLabel(t.endM)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               {!rows.some((r) => r.h.tenants.length) && (
-                <tr><td colSpan={10} className="dim">Nothing under lease yet.</td></tr>
+                <tr><td colSpan={5} className="dim">Nothing under lease yet.</td></tr>
               )}
             </tbody>
           </table>

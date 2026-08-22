@@ -1,5 +1,7 @@
 # Principal playtest sheet — machine findings + what only you can see
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 **Branch:** `cursor/the-principal-9786` · **PR #62**  
 **Date:** pre-flight before first human session  
 **Scope:** Person / careers / mortality / estate / fund / genealogy

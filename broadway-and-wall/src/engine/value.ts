@@ -1289,9 +1289,11 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   let m = use
     ? useRentPsfYr(rec, econ, h.condition, use) * faceGrossUp(econ, use)
     : blendBy(rec, (u) => useRentPsfYr(rec, econ, h.condition, u) * faceGrossUp(econ, u));
-  const done = h.programsDone ?? {};
-  if (done.lobby !== undefined) m *= 1.04;
-  if (done.facade !== undefined) m *= 1.08;
+  // Programmes used to multiply here AND lift condIdx (PROGRAM_LIFT →
+  // CONDITION_RENT_MULT). Measured on a 1940 office: condition lift 1.20×,
+  // explicit lobby×1.04×facade×1.08 = 1.12×, both together 1.35× — the same
+  // cheque twice. The condition channel stays; the arrival factor in
+  // absorption.ts is velocity, not a third price. See QUALITY_BALANCE_PLAN.md §2.
   m *= 1 + 0.08 * (h.stance ?? 0);
   if (h.landmarked) m *= 1.07;
   return m;
@@ -1600,6 +1602,19 @@ export function recoveryOf(t: { recovery?: Recovery; net?: boolean }): Recovery 
  * What a tenant actually reimburses this year, in dollars, for opex and for
  * property tax. `baseStopPsf` is the expense level frozen at signing.
  */
+/**
+ * WHAT A TENANT WILL REIMBURSE of the service policy.
+ *
+ * Institutional service is +12% on the controllable half. An NNN clause
+ * recovers the MARKET operating bill — the building's share of heat, tax,
+ * insurance — not the extra front desk the landlord chose to staff. Lean
+ * recovers lean (you cannot bill more than you spend). Above-market service
+ * is an unrecovered amenity. See QUALITY_BALANCE_PLAN.md §3.
+ */
+export function recoverableService(service?: -1 | 0 | 1): -1 | 0 | 1 {
+  return (Math.min(service ?? 0, 0)) as -1 | 0 | 1;
+}
+
 export function recoveryFor(
   t: { sf: number; recovery?: Recovery; net?: boolean; baseStopPsf?: number },
   opexNowPsf: number,
@@ -1928,7 +1943,7 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
   const taxPsf = bill / Math.max(1, rec.bldgArea);
-  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, h.service) : taxPsf;
+  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
   return Math.max(0, bill - recovered);
@@ -1974,6 +1989,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
   const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -1982,7 +1998,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     leasedSf += t.sf;
     // Recoveries keep running through a free-rent period — free rent is a
     // concession on BASE rent, not on the tenant's share of the boiler.
-    const r = recoveryFor(t, opexNowPsf, taxNowPsf);
+    const r = recoveryFor(t, opexRecoverPsf, taxNowPsf);
     recoveredOpex += r.opex;
     recoveredTax += r.tax;
     if (t.freeUntilM !== undefined && currentQ < t.freeUntilM) continue;
@@ -2061,12 +2077,13 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
   const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
   for (const t of h.tenants) {
     leasedSf += t.sf;
-    const r = recoveryFor(t, opexNowPsf, taxNowPsf);
+    const r = recoveryFor(t, opexRecoverPsf, taxNowPsf);
     recOpex += r.opex; recTax += r.tax;
     if (t.freeUntilM !== undefined && month < t.freeUntilM) { free += t.rentPsf * t.sf; continue; }
     baseRent += t.rentPsf * t.sf;

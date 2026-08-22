@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
@@ -559,7 +559,22 @@ function tickMonth(
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     if (h.renovatingUntilM !== undefined && s.month >= h.renovatingUntilM) {
-      h.condition = "good";
+      // Grade is a READING of condIdx. Writing the label alone lasted one
+      // month: tickLeasing recomputes h.condition = condGrade(h.condIdx) from
+      // the index nobody lifted, so a $210/sf gut bought one month of "good".
+      // One code path owns grade — lift the index to the building's ceiling.
+      //
+      // A gut moves the BONES toward (not to) modern. condCeiling reads
+      // yearBuilt and buildSpec only: floor-to-floor height and the core stay
+      // what they are (yearBuilt is left alone — a 1928 building never becomes
+      // a 2015 one), but a full re-clad and re-plant does lift the
+      // specification. The 0.4 step toward 0.75 is that lift. QUALITY_BALANCE_PLAN.md §1.
+      const parcel = parcels[h.bbl];
+      const spec = parcel?.buildSpec ?? rec.buildSpec ?? 0.5;
+      if (parcel && spec < 0.75) parcel.buildSpec = spec + 0.4 * (0.75 - spec);
+      const ceilingRec = { yearBuilt: rec.yearBuilt, buildSpec: parcel?.buildSpec ?? spec };
+      h.condIdx = condCeiling(ceilingRec, s.month);
+      h.condition = condGrade(h.condIdx);
       h.lastCapM = s.month;
       delete h.renovatingUntilM;
       s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });

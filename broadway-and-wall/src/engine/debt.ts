@@ -497,6 +497,10 @@ export interface Quote {
   holdCapped?: boolean;
   /** Sized on the business plan rather than on the income the building earns today. */
   stabConstrained?: boolean;
+  /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
+  byLtv?: number;
+  byDscr?: number;
+  byDebtYield?: number;
 }
 
 /**
@@ -652,6 +656,9 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
     dyConstrained: !onPlan && byDebtYield < byLtv && byDebtYield < byDscr,
     stabConstrained: onPlan,
     debtYield: principal > 0 ? Math.max(0, noiYr) / principal : 0,
+    byLtv: Math.round(byLtv),
+    byDscr: Math.round(byDscr),
+    byDebtYield: Math.round(byDebtYield),
   };
 }
 

@@ -1,7 +1,7 @@
 import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
+import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
@@ -247,6 +247,8 @@ interface AppState {
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string, spec?: number) => void;
+  /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
+  setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
   clearBts: (bbl: string) => void;
   convertUse: (bbl: string, target: "multifamily" | "mixed", mix?: UseMix) => void;
@@ -888,9 +890,47 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
     if (r.err) { toast(r.err, "err"); return; }
+    const h = r.s.holdings[bbl];
+    if (h?.devDraft) {
+      const { devDraft: _drop, ...rest } = h;
+      r.s = { ...r.s, holdings: { ...r.s.holdings, [bbl]: rest } };
+    }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
+  },
+
+  setDevDraft: (bbl, draft) => {
+    const { game } = get();
+    if (!game) return;
+    const h = game.holdings[bbl];
+    if (!h) return;
+    let nextH: typeof h;
+    if (draft === null) {
+      if (!h.devDraft) return;
+      const { devDraft: _drop, ...rest } = h;
+      nextH = rest;
+    } else {
+      nextH = {
+        ...h,
+        devDraft: {
+          tab: "programme",
+          use: "office",
+          cov: 0.6,
+          floors: 8,
+          contract: "gmp",
+          ltcWant: 1,
+          bank: h.devDraft?.bank ?? "",
+          spec: 0.5,
+          split: { retail: 15, office: 45, multifamily: 40 },
+          ...h.devDraft,
+          ...draft,
+        },
+      };
+    }
+    const next = { ...game, holdings: { ...game.holdings, [bbl]: nextH } };
+    set({ game: next });
+    void persist(next);
   },
 
   proposeBts: (bbl, use, floors, coverage) => {
@@ -918,6 +958,11 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = startAdaptiveReuse(game, parcels, bbl, target, mix);
     if (r.err) { toast(r.err, "err"); return; }
+    const h = r.s.holdings[bbl];
+    if (h?.devDraft) {
+      const { devDraft: _drop, ...rest } = h;
+      r.s = { ...r.s, holdings: { ...r.s.holdings, [bbl]: rest } };
+    }
     set({ game: r.s });
     toast(r.msg ?? "Conversion started.");
     void persist(r.s);

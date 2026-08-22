@@ -1,5 +1,7 @@
 # Fixing what the playtest found
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 Companion to `PLAYTEST_2026-08.md`. That document measured the faults; this one
 says what to do about them, in what order, and what measurement closes each
 step. Every ordering decision here is downstream of one finding: **most of the

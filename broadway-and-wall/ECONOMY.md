@@ -1,5 +1,7 @@
 # ECONOMY.md — the market rebuild
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 **Status: AWAITING OWNER APPROVAL. No implementation until this document is signed off.**
 
 The mandate, verbatim: *"THE ECONOMY IS THE GAME, AND RIGHT NOW IT'S FAKE...

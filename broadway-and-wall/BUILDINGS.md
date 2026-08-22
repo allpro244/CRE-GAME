@@ -66,8 +66,8 @@ The two things that made the sharing possible are worth knowing about:
 
 ## 2 · WHAT EXISTS NOW
 
-**144 facade families** (was 10, of which 2 carried 71% of the city), out of
-152 `S_*` ids — the other eight are not facades: `S_PLAIN`, `S_CORNICE`,
+**173 facade families** (was 10, of which 2 carried 71% of the city), out of
+181 `S_*` ids — the other eight are not facades: `S_PLAIN`, `S_CORNICE`,
 `S_GREEN`, `S_LOT`, `S_GABLE`, `S_LAWN`, `S_PATH`, `S_POND`.
 
 > **Re-count before you quote this.** This section said 82 for long enough that
@@ -90,6 +90,12 @@ The two things that made the sharing possible are worth knowing about:
 - *The buildings a town has one of* — queen anne, stick, tudor, mission,
   picture palace, diner, firehouse, school, library, bank, hotel, department
   store, motel, strip.
+- *The last twenty years* — bay box, standing seam, stack bond, townhome row,
+  wave deck, pixel panel, fin wall, the new arch, pale grid, select-service
+  hotel, cold box, checkerboard, weathering steel — plus the office products
+  (medical, office park, professional, build-to-suit, back office, loft,
+  government) re-opened in the post-1998 pools, where they had been gated out
+  even though every one of them is still being delivered.
 
 **11 plan families** (`build.mjs`) — courtyard, light court, dumbbell,
 campanile, end towers, twins, cruciform, shifted stack, notched slab, chamfer
@@ -104,17 +110,20 @@ dome, cupola, clock stage, spire, smokestack, tank tower, sign letters, urns,
 dormers, helipad, pergola, planters, greenhouse, flagpole, mast, dish farm,
 davit, ventilators, chimney pots).
 
-**Current audit** (`pnpm styles`, 12 generated islands, 9,625 buildings, 144
+**Current audit** (`pnpm styles`, 12 generated islands, 9,665 buildings, 173
 facade families):
 
 ```
 DEAD (unreachable by any input): none
-untenanted (reachable, absent from these islands):
-    diagrid (needs office 20fl 2000), steelshelf (needs office 6fl 2015),
-    skygarden (needs office 6fl 2015), megabrace (needs office 12fl 2000)
+untenanted (reachable, absent from these islands): 21 families — every one of
+    them the tall or the post-2012 end of the registry (crystal, diagrid,
+    terrapier, ... stackbond, wavedeck, finrib, neoarch, whitegrid, checker,
+    corten). Correct, not broken: a generated harbour town is old and low,
+    and these are the buildings the PLAYER puts up — the slatesweep below is
+    where they have to show, and does.
 DOMINANT : none
-top-5 share: 21.6%      (the two-family era was 71%)
-office 72 families · retail 65 · multifamily 47 · industrial 33
+top-5 share: 18.4%      (the two-family era was 71%)
+office 76 families · retail 71 · multifamily 54 · industrial 36
 ```
 
 It sweeps GENERATED islands, which is a change worth knowing about: it used to
@@ -130,9 +139,15 @@ question of `setPlayerBuildings`, and it has to sweep seeds for the same reason
 this one does. Across 6 randomly generated islands, 120 built lots each:
 
 ```
-facade families per town: min 40 · median 44 · max 45   (union 55)
-roof surfaces per town:   6 in every town
+facade families per town: min 56 · median 56 · max 60   (union 81)
+roof surfaces per town:   6 in every town               (union 10)
 ```
+
+(Was min 40 · median 44 · max 45, union 55, before the last-twenty-years
+batch — the slate paints classes, floors and years from 2004 to 2025, so it
+is almost entirely a modern-pool measurement, and the modern pools were the
+thin ones: an office finished 2005 at three floors could reach four families
+against its 1970 twin's eleven.)
 
 The comparison worth keeping is that the old number was **6 in every town, at
 every seed** — not six because a harbour town is small, six because the choice

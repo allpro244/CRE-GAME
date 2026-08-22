@@ -155,7 +155,7 @@ function walk(seed, months, shockAt, dose) {
       };
     }
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
-    const before = CLASSES.map((k) => g.econ.stock?.[k] ?? 0);
+    const before = Object.fromEntries(CLASSES.map((k) => [k, g.econ.stock?.[k] ?? 0]));
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     const e = g.econ;
     const s = snap(e);

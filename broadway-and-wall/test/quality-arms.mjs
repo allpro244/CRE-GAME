@@ -58,19 +58,20 @@ console.log(`both channels                  $${both.toFixed(2)}  (${(both / base
 const double = both / afterLift - 1;
 console.log(`explicit on top of condition   +${(double * 100).toFixed(1)}%  — ${double > 0.02 ? "SAME CHEQUE TWICE" : "condition owns price"}`);
 
-// Service recovery: walk live office tenants / LOIs if any, else the quote path.
+// Service recovery: tick a year so the city writes letters, then count
+// office recovery clauses. Opening tape is empty; the ~80% net figure is
+// a draw rate, not a stock on month 0.
+let gTick = g;
+for (let i = 0; i < 12; i++) gTick = E.advanceMonth(gTick, parcels, bbls, {});
 let nnn = 0, tot = 0;
-for (let i = 0; i < 36; i++) {
-  // count recovery clauses on whatever the city already has let
-}
-for (const h0 of Object.values(g.holdings)) {
+for (const h0 of Object.values(gTick.holdings)) {
   for (const t of h0.tenants ?? []) {
     if ((t.use ?? parcels[h0.bbl]?.class) !== "office") continue;
     tot++;
     if (E.recoveryOf(t) === "nnn") nnn++;
   }
 }
-for (const loi of g.lois ?? []) {
+for (const loi of gTick.lois ?? []) {
   if (loi.use !== "office") continue;
   tot++;
   if (loi.net) nnn++;

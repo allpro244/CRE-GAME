@@ -265,7 +265,8 @@ const recordClosings = (g, parcels, prev, stats) => {
     if (!rec || !h) continue;
     const old = prev.get(k);
     const isNew = t.startM === g.month && !old;
-    const isRenew = !!old && (old.t.endM !== t.endM || old.t.rentPsf !== t.rentPsf);
+    // A bump moves rentPsf on the anniversary. That is not a signing.
+    const isRenew = !!old && old.t.endM !== t.endM;
     if (!isNew && !isRenew) continue;
     const market = E.managedRentPsfYr(rec, g.econ, h, t.use);
     const tight = tightOf(g, t.use);

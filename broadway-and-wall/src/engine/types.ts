@@ -591,6 +591,11 @@ export interface Holding {
     round?: number;                    // 0 first round, 1 best and final
     offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string };
   };
+  /**
+   * THE SCHEME ON THE DESK. Survives leaving the lot to read the books.
+   * Cleared when the job starts. See DevelopSection / setDevDraft.
+   */
+  devDraft?: DevDraft;
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
@@ -617,6 +622,25 @@ export interface Holding {
 // pick use and FAR up to zoning, 60% construction loan, the building rises
 // over 4-6 quarters, then leases up from empty.
 export type Contract = "gmp" | "costplus";
+
+/**
+ * IN-PROGRESS DEVELOPMENT SCHEME. Programme, design and financing each take
+ * real thought, and the player should leave to check the books or the economy
+ * without losing the dials. Not a commitment — cleared when ground breaks.
+ */
+export type DevDraftTab = "programme" | "design" | "financing";
+export interface DevDraft {
+  tab: DevDraftTab;
+  use: DevUse;
+  cov: number;
+  floors: number;
+  contract: Contract;
+  ltcWant: number;
+  bank: string;
+  spec: number;
+  split: { retail: number; office: number; multifamily: number };
+  reuseTarget?: "multifamily" | "mixed";
+}
 
 export interface BtsCommitment {
   name: string;
@@ -1271,6 +1295,10 @@ export interface EconHistoryPoint {
   cap?: Record<BuiltClass, number>;
   abs?: Record<BuiltClass, number>;    // net absorption that month, sf
   comp?: Record<BuiltClass, number>;   // completions that month, sf
+  /** Standing inventory at month-end, sf — the stock, not the month's flow. */
+  stock?: Record<BuiltClass, number>;
+  /** Square feet with a tenant in them at month-end. */
+  occupied?: Record<BuiltClass, number>;
 }
 
 export interface Econ {
@@ -1396,6 +1424,24 @@ export interface Econ {
    *  Market pressure forms instantly; landlords adjust asking rents only after
    *  trailing vacancy and unmet demand have sat on the quote sheet for months. */
   rentPress?: Record<BuiltClass, number>;
+  /**
+   * LAST MONTH'S RENT PATH, per class — vacTerm, EMA, clamp, drift pieces.
+   * Instrumentation for the vacancy-response harness. Not a price; not saved
+   * as a decision. A test that cannot see the rail cannot say whether the
+   * rail is load-bearing.
+   */
+  rentPath?: Record<BuiltClass, {
+    gap: number;
+    vacTerm: number;
+    instant: number;
+    pressEma: number;
+    pressClamped: number;
+    clampBound: boolean;
+    escalation: number;
+    anchor: number;
+    drift: number;
+    nomCh: number;
+  }>;
   /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
    *  deal or VALUES an asset reads this; everything that reports the market
    *  headline reads rentIdx. */

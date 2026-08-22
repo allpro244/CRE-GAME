@@ -193,7 +193,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
       })()}
       <button className="loi-addr" onClick={() => go(bbl)}>{useStore.getState().parcels?.[bbl]?.address ?? bbl}</button>
       <div className="loi-line mono">
-        ask {usd(ask)}{h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}
+        ask {usd(ask)}
+        {offer ? ` · they are at ${usd(offer.price)} · net ${usd(closeNet(offer.price))} if you take it` : ""}
+        {h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}
         {/* THE NUMBER EVERY BUYER CONVERTS YOUR ASK INTO before they answer the
             phone. It was on the property card and not here, which is the one
             screen you actually work your sales from. */}
@@ -333,6 +335,13 @@ export function DealsPage() {
     && (game.facility.maturityM - q <= 24 || game.facility.sweep || game.facility.breachedSince !== undefined)
     ? game.facility
     : null;
+  const saleCount = sales.length + (game.portfolioSale ? 1 : 0);
+  const liveCount = Object.keys(game.talks ?? {}).length
+    + (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased).length
+    + game.lois.filter((l) => loiNeedsPrincipal(game, l)).length;
+  const [desk, setDesk] = useState<"live" | "sales" | "watch">(
+    saleCount > 0 ? "sales" : "live",
+  );
 
   return (
     <div>
@@ -341,9 +350,26 @@ export function DealsPage() {
           ⏱ 1031 clock: buy for ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} or {usd(game.exchange.deferredTax)} of deferred tax comes due.
         </div>
       )}
-      <div className="deals-grid">
+      <div className="btn-row" style={{ marginBottom: 10 }} role="tablist" aria-label="Deals desk">
+        <button type="button" role="tab" aria-selected={desk === "live"}
+          className={"btn" + (desk === "live" ? " btn-on" : "")}
+          onClick={() => setDesk("live")}>
+          Letters · {liveCount}
+        </button>
+        <button type="button" role="tab" aria-selected={desk === "sales"}
+          className={"btn" + (desk === "sales" ? " btn-on" : "")}
+          onClick={() => setDesk("sales")}>
+          Your sales · {saleCount}
+        </button>
+        <button type="button" role="tab" aria-selected={desk === "watch"}
+          className={"btn" + (desk === "watch" ? " btn-on" : "")}
+          onClick={() => setDesk("watch")}>
+          Watch
+        </button>
+      </div>
+      <div className={"deals-grid" + (desk !== "live" ? " deals-one" : "")}>
 
-      <section>
+      {desk === "live" && <section>
         {/* EVERYTHING ON THE TABLE, contracts first — because a contract has
             a clock on it and a conversation does not. This used to be able to
             show exactly one row, since the game could only hold one. */}
@@ -511,13 +537,10 @@ export function DealsPage() {
             </div>
           </>
         )}
-      </section>
-
-      <section>
         {/* An off-market approach that you set aside has to be findable, or
             "Not now" is the same as "never" — and a number an owner gave you is
             a live deal whether or not you looked at it today. */}
-        <div className="page-section">Doors you knocked on · {calls.length}</div>
+        <div className="page-section" style={{ marginTop: 18 }}>Doors you knocked on · {calls.length}</div>
         {calls.length === 0 && <div className="hint">Nothing open. Walk up to any building you do not own and ask.</div>}
         <div className="mini-list">
           {calls.map((c) => (
@@ -540,7 +563,9 @@ export function DealsPage() {
             {Math.max(0, inbound[0].lapseM - game.month) === 1 ? "" : "s"}. The files are on Marketplace.
           </div>
         )}
+      </section>}
 
+      {desk === "sales" && <section>
         {/* EVERYTHING YOU ARE SELLING, ON THE DESK YOU SELL FROM.
             A book of buildings in the market was visible only on the Portfolio
             page, behind the bundling tool that created it — so the one screen
@@ -548,20 +573,21 @@ export function DealsPage() {
             silent about the largest transaction you had open. A portfolio is a
             sale in progress; it goes with the sales in progress, and the whole
             desk comes with it so the bid can be answered from here. */}
-        <div className="page-section" style={{ marginTop: 18 }}>
+        <div className="page-section">
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
+        </div>
+        <div className="hint">
+          Offers on your own book live here, full width — not next to inbound letters.
+          One card at a time: accept, decline, or counter.
         </div>
         {sales.length === 0 && !game.portfolioSale
           && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
-        {/* The live process only. `bundle` is the picks being assembled on the
-            Portfolio page and there is no ticking here, so it is empty rather
-            than the deeds already in the market — passing those meant any
-            change to the desk's live-process guard would turn this into a
-            prompt to re-list the buildings you had just sold. */}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
+      </section>}
 
-        <div className="page-section" style={{ marginTop: 18 }}>Rolling within a year · {expiring.length}</div>
+      {desk === "watch" && <section>
+        <div className="page-section">Rolling within a year · {expiring.length}</div>
         <div className="mini-list">
           {expiring.map((e, i) => (
             <button key={i} className="neighbor" onClick={() => go(e.bbl)}>
@@ -608,7 +634,7 @@ export function DealsPage() {
             </div>
           )}
         </div>
-      </section>
+      </section>}
       </div>
     </div>
   );

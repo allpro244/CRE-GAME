@@ -1,5 +1,7 @@
 # A playtest: what feels real in this economy, and what does not
 
+**No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
+
 **Harness:** `pnpm playtest` — 6 seeds × 40 years, one pass, ~6 minutes. Every
 number below is printed by it, so it can be argued with rather than believed.
 Cross-checks quoted from `pnpm rails`, `pnpm pencils`, `pnpm devyield`,

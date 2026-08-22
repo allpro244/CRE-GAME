@@ -22,7 +22,11 @@ export function PropertyPage() {
   // last building's mortgage tab is how you misread a balance. The exception
   // is a signed purchase contract: opening it from Deals should show the
   // financing choices immediately, not hide them behind an Overview tab.
-  useEffect(() => { setTab(fundingDue ? "deal" : "summary"); }, [bbl, fundingDue]);
+  useEffect(() => {
+    const holding = bbl ? game.holdings[bbl] : undefined;
+    if (bbl && holding?.devDraft && !game.developments[bbl]) setTab("build");
+    else setTab(fundingDue ? "deal" : "summary");
+  }, [bbl, fundingDue]);
   if (!bbl) return <div className="hint">Nothing selected.</div>;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return <div className="hint">Unknown parcel.</div>;

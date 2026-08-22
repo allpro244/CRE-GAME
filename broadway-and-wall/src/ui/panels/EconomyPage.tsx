@@ -205,6 +205,89 @@ export function CityFigures() {
  * "office vacancy is 12%" is not a decision and "the Exchange is at 6% and
  * Millside is at 21%" is.
  */
+
+const STOCK_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
+const STOCK_COLOR: Record<BuiltClass, string> = {
+  office: "#3d6f9e", retail: "#a8562e", multifamily: "#4a7d5a", industrial: "#7a6a45",
+};
+
+function sfShort(v: number) {
+  const a = Math.abs(v);
+  return a >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : a >= 1e4 ? `${Math.round(v / 1e3)}k` : a >= 1 ? `${Math.round(v / 100) / 10}k` : "0";
+}
+
+/**
+ * Standing inventory vs space leased, walked from the live month-end back
+ * through the tape. Points stamped after this field existed use the recorded
+ * stocks; older points reconstruct occupied from vacancy and walk stock back
+ * by that month's completions (demolitions are not on the tape, so a teardown
+ * will overstate earlier inventory — new games carry the real stocks).
+ */
+function standingVsLeased(
+  tail: EconHistoryPoint[],
+  k: BuiltClass,
+  liveStock: number,
+): { stock: number[]; leased: number[] } {
+  const stock: number[] = new Array(tail.length);
+  const leased: number[] = new Array(tail.length);
+  let stk = liveStock;
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const h = tail[i];
+    if (h.stock?.[k] != null) stk = h.stock[k]!;
+    stock[i] = stk;
+    leased[i] = h.occupied?.[k] != null
+      ? h.occupied[k]!
+      : Math.max(0, Math.round(stk * (1 - (h.vac?.[k] ?? 0))));
+    stk = Math.max(0, stk - (h.comp?.[k] ?? 0));
+  }
+  return { stock, leased };
+}
+
+function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
+  tail: EconHistoryPoint[];
+  live: { stock?: Partial<Record<BuiltClass, number>>; occupied?: Partial<Record<BuiltClass, number>> };
+  xFrom: string;
+  xTo: string;
+  spanYrs: number;
+}) {
+  if (tail.length < 2) return null;
+  const xl: [string, string] = [xFrom, xTo];
+  return (
+    <>
+      <div className="page-section">Stock standing vs space leased — the last {spanYrs} year{spanYrs === 1 ? "" : "s"}</div>
+      <div className="hint">
+        The stocks, not the month&apos;s flow. Solid is every square foot that exists. Dashed is every square
+        foot with a tenant in it. The gap is vacancy. Completions climb the solid line; absorption moves the
+        dashed one. The annual bars further down are the same two quantities as flows.
+      </div>
+      <div className="chart-grid">
+        {STOCK_CLASSES.map((k) => {
+          const liveStk = live.stock?.[k] ?? tail[tail.length - 1]?.stock?.[k] ?? 0;
+          const { stock, leased } = standingVsLeased(tail, k, liveStk);
+          return (
+            <div className="chart-cell" key={k}>
+              <div className="chart-title">{SECTOR_LABEL[k]} — standing vs leased</div>
+              <LineChart
+                height={108}
+                series={[
+                  { label: "stock", color: STOCK_COLOR[k], pts: stock },
+                  { label: "leased", color: "#7d8a96", pts: leased, dashed: true },
+                ]}
+                yFmt={sfShort}
+                zeroBase
+                xLabels={xl}
+              />
+              <div className="chart-note">
+                {sfShort(stock[stock.length - 1] ?? 0)} standing · {sfShort(leased[leased.length - 1] ?? 0)} leased
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export function EconomyPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -566,6 +649,9 @@ export function EconomyPage() {
       )}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
+      {(sel === "general" || isClass) && (
+        <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
+      )}
       {sel === "general" && <CityEconCharts tail={tail} spanYrs={spanYrs} />}
       {sel === "land" && <LandValueChart />}
       {sel === "banks" && <TheBanks />}

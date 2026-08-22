@@ -83,8 +83,18 @@ export function PortfolioPage() {
     const noi = ownedHoldingNoiYr(game, parcels, h);
     // Facility replaces the deed mortgage — allocated share is the lien that
     // still sits on this row once the pool is papered.
-    const debt = (h.loan?.balance ?? 0) + allocatedAmount(game, parcels, h.bbl);
-    const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
+    const facBal = allocatedAmount(game, parcels, h.bbl);
+    const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + facBal;
+    // Same walk as portfolioPropertyMonthlyCF, plus this row's share of a
+    // facility payment. The header CF / yr also subtracts construction
+    // interest, the whole facility and the revolver — those are firm lines,
+    // not a deed's. A row that skipped mezz or a pooled facility printed
+    // NOI as cash flow on the buildings that actually carry that paper.
+    const facPmt = game.facility && game.facility.balance > 0
+      ? game.facility.monthlyPmt * (facBal / game.facility.balance)
+      : 0;
+    const dsMo = (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt;
+    const cf = noi / 12 - dsMo;
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
     totV += v; totD += debt;
@@ -121,7 +131,7 @@ export function PortfolioPage() {
       gain: v - h.costBasis,
       debt,
       equity: v - debt,
-      ds: h.loan?.monthlyPmt ?? 0,
+      ds: dsMo,
     };
   });
   type PRow = (typeof rows)[number];
@@ -143,7 +153,8 @@ export function PortfolioPage() {
   const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   // Property … buttons. Extra lead cells when ranking or bundling.
-  const bookCols = 17 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
+  const bookCols = 9 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
+  const schemes = holdings.filter((h) => h.devDraft && !game.developments[h.bbl]);
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
     const rec = resolveRec(parcels, game, h.bbl);
@@ -410,35 +421,43 @@ export function PortfolioPage() {
           player ticking their way down a thirty-building book pushed the panel
           holding "Take it to market" off the top of the screen. */}
       <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
-      <div className="scroll-x">
-      <table className="tbl">
+      {schemes.length > 0 && (
+        <div className="deal" style={{ marginTop: 8, marginBottom: 8 }}>
+          <div className="deal-head">Scheme in progress · {schemes.length}</div>
+          <div className="mini-list">
+            {schemes.map((h) => {
+              const rec = resolveRec(parcels, game, h.bbl);
+              const d = h.devDraft!;
+              return (
+                <button key={h.bbl} className="neighbor" onClick={() => go(h.bbl)}>
+                  <span className="neighbor-addr">{rec?.address ?? h.bbl}</span>
+                  <span className="neighbor-meta mono">
+                    {d.floors} fl {d.use} · {d.tab} — resume →
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <table className="tbl tbl-book">
         <thead>
           <tr>
             {bundling && <th></th>}
             {ranked && <th className="num">#</th>}
-            {/* Square feet is the denominator of every number to the right of
-                it — NOI, value and debt are all quoted per foot in this
-                business, and the book listed none of them against an area. */}
             <H k="addr" label="Property" desc={false} />
-            <H k="cls" label="Class" desc={false} />
-            <H k="area" label="Building sf" num />
-            <H k="spaces" label="Spaces" num title="Leased spaces. Sorts on how many are let." />
+            <H k="area" label="sf" num />
             <H k="occ" label="Occ" num />
-            <H k="rentPsf" label="Rent $/sf" num title="Average contract rent across the rent roll, per square foot per year" />
+            <H k="rentPsf" label="Rent" num title="Average contract rent across the rent roll, per square foot per year" />
             <H k="noi" label="NOI / yr" num />
-            <H k="v" label="Value" num />
-            <H k="cost" label="Cost" num title="What you paid, including closing costs" />
-            <H k="basisPsf" label="Basis / psf" num title="What you paid per square foot of building, including closing costs — the number to hold against rent, value and what it would cost to build" />
-            <H k="gain" label="Gain" num title="Appraisal against cost basis — unrealised, before tax and before the cost of selling" />
-            <H k="debt" label="Debt" num />
-            <H k="equity" label="Equity" num />
-            <H k="ds" label="Debt svc / mo" num />
+            <H k="v" label="Value" num title="Appraisal. Cost, basis and unrealised gain sit under the number." />
+            <H k="debt" label="Debt" num title="Liens on this deed, including mezz and a facility share. Equity and monthly service sit under the number." />
             <H k="cf" label="CF / mo" num />
-            <th>Status</th><th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ, debt }, i) => {
+          {shown.map(({ h, rec, v, noi, cf, occ, debt, ds }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
@@ -472,25 +491,53 @@ export function PortfolioPage() {
                 </td>
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
-              <td className="nowrap">{rec?.address ?? h.bbl}</td>
-              <td>{rec ? useLabel(rec) : "—"}</td>
+              <td>
+                <div>{rec?.address ?? h.bbl}</div>
+                <div className="dim" style={{ fontSize: 11 }}>
+                  {rec ? useLabel(rec) : ""}
+                  {h.groundLeased || !rec || !rec.bldgArea ? "" : (() => {
+                    const u = unitStatus(rec, h, game.month);
+                    return ` · ${u.leased}/${u.total} spaces`;
+                  })()}
+                  {h.devDraft && !dv ? " · scheme" : ""}
+                </div>
+                {(() => {
+                  const bits = [
+                    wk ? (wk.stage === "foreclosure" ? "foreclosure"
+                      : wk.stage === "forbearance" ? "extended"
+                      : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt) ? "default · current"
+                      : "default") : null,
+                    dv ? "building" : null,
+                    h.loan?.sweep ? "sweep" : null,
+                    h.sale ? "listed" : null,
+                    h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "reno" : null,
+                    h.program ? "capex" : null,
+                    siteDeeds(game, h.bbl).length > 1 ? "assembled" : null,
+                    game.btsProspects?.[h.bbl] ? "bts terms" : h.btsOffer ? "bts listed" : null,
+                    game.groundLeases?.[h.bbl] ? "ground-leased" : h.groundOffer ? "gl offered" : null,
+                  ].filter(Boolean);
+                  if (!bits.length && !wk && !dv) return null;
+                  return (
+                    <div className={wk ? "neg" : "dim"} style={{ fontSize: 11 }}>
+                      {bits.join(" · ")}
+                      {wk && <span className="mono"> · {wk.stage === "foreclosure"
+                        ? `auction ${monthLabel(wk.decideM)}`
+                        : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt)
+                          ? "coupon current"
+                          : `file ${monthLabel(wk.decideM)}`}</span>}
+                      {dv && <span className="mono"> · {(dv.sf / 1000).toFixed(0)}k sf {monthLabel(dv.deliverM)}</span>}
+                    </div>
+                  );
+                })()}
+              </td>
               <td className="num" title={h.groundLeased
                 ? "Lessee improvement — not your building sf"
                 : rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
                 {h.groundLeased || !rec || !rec.bldgArea ? "—" : sf(rec.bldgArea)}
-                {/* THE SIZE OF THE PRODUCT, under the size of the building. A
-                    hundred thousand feet cut into 450-foot studios and the same
-                    hundred thousand cut into 1,800-foot family flats are two
-                    different businesses at identical area — different rents,
-                    different tenants, different turnover — and on anything you
-                    programmed yourself it is a decision you made and can read
-                    back. It hangs under the area instead of taking a column of
-                    its own because half the book has no flats in it at all. */}
                 {!h.groundLeased && rec && avgUnitSf(rec) > 0 && (
                   <div className="dim" style={{ fontSize: 11 }}>{sf(avgUnitSf(rec))}/flat</div>
                 )}
               </td>
-              <td className="num">{h.groundLeased || !rec || !rec.bldgArea ? "—" : (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })()}</td>
               <td
                 className="num"
                 title={dv
@@ -543,65 +590,27 @@ export function PortfolioPage() {
                 return <td className="num dim">—</td>;
               })()}
               <td className={"num" + (noi < 0 ? " neg" : "")}>{usd(noi)}</td>
-              <td className="num">{usd(v)}</td>
-              {/* WHAT IT HAS DONE FOR YOU. Appraisal against what you actually
-                  paid — the number every owner carries in their head and the
-                  one this book never showed. Unrealised, before tax and before
-                  the cost of getting out, which is why it is not net worth. */}
-              <td className="num dim">{usd(h.costBasis)}</td>
-              <td className="num dim">
-                {!h.groundLeased && rec && rec.bldgArea > 0 ? `$${(h.costBasis / rec.bldgArea).toFixed(0)}` : "—"}
-              </td>
               {(() => {
                 const g = v - h.costBasis;
                 const pctG = h.costBasis > 0 ? (g / h.costBasis) * 100 : 0;
                 return (
-                  <td className={"num" + (g < 0 ? " neg" : "")} title={`${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
-                    {g > 0 ? "+" : ""}{usd(g)} · {g > 0 ? "+" : ""}{pctG.toFixed(0)}%
+                  <td className="num" title={`Cost ${usd(h.costBasis)}${!h.groundLeased && rec && rec.bldgArea > 0 ? ` · $${(h.costBasis / rec.bldgArea).toFixed(0)}/sf` : ""} · ${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
+                    {usd(v)}
+                    <div className={"dim" + (g < 0 ? " neg" : "")} style={{ fontSize: 11 }}>
+                      {g > 0 ? "+" : ""}{usd(g)} · {g > 0 ? "+" : ""}{pctG.toFixed(0)}%
+                    </div>
                   </td>
                 );
               })()}
-              <td className="num">{usd(debt)}</td>
-              <td className="num">{usd(v - debt)}</td>
-              {/* A LEADING MINUS THAT WRAPS IS A BARE DASH. In a 62px column
-                  `"−" + usd(...)` breaks after the sign, so a real payment
-                  rendered as a dash over a number — visually identical to the
-                  "—" that means no debt at all. Parenthesised the way an
-                  accountant writes a negative, which cannot wrap apart. */}
-              <td className="num nowrap">{h.loan ? `(${usd(h.loan.monthlyPmt)})` : "—"}</td>
-              <td className={"num nowrap" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
-              {/* A BUILDING IN DEFAULT WAS INVISIBLE FROM HERE. The workout desk
-                  lives on the property record, so the only way to find out a
-                  lender had filed was to open that one building. On a
-                  thirty-building book that is not a warning, it is a scavenger
-                  hunt with a foreclosure at the end of it. */}
-              <td className={wk ? "neg" : "dim"}>
-                {[wk ? (wk.stage === "foreclosure" ? "⚠ FORECLOSURE"
-                  : wk.stage === "forbearance" ? "⚠ EXTENDED"
-                  : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt) ? "⚠ DEFAULT · CURRENT"
-                  : "⚠ DEFAULT") : null,
-                  dv ? "UNDER CONSTRUCTION" : null,
-                  h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
-                  h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
-                  h.program ? "CAPEX" : null,
-                  siteDeeds(game, h.bbl).length > 1 ? "ASSEMBLED" : null,
-                  game.btsProspects?.[h.bbl] ? "BTS TERMS" : h.btsOffer ? "BTS LISTED" : null,
-                  game.groundLeases?.[h.bbl] ? "GROUND-LEASED" : h.groundOffer ? "GL OFFERED" : null].filter(Boolean).join(" · ")}
-                {(() => {
-                  const g = game.groundLeases?.[h.bbl];
-                  return g ? <div className="mono" style={{ fontSize: 11 }}>{g.tenant} · reverts {monthLabel(g.endM)}</div> : null;
-                })()}
-                {wk && <div className="mono" style={{ fontSize: 11 }}>
-                  {wk.stage === "foreclosure"
-                    ? `auction ${monthLabel(wk.decideM)}`
-                    : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt)
-                      ? "coupon current — will not file"
-                      : `they file ${monthLabel(wk.decideM)}`}
-                </div>}
-                {dv && <div className="mono" style={{ fontSize: 11 }}>
-                  {(dv.sf / 1000).toFixed(0)}k sf · delivers {monthLabel(dv.deliverM)}
-                </div>}
+              <td className="num" title={debt > 0 ? `Equity ${usd(v - debt)}` : "Unencumbered"}>
+                {debt > 0 ? usd(debt) : "—"}
+                {debt > 0 && (
+                  <div className="dim" style={{ fontSize: 11 }}>
+                    eq {usd(v - debt)} · ds {usd(ds)}/mo
+                  </div>
+                )}
               </td>
+              <td className={"num nowrap" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
               <td>
                 {/* list / refi / ground-lease from the row — no need to open the record */}
                 <div className="btn-row" style={{ gap: 4, margin: 0 }}>
@@ -702,37 +711,36 @@ export function PortfolioPage() {
             );
           })}
           {Object.values(game.developments).map((dv) => (
-            /* SEVENTEEN CELLS, same order as the header. Basis / psf and the
-               action column were added after a sixteen-cell patch; the loan
-               then sat under Gain, equity under Debt, and BUILDING under
-               CF / mo. A misaligned number is worse than a missing one. */
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               {bundling && <td className="dim">·</td>}
               {ranked && <td className="num dim">—</td>}
-              <td className="nowrap">{parcels[dv.bbl]?.address ?? dv.bbl}</td>
-              <td>{devUseLabel(dv.use)}</td>
+              <td>
+                <div>{parcels[dv.bbl]?.address ?? dv.bbl}</div>
+                <div className="dim" style={{ fontSize: 11 }}>
+                  {devUseLabel(dv.use)} · building · delivers {monthLabel(dv.deliverM)}
+                </div>
+              </td>
               <td className="num dim">{sf(dv.sf)}</td>
-              <td className="num dim">—</td>
-              <td className="num dim">—</td>
-              <td className="num dim">—</td>
+              <td className="num dim">{(dv.signed?.length ?? 0)
+                ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre`
+                : "—"}</td>
               <td className="num dim">—</td>
               <td className="num dim">—</td>
               <td className="num" title="The budget as it stands, escalation included">{usd(dv.costTotal)}</td>
-              <td className="num dim">—</td>
-              <td className="num dim">—</td>
-              <td className="num">{usd(dv.loanBalance)}</td>
-              <td className="num" title="What you have actually put in so far">{usd(dv.equitySpent)}</td>
-              <td className="num nowrap neg" title="Construction interest accruing into the loan, not paid in cash">
-                {usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}
+              <td className="num" title="Construction loan drawn, interest accruing into the balance">
+                {usd(dv.loanBalance)}
+                <div className="dim" style={{ fontSize: 11 }}>
+                  eq {usd(dv.equitySpent)} · {(dv.loanBalance * dv.ratePct) / 100 / 12 > 0
+                    ? `int ${usd((dv.loanBalance * dv.ratePct) / 100 / 12)}/mo`
+                    : "no draw"}
+                </div>
               </td>
               <td className="num dim">—</td>
-              <td className="dim">BUILDING · delivers {monthLabel(dv.deliverM)}</td>
               <td></td>
             </tr>
           ))}
         </tbody>
       </table>
-      </div>
       {/* History reads under the living book: what left, when, and what
           leaving returned. */}
       <ExitsRecord />

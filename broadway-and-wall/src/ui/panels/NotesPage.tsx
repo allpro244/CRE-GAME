@@ -113,30 +113,31 @@ export function NoteSellers() {
     .sort((a, b) => b.p - a.p);
   if (!lenders.length) return null;
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div>
       <table className="tbl">
         <thead>
           <tr>
             <th>Desk</th>
             <th className="num" title="Capital over book — the one number that decides whether a desk is open">Capital</th>
             <th className="num" title="How badly they need to sell something. This is the number the offer generator reads.">Pressure</th>
-            <th>What that means</th>
           </tr>
         </thead>
         <tbody>
           {lenders.map(({ l, p, cap }) => (
             <tr key={l.name}>
-              <td>{l.name}{l.failedM !== undefined ? <span className="neg"> · in receivership</span> : ""}</td>
+              <td>
+                <div>{l.name}{l.failedM !== undefined ? <span className="neg"> · in receivership</span> : ""}</div>
+                <div className="dim" style={{ fontSize: 11 }}>
+                  {l.failedM !== undefined
+                    ? "A receiver is a forced seller. Everything they hold is for sale and none of it is priced by them."
+                    : p > 0.7 ? "Badly impaired. They will sell good paper cheap to raise capital, and that is when you want to be looking."
+                      : p > 0.35 ? "Under real pressure. Expect them to shop the weakest files first."
+                        : p > 0.1 ? "Comfortable. Anything they offer will be priced above fair and the right move is usually to pass."
+                          : "No reason to sell anything to anybody."}
+                </div>
+              </td>
               <td className="num mono">{(100 * cap).toFixed(1)}%</td>
               <td className={"num mono" + (p > 0.5 ? " neg" : "")}>{(100 * p).toFixed(0)}%</td>
-              <td className="dim">
-                {l.failedM !== undefined
-                  ? "A receiver is a forced seller. Everything they hold is for sale and none of it is priced by them."
-                  : p > 0.7 ? "Badly impaired. They will sell good paper cheap to raise capital, and that is when you want to be looking."
-                    : p > 0.35 ? "Under real pressure. Expect them to shop the weakest files first."
-                      : p > 0.1 ? "Comfortable. Anything they offer will be priced above fair and the right move is usually to pass."
-                        : "No reason to sell anything to anybody."}
-              </td>
             </tr>
           ))}
         </tbody>

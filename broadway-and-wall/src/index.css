@@ -1013,10 +1013,14 @@ body {
 .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chart-legend-swatch { width: 15px; height: 3px; border-radius: 1px; display: inline-block; flex: none; }
 
-/* A wide table inside a narrow docked panel scrolls itself rather than
-   pushing the whole page sideways. */
-.scroll-x { overflow-x: auto; max-width: 100%; }
-.page-portfolio .scroll-x { margin-top: 8px; }
+/* Horizontal scroll is forbidden on every panel. Tables compact; the page
+   never grows sideways. Vertical scroll is the overflow. */
+html, body, #root { overflow-x: hidden; }
+.page-backdrop, .page-sheet, .page { overflow-x: hidden; max-width: 100%; }
+.scroll-x { overflow-x: hidden; max-width: 100%; }
+.page-portfolio .tbl-book { margin-top: 8px; }
+.tbl-book td { vertical-align: top; }
+.deals-grid.deals-one { grid-template-columns: 1fr; }
 
 /* THREE SCALES, ONE COLUMN. Occupancy, rent and NOI cannot share a y-axis —
    a per-cent, a $/sf and a $/yr on one scale is a flat line and a spike. So

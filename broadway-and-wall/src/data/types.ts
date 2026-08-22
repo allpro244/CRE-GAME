@@ -38,11 +38,10 @@ export interface ParcelRecord {
   assessedTotal: number;
   /**
    * HOW WELL THIS BUILDING WAS BUILT, 0..1, with 0.5 as ordinary market
-   * standard. Set when the player or the street breaks ground and never
-   * changes afterwards, because it describes the things a renovation cannot
-   * reach: the floor-to-floor, the curtain wall, the structure, the plant.
-   * Read by `condCeiling` — a trophy specification ages more slowly and keeps
-   * a higher ceiling forever.
+   * standard. Set when the player or the street breaks ground. A gut
+   * renovation steps it toward (not to) modern — that is the re-clad and
+   * re-plant. yearBuilt is the thing a renovation cannot reach: floor-to-floor,
+   * the core, the slab. Read by `condCeiling`. QUALITY_BALANCE_PLAN.md §1.
    */
   buildSpec?: number;
   demandScore: number;  // 0–100

@@ -3698,6 +3698,7 @@ export function tickEcon(s: GameState) {
     const instant = vacTerm + scarcity;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
+    const pressEma = e.rentPress[k];
     // Near/on the frictional rail, bleed stored POSITIVE shortage pressure so
     // the lag EMA cannot keep paying real rent after availability has
     // saturated. Soft-side (negative) press is left to the ordinary tau chase
@@ -3803,6 +3804,7 @@ export function tickEcon(s: GameState) {
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);
+    const clampBound = pressEma <= -0.008 + 1e-12;
     // Phase / job / sector sentiment must not LIFT asking while soft, on/near
     // the frictional rail, or once rent is already near earned pay. Soft:
     // empty floors on the shelf. Rail-bound: availability is saturated (same
@@ -3826,6 +3828,12 @@ export function tickEcon(s: GameState) {
     // digit. Left in place because a guard that never fires is a guard.
     const beforeRent = e.rentIdx[k];
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
+    e.rentPath[k] = {
+      gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,
+      escalation, anchor, drift,
+      nomCh: beforeRent > 0 ? e.rentIdx[k] / beforeRent - 1 : 0,
+    };
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - CONC_DEPTH * e.concIdx[k])).toFixed(4);
     // EXPLAIN THE MOVE. Defaults, tenant exits and district shifts already
     // write a cause. Asking rent did not — the Economy page showed a chart
@@ -4255,6 +4263,17 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     comp: comp ? {
       office: Math.round(comp.office ?? 0), retail: Math.round(comp.retail ?? 0),
       multifamily: Math.round(comp.multifamily ?? 0), industrial: Math.round(comp.industrial ?? 0),
+    } : undefined,
+    // STOCKS, not the month's flow. The Economy page plots these against each
+    // other — standing inventory vs space actually leased — over the whole
+    // history. Completions and absorption stay on `comp`/`abs`.
+    stock: e.stock ? {
+      office: Math.round(e.stock.office ?? 0), retail: Math.round(e.stock.retail ?? 0),
+      multifamily: Math.round(e.stock.multifamily ?? 0), industrial: Math.round(e.stock.industrial ?? 0),
+    } : undefined,
+    occupied: e.occupied ? {
+      office: Math.round(e.occupied.office ?? 0), retail: Math.round(e.occupied.retail ?? 0),
+      multifamily: Math.round(e.occupied.multifamily ?? 0), industrial: Math.round(e.occupied.industrial ?? 0),
     } : undefined,
   });
   if (e.history.length > 1260) e.history.shift();

@@ -80,7 +80,7 @@ console.log("\nVACANT OFFICE — tours, the desk, and the rent column\n");
 
   const sup = E.supportableOcc(g.econ, rec, "office");
   const poolSf = Math.max(0, sf - (1 - sup) * sf);
-  const suite = E.useSuiteSf(rec, "office");
+  const suite = E.typicalSuiteSf(rec, "office");
   const wouldSkip = sf > poolSf + suite * 0.15;
   check(wouldSkip,
     `precondition: a whole-building letter overshoots the old pool sliver `
@@ -129,8 +129,7 @@ console.log("\nVACANT OFFICE — tours, the desk, and the rent column\n");
 
   g.lois = [loi];
   g.agent = true;
-  g.agentFloor = 0.90;
-  g.agentPassBelow = 0.78;
+  g.leasingPlan = E.starterPlan();
   g.cash = Math.max(g.cash, 20_000_000);
   const before = g.holdings[bought].tenants.length;
   E.runLeasingAgent(g, parcels);

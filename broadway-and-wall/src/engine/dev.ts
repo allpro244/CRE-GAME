@@ -20,7 +20,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, depositsOn, genAnchorTenant, minTenancySf, useVacantSf } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, useSf } from "./mix";
@@ -2324,7 +2324,7 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     };
     const openSf = Math.round(leasable * pre.ceiling) - takenSf;
     // Same floor delivery uses when it converts `signed` into a rent-roll row.
-    const floorSf = minTenancySf(asBuilt, lead);
+    const floorSf = minLettableSf(asBuilt, lead);
     if (openSf < floorSf) continue;
 
     // a tight market lets a building before it opens; a glut does not

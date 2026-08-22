@@ -453,7 +453,7 @@ export function DealsPage() {
               {quiet
                 ? (tally
                   ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
-                  : "Your desk has the book — nothing referred back right now. They sign inside the mandate on Leasing; the monthly tally lives there too.")
+                  : "Your desk has the book — nothing referred back right now. They work the posted plan on Leasing; the quarterly digest lives there too.")
                 : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
             </div>
             {Object.keys(game.holdings).length === 0 ? (
@@ -462,7 +462,7 @@ export function DealsPage() {
               </button>
             ) : (
               <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
-                Open Leasing mandate →
+                Open Leasing plan →
               </button>
             )}
           </div>

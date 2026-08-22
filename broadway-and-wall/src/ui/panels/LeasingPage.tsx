@@ -131,7 +131,7 @@ export function LeasingPage() {
         ? "Your leasing desk holds the pen."
         : "You hold the pen.";
     const sub = game.agent
-      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They sign inside your mandate, counter soft letters, pick clear tour winners, and refer expansions, dead heats and capital calls. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They work the posted plan: counter to the sheet, docket exceptions, decline junk. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
       : teamOn
         ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
         : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, hire leasing on Staff and hand them the book, or hire outside coverage at 6% — nothing takes the pen unless you say so.";

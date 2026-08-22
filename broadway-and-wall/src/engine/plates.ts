@@ -157,6 +157,18 @@ export function marketNormSuiteSf(use: BuiltClass, plateSf: number): number {
   return Math.min(plateSf, MARKET_NORM_SF[use]);
 }
 
+/**
+ * Demand-distribution parameter for this building and use — the size a
+ * typical tenancy aims at, never a pre-cut the stack is forced into.
+ * A whole plate smaller than the class norm is the plate (the shop, the shed).
+ */
+export function typicalSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
+  const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
+  if (use === "multifamily") return Math.min(a, 900);
+  const plate = stackForUse(rec, use)?.plateSf ?? a;
+  return marketNormSuiteSf(use, plate);
+}
+
 export function remnantSf(sf: number, plateSf: number, use: BuiltClass): boolean {
   if (!(sf > 0) || !(plateSf > 0)) return false;
   return sf < plateSf * REMNANT_OF_PLATE && sf < marketNormSuiteSf(use, plateSf);

@@ -33,7 +33,7 @@ const commercialSuites = (rec) => {
   for (const u of E.leasableUses(rec)) {
     const sf = E.useSf(rec, u);
     if (sf <= 0) continue;
-    n += Math.max(1, Math.round(sf / E.useSuiteSf(rec, u)));
+    n += Math.max(1, Math.round(sf / E.typicalSuiteSf(rec, u)));
   }
   return n;
 };
@@ -266,8 +266,8 @@ const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN
   const under = E.clearAgainstPlan(g, letter({ rentPsf: market * 0.88 }), plan, { rec, h });
   ok("under-quote is still sign (desk will counter)", under.verdict === "sign", under.verdict);
 
-  const syn = E.synthesizeFromDials({ agent: true, agentFloor: 0.90 });
-  ok("synthesised quote is agentFloor, no par cap applied beyond the dial",
+  const syn = E.starterPlan();
+  ok("starter quote is the old default sign line, no par cap",
     Math.abs(syn.sheet.office.quotePct - 0.90) < 1e-9
     && syn.sheet.office.quotePct <= 1.00,
     `quotePct=${syn.sheet.office.quotePct}`);

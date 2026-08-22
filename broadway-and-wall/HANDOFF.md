@@ -372,3 +372,34 @@ they dominate. Two of the last three fault reports were exactly that.
 
 **Do not merge #85** as stacked — last commit breaks century firms. Use the
 balances-only PR from `GROK_QUEUE.md` G3 instead.
+
+---
+
+## 10. THE LEASING OVERHAUL (Phases 0–5)
+
+See `LEASING_OVERHAUL_PLAN.md`. Two systems shipped together:
+
+1. **Floorplate inventory** (`src/engine/plates.ts`). A building is a stack of
+   plates, not a pre-cut of N equal suites. Tenants arrive with a size;
+   demise/merge are events with cost. Vacant inventory is contiguous blocks
+   (`blocksOf`). The physical lettable floor is `minLettableSf` — a remnant
+   under the city norm stays vacant; a whole shop smaller than the norm is
+   still the shop.
+2. **One clearing engine.** The four mandate dials and the desk-that-imitates
+   the player are gone. A posted `leasingPlan` (asking sheet, hold-out,
+   package, dollar authority) is what both the desk and the principal clear
+   against (`clearAgainstPlan`). No desk → letters land on the player. A desk
+   without a sheet gets `starterPlan()` (quote 90%, the old default sign line).
+   Old saves that still carry leftover dial fields are migrated in `save.ts`.
+
+**Do not tune the desk** until Phase 6's adversarial number is in. The Phase 0
+gap (principal +17.7 NE points over the old desk) closed to +6.8 under the
+player-equivalent sheet. Residual is a posted number vs the tenant
+indifference function, plus fees. That is (a) in the plan's language — the
+schema cannot track the cycle — not a coefficient to twist.
+
+Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
+`pnpm plan-ui`, `pnpm plates-blocks`. Rebuild `pnpm engine` before every probe.
+
+Phase 1 and Phase 5 are the two sanctioned `pnpm baseline` re-rolls. Do not
+add world-stream draws. `pAccept` and `drawRequirementSf` stay on `rng(s)`.

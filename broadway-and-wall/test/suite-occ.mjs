@@ -54,7 +54,7 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
 
 {
   const typical = { ...rec };
-  const sfPer = E.useSuiteSf(typical, "office");
+  const sfPer = E.typicalSuiteSf(typical, "office");
   const plate = E.stackForUse(typical, "office")?.plateSf ?? HQ;
   if (sfPer > plate + 1) fail(`market-norm suite ${sfPer} exceeds plate ${plate}`);
   else console.log(`ok  market-norm office suite ${Math.round(sfPer)} ft on a ${Math.round(plate)} ft plate`);
@@ -128,7 +128,7 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
     floors: 1,
     mix: { industrial: 1 },
   };
-  const sfPer = E.useSuiteSf(ware, "industrial");
+  const sfPer = E.typicalSuiteSf(ware, "industrial");
   if (sfPer > shed) fail(`industrial suite ${sfPer} exceeds the ${shed} ft shed`);
   else if (sfPer !== shed) fail(`9,371 ft shed should be one ${shed} ft plate (got ${sfPer})`);
   else console.log(`ok  ${shed} ft warehouse is one ${sfPer} ft plate, not 12,000`);
@@ -147,7 +147,7 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
     const p = parcels[bbl];
     if (!p || p.class !== "industrial" || !p.bldgArea) continue;
     nInd++;
-    const per = E.useSuiteSf(p, "industrial");
+    const per = E.typicalSuiteSf(p, "industrial");
     const leg = E.useSf(p, "industrial") || p.bldgArea;
     if (per > leg + 1) over++;
   }

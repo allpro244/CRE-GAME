@@ -6,7 +6,7 @@
 // Phase 0 of LEASING_OVERHAUL_PLAN.md. No engine change. Two policies, one
 // book, paired seeds, ten years:
 //
-//   desk        firm agent on, default mandate (floor 90%, AGENT_FLOOR_MAX = 1.00)
+//   desk        firm agent on, starter plan (quote 90%)
 //   principal   counters every letter to tenantIndifferenceMult; the rest walk
 //
 // Same starting 100-suite commercial book on both arms (gifted, not bought —
@@ -62,7 +62,7 @@ const commercialSuites = (rec) => {
   for (const u of E.leasableUses(rec)) {
     const sf = E.useSf(rec, u);
     if (sf <= 0) continue;
-    n += Math.max(1, Math.round(sf / E.useSuiteSf(rec, u)));
+    n += Math.max(1, Math.round(sf / E.typicalSuiteSf(rec, u)));
   }
   return n;
 };
@@ -306,8 +306,6 @@ const runArm = (g0, parcels, adj, policy) => {
   const stats = freshStats();
   if (policy === "desk" || policy === "plan") {
     g.agent = true;
-    delete g.agentFloor;
-    delete g.agentPassBelow;
     if (policy === "plan") g.leasingPlan = E.playerEquivalentPlan();
     else delete g.leasingPlan;
     g = structuredClone(g);
@@ -401,7 +399,7 @@ const summarise = (label, start, end, stats) => {
 
 console.log("\nDESK VS PATIENT PRINCIPAL — Phase 3 re-run (player-equivalent plan)");
 console.log(`  seeds ${SEEDS.join(", ")} · ${HZ} months · target ${TARGET_SUITES} commercial suites`);
-console.log("  desk  = agent + synthesised-from-dials plan (quotePct = agentFloor 0.90)");
+console.log("  desk  = agent + starter plan (quotePct 0.90)");
 console.log("  plan  = agent + player-equivalent sheet (quote 1.08, holdM 18, no par cap)");
 console.log("  principal = counter every letter to tenantIndifferenceMult");
 console.log("  signed NE% is face after free months and the bump; TI is not on the tenant\n");
@@ -521,7 +519,7 @@ console.log("READ AGAINST PHASE 3");
 console.log(`  synthesised desk still trails the bot on NE%  ${princBeatsDesk ? "YES" : "NO"}  (${pct(princNe)} vs ${pct(deskNe)})`);
 console.log(`  bot beats synthesised desk in tight months    ${princBeatsDeskTight ? "YES" : "NO"}  (${pct(princTight)} vs ${pct(deskTight)})`);
 console.log(`  player-equivalent plan within a few NE points ${planGap <= 0.04 ? "YES" : "NO"}  (${pct(planNe)} vs ${pct(princNe)}, gap ${pct(planGap)})`);
-console.log(`  residual is fees/hold-out, not a par clamp    quote 1.08 is legal; AGENT_FLOOR_MAX is unused on this path`);
+console.log(`  residual is fees/hold-out, not a par clamp    quote 1.08 is legal; the old sign-line cap is gone`);
 console.log(`  a large share of any edge is the 4% floor     ${exploitShare > 0.15 ? "YES" : "NO"}  (exploit share of E[p] ${pct(exploitShare)})`);
 if (exploitShare <= 0.15) {
   console.log("  The patient-principal bot counters TO indifference, where the");

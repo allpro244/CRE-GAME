@@ -12,6 +12,12 @@ The rule this whole document exists to serve: **a building family that is never
 drawn is dead code that compiles.** Six were found that way, and every one was
 found by counting rather than by looking. `pnpm styles` is the counter.
 
+Leasing inventory is a different question and lives in `src/engine/plates.ts`,
+not here. A building is a stack of floorplates; tenants arrive with a size;
+vacant space is contiguous blocks. The renderer still draws a mass. It does
+not pre-cut N equal suites, and a stacking diagram is out of scope — the
+rent-roll tab lists the blocks.
+
 ---
 
 ## 1 · WHERE THINGS LIVE

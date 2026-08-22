@@ -2758,30 +2758,16 @@ export interface GameState {
    *
    * Asking sheet + hold-out + dollar authority. When this is present and a
    * desk holds the pen, `clearAgainstPlan` is the one clearing engine for
-   * desk and (via the same tenant reaction) the principal. Absent: legacy
-   * mandate dials still run, so older saves keep working until Phase 5
-   * deletes the dials. A save that loads with `agent` / `teamLeasing` /
-   * `renewalMgmt` and no plan gets a starter sheet synthesised from the
-   * dials (`quotePct: agentFloor`).
+   * desk and (via the same tenant reaction) the principal. A save that loads
+   * with `agent` / `teamLeasing` / `renewalMgmt` and no plan gets a starter
+   * sheet (`quotePct` 0.90, the old default sign line).
    */
   leasingPlan?: LeasingPlan;
-  /**
-   * THE MANDATE YOU GAVE THE DESK — see agentPolicy in leasing.ts.
-   *
-   * DEPRECATED once `leasingPlan` is set (Phase 3). Phase 5 deletes these
-   * fields. `agentFloor` is the lowest net-effective share of market they may
-   * AUTO-SIGN. Below that and above `agentPassBelow` they refer the letter
-   * back to you; under the pass line they kill it. Undefined fields keep the
-   * defaults in leasing.ts so older saves stay coherent.
-   */
-  agentFloor?: number;
-  /** Auto-pass (kill) letters scoring under this share of market. */
-  agentPassBelow?: number;
   /**
    * SIGNING AUTHORITY, IN SQUARE FEET. A leasing manager's mandate in life is
    * bounded by the size of the deal, not only by its price: under the limit
    * the desk signs, over it the letter goes to the principal whatever the
-   * mandate says. Applies to EVERY delegation — the firm agent, a building's
+   * sheet says. Applies to EVERY delegation — the firm agent, a building's
    * covering exclusive, renewal management — because it is an authority limit
    * on the firm, not a setting on one channel. Undefined = no size limit,
    * which is how every save before it behaved.
@@ -2794,19 +2780,6 @@ export interface GameState {
    * they lose is the pen.
    */
   signOwnAll?: boolean;
-  /** Minimum tenant credit the desk may auto-sign (0 any · 1 solid · 2 strong). */
-  agentMinCredit?: Credit;
-  /**
-   * Cap on fit-out the desk may fund, as months of face rent
-   * (`tiPsf / rentPsf * 12`). Undefined = generous default in leasing.ts.
-   */
-  agentMaxTiMonths?: number;
-  /**
-   * Cap on total upfront leasing cash (TI + commission), expressed as months
-   * of the letter's face rent. Prevents long-term commission plus TI packages
-   * from clearing a TI-only mandate.
-   */
-  agentMaxSigningMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

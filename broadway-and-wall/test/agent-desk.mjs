@@ -74,19 +74,18 @@ g.lois = [
   },
 ];
 g.agent = true;
-g.agentFloor = 0.90;
-g.agentPassBelow = 0.78;
+g.leasingPlan = E.starterPlan();
 g.cash = Math.max(g.cash, 20_000_000);
 
 const beforeTenants = g.holdings[boughtBbl].tenants.length;
 E.runLeasingAgent(g, parcels);
-const afterIds = g.lois.map((l) => l.id);
+const tourLeft = g.lois.filter((l) => l.id === 101 || l.id === 102 || l.id === 103);
 const signed = g.holdings[boughtBbl].tenants.length > beforeTenants;
-check(signed, "agent signed the clear tour winner");
-check(!afterIds.includes(101) && !afterIds.includes(102) && !afterIds.includes(103),
-  "entire contested tour cleared off the desk after a clear winner");
-check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
-  "no LOI attention items when agent left an empty referred pile");
+check(!signed, "contested tour is not auto-signed — the principal picks");
+check(tourLeft.length === 3 && tourLeft.every((l) => l.referred || l.docketReason),
+  "entire contested tour is docketed so the principal chooses");
+check(E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
+  "docketed tour letters still need the principal");
 
 // Hire-path: open letters, agent off → runLeasingAgent after flag.
 {
@@ -110,8 +109,7 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
 // Mid-band single letter: desk counters instead of dumping it on you.
 {
   g.agent = true;
-  g.agentFloor = 0.90;
-  g.agentPassBelow = 0.78;
+  g.leasingPlan = E.starterPlan();
   g.holdings[boughtBbl].tenants = [];
   g.lois = [{
     id: 301, bbl: boughtBbl, kind: "new", use, name: "Soft But Close LLC",

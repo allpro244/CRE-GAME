@@ -24,7 +24,7 @@ import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING
 // so an invariant that appraises at its BIRTH grade is measuring a different
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
-import { conveyedValue, leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse, isCommercial } from "./leasing";
+import { conveyedValue, leasableUses, minLettableSf, useVacantSf, notReadySf, unitStatusByUse, isCommercial } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { blockIdentity } from "./plates";
 import { MAX_FLOORS_BY_USE } from "./dev";
@@ -421,13 +421,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   // and the same rule was ALSO checked forty lines below at 2,000 rather than
   // 1,900, which is the same quantity with two answers. A 692 sf office
   // building let to one firm is not a closet, it is the whole building; see
-  // minTenancySf, which is what leasing.ts now enforces.
+  // minLettableSf, which is what leasing.ts now enforces.
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     for (const t of h.tenants) {
       const use = t.use ?? leasableUses(rec)[0] ?? "office";
-      const floor = minTenancySf(rec, use) - 1;    // a little slack for rounding
+      const floor = minLettableSf(rec, use) - 1;    // a little slack for rounding
       if (t.sf > 0 && t.sf < floor) {
         bad("tenancy", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf tenancy, under the ${floor} sf floor for ${use}`);
       }
@@ -454,8 +454,8 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     // under the floor that no new tenant can ever lease, offered to the sitting
     // neighbour. Same test signLoi applies, so the two cannot disagree.
     const floor = l.kind === "expansion"
-      ? Math.min(l.sf, minTenancySf(rec, use))
-      : minTenancySf(rec, use);
+      ? Math.min(l.sf, minLettableSf(rec, use))
+      : minLettableSf(rec, use);
     const vac = useVacantSf(rec, h, use, s.month);
     if (vac < floor) {
       bad("loi", `${l.bbl} ${l.name}`, `letter for ${Math.round(l.sf)} sf of ${use} is live, but only `

@@ -27,8 +27,8 @@ import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./cr
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { penJudgment, penNegotiation, pmTenantCareMult, rentMultFor } from "./staff";
-import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, marketNormSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
+import { pmTenantCareMult, rentMultFor } from "./staff";
+import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -145,17 +145,6 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 /** The smallest space anybody will take on a commercial lease here. */
 export const COMMERCIAL_SUITE_MIN = 2_000;
 
-export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
-  // MARKET NORM, not a pre-cut. The building is a stack of plates
-  // (plates.ts); this number is what the demand distribution is aimed at.
-  // The even-cut that used to live here forced N equal suites at development
-  // and is deleted — remnants and contiguous blocks are now real.
-  const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
-  if (use === "multifamily") return Math.min(a, 900);
-  const plate = stackForUse(rec, use)?.plateSf ?? a;
-  return marketNormSuiteSf(use, plate);
-}
-
 /**
  * THE SMALLEST SPACE THAT IS A TENANCY IN THIS BUILDING — which is not the
  * same number as the smallest space that is a tenancy in this CITY.
@@ -164,8 +153,8 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
  * As a demise floor it is right: a tower cut into 1,400 ft suites is a market
  * stall, and that is the fault it was raised to fix. As a LETTABILITY floor it
  * condemned every building smaller than itself — a 1,634 ft office building or
- * a 1,397 ft shop at grade has no space above the floor, so `toSuites` refused
- * to place a tenant in it, and refused for ever.
+ * a 1,397 ft shop at grade has no space above the floor, so the even-cut
+ * helper refused to place a tenant in it, and refused for ever.
  *
  * Measured on the shipped island: 203 of 739 commercial legs — 27% of every
  * shopfront and small office in the city — could not have a tenant in any
@@ -177,17 +166,17 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
  * what the building actually is: a whole leg is always lettable, a REMNANT of
  * a bigger leg still has to clear the norm. That is what a floor is for.
  */
-export function minTenancySf(rec: ParcelRecord, use: BuiltClass): number {
+export function minLettableSf(rec: ParcelRecord, use: BuiltClass): number {
   if (use === "multifamily") return 450;
   // FLOORED, and it matters. Square footages here are floats — a 37.66% retail
   // share of 3,710 ft is 1,397.186 — while a lease is signed in whole feet. A
   // floor of 1,397.186 against a demise that rounds to 1,397 fails by a fifth
   // of a square foot, and the shop stays dark for the length of the game.
-  return Math.floor(Math.min(COMMERCIAL_SUITE_MIN, useSuiteSf(rec, use)));
+  return Math.floor(Math.min(COMMERCIAL_SUITE_MIN, typicalSuiteSf(rec, use)));
 }
 /** The building's headline suite size — its dominant leasable use. */
 export function suiteSf(rec: ParcelRecord): number {
-  return useSuiteSf(rec, leasableUses(rec)[0] ?? dominantUse(rec));
+  return typicalSuiteSf(rec, leasableUses(rec)[0] ?? dominantUse(rec));
 }
 
 /**
@@ -212,7 +201,7 @@ export function suiteSf(rec: ParcelRecord): number {
 export function avgUnitSf(rec: ParcelRecord): number {
   const area = useSf(rec, "multifamily");
   if (area <= 0) return 0;
-  return area / Math.max(1, Math.round(area / useSuiteSf(rec, "multifamily")));
+  return area / Math.max(1, Math.round(area / typicalSuiteSf(rec, "multifamily")));
 }
 
 // How many leasable spaces the building holds.
@@ -224,7 +213,7 @@ export function unitCount(rec: ParcelRecord): number {
   for (const u of uses(rec)) {
     const sf = useSf(rec, u);
     if (sf <= 0) continue;
-    n += Math.max(1, Math.round(sf / useSuiteSf(rec, u)));
+    n += Math.max(1, Math.round(sf / typicalSuiteSf(rec, u)));
   }
   return Math.max(1, n);
 }
@@ -244,14 +233,14 @@ export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): U
     const sf = useSf(rec, use);
     if (sf <= 0) continue;
     if (use === "multifamily") {
-      const sfPer = useSuiteSf(rec, use);
+      const sfPer = typicalSuiteSf(rec, use);
       const total = Math.max(1, Math.round(sf / sfPer));
       const leased = Math.min(total, Math.round((h.occ ?? 0) * total));
       out.push({ use, total, leased, vacant: total - leased, notReady: 0, sfPer });
       continue;
     }
     const stack = stackForUse(rec, use);
-    const sfPer = stack?.plateSf ?? useSuiteSf(rec, use);
+    const sfPer = stack?.plateSf ?? typicalSuiteSf(rec, use);
     const vacantBlocks = blocksOf(rec, h).filter((b) => b.use === use);
     const leasedN = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).length;
     const total = Math.max(1, leasedN + vacantBlocks.length);
@@ -289,57 +278,26 @@ export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
 }
 
 /**
- * Round a requested area to whole suites, bounded by what is actually free.
- *
- * The remainder matters. A building with one and a half suites empty must
- * still be able to let the half — demising a suite is ordinary, and refusing
- * to means a building can never lease its last ten per cent and sits at 91%
- * occupancy for a century.
+ * Size a requested bite against what is actually free. No even-cut: the
+ * building is plates, and a tenant arrives with a size. A remnant under the
+ * lettable floor is not space; a leftover that would strand an unlettable
+ * sliver is taken with the bite.
  */
-export function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
-  const sfPer = use ? useSuiteSf(rec, use) : suiteSf(rec);
-  // Flats have their own floor — 450 ft is a studio, not a closet. And a
-  // building smaller than the market's smallest suite is not unlettable, it is
-  // a small building: see minTenancySf.
-  const floor = minTenancySf(rec, use ?? dominantUse(rec));
-  const maxUnits = Math.floor(cap / sfPer + 0.02);
-  // A REMNANT UNDER THE FLOOR IS NOT SPACE. This read
-  // `Math.min(PART_SUITE_MIN, sfPer * 0.35)`, and the Math.min quietly
-  // collapsed the 2,000 ft floor to 700 the moment the demise was already at
-  // the floor — which is most small commercial buildings. Thirty per cent of
-  // every inherited rent roll came out below the minimum because of it. A
-  // sliver nobody will lease stays vacant; that is what a floor means.
-  //
-  // And a remnant is the LAST PIECE OF A SUITE, not a bite of a much larger
-  // one. Construction used to pass the 32% spec-office ceiling as `cap`; this
-  // branch then handed back 2,000 ft of a 26,000 ft single tenancy, and the
-  // book read 1/1 spaces at 8% occupancy. Nobody leases 8% of a one-space
-  // building. Take the leftover only when it is most of a suite.
-  if (maxUnits < 1) {
-    if (cap >= floor && cap >= sfPer * 0.65) return Math.round(Math.min(cap, sfPer));
-    return 0;
-  }
-  const n = Math.max(1, Math.min(maxUnits, Math.round(want / sfPer)));
-  const taken = n * sfPer;
-  // if letting whole suites would strand an unlettable sliver, take it too
-  const left = cap - taken;
-  // ...and never more than there is. The 0.02 slop above absorbs float error
-  // when the space divides evenly, but it can also round a whole suite up past
-  // what is actually vacant — which let buildings sign leases for a few dozen
-  // square feet they did not have.
-  const out = Math.min(Math.floor(cap), Math.round(left > 0 && left < Math.min(floor, sfPer * 0.35) ? cap : taken));
-  // The 0.02 slop can allow a whole suite when the vacancy is a couple of per
-  // cent short of one, and the clamp above then trims it back BELOW the floor.
-  // That is where the last handful of 1,960 ft offices were coming from.
-  return out >= floor ? out : 0;
+export function fitWantSf(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
+  const floor = minLettableSf(rec, use ?? dominantUse(rec));
+  if (cap < floor) return 0;
+  const take = Math.min(Math.floor(cap), Math.max(floor, Math.round(want)));
+  const left = cap - take;
+  if (left > 0 && left < floor) return Math.floor(cap);
+  return take >= floor ? take : 0;
 }
 
 /**
  * THE FEET NO TENANCY CAN BE CUT OUT OF — a loss factor, measured rather than
  * asserted.
  *
- * A leg whose whole remaining vacancy is under `minTenancySf` cannot be let to
- * anybody. `toSuites` refuses it, the tour gate refuses it, and it refuses for
+ * A leg whose whole remaining vacancy is under `minLettableSf` cannot be let to
+ * anybody. The tour gate refuses it, and it refuses for
  * ever, because nothing in the market ever gets larger. Measured on seed 4242
  * after 25 years, 3 of 14 commercial holdings sat permanently short of full for
  * exactly this reason — 1,311 sf against a 2,000 sf floor at one, 1,580 at
@@ -362,7 +320,7 @@ export function unlettableRemainderSf(rec: ParcelRecord, h: Holding, use?: Built
   let n = 0;
   for (const u of legs) {
     const free = useVacantSf(rec, h, u);
-    if (free > 0 && free < minTenancySf(rec, u)) n += free;
+    if (free > 0 && free < minLettableSf(rec, u)) n += free;
   }
   // A hundred feet is a cupboard, not a loss factor. Leg areas are floats — a
   // mix share of a building area lands on 926.6 sf — so a must-take that clears
@@ -710,12 +668,12 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     }
     let leased = 0;
     let guard = 0;
-    const floorSf = minTenancySf(rec, use);
+    const floorSf = minLettableSf(rec, use);
     while (leased < target - 0.5 && guard++ < 40) {
       const free = Math.min(target - leased, legSf - leased);
       if (free < 1) break;
       // A remnant of a bigger leg is vacant, not a closet tenancy. A whole
-      // leg under the city norm is the shop — that is what minTenancySf is for.
+      // leg under the city norm is the shop — that is what minLettableSf is for.
       if (free < floorSf) {
         if (leased > 0) break;
       }
@@ -830,7 +788,7 @@ export function genAnchorTenant(
   // the building is plates, and a 2,000 ft construction letter is 2,000 ft.
   const sfAnchor = Math.round(Math.min(Math.max(0, sfWanted), vacant));
   if (sfAnchor < 1) return false;
-  const floor = minTenancySf(rec, use);
+  const floor = minLettableSf(rec, use);
   if (sfAnchor < floor && vacant < floor) return false;
   const sector = pickSector(s, use);
   const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
@@ -1099,7 +1057,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const h = s.holdings[l.bbl];
       if (!rec || !h) return true;
       const use = l.use ?? leasableUses(rec)[0] ?? "office";
-      const floor = minTenancySf(rec, use);
+      const floor = minLettableSf(rec, use);
       if (useVacantSf(rec, h, use, q) >= floor) return true;
       gone.push(l);
       return false;
@@ -1467,7 +1425,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const needG = t.sf * (t.staff ?? 1);
         if (needG >= t.sf * 0.62) continue;                 // not shrunk enough to give a floor back
         const use = t.use ?? (rec.class as BuiltClass);
-        const newSf = Math.max(minTenancySf(rec, use), toSuites(rec, needG, t.sf, use) || t.sf);
+        const newSf = Math.max(minLettableSf(rec, use), fitWantSf(rec, needG, t.sf, use) || t.sf);
         const freed = t.sf - newSf;
         if (freed < t.sf * 0.15) continue;                  // nothing that demises cleanly
         if (hashChance(`gb:${s.seed}:${h.bbl}:${t.name}:${t.startM}:${q}`) >= 0.05) continue;
@@ -1630,7 +1588,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           q, kind: "deal", bbl: h.bbl,
           text: `${t.name} has outgrown their space at ${rec.address} and will take on the `
             + `${remnant.toLocaleString()} sf remainder next door — it is under the `
-            + `${minTenancySf(rec, use).toLocaleString()} sf minimum tenancy here, so nobody else can lease it at all. `
+            + `${minLettableSf(rec, use).toLocaleString()} sf minimum tenancy here, so nobody else can lease it at all. `
             + `Coterminous with the lease they are on; the letter is on your desk.`,
         });
         continue;
@@ -1644,9 +1602,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // the renewal, one lease earlier.
       const legAll = useSf(rec, use);
       const room = Math.max(0, free - (1 - supportableOcc(s.econ, rec, use)) * legAll);
-      if (room < minTenancySf(rec, use)) continue;
-      const wantSf = toSuites(rec, Math.min(free, room, need - t.sf), free, use);
-      if (!wantSf || wantSf > room + useSuiteSf(rec, use) * 0.15) continue;
+      if (room < minLettableSf(rec, use)) continue;
+      const wantSf = fitWantSf(rec, Math.min(free, room, need - t.sf), free, use);
+      if (!wantSf || wantSf > room + typicalSuiteSf(rec, use) * 0.15) continue;
       if (rng(s, "leasing") > 0.16) continue;                // they get round to it
       t.askedM = q;
       const market = managedRentPsfYr(rec, s.econ, h, use);
@@ -1762,7 +1720,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
             return t.sf;
           }
           if (need >= t.sf * 0.78) return t.sf;
-          return Math.max(minTenancySf(rec, use), toSuites(rec, need, t.sf, use) || t.sf);
+          return Math.max(minLettableSf(rec, use), fitWantSf(rec, need, t.sf, use) || t.sf);
         })(),
         rentPsf: +(Math.max(market * 0.6, ask) * rentMultFor(s, h)).toFixed(2),
         termM: Math.round(rrange(s, 36, 84, "leasing")),
@@ -1796,7 +1754,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // moved. Held on the holding rather than derived, because "how long has
     // this been sitting" is a fact about the space and not about the roll:
     // a tenant leaving does not tell you when the FLOOR came free.
-    if (vac >= minTenancySf(rec, dominantUse(rec)) && !h.leasingHold && !renovating) {
+    if (vac >= minLettableSf(rec, dominantUse(rec)) && !h.leasingHold && !renovating) {
       h.darkMs = (h.darkMs ?? 0) + 1;
       if (planIsLive(s)) digestOf(s).vacMonths += 1;
     } else if (h.darkMs) {
@@ -1812,7 +1770,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
     // Same floor on the way in: a building does not go to market with 700 ft
     // of leftover, so nobody turns up asking for it.
-    if (!renovating && !h.leasingHold && vac >= minTenancySf(rec, dominantUse(rec)) && openTours < loiCap) {
+    if (!renovating && !h.leasingHold && vac >= minLettableSf(rec, dominantUse(rec)) && openTours < loiCap) {
       // WHERE A LETTER COMES FROM — see absorption.ts. Not a coin flip per
       // building any more: the city has a finite quantity of requirement in the
       // market this month, every vacant foot in town is competing for it, and
@@ -1866,11 +1824,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // here is at most what is left of the address's own tenant pool.
         const legAll = useSf(rec, use);
         const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
-        // toSuites never demises below one suite — pass it a starved `want`
-        // and it hands back a full suite anyway, which is exactly how the
-        // ceiling kept losing. When what is left of the pool will not fill
-        // the smallest thing this building demises, nobody tours.
-        if (poolSf < minTenancySf(rec, use)) continue;
+        // A starved pool must not round UP to a full market-norm bite — that
+        // is how the occupancy ceiling used to lose. When what is left of
+        // the pool will not fill the smallest thing this building demises,
+        // nobody tours.
+        if (poolSf < minLettableSf(rec, use)) continue;
         // Consume the city's requirement draw so the world stream does not
         // re-roll (Phase 1 was the sanctioned extra draw). The letter's SIZE
         // is the class log-normal on the leasing channel — same SIZE_DIST
@@ -1878,12 +1836,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         drawRequirementSf(s, use);
         const plate = stackForUse(rec, use)?.plateSf ?? legVac;
         const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf)));
-        if (want < minTenancySf(rec, use)) continue;
+        if (want < minLettableSf(rec, use)) continue;
         const fit = matchBlock(rec, h, use, want);
         if (!fit) continue;
         const sf = fit.sf;
         const lastBlock = fit.block.sf >= legVac - 1;
-        if (!lastBlock && sf > poolSf + minTenancySf(rec, use) * 0.15) continue;
+        if (!lastBlock && sf > poolSf + minLettableSf(rec, use) * 0.15) continue;
         const demiseCost = fit.demiseSf > 0
           ? Math.round(DEMISE_PSF * fit.demiseSf * s.econ.costIdx)
           : 0;
@@ -1935,7 +1893,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const band = termBandM(credit);
         const termM = Math.round(
           rrange(s, band.loM, band.hiM, "leasing")
-          * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
+          * (sf > typicalSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
           * (s.econ.phase === "recession" || s.econ.phase === "depression" ? 0.85 : 1) * termBias,
         );
         // WHAT THIS TENANT IS OFFERING against a fair ask for this space. Drawn
@@ -2035,13 +1993,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // narrow middle option for renewals. A listing exclusive works the phones
   // and does not sign. "Take leasing back" means the principal owns every
   // letter that is not on the renewal desk.
-  if (ensureLeasingPlan(s)) {
-    runPlanDesk(s, parcels);
-  } else if (s.agent) runAgent(s, parcels);
-  else {
-    runDelegatedLeasing(s, parcels);
-    if (s.renewalMgmt) runRenewalDesk(s, parcels);
-  }
+  if (ensureLeasingPlan(s)) runPlanDesk(s, parcels);
 }
 
 /**
@@ -2189,7 +2141,7 @@ export function specSuiteQuote(s: GameState, rec: ParcelRecord, h: Holding, use:
   const take = Math.max(0, Math.min(Math.round(sf), Math.round(open)));
   // You cannot pre-build a closet either. 800 was a number from before the
   // floor existed.
-  if (take < minTenancySf(rec, use)) return null;
+  if (take < minLettableSf(rec, use)) return null;
   return { sf: take, cost: Math.round(take * psf * s.econ.costIdx), readyM: s.month + SPEC_MONTHS, use };
 }
 
@@ -2582,75 +2534,10 @@ export function netEffectivePsf(
     + bumpPremiumPsf(rentPsf, bump, loi.termM);
 }
 
-/**
- * LEASING MANDATE — what you hand a desk when you stop reading every letter.
- *
- * Three bands, the way a real exclusive works:
- *   ≥ floor          auto-sign (within credit / TI caps)
- *   pass…floor       counter and negotiate toward the sign line
- *   < pass           kill it — not worth anyone's afternoon
- *
- * Soft letters used to bounce straight back to the principal "for a counter".
- * That is the desk's job. They counter; you only see expansions, tour dead
- * heats, credit/TI breaches, failed negotiations, and funding holes.
- *
- * The score is NET EFFECTIVE to the landlord (face after free months, less
- * amortised TI), against the market for THAT use. Face-only at 82% was how a
- * desk quietly filled buildings 18–20% under market while the principal thought
- * they had hired a professional. Default floor is now 90%.
- */
-export const AGENT_FLOOR_DEFAULT = 0.90;
-export const AGENT_FLOOR_MIN = 0.70;
-export const AGENT_FLOOR_MAX = 1.00;
-export const AGENT_PASS_DEFAULT = 0.78;
-export const AGENT_PASS_MIN = 0.55;
-export const AGENT_TI_MONTHS_DEFAULT = 9;
-export const AGENT_TI_MONTHS_MIN = 0;
-export const AGENT_TI_MONTHS_MAX = 18;
-/** TI plus commission, expressed as months of the lease's face rent. */
-export const AGENT_SIGNING_MONTHS_DEFAULT = 12;
-export const AGENT_SIGNING_MONTHS_MIN = 3;
-export const AGENT_SIGNING_MONTHS_MAX = 24;
-
-export function agentFloor(s: GameState): number {
-  const f = s.agentFloor;
-  return f === undefined || !Number.isFinite(f)
-    ? AGENT_FLOOR_DEFAULT
-    : Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f));
-}
-
-export function agentPassBelow(s: GameState): number {
-  const floor = agentFloor(s);
-  const p = s.agentPassBelow;
-  const raw = p === undefined || !Number.isFinite(p) ? AGENT_PASS_DEFAULT : p;
-  // Pass line always sits strictly under the sign line.
-  return Math.min(floor - 0.02, Math.max(AGENT_PASS_MIN, raw));
-}
-
-export function agentMinCredit(s: GameState): Credit {
-  const c = s.agentMinCredit;
-  if (c !== 0 && c !== 1 && c !== 2) return 0;
-  return c;
-}
-
-export function agentMaxTiMonths(s: GameState): number {
-  const m = s.agentMaxTiMonths;
-  return m === undefined || !Number.isFinite(m)
-    ? AGENT_TI_MONTHS_DEFAULT
-    : Math.min(AGENT_TI_MONTHS_MAX, Math.max(AGENT_TI_MONTHS_MIN, m));
-}
-
 /** Fit-out expressed as months of the letter's face rent. */
 export function loiTiMonths(loi: LOI): number {
   if (loi.rentPsf <= 0) return 0;
   return (loi.tiPsf / loi.rentPsf) * 12;
-}
-
-export function agentMaxSigningMonths(s: GameState): number {
-  const m = s.agentMaxSigningMonths;
-  return m === undefined || !Number.isFinite(m)
-    ? AGENT_SIGNING_MONTHS_DEFAULT
-    : Math.min(AGENT_SIGNING_MONTHS_MAX, Math.max(AGENT_SIGNING_MONTHS_MIN, m));
 }
 
 /** Upfront TI + commission as months of this lease's annual face rent. */
@@ -2730,8 +2617,6 @@ function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): numbe
   return currentAskPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]) * blockShapeMult(s, rec, h, loi);
 }
 
-type DeskVerdict = "sign" | "counter" | "refer" | "pass";
-
 /**
  * IS THIS LETTER A MUST-TAKE — the dead remnant going into the neighbour's
  * lease, rather than an incumbent asking for a suite?
@@ -2744,73 +2629,7 @@ type DeskVerdict = "sign" | "counter" | "refer" | "pass";
  */
 function isMustTake(loi: LOI, rec: ParcelRecord | undefined): boolean {
   if (loi.kind !== "expansion" || !rec) return false;
-  return loi.sf < minTenancySf(rec, loi.use ?? dominantUse(rec));
-}
-
-function deskVerdict(
-  s: GameState, loi: LOI, market: number, feeRate: number,
-  opts?: {
-    ignoreTour?: boolean; cover?: "agent" | "exclusive" | "staff" | null;
-    /** The building, when the caller has it — lets the desk tell a must-take from an expansion. */
-    rec?: ParcelRecord;
-  },
-): {
-  verdict: DeskVerdict; score: number; floor: number; pass: number;
-  adjFloor: number; adjPass: number; why?: string;
-} {
-  const floor = agentFloor(s);
-  const pass = agentPassBelow(s);
-  // Outside agent/exclusive is mid competence — they do not inherit payroll stars.
-  const judgment = penJudgment(s, opts?.cover ?? "staff");
-  const slack = ((judgment - 50) / 100) * 0.06;
-  const adjFloor = Math.max(0.5, floor - slack);
-  const adjPass = Math.max(0.35, pass - slack * 0.5);
-  const score = loiMandateScore(loi, market);
-  const minCred = agentMinCredit(s);
-  const maxTiM = agentMaxTiMonths(s);
-  const tiM = loiTiMonths(loi);
-  const maxSigningM = agentMaxSigningMonths(s);
-  const signingM = loiSigningMonths(loi, feeRate);
-  const base = { score, floor, pass, adjFloor, adjPass };
-
-  // A mandate may price routine paper; it cannot make the programming call on
-  // an incumbent expansion. Tours are handled in runLeasingAgent as a group —
-  // forcing every party back used to mean "hire the agent" still filled the
-  // screen with every competing letter.
-  if (loi.kind === "expansion" && !isMustTake(loi, opts?.rec)) {
-    return { ...base, verdict: "refer", why: "an incumbent expansion changes how you program the building" };
-  }
-  if (
-    !opts?.ignoreTour
-    && loi.tourId !== undefined
-    && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
-  ) {
-    return { ...base, verdict: "refer", why: "multiple tenants are competing for the same space; you choose the winner" };
-  }
-  if (loi.credit < minCred) {
-    return { ...base, verdict: "refer", why: `credit below your ${CREDIT_LABEL[minCred]} minimum` };
-  }
-  if (tiM > maxTiM + 0.05) {
-    // Fat TI: refer if the rent score is otherwise fine; pass if the letter is
-    // also cheap — a desk does not auto-sign a capital hole.
-    if (score >= adjFloor) {
-      return { ...base, verdict: "refer", why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
-    }
-  }
-  if (score < adjPass) return { ...base, verdict: "pass" };
-  // Soft but workable — the desk counters toward the sign line instead of
-  // dumping every mid-band letter on the principal.
-  if (score < adjFloor) return { ...base, verdict: "counter" };
-  if (tiM > maxTiM + 0.05) {
-    return { ...base, verdict: "refer", why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
-  }
-  if (signingM > maxSigningM + 0.05) {
-    return {
-      ...base, verdict: "refer",
-      why: `TI plus commission is ${signingM.toFixed(1)} months of rent against your ${maxSigningM}-month upfront-cost cap`,
-    };
-  }
-  return { ...base, verdict: "sign" };
+  return loi.sf < minLettableSf(rec, loi.use ?? dominantUse(rec));
 }
 
 /**
@@ -2831,58 +2650,10 @@ function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE): bool
 }
 
 /**
- * Terms that lift a soft letter toward the mandate sign line: modest concession
- * cuts and the rent that gets net effective to `targetScore` of market.
- *
- * NO TERM HERE, DELIBERATELY. The four dials this returns are all price. How
- * long the building signs paper for is a programming decision about the asset —
- * it sets WALT, it sets when the space rolls, and `loiMandateScore` has no view
- * on either (it scores $/sf, not years). A desk with a price mandate does not
- * get to reprogram the building, so the letter's term goes back to the tenant
- * untouched and only the principal can counter it. The asymmetry is the point.
- */
-export function agentCounterTerms(
-  loi: LOI, market: number, targetScore: number,
-): { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number } {
-  const years = Math.max(1, loi.termM / 12);
-  const openRent = loi.rentPsf;
-  const openTi = loi.tiPsf ?? 0;
-  const openFree = loi.freeM ?? 0;
-  const openBump = bumpOf(loi);
-  let freeM = Math.max(0, Math.round(openFree * 0.65));
-  let tiPsf = Math.max(0, Math.round(openTi * 0.72));
-  let bumpPct = Math.min(5, Math.round((Math.max(openBump, DEFAULT_BUMP_PCT) + 0.25) * 4) / 4);
-  let rentPsf = openRent;
-  for (let i = 0; i < 5; i++) {
-    const paid = 1 - Math.min(0.45, freeM / Math.max(1, loi.termM));
-    const bumpPrem = bumpPremiumPsf(rentPsf, bumpPct, loi.termM);
-    const need = targetScore * market + (TI_VALUE * tiPsf) / years - bumpPrem;
-    rentPsf = paid > 0.05 ? need / paid : need;
-    rentPsf = Math.max(openRent, Math.min(market * 1.14, rentPsf));
-  }
-  rentPsf = +rentPsf.toFixed(2);
-  // If still short of the target, squeeze concessions harder once.
-  if (loiMandateScore({ ...loi, rentPsf, tiPsf, freeM, bumpPct }, market) < targetScore - 0.005) {
-    freeM = Math.max(0, Math.round(freeM * 0.5));
-    tiPsf = Math.max(0, Math.round(tiPsf * 0.55));
-    bumpPct = Math.min(5, Math.round((bumpPct + 0.25) * 4) / 4);
-    const paid = 1 - Math.min(0.45, freeM / Math.max(1, loi.termM));
-    const bumpPrem = bumpPremiumPsf(Math.max(openRent, market), bumpPct, loi.termM);
-    const need = targetScore * market + (TI_VALUE * tiPsf) / years - bumpPrem;
-    rentPsf = +(Math.max(openRent, Math.min(market * 1.14, paid > 0.05 ? need / paid : need))).toFixed(2);
-  }
-  // Never open a counter that is weaker than the letter already on the table.
-  if (rentPsf < openRent) rentPsf = openRent;
-  if (tiPsf > openTi) tiPsf = openTi;
-  if (freeM > openFree) freeM = openFree;
-  return { rentPsf, tiPsf, freeM, bumpPct };
-}
-
-/**
  * PLAYER-EQUIVALENT PLAN — the sheet a patient principal would post.
  *
- * quotePct 1.08 is a hold-above-par ask (the old AGENT_FLOOR_MAX = 1.00
- * forbade this). holdM 18 then step 2pp/quarter down to 0.95 is time-on-market
+ * quotePct 1.08 is a hold-above-par ask (the old mandate sign line was capped
+ * at par and forbade this). holdM 18 then step 2pp/quarter down to 0.95 is time-on-market
  * instead of a first-letter grab. Authority is unbounded so the Phase 0
  * residual is fees, not a dollar clamp. Package matches typical inbound
  * letters so off-package is the exception, not the rule.
@@ -2910,25 +2681,26 @@ export function playerEquivalentPlan(): LeasingPlan {
 
 const COMMERCIAL_PLAN_USES: BuiltClass[] = ["office", "retail", "industrial"];
 
-/** Starter sheet from the legacy mandate dials. Phase 5 deletes the dials. */
-export function synthesizeFromDials(s: GameState): LeasingPlan {
-  const floor = agentFloor(s);
-  const tiMonths = agentMaxTiMonths(s);
-  // Months-of-rent cap → $/sf at a typical commercial face. Generous on
-  // purpose: a migrated save should not docket every inbound letter.
-  const maxTiPsf = Math.round(tiMonths * 80 / 12);
-  const row: PlanRow = {
-    quotePct: floor,
-    maxTiPsf: Math.max(20, maxTiPsf),
-    maxFreeM: Math.min(12, Math.max(3, Math.round(tiMonths * 0.7))),
-    minBumpPct: DEFAULT_BUMP_PCT,
-    termLoM: 36,
-    termHiM: 180,
-    minCredit: agentMinCredit(s),
-    holdM: 0,
-    stepPct: 0.02,
-    floorPct: floor,
-  };
+/**
+ * Starter sheet when a desk holds the pen and no plan is posted.
+ * Hard-coded to the old default mandate (quote 90%, TI ~60, free 6)
+ * so a migrated save does not docket every inbound letter. save.ts
+ * may seed a tighter sheet from leftover dial fields before this runs.
+ */
+export const STARTER_PLAN_ROW: PlanRow = {
+  quotePct: 0.90,
+  maxTiPsf: 60,
+  maxFreeM: 6,
+  minBumpPct: DEFAULT_BUMP_PCT,
+  termLoM: 36,
+  termHiM: 180,
+  minCredit: 0,
+  holdM: 0,
+  stepPct: 0.02,
+  floorPct: 0.90,
+};
+
+export function starterPlan(row: PlanRow = STARTER_PLAN_ROW): LeasingPlan {
   const sheet: LeasingPlan["sheet"] = {};
   for (const u of COMMERCIAL_PLAN_USES) sheet[u] = { ...row };
   return { sheet, authority: 1e15 };
@@ -2941,7 +2713,7 @@ export function synthesizeFromDials(s: GameState): LeasingPlan {
 export function ensureLeasingPlan(s: GameState): LeasingPlan | undefined {
   if (s.leasingPlan) return s.leasingPlan;
   if (!deskHoldsPen(s)) return undefined;
-  s.leasingPlan = synthesizeFromDials(s);
+  s.leasingPlan = starterPlan();
   return s.leasingPlan;
 }
 
@@ -2979,20 +2751,20 @@ export function patchPlanRow(
   key: BuiltClass | { bbl: string },
   patch: Partial<PlanRow>,
 ): void {
-  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = synthesizeFromDials(s));
+  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = starterPlan());
   if (typeof key === "string") {
-    const row = plan.sheet[key] ?? { ...PLAYER_EQUIVALENT_ROW, quotePct: agentFloor(s), floorPct: agentFloor(s) };
+    const row = plan.sheet[key] ?? { ...STARTER_PLAN_ROW };
     plan.sheet[key] = { ...row, ...patch };
     return;
   }
   const use = "office" as BuiltClass;
   const fallback = plan.sheet.byBbl?.[key.bbl] ?? plan.sheet[use] ?? plan.sheet.office
-    ?? { ...PLAYER_EQUIVALENT_ROW, quotePct: agentFloor(s), floorPct: agentFloor(s) };
+    ?? { ...STARTER_PLAN_ROW };
   plan.sheet.byBbl = { ...(plan.sheet.byBbl ?? {}), [key.bbl]: { ...fallback, ...patch } };
 }
 
 export function setPlanAuthority(s: GameState, authority: number): void {
-  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = synthesizeFromDials(s));
+  const plan = ensureLeasingPlan(s) ?? (s.leasingPlan = starterPlan());
   plan.authority = Math.max(0, authority);
 }
 
@@ -3267,8 +3039,7 @@ function planCoverOf(
 
 /**
  * Execute the posted plan on every letter a desk covers. Multi-party tours
- * docket as a group — the principal picks. `runRenewalDesk` folds in via
- * `planCoverOf` (renewal management is a cover, not a second engine).
+ * docket as a group — the principal picks. Renewal management folds in via `planCoverOf` (a cover, not a second engine).
  */
 function runPlanDesk(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
@@ -3418,102 +3189,6 @@ function tenantCounterOutcome(
   return "countered";
 }
 
-/**
- * Desk negotiates a soft letter toward the sign line. Returns whether the
- * letter was fully resolved (signed / walked / passed) so tour logic can stop.
- */
-function agentNegotiateLoi(
-  s: GameState, _parcels: ParcelTable, loi: LOI,
-  rec: ParcelRecord, h: Holding, market: number,
-  feeRate: number, adjFloor: number, adjPass: number,
-  who: string,
-  cover?: "agent" | "exclusive" | "staff" | null,
-): boolean {
-  const target = Math.min(1.02, adjFloor + 0.01);
-  const terms = agentCounterTerms(loi, market, target);
-  bumpDeskMonth(s, "countered");
-  const outcome = tenantCounterOutcome(s, rec, h, loi, terms);
-  if (outcome === "took") {
-    if (!agentCanFund(s, loi, feeRate)) {
-      agentReferLoi(s, loi, rec,
-        `${who} got them to $${loi.rentPsf.toFixed(2)}/sf, but signing needs `
-        + `${money(loiSigningCost(loi, feeRate))} against the ${money(agentCashReserve(s))} treasury reserve`,
-        who);
-      return true;
-    }
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    const before = h.tenants.length;
-    signLoi(s, rec, h, loi, feeRate);
-    const failed = (s as GameState & { _signFailed?: string })._signFailed
-      || (loi.kind === "new" && h.tenants.length <= before);
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    if (failed) {
-      agentReferLoi(s, loi, rec, `${who} got a yes and could not demise the space`, who);
-      return true;
-    }
-    bumpDeskMonth(s, "signed");
-    s.lois = s.lois.filter((l) => l.id !== loi.id);
-    s.news.unshift({
-      q: s.month, kind: "deal",
-      text: `${who} countered ${loi.name} at ${rec.address} up to $${loi.rentPsf.toFixed(2)}/sf`
-        + (loi.freeM ? ` / ${loi.freeM} mo free` : "")
-        + ` and they took it.`,
-    });
-    return true;
-  }
-  if (outcome === "walked") {
-    bumpDeskMonth(s, "walked");
-    s.lois = s.lois.filter((l) => l.id !== loi.id);
-    s.news.unshift({
-      q: s.month, kind: "info",
-      text: `${who} pushed ${loi.name} at ${rec.address} and they walked — `
-        + `$${terms.rentPsf.toFixed(2)}/sf was more than the space was worth to them.`,
-    });
-    return true;
-  }
-  // Final counter-back: take it when negotiation skill says the number clears
-  // a softened bar; otherwise leave the improved letter on your desk once.
-  const score = loiMandateScore(loi, market);
-  const neg = penNegotiation(s, cover ?? "staff");
-  const acceptBar = Math.max(adjPass + 0.01, adjFloor - ((neg - 50) / 100) * 0.08);
-  if (score >= acceptBar && agentCanFund(s, loi, feeRate)) {
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    const before = h.tenants.length;
-    signLoi(s, rec, h, loi, feeRate);
-    const failed = (s as GameState & { _signFailed?: string })._signFailed
-      || (loi.kind === "new" && h.tenants.length <= before);
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    if (!failed) {
-      bumpDeskMonth(s, "signed");
-      s.lois = s.lois.filter((l) => l.id !== loi.id);
-      s.news.unshift({
-        q: s.month, kind: "deal",
-        text: `${who} took ${loi.name}'s final at ${rec.address}: $${loi.rentPsf.toFixed(2)}/sf`
-          + ` (${(score * 100).toFixed(0)}% of market net effective) — inside what negotiation skill can close.`,
-      });
-      return true;
-    }
-  }
-  agentReferLoi(s, loi, rec,
-    `${who} countered; they came back at $${loi.rentPsf.toFixed(2)}/sf `
-    + `(${(score * 100).toFixed(0)}% of market net effective) — final, and it still needs you`,
-    who);
-  return true;
-}
-
-function agentPassLoi(
-  s: GameState, loi: LOI, rec: { address?: string }, score: number, market: number, pass: number,
-  who = "Your agent",
-) {
-  bumpDeskMonth(s, "passed");
-  s.lois = s.lois.filter((l) => l.id !== loi.id);
-  s.news.unshift({
-    q: s.month, kind: "info",
-    text: `${who} passed on ${loi.name} at ${rec.address} — net effective `
-      + `${(score * 100).toFixed(0)}% of a $${market.toFixed(2)} market (pass below ${Math.round(pass * 100)}%).`,
-  });
-}
-
 /** Why a letter came back untouched — the authority limit, in the player's own numbers. */
 function authorityWhy(s: GameState, l: LOI): string {
   return s.signOwnAll
@@ -3545,208 +3220,7 @@ function agentReferLoi(
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
 ) {
-  if (ensureLeasingPlan(s)) {
-    runPlanDesk(s, parcels, opts);
-    return;
-  }
-  const onlyDelegated = !!opts?.onlyDelegated;
-  const coverOf = (bbl: string) => {
-    if (!onlyDelegated) return { kind: "agent" as const, who: "Your agent" };
-    return deskCoverage(s, bbl);
-  };
-
-  // --- TOURS FIRST ----------------------------------------------------------
-  // Several parties on one suite is one decision, not N popups. If exactly one
-  // letter clears the sign line and the cheque, the desk takes it and the rest
-  // go elsewhere. Only a true dead heat comes back to you.
-  const tourIds = [...new Set(
-    s.lois.filter((l) => !l.referred && l.tourId !== undefined).map((l) => l.tourId!),
-  )];
-  for (const tid of tourIds) {
-    const party = s.lois.filter((l) => l.tourId === tid && !l.referred);
-    if (party.length <= 1) continue;
-    const cover = coverOf(party[0].bbl);
-    if (!cover) continue;
-    // AUTHORITY BEFORE MANDATE. A contested suite is one decision, so if the
-    // desk could not sign the winner it does not get to pick one either — the
-    // whole tour goes back with the parties intact.
-    if (party.some((l) => overDeskAuthority(s, l))) {
-      for (const l of party) {
-        const r = resolveRec(parcels, s, l.bbl);
-        if (r) agentReferLoi(s, l, r, authorityWhy(s, l), cover.who);
-      }
-      continue;
-    }
-    const feeRate = deskFee(cover.kind, party[0]);
-    const scored = party.map((loi) => {
-      const h = s.holdings[loi.bbl];
-      const rec = resolveRec(parcels, s, loi.bbl);
-      if (!h || !rec) return null;
-      const market = loiMarket(s, rec, h, loi);
-      const v = deskVerdict(s, loi, market, feeRate, { ignoreTour: true, cover: cover.kind, rec });
-      return {
-        loi, h, rec, market, ...v,
-        fundable: v.verdict === "sign" && agentCanFund(s, loi, feeRate),
-      };
-    }).filter((x): x is NonNullable<typeof x> => !!x);
-
-    const winners = scored.filter((x) => x.fundable);
-    if (winners.length === 1) {
-      const w = winners[0];
-      const before = w.h.tenants.length;
-      delete (s as GameState & { _signFailed?: string })._signFailed;
-      signLoi(s, w.rec, w.h, w.loi, feeRate);
-      const failed = (s as GameState & { _signFailed?: string })._signFailed
-        || w.h.tenants.length <= before;
-      delete (s as GameState & { _signFailed?: string })._signFailed;
-      if (failed) {
-        agentReferLoi(s, w.loi, w.rec, "the desk tried to sign the clear winner and could not demise the space", cover.who);
-        for (const x of scored) {
-          if (x.loi.id === w.loi.id) continue;
-          if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
-          else if (x.verdict === "counter") {
-            agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who, cover.kind);
-          } else {
-            agentReferLoi(s, x.loi, x.rec,
-              x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
-              cover.who);
-          }
-        }
-        continue;
-      }
-      bumpDeskMonth(s, "signed");
-      const lost = party.filter((l) => l.id !== w.loi.id);
-      s.lois = s.lois.filter((l) => l.tourId !== tid);
-      if (lost.length) {
-        s.news.unshift({
-          q: s.month, kind: "info",
-          text: `${cover.who} took ${w.loi.name} for the contested space at ${w.rec.address}; `
-            + `${lost.map((l) => l.name).join(" and ")} ${lost.length > 1 ? "have" : "has"} gone elsewhere.`,
-        });
-      }
-      continue;
-    }
-    if (winners.length > 1) {
-      for (const x of scored) {
-        if (x.fundable) {
-          agentReferLoi(s, x.loi, x.rec,
-            `clears your mandate with ${x.score >= 1 ? "par-or-better" : `${(x.score * 100).toFixed(0)}% of market`} net effective, and so does another party on the same suite — you choose`,
-            cover.who);
-        } else if (x.verdict === "pass") {
-          agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
-        } else {
-          agentReferLoi(s, x.loi, x.rec,
-            x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
-            cover.who);
-        }
-      }
-      continue;
-    }
-    // Nobody clears a sign — negotiate the strongest soft letter; pass junk.
-    const soft = scored
-      .filter((x) => x.verdict === "counter")
-      .sort((a, b) => b.score - a.score);
-    let tourResolved = false;
-    for (const x of soft) {
-      if (!s.lois.some((l) => l.id === x.loi.id)) continue;
-      agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who, cover.kind);
-      if (!s.lois.some((l) => l.tourId === tid && !l.referred)) {
-        // Signed or walked the last open party — clear stragglers that passed.
-        s.lois = s.lois.filter((l) => l.tourId !== tid || l.referred);
-        tourResolved = true;
-        break;
-      }
-      // Signed one mid-band into a real tenant — rest of the tour is gone.
-      if (!s.lois.some((l) => l.id === x.loi.id) && x.h.tenants.some((t) => t.name === x.loi.name)) {
-        const lost = party.filter((l) => l.id !== x.loi.id);
-        s.lois = s.lois.filter((l) => l.tourId !== tid);
-        if (lost.length) {
-          s.news.unshift({
-            q: s.month, kind: "info",
-            text: `${cover.who} negotiated ${x.loi.name} onto the contested space at ${x.rec.address}; `
-              + `${lost.map((l) => l.name).join(" and ")} ${lost.length > 1 ? "have" : "has"} gone elsewhere.`,
-          });
-        }
-        tourResolved = true;
-        break;
-      }
-    }
-    if (tourResolved) continue;
-    for (const x of scored) {
-      if (!s.lois.some((l) => l.id === x.loi.id) || x.loi.referred) continue;
-      if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
-      else if (x.verdict === "counter") {
-        // Already negotiated above and still live → referred inside negotiate.
-      } else {
-        agentReferLoi(s, x.loi, x.rec,
-          x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
-          cover.who);
-      }
-    }
-  }
-
-  for (const loi of [...s.lois]) {
-    if (loi.referred) continue;
-    if (
-      loi.tourId !== undefined
-      && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
-    ) continue;
-    const cover = coverOf(loi.bbl);
-    if (!cover) continue;
-    const h = s.holdings[loi.bbl];
-    const rec = resolveRec(parcels, s, loi.bbl);
-    if (!h || !rec) continue;
-    if (overDeskAuthority(s, loi)) {
-      agentReferLoi(s, loi, rec, authorityWhy(s, loi), cover.who);
-      continue;
-    }
-    const feeRate = deskFee(cover.kind, loi);
-    const market = loiMarket(s, rec, h, loi);
-    const { verdict, score, floor, pass, adjFloor, adjPass, why } =
-      deskVerdict(s, loi, market, feeRate, { cover: cover.kind, rec });
-    if (verdict === "pass") {
-      agentPassLoi(s, loi, rec, score, market, pass, cover.who);
-      continue;
-    }
-    if (verdict === "refer") {
-      agentReferLoi(s, loi, rec,
-        why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`,
-        cover.who);
-      continue;
-    }
-    if (verdict === "counter") {
-      agentNegotiateLoi(s, parcels, loi, rec, h, market, feeRate, adjFloor, adjPass, cover.who, cover.kind);
-      continue;
-    }
-    if (!agentCanFund(s, loi, feeRate)) {
-      agentReferLoi(s, loi, rec,
-        `signing needs ${money(loiSigningCost(loi, feeRate))} and would leave less than the ${money(agentCashReserve(s))} treasury reserve`,
-        cover.who);
-      continue;
-    }
-    const before = h.tenants.length;
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    signLoi(s, rec, h, loi, feeRate);
-    const failed = (s as GameState & { _signFailed?: string })._signFailed
-      || (loi.kind === "new" && h.tenants.length <= before);
-    delete (s as GameState & { _signFailed?: string })._signFailed;
-    if (failed) {
-      agentReferLoi(s, loi, rec, "the desk tried to sign and could not demise the space", cover.who);
-      continue;
-    }
-    bumpDeskMonth(s, "signed");
-    s.lois = s.lois.filter((l) => l.id !== loi.id);
-  }
-}
-
-/** @deprecated Prefer runLeasingAgent — kept as the tick's private name. */
-function runAgent(s: GameState, parcels: ParcelTable) {
-  runLeasingAgent(s, parcels);
-}
-
-/** Staff desk — negotiate without the firm-wide agent, after a handoff. */
-function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
-  runLeasingAgent(s, parcels, { onlyDelegated: true });
+  if (ensureLeasingPlan(s)) runPlanDesk(s, parcels, opts);
 }
 
 /**
@@ -3757,15 +3231,7 @@ function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
  * the pile.
  */
 export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
-  if (ensureLeasingPlan(s)) {
-    runPlanDesk(s, parcels);
-    return;
-  }
-  if (s.agent) runLeasingAgent(s, parcels);
-  else {
-    runDelegatedLeasing(s, parcels);
-    if (s.renewalMgmt) runRenewalDesk(s, parcels);
-  }
+  if (ensureLeasingPlan(s)) runPlanDesk(s, parcels);
 }
 
 /**
@@ -3791,81 +3257,13 @@ export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
  * exclusive that stacked six points on top of four would charge you twice for
  * one transaction, and this does not, because there are two people here.
  *
- * The floor is the same player-set net-effective sign line `runAgent` uses
- * (90% by default): a manager with a mandate
- * still will not sign a renewal well under the market — they refer it back, and
- * it becomes the owner's problem again, which is exactly what happens when the
- * number is bad enough to need a principal.
+ * Renewals they cover run through the posted plan (`planCoverOf`), not a
+ * second engine. A letter off the sheet still comes back to the principal.
  */
 /** The manager's cut of a renewal they sign, on total lease value. */
 export const RENEWAL_MGMT_FEE = 0.02;
 /** What a renewal letter has always cost to sign — see leaseCosts. */
 const RENEWAL_SELF_FEE = 0.02;
-function runRenewalDesk(s: GameState, parcels: ParcelTable) {
-  for (const loi of [...s.lois]) {
-    if (loi.kind !== "renewal") continue;
-    if (loi.referred) continue;
-    // Firm agent / exclusive / leasing staff already worked this letter.
-    if (deskCoverage(s, loi.bbl)) continue;
-    const h = s.holdings[loi.bbl];
-    const rec = resolveRec(parcels, s, loi.bbl);
-    if (!h || !rec) continue;
-    // The renewal desk is a delegation like any other and the authority limit
-    // is above all of them.
-    if (overDeskAuthority(s, loi)) {
-      agentReferLoi(s, loi, rec, authorityWhy(s, loi), "Management");
-      continue;
-    }
-    const market = loiMarket(s, rec, h, loi);
-    const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
-    // Renewal management is outside coverage — mid competence, not your leasing hire.
-    const { verdict, score, floor, pass, adjFloor, adjPass, why } =
-      deskVerdict(s, loi, market, rate, { cover: "exclusive", rec });
-    if (verdict === "pass") {
-      bumpDeskMonth(s, "passed");
-      s.lois = s.lois.filter((l) => l.id !== loi.id);
-      s.news.unshift({
-        q: s.month, kind: "info",
-        text: `Management passed on ${loi.name}'s renewal at ${rec.address} — net effective `
-          + `${(score * 100).toFixed(0)}% of market (pass below ${Math.round(pass * 100)}%).`,
-      });
-      continue;
-    }
-    if (verdict === "refer") {
-      bumpDeskMonth(s, "referred");
-      loi.referred = true;
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `Management referred ${loi.name}'s renewal at ${rec.address} back to you — `
-          + (why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`)
-          + `.`,
-      });
-      continue;
-    }
-    if (verdict === "counter") {
-      agentNegotiateLoi(s, parcels, loi, rec, h, market, rate, adjFloor, adjPass, "Management", "exclusive");
-      continue;
-    }
-    // The letter's own commission plus the manager's mandate — see above.
-    const cost = loiSigningCost(loi, rate);
-    // Cash only — see `agentCanFund`. The desk refers rather than draws.
-    const reserve = agentCashReserve(s);
-    if (s.cash - cost < reserve) {
-      bumpDeskMonth(s, "referred");
-      loi.referred = true;
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `Management would renew ${loi.name} at ${rec.address}, but signing needs `
-          + `${money(cost)} and would breach the ${money(reserve)} treasury reserve. Back on your desk.`,
-      });
-      continue;
-    }
-    signLoi(s, rec, h, loi, rate);
-    bumpDeskMonth(s, "signed");
-    s.lois = s.lois.filter((l) => l.id !== loi.id);
-  }
-}
-
 function leaseCosts(loi: LOI, feeRate?: number): { ti: number; lc: number } {
   const ti = loi.tiPsf * loi.sf;
   const rate = feeRate ?? (loi.kind === "new" ? 0.04 : 0.02);
@@ -3948,7 +3346,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // letter must still find a suite, and a must-take remnant (written for less
     // than a suite precisely because nobody else can ever take it) must still
     // find the remnant. Without this the must-take could never sign at all.
-    if (add < Math.min(l.sf, minTenancySf(rec, use))) {
+    if (add < Math.min(l.sf, minLettableSf(rec, use))) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} lost the expansion space at ${rec.address} — the other letter signed first, and what is left will not demise.`,
@@ -4032,7 +3430,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // lease against a floor that says 2,000. If what is left is not a suite,
     // the deal died when the other one signed; that is what "you cannot lease
     // the same floor twice" costs.
-    const floorSf = minTenancySf(rec, use);
+    const floorSf = minLettableSf(rec, use);
     if (sf < floorSf) {
       // AND IT IS SAID OUT LOUD. A news line scrolls past; what the player
       // needs is the thing they just clicked telling them why it did nothing.

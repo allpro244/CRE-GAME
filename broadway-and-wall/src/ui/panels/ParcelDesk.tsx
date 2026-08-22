@@ -12,7 +12,7 @@ import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsf
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minTenancySf, unlettableRemainderSf, planIsLive } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
@@ -378,7 +378,7 @@ function ParcelPanelInner({
                it, so a 1,412 sf residential leg is two flats of 706 and saying
                "900 each" describes 1,800 feet the building does not have.
                Commercial keeps the demise, because there the remnant under the
-               floor genuinely is not a suite — see toSuites. */
+               floor genuinely is not a suite — see minLettableSf. */
             v={`${u.leased} of ${u.total} · ${sf(u.use === "multifamily" ? avgUnitSf(rec) : u.sfPer)} each`}
             bad={u.leased < u.total * 0.6}
           />
@@ -534,7 +534,7 @@ function ParcelPanelInner({
                   const expRoom = Math.max(0,
                     useVacantSf(rec, holding, u, game.month)
                     - (1 - supportableOcc(game.econ, rec, u)) * useSf(rec, u));
-                  const noRoom = outgrown && expRoom < minTenancySf(rec, u);
+                  const noRoom = outgrown && expRoom < minLettableSf(rec, u);
                   // TENURE ON THE ROW. The roll knows exactly how long every
                   // tenant has been here and never said so — and "since 2004"
                   // is what turns a row into a relationship.
@@ -578,7 +578,7 @@ function ParcelPanelInner({
             )}
             {/* VACANT, AND THE PART OF IT THAT IS NOT SPACE. A leg whose whole
                 leftover is under the demise floor cannot be shown to anybody —
-                the tour gate and toSuites both refuse it — so listing it as
+                the tour gate and the lettable floor both refuse it — so listing it as
                 vacant sends the owner chasing a percentage no letter can fill.
                 Same feet the engine offers a sitting neighbour as a must-take. */}
             {(() => {

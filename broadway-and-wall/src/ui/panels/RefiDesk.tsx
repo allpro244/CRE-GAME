@@ -190,10 +190,9 @@ export function RefiSection({ bbl }: { bbl: string }) {
           Reading them one at a time by clicking each button is not a market;
           this is the market. Sorted by what actually reaches your account. */}
       <div className="page-section" style={{ marginTop: 8 }}>The market for this building</div>
-      <div className="scroll-x">
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
           </thead>
           <tbody>
             {[...deskQuotes]
@@ -220,23 +219,22 @@ export function RefiSection({ bbl }: { bbl: string }) {
                   }}
                   onClick={() => x.available && x.maxProceeds > 0 && setProduct(x.id)}
                 >
-                  <td>{x.id === picked ? "▸ " : ""}{x.label}</td>
+                  <td>
+                    {x.id === picked ? "▸ " : ""}{x.label}
+                    <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>
+                      {x.why ?? (px > 0 ? x.binding : "nothing to lend against")}
+                    </div>
+                  </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
                   <td className="num">{((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%</td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
                     {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
                   </td>
-                  {/* The reason, in the lender's own words when there is one,
-                      and otherwise the test that actually bound. Never blank —
-                      a quote with no reason is the same defect as a dead
-                      button, which is what this whole card is fixing. */}
-                  <td className="dim">{x.why ?? (px > 0 ? x.binding : "nothing to lend against")}</td>
                 </tr>
               ))}
           </tbody>
         </table>
-      </div>
       <div className="grid">
         <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />
@@ -327,7 +325,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
           </tr>
         );
         return (
-          <div className="scroll-x" style={{ marginTop: 6 }}>
+          <div style={{ marginTop: 6 }}>
             <table className="tbl">
               <thead>
                 <tr><th>At {usd(proceeds)}</th><th className="num">Today</th><th className="num">After</th></tr>

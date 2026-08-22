@@ -39,40 +39,35 @@ export function ExitsRecord() {
   return (
     <div className="page-section">
       <div className="page-section-head">The realized record · {rec.n} exit{rec.n === 1 ? "" : "s"}</div>
-      <div className="scroll-x">
-        <table className="tbl exits-tbl">
-          <thead>
-            <tr>
-              <th>Property</th>
-              <th>Bought</th>
-              <th>Sold</th>
-              <th className="num" title="Years between the deed coming on and going off the book">Held</th>
-              <th className="num" title="Cost basis — price paid plus closing costs, net of any 1031 rolled in">Basis</th>
-              <th className="num">Price</th>
-              <th className="num" title="Sale price against cost basis — realized, before tax">Gain</th>
-              <th className="num" title="Sale price over cost basis. The rent and capital of the holding years are not recorded per deed, so no annualized return is quoted — a multiple is what the record supports">Multiple</th>
-              <th></th>
+      <table className="tbl exits-tbl">
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th className="num" title="Cost basis — price paid plus closing costs, net of any 1031 rolled in">Basis</th>
+            <th className="num">Price</th>
+            <th className="num" title="Sale price against cost basis — realized, before tax. Multiple is what the record supports; rent and capital of the hold are not kept per deed.">Gain</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rec.rows.map((e, i) => (
+            <tr key={`${e.bbl}:${e.soldM}:${i}`}>
+              <td>
+                {e.address}
+                <div className="dim" style={{ fontSize: 11 }}>
+                  {monthLabel(e.boughtM)} → {monthLabel(e.soldM)} · {((e.soldM - e.boughtM) / 12).toFixed(1)} yrs
+                  {e.forced ? " · forced" : ""}
+                </div>
+              </td>
+              <td className="num dim">{usd(e.basis)}</td>
+              <td className="num">{usd(e.price)}</td>
+              <td className={"num nowrap" + (e.gain < 0 ? " neg" : " exit-pos")}>
+                {e.gain >= 0 ? "+" : ""}{usd(e.gain)}
+                <div className="dim" style={{ fontSize: 11 }}>{e.basis > 0 ? `${(e.price / e.basis).toFixed(2)}x` : "—"}</div>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {rec.rows.map((e, i) => (
-              <tr key={`${e.bbl}:${e.soldM}:${i}`}>
-                <td className="nowrap">{e.address}</td>
-                <td className="nowrap dim">{monthLabel(e.boughtM)}</td>
-                <td className="nowrap dim">{monthLabel(e.soldM)}</td>
-                <td className="num">{((e.soldM - e.boughtM) / 12).toFixed(1)} yrs</td>
-                <td className="num dim">{usd(e.basis)}</td>
-                <td className="num">{usd(e.price)}</td>
-                <td className={"num nowrap" + (e.gain < 0 ? " neg" : " exit-pos")}>
-                  {e.gain >= 0 ? "+" : ""}{usd(e.gain)}
-                </td>
-                <td className="num">{e.basis > 0 ? `${(e.price / e.basis).toFixed(2)}x` : "—"}</td>
-                <td>{e.forced ? <span className="chip chip-distress" title="Taken, not sold — a foreclosure, a receiver's sale, or keys handed back">forced</span> : null}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
       <div className="exits-foot">
         <span>{rec.rows.length < rec.n ? `showing the last ${rec.rows.length} of ${rec.n}` : `${rec.n} exit${rec.n === 1 ? "" : "s"}`}</span>
         <span>total realized gain{" "}

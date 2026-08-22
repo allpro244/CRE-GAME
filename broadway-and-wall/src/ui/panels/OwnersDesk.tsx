@@ -65,53 +65,66 @@ export function Owners() {
           <button key={k} className={"btn" + (only === k ? " btn-on" : "")} onClick={() => setOnly(k)}>{label}</button>
         ))}
       </div>
-      <div className="scroll-x">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Owner</th><th>What they are</th><th className="num">Deeds</th><th className="num">Square feet</th>
-              <th className="num">Gross assets</th><th className="num">Debt</th><th className="num">Net worth</th>
-              <th className="num">Yield</th><th className="num">Cash flow / yr</th><th>Where you stand</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map(({ o, sf: area }) => {
-              const isOpen = open === o.id;
-              const dead = o.failedM !== undefined;
-              return (
-                <Fragment key={o.id}>
-                  <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }} title={o.note}
-                    onClick={() => setOpen(isOpen ? null : o.id)}>
-                    <td>{isOpen ? "▾ " : "▸ "}{o.name}</td>
-                    <td className="dim">
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Owner</th>
+            <th className="num">Book</th>
+            <th className="num">Assets</th>
+            <th className="num">Debt</th>
+            <th className="num">Net worth</th>
+            <th>Standing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map(({ o, sf: area }) => {
+            const isOpen = open === o.id;
+            const dead = o.failedM !== undefined;
+            return (
+              <Fragment key={o.id}>
+                <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }} title={o.note}
+                  onClick={() => setOpen(isOpen ? null : o.id)}>
+                  <td>
+                    {isOpen ? "▾ " : "▸ "}{o.name}
+                    <div className="dim" style={{ fontSize: 11 }}>
                       {dead
                         ? "in receivership"
                         : o.operator
                           ? o.style ? STYLE_WORD[o.style] ?? o.style : "operator"
                           : `${o.kind} · holder`}
+                    </div>
+                  </td>
+                  <td className="num">
+                    {o.book.length}
+                    <div className="dim" style={{ fontSize: 11 }}>{area > 0 ? sf(area) : "—"}</div>
+                  </td>
+                  <td className="num">
+                    {usd(o.sheet.assets)}
+                    <div className="dim" style={{ fontSize: 11 }}>
+                      {o.sheet.assets > 0 ? `${((o.income.noi / o.sheet.assets) * 100).toFixed(1)}% yield` : "—"}
+                    </div>
+                  </td>
+                  <td className={"num" + (o.sheet.debt > 0 ? " dim" : "")}>{o.sheet.debt > 0 ? usd(o.sheet.debt) : "clear"}</td>
+                  <td className={"num" + (o.sheet.equity < 0 ? " neg" : "")}>
+                    {usd(o.sheet.equity)}
+                    <div className={"dim" + (o.income.net < 0 ? " neg" : "")} style={{ fontSize: 11 }}>
+                      cf {usd(o.income.net)}/yr
+                    </div>
+                  </td>
+                  <td className={o.cold ? "neg" : o.rel.deals > 0 ? "" : "dim"}>{o.standing}</td>
+                </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={6} style={{ background: "rgba(43,37,26,0.035)" }}>
+                      <OwnerStatement o={o} onFocus={(b) => focus(b, true)} />
                     </td>
-                    <td className="num">{o.book.length}</td>
-                    <td className="num">{area > 0 ? sf(area) : "—"}</td>
-                    <td className="num">{usd(o.sheet.assets)}</td>
-                    <td className={"num" + (o.sheet.debt > 0 ? " dim" : "")}>{o.sheet.debt > 0 ? usd(o.sheet.debt) : "clear"}</td>
-                    <td className={"num" + (o.sheet.equity < 0 ? " neg" : "")}>{usd(o.sheet.equity)}</td>
-                    <td className="num">{o.sheet.assets > 0 ? `${((o.income.noi / o.sheet.assets) * 100).toFixed(1)}%` : "—"}</td>
-                    <td className={"num" + (o.income.net < 0 ? " neg" : "")}>{usd(o.income.net)}</td>
-                    <td className={o.cold ? "neg" : o.rel.deals > 0 ? "" : "dim"}>{o.standing}</td>
                   </tr>
-                  {isOpen && (
-                    <tr>
-                      <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
-                        <OwnerStatement o={o} onFocus={(b) => focus(b, true)} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
       <div className="hint">
         An offer somebody finds insulting is not filed against the building — it is filed against THEM, and
         they own the other four. That is what the last column is for, and it is true of a fund and a family

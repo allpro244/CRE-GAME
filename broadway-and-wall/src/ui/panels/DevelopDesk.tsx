@@ -1,7 +1,7 @@
 // Ground-up development and adaptive reuse desks.
 // Extracted from ParcelDesk. Three tabs: Programme · Design · Financing,
 // with an always-visible summary strip so the equity cheque never hides under dials.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
@@ -96,7 +96,14 @@ export function ReuseSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl);
-  const [target, setTarget] = useState<"multifamily" | "mixed">("multifamily");
+  const saved = game.holdings[bbl]?.devDraft?.reuseTarget;
+  const [target, setTarget] = useState<"multifamily" | "mixed">(saved ?? "multifamily");
+  const dirty = useRef(!!saved);
+  useEffect(() => {
+    if (!dirty.current) return;
+    useStore.getState().setDevDraft(bbl, { reuseTarget: target });
+  }, [bbl, target]);
+  const pick = (v: "multifamily" | "mixed") => { dirty.current = true; setTarget(v); };
   if (!rec) return null;
   const eligibility = adaptiveReuseEligibility(game, parcels, bbl);
   const mixed = target === "mixed"
@@ -113,9 +120,9 @@ export function ReuseSection({ bbl }: { bbl: string }) {
       </div>
       <div className="btn-row">
         <button className={"btn" + (target === "multifamily" ? " btn-on" : "")}
-          onClick={() => setTarget("multifamily")}>Apartments</button>
+          onClick={() => pick("multifamily")}>Apartments</button>
         <button className={"btn" + (target === "mixed" ? " btn-on" : "")}
-          onClick={() => setTarget("mixed")}>Mixed · 70% housing</button>
+          onClick={() => pick("mixed")}>Mixed · 70% housing</button>
       </div>
       {!eligibility.ok ? (
         <div className="hint alarm">{eligibility.why}</div>
@@ -152,21 +159,42 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // together all change the envelope, and planning against the static table
   // meant none of them bought you anything at this desk.
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
-  const [tab, setTab] = useState<BuildTab>("programme");
-  const [use, setUse] = useState<DevUse>("office");
-  const [cov, setCov] = useState(0.6);
-  const [floors, setFloors] = useState(8);
-  const [contract, setContract] = useState<Contract>("gmp");
-  const [ltcWant, setLtcWant] = useState(1);   // share of the lender's max you take
-  const [bank, setBank] = useState<string>(CONSTRUCTION_LENDER);   // who writes the construction loan
-  const [spec, setSpec] = useState(0.5);
+  const saved = game.holdings[bbl]?.devDraft;
+  const [tab, setTabRaw] = useState<BuildTab>(saved?.tab ?? "programme");
+  const [use, setUseRaw] = useState<DevUse>(saved?.use ?? "office");
+  const [cov, setCovRaw] = useState(saved?.cov ?? 0.6);
+  const [floors, setFloorsRaw] = useState(saved?.floors ?? 8);
+  const [contract, setContractRaw] = useState<Contract>(saved?.contract ?? "gmp");
+  const [ltcWant, setLtcWantRaw] = useState(saved?.ltcWant ?? 1);   // share of the lender's max you take
+  const [bank, setBankRaw] = useState<string>(saved?.bank || CONSTRUCTION_LENDER);   // who writes the construction loan
+  const [spec, setSpecRaw] = useState(saved?.spec ?? 0.5);
   // THE STACK IS YOURS TO CHOOSE. "Mixed-use" was one canonical 15/45/40
   // building, which is a preset rather than a programme — how much retail the
   // frontage carries and whether the middle is offices or flats is the biggest
   // decision on the site, and it drives cost, exit cap and lender appetite.
-  const [split, setSplit] = useState<{ retail: number; office: number; multifamily: number }>(
-    { retail: 15, office: 45, multifamily: 40 },
+  const [split, setSplitRaw] = useState<{ retail: number; office: number; multifamily: number }>(
+    saved?.split ?? { retail: 15, office: 45, multifamily: 40 },
   );
+  // Persist after the player has actually touched a dial — opening the desk
+  // and leaving must not stamp a default scheme onto every vacant lot.
+  const dirty = useRef(!!saved);
+  useEffect(() => {
+    if (!dirty.current) return;
+    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split });
+  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split]);
+  const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    dirty.current = true;
+    fn(...a);
+  };
+  const setTab = touch(setTabRaw);
+  const setUse = touch(setUseRaw);
+  const setCov = touch(setCovRaw);
+  const setFloors = touch(setFloorsRaw);
+  const setContract = touch(setContractRaw);
+  const setLtcWant = touch(setLtcWantRaw);
+  const setBank = touch(setBankRaw);
+  const setSpec = touch(setSpecRaw);
+  const setSplit = touch(setSplitRaw);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -200,7 +228,10 @@ export function DevelopSection({ bbl }: { bbl: string }) {
 
   return (
     <div className="deal">
-      <div className="deal-head">Develop this lot</div>
+      <div className="deal-head">
+        Develop this lot
+        {saved && <span className="dim"> · scheme held</span>}
+      </div>
       <div className="hint">
         {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · anything may be built here.
       </div>

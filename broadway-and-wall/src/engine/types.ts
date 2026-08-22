@@ -591,6 +591,11 @@ export interface Holding {
     round?: number;                    // 0 first round, 1 best and final
     offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string };
   };
+  /**
+   * THE SCHEME ON THE DESK. Survives leaving the lot to read the books.
+   * Cleared when the job starts. See DevelopSection / setDevDraft.
+   */
+  devDraft?: DevDraft;
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
@@ -617,6 +622,25 @@ export interface Holding {
 // pick use and FAR up to zoning, 60% construction loan, the building rises
 // over 4-6 quarters, then leases up from empty.
 export type Contract = "gmp" | "costplus";
+
+/**
+ * IN-PROGRESS DEVELOPMENT SCHEME. Programme, design and financing each take
+ * real thought, and the player should leave to check the books or the economy
+ * without losing the dials. Not a commitment — cleared when ground breaks.
+ */
+export type DevDraftTab = "programme" | "design" | "financing";
+export interface DevDraft {
+  tab: DevDraftTab;
+  use: DevUse;
+  cov: number;
+  floors: number;
+  contract: Contract;
+  ltcWant: number;
+  bank: string;
+  spec: number;
+  split: { retail: number; office: number; multifamily: number };
+  reuseTarget?: "multifamily" | "mixed";
+}
 
 export interface BtsCommitment {
   name: string;

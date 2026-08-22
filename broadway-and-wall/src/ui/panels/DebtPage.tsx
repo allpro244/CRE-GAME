@@ -267,7 +267,11 @@ export function DebtPage() {
       <div className="grid">
         <Row k="Mortgages" v={`${usd(agg.bal - (fac?.balance ?? 0))} across ${rows.filter((r) => r.h.loan).length} buildings`} />
         {fac && <Row k="Portfolio facility" v={`${usd(fac.balance)} across ${fac.bbls.length} deeds · ${fac.lender}`} strong />}
-        <Row k="Construction" v={agg.cons > 0 ? `${usd(agg.cons)} drawn` : "none"} />
+        <Row k="Construction" v={agg.cons > 0
+          ? Object.values(game.developments).map((d) =>
+            `${usd(d.loanBalance)} of ${usd(d.commitment)} @ ${d.ratePct.toFixed(2)}% · ${d.lender ?? "construction"} · delivers ${monthLabel(d.deliverM)}`
+          ).join(" · ")
+          : "none"} />
         <Row k="Line of credit" v={agg.loc > 0 ? `${usd(agg.loc)} at ${locRate(game).toFixed(2)}%` : "undrawn"} bad={agg.loc > 0} />
         <Row k="Annual debt service" v={usd(Math.round(agg.ds))} />
         <Row k="NOI against it" v={`${usd(Math.round(agg.noi))} — ${usd(Math.round(agg.noi - agg.ds))} after debt service`} bad={agg.noi - agg.ds < 0} />
@@ -448,10 +452,9 @@ export function DebtPage() {
               )}
             </>
           )}
-          <div className="scroll-x">
             <table className="tbl">
               <thead>
-                <tr><th>Pledged</th><th className="num">Value</th><th className="num">Allocated</th><th className="num">Release price</th><th></th></tr>
+                <tr><th>Pledged</th><th className="num">Value</th><th className="num">Allocated</th><th className="num">Release</th><th></th></tr>
               </thead>
               <tbody>
                 {fac.bbls.map((b) => {
@@ -483,7 +486,6 @@ export function DebtPage() {
                 })}
               </tbody>
             </table>
-          </div>
           <div className="hint">
             The pool is crossed: every deed stands behind the whole balance, a covenant breach sweeps all of them
             at once, and selling one costs its allocated share plus {Math.round((RELEASE_PREMIUM - 1) * 100)}%.
@@ -510,18 +512,19 @@ export function DebtPage() {
         </>
       ) : (
         <>
-          <div className="scroll-x">
             <table className="tbl">
               <thead>
-                <tr><th></th><th>Building</th><th>Class</th><th className="num">Value</th><th className="num">NOI</th><th className="num">Mortgage to repay</th></tr>
+                <tr><th></th><th>Building</th><th className="num">Value</th><th className="num">NOI</th><th className="num">Payoff</th></tr>
               </thead>
               <tbody>
                 {candidates.map((c) => (
                   <tr key={c.bbl} style={{ cursor: "pointer" }}
                     onClick={() => setPool(pool.includes(c.bbl) ? pool.filter((b) => b !== c.bbl) : [...pool, c.bbl])}>
                     <td><input type="checkbox" readOnly checked={pool.includes(c.bbl)} /></td>
-                    <td>{c.rec.address}</td>
-                    <td>{CLASS_LABEL[c.rec.class] ?? c.rec.class}</td>
+                    <td>
+                      {c.rec.address}
+                      <div className="dim" style={{ fontSize: 11 }}>{CLASS_LABEL[c.rec.class] ?? c.rec.class}</div>
+                    </td>
                     <td className="num">{usd(c.value)}</td>
                     <td className="num">{usd(Math.round(ownedHoldingNoiYr(game, parcels, c.h)))}</td>
                     <td className="num dim">{c.loan > 0 ? usd(c.loan) : "—"}</td>
@@ -529,7 +532,6 @@ export function DebtPage() {
                 ))}
               </tbody>
             </table>
-          </div>
           {qt && (
             <>
               <div className="btn-row">
@@ -586,13 +588,12 @@ export function DebtPage() {
 
       {/* ---- every loan, one row each ---------------------------------- */}
       <div className="page-section">Loan by loan</div>
-      <div className="scroll-x">
         <table className="tbl">
           <thead>
             <tr>
               <th>Building</th><th>Desk</th><th className="num">Balance</th><th className="num">Rate</th>
               <th className="num">LTV</th><th className="num">DSCR</th><th className="num">Payment</th>
-              <th>Matures</th><th>Terms</th><th></th>
+              <th>Matures</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -613,17 +614,19 @@ export function DebtPage() {
                     <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
                     {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
                   </td>
-                  <td className="dim">{p.lender}</td>
+                  <td className="dim">
+                    {p.lender}
+                    <div style={{ fontSize: 11 }}>
+                      {[l.sweep ? "swept" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
+                        l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
                   <td className="num">{usd(l.balance)}</td>
                   <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
                   <td className={"num" + (lv !== null && lv > l.maxLTV ? " neg" : "")}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
                   <td className={"num" + (d !== null && d < l.minDSCR ? " neg" : "")}>{d !== null ? d.toFixed(2) : "—"}</td>
                   <td className="num">{usd(l.monthlyPmt)}</td>
                   <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
-                  <td className="dim">
-                    {[l.sweep ? "SWEPT" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
-                      l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
-                  </td>
                   <td>
                     <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end" }}>
                       <button
@@ -654,7 +657,7 @@ export function DebtPage() {
                 </tr>
                 {refiRow === h.bbl && (
                   <tr>
-                    <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
+                    <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
                       <RefiSection bbl={h.bbl} />
                     </td>
                   </tr>
@@ -662,26 +665,59 @@ export function DebtPage() {
                 </Fragment>
               );
             })}
+            {Object.values(game.developments).map((dv) => {
+              const rec = parcels[dv.bbl];
+              const intMo = (dv.loanBalance * dv.ratePct) / 100 / 12;
+              const lv = dv.costTotal > 0 ? dv.loanBalance / dv.costTotal : null;
+              return (
+                <tr key={`cons:${dv.bbl}`}>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(dv.bbl, true)}>{rec?.address ?? dv.bbl}</a>
+                    <div className="dim" style={{ fontSize: 11 }}>construction · {dv.use}</div>
+                  </td>
+                  <td className="dim">
+                    {dv.lender ?? "construction"}
+                    <div style={{ fontSize: 11 }}>
+                      {[dv.contract === "gmp" ? "GMP" : "cost-plus", "IO", dv.repudiatedM !== undefined ? "repudiated" : null]
+                        .filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
+                  <td className="num" title={`${usd(dv.drawn)} drawn of ${usd(dv.commitment)} committed`}>
+                    {usd(dv.loanBalance)}
+                    <div className="dim" style={{ fontSize: 11 }}>of {usd(dv.commitment)}</div>
+                  </td>
+                  <td className="num">{dv.ratePct.toFixed(2)}%</td>
+                  <td className="num">{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
+                  <td className="num dim">—</td>
+                  <td className="num" title="Interest accruing into the loan, not paid in cash">{usd(intMo)}</td>
+                  <td>{monthLabel(dv.deliverM)}</td>
+                  <td className="dim">delivers</td>
+                </tr>
+              );
+            })}
             {fac && (
               <tr>
                 <td><strong>The facility</strong> <span className="dim">· {fac.bbls.length} deeds crossed</span></td>
-                <td className="dim">{fac.lender}</td>
+                <td className="dim">
+                  {fac.lender}
+                  <div style={{ fontSize: 11 }}>
+                    {[fac.sweep ? "swept" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}
+                  </div>
+                </td>
                 <td className="num">{usd(fac.balance)}</td>
                 <td className="num">{fac.ratePct.toFixed(2)}%</td>
                 <td className={"num" + (facM.ltv !== null && facM.ltv > fac.maxLTV ? " neg" : "")}>{facM.ltv !== null ? (facM.ltv * 100).toFixed(0) + "%" : "—"}</td>
                 <td className={"num" + (facM.dscr !== null && facM.dscr < fac.minDSCR ? " neg" : "")}>{facM.dscr !== null ? facM.dscr.toFixed(2) : "—"}</td>
                 <td className="num">{usd(fac.monthlyPmt)}</td>
                 <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
-                <td className="dim">{[fac.sweep ? "SWEPT" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}</td>
                 <td className="dim">—</td>
               </tr>
             )}
-            {!rows.some((r) => r.h.loan) && !fac && (
-              <tr><td colSpan={10} className="dim">No debt. Every building here is owned outright.</td></tr>
+            {!rows.some((r) => r.h.loan) && !fac && Object.keys(game.developments).length === 0 && (
+              <tr><td colSpan={9} className="dim">No debt. Every building here is owned outright.</td></tr>
             )}
           </tbody>
         </table>
-      </div>
     </div>
   );
 }

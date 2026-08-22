@@ -10,7 +10,7 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
@@ -4172,25 +4172,21 @@ export function tickCityGrowth(
   // THE CRANE FILLS THE BOOK'S COMPOSITION, NOT JUST ITS TOTAL.
   // useForZone already weights the programme by startOwed, but it only
   // sees the lot the surplus contest already picked — and that contest
-  // prefers high-residual dirt, which is never fringe C. Industrial was
-  // a third of every order and 3% of every groundbreak (mixmatch) because
-  // the site search could not find a legal bay. Same 36 draws. If any
-  // sampled lot can host the class the book is most owed, that lot wins.
-  let leadOwed: BuiltClass | null = null;
-  let leadAmt = 0;
-  if (s.econ.startOwed) {
-    for (const k of BUILT_CLASSES) {
-      const v = s.econ.startOwed[k] ?? 0;
-      if (v > leadAmt) { leadAmt = v; leadOwed = k; }
-    }
-  }
+  // prefers high-residual dirt, which is never a bay. Industrial was a
+  // third of every order and 3% of every groundbreak (mixmatch).
+  //
+  // Same 36 draws. After the sample: if a SHORT class is owed and we
+  // found a legal lot for it, that lot wins. Office can be built on
+  // most C dirt; a shed can only be built on the M the board just
+  // mapped. Leaving those lots empty while office takes every crew
+  // slot is how stock stayed frozen after the map existed.
+  const owedBook = s.econ.startOwed;
 
   while (n-- > 0) {
     // sample a handful of candidates, build on the most in-demand of them
     let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
     let bestScore = -1;
-    let bestFit: { bbl: string; rec: (typeof parcels)[string] } | null = null;
-    let bestFitScore = -1;
+    const bestBy: Partial<Record<BuiltClass, { bbl: string; rec: (typeof parcels)[string]; score: number }>> = {};
     for (let i = 0; i < 36; i++) {
       const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
@@ -4242,13 +4238,34 @@ export function tickCityGrowth(
       const read = landRead(rec, s.econ);
       const score = read.builder - read.psf + rng(s, "dev") * 12;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
-      if (leadOwed && zonePermits(rec.zoneDist, leadOwed, rec.demandScore, s.econ)
-          && score > bestFitScore) {
-        bestFitScore = score;
-        bestFit = { bbl, rec };
+      for (const k of BUILT_CLASSES) {
+        if ((owedBook?.[k] ?? 0) <= 0 && !classPinnedOwed(s.econ, k)) continue;
+        if (!zonePermits(rec.zoneDist, k, rec.demandScore, s.econ)) continue;
+        const cur = bestBy[k];
+        if (!cur || score > cur.score) bestBy[k] = { bbl, rec, score };
       }
     }
-    if (bestFit) best = bestFit;
+    {
+      let pick: { bbl: string; rec: (typeof parcels)[string]; score: number } | null = null;
+      let pickAmt = -1;
+      for (const k of BUILT_CLASSES) {
+        const cand = bestBy[k];
+        if (!cand) continue;
+        if (!classPinnedOwed(s.econ, k) && !classIsShort(s.econ, k)) continue;
+        const amt = owedBook?.[k] ?? 0;
+        if (amt > pickAmt) { pickAmt = amt; pick = cand; }
+      }
+      if (!pick) {
+        pickAmt = -1;
+        for (const k of BUILT_CLASSES) {
+          const cand = bestBy[k];
+          if (!cand) continue;
+          const amt = owedBook?.[k] ?? 0;
+          if (amt > pickAmt) { pickAmt = amt; pick = cand; }
+        }
+      }
+      if (pick) best = pick;
+    }
     if (!best) continue;
     const { bbl, rec } = best;
     const dNow = demandNow(s, rec);

@@ -4256,6 +4256,17 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
       office: Math.round(comp.office ?? 0), retail: Math.round(comp.retail ?? 0),
       multifamily: Math.round(comp.multifamily ?? 0), industrial: Math.round(comp.industrial ?? 0),
     } : undefined,
+    // STOCKS, not the month's flow. The Economy page plots these against each
+    // other — standing inventory vs space actually leased — over the whole
+    // history. Completions and absorption stay on `comp`/`abs`.
+    stock: e.stock ? {
+      office: Math.round(e.stock.office ?? 0), retail: Math.round(e.stock.retail ?? 0),
+      multifamily: Math.round(e.stock.multifamily ?? 0), industrial: Math.round(e.stock.industrial ?? 0),
+    } : undefined,
+    occupied: e.occupied ? {
+      office: Math.round(e.occupied.office ?? 0), retail: Math.round(e.occupied.retail ?? 0),
+      multifamily: Math.round(e.occupied.multifamily ?? 0), industrial: Math.round(e.occupied.industrial ?? 0),
+    } : undefined,
   });
   if (e.history.length > 1260) e.history.shift();
 }

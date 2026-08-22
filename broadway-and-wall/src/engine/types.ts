@@ -1271,6 +1271,10 @@ export interface EconHistoryPoint {
   cap?: Record<BuiltClass, number>;
   abs?: Record<BuiltClass, number>;    // net absorption that month, sf
   comp?: Record<BuiltClass, number>;   // completions that month, sf
+  /** Standing inventory at month-end, sf — the stock, not the month's flow. */
+  stock?: Record<BuiltClass, number>;
+  /** Square feet with a tenant in them at month-end. */
+  occupied?: Record<BuiltClass, number>;
 }
 
 export interface Econ {

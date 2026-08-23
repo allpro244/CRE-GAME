@@ -257,7 +257,7 @@ scarcity pressure still observes instantly; application into `rentIdx` runs
 through a per-class EMA (`rentPress`, τ≈4 months). Same-month vac→rent leadlag
 clears; the four-quadrant checks (#31) still want a longer campaign sample.
 
-**8. #33 seller predictability, #36 zoning depth, #48/#49 firm entry and exit.**
+**8. #33 seller predictability (tape path closed — `bidOdds` reads kind floors; negotiation still has its own reservation), #36 zoning depth, #48/#49 firm entry and exit.**
 Longstanding, lower priority.
 
 **Thin-sponsor covenant immortality — CLOSED.** Equity cures and covenant

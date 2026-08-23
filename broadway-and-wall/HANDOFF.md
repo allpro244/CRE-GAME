@@ -257,7 +257,7 @@ scarcity pressure still observes instantly; application into `rentIdx` runs
 through a per-class EMA (`rentPress`, τ≈4 months). Same-month vac→rent leadlag
 clears; the four-quadrant checks (#31) still want a longer campaign sample.
 
-**8. #33 seller predictability, #36 zoning depth, #48/#49 firm entry and exit.**
+**8. #33 seller predictability (tape path closed — `bidOdds` reads kind floors; negotiation still has its own reservation), #36 zoning depth, #48/#49 firm entry and exit.**
 Longstanding, lower priority.
 
 **Thin-sponsor covenant immortality — CLOSED.** Equity cures and covenant
@@ -366,7 +366,7 @@ they dominate. Two of the last three fault reports were exactly that.
 | FAR / industrial / insolvency / refi fundable UX | **Grok G3** — balances-only PR (not #85) |
 | Ground-up cost/rent pillar (`e64b048`) | **Parked** — broke `firms` seed 4242; Fable F6 only with harnesses |
 | Distressed buyer idle months (playtest #6) | **Shipped** #91 |
-| Seller predictability (#33) | Measurement **Grok G4**; engine depth still open |
+| Seller predictability (#33) | Tape `bidOdds` now reads the same kind floors as the desk; OfferDesk shows a typical close band |
 | Diversification loses (playtest #7) | **Deferred** — investigate strategy vs economy |
 | The Station / zoning / tenant / broker / firms | **Shipped** #94 (engine); visibility pass on desks |
 

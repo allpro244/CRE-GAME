@@ -906,7 +906,8 @@ export function PortfolioBidActions({
       </div>
       {!bid.countered && countering && (
         <>
-          <Slider min={cb.min} max={cb.max} step={cb.step} editable="price"
+          <Slider min={cb.min} max={cb.max} step={cb.step}
+            typedMin={cb.typedMin} typedMax={cb.typedMax} editable="price"
             value={px} onChange={setCounter}
             label="Counter at" format={(v: number) => usd(v)}
             hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />

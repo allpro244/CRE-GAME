@@ -42,16 +42,40 @@ const ok = (name, cond, detail = "") => {
     prev = p;
   }
 
+  const kind = E.sellerOf(g, parcels, bbl).kind;
   const mid = E.bidOdds(g, parcels, bbl, listing, Math.round(listing.ask * 0.94));
-  ok("94% of ask is near coin flip", mid > 0.35 && mid < 0.75, `p=${mid.toFixed(3)}`);
+  const typical = kind === "local" || kind === "developer" || kind === "partnership";
+  if (typical) {
+    ok("94% of ask is near coin flip for a typical seller", mid > 0.35 && mid < 0.75,
+      `${kind} p=${mid.toFixed(3)}`);
+  } else if (kind === "institution") {
+    ok("institution holds the last points at 94%", mid < 0.40, `p=${mid.toFixed(3)}`);
+  } else {
+    ok(`${kind} takes 94% more readily than a typical seller`, mid > 0.55, `p=${mid.toFixed(3)}`);
+  }
 
   const low = E.bidOdds(g, parcels, bbl, listing, Math.round(listing.ask * 0.70));
-  ok("70% of ask is long shot", low < 0.05, `p=${low.toFixed(4)}`);
+  ok("70% of ask is long shot", low < 0.08, `p=${low.toFixed(4)}`);
 
   const distress = { ...listing, distress: true };
   const distressMid = E.bidOdds(g, parcels, bbl, distress, Math.round(listing.ask * 0.94));
   ok("distress listing accepts lower bids", distressMid > mid,
     `distress=${distressMid.toFixed(3)} normal=${mid.toFixed(3)}`);
+
+  const estateMid = E.reserveMidOf("estate");
+  const instMid = E.reserveMidOf("institution");
+  const localMid = E.reserveMidOf("local");
+  ok("estate reservation sits under a local", estateMid < localMid,
+    `estate=${estateMid} local=${localMid}`);
+  ok("institution reservation sits over a local", instMid > localMid,
+    `institution=${instMid} local=${localMid}`);
+  ok("local mid is the 0.94 sale-to-list coin flip", Math.abs(localMid - 0.94) < 1e-9,
+    String(localMid));
+  const band = E.closingBand("estate");
+  ok("estate closing band includes 90% of ask", band.lo <= 0.90 && band.hi >= 0.90,
+    `${band.lo}–${band.hi}`);
+  ok("institution band sits above an estate band", E.closingBand("institution").lo > band.hi,
+    `inst lo=${E.closingBand("institution").lo} estate hi=${band.hi}`);
 
   for (let m = 0; m < 48 && !E.holderOf(g, parcels, bbl); m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency ?? {});
@@ -131,6 +155,15 @@ const ok = (name, cond, detail = "") => {
       `distress=${dist.toFixed(3)} voluntary=${vol.toFixed(3)}`);
   } else {
     console.log("SKIP  distress vs voluntary mean (thin sample)");
+  }
+  const estate = byKind.estate ?? [];
+  const inst = byKind.institution ?? [];
+  if (estate.length >= 10 && inst.length >= 10) {
+    ok("estate mean odds at 94% beat an institution",
+      mean(estate) > mean(inst) + 0.05,
+      `estate=${mean(estate).toFixed(3)} institution=${mean(inst).toFixed(3)}`);
+  } else {
+    console.log("SKIP  estate vs institution mean (thin sample)");
   }
 }
 

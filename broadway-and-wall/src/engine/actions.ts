@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
-import { recentLowballs, sellerOf, strikeDeal } from "./acquire";
+import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
@@ -414,13 +414,12 @@ export function executePurchase(
  * of levelling off into a free option.
  *
  * Calibrated on sale-to-list: commercial deals close at a median near 95% of
- * ask, so a bid at 95% is close to a coin flip, and that is where the centre
- * goes. The curve that comes out tracks the old one from full ask down to
- * ~80% — 0.57 vs 0.71 at 95%, 0.018 vs 0.020 at 80% — and then keeps falling
- * where the old one flattened: 1-in-950 at 70% of ask, and effectively never
- * for a dollar.
+ * ask, so a bid at 95% is close to a coin flip FOR A TYPICAL SELLER. The
+ * centre is no longer one number for the whole city — `reserveMidOf` reads
+ * the same floors the desk uses (local 0.94, estate 0.89, institution 1.00).
+ * The curve still thins in the tail: 1-in-950 at 70% of ask against a local,
+ * and effectively never for a dollar.
  */
-const RESERVE_MID = 0.94;      // the median seller's reservation, as a share of their own ask
 const RESERVE_SD = 0.035;      // spread across owners; distress widens it, below
 export function bidOdds(
   s: GameState, parcels: ParcelTable, bbl: string,
@@ -435,13 +434,17 @@ export function bidOdds(
   // it lowers what they will settle for.
   const phase = s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
   const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
-  const motivated = listing.distress ? (lenderSale ? -0.10 : -0.075) : 0;
+  const seller = sellerOf(s, parcels, bbl);
+  // Kind + distress share the desk's floors. Phase / street / relationship
+  // stay here — they are this month, not this person.
+  let mid = reserveMidOf(seller.kind, { distress: !!listing.distress, lenderSale }) + phase;
   // A seller refuses a lowball because somebody else will pay more. How much
   // that is true depends on who else has money today — which is the whole
   // reason to know what the other firms on the street are doing.
   const room = (marketAppetite(s) - 1) * 0.05;
-  let mid = RESERVE_MID + phase + motivated + room;
+  mid += room;
   if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
+  mid = Math.max(0.70, Math.min(1.08, mid));
   // A forced sale is not just cheaper, it is less predictable: a receiver with
   // a deadline and an estate with a lawyer settle in very different places.
   const sd = listing.distress ? (lenderSale ? 0.075 : 0.060) : RESERVE_SD;

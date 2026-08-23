@@ -15,7 +15,7 @@ import {
   buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
-import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
+import { sellerOf, sellerProfile, closingBand, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS } from "@/engine/debt";
@@ -790,6 +790,8 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
   }
   const offerPriceRounded = Math.round(offerPrice);
   const seller = sellerOf(game, parcels, bbl);
+  const lenderSale = !!distress && !!loanBasis;
+  const band = closingBand(seller.kind, { distress: !!distress, lenderSale });
   const talks = game.talks?.[bbl] ?? null;
   // Everything else you have on the table. Not a blocker any more — a list,
   // because knowing what else you are committed to is exactly what you need
@@ -832,8 +834,8 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
             : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
           : distress
-            ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` The desk is clearing ${usd(loanBasis)} of debt` : " Motivated seller"} — counter below the ask; they move more readily than a voluntary seller.`
-            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. Name a price; they take it, counter, or walk.`}
+            ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` The desk is clearing ${usd(loanBasis)} of debt` : " Motivated seller"} — ${sellerProfile(seller.kind).label} typically closes around ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`
+            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. ${sellerProfile(seller.kind).label} typically closes around ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a

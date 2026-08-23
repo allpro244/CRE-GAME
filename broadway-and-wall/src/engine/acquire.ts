@@ -94,6 +94,43 @@ const SELLERS: Record<SellerKind, {
 export const sellerProfile = (k: SellerKind) => SELLERS[k];
 
 /**
+ * THE TAPE AND THE DESK READ THE SAME FLOORS.
+ *
+ * `bidOdds` used one citywide mid (0.94 of ask) for every seller. The desk
+ * already knew an estate sits at 0.87 and an institution at 0.98 — so the
+ * same person accepted at 94% of ask as a coin flip on the tape and refused
+ * it across the table. One quantity, two answers.
+ *
+ * +0.02 keeps a local (floor 0.92) on the 0.94 coin-flip commercial
+ * sale-to-list is calibrated on. Kind moves the centre; distress still
+ * notches it. Phase, street appetite and relationship stay on `bidOdds` —
+ * they are this month, not this person.
+ */
+export const RESERVE_KIND_LIFT = 0.02;
+
+export function reserveMidOf(
+  kind: SellerKind,
+  opts?: { distress?: boolean; lenderSale?: boolean },
+): number {
+  const motivated = opts?.distress ? (opts.lenderSale ? -0.10 : -0.075) : 0;
+  return Math.max(0.70, Math.min(1.06, SELLERS[kind].floor + RESERVE_KIND_LIFT + motivated));
+}
+
+/** Typical close as a share of ask — kind + distress, not this month's cycle. */
+export function closingBand(
+  kind: SellerKind,
+  opts?: { distress?: boolean; lenderSale?: boolean },
+): { lo: number; hi: number; mid: number } {
+  const mid = reserveMidOf(kind, opts);
+  const sd = opts?.distress ? (opts.lenderSale ? 0.075 : 0.060) : 0.035;
+  return {
+    mid,
+    lo: Math.max(0.70, mid - 1.5 * sd),
+    hi: Math.min(1.08, mid + sd),
+  };
+}
+
+/**
  * WHO HOLDS THE NINE BUILDINGS IN TEN THAT BELONG TO NOBODY YOU HAVE HEARD OF.
  *
  * A dozen named firms own a few hundred lots between them; the rest of the city

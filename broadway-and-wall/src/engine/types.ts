@@ -2460,6 +2460,8 @@ export interface GameState {
    * different holder from then on, instead of the one the player bought from.
    */
   deedSalt?: Record<string, number>;
+  /** The opening construction pipeline has been seeded (seedOpeningPipeline); once per game. */
+  openingPipelineSeeded?: boolean;
   /**
    * The largest building PLANNED in each class so far this campaign — seeded
    * from the standing stock, so the first two-storey shop of the run does not

@@ -19,7 +19,7 @@ import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from 
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
-import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
+import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
@@ -1731,6 +1731,8 @@ export const advanceQuarter = advanceMonth;
 
 export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]): GameState {
   const next = cloneState(s);
+  // The cranes first, so the tape does not offer a lot with a frame on it.
+  seedOpeningPipeline(next, parcels, bbls);
   refreshListings(next, parcels, bbls);
   return next;
 }

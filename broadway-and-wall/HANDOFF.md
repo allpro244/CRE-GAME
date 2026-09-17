@@ -213,6 +213,24 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **The cranes were already up** — every city opened with nothing under
+  construction (Economy page: 0 sf in all four sectors, every era, a boom
+  included; measured 8 seeds: 0 jobs at month 0, 0-1 at twelve, 0-6 at
+  thirty-six). `seedOpeningPipeline` (dev.ts, called from `firstListings`)
+  now starts jobs through the SAME door the growth loop uses — the city's
+  groundbreak is factored into `startCityJob`: site contest, cornice, use
+  cap, the shared pro forma — with the crew count from `crewCapacity`, the
+  utilisation the loop reads off slack, and each start backdated a random
+  way into its build with ledger (`spent`/`equityLeft`/`debt` along the
+  S-curve fundJobs draws on) and delivery queue stamped as of that month.
+  Named firms do not claim backdated starts. Measured after, 8 seeds: 0 to
+  9 jobs at the bell (0 to 3.5% of stock); four of eight still open at zero
+  because the pro forma clears nothing on those seeds — that is §6's
+  "development barely pencils" fault showing at month 0, not the seed. This
+  re-rolls the century (opening jobs occupy lots, deliver space, draw the
+  city pool), so the baseline moves. The `[history]` invariant now allows a
+  `build-start` event up to 60 months before month zero — no other kind is
+  written into the past — and `monthLabel` already prints "Aug 1999" for it.
 - **One cap-rate rail** — the era opener clamped caps to 3.2..14 and the
   monthly walk to 3.4..11, so a dear-money game could open at 12.5% and
   slide to 11.0% over its first months with nothing having moved. `CAP_RAIL`

@@ -1072,3 +1072,18 @@ window × lender appetite), your standing and the desk's book, and the card
 printed the stated rate. Both reasons are now on the quote and the desk, and
 `pnpm refi-bind` asserts proceeds = min(legs) × haircut with the haircut named
 whenever it bit.
+
+# THE CRANES WERE ALREADY UP — fixed
+
+Every city opened with an empty construction pipeline. Real cities carry one
+to three per cent of their floor area in the air at any moment — more at the
+top of a cycle, less at the bottom — and some of it is half built on the day
+a newcomer arrives. The opening pipeline is not a new number: the crew count
+is the town's contractor capacity (`crewCapacity`, stock turnover × build
+duration), how busy they were is the growth loop's own appetite read off
+vacancy slack, and every start goes through `startCityJob` — the same site
+contest and pro forma the city runs every month — backdated a random way into
+its build with the ledger and the delivery queue stamped as of that month.
+Measured: 0-3.5% of stock at the bell; on half the seeds the pro forma clears
+nothing, which is the development-pencils fault the pipeline now shows at
+month zero instead of hiding behind an empty sky.

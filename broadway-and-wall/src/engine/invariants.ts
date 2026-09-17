@@ -213,7 +213,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (!parcels[bbl]) bad("history", `property ${bbl}`, "history attached to a parcel that does not exist");
     if (events.length > PROPERTY_HISTORY_CAP) bad("history", `property ${bbl}`, `${events.length} events exceed cap`);
     for (const e of events) {
-      if (!fin(e.m) || e.m < 0 || e.m > s.month) bad("history", `property ${bbl}`, `event month ${e.m}`);
+      // A groundbreak can predate the game: the opening pipeline
+      // (seedOpeningPipeline) stamps a frame that was already standing at
+      // its real start month, and "Aug 1999" is the honest date for it. No
+      // other event kind is written into the past, and no build runs five
+      // years, so that is the whole allowance.
+      const floor = e.kind === "build-start" ? -60 : 0;
+      if (!fin(e.m) || e.m < floor || e.m > s.month) bad("history", `property ${bbl}`, `event month ${e.m}`);
     }
   }
 

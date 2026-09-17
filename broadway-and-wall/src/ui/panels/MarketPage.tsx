@@ -726,7 +726,12 @@ export function MarketPage() {
                     <td className="num">{usd(li.ask)}</td>
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
                     <td className="num">{built ? usd(noi) : "—"}</td>
-                    <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
+                    {/* A YIELD NEEDS INCOME. An empty building with a tax bill
+                        printed "-14.80%" on the tape, which is not a cap rate
+                        anybody quotes: there is nothing to capitalise. */}
+                    <td className="num" title={built && noi <= 0 ? "No income to capitalise — the building is empty or its costs exceed its rent; the ask is a price for the shell" : undefined}>
+                      {built ? (noi > 0 ? goingIn.toFixed(2) + "%" : "— vacant") : "—"}
+                    </td>
                     {/* THE BUILDING'S OCCUPANCY, AND IT IS A FACT.
                         This column used to be the CITY'S — occupancy(rec, econ),
                         the class model — because "you have not seen inside a

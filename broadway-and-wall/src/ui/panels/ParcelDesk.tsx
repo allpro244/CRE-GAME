@@ -788,7 +788,12 @@ function ParcelPanelInner({
                 return (
                   <>
                     <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
-                    <Row k="Going-in cap" v={((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    <Row
+                      k="Going-in cap"
+                      v={ip.noi > 0 ? ((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%" : "— no income to capitalise"}
+                      strong={ip.noi > 0}
+                      bad={ip.noi <= 0}
+                    />
                     {/* The seller's other number, and it is labelled as the
                         forecast it is. What you buy is the line above. */}
                     <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />

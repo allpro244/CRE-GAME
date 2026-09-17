@@ -213,6 +213,10 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **No negative cap rates on the tape** — an empty 1941 office with a tax
+  bill printed "−14.80%" in the Marketplace's Cap rate column and on the
+  parcel desk's "Going-in cap" row. A yield needs income; both print a dash
+  with the reason ("no income to capitalise") when NOI is at or under zero.
 - **`pnpm leaseup` measured a unit count, not a lease-up** — its 85% bar
   was `unitStatus` leased-over-total, and the total is the leg divided by the
   class's norm suite; a building demised into five real tenancies against a

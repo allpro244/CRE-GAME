@@ -596,7 +596,7 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     const rent = useRentPsfYr(rec, econ, "good", use) * rentMult * belief;
     if (!(rent > 0)) continue;
     const occ = use === "multifamily" ? 0.95 : 0.90;
-    const opex = opexPsf(use, econ, false);
+    const opex = opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
     const recov = RECOVERY_RATE[use] ?? 0;
     // SOMEBODY HAS TO MANAGE THE BUILDING, AND THIS PRO FORMA WAS NOT PAYING
     // THEM. `noiYr` — what the tape, the lender, `assetValue` and the player's
@@ -735,7 +735,8 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   const occ = k === "multifamily" ? 0.95 : 0.90;
-  const opex = opexPsf(k, e, false);
+  // the P90 site's opex, not the mean's — same station as its rent
+  const opex = opexPsf(k, e, false) * Math.pow(locMult, OPEX_LOC_ELASTICITY);
   const recov = RECOVERY_RATE[k] ?? 0;
   const egi = rent * occ + opex * recov * occ;
   const noiPsf = egi - opex - egi * MGMT_FEE;
@@ -1546,6 +1547,40 @@ function managedOpexPsf(
   return controllableOpexPsf(cls, econ, systemsDone, service, pmMult) + OPEX_FIXED[cls] * econ.costIdx;
 }
 
+/**
+ * A CHEAP BUILDING IS CHEAPER TO RUN.
+ *
+ * `opexPsf` is one number per class, city-wide, and it was charged to every
+ * address alike. Measured at the opening bell across six seeds: apartment
+ * rent runs $13.5 a rentable foot on the fringe fifth of the city and $48
+ * on the prime fifth — a 3.6x spread, which is already the top of what the
+ * location gradient means to produce — but a flat $8.23 of opex against both
+ * turned that into a 10.8x spread in NOI (28% margin against 85%) and a
+ * 13.9x spread in value per foot ($36 against $502). Half the city's flats
+ * sat in a bin whose median value was $77 a foot, a standing 1986 waterfront
+ * block appraised at $11, and a fringe building at 73% let earned less than
+ * nothing. Real secondary metros run three to four times fringe to prime.
+ *
+ * The missing fact is that operating cost follows the building's station.
+ * Payroll, turns, utilities the owner carries, the standard of the finishes
+ * that get repaired: the NAA and IREM income-expense surveys put class-A
+ * garden apartments at roughly 1.3x class-C opex per foot against rents
+ * about 1.7x apart, which is an elasticity of about one half on the rent
+ * level. Property tax is separate and already ad valorem; the management fee
+ * is already a share of collections. This is applied through the SAME
+ * location multiplier the rent reads, pivoted on the city's mean address, so
+ * the average building's expense line does not move — the fringe gets
+ * cheaper to run and the prime dearer, which is what the surveys say.
+ *
+ * Applied at every site that prices a PARCEL. The class-level pro formas
+ * (`devPencils` at the P90 site, the order book's class check) read the mean
+ * or their own location, as noted at each.
+ */
+export const OPEX_LOC_ELASTICITY = 0.5;
+export function locOpexMult(rec: ParcelRecord, econ: Econ | undefined, cls: BuiltClass): number {
+  return Math.pow(locationRentMult(rec, econ, cls), OPEX_LOC_ELASTICITY);
+}
+
 // THE LEGACY FLAT TABLE IS GONE. It was "kept for compatibility with anything
 // still asking the old question", and the thing still asking was multifamily —
 // which billed $10.00/sf while planDevelopment, the land residual and every
@@ -1709,7 +1744,7 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
     const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
     const occ = useOccupancy(rec, econ, use, stabilised);
-    const op = sf * opexPsf(use, econ, false);
+    const op = sf * opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
     rent += sf * useRentPsfYr(rec, econ, condition, use) * occ;
     opex += op;
     // ...and what a typical roll of that class bills back. Recovery is
@@ -1943,7 +1978,7 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
   const taxPsf = bill / Math.max(1, rec.bldgArea);
-  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) : taxPsf;
+  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) * locOpexMult(rec, econ, rec.class as BuiltClass) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
   return Math.max(0, bill - recovered);
@@ -1979,7 +2014,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
@@ -1988,8 +2023,8 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   const systemsDone = h.programsDone?.systems !== undefined;
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -2060,7 +2095,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, "multifamily");
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
@@ -2076,8 +2111,8 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   const systemsDone = h.programsDone?.systems !== undefined;
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;

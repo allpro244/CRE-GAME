@@ -1132,3 +1132,40 @@ The opening draw (regime.ts) is untouched: 12 of 40 games still open above
 one seed in forty at the 23% ceiling, p90 months-above-10% unchanged — sits
 in the expectations channel (`inflExp` still reaches its 16% clamp in the
 worst seed) and is the next thing to trace.
+
+# A CHEAP BUILDING IS CHEAPER TO RUN — fixed
+
+The playtest that found it: a 5,004 sf apartment block on the waterfront at a
+demand score of 24, bought at 96% let for $363K on its roll, appraised at
+$53-60K three years later at 95% let — because the market rent for that
+address is $10 a foot, opex was a flat $8.23 a foot for every apartment in
+town, and the estimate of its income was $3,010 a year.
+
+Measured at the opening bell, six seeds, every standing building:
+
+    apartments   demand 0-19: rent $13.5/rsf  NOI $3.8  margin 28%  value $36/gsf
+                 demand 80-99: rent $48.2/rsf  NOI $40.9  margin 85%  value $502/gsf
+                 prime/fringe value 13.9x     (rent 3.6x, NOI 10.8x)
+    office       prime/fringe value 6.3x      retail 26.4x
+
+Real secondary metros run three to four times fringe to prime for apartments
+and office. The rent gradient is already at the top of what `locationRentMult`
+is meant to produce; what multiplied it was a cost that did not move with the
+address. The NAA and IREM income-expense surveys put class-A garden apartments
+at about 1.3x class-C operating cost per foot against rents about 1.7x apart:
+an elasticity of about one half. `locOpexMult` applies that through the same
+location multiplier the rent reads, pivoted on the city's mean address, at
+every site that prices a parcel (NOI, the operating statement, base-year
+stops, tax recovery, the site pro forma). The class-level pro formas read the
+mean or the P90 site as before. Same six seeds after:
+
+    apartments   demand 0-19: NOI $6.0  margin 44%  value $56/gsf
+                 demand 80-99: NOI $38.9  margin 81%  value $407/gsf
+                 prime/fringe value 7.3x
+    office       4.9x          retail 16.7x
+
+What remains of the apartment spread is the rent gradient itself (3.6x
+between the extreme fifths against the 2-2.5x the `LOC_SPREAD` comment cites
+for the business) and a small cap-rate location term; retail's is its own
+footfall gradient, by design. Both are calibration questions for
+`locationRentMult`, not for the expense line.

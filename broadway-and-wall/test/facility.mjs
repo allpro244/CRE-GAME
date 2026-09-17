@@ -50,6 +50,14 @@ function run(cash0, label) {
         if (bought >= 10) break;
         const rec = E.resolveRec(parcels, g, L.bbl);
         if (!rec || rec.class === "land" || !rec.bldgArea || g.holdings[L.bbl]) continue;
+        // A POOL THAT CAN CARRY A FACILITY. The firms bought whatever was
+        // cheapest on the tape in order, and once fringe buildings were priced
+        // on their own operating cost the thin firm's eight deeds summed to a
+        // $4M borrowing base against the desks' $5M documentation floor — so
+        // it papered nothing and this file reported "free leverage" on a
+        // facility that did not exist. Eight deeds at $400K+ carry a base; and
+        // nobody here buys a building they cannot pay for.
+        if (L.ask < 400_000 || L.ask > g.cash * 0.6) continue;
         const pid = bought % 2 === 0 ? "cash" : (["savings", "harbor"].find((id) => E.buyQuote(g, parcels, L.bbl, L.ask, id, 1).principal > 0) ?? "cash");
         const r = E.executePurchase(g, parcels, L.bbl, L.ask, pid, false, 1);
         if (r && r.s && r.s.holdings[L.bbl]) { g = r.s; bought++; }

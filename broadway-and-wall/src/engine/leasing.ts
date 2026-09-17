@@ -18,7 +18,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
@@ -68,7 +68,9 @@ function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?
   const sys = h.programsDone?.systems !== undefined;
   // A shop and an office in the same building do not have the same expense
   // stop — their expense loads are not the same and never were.
-  const op = use ? opexPsf(use, econ, sys, h.service) : blendBy(rec, (u) => opexPsf(u, econ, sys, h.service));
+  const op = use
+    ? opexPsf(use, econ, sys, h.service) * locOpexMult(rec, econ, use)
+    : blendBy(rec, (u) => opexPsf(u, econ, sys, h.service) * locOpexMult(rec, econ, u));
   return op + tax;
 }
 

@@ -213,6 +213,33 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **A cheap building is cheaper to run** — opex was one flat number per
+  class for every address, so apartments ran a 3.6x fringe-to-prime rent
+  spread into a 13.9x value spread ($36 to $502 a gross foot; half the flats
+  in a $77 bin; a fringe block at 73% let earning less than nothing).
+  `locOpexMult` in value.ts scales operating cost with the building's
+  station at an elasticity of one half (NAA/IREM class A vs C), through the
+  same location multiplier the rent reads and pivoted on the city mean, at
+  every parcel-level site. After: apartments 7.3x, office 4.9x, retail
+  16.7x (its own footfall gradient). Full note in ECONOMY.md. This moves
+  every value, pro forma and loan size on the fringe and the prime, so the
+  baseline moves — and moves a lot: land median +56%, office rent index
+  +38%, population +7.5%, floor area +7% (25-year, 6-seed medians). Traced
+  on seed 550991 against the previous engine: identical for six years, then
+  more sites pencil at the fringe, more cranes (9 vs 1 live at year 10), more
+  jobs (+9.5%), more residents, tighter housing, and the office rent index
+  runs 12-28% higher through years 10-20 while vacancy sits on the same
+  friction floor in both. That is the city's own growth loop answering a
+  viable fringe, not a wire moving the wrong way; `pnpm playtest` §A2 now
+  has asks tracking rolls harder (a 30pp-better roll asks 1.25x the model,
+  was 1.02x), which is the direction that section says it wants. The
+  remaining apartment spread is the rent gradient (3.6x against the 2-2.5x
+  `LOC_SPREAD`'s own comment cites; `econ:report` A reads an achieved 5.2x
+  median) and is open. `pnpm facility` needed its firms restricted to
+  pool-worthy buildings they can pay for (asks $400K+, under 60% of cash):
+  once fringe buildings were priced on their own cost, the thin firm's eight
+  cheapest deeds summed to a $4M base against the desks' $5M documentation
+  floor and it papered nothing.
 - **No negative cap rates on the tape** — an empty 1941 office with a tax
   bill printed "−14.80%" in the Marketplace's Cap rate column and on the
   parcel desk's "Going-in cap" row. A yield needs income; both print a dash
@@ -401,6 +428,22 @@ records a breach, so a firm with the cash never shows `breachedSince`; the
 covenant took its paydown out of cash instead, sixteen times in thirty years
 for the thin firm, and the harness counted only the recorded breach. A cure
 is a bite; it counts them now. Neither row is in `pnpm check`.
+
+**0d. `econ:report` band B (supply shock) is outside its band on this
+engine:** a +10% office delivery moves rents only 2.1% below the
+counterfactual (band wants 10%) and the new building never reaches 80% let
+inside ten years. The transmission audit's supply section reads the same
+2-3% and calls the wire present; the band is a calibration question about
+how hard a glut moves face rent (concessions carry 0% of the adjustment
+here; real gluts move concessions first). Reported, not gated; predates the
+opex change (the wire does not read opex).
+
+**0c. `pnpm audit` on this engine (Sep 2026, `node tools/econaudit.mjs`,
+timed out at 40 min after section 9):** experiments 1-6 WIRED (2 reads WEAK
+on the negative demand shock, as before), 7 housing→retail spillover
+BACKWARDS and 8 contradiction scan BROKEN — both already recorded in the
+committed `ECONOMY_AUDIT.md`, so they predate this session. Note `pnpm audit`
+is shadowed by pnpm's own vulnerability audit; call the tool directly.
 
 **0a. Fringe lease-up is slow, not stuck.** After the harness fix in §5,
 16 of 16 empty office buildings stabilise (median 41 months) and the slowest

@@ -13,7 +13,7 @@ import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand"
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, locOpexMult, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
   noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -917,7 +917,7 @@ export function planDevelopment(
   // Logistic curve to ~[0.35, 2] — the old clamp pinned the floor 50% of months.
   const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
   const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
-  const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
+  const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false) * locOpexMult(rec, s.econ, u));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
   const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
   // Mean occupancy across the absorption curve the market actually runs
@@ -1082,7 +1082,7 @@ export function planDevelopment(
   const marketStabNoi = noiYr(asBuilt, s.econ, "good", true);
   let stabNoi = marketStabNoi;
   if (btsShare > 0 && bts) {
-    const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
+    const opex = overMix(mix, (u) => opexPsf(u, s.econ, false) * locOpexMult(asBuilt, s.econ, u));
     const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
     const egiPsf = bts.rentPsf + opex * recovery;
     const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);

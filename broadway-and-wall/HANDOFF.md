@@ -233,9 +233,14 @@ another. Grep before you add another.
   viable fringe, not a wire moving the wrong way; `pnpm playtest` §A2 now
   has asks tracking rolls harder (a 30pp-better roll asks 1.25x the model,
   was 1.02x), which is the direction that section says it wants. The
-  remaining apartment spread is the rent gradient (3.6x against the 2-2.5x
-  `LOC_SPREAD`'s own comment cites; `econ:report` A reads an achieved 5.2x
-  median) and is open. `pnpm facility` needed its firms restricted to
+  remaining apartment spread is the rent gradient — MEASURED, and left
+  alone: on the reference city 3% of offices and 10% of flats sit on
+  `LOC_SPREAD`'s floor, none on the ceiling, and the p10-p90 raw multiplier
+  runs 3.1x office, 2.8x apartments, 4.3x retail, 1.9x industrial, which is
+  the business as the comment states it. `econ:report` A's 5.2x is the
+  single worst building against the single best, and the 7.3x above is the
+  0-19 bin (n=180) against the 80-99 bin (n=12); the 20-39 against 60-79
+  bins run 3.8x. `pnpm facility` needed its firms restricted to
   pool-worthy buildings they can pay for (asks $400K+, under 60% of cash):
   once fringe buildings were priced on their own cost, the thin firm's eight
   cheapest deeds summed to a $4M base against the desks' $5M documentation
@@ -436,7 +441,11 @@ inside ten years. The transmission audit's supply section reads the same
 2-3% and calls the wire present; the band is a calibration question about
 how hard a glut moves face rent (concessions carry 0% of the adjustment
 here; real gluts move concessions first). Reported, not gated; predates the
-opex change (the wire does not read opex).
+opex change (the wire does not read opex). Read with care: the seed it draws
+opens at 19.6% office vacancy with the concession dial already saturated,
+so the counterfactual is equally saturated and the effective line cannot
+separate from face — the 100% face share is the harness's seed, not the
+market's behaviour. Re-run it on a balanced opening before acting on it.
 
 **0c. `pnpm audit` on this engine (Sep 2026, `node tools/econaudit.mjs`,
 timed out at 40 min after section 9):** experiments 1-6 WIRED (2 reads WEAK

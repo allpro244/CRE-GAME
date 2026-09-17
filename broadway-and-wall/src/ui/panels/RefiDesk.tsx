@@ -233,6 +233,13 @@ export function RefiSection({ bbl }: { bbl: string }) {
                     <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>
                       {x.why ?? (px > 0 ? x.binding + (x.bindingWhy ? ` — ${x.bindingWhy}` : "") : "nothing to lend against")}
                     </div>
+                    {/* A desk whose `why` already names the rent-roll haircut
+                        was dropping the other half of the story — the credit
+                        window or its own appetite cutting the stated advance.
+                        Both reasons, or the player fixes the wrong one. */}
+                    {x.why && px > 0 && x.advanceWhy && (
+                      <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>…and {x.advanceWhy}</div>
+                    )}
                   </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
                   <td

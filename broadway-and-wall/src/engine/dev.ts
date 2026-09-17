@@ -31,6 +31,7 @@ import {
   programmeSf,
   queueSupplyProject,
   rescheduleSupplyProject,
+  syncSupplyViews,
 } from "./supply";
 import { recordPropertyEvent } from "./history";
 
@@ -4446,6 +4447,12 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   for (let i = 0; i < want * 4 && started < want; i++) {
     if (startCityJob(s, parcels, bbls, null, e.startOwed, maturity, { backdate: rng(s, "dev"), quiet: true })) started++;
   }
+  // The Research page reads `econ.pipeline`, which the queue only refreshes
+  // once a month so that construction cannot depend on iteration order
+  // inside a tick. Before the first tick there is no order to depend on, and
+  // an opening screen that says "0 sf under construction" over nine live
+  // frames is the fault this function exists to fix.
+  syncSupplyViews(e, true);
 }
 
 export function bumpLand(s: GameState, bbl: string, mult: number) {

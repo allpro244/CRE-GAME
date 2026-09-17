@@ -1429,6 +1429,8 @@ export interface RefiQuote {
    * the building was fine.
    */
   bindingWhy?: string;
+  /** The advance-rate half of that sentence on its own — the credit window, appetite, standing or book — so a desk whose `why` already names the haircut does not lose it. */
+  advanceWhy?: string;
   /** What the desk advanced today as a share of value, after every cut. */
   advanceToday: number;
   /** The rent-roll haircut applied after sizing (concentration, rollover, one trade), 1 when none. */
@@ -1565,6 +1567,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         }
         return parts.length ? parts.join("; ") : undefined;
       })(),
+      advanceWhy: q.advanceWhy,
       advanceToday: value > 0 ? q.principal / value : 0,
       haircut: hair.mult,
       ioM: p.ioM,

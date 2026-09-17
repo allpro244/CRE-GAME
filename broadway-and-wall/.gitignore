@@ -25,3 +25,4 @@ check*.mjs
 .audit/
 .audit-rails/
 dist-gallery/
+test/.opening-screen.*

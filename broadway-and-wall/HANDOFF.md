@@ -213,6 +213,17 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **The opening screen is asserted** — `pnpm opening-screen` renders the
+  top bar, Economy, Research, Marketplace and the refinance desk against a
+  real month-zero game (same SSR build as `pnpm leasing-page`) and fails if
+  the era is not named, the Research "Under construction" column reads 0 sf
+  on a seed that seeded jobs, the shops ledger precedes the tape, or a
+  quote's reason is missing from the desk. Two faults it caught on its first
+  run: `econ.pipeline` is refreshed once a month by design, so the opening
+  screen read 0 sf over nine live frames (seedOpeningPipeline now refreshes
+  the view once, before the first tick); and a desk whose `why` already
+  named the rent-roll haircut dropped the credit-window half of the reason
+  (`RefiQuote.advanceWhy`, printed on a second line of the desk table).
 - **The cranes were already up** — every city opened with nothing under
   construction (Economy page: 0 sf in all four sectors, every era, a boom
   included; measured 8 seeds: 0 jobs at month 0, 0-1 at twelve, 0-6 at

@@ -391,14 +391,22 @@ reference city, 50 years each, no player:
     peak policy rate      p50 10.2  p90 22.8   max 31.9
 
 The opening draw is the era table and is a design choice. The century AFTER
-the opening is not: a median seed that peaks at 12.6% money and one in ten
-that pins the 23% ceiling is a nation model that over-produces Great
-Inflations — the developed world since 1960 has one (peak policy 20%), and
-nothing at 31.9%. Suspects, in order: the `easeEma` policy-mistake term that
-lets cheap money compound into a regime, the 0.22 inflation clamp being
-load-bearing rather than a guard, and credibility recovering too slowly. Rank
-this above the listing-volume feel question below; it is the standing
-answer to "does the base rate match the base rate".
+the opening was not: a median seed that peaks at 12.6% money and one in ten
+that pins the 23% ceiling was a nation model over-producing Great
+Inflations. Traced (40 seeds, monthly nation state, the four worst run-ups
+printed): every peak sat downstream of a fiscal-pressure episode that FROZE
+the policy rate for 30-96 months while `easeEma` compounded the ease to 20%
+inflation, credibility hit its floor and expectations their clamp — and then
+a bank climbing at 0.75 a meeting off a 12-month-smoothed read peaked two
+years after inflation did. Two mechanism fixes, both from the record (the
+Martin Fed leaned back at ~1.25 pts/yr under Vietnam pressure; Volcker moved
+in 1.5-point steps): pressure is a grudging pace, not a freeze; the restore
+regime moves 1.5 a meeting. Measured, both (ECONOMY.md "A LEANED-ON BANK
+LEANS BACK"): peak policy max 31.9 → 24.5, p90 22.8 → 19.6; peak inflation
+max 22% → 18% and its clamp no longer binds; the index ceiling still touched
+by one seed in forty. `pnpm inflation`, `pnpm rates` and `pnpm balance`
+green. The 16% expectations clamp still binds in the worst seed and is the
+next suspect.
 
 Listing volume, same session, 6 seeds × 10 years: 7-18 deeds live on the
 tape at the opening bell (7 in a cheap-money era, 17-18 in an inflation),

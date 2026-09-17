@@ -1087,3 +1087,48 @@ its build with the ledger and the delivery queue stamped as of that month.
 Measured: 0-3.5% of stock at the bell; on half the seeds the pro forma clears
 nothing, which is the development-pencils fault the pipeline now shows at
 month zero instead of hiding behind an empty sky.
+
+# A LEANED-ON BANK LEANS BACK — the fiscal-pressure freeze, and the pace of a frightened bank
+
+Forty centuries, no player, the nation model alone: the median seed peaked at
+12.6% money, one century in ten pinned the 23% index ceiling, and one policy
+rate reached 31.9%. The trajectories all had the same shape. A fiscal-pressure
+episode (`pressureM`, 30-96 months) froze the policy rate outright — 0.3% or
+4.9% for five to eight years — while `easeEma` compounded the ease into 20%
+inflation, credibility hit its 0.10 floor, expectations pinned their 16% clamp
+and the target drifted to its 6% ceiling; when the pressure lifted, the rule
+asked for 30% and the bank climbed toward it at three-quarters a meeting for
+five years, reading trend inflation through a twelve-month smoothing, so it
+peaked two years after inflation did.
+
+Neither half is history. The Martin Fed under the Vietnam build-out took the
+funds rate from 4% to 9% between 1965 and 1969 — leaned on, it still leaned
+back, at about a third of the rule's pace. And Volcker, once he had the
+argument to win, moved in points: 11% to 17.6% in eight months, 9% inside the
+next quarter, 19% six months after that.
+
+So: under pressure the bank moves a quarter point, only on a visible miss,
+never the frightened three-quarters (two points a year at most); and in the
+restore regime — credibility under 0.55 with inflation seen above 4.5% — it
+moves a point and a half a meeting, both ways. Measured, the freeze alone:
+
+    peak policy      p50 10.2 → 9.9    p90 22.8 → 17.6    max 31.9 → 27.3
+    50-yr max index  p90 23.0 → 19.5   (the ceiling no longer binds at p90)
+    months above 10% p50 5% → 4%       peak inflation p90 15% → 13%
+
+...and with the Volcker step on top (same 40 seeds × 50 years):
+
+    peak policy      p50 10.2 → 9.8    p90 22.8 → 19.6    max 31.9 → 24.5
+    peak inflation   p90 15% → 14%     max 22% → 18%      (the 0.22 clamp no longer binds)
+    50-yr max index  p50 12.6 → 12.1   p90 23.0 → 21.3    max 23.0 (one seed still touches it)
+    months above 10% p50 5% → 4%       p90 21% → 23%
+
+The step trades a little at p90 for the whole of the extreme tail: a bank
+that reaches the breaking rate while inflation is still rising peaks lower
+and breaks it earlier, so the worst century now looks like 1981 (24.5% money
+against 18% inflation) rather than something no developed economy has seen.
+The opening draw (regime.ts) is untouched: 12 of 40 games still open above
+10%, which is the era table and the owner's call. What remains of the tail —
+one seed in forty at the 23% ceiling, p90 months-above-10% unchanged — sits
+in the expectations channel (`inflExp` still reaches its 16% clamp in the
+worst seed) and is the next thing to trace.

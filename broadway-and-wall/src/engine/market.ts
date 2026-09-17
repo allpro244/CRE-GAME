@@ -1690,12 +1690,39 @@ export function tickEcon(s: GameState) {
       const abs = Math.abs(gap);
       let step = 0;
       if (abs >= 0.15) {
+        // A BANK THAT HAS LOST THE ARGUMENT DOES NOT MOVE IN QUARTER POINTS.
+        // At three-quarters a meeting it took five years to climb from 5% to
+        // 30%, reading trend inflation through a twelve-month smoothing, so
+        // it peaked two years after inflation did and hiked six points a
+        // year into a disinflation already under way (measured across forty
+        // centuries: peak policy 27-32% against 17% inflation and falling).
+        // Volcker took the funds rate from 11% to 17.6% in eight months, cut
+        // it to 9% inside a quarter, and had it at 19% six months later —
+        // a point and a half a meeting, both ways. That pace is the
+        // restore regime's: it reaches the rate that breaks the inflation
+        // while the inflation is still rising, which is the only reason
+        // the peak is lower.
         const frightened = abs > 7 || restore > 0;
-        const unit = frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+        const unit = restore > 0 ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
         step = Math.sign(gap) * unit;
         if (Math.abs(step) > abs) step = gap;
       }
-      if (n.pressureM > 0 && step > 0) step = 0;
+      // A LEANED-ON BANK LEANS BACK, SLOWLY. This froze the rate outright for
+      // the whole episode (30-96 months), and measured across forty
+      // centuries that freeze was the entire run-away: policy pinned at 0.3%
+      // or 4.9% for five to eight years while inflation compounded through
+      // easeEma to 20%, credibility hit its floor, expectations pinned their
+      // 16% clamp, and the rule then asked for 30% money into a disinflation
+      // already under way (peak policy 31.9%; one century in ten pinned the
+      // 23% index ceiling). No modern central bank was ever held at zero
+      // against 10% inflation for eight years. The Martin Fed under the
+      // Vietnam build-out took the funds rate from 4% to 9% between 1965 and
+      // 1969 — about a point and a quarter a year, a third of what the rule
+      // wanted — and that is the shape here: under pressure the bank moves a
+      // quarter point, only on a visible miss, never the frightened
+      // three-quarters. Two points a year at most. The mistake still
+      // compounds; it no longer compounds unopposed.
+      if (n.pressureM > 0 && step > 0) step = gap > 1.0 ? 0.25 : 0;
       n.policy = Math.max(0.25, n.policy + step);
     }
 

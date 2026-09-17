@@ -820,6 +820,13 @@ body {
 }
 /* Optional primer — a card, not a trap. Must not use .modal-backdrop or
    Space/Year are swallowed as "answer the card first". */
+/* THE PRIMER OFFER SITS ON THE CYCLE DIGEST. Both cards anchor bottom-left,
+   and on a fresh game the offer (z 45) covered the digest (z 22) so its head
+   peeked out above the offer with the rest hidden — two cards in one corner,
+   one of them unreadable. The offer is a one-time first-run card, and the
+   digest has nothing to say in month zero, so the digest yields until the
+   offer is answered. */
+.app:has(.primer-offer) .cycle-digest { display: none; }
 .primer-offer {
   position: absolute; left: 18px; bottom: 18px; z-index: 45;
   width: min(340px, calc(100vw - 36px));

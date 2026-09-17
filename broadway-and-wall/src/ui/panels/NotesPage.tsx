@@ -1,4 +1,5 @@
 import { useStore } from "@/state/store";
+import { districtLabel } from "@/engine/mix";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -31,7 +32,7 @@ export function bankStatement(game: GameState, parcels: ParcelTable, lenderName:
     const w = game.workouts?.[h.bbl];
     rows.push({
       bbl: h.bbl, borrower: firmShort(game), yours: true, dev: false,
-      klass: rec.class, district: rec.district ?? "—",
+      klass: rec.class, district: districtLabel(rec),
       balance: h.loan.balance, rate: h.loan.ratePct, matM: h.loan.maturityM,
       origLtv: h.loan.origValue ? h.loan.principal / h.loan.origValue : null,
       curLtv: v > 0 ? h.loan.balance / v : null,
@@ -47,7 +48,7 @@ export function bankStatement(game: GameState, parcels: ParcelTable, lenderName:
     const v = r ? assetValue(rec, game.econ, assetGrade(r, rec)) : 0;
     rows.push({
       bbl: x.bbl, borrower: r?.name ?? "—", yours: false, dev: false,
-      klass: x.klass, district: rec.district ?? "—",
+      klass: x.klass, district: districtLabel(rec),
       balance: x.balance, rate: x.ratePct, matM: x.maturityM,
       origLtv: x.origValue > 0 ? x.balance / x.origValue : null,
       curLtv: v > 0 ? x.balance / v : null,
@@ -62,7 +63,7 @@ export function bankStatement(game: GameState, parcels: ParcelTable, lenderName:
       const rec = resolveRec(parcels, game, d.bbl);
       rows.push({
         bbl: d.bbl, borrower: firmShort(game), yours: true, dev: true,
-        klass: "construction", district: rec?.district ?? "—",
+        klass: "construction", district: rec ? districtLabel(rec) : "—",
         balance: d.loanBalance, rate: d.ratePct ?? 0, matM: d.deliverM ?? game.month,
         origLtv: d.costTotal > 0 ? d.commitment / d.costTotal : null, curLtv: null,
         status: "construction", bad: false,

@@ -177,17 +177,52 @@ function ParcelPanelInner({
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
-        const vacant = rec.class === "land" || room >= 0.25;
+        const dirt = rec.class === "land" || !rec.bldgArea;
+        const vacant = dirt || room >= 0.25;
         if (!vacant || game.landmarks?.[selectedBBL] !== undefined) return null;
-        const pencils = read.winner === "builder" && read.builder > 0;
+        // ON DIRT the builder's residual only has to exist. ON A BUILT LOT it
+        // has to beat the building: a rebuild pencils when the dirt, cleared,
+        // is worth more to a builder than what stands on it is worth today —
+        // the appraisal per foot of lot. The first cut of this card compared
+        // the builder's bid to the HOLDER's bid (a bid for the same dirt) and
+        // called a 99%-let corner "Redevelopment pencils" on the strength of
+        // $238 against $464, neither of which was the building.
+        const standingPsf = dirt ? 0 : value / Math.max(1, rec.lotArea);
+        const pencils = read.winner === "builder" && read.builder > 0 && (dirt || read.builder > standingPsf);
+        // A STANDING BUILDING IS NOT DIRT. This card headed every owned
+        // building that used under three quarters of its envelope "Dirt —
+        // nothing pencils today · Holder bid $0/sf wins the auction — wait for
+        // rents, or clear the site" — and with tower-legal envelopes on the
+        // core that is most of the buildings in town, fully let ones included.
+        // The owner saw it on a five-storey office with two tenants. The
+        // question on a built lot is a different one: would a rebuild out-earn
+        // what stands, and the answer names both bids so the player can read
+        // which side is winning and by how much.
+        const head = dirt
+          ? (pencils ? "Developable" : "Dirt — nothing pencils today")
+          : (pencils ? `Redevelopment pencils · ${(room * 100).toFixed(0)}% of the envelope unused`
+            : `Underbuilt · ${(room * 100).toFixed(0)}% of the envelope unused`);
+        // On a built lot the three bids are for the DIRT, and on most of the
+        // city both the builder's and the holder's are zero — a rebuild does
+        // not pencil at today's rents or the next peak's, and the land reads
+        // on its location alone. Say that, rather than "$0/sf against $0/sf".
+        const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
+          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner}'s bid`);
+        const hint = dirt
+          ? (pencils
+            ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
+            : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`)
+          : (pencils
+            ? `Cleared, this dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder; the building standing on it is worth $${standingPsf.toFixed(0)}/sf of lot today. Build prices the scheme.`
+            : `A rebuild does not pencil here today`
+              + (read.builder > 0
+                ? ` — cleared, the dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder, and the building on it is worth $${standingPsf.toFixed(0)}/sf of lot`
+                : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
+              + `; ${dirtLine}. Wait for rents, or plan a bigger building on Build.`);
         return (
           <div className="deal" style={{ marginTop: 0 }}>
-            <div className="deal-head">{pencils ? "Developable" : "Dirt — nothing pencils today"}</div>
-            <div className="hint">
-              {pencils
-                ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
-                : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`}
-            </div>
+            <div className="deal-head">{head}</div>
+            <div className="hint">{hint}</div>
             <button
               type="button"
               className="btn btn-sm"

@@ -23,8 +23,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, NATURAL_VAC, rng } from "./market";
-import { resolveRec, useOccupancy, demandIdx, useRentPsfYr, managedRentPsfYr } from "./value";
-import { useSf } from "./mix";
+import { resolveRec, useOccupancy, demandIdx, useRentPsfYr, managedRentPsfYr, useRentableSf } from "./value";
 import { demandModel } from "./demand";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -197,7 +196,7 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    const a = useSf(rec, use);
+    const a = useRentableSf(rec, use);
     if (a <= 0) continue;
     const id = model.ofBbl.get(bbl);
     if (!id) continue;
@@ -286,7 +285,7 @@ export function localMarket(s: GameState, parcels: ParcelTable, rec: ParcelRecor
       const orec = resolveRec(parcels, s, bbl);
       const oh = s.holdings[bbl];
       if (!orec || !oh) continue;
-      const legSf = useSf(orec, use);
+      const legSf = useRentableSf(orec, use);
       if (legSf <= 0) continue;
       const taken = oh.tenants.reduce((a, x) => a + ((x.use ?? orec.class) === use ? x.sf : 0), 0);
       const openSf = Math.max(0, legSf - taken);
@@ -370,7 +369,7 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   // a prime one in the high 90s. Above that line the phones go quiet,
   // whatever the asking — and the trickle that remains is what a hungry
   // landlord scrapes up door-knocking.
-  const legSf = useSf(rec, use);
+  const legSf = useRentableSf(rec, use);
   if (legSf > 0) {
     const takenSf = h.tenants.reduce((a, t) => a + ((t.use ?? rec.class) === use ? t.sf : 0), 0);
     const occ = takenSf / legSf;
@@ -557,7 +556,7 @@ export function currentAskPsfYr(
 export function leasingOdds(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, use: BuiltClass,
 ): LeasingOdds | null {
-  const legSf = useSf(rec, use);
+  const legSf = useRentableSf(rec, use);
   if (legSf <= 0) return null;
   const taken = h.tenants.reduce((a, t) => a + ((t.use ?? rec.class) === use ? t.sf : 0), 0);
   const turning = (h.makeReady ?? []).reduce((a, m) => a + (m.readyM > s.month && (m.use ?? use) === use ? m.sf : 0), 0);

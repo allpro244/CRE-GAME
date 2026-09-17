@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { districtLabelOf } from "@/engine/mix";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
@@ -248,7 +249,7 @@ export function ResearchPage() {
                   const log = game.zoneLog?.[d];
                   return (
                     <tr key={d}>
-                      <td>{d}</td>
+                      <td>{districtLabelOf(parcels, d)}</td>
                       <td className={"num" + (adj < 1 ? " neg" : "")}>{(adj * 100).toFixed(0)}%</td>
                       <td className="dim">{log ? monthLabel(log.m) : "never"}</td>
                       <td className={log?.dir === -1 ? "neg" : "dim"}>

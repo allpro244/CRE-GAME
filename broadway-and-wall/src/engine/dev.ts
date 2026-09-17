@@ -23,7 +23,7 @@ export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
-import { mixOf, useSf } from "./mix";
+import { mixOf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
 import {
@@ -1157,8 +1157,8 @@ export function adaptiveReuseEligibility(
     return { ok: false, why: "Existing secured debt must be paid off or released before a conversion loan closes." };
   }
   const occupied = h.tenants.reduce((a, t) => a + t.sf, 0)
-    + (h.occ ?? 0) * useSf(rec, "multifamily");
-  const occupancy = occupied / Math.max(1, rec.bldgArea);
+    + (h.occ ?? 0) * useRentableSf(rec, "multifamily");
+  const occupancy = occupied / Math.max(1, rentableSf(rec));
   if (occupancy > 0.20) {
     return { ok: false, why: `The building is ${(occupancy * 100).toFixed(0)}% occupied. Stop leasing and obtain vacant possession first.`, occupancy };
   }
@@ -1869,8 +1869,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   // ignore entirely, so a full apartment block with no commercial roll could be
   // knocked down with people living in it.
   const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0)
-    + useSf(rec, "multifamily") * (h.occ ?? 0);
-  if (leased / Math.max(1, rec.bldgArea) > 0.2) {
+    + useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  if (leased / Math.max(1, rentableSf(rec)) > 0.2) {
     return {
       s,
       err: "You can't demolish over occupied space. Stop letting it and wait the roll out, or buy the leases out — both are on the leasing desk.",

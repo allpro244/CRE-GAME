@@ -1002,3 +1002,31 @@ Two upstream faults, both named before, both larger than a cap-rate change:
 Neither should be reached for through the cap formula. Severing the vacancy
 or credit pricing to make cheap money read cheap would be a fake number
 wearing the owner's request.
+
+
+# THE RENT ROLL WAS BIGGER THAN THE BUILDING — fixed
+
+Found on the owner's own screen: "Leased 7,504 sf of 5,986 sf". A five-storey
+office of 8,314 gross feet at 72% efficiency has 5,986 rentable feet, and its
+roll carried 7,504 — two tenants sized off the GROSS plate. Occupancy printed
+100% with a suite still empty, and the rent on 1,518 feet that do not exist
+arrived every month.
+
+The seam: HANDOFF §7 1b moved every READER of area — `occupancyRead`,
+`useVacantSf`, rent, NOI, cap, stock — onto `rentableSf`, and left the
+WRITER on gross. `stacksOf` built plates from `useSf`, `typicalSuiteSf` and
+`drawTenantSf` drew suites from those plates, `buildRentRoll` filled toward
+`useSf × targetOcc`, `blocksOf` laid vacant blocks from `useSf − tenants`,
+and the `overleased` invariant measured tenants against `useSf` — so the
+identity "tenants + vacant blocks == useSf" held to the foot while the
+building it described was 8-28% smaller than the roll. One quantity, two
+answers, with the invariant written on the wrong one.
+
+Everything in the physical layer reads rentable now. Measured on three
+procedural cities × five years: 0 of 1,945 listing legs let past rentable
+(before: any leg could run to gross). `pnpm suite-occ` and `pnpm
+plates-blocks` assert the identity on rentable feet; the 9,371 ft shed is one
+8,295 ft plate. This changes how many tenants a roll draws, which re-rolls
+every century (§4 of HANDOFF) — the baseline moves, and the direction is the
+correction: smaller rolls, lower in-place income on the same buildings, and
+an occupancy figure that can no longer be pinned at 100% by arithmetic.

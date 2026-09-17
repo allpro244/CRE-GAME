@@ -8,6 +8,7 @@
 // opens and thrown away when it closes, never kept warm behind a surface
 // that is almost always shut.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
 import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
@@ -171,7 +172,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     const address = rec?.address ?? bbl;
     out.push(mk({
       id: `d:${bbl}`, kind: "deed", label: address, tag: "yours",
-      sub: rec ? `${rec.district} · ${CLASS_LABEL[rec.class]}` : undefined,
+      sub: rec ? `${districtLabel(rec)} · ${CLASS_LABEL[rec.class]}` : undefined,
       run: () => st().focus(bbl, true),
     }));
     h.tenants.forEach((t, ti) => {
@@ -208,7 +209,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     if (game.holdings[bbl]) continue;
     const rec = parcels[bbl];
     out.push(mk({
-      id: `p:${bbl}`, kind: "lot", label: rec.address, sub: rec.district, tag: "lot",
+      id: `p:${bbl}`, kind: "lot", label: rec.address, sub: districtLabel(rec), tag: "lot",
       run: () => st().focus(bbl, true),
     }));
   }

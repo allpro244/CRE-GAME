@@ -2,6 +2,7 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
+import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
@@ -3390,7 +3391,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
             q: s.month, kind: "info",
             text: record && !mine
               ? `A record: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M, the largest trade on the tape.`
-              : `Sold in ${rec.district}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
+              : `Sold in ${districtLabel(rec)}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
           });
         }
       }

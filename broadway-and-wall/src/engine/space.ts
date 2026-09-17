@@ -17,8 +17,8 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { NATURAL_VAC, CITY_STOCK } from "./market";
-import { resolveRec, useOccupancy, useRentPsfYr, initialCondition } from "./value";
-import { uses, useSf } from "./mix";
+import { resolveRec, useOccupancy, useRentPsfYr, initialCondition, useRentableSf } from "./value";
+import { uses, districtLabel } from "./mix";
 
 export interface SubmarketLeg {
   sf: number;         // inventory standing in this district, this class
@@ -29,6 +29,8 @@ export interface SubmarketLeg {
 }
 export interface Submarket {
   district: string;
+  /** what the district is called; the key above is what it is filed under */
+  name: string;
   legs: Record<BuiltClass, SubmarketLeg>;
   totalSf: number;
   vacantLots: number;
@@ -53,7 +55,7 @@ export function submarkets(s: GameState, parcels: ParcelTable, bbls: string[]): 
     if (!rec) continue;
     const d = rec.district || "—";
     let m = by.get(d);
-    if (!m) { m = { district: d, legs: emptyLegs(), totalSf: 0, vacantLots: 0, landSf: 0 }; by.set(d, m); }
+    if (!m) { m = { district: d, name: districtLabel(rec), legs: emptyLegs(), totalSf: 0, vacantLots: 0, landSf: 0 }; by.set(d, m); }
     if (rec.class === "land" || !rec.bldgArea) {
       m.vacantLots++;
       m.landSf += rec.lotArea;
@@ -61,7 +63,7 @@ export function submarkets(s: GameState, parcels: ParcelTable, bbls: string[]): 
     }
     const cond = initialCondition(rec);
     for (const u of uses(rec)) {
-      const sf = useSf(rec, u);
+      const sf = useRentableSf(rec, u);
       if (sf <= 0) continue;
       const leg = m.legs[u];
       leg.sf += sf;

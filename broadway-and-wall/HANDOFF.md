@@ -167,7 +167,7 @@ a module `Map`, not on `s`. The first cut cached to `s.holders`, which meant
 `holderOf` — called from `sellerOf` and six render paths — mutated the state it
 was handed. Keep readers pure.
 
-**START_YEAR is 2024 and there are no stray copies of it.** There were
+**START_YEAR is 2000 (types.ts) and there are no stray copies of it.** There were
 seventeen hardcoded `2000 + Math.floor(month/12)` in seven files while the
 constant said 2024, so the game printed one year and aged its stock from
 another. Grep before you add another.
@@ -176,6 +176,51 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **Rent rolls fit their buildings** (Sep 2026). The floorplate layer —
+  stacks, suites, vacant blocks and the roll target `buildRentRoll` fills
+  toward — was sized on `useSf` (GROSS) while occupancy, vacancy, rent and
+  value read `useRentableSf`. The readers were moved to rentable in 1b and
+  the writer never was, so a roll could be let up to the gross figure: the
+  owner's Leasing page printed "Leased 7,504 sf of 5,986 sf" on a
+  five-storey office at 72% efficiency, occupancy pinned at 100% with a suite
+  still empty, rent arriving on 1,518 phantom feet. One basis now, in
+  `plates.ts`, `leasing.ts`, `absorption.ts`, `dev.ts`, `portfolio.ts`,
+  `space.ts` and the `overleased` invariant (which measured against gross and
+  so could not see it). `pnpm suite-occ` / `pnpm plates-blocks` assert the
+  identity on rentable; a 3-city probe finds 0 of 1,945 listing legs over
+  rentable. This changes the leasing draw count, so it re-rolls every century
+  (§4) and moves the baseline: rolls are 8-28% smaller, as they should be.
+  It also un-broke `pnpm leaseup`: on the old engine 16 of 16 empty office
+  buildings were "still empty after 20yr" because the 85%-of-units bar was
+  counted on gross-sized units that rentable-sized tenants could never fill;
+  now 10 of 16 fill (median 115 months) and the six that do not are fringe
+  buildings in a 13% vacancy market whose `leasingOdds` readout says so
+  (loiOdds 0.4%/month, share of market 0.03%). That slowness is the
+  demand-pool model, not the plates, and it is open as a feel question.
+- **A standing building is not "Dirt"** — the parcel desk headed every owned
+  building using under 75% of its FAR envelope "Dirt — nothing pencils today ·
+  Holder bid $0/sf wins the auction", which with tower-legal envelopes on the
+  core is most of the town, fully-let buildings included. Built lots now read
+  "Underbuilt / Redevelopment pencils · N% of the envelope unused" with both
+  bids named — and "pencils" on a built lot means the builder's residual for
+  the CLEARED dirt beats the standing building's appraisal per foot of lot,
+  not the holder's bid for the same dirt (the first cut called a 99%-let
+  corner a redevelopment on $238 against $464, neither of them the building).
+- **The Books net-worth tile is the top bar's number.** It read `nwHistory`
+  (stamped at the last tick), so for the rest of any month with a purchase
+  or sale in it the tile disagreed with the bar above it ($2.54M against
+  $2.15M after a levered buy). Live `netWorth(game, parcels)` now, one
+  function; "Deposits held" prints the liability without a minus sign.
+- **The primer offer no longer sits on the cycle digest.** Both cards anchor
+  bottom-left; the first-run offer (z 45) covered the digest (z 22). The
+  digest yields while the offer is up (`.app:has(.primer-offer)`).
+- **District names travel with the parcels.** `rec.district` is the generator's
+  leaf KEY (`thechange`); the map label carried the name and nothing else did,
+  so the tape printed "Sold in thechange" and every district column (Economy
+  submarkets, Research zoning, Notes, Palette, Concentration, the banks' book)
+  printed keys. `districtName` rides on the parcel from the manifest;
+  `districtLabel(rec)` / `districtLabelOf(parcels, key)` in `mix.ts` are the
+  readers. Old saves fall back to the key.
 - **Cap rates stop chasing inflation into the ceiling, and the Leasing tab
   lists its letters** (Sep 2026). The owner asked why an 8% cap sits on 2%
   money. Measured (`pnpm capvsrate`): the rate wire was right at the bottom —

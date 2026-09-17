@@ -3,7 +3,7 @@
 //   pnpm engine && pnpm plates-blocks
 //
 // Phase 1 of LEASING_OVERHAUL_PLAN.md. A building is floors × plate. Vacant
-// inventory is contiguous blocks. Σ tenants.sf + Σ blocks.sf == useSf.
+// inventory is contiguous blocks. Σ tenants.sf + Σ blocks.sf == useRentableSf.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -32,7 +32,8 @@ const rec = {
 const stacks = E.stacksOf(rec);
 ok("one office stack", stacks.length === 1 && stacks[0].floors === 10,
   `${stacks.length} stacks, ${stacks[0]?.floors} floors, plate ${Math.round(stacks[0]?.plateSf ?? 0)}`);
-ok("plate is useSf / floors", Math.abs((stacks[0]?.plateSf ?? 0) - 12_000) < 1);
+ok("plate is rentable use sf / floors", Math.abs((stacks[0]?.plateSf ?? 0) - E.useRentableSf(rec, "office") / 10) < 1,
+  `plate ${Math.round(stacks[0]?.plateSf ?? 0)} vs rentable/floors ${Math.round(E.useRentableSf(rec, "office") / 10)} (gross/floors would be 12,000)`);
 
 const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
 const h = {

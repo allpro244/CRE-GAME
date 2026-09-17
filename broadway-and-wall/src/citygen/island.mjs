@@ -3060,7 +3060,13 @@ export function islandConfig(seed) {
   // round a bay has its centroid in the water, which is how "MILLSIDE" ended up
   // floating offshore on seed 424242. So the mean is the target and the nearest
   // dry sample IN THAT LEAF is the answer.
+  // THE SLUG IS THE KEY, THE NAME IS WHAT PEOPLE READ. Parcels carry the leaf
+  // key (`thechange`); the map label carries the name. Nothing downstream
+  // could get from one to the other, so the news tape printed "Sold in
+  // thechange". This map is the bridge and it travels in the manifest.
+  const districtNames = {};
   const labelDistrict = (k, text) => {
+    districtNames[k] = text;
     const c = leafCentre(k);
     const at = c && (wants(c, k, 30) ?? wants(c, k, 0));
     if (at) labels.push({ name: text.toUpperCase(), labelKind: "district", xy: [Math.round(at[0]), Math.round(at[1])] });
@@ -3152,6 +3158,7 @@ export function islandConfig(seed) {
     breakwaters,
     stations,
     labels,
+    districtNames,
     avenues,
     streets,
     // Not read by the generator — this is what the verification harness and any

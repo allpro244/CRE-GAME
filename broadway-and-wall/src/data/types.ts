@@ -14,7 +14,8 @@ export interface ParcelRecord {
   farMaxComm: number;
   farMaxRes: number;
   bldgClass: string;
-  district: string;     // the neighbourhood — the unit of a submarket
+  district: string;     // the neighbourhood — the unit of a submarket (a KEY: `thechange`)
+  districtName?: string;  // what it is called on the map (`The Change`); absent on old saves
   class: AssetClass;              // the dominant use; the mix has the rest
   mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
   /**
@@ -63,6 +64,8 @@ export interface DataManifest {
   source: "nyc-open-data" | "synthetic" | "fictional";
   district: string;
   city?: string;
+  /** district key -> display name, from the generator */
+  districts?: Record<string, string>;
   lots: number;
   adjacencyEdges: number;
 }

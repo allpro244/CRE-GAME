@@ -495,6 +495,8 @@ export function buildCityData(src) {
       zoneDist: p.zonedist1 ?? "—",
       // the neighbourhood this lot sits in — the submarket view is built on it
       district: p.district ?? p.cd ?? "—",
+      // ...and what that district is called, when the generator told us
+      ...(manifest?.districts?.[p.district ?? p.cd] ? { districtName: manifest.districts[p.district ?? p.cd] } : {}),
       farMaxComm, farMaxRes,
       bldgClass: cls,
       class: klass,

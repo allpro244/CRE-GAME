@@ -21,7 +21,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee } from "./value";
-import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
+import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
 import { recordPropertyEvent } from "./history";
@@ -199,7 +199,7 @@ export function suiteSf(rec: ParcelRecord): number {
  * agrees with.
  */
 export function avgUnitSf(rec: ParcelRecord): number {
-  const area = useSf(rec, "multifamily");
+  const area = useRentableSf(rec, "multifamily");
   if (area <= 0) return 0;
   return area / Math.max(1, Math.round(area / typicalSuiteSf(rec, "multifamily")));
 }
@@ -211,7 +211,7 @@ export function unitCount(rec: ParcelRecord): number {
   // shops, and dividing the whole building by one suite size counted neither.
   let n = 0;
   for (const u of uses(rec)) {
-    const sf = useSf(rec, u);
+    const sf = useRentableSf(rec, u);
     if (sf <= 0) continue;
     n += Math.max(1, Math.round(sf / typicalSuiteSf(rec, u)));
   }
@@ -230,7 +230,7 @@ export interface UnitRow { use: BuiltClass; total: number; leased: number; vacan
 export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): UnitRow[] {
   const out: UnitRow[] = [];
   for (const use of uses(rec)) {
-    const sf = useSf(rec, use);
+    const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
     if (use === "multifamily") {
       const sfPer = typicalSuiteSf(rec, use);
@@ -651,7 +651,9 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
   ];
   for (const stack of stacksOf(rec)) {
     const use = stack.use;
-    const legSf = useSf(rec, use);
+    // RENTABLE feet: the target a roll fills toward is the area a tenant can
+    // sign for, so a roll can never exceed the building it sits in.
+    const legSf = useRentableSf(rec, use);
     if (legSf < 400) continue;
     const targetOcc = Math.max(0, Math.min(0.98,
       useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
@@ -937,7 +939,7 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   // supports is holding tenants it did not really win, and it loses them at
   // the roll. That is what the number means — the occupancy where the people
   // arriving and the people leaving finally balance.
-  const legSf = useSf(rec, use);
+  const legSf = useRentableSf(rec, use);
   const occNow = legSf > 0
     ? h.tenants.reduce((a, x) => a + ((x.use ?? rec.class) === use ? x.sf : 0), 0) / legSf
     : 0;
@@ -1600,7 +1602,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // stops being the obvious answer and a better building across town
       // starts being it — which is the same conversation fLoc is having at
       // the renewal, one lease earlier.
-      const legAll = useSf(rec, use);
+      const legAll = useRentableSf(rec, use);
       const room = Math.max(0, free - (1 - supportableOcc(s.econ, rec, use)) * legAll);
       if (room < minLettableSf(rec, use)) continue;
       const wantSf = fitWantSf(rec, Math.min(free, room, need - t.sf), free, use);
@@ -1822,7 +1824,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // jump a fringe building from 67% straight to 92% in one signing and
         // the ceiling never got a vote. The requirement that actually tours
         // here is at most what is left of the address's own tenant pool.
-        const legAll = useSf(rec, use);
+        const legAll = useRentableSf(rec, use);
         const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
         // A starved pool must not round UP to a full market-norm bite — that
         // is how the occupancy ceiling used to lose. When what is left of
@@ -3874,7 +3876,7 @@ export function buyOutTenants(
   if (!q || (!q.tenants && !(h0.occ ?? 0))) return { s, err: "Nobody to buy out — it is already empty." };
   // Flats run on aggregate occupancy rather than named leases, so the cost of
   // clearing them is a year of the residential income at the same premium.
-  const resSf = useSf(rec, "multifamily") * (h0.occ ?? 0);
+  const resSf = useRentableSf(rec, "multifamily") * (h0.occ ?? 0);
   const resCost = Math.round(resSf * useRentPsfYr(rec, s.econ, h0.condition, "multifamily") * BUYOUT_PREMIUM);
   const total = q.cost + resCost;
   if (total <= 0) return { s, err: "Nobody to buy out — it is already empty." };

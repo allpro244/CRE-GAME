@@ -184,3 +184,27 @@ export function mixLabel(rec: ParcelRecord): string {
   const m = mixOf(rec);
   return uses(rec).map((u) => `${Math.round((m[u] ?? 0) * 100)}% ${USE_WORD[u]}`).join(" · ");
 }
+
+
+/**
+ * WHAT A DISTRICT IS CALLED. `district` is a key (`thechange`); the name the
+ * map prints (`The Change`) rides on `districtName`. Saves from before the
+ * name travelled fall back to the key rather than to a blank.
+ */
+export function districtLabel(rec: { district: string; districtName?: string }): string {
+  return rec.districtName ?? rec.district;
+}
+
+const districtNameCache = new WeakMap<object, Map<string, string>>();
+/** The same, from a district key alone — scans the table once per table. */
+export function districtLabelOf(parcels: Record<string, { district: string; districtName?: string }>, key: string): string {
+  let m = districtNameCache.get(parcels);
+  if (!m) {
+    m = new Map();
+    for (const rec of Object.values(parcels)) {
+      if (rec.districtName && !m.has(rec.district)) m.set(rec.district, rec.districtName);
+    }
+    districtNameCache.set(parcels, m);
+  }
+  return m.get(key) ?? key;
+}

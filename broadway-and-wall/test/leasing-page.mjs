@@ -67,35 +67,41 @@ const h0 = Object.values(g.holdings).find((h) => h.tenants.length);
 if (!h0) { console.log("FAIL  no tenants on the book"); process.exit(1); }
 h0.tenants[0].endM = g.month + 7;
 
-let loi: any = null, renewal: any = null;
-for (let m = 0; m < 36 && !(loi && renewal); m++) {
-  g = advanceMonth(g, parcels, bbls, adjacency);
-  for (const l of g.lois) {
-    if (!loiNeedsPrincipal(g, l)) continue;
-    if (l.kind === "renewal") renewal = l; else loi = loi ?? l;
-  }
-}
-const onDesk = g.lois.filter((l) => loiNeedsPrincipal(g, l)).length;
-console.log("month " + g.month + ": " + onDesk + " on the desk, new lease " + (loi ? loi.name : "none") + ", renewal " + (renewal ? renewal.name : "none"));
-
-useStore.setState({ game: g, parcels } as any);
-const origUses = React.useSyncExternalStore;
-(React as any).useSyncExternalStore = (sub: any, get: any) => origUses(sub, get, get);
-const html = renderToString(<LeasingPage />);
+// TWO RENDERS, ONE LETTER EACH. A renewal is engineered (the roll above), so
+// it arrives on the clock; a new-lease letter depends on traffic. Each is
+// asserted on a page rendered while it is LIVE — a letter seen in month 5
+// that lapsed by month 9 is on no page, and the first cut of this harness
+// waited for both to coincide and once sat 36 months without them doing so.
+const liveOn = (kind: "renewal" | "new") => g.lois.find((l) => loiNeedsPrincipal(g, l) && (kind === "renewal" ? l.kind === "renewal" : l.kind !== "renewal"));
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
 let fails = 0;
 const ok = (name: string, cond: boolean) => { console.log((cond ? "PASS  " : "FAIL  ") + name); if (!cond) fails++; };
-ok("a letters section renders on Leasing", html.includes("On your desk ·"));
-ok("a new-lease LOI arrived to test against", !!loi);
-if (loi) ok("the LOI from " + loi.name + " is listed on Leasing", html.includes(esc(loi.name)));
+const origUses = React.useSyncExternalStore;
+(React as any).useSyncExternalStore = (sub: any, get: any) => origUses(sub, get, get);
+const renderLeasing = () => { useStore.setState({ game: g, parcels } as any); return renderToString(<LeasingPage />); };
+
+let renewal: any = null;
+for (let m = 0; m < 12 && !renewal; m++) { g = advanceMonth(g, parcels, bbls, adjacency); renewal = liveOn("renewal"); }
 ok("a renewal letter arrived to test against", !!renewal);
 if (renewal) {
+  const html = renderLeasing();
+  console.log("month " + g.month + ": renewal from " + renewal.name + " is live");
+  ok("a letters section renders on Leasing", html.includes("On your desk ·"));
   ok("the renewal from " + renewal.name + " is listed on Leasing", html.includes(esc(renewal.name)));
   ok("the renewal carries the RENEWAL chip", html.includes("chip-renewal"));
 }
-ok("the cards carry their actions", html.includes(">Accept<") || html.includes("Take their final"));
+let loi: any = null;
+for (let m = 0; m < 48 && !loi; m++) { g = advanceMonth(g, parcels, bbls, adjacency); loi = liveOn("new"); }
+ok("a new-lease LOI arrived to test against", !!loi);
+if (loi) {
+  const html = renderLeasing();
+  console.log("month " + g.month + ": new-lease letter from " + loi.name + " is live (" + g.lois.filter((l) => loiNeedsPrincipal(g, l)).length + " on the desk)");
+  ok("the LOI from " + loi.name + " is listed on Leasing", html.includes(esc(loi.name)));
+  ok("the cards carry their actions", html.includes(">Accept<") || html.includes("Take their final"));
+}
 
 // THE PORTFOLIO PAGE AGREES WITH THE TOP BAR. Same store, same game.
+useStore.setState({ game: g, parcels } as any);
 const book = renderToString(<PortfolioPage />);
 const po = portfolioOccupancy(g, parcels);
 ok("the book has a lettable foot to measure", !!po);

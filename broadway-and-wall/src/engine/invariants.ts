@@ -18,14 +18,14 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING } from "./value";
+import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING, useRentableSf } from "./value";
 // ONE FUNCTION, ONE MEANING. Every price in the game now appraises at the grade
 // the building is actually IN — its year, moved by whoever has been running it —
 // so an invariant that appraises at its BIRTH grade is measuring a different
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
 import { conveyedValue, leasableUses, minLettableSf, useVacantSf, notReadySf, unitStatusByUse, isCommercial } from "./leasing";
-import { mixOf, useSf } from "./mix";
+import { mixOf } from "./mix";
 import { blockIdentity } from "./plates";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { FAR_FLOOR, FAR_CEIL } from "./zoning";
@@ -281,10 +281,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       }
       // each component holds only what fits in it
       for (const u of Object.keys(m) as BuiltClass[]) {
-        const cap = useSf(rec, u);
+        // RENTABLE feet: a roll larger than the demiseable area is the fault
+        // this used to miss, because it measured against the gross figure.
+        const cap = useRentableSf(rec, u);
         const inUse = h.tenants.filter((tn) => (tn.use ?? rec.class) === u).reduce((n, tn) => n + tn.sf, 0);
         if (inUse > cap + 1) {
-          bad("overleased", at, `${Math.round(inUse).toLocaleString()} sf let in the ${u} part, which is ${Math.round(cap).toLocaleString()} sf`);
+          bad("overleased", at, `${Math.round(inUse).toLocaleString()} sf let in the ${u} part, which is ${Math.round(cap).toLocaleString()} rentable sf`);
         }
       }
       for (const tn of h.tenants) {
@@ -405,7 +407,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!row.ok) {
         bad("blocks", `${h.bbl} ${row.use}`,
           `tenants ${Math.round(row.tenantSf)} + blocks ${Math.round(row.blockSf)} `
-          + `!= useSf ${Math.round(row.useSf)}`);
+          + `!= rentable ${Math.round(row.useSf)}`);
       }
     }
   }

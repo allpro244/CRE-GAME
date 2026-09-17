@@ -947,7 +947,7 @@ export function EconomyPage() {
             const d = v - vacNow;
             return (
               <tr key={m.district} style={{ cursor: "default" }}>
-                <td>{m.district}</td>
+                <td>{m.name}</td>
                 <td className="num">{(leg.sf / 1e6).toFixed(2)}M sf</td>
                 <td className={"num" + (v > NATURAL_VAC[focus] + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
                 <td className="num dim">{d >= 0 ? "+" : ""}{(d * 100).toFixed(1)} pts</td>

@@ -1,4 +1,5 @@
 import { useState, Fragment } from "react";
+import { districtLabelOf } from "@/engine/mix";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
@@ -172,7 +173,7 @@ export function TheBanks() {
                               <div style={{ marginBottom: 6 }}>
                                 <span className="dim">In this town: </span>
                                 {shares.map(([k, v]) => `${k} ${(100 * v / cityTotal).toFixed(0)}%`).join(" · ")}
-                                {districts.length > 1 && <span className="dim"> — by district {districts.map(([k, v]) => `${k} ${(100 * v / cityTotal).toFixed(0)}%`).join(", ")}</span>}
+                                {districts.length > 1 && <span className="dim"> — by district {districts.map(([k, v]) => `${districtLabelOf(parcels, k)} ${(100 * v / cityTotal).toFixed(0)}%`).join(", ")}</span>}
                                 {full.length > 0 && (
                                   <span className="neg"> — full on {full.map(([k]) => k).join(" and ")} against their {(classCap * 100).toFixed(0)}% limit; new paper in that class is cut, whoever brings it</span>
                                 )}

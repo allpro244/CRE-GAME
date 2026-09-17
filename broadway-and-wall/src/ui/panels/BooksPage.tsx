@@ -4,7 +4,7 @@ import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { ownedHoldingValue, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, resolveRec, netWorth } from "@/engine/value";
 import {
   balanceSnapshotView, buildBalanceSheet, booksMonthAsYear,
   type BalanceSheetView,
@@ -24,7 +24,12 @@ export function BooksPage() {
   const setPage = useStore((s) => s.setPage);
   const select = useStore((s) => s.select);
   const [tab, setTab] = useState<BooksTab>("balance");
-  const nw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
+  // THE SAME NET WORTH THE TOP BAR PRINTS. This read `nwHistory`, the figure
+  // stamped at the last tick — so for the rest of any month in which you
+  // bought or sold, the tile disagreed with the bar above it ($2.54M against
+  // $2.15M on the owner's screen, after a levered purchase). Live, one
+  // function, one answer.
+  const nw = netWorth(game, parcels);
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
@@ -49,7 +54,8 @@ export function BooksPage() {
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
         {depositsHeld(game) > 0 && (
-          <Big label="Deposits held" value={"−" + usd(depositsHeld(game))} />
+          <Big label="Deposits held" value={usd(depositsHeld(game))}
+            title="Tenants' money, not yours — a liability on the balance sheet, due back when they leave. It sits inside Cash." />
         )}
         <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
         <Big label="Taxes paid, lifetime" value={usd(game.taxesPaid ?? 0)} />

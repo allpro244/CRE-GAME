@@ -294,6 +294,10 @@ const REFI_FEE = 0.01;
  * `ease` is the hometown bank cutting a friend slack in a crunch — see the
  * crunchEase term at the only call site that passes it.
  */
+function usdM(x: number): string {
+  return x >= 1e6 ? `$${(x / 1e6).toFixed(x >= 1e7 ? 0 : 1)}M` : `$${Math.round(x / 1e3)}k`;
+}
+
 export function advanceFactor(s: GameState, lender: string, ease = 1): number {
   const tight = Math.max(0, 1 - (s.econ.creditIdx ?? 1));
   const app = lenderAppetite(s, lender);
@@ -497,6 +501,10 @@ export interface Quote {
   holdCapped?: boolean;
   /** Sized on the business plan rather than on the income the building earns today. */
   stabConstrained?: boolean;
+  /** The advance the desk actually sized at today, as a share of value — the stated rate after the credit window, appetite, standing and book. */
+  advanceLtvToday?: number;
+  /** Why that is not the stated rate, when it is not. */
+  advanceWhy?: string;
   /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
   byLtv?: number;
   byDscr?: number;
@@ -557,8 +565,35 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const conc = street ? { mult: 1, capRoom: Infinity, why: undefined as string | undefined } : concentrationRoom(s, product, klass);
   const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
+  const adv = advanceFactor(s, product.lender, crunchEase);
   const byLtv = Math.min(conc.capRoom,
-    product.ltv * advanceFactor(s, product.lender, crunchEase) * (1 - st.advanceCut) * conc.mult * price);
+    product.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
+  // WHAT "ADVANCE RATE" MEANS TODAY. The desk's stated advance is a number on
+  // a term sheet; what it writes is that number after the credit window, the
+  // lender's own appetite, the borrower's standing and the desk's book have
+  // each taken their cut. A quote labelled "advance rate" at 23% of value
+  // against a 65% stated rate — the owner's complaint, verbatim — is not
+  // wrong, it is unexplained, and an unexplained wall reads as a broken
+  // button. So the leg carries its effective rate and the reason it is not
+  // the stated one, in the order the cuts were taken.
+  const advanceLtvToday = price > 0 ? byLtv / price : 0;
+  const advanceWhy = (() => {
+    if (street || price <= 0) return undefined;
+    const parts: string[] = [];
+    if (adv < 0.97) {
+      parts.push(tight > 0.05 && app < 0.95
+        ? `the credit window is ${tight > 0.5 ? "shut" : "tight"} and ${product.lender} has little appetite — they advance ${Math.round(adv * 100)}% of their stated rate`
+        : tight > 0.05
+        ? `the credit window is ${tight > 0.5 ? "shut" : "tight"} — the desk advances ${Math.round(adv * 100)}% of its stated rate`
+        : `${product.lender} is short of appetite — they advance ${Math.round(adv * 100)}% of their stated rate`);
+    }
+    if (st.advanceCut > 0.005) parts.push(`your standing takes ${Math.round(st.advanceCut * 100)}% off the advance`);
+    if (conc.mult < 0.995 && conc.why) parts.push(conc.why);
+    if (Number.isFinite(conc.capRoom) && conc.capRoom < product.ltv * adv * (1 - st.advanceCut) * conc.mult * price) {
+      parts.push(`${product.lender} already holds enough of your paper — ${usdM(conc.capRoom)} is all the single-name room they have`);
+    }
+    return parts.length ? parts.join("; ") : undefined;
+  })();
   // a desk that is not in the market for this deal quotes nothing at all
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A HOLD SIZE IS A LIMIT ON ONE ASSET. The street's books are spread across
@@ -586,6 +621,8 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
       ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined),
       concWhy: conc.why,
       holdCapped: true,
+      advanceLtvToday,
+      advanceWhy,
     };
   }
   if (!street && product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
@@ -593,9 +630,9 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.
   if (product.uwDscr <= 0) {
-    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
+    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy };
   }
-  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why };
+  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why, advanceLtvToday, advanceWhy };
 }
 
 /**
@@ -1384,6 +1421,18 @@ export interface RefiQuote {
   /** The coverage covenant this paper carries — what the ratio has to stay above. */
   minDSCR: number;
   binding: string;      // which of the three tests actually capped the loan
+  /**
+   * The rest of the sentence. `binding` names the test; this says why that
+   * test landed where it did — the credit window that cut a 65% advance to
+   * 25%, or the rent-roll haircut that took the sized loan down again after
+   * the test. Without it the card told the borrower to fix the building when
+   * the building was fine.
+   */
+  bindingWhy?: string;
+  /** What the desk advanced today as a share of value, after every cut. */
+  advanceToday: number;
+  /** The rent-roll haircut applied after sizing (concentration, rollover, one trade), 1 when none. */
+  haircut: number;
   ioM: number;
   termM: number;
   amortYears: number;
@@ -1506,6 +1555,18 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : q.dyConstrained ? "debt yield"
         : q.dscrConstrained ? "coverage"
         : "advance rate",
+      bindingWhy: (() => {
+        const parts: string[] = [];
+        const onAdvance = !q.holdCapped && !q.stabConstrained && !q.dyConstrained && !q.dscrConstrained;
+        if (onAdvance && q.advanceWhy) parts.push(q.advanceWhy);
+        if (hair.mult < 0.995 && raw.principal > 0) {
+          parts.push(`then the desk takes ${Math.round((1 - hair.mult) * 100)}% off for the roll`
+            + (hair.why ? `: ${hair.why}` : ""));
+        }
+        return parts.length ? parts.join("; ") : undefined;
+      })(),
+      advanceToday: value > 0 ? q.principal / value : 0,
+      haircut: hair.mult,
       ioM: p.ioM,
       termM: p.termM,
       amortYears: p.amortYears,

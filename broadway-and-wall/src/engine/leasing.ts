@@ -676,15 +676,24 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
       if (free < 1) break;
       // A remnant of a bigger leg is vacant, not a closet tenancy. A whole
       // leg under the city norm is the shop — that is what minLettableSf is for.
+      let sf: number;
       if (free < floorSf) {
         if (leased > 0) break;
-      }
-      let sf = free < floorSf
-        ? Math.round(free)
-        : drawTenantSf(s, use, stack.plateSf, free);
-      if (sf > free + 0.5) {
-        if (free >= floorSf && rng(s, "leasing") < free / sf) sf = Math.round(free);
-        else break;
+        // THE TARGET BINDS UNDER A SUITE. A two-plate shop leg of 4,110 ft at
+        // a 47% occupancy target asked for 1,953 ft of tenant, and the roll
+        // wrote a 1,953 ft tenancy — under the 2,000 ft floor nothing else in
+        // the engine will let. Nobody demises the market's vacancy fraction;
+        // they let a suite. So the roll runs one suite full — a shade over
+        // the target — rather than a closet. The floor never exceeds the
+        // plate (typicalSuiteSf), so the min is the whole leg only when the
+        // leg IS the suite.
+        sf = Math.round(Math.min(legSf, floorSf));
+      } else {
+        sf = drawTenantSf(s, use, stack.plateSf, free);
+        if (sf > free + 0.5) {
+          if (rng(s, "leasing") < free / sf) sf = Math.round(free);
+          else break;
+        }
       }
       // NOBODY LEAVES A SLIVER. A standing roll is the work of a landlord who
       // demised to fit: when what a draw would leave of the space cannot be

@@ -1049,3 +1049,26 @@ What remains is the for-sale skew the harness names and the −14/+5pp opening
 draw, both deliberate. Prospects arriving later still leave remnants through
 `matchBlock`, on purpose — that is the demise trade the leasing overhaul
 built, and `pnpm demise` keeps it a minority of vacant feet.
+
+# A STANDING ROLL LETS A SUITE, NOT THE VACANCY FRACTION — fixed
+
+On a multi-plate leg `buildRentRoll` fills toward `legSf × targetOcc`, and
+the "whole leg under the norm is the shop" branch took `free` — the target's
+remainder — as the tenancy when it was under the demise floor. That is right
+on a one-plate shop (the target IS the leg) and wrong on two plates at a 47%
+target: a 1,953 ft tenant on a 4,110 ft shop leg, under the 2,000 ft floor.
+Nobody demises to the market's vacancy fraction; they let a suite. The branch
+now writes `min(legSf, floorSf)` and the roll runs a shade over target. The
+floor never exceeds the plate (`typicalSuiteSf`), so it is the whole leg only
+when the leg is the suite. No draw order changed.
+
+# A REFINANCE QUOTE WITH NO REASON IS A DEAD BUTTON — fixed
+
+`refiQuotes` sized on three tests and then multiplied by `collateralHaircut`
+(concentration, rollover inside two years, one trade), and the card printed
+the name of the test beside a cheque the haircut had halved. Separately the
+"advance rate" leg is the desk's stated rate after `advanceFactor` (credit
+window × lender appetite), your standing and the desk's book, and the card
+printed the stated rate. Both reasons are now on the quote and the desk, and
+`pnpm refi-bind` asserts proceeds = min(legs) × haircut with the haircut named
+whenever it bit.

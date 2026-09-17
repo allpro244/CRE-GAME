@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
-import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
+import type { Bid, BuiltClass, DevUse, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
@@ -16,7 +16,7 @@ import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing"
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
-import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
+import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
@@ -985,8 +985,12 @@ export function groundLesseeBuildableSf(
   if (!bare || !bare.lotArea) return null;
   const far = farMaxFor(bare);
   const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
-  const floors = Math.max(1, Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
-    Math.ceil(far / Math.max(0.08, cov))));
+  // THE SAME CAP THE PLANNER AND THE CITY OBEY. This desk carried its own
+  // table — four storeys of industrial — while dev.ts caps sheds at two, and
+  // the invariant that polices massing caught a lessee putting up a
+  // four-storey warehouse the city itself is not allowed to build.
+  const useCap = MAX_FLOORS_BY_USE[use as DevUse] ?? 18;
+  const floors = Math.max(1, Math.min(useCap, Math.ceil(far / Math.max(0.08, cov))));
   // SAME ENVELOPE CAP AS PLAYER DEVELOPMENT. Coverage × floors used to overrun
   // legal FAR whenever the top storey was a partial plate — the lessee planted
   // a bigger building than zoning allowed. Cap gross area at lot × FAR.

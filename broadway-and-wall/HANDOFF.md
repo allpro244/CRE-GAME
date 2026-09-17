@@ -176,6 +176,51 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **A standing roll lets a suite, not the vacancy fraction** (Sep 2026).
+  The rentable move exposed a gap in `buildRentRoll`: on a multi-plate leg
+  the fill target is `legSf × targetOcc`, and when that target came in under
+  the demise floor the "whole leg under the norm is the shop" branch wrote a
+  tenancy the size of the TARGET — a 1,953 ft tenant on a 4,110 ft two-plate
+  shop leg at a 47% target, under the 2,000 ft floor nothing else in the
+  engine will let. `pnpm test` caught four of them across 8 seeds × 5 bots
+  (`[tenancy] ... under the 1999 sf floor`). The branch now lets one suite
+  (`min(legSf, floorSf)`) and the roll runs a shade over target rather than
+  writing a closet. RNG draw order is unchanged, so this does not re-roll.
+- **A ground lessee obeys the massing cap** — `groundLesseeBuildableSf`
+  carried its own floor table (industrial 4) beside `MAX_FLOORS_BY_USE`
+  (industrial 2); the massing invariant caught a lessee's four-storey shed at
+  month 229 of the builder bot. One table now.
+- **A refinance quote says why** — the owner's A7 note ("LTV maxes out at 23%
+  with 5.0x DSCR at 2% — why can't I leverage more?") was the card labelling
+  a loan "advance rate" / "debt yield" beside a cheque that matched neither
+  leg. Two things were silent: the effective advance (stated rate × credit
+  window × lender appetite × your standing × their book, `advanceFactor` and
+  friends in `quote`) and the rent-roll haircut `refiQuotes` takes AFTER the
+  three tests (`collateralHaircut` — concentration, rollover, one trade; the
+  harness case was ×0.52 for "100% of the income is media"). `Quote` now
+  carries `advanceLtvToday` + `advanceWhy`; `RefiQuote` carries
+  `bindingWhy`, `advanceToday`, `haircut`; RefiDesk prints the reason under
+  "What caps it", the Advance column shows the rate the desk sized at today
+  (stated rate on hover), and `pnpm refi-bind` asserts the identity
+  proceeds = min(legs) × haircut and that the reason line names the haircut
+  whenever it bit.
+- **The era is on screen** — `regime.ts` opens a quarter of new games (by
+  weight: Great Inflation 13, "the morning after" 11 of 100) at an 8-17%
+  base rate under a calendar that says January 2000, and nothing in the UI
+  ever printed `eraLabel`/`eraBlurb`. The playtest screenshot read "JAN 2000
+  · BASE RATE 17.24%" with no explanation, which is what the owner's "does
+  the base rate match" question was really about. Now: an opening news item
+  names the era and the opening rate, the date tile's tooltip carries it,
+  a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
+  tile. The calendar is unchanged (building ages read off START_YEAR).
+- **The primer offer retires itself** — it sat in the corner six months and
+  two closed purchases into a playthrough. Advancing the clock or owning a
+  deed dismisses it; the Primer stays in the header.
+- **The Marketplace leads with the tape** — the four live listings were
+  under an empty "Books for sale" explainer, the distress pipeline and the
+  three-shop broker ledger. Empty books is one line (explainer on hover);
+  the shops ledger moved below the tape; broker calls stay above it because
+  they expire.
 - **Rent rolls fit their buildings** (Sep 2026). The floorplate layer —
   stacks, suites, vacant blocks and the roll target `buildRentRoll` fills
   toward — was sized on `useSf` (GROSS) while occupancy, vacancy, rent and
@@ -291,6 +336,51 @@ another. Grep before you add another.
 ---
 
 ## 6. OPEN FAULTS, RANKED
+
+**0. `pnpm facility` was failing on the committed engine — half fixed.**
+Two rows, verified identical on `c826741` with the working tree stashed: "2-3
+month(s) with a negative balance" and "a thinly capitalised firm went thirty
+years without the facility ever biting — it has become free leverage". The
+first was the equity cure in `tickFacility`: a pool earning negative NOI has
+a negative DSCR, `balance × (dscr / minDSCR)` was a negative paydown target,
+and the cure wrote a cheque for more than the loan. Clamped at full repayment
+and a cure that clears the line now retires the facility the way
+`repayFacility` does. The second is still open: the harness's "thin" firm
+($8M cash against a $5.8M line over 8 deeds) carries enough income and cash
+that neither covenant trips in thirty years — decide whether the harness's
+firm is thin enough before touching `facility.ts`. Neither row is in
+`pnpm check`, which is why the first survived.
+
+**0b. A quarter of new games open in a 1981.** By design (`regime.ts`, era
+weights), and now labelled on screen (§5). Whether an era that prints 17%
+money under a year 2000 calendar is the right design is the owner's call;
+the honest alternatives are to shift the calendar with the era (building
+ages and every `START_YEAR` reader move with it) or to reweight the eras
+toward the post-1990 range. Measured this session, 40 `newGame` seeds on the
+reference city, 50 years each, no player:
+
+    opening base rate     p10 3.76  p50 7.03  p90 14.56  max 18.17   (12 of 40 open above 10%)
+    50-yr max base rate   p10 8.56  p50 12.58  p90 23.00  max 23.00  (the RATE_CEIL rail binds in ≥10% of centuries)
+    months above 10%      p50 5%    p90 21%    max 33%
+    peak inflation        p50 9%    p90 15%    max 22%    (the 0.22 inflation clamp binds)
+    peak policy rate      p50 10.2  p90 22.8   max 31.9
+
+The opening draw is the era table and is a design choice. The century AFTER
+the opening is not: a median seed that peaks at 12.6% money and one in ten
+that pins the 23% ceiling is a nation model that over-produces Great
+Inflations — the developed world since 1960 has one (peak policy 20%), and
+nothing at 31.9%. Suspects, in order: the `easeEma` policy-mistake term that
+lets cheap money compound into a regime, the 0.22 inflation clamp being
+load-bearing rather than a guard, and credibility recovering too slowly. Rank
+this above the listing-volume feel question below; it is the standing
+answer to "does the base rate match the base rate".
+
+Listing volume, same session, 6 seeds × 10 years: 7-18 deeds live on the
+tape at the opening bell (7 in a cheap-money era, 17-18 in an inflation),
+22-32 arrivals a year = 2.5-3.7% of the building stock. Institutional
+turnover runs 5-10% of stock VALUE a year, all-buildings turnover nearer
+3-5% — the tape is at the low end of real, not broken. The playtest city
+that opened with four listings was a dear-money recession.
 
 **1. The industrial vacancy floor — RE-OPENED, then improved. Read this before
 trusting any "CLOSED" below.** This entry said CLOSED and `BASELINE.json` said

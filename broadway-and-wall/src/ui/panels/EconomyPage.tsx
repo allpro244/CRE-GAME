@@ -454,6 +454,10 @@ export function EconomyPage() {
             two either way; the era decides whether that is 3% or 13%, and it
             changes on a scale of decades — which is what makes a loan you
             struck twenty years ago a different animal at maturity. */}
+        {e.eraLabel && (
+          <Big label="Era" value={e.eraLabel}
+            title={`${e.eraBlurb ?? ""} Drawn once when the city was founded; the calendar counts your years, the era is the decade the money behaves like.`} />
+        )}
         {e.rateRegime !== undefined && (
           <Big label="Long-run rate" value={pct(e.rateRegime)}
             title="The level the base rate is being pulled toward — the cheap-money or dear-money era the cycle rides on top of. It re-aims every 12–25 years, which is why a loan struck today can mature in a very different rate world."

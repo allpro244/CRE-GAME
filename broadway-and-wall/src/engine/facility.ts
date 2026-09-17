@@ -820,8 +820,14 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
     let target = f.balance;
     if (m.dscr !== null && m.dscr < f.minDSCR) target = Math.min(target, f.balance * (m.dscr / f.minDSCR));
     if (m.ltv !== null && m.ltv > f.maxLTV && m.value > 0) target = Math.min(target, f.maxLTV * m.value);
-    const need = Math.ceil(f.balance - target);
-    const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
+    // A CURE PAYS DOWN TO THE COVENANT, NEVER PAST ZERO. A pool earning
+    // negative NOI has a negative coverage ratio, and balance × (dscr / min)
+    // is then a negative target — the cure was writing a cheque for more
+    // than the loan and `pnpm facility` counted the months the balance sat
+    // below zero. The most any cure can do is repay the facility in full.
+    target = Math.max(0, target);
+    const need = Math.min(f.balance, Math.ceil(f.balance - target));
+    const pay = Math.min(f.balance, fundCashNeed(s, parcels, need, { allowLoc: false }));
     if (pay > 0) {
       f.balance -= pay;
       out += pay;
@@ -833,6 +839,13 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
           q, kind: "info",
           text: `Cured the facility covenant with a $${(pay / 1e6).toFixed(2)}M paydown. Balance $${(f.balance / 1e6).toFixed(1)}M.`,
         });
+      }
+      // ...and a cure that repaid the whole line is a repayment: the pool is
+      // unencumbered, same as `repayFacility` says it is.
+      if (f.balance <= 0) {
+        delete s.facility;
+        s.news.unshift({ q, kind: "deal", text: "The facility is repaid in full. Every deed in the pool is unencumbered again." });
+        return out;
       }
     }
   }

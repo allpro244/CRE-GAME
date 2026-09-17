@@ -244,6 +244,19 @@ export function newGame(
           ? "Same cheque, deeper pond — rivals and bank holds are sized to the map."
           : "The standard island: banks and rivals sized to what stands here."),
   });
+  // WHICH DECADE YOU WALKED INTO, SAID OUT LOUD. The era draw (regime.ts) can
+  // open the game at a 17% base rate under a calendar that says January 2000,
+  // and nothing on screen said why — the owner read it as the rate being
+  // wrong. It is not wrong; it is a different decade wearing this year's
+  // date, and the player is owed the sentence.
+  if (s.econ.eraLabel) {
+    s.news.push({
+      q: 0,
+      kind: "info",
+      text: `${s.econ.eraLabel}. ${s.econ.eraBlurb ?? ""} Money opens at ${s.econ.indexRate.toFixed(2)}% `
+        + `with the credit window ${Math.round((s.econ.creditIdx ?? 1) * 100)}% open; the calendar says ${monthLabel(0)}, the market says which decade it is.`,
+    });
+  }
   return s;
 }
 

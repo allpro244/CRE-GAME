@@ -135,6 +135,15 @@ function BackButton() {
   );
 }
 
+// The era's headline, cut to fit an 92px tile. Long form is in the tooltip.
+const ERA_SHORT: Record<string, string> = {
+  postwar: "long boom",
+  greatinflation: "inflation",
+  volcker: "dear money",
+  disinflation: "disinflation",
+  zirp: "cheap money",
+};
+
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
   const [jobOpen, setJobOpen] = useState<JobId | null>(null);
@@ -432,7 +441,19 @@ export default function TopBar() {
               Line into overflow:hidden and show "$5.." for a multi-million limit. */}
           <div className="topbar-summary">
           <div className="topbar-vital">
-            <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
+            <Stat
+              label={monthLabel(game.month)}
+              value={`Yr ${Math.floor(game.month / 12) + 1}`}
+              wide
+              w={118}
+              keep
+              // The calendar is a count of months; the era is the decade the
+              // money behaves like. A 17% base rate under "Jan 2000" is not a
+              // fault, and the tooltip is where the screen says so.
+              title={game.econ.eraLabel
+                ? `${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The calendar counts your years; the era is the decade the money behaves like.`
+                : undefined}
+            />
             <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep
               title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
             {game.fund && !game.fund.settled && (
@@ -590,6 +611,15 @@ export default function TopBar() {
             w={84}
             title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
           />
+          {game.econ.eraLabel && (
+            <Stat
+              label="Era"
+              value={ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}
+              drop={3}
+              w={92}
+              title={`${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The cycle takes rates a point or two either way; the era decides whether that is 3% or 13%, and it turns over on a scale of decades.`}
+            />
+          )}
           {(() => {
             const book = firmBookStress(game);
             return (

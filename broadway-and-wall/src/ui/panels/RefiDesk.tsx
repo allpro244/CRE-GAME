@@ -231,11 +231,21 @@ export function RefiSection({ bbl }: { bbl: string }) {
                   <td>
                     {x.id === picked ? "▸ " : ""}{x.label}
                     <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>
-                      {x.why ?? (px > 0 ? x.binding : "nothing to lend against")}
+                      {x.why ?? (px > 0 ? x.binding + (x.bindingWhy ? ` — ${x.bindingWhy}` : "") : "nothing to lend against")}
                     </div>
                   </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
-                  <td className="num">{((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%</td>
+                  <td
+                    className="num"
+                    // The advance the desk SIZED AT today, not the one on the
+                    // term sheet. A 65% column beside a 25%-of-value cheque is
+                    // the screen contradicting itself.
+                    title={px > 0 && Math.abs(x.advanceToday - x.advanceLtv) > 0.02
+                      ? `Stated ${(x.advanceLtv * 100).toFixed(0)}%; sized at ${(x.advanceToday * 100).toFixed(0)}% of value today`
+                      : undefined}
+                  >
+                    {px > 0 ? `${(x.advanceToday * 100).toFixed(0)}%` : `${((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%`}
+                  </td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
                     {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
@@ -273,7 +283,17 @@ export function RefiSection({ bbl }: { bbl: string }) {
           bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
-        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`} />
+        {q.maxProceeds > 0 && q.bindingWhy && (
+          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px" }}>{q.bindingWhy}</div>
+        )}
+        <Row
+          k="Structure"
+          v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
+            + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% today (${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% stated)`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance`)
+            + ` / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`}
+        />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         {capPremium > 0 && <Row k="Rate cap at close" v={usd(capPremium)} />}
         <Row

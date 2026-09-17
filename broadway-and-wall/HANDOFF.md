@@ -373,19 +373,19 @@ another. Grep before you add another.
 
 ## 6. OPEN FAULTS, RANKED
 
-**0. `pnpm facility` was failing on the committed engine — half fixed.**
-Two rows, verified identical on `c826741` with the working tree stashed: "2-3
-month(s) with a negative balance" and "a thinly capitalised firm went thirty
-years without the facility ever biting — it has become free leverage". The
-first was the equity cure in `tickFacility`: a pool earning negative NOI has
-a negative DSCR, `balance × (dscr / minDSCR)` was a negative paydown target,
-and the cure wrote a cheque for more than the loan. Clamped at full repayment
-and a cure that clears the line now retires the facility the way
-`repayFacility` does. The second is still open: the harness's "thin" firm
-($8M cash against a $5.8M line over 8 deeds) carries enough income and cash
-that neither covenant trips in thirty years — decide whether the harness's
-firm is thin enough before touching `facility.ts`. Neither row is in
-`pnpm check`, which is why the first survived.
+**0. `pnpm facility` was failing on the committed engine — fixed, both rows.**
+Verified identical on `c826741` with the working tree stashed: "2-3 month(s)
+with a negative balance" and "a thinly capitalised firm went thirty years
+without the facility ever biting". The first was the equity cure in
+`tickFacility`: a pool earning negative NOI has a negative DSCR,
+`balance × (dscr / minDSCR)` was a negative paydown target, and the cure
+wrote a cheque for more than the loan — clamped at full repayment, and a
+cure that clears the line retires the facility the way `repayFacility` does.
+The second was the harness: `tickFacility` runs the equity cure BEFORE it
+records a breach, so a firm with the cash never shows `breachedSince`; the
+covenant took its paydown out of cash instead, sixteen times in thirty years
+for the thin firm, and the harness counted only the recorded breach. A cure
+is a bite; it counts them now. Neither row is in `pnpm check`.
 
 **0b. A quarter of new games open in a 1981.** By design (`regime.ts`, era
 weights), and now labelled on screen (§5). Whether an era that prints 17%

@@ -33,7 +33,7 @@ const N = +(process.env.N || 3);
 const HZ = +(process.env.HZ || 360);
 
 function run(cash0, label) {
-  let opened = 0, breaches = 0, accels = 0, releases = 0, badPool = 0, badBal = 0, cheapRelease = 0;
+  let opened = 0, breaches = 0, accels = 0, cures = 0, releases = 0, badPool = 0, badBal = 0, cheapRelease = 0;
   let paid = 0, drawn = 0;
   const lines = [];
   for (let seed = 0; seed < N; seed++) {
@@ -90,6 +90,12 @@ function run(cash0, label) {
       lastStale = new Set(stale);
       if (f.breachedSince !== undefined && !sawBreach) { sawBreach = true; breaches++; }
       if (f.accelM !== undefined && !sawAccel) { sawAccel = true; accels++; }
+      // A CURE IS A BITE. tickFacility runs the equity cure BEFORE it records
+      // a breach, so a firm with the cash never shows `breachedSince` — the
+      // covenant took its paydown out of cash instead. Counting only the
+      // recorded breach made a facility that forced $2M of paydowns in a
+      // decade read as "free leverage". The cure writes one news line.
+      cures += g.news.filter((n) => n.q === g.month && /Cured the facility covenant/.test(n.text)).length;
       paid += Math.max(0, cash0m - g.cash) > 0 ? Math.min(bal0 - f.balance > 0 ? bal0 - f.balance : 0, bal0) : 0;
       // Sell one out of the pool halfway through and check the release price.
       if (m === 30 && f.bbls.length > 3) {
@@ -102,7 +108,7 @@ function run(cash0, label) {
       }
     }
   }
-  return { label, opened, breaches, accels, releases, badPool, badBal, cheapRelease, drawn, lines };
+  return { label, opened, breaches, accels, cures, releases, badPool, badBal, cheapRelease, drawn, lines };
 }
 
 const rich = run(120e6, "well capitalised");
@@ -111,7 +117,7 @@ const thin = run(14e6, "thinly capitalised");
 console.log(`\nONE LOAN, MANY DEEDS — ${N} towns x ${HZ / 12} years each\n`);
 for (const r of [rich, thin]) {
   console.log(`  ${r.label}: ${r.opened} facilities papered, $${(r.drawn / 1e6).toFixed(0)}M drawn, `
-    + `${r.breaches} breached, ${r.accels} accelerated, ${r.releases} released`);
+    + `${r.breaches} breached, ${r.accels} accelerated, ${r.cures} cured from cash, ${r.releases} released`);
   for (const l of r.lines) console.log(l);
 }
 
@@ -140,8 +146,8 @@ else ok(`${rich.releases + thin.releases} releases exercised.`);
 // people's books is to stop it ever biting. If this ever reads zero, the
 // facility has become free leverage and this file has become the thing it was
 // written to prevent.
-if (thin.breaches + thin.accels === 0) fail("a thinly capitalised firm went thirty years without the facility ever biting — it has become free leverage.");
-else ok(`the thin firm's facility bit — ${thin.breaches} breach(es), ${thin.accels} acceleration(s).`);
+if (thin.breaches + thin.accels + thin.cures === 0) fail("a thinly capitalised firm went thirty years without the facility ever biting — no breach, no acceleration, no forced cure. It has become free leverage.");
+else ok(`the thin firm's facility bit — ${thin.breaches} breach(es), ${thin.accels} acceleration(s), ${thin.cures} covenant cure(s) paid out of cash.`);
 
 // ...and the mirror: a firm with the money must not be taken by one, for the
 // same reason a sponsor with cash does not lose a building to a covenant.

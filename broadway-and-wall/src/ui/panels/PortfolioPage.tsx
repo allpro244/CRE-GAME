@@ -6,7 +6,7 @@ import { monthLabel } from "@/engine/types";
 import type { BuiltClass, GameState } from "@/engine/types";
 import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
-import { unitStatus, avgUnitSf } from "@/engine/leasing";
+import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
 import { payOffDue } from "@/engine/debt";
@@ -19,7 +19,7 @@ import { ListSection, GroundLeaseSection } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
 import { siteDeeds } from "@/engine/actions";
-import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
+import { useLabel, devUseLabel, occRead, occLabel, occTitle, Big, Row } from "@/ui/panels/shared";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { Rollover } from "@/ui/rollups/Rollover";
 import { Concentration } from "@/ui/rollups/Concentration";
@@ -96,7 +96,18 @@ export function PortfolioPage() {
     const dsMo = (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt;
     const cf = noi / 12 - dsMo;
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
-    const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
+    //
+    // THE SAME OCCUPANCY THE TOP BAR AND LEASING QUOTE. This row divided let
+    // feet by ALL rentable feet (`physicalOcc`) while the top bar and every
+    // Leasing row divide by LETTABLE feet — rentable less the remainder too
+    // small to demise. A building Leasing called "fully let · 1,300 sf
+    // unlettable" printed 94% here, and a book the header put at 96% listed
+    // rows that never reached it. The owner noticed: "occupancy on the top
+    // panel doesn't match the portfolio." One reader, `occupancyRead`, and
+    // the same label and tooltip Leasing uses, so the remainder is explained
+    // where it is subtracted rather than silently counted as vacancy.
+    const or = fee || !rec || rec.class === "land" || !rec.bldgArea ? null : occRead(rec, h);
+    const occ = or ? or.lettableOcc : 0;
     totV += v; totD += debt;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
@@ -115,7 +126,7 @@ export function PortfolioPage() {
       : (leasedSf > 0 ? rollYr / leasedSf : managedRentPsfYr(rec, game.econ, h));
     const u = !fee && rec && rec.bldgArea ? unitStatus(rec, h, game.month) : null;
     return {
-      h, rec, v, noi, cf, occ,
+      h, rec, v, noi, cf, occ, or,
       addr: rec?.address ?? h.bbl,
       cls: fee ? "leased fee" : (rec ? useLabel(rec) : ""),
       area: fee ? 0 : (rec?.bldgArea ?? 0),
@@ -292,6 +303,19 @@ export function PortfolioPage() {
           const g = totV - cost;
           return <Big label="Unrealised gain" value={`${g > 0 ? "+" : ""}${usd(g)} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
         })()}
+        {/* THE BOOK'S OCCUPANCY, HERE TOO — the same function the top bar and
+            Leasing read, so the number at the top of the screen can be
+            checked against the rows it is summing without changing pages. */}
+        {(() => {
+          const po = portfolioOccupancy(game, parcels);
+          return (
+            <Big label="Occupancy" value={po ? (100 * po.occ).toFixed(1) + "%" : "—"}
+              bad={!!po && po.occ < 0.8}
+              title={po
+                ? `${sf(po.leasedSf)} let of ${sf(po.lettableSf)} lettable across operated buildings — the same total as the top bar and Leasing. Each row below is the same read for one building.`
+                : "Appears once you own an operated building."} />
+          );
+        })()}
         <Big label="Buildings" value={String(holdings.length)} />
         {/* THE ONE THING YOU CANNOT AFFORD TO MISS. */}
 
@@ -457,7 +481,7 @@ export function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ, debt, ds }, i) => {
+          {shown.map(({ h, rec, v, noi, cf, occ, or, debt, ds }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
@@ -544,11 +568,12 @@ export function PortfolioPage() {
                   ? ((dv.signed?.length ?? 0)
                     ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf spoken for — land on the rent roll at delivery`
                     : "Under construction — no rent roll until it delivers")
-                  : h.groundLeased ? "Ground coupon — the lessee lets the building" : undefined}
+                  : h.groundLeased ? "Ground coupon — the lessee lets the building"
+                    : or ? occTitle(or) : undefined}
               >
                 {dv
                   ? ((dv.signed?.length ?? 0) ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre` : "—")
-                  : h.groundLeased || rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}
+                  : h.groundLeased || rec?.class === "land" || !or ? "—" : occLabel(or)}
               </td>
               {/* WHAT THE ROLL ACTUALLY COLLECTS, per foot. The rent every
                   decision in the game is denominated in, and the book quoted

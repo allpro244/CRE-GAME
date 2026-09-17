@@ -12,6 +12,8 @@ dist-zip/
 # other over one shared file.
 test/.entry*.ts
 test/.engine*.mjs
+# The one harness that renders React writes its own entry and bundle.
+test/.leasing-page.*
 *.png
 
 # Throwaway diagnostic probes. These are scratch: written to answer one

@@ -3884,6 +3884,43 @@ export function tickEcon(s: GameState) {
     }
   }
   const retMean = BUILT_CLASSES.reduce((a, k) => a + e.retExp![k], 0) / BUILT_CLASSES.length;
+  // THE INFLATION INSIDE A NOMINAL RATE IS ALSO INSIDE NEXT YEAR'S RENT.
+  //
+  // This term read the NOMINAL loan index, at 0.55 of cap per point. Measured
+  // over eight procedural cities x 100 years (`pnpm capvsrate`, Sep 2026):
+  // with the index above 10% the office cap sat ON the 11% ceiling in the
+  // median month, and the ceiling bound in 17.4% of ALL months (multifamily
+  // 7.7%) — because a Great Inflation puts the index at 12-16 and
+  // 0.55 x (14 - 5.4) asks for a 13% cap. The real record refused that every
+  // time it was asked: in 1981 the ten-year was 14% and office traded at
+  // 9-10; in 1978 it was 8.4% against caps of 8.5; through the whole of
+  // 1979-84 the spread of property yields over the ten-year was NEGATIVE, by
+  // as much as four points. A building is a real asset: its yield is a real
+  // rate plus a risk premium less growth, and when the public expects 8%
+  // inflation it expects 8% on the rent too, so the buyer capitalises against
+  // the index LESS that expectation.
+  //
+  // AND THE PASS-THROUGH IS ONE-SIDED, because rents are sticky downward. A
+  // lease carries a fixed 2-3% annual bump whatever the CPI does — which is
+  // why US rent growth never turned negative through 2010-15 at 1.5%
+  // inflation, and why office traded at 6.5-7% on a 2% ten-year then, not
+  // the 7.5-8% a symmetric real-rate model would ask for. The growth a buyer
+  // underwrites is floored at the contractual bump, so expected inflation
+  // enters only ABOVE the 2% target it is anchored to; at or under it this is
+  // exactly the nominal expression it replaces, and the modern-era
+  // calibration (office ~6.7 at a 2% index in a functioning market, 8.5 at
+  // 5.4) does not move by a basis point. Only the inflation eras move, and
+  // they move to where they were. Measured in cheap money the engine's own
+  // `inflExp` sits at ZERO in the median month, so the symmetric form was
+  // tried and rejected: it lifted every cheap-money cap by about a point,
+  // against the record. `inflExp` rather than realised inflation because a
+  // bond yield embeds what people EXPECT, and the engine already models
+  // expectations coming unanchored — which is exactly when this matters.
+  // Measured after: office on the ceiling 17.4% → 4.5% of months, multifamily
+  // 7.7% → 0.5%; what still touches it is a Volcker with a 7.6% REAL policy
+  // rate, which is the bank's number to answer for. Full table in ECONOMY.md.
+  const inflOver = Math.max(0, (e.nat?.inflExp ?? 0.02) - 0.02) * 100;
+  const capIndex = e.indexRate - inflOver;
   for (const k of BUILT_CLASSES) {
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
     // A sector in favour reprices harder than it used to: capital rotating
@@ -3897,19 +3934,20 @@ export function tickEcon(s: GameState) {
     const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
     const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
     // ...and they TRACK the cost of debt, at about half a point of cap for a
-    // point of rate, which is what the real relationship looks like. At 0.38
-    // the spread between yield and borrowing cost barely moved across a
-    // century of rates, so the fix-or-float decision and the timing of a
-    // levered purchase were both weather rather than judgement. At 0.55 a rate
-    // spike genuinely flips leverage negative and a rate collapse genuinely
-    // makes it free — which is the trade the player is supposed to be reading.
+    // point of rate net of above-target inflation (see above), which is what
+    // the real relationship looks like. At 0.38 the spread between yield and
+    // borrowing cost barely moved across a century of rates, so the
+    // fix-or-float decision and the timing of a levered purchase were both
+    // weather rather than judgement. At 0.55 a rate spike genuinely flips
+    // leverage negative and a rate collapse genuinely makes it free — which
+    // is the trade the player is supposed to be reading.
     // Half a point of cap per point of trailing excess return, bracketed at
     // +/-1.1 as a guard: the historical spread between the most- and
     // least-favoured class's cap moved about two points across an allocation
     // cycle (office vs industrial, 2007 to 2021), and this term's full swing
     // matches that without ever being the largest term in the sum.
     const flows = clamp(-0.65 * (e.retExp![k] - retMean), -1.3, 1.3);
-    const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
+    const target = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //

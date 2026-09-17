@@ -858,3 +858,147 @@ from one-way rent catch-up. Measured: median rail-bound real ~+0.3%/yr (was
 firm-near +4–5%); century real office ~0.85%/yr; real construction cost
 ~+0.5%/yr (was ~+0.8–1.1%). Harness: `test/rent-anchor.mjs` rail-real +
 cost-real clauses.
+
+# AN 8% CAP ON 2% MONEY — half the wire was right, and the other half was the glut
+
+The owner's report, verbatim: *"There are times when the base rate is 2% but
+the lowest cap rate I can sell my building is 8%. Isn't this a problem?"* Two
+questions in that: is the cap-rate-to-rate wire realistic, and if it is, where
+does the 8 come from. Both measured, eight procedural cities × 100 years each,
+monthly (`pnpm capvsrate`, Sep 2026, before any change):
+
+```
+index bin      n     office p10/p50/p90   multifam p50   office − index p50
+ 0-2         503     4.94  7.07  9.00        5.08           5.40
+ 2-2.5      1202     5.79  8.49  9.49        5.99           6.22
+ 2.5-3      1336     6.42  8.83  9.64        6.60           6.09
+ 3-4        1321     6.23  8.77 10.07        6.45           5.35
+ 4-5         953     6.56  8.44 10.84        6.17           3.82
+ 5-6        1171     6.82  8.54 10.93        6.41           3.02
+ 6-8        1350     7.25  9.34 11.00        7.06           2.62
+ 8-10        643     8.20 10.59 11.00        8.69           1.34
+ 10+        1121    10.90 11.00 11.00       11.00          −5.06
+```
+
+Cheap money is 17.8% of the century (index ≤ 2.5%), and in those months the
+office cap is **8.17% in the median month, 8% or over in 54.5% of them** — a
+620bp spread over the index, against a real 2010-20 record of 280-500bp
+(CBRE: multifamily 230, office 280, retail 320, industrial 340 over the
+ten-year; the GFC peak ran the all-property spread to ~440). The owner is
+right that the number is wrong. The decomposition says which term:
+
+```
+office cap target, index ≤ 2.5%      p10     p50     p90
+  CAP_BASE                           8.50    8.50    8.50
+  0.55 × (index − 5.4)              −2.00   −1.78   −1.63
+  −0.25 × cycleDev                  −0.11    0.07    0.15
+  crunch  1.6 × (1 − creditIdx)      0.00    0.49    0.63
+  sector  −30 × sectorMom           −0.23    0.04    0.23
+  vacRisk (clamped −0.6 … +2.0)     −0.60    1.42    2.00
+  flows                             −1.30   −0.63    0.18
+  TARGET                             5.20    8.01    9.16
+```
+
+**The rate wire does what it says** — it takes 178bp off. What puts the cap at
+8 is the vacancy term (+1.42 median, pinned at its +2.0 guard at p90) and the
+credit crunch (+0.49). And those are not independent of the rate: **62% of
+all cheap-money months are the city's recession or depression phase**, because
+the policy rate is at its 0.25% floor precisely when the country is in a deep
+recession, and the city is in a glut at the same time. Split by phase:
+
+```
+index ≤ 2.5%                     n     office cap p50   office vacancy p50
+  recession / depression      1050        8.75              33.2%
+  recovery / expansion / peak  655        6.67               9.8%
+```
+
+**At a 2% index in a functioning market the engine prices office at 6.67%.**
+That is the 2013-19 record (national office 6.5-7.0 on a ~2% ten-year, trophy
+CBD at 4.5-5, suburban Class B at 7.5-8.5 — and `capRateFor` spreads the
+city's buildings 4.9 / 7.5 / 9.7 at p10/p50/p90 around it, good condition 6.7,
+worn 8.05, which is that distribution). The 8.75 is a market with a third of
+its offices empty. In 2009-11 the real thing produced exactly that — office
+caps of 8-8.4 on a 3% ten-year — and then healed in three years as vacancy
+came off 17.5% and credit reopened. The engine's glut does not heal: office
+vacancy sits at **23.4% in the median cheap-money month** and 33% in the
+depression ones, against a US national peak of ~19.5% (1991, 2024). That is
+`REALISM_AUDIT_2026-08.md` §1 — standing stock has no exit, so a glut cannot
+clear — read through the cap rate. The cap is pricing the vacancy honestly;
+the vacancy is the fake number.
+
+## What was fixed: the top of the wire
+
+The same table has a second fault, and it IS the wire. Above a 10% index the
+office cap is **on the 11% ceiling in the median month**, and the ceiling
+binds in **17.4% of all months** (multifamily 7.7%) — a load-bearing rail,
+fake number five. The term read the NOMINAL index at 0.55 per point, so a
+Great Inflation at a 14% index asked for a 13% cap. The record refused that
+every time: 1981, ten-year 14%, office 9-10; 1978, 8.4% against caps of 8.5;
+property yields spent 1979-84 BELOW the ten-year by up to four points. The
+inflation inside a nominal rate is also inside next year's rent, so a buyer
+capitalises against the index less the inflation the public expects.
+
+And the pass-through is one-sided, because rents are sticky downward: a lease
+carries a fixed 2-3% bump whatever the CPI does, which is why US rent growth
+never turned negative through 2010-15 at 1.5% inflation. This matters here
+because the engine's `inflExp` sits at **zero in the median cheap-money month**
+(p10 −0.5%) — a symmetric real-rate term was tried first and lifted every
+cheap-money cap by about a point, the opposite of the record. So expected
+inflation enters the cap target only above the 2% target it is anchored to
+(`inflOver` in `market.ts`); at or under it the expression is exactly the
+nominal one it replaces, and the modern-era calibration does not move.
+
+After, same eight seeds and eras (`pnpm capvsrate`):
+
+```
+                                          before      after
+office cap ON the 11% ceiling, all months  17.4%       4.5%
+multifamily on the ceiling                  7.7%       0.5%
+index ≥ 10: office cap p50                 11.00      10.44   (inflExp p50 7.1% → 5.2%)
+index 6-8:  office cap p50                  9.34       8.19
+index ≤ 2.5: office cap p50                 8.17       6.35
+index ≤ 2.5, recession/depression           8.75       7.87   (office vacancy 33% → 21%)
+index ≤ 2.5, functioning market             6.67       6.08   (vacancy 9.8% → 6.0%)
+whole run: office cap p50 / spread p50   8.93 / 3.69  7.74 / 2.58
+```
+
+Read the bottom half of that table with `HANDOFF.md` §4 in mind: a change
+that moves values moves every state-dependent branch after it, so the after
+run is a different century on the same seeds, and this one drew far less
+office vacancy (17.6% → 8.9% at the whole-run median). The term is identical
+by construction wherever expected inflation is at or under target, so the
+cheap-money moves are mostly the world, not the wire; the depression months
+still print 7.9 on 21% vacancy, which is the diagnosis above holding. The
+top half is the wire: the ceiling has gone from the number to a guard, and
+what still touches it is the engine's Volcker — a real policy rate of 7.6%
+in the median high-rate month, twice the real 1981-82 peak, which is the
+central bank's aggressiveness and not the cap's to fix.
+
+## What is not fixed, and what would fix it
+
+Two upstream faults, both named before, both larger than a cap-rate change:
+
+1. **The glut has no exit** (`REALISM_AUDIT_2026-08.md` §1). Office vacancy
+   runs 17.6% at the century median and 33% in a depression, because no class
+   but industrial can mothball, demolish or convert. Until standing stock can
+   leave, `vacRisk` will price a vacancy no real market has had, and the +2.0
+   guard on it will keep binding. The realistic mechanism is written down
+   there: a carrying-cost comparison per building, not a development pro
+   forma. Do not weaken `CAP_VAC_BETA` (0.12/pp is inside the 2024
+   cross-metro evidence — SF at 30%+ vacancy traded office at 8-10 caps on a
+   4.2% ten-year) and do not raise the guard first.
+
+2. **Credit stays shut for as long as the glut lasts.** `creditIdx` targets
+   0.62 through a depression, and the depression is stretched while slack is
+   load-bearing, so `crunch` sits at +0.5-0.6 for a decade. The real CRE
+   credit crunches lasted about three years (1990-93, 2008-11): bank losses
+   were recognised and capital rebuilt on the lender's clock while the space
+   market was still empty. The mechanism is capital availability derived
+   from the lenders' own balance sheets (`lenders.ts` already carries capital
+   ratios and panic spreads) rather than from the property phase table — a
+   change that touches every borrowing quote and every rival, and should be
+   its own decision.
+
+Neither should be reached for through the cap formula. Severing the vacancy
+or credit pricing to make cheap money read cheap would be a fake number
+wearing the owner's request.

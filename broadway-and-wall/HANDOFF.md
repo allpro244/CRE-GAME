@@ -176,6 +176,21 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **Cap rates stop chasing inflation into the ceiling, and the Leasing tab
+  lists its letters** (Sep 2026). The owner asked why an 8% cap sits on 2%
+  money. Measured (`pnpm capvsrate`): the rate wire was right at the bottom —
+  office 6.67% at a ≤2.5% index in a functioning market — and the 8 is the
+  glut (33% office vacancy in the depression months that are 62% of cheap
+  money). The wire was wrong at the TOP: reading the nominal index, it pinned
+  office on the 11% rail in 17.4% of all months. Expected inflation above the
+  2% target now comes off the index the cap target reads (one-sided: rents
+  are sticky downward). Write-up at the end of `ECONOMY.md`. Separately,
+  `pnpm leasing-page` renders the Leasing page against a real game and
+  asserts the LOI and renewal letters are on it — they were only on Deals.
+  The same harness renders Portfolio and asserts its occupancy — the book
+  total and every row — is the top bar's number: rows were dividing by
+  rentable feet while the top bar and Leasing divide by lettable feet, so a
+  "fully let · 1,300 sf unlettable" building printed 94% on Portfolio.
 - **The inflation fix** (`4034910`) — the most consequential. Labour demand was
   not constrained by labour supply: `employIdx` (jobs WANTED) grew unbounded,
   unfilled positions reached 8–24% of the labour force and never came back, and
@@ -257,7 +272,17 @@ scarcity pressure still observes instantly; application into `rentIdx` runs
 through a per-class EMA (`rentPress`, τ≈4 months). Same-month vac→rent leadlag
 clears; the four-quadrant checks (#31) still want a longer campaign sample.
 
-**8. #33 seller predictability (tape path closed — `bidOdds` reads kind floors; negotiation still has its own reservation), #36 zoning depth, #48/#49 firm entry and exit.**
+**8. An 8% cap on 2% money — the glut, read through the cap rate.** Open, and
+upstream of the cap formula. `pnpm capvsrate`: in cheap money (index ≤ 2.5%,
+17.8% of the century) the office cap is 8.17% median, 8+ in 54.5% of months,
+because 62% of those months are recession/depression with office vacancy at
+33%; in the other 38% the cap is 6.67%, which is the 2013-19 record. The fix
+is §1 of `REALISM_AUDIT_2026-08.md` (standing stock has no exit) plus a credit
+crunch that heals on the lenders' clock instead of the phase table — see the
+last section of `ECONOMY.md`. Do not touch `CAP_VAC_BETA` or its +2.0 guard
+first; they are pricing the fault, not causing it.
+
+**9. #33 seller predictability (tape path closed — `bidOdds` reads kind floors; negotiation still has its own reservation), #36 zoning depth, #48/#49 firm entry and exit.**
 Longstanding, lower priority.
 
 **Thin-sponsor covenant immortality — CLOSED.** Equity cures and covenant

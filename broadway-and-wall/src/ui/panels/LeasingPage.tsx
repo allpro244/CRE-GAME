@@ -11,6 +11,7 @@ import { portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
+import { LoiCard } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 
 export function LeasingPage() {
@@ -216,6 +217,43 @@ export function LeasingPage() {
   }
 
   /**
+   * THE LETTERS THEMSELVES, ON THE LEASING PAGE.
+   *
+   * An LOI or a renewal used to reach the player as an interrupt card and as a
+   * row on Deals, and this page — the one called Leasing — showed a COUNT of
+   * them ("On your desk · 3") and nothing else. The owner's report: "when you
+   * get LOIs and renewals, they don't pop up in the leasing tab." They did
+   * not. Somebody reading their rent roll, seeing a tenant roll in eleven
+   * months, had to leave the page to find the renewal letter that tenant had
+   * already sent.
+   *
+   * Same cards, same predicate, same order as the Deals desk — `LoiCard` is
+   * imported, not copied, so the two surfaces cannot drift. Referred letters
+   * first, then the tours grouped, then arrival order.
+   */
+  function DeskLetters() {
+    const desk = game.lois.filter((l) => loiNeedsPrincipal(game, l));
+    if (!desk.length) return null;
+    const renewals = desk.filter((l) => l.kind === "renewal").length;
+    const quiet = deskHoldsPen(game);
+    return (
+      <div className="page-section">
+        <div className="page-section-head">
+          On your desk · {desk.length} letter{desk.length === 1 ? "" : "s"}
+          {renewals ? ` · ${renewals} renewal${renewals === 1 ? "" : "s"}` : ""}
+          {quiet ? " · referred by your desk" : ""}
+        </div>
+        <div className="loi-grid">
+          {[...desk]
+            .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
+              || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
+            .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
+        </div>
+      </div>
+    );
+  }
+
+  /**
    * THE MIDDLE OPTION. The agent above takes the whole book at 6% and signs
    * everything, including the new leases — which is the half worth doing
    * yourself, where you trade term against allowance and decide whether a
@@ -258,6 +296,7 @@ export function LeasingPage() {
       <AgentBar />
       <RenewalBar />
       <DeskActivity />
+      <DeskLetters />
       <PlanEditor />
       <PlanDigest />
       <div className="stat-strip">
@@ -275,7 +314,7 @@ export function LeasingPage() {
         <Big
           label="On your desk"
           value={String(game.lois.filter((l) => loiNeedsPrincipal(game, l)).length)}
-          title="Letters that still need you — desk-covered paper is quiet"
+          title="Letters that still need you — listed above, and on Deals. Desk-covered paper is quiet."
         />
       </div>
 

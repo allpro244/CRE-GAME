@@ -4,7 +4,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
-import { applyEra, driftInflTarget } from "./regime";
+import { applyEra, driftInflTarget, CAP_RAIL } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
 
@@ -3948,7 +3948,7 @@ export function tickEcon(s: GameState) {
     // matches that without ever being the largest term in the sum.
     const flows = clamp(-0.65 * (e.retExp![k] - retMean), -1.3, 1.3);
     const target = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
-    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
+    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), CAP_RAIL.lo, CAP_RAIL.hi);
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that

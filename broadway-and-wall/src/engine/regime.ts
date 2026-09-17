@@ -114,6 +114,19 @@ export interface Era {
  * Expressed in year-2000 dollars, like every other salary and price in this
  * engine; the reader multiplies by costIdx.
  */
+/**
+ * THE CAP-RATE RAIL, ONCE. The monthly walk in market.ts clamped cap rates to
+ * 3.4..11 while the era opener clamped them to 3.2..14 — the same quantity
+ * with two answers, and a dear-money era could open at 12.5% and slide to
+ * 11.0% over its first months with nothing in the world having moved. Both
+ * read this. Measured (30 seeds × 30 years) the ceiling binds 1% of months
+ * in a long expansion, 3-4% in a disinflation or the morning after, 10% in a
+ * Great Inflation, and the floor essentially never: a guard, not a rail,
+ * except at the top of an inflation, which is where 1981's transaction caps
+ * actually sat.
+ */
+export const CAP_RAIL = { lo: 3.4, hi: 11 } as const;
+
 export const DEPOSIT_INSURANCE: Record<string, number> = {
   postwar: 20_000,
   greatinflation: 40_000,
@@ -226,7 +239,7 @@ export function applyEra(econ: Econ, seed: number, natural: Record<string, numbe
   // so an era that opens at 14% short rates does not also open at a 5% cap.
   const bump = d(...era.capBump);
   for (const cls of Object.keys(econ.capRate) as (keyof typeof econ.capRate)[]) {
-    econ.capRate[cls] = +Math.max(3.2, Math.min(14, econ.capRate[cls] + bump + d(-0.2, 0.2))).toFixed(2);
+    econ.capRate[cls] = +Math.max(CAP_RAIL.lo, Math.min(CAP_RAIL.hi, econ.capRate[cls] + bump + d(-0.2, 0.2))).toFixed(2);
   }
   econ.creditIdx = +d(...era.creditIdx).toFixed(3);
 

@@ -213,6 +213,13 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **One cap-rate rail** — the era opener clamped caps to 3.2..14 and the
+  monthly walk to 3.4..11, so a dear-money game could open at 12.5% and
+  slide to 11.0% over its first months with nothing having moved. `CAP_RAIL`
+  in `regime.ts` is read by both. Measured bind share by era (30 seeds × 30
+  years): long expansion 1%, disinflation/morning-after 3-4%, Great
+  Inflation 10% — a guard everywhere but the top of an inflation, which is
+  where 1981's transaction caps sat. Baseline unmoved.
 - **The primer offer retires itself** — it sat in the corner six months and
   two closed purchases into a playthrough. Advancing the clock or owning a
   deed dismisses it; the Primer stays in the header.

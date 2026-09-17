@@ -434,6 +434,20 @@ covenant took its paydown out of cash instead, sixteen times in thirty years
 for the thin firm, and the harness counted only the recorded breach. A cure
 is a bite; it counts them now. Neither row is in `pnpm check`.
 
+**0e. The city labour market, measured before anyone touches migration.**
+`pnpm playtest` §D read unemployment on its 2.8% frictional floor in 40% of
+months with a 0.2pp recession gap, which looks like a load-bearing rail.
+On the reference city, 6 seeds × 50 years, no player: unemployment p10
+2.8% / p50 6.3% / p90 11.1%, on the floor 15.5% of months, unfilled
+positions p50 0 / p90 2.7%, and population growth tracks job growth within
+a few hundredths of a point a year on every seed (0.79% vs 0.82%, −1.07% vs
+−1.29%, …). The recession-vs-expansion median gap is 1.2pp against a real
+2-5pp — narrow, but a calibration of `natPull`, not a rail. The playtest's
+40% is its own six cities with a player buying. `vacPull` (a tenth of the
+vacancy gap a year) is slower than Blanchard-Katz's three-to-five-year
+regional adjustment and would be the dial if the gap is ever widened; it
+was left alone because the measurement did not call for it.
+
 **0d. `econ:report` band B (supply shock) is outside its band on this
 engine:** a +10% office delivery moves rents only 2.1% below the
 counterfactual (band wants 10%) and the new building never reaches 80% let

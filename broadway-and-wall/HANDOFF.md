@@ -213,6 +213,17 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **`pnpm leaseup` measured a unit count, not a lease-up** — its 85% bar
+  was `unitStatus` leased-over-total, and the total is the leg divided by the
+  class's norm suite; a building demised into five real tenancies against a
+  six-unit norm read 5 of 6 = 83% and "still empty after 20 years" with 100%
+  of its feet let. Measured on that bar: 6 of 16 filled, 10 "empty" — and of
+  those ten, four were at or above 95% of their area and only one under 65%.
+  On rentable feet: 16 of 16 reach 85% let, min 11 months, median 41, p75
+  82, max 153 (a demand-38 corner). The "fringe lease-up feel" fault in §6
+  was mostly this harness; what remains is that a fringe building takes 7-13
+  years to stabilise, which the letter model's tenant-pool ceiling (high 70s
+  to low 90s by address) and location gradient produce by design.
 - **The opening screen is asserted** — `pnpm opening-screen` renders the
   top bar, Economy, Research, Marketplace and the refinance desk against a
   real month-zero game (same SSR build as `pnpm leasing-page`) and fails if
@@ -386,6 +397,13 @@ records a breach, so a firm with the cash never shows `breachedSince`; the
 covenant took its paydown out of cash instead, sixteen times in thirty years
 for the thin firm, and the harness counted only the recorded breach. A cure
 is a bite; it counts them now. Neither row is in `pnpm check`.
+
+**0a. Fringe lease-up is slow, not stuck.** After the harness fix in §5,
+16 of 16 empty office buildings stabilise (median 41 months) and the slowest
+fringe corner takes 153. Whether 7-13 years is the right pace for a demand-40
+address is a calibration question against real suburban class-B absorption
+(which does run years, not decades); the mechanism is `leaseFactors`
+(location cubed, tenant pool) and it is documented as a shape.
 
 **0b. A quarter of new games open in a 1981.** By design (`regime.ts`, era
 weights), and now labelled on screen (§5). Whether an era that prints 17%

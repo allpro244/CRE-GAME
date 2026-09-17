@@ -686,6 +686,14 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
         if (free >= floorSf && rng(s, "leasing") < free / sf) sf = Math.round(free);
         else break;
       }
+      // NOBODY LEAVES A SLIVER. A standing roll is the work of a landlord who
+      // demised to fit: when what a draw would leave of the space cannot be
+      // let on its own, the tenant took it. Without this a 3,000 ft shop was
+      // generated as a 2,500 ft tenancy and a 500 ft remnant, a five-floor
+      // office as four floors and an unlettable strip — and `pnpm playtest` §B
+      // read the city's retail rolls 17pp emptier than the market model that
+      // priced them, industrial 10pp, office 3pp: the gap was these slivers.
+      if (free - sf > 0.5 && free - sf < floorSf) sf = Math.round(free);
       if (sf < 1) break;
       if (leased > 0 && sf < floorSf) break;
       const sector = pickSector(s, use);

@@ -2455,6 +2455,12 @@ export interface GameState {
    */
   lastTradeM?: Record<string, number>;
   /**
+   * Deeds the player sold to an anonymous buyer, keyed to the month they
+   * changed hands. `holderOf` salts its draw with it so the register names a
+   * different holder from then on, instead of the one the player bought from.
+   */
+  deedSalt?: Record<string, number>;
+  /**
    * The largest building PLANNED in each class so far this campaign — seeded
    * from the standing stock, so the first two-storey shop of the run does not
    * make the tape. When a groundbreaking beats it, that is a record and the

@@ -1030,3 +1030,22 @@ plates-blocks` assert the identity on rentable feet; the 9,371 ft shed is one
 every century (§4 of HANDOFF) — the baseline moves, and the direction is the
 correction: smaller rolls, lower in-place income on the same buildings, and
 an occupancy figure that can no longer be pinned at 100% by arithmetic.
+
+# STANDING ROLLS LEFT SLIVERS — fixed
+
+`buildRentRoll` filled a leg toward its target with log-normal draws and
+stopped when what was left could not take a tenancy, so a 3,000 ft shop was
+generated as a 2,500 ft tenant and a 500 ft remnant, and a five-floor office
+as four floors let and one unlettable strip. Each sliver was honest in itself
+(`occupancyRead` names it) but the market model that prices the building
+counts those feet as occupiable, and `pnpm playtest` §B put the seam at 17pp
+for retail, 10pp industrial, 3pp office once the rolls were on rentable feet.
+
+A landlord generating a standing roll demised to fit: when the space a draw
+would leave cannot be let on its own, the tenant took it. Measured, same
+harness, re-rolled world: retail 17pp → 8pp, industrial 10 → 9, office 3 → 8
+(rolls 82 → 85% let; the market side moved the other way on the re-roll).
+What remains is the for-sale skew the harness names and the −14/+5pp opening
+draw, both deliberate. Prospects arriving later still leave remnants through
+`matchBlock`, on purpose — that is the demise trade the leasing overhaul
+built, and `pnpm demise` keeps it a minority of vacant feet.

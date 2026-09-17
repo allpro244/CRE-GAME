@@ -95,6 +95,7 @@
     "plan-desk": "node test/plan-desk.mjs",
     "plan-ui": "node test/plan-ui.mjs",
     "leasing-page": "node test/leasing-page.mjs",
+    "deed-goes": "node test/deed-goes.mjs",
     "suite-occ": "node test/suite-occ.mjs",
     "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",

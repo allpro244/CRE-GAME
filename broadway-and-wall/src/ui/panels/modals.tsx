@@ -877,10 +877,18 @@ function DecisionBody({
             : "Offer in hand — they are buying, you are selling"}
         </div>
         <div className="modal-title">{usd(offer.price)} for {rec.address}</div>
-        <div className="modal-sub">Good until {monthLabel(offer.expiresM)}. Your ask is {usd(h.sale!.ask)}.</div>
+        {/* AN UNSOLICITED APPROACH HAS NO ASK TO COMPARE TO. The engine parks
+            the approach in `sale` with ask = their number, so this card said
+            "Your ask is $1.88M · vs. your ask 0.0%" about a building the
+            player never listed. The number is theirs; say so. */}
+        <div className="modal-sub">
+          {h.sale!.unsolicited
+            ? `Good until ${monthLabel(offer.expiresM)}. You had not listed it — the number is theirs${offer.from ? `, and it is ${offer.from} asking` : ""}.`
+            : `Good until ${monthLabel(offer.expiresM)}. Your ask is ${usd(h.sale!.ask)}.`}
+        </div>
         <div className="grid">
           <Row k="Offer" v={usd(offer.price)} strong />
-          <Row k="vs. your ask" v={`${((offer.price / h.sale!.ask - 1) * 100).toFixed(1)}%`} />
+          {!h.sale!.unsolicited && <Row k="vs. your ask" v={`${((offer.price / h.sale!.ask - 1) * 100).toFixed(1)}%`} />}
           <Row k="vs. appraisal" v={`${((offer.price / apMid(offerBbl!, value) - 1) * 100).toFixed(1)}%`} />
           <Row k="Loan payoff" v={usd(proceeds.loanPayoff)} />
           {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}

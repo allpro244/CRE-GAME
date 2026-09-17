@@ -2687,7 +2687,6 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   }
   next.exits = next.exits ?? [];
   next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
-  recordComp(next, rec, offer.price, "a buyer", firmShort(next), undefined, h.condition);
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was
@@ -2725,6 +2724,23 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.lastTradeM = next.lastTradeM ?? {};
   next.lastTradeM[bbl] = next.month;
   delete next.holdings[bbl];
+  // WHOEVER BOUGHT IT OWNS IT. The deed left the player's book and landed
+  // nowhere: `holderOf` hashes an unowned parcel to a registered holder, and
+  // the hash is the parcel's, so the desk showed the building back with the
+  // firm the player had bought it FROM — "Owned by Abernathy Construction",
+  // a month after selling it to a family office. A named firm's bid now
+  // puts the deed in that firm's book, on that firm's balance sheet (the
+  // same close it does off the tape); an anonymous buyer re-draws the holder
+  // with a salt, so the register's memory of the deed starts over with a
+  // different name. A package sale books its own buyer — see portfoliosale.
+  let took: ReturnType<typeof rivalBuys> = null;
+  if (!next.portfolioSale?.bbls.includes(bbl)) {
+    const named = offer.from ? livingRivals(next).find((r) => r.name === offer.from) : undefined;
+    took = named ? rivalBuys(next, parcels, rec, offer.price, named, firmShort(next)) : null;
+    if (!took) (next.deedSalt ??= {})[bbl] = next.month;
+  }
+  // The comp: `rivalBuys` files its own when a firm takes the deed.
+  if (!took) recordComp(next, rec, offer.price, offer.from ?? "a buyer", firmShort(next), undefined, h.condition);
   // A SALE OUT OF DEFAULT CLOSES THE FILE. It is the best outcome available in
   // a workout — the lender is repaid at closing and nobody takes a loss — and
   // the file has to die with the deed, not linger and foreclose on a building
@@ -2733,7 +2749,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
+    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M${offer.from ? ` to ${offer.from}` : ""} — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
       + (kick > 0 ? `. Your lender took $${(kick / 1e6).toFixed(2)}M of the gain` : "")
       + (breakFee > 0 ? `, and $${(breakFee / 1e6).toFixed(2)}M to break the loan early` : "")
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`

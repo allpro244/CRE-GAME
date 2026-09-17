@@ -197,6 +197,13 @@ another. Grep before you add another.
   buildings in a 13% vacancy market whose `leasingOdds` readout says so
   (loiOdds 0.4%/month, share of market 0.03%). That slowness is the
   demand-pool model, not the plates, and it is open as a feel question.
+  SAVES FROM BEFORE THIS carry gross-sized rolls: a loaded building can read
+  "Leased 7,504 of 5,986" until those leases roll (1-8 years). No migration
+  trims them — cutting a signed tenant's feet is cutting the player's rent.
+  `pnpm playtest` §B after the change: office rolls 3pp under the market
+  model, retail 17pp, industrial 10pp — the Layer-1/Layer-2 seam is open for
+  retail and industrial (single-floor legs are let-or-empty in
+  `buildRentRoll`; suspect that and the -14/+5pp draw).
 - **A standing building is not "Dirt"** — the parcel desk headed every owned
   building using under 75% of its FAR envelope "Dirt — nothing pencils today ·
   Holder bid $0/sf wins the auction", which with tower-legal envelopes on the
@@ -206,6 +213,30 @@ another. Grep before you add another.
   the CLEARED dirt beats the standing building's appraisal per foot of lot,
   not the holder's bid for the same dirt (the first cut called a 99%-let
   corner a redevelopment on $238 against $464, neither of them the building).
+- **Standing rolls no longer leave slivers.** `buildRentRoll` let a 3,000 ft
+  shop as 2,500 ft plus a 500 ft remnant, a five-floor office as four floors
+  and an unlettable strip; when what a draw would leave cannot be let, the
+  tenant takes it. `pnpm playtest` §B: retail rolls 17pp under the market
+  model → 8pp, office 3 → 8 on a re-rolled world, industrial 10 → 9; the
+  rest is the for-sale skew and the −14/+5pp draw the harness itself names.
+- **"Your ask vs the market" compares like with like.** `leasingOdds` printed
+  a FACE, condition-adjusted ask against an EFFECTIVE standard-condition
+  market rent, so a good building on the Market stance read "$35 vs $26" in
+  a glut and the row went red — the player was told they were over market
+  while sitting on it. The market figure is now what the building would ask
+  on the Market stance with no stale markdown; the gap shown is the stance
+  and the agent's markdown only. The odds themselves never used the pair.
+- **A sold deed lands with its buyer.** It left the player's book and landed
+  nowhere: `holderOf` re-hashed the unowned parcel to the holder the player
+  had bought it FROM ("Owned by Abernathy Construction" a month after
+  selling), and a named firm's winning bid put nothing in that firm's book.
+  Now a living firm's bid closes into that firm's balance sheet through
+  `rivalBuys(…, prefer)` — on its own cheque, or not at all (the first cut
+  fell through to the appetite draw and handed Anwar Estates' bid to Pell
+  Street) — and an anonymous buyer salts the register draw (`deedSalt`) so
+  the holder is a different, stable name. One comp per sale, in the buyer's
+  name. `pnpm deed-goes`. The unsolicited-offer card also stops saying "Your
+  ask is $1.88M · vs. your ask 0.0%" about a building never listed.
 - **The Books net-worth tile is the top bar's number.** It read `nwHistory`
   (stamped at the last tick), so for the rest of any month with a purchase
   or sale in it the tile disagreed with the bar above it ($2.54M against

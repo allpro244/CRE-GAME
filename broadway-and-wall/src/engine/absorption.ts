@@ -23,7 +23,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, NATURAL_VAC, rng } from "./market";
-import { resolveRec, useOccupancy, demandIdx, useRentPsfYr, managedRentPsfYr, useRentableSf } from "./value";
+import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf } from "./value";
 import { demandModel } from "./demand";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -604,7 +604,16 @@ export function leasingOdds(
     cityVac: lm.cityVac, localVac: lm.localVac,
     requirementSf, shareOfMarket, captureSf, monthsToLet, loiOdds, typicalDealSf,
     askPsf: currentAskPsfYr(rec, s.econ, h, use),
-    marketPsf: useRentPsfYr(rec, s.econ, "standard", use),
+    // LIKE FOR LIKE. The ask is a FACE rent for THIS building — condition and
+    // location in, the concession package written separately on the deal.
+    // The market it was printed against was the EFFECTIVE rent of a
+    // standard-condition building, so a good building asking exactly its
+    // market read "ask $35 vs market $26" in a glut and the desk turned the
+    // row red at a 4% gap: the player was told they were over market while
+    // sitting on it. The market here is what this building would ask on the
+    // "Market" stance with no stale markdown — so the gap the row shows is
+    // the player's own stance and the agent's markdown, and nothing else.
+    marketPsf: managedRentPsfYr(rec, s.econ, { ...h, stance: 0 }, use),
     weight, factors,
   };
 }

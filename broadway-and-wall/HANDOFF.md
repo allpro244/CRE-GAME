@@ -434,6 +434,21 @@ covenant took its paydown out of cash instead, sixteen times in thirty years
 for the thin firm, and the harness counted only the recorded breach. A cure
 is a bite; it counts them now. Neither row is in `pnpm check`.
 
+**0f. One building, three appraisals in six months (playthrough 3, Hartmoor
+Landing, cheap-money opening).** 107 W 7th St, 5,004 sf of flats at demand
+23, 96% let: the parcel desk appraised it at $161-181K while it was on the
+tape at $363K (the bot paid the ask — twice the desk's own number, which is
+the bot's fault, not the game's); the month it closed, the OWNED desk read
+$281-317K with market rent $15 against the $12 it had printed a moment
+before; six months later $173-195K; a year on $134-152K. In-place NOI on
+the same card ran $17K → $15K → $9.9K → $7.2K over that year with occupancy
+96-97% throughout. Either the mark blends toward the price paid at closing
+(then say so on the card) or the owned and unowned readers disagree on rent
+and condition for the same roll — read `holdingValue` against the tape's
+`assetValue`/`inPlace` on a fresh purchase before the offer card says "vs
+appraisal −7.4%" on a building bought at 2x that appraisal. Screenshots
+02/03/04/08 of the run.
+
 **0e. The city labour market, measured before anyone touches migration.**
 `pnpm playtest` §D read unemployment on its 2.8% frictional floor in 40% of
 months with a 0.2pp recession gap, which looks like a load-bearing rail.

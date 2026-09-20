@@ -2699,6 +2699,7 @@ export const PLAYER_EQUIVALENT_ROW: PlanRow = {
   holdM: 18,
   stepPct: 0.02,
   floorPct: 0.95,
+  minNePct: 0.90,
 };
 
 export function playerEquivalentPlan(): LeasingPlan {
@@ -2728,6 +2729,7 @@ export const STARTER_PLAN_ROW: PlanRow = {
   holdM: 0,
   stepPct: 0.02,
   floorPct: 0.90,
+  minNePct: 0.82,
 };
 
 export function starterPlan(row: PlanRow = STARTER_PLAN_ROW): LeasingPlan {
@@ -2869,7 +2871,17 @@ export function clearAgainstPlan(
   loi: LOI,
   plan: LeasingPlan,
   ctx: { rec: ParcelRecord; h: Holding; ignoreTour?: boolean; feeRate?: number },
-): { verdict: PlanClear; why?: string; quotePsf: number; row?: PlanRow } {
+): {
+  verdict: PlanClear; why?: string; quotePsf: number; row?: PlanRow;
+  /** The letter as written, net effective over market. */
+  neScore?: number;
+  /** The row's signing floor. */
+  neFloor?: number;
+  /** Whether the letter as written may be signed without a counter. */
+  signAsIs?: boolean;
+  /** The counter the desk would put (ask, concessions capped, then trimmed to the floor). */
+  counter?: CounterTerms;
+} {
   const { rec, h } = ctx;
   const row = planRowFor(plan, loi);
   if (!row) return { verdict: "decline", why: "no sheet for this use", quotePsf: 0 };
@@ -2879,6 +2891,9 @@ export function clearAgainstPlan(
   const atQuote = loi.rentPsf + 0.005 >= quotePsf;
   const offPackage = (loi.tiPsf ?? 0) > row.maxTiPsf + 0.05
     || (loi.freeM ?? 0) > row.maxFreeM + 0.05;
+  const market = loiMarket(s, rec, h, loi);
+  const neFloor = neFloorOf(row);
+  const neScore = loiMandateScore(loi, market);
 
   if (loi.kind === "expansion" && !isMustTake(loi, rec)) {
     return { verdict: "docket", why: "an incumbent expansion changes how you program the building", quotePsf, row };
@@ -2919,21 +2934,75 @@ export function clearAgainstPlan(
       quotePsf, row,
     };
   }
-  // Workable — already at the ask, or the desk will counter to it through
-  // the same indifference / pAccept path the principal uses.
-  return { verdict: "sign", quotePsf, row };
+  // THE FLOOR IS ON WHAT NETS, NOT ON THE FACE. A letter at the ask with
+  // six free months on a three-year term and a fat allowance cleared every
+  // gate above and signed — at two-thirds of market net effective, under a
+  // sheet whose "walk-away floor" said 90%. The mandate the owner asked
+  // for is the one every asset manager writes: the least you will take,
+  // net effective, with a cap on free rent. So: signable as written only if
+  // it nets the floor; otherwise the desk counters, giving less away first;
+  // and if the sheet's own ask cannot net the floor with nothing given
+  // away, the sheet is contradicting itself and the letter is yours.
+  const signAsIs = atQuote && !offPackage && neScore + 0.005 >= neFloor;
+  const counter = trimToNeFloor(loi, planCounterTerms(loi, row, quotePsf), market, neFloor);
+  if (!signAsIs && !counter) {
+    return {
+      verdict: "docket",
+      why: `nets ${(neScore * 100).toFixed(0)}% of market against your ${(neFloor * 100).toFixed(0)}% floor, `
+        + `and the sheet's ask cannot reach the floor even with no free rent and no allowance — raise the ask or lower the floor`,
+      quotePsf, row, neScore, neFloor, signAsIs: false,
+    };
+  }
+  // Workable — already at the ask and netting the floor, or the desk will
+  // counter through the same indifference / pAccept path the principal uses.
+  return { verdict: "sign", quotePsf, row, neScore, neFloor, signAsIs, counter: counter ?? undefined };
 }
 
-function planCounterTerms(
-  loi: LOI, row: PlanRow, quotePsf: number,
-): { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; termM: number } {
+type CounterTerms = { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; termM: number };
+function planCounterTerms(loi: LOI, row: PlanRow, quotePsf: number): CounterTerms {
   return {
-    rentPsf: +Math.max(1, quotePsf).toFixed(2),
+    // A letter already over the ask is not countered DOWN to it.
+    rentPsf: +Math.max(1, quotePsf, loi.rentPsf).toFixed(2),
     tiPsf: Math.min(loi.tiPsf ?? 0, row.maxTiPsf),
     freeM: Math.min(loi.freeM ?? 0, row.maxFreeM),
     bumpPct: Math.max(bumpOf(loi), row.minBumpPct),
     termM: loi.termM,
   };
+}
+/** The signing floor a row carries — see PlanRow.minNePct. */
+export function neFloorOf(row: PlanRow): number {
+  return row.minNePct ?? row.floorPct;
+}
+/** The landlord's net effective a set of terms would net, as a share of market. */
+export function neScoreAt(loi: LOI, terms: Partial<CounterTerms>, market: number): number {
+  return loiMandateScore({
+    ...loi,
+    rentPsf: terms.rentPsf ?? loi.rentPsf,
+    tiPsf: terms.tiPsf ?? loi.tiPsf,
+    freeM: terms.freeM ?? loi.freeM,
+    bumpPct: terms.bumpPct ?? loi.bumpPct,
+    termM: terms.termM ?? loi.termM,
+  }, market);
+}
+/**
+ * BRING A COUNTER UP TO THE FLOOR, concessions first. A leasing mandate in
+ * life is written as "sign nothing under $X net effective", and the desk
+ * gets there by giving less away before it asks for more rent: free months
+ * come off first (a month at a time), then the allowance (in $5 steps). Rent
+ * is not raised above the sheet's ask here — the ask is the sheet's own
+ * decision — so a floor the ask cannot net even with nothing given away is
+ * the sheet contradicting itself, and that letter is the principal's.
+ * Returns null when the floor is out of reach.
+ */
+export function trimToNeFloor(
+  loi: LOI, terms: CounterTerms, market: number, floor: number,
+): CounterTerms | null {
+  const t = { ...terms };
+  const clears = () => neScoreAt(loi, t, market) + 0.005 >= floor;
+  if (clears()) return t;
+  while (t.freeM > 0 && !clears()) t.freeM -= 1;
+  while (t.tiPsf > 0 && !clears()) t.tiPsf = Math.max(0, t.tiPsf - 5);
+  return clears() ? t : null;
 }
 
 function planDocketLoi(
@@ -3012,11 +3081,11 @@ function executePlanLetter(
   }
   const row = cleared.row;
   const quotePsf = cleared.quotePsf;
-  if (loi.rentPsf + 0.005 >= quotePsf) {
+  if (cleared.signAsIs) {
     planTrySign(s, rec, h, loi, feeRate, who);
     return;
   }
-  const terms = planCounterTerms(loi, row, quotePsf);
+  const terms = cleared.counter ?? planCounterTerms(loi, row, quotePsf);
   bumpDeskMonth(s, "countered");
   const outcome = tenantCounterOutcome(s, rec, h, loi, terms);
   if (outcome === "took") {
@@ -3044,12 +3113,13 @@ function executePlanLetter(
   // to the principal and recreate the old referral desk.
   const market = loiMarket(s, rec, h, loi);
   const score = loiMandateScore(loi, market);
-  if (score + 0.005 >= row.floorPct && agentCanFund(s, loi, feeRate)) {
+  const floor = neFloorOf(row);
+  if (score + 0.005 >= floor && agentCanFund(s, loi, feeRate)) {
     if (planTrySign(s, rec, h, loi, feeRate, who)) {
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `${who} took ${loi.name}'s final at ${rec.address}: $${loi.rentPsf.toFixed(2)}/sf `
-          + `(${(score * 100).toFixed(0)}% of market) — inside the sheet's floor.`,
+          + `(${(score * 100).toFixed(0)}% of market net effective) — inside your ${(floor * 100).toFixed(0)}% floor.`,
       });
     }
     return;

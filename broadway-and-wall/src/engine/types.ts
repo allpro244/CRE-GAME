@@ -2221,6 +2221,18 @@ export interface PlanRow {
   holdM: number;
   stepPct: number;
   floorPct: number;
+  /**
+   * THE LEAST THE DESK MAY SIGN, net effective, as a share of the letter's
+   * market: face after free rent, less the allowance amortised over the
+   * term, plus what the bump is worth. `quotePct`/`floorPct` govern what the
+   * desk ASKS; this governs what it may accept. Free months and fit-out come
+   * out of the counter before rent does; a letter that cannot reach it is
+   * docketed with the reason. Absent on rows written before it existed —
+   * `neFloorOf` reads `floorPct` then, which is what the old "walk-away
+   * floor" label promised and the old code enforced only on a tenant's
+   * final.
+   */
+  minNePct?: number;
   /** Floors kept whole for a block user. A letter that breaks one dockets. */
   holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
 }

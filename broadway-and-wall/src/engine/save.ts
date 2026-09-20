@@ -166,6 +166,9 @@ function migrateLegacyMandateDials(state: GameState): void {
       holdM: 0,
       stepPct: 0.02,
       floorPct: floor,
+      // The old dial's floor was the promise "never sign under this"; the
+      // engine enforced it only on a tenant's final. It is the signing floor now.
+      minNePct: floor,
     };
     state.leasingPlan = starterPlan(row);
   }

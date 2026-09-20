@@ -213,6 +213,32 @@ another. Grep before you add another.
   names the era and the opening rate, the date tile's tooltip carries it,
   a drop-3 "Era" tile sits beside Market, and the Economy strip has an Era
   tile. The calendar is unchanged (building ages read off START_YEAR).
+- **The leasing mandate has a net-effective floor** (owner's ask, Sep 2026:
+  "your team automatically leases buildings and you set the least effective
+  rent you will take, with a cap on free rent"). The posted plan already
+  carried an ask, a hold-then-step-down, a free-rent cap, a TI cap, a term
+  band, a credit floor and signing authority — but its only floor was on
+  FACE rent, enforced on a tenant's final, so a letter at the ask with six
+  free months on a three-year term and $60 of TI signed at two-thirds of
+  market net effective. `PlanRow.minNePct` is the signing floor: face after
+  free rent, less TI amortised over the term, plus the bump premium
+  (`loiMandateScore`), as a share of the letter's market. `clearAgainstPlan`
+  signs as written only when the letter nets it; otherwise `trimToNeFloor`
+  builds the counter — ask, concessions capped, then free months off one at
+  a time, then TI in $5 steps — and a floor the sheet's own ask cannot net
+  dockets with the reason. Rows written before the field read `floorPct`
+  (what the old "walk-away floor" label promised); starter 0.82,
+  player-equivalent 0.90. The plan sheet now leads with "Lowest net
+  effective" (with the $/sf it means on today's index), free-rent cap and
+  TI cap, then the ask; "Walk-away floor" is "Lowest ask". The editor shows
+  before a desk holds the pen, so the mandate is written first and the pen
+  handed second. `pnpm plan-desk` asserts the gate, the trim, the docket and
+  the whole-book monotonicity; measured on six seeds × 96 months of a
+  ~100-suite book: a 72% floor signs 42.8 deals at 86% net effective (the
+  harness's blended measure) and the desk's own ledger reads 90.9%; a 95%
+  floor signs 21.2 at 91%, ledger 100.3% — the desk never averages under
+  its floor on its own measure. Baseline unmoved (the reference bots never
+  hand the pen to a desk).
 - **A cheap building is cheaper to run** — opex was one flat number per
   class for every address, so apartments ran a 3.6x fringe-to-prime rent
   spread into a 13.9x value spread ($36 to $502 a gross foot; half the flats

@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import type { BuiltClass, DeskDigest, PlanRow } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
-import { agentCashReserve, deskHoldsPen, planIsLive, planRowFor, PLAYER_EQUIVALENT_ROW } from "@/engine/leasing";
+import { agentCashReserve, deskHoldsPen, neFloorOf, planIsLive, planRowFor, PLAYER_EQUIVALENT_ROW } from "@/engine/leasing";
 import { usd } from "@/ui/format";
 import { Big } from "@/ui/panels/shared";
 
@@ -62,9 +62,43 @@ function ClassRow({ use }: { use: BuiltClass }) {
   const setPlanRow = useStore((s) => s.setPlanRow);
   const row = rowOf(game, use);
   const label = use === "office" ? "Office" : use === "retail" ? "Retail" : "Industrial";
+  const idx = game.econ.effRentIdx?.[use] ?? game.econ.rentIdx?.[use] ?? 0;
+  const neFloor = neFloorOf(row);
   return (
     <div style={{ marginTop: 12 }}>
       <div className="slider-label" style={{ marginBottom: 4 }}>{label}</div>
+      {/* THE MANDATE, in the order an owner writes one: the least you will
+          take net effective, what the desk may give away to get there, then
+          how it asks. */}
+      <Slider
+        label="Lowest net effective"
+        value={Math.round(neFloor * 100)}
+        min={60}
+        max={100}
+        step={1}
+        onChange={(v) => setPlanRow(use, { minNePct: v / 100 })}
+        marks={[{ at: 70, label: "70" }, { at: 85, label: "85" }, { at: 100, label: "par" }]}
+        format={(v) => `${v}% of market net effective — about $${(idx * v / 100).toFixed(2)}/sf/yr on today's ${label.toLowerCase()} index`}
+        hint="Face after free rent, less the allowance spread over the term, plus what the bump is worth. The desk signs nothing that nets less: free months come off the counter first, then fit-out; a letter that still cannot reach it comes to you with the reason."
+      />
+      <Slider
+        label="Max free rent"
+        value={row.maxFreeM}
+        min={0}
+        max={12}
+        step={1}
+        onChange={(v) => setPlanRow(use, { maxFreeM: v })}
+        format={(v) => v === 0 ? "no free months" : `${v} months`}
+      />
+      <Slider
+        label="Max TI"
+        value={row.maxTiPsf}
+        min={0}
+        max={120}
+        step={5}
+        onChange={(v) => setPlanRow(use, { maxTiPsf: v })}
+        format={(v) => v === 0 ? "no TI without you" : `$${v}/sf`}
+      />
       <Slider
         label="Asking vs market"
         value={Math.round(row.quotePct * 100)}
@@ -98,31 +132,13 @@ function ClassRow({ use }: { use: BuiltClass }) {
         format={(v) => `${v} pp per quarter`}
       />
       <Slider
-        label="Walk-away floor"
+        label="Lowest ask"
         value={Math.round(row.floorPct * 100)}
         min={70}
         max={Math.round(row.quotePct * 100)}
         step={1}
         onChange={(v) => setPlanRow(use, { floorPct: v / 100 })}
-        format={(v) => `${v}% of market — never quote below`}
-      />
-      <Slider
-        label="Max TI"
-        value={row.maxTiPsf}
-        min={0}
-        max={120}
-        step={5}
-        onChange={(v) => setPlanRow(use, { maxTiPsf: v })}
-        format={(v) => v === 0 ? "no TI without you" : `$${v}/sf`}
-      />
-      <Slider
-        label="Max free rent"
-        value={row.maxFreeM}
-        min={0}
-        max={12}
-        step={1}
-        onChange={(v) => setPlanRow(use, { maxFreeM: v })}
-        format={(v) => v === 0 ? "no free months" : `${v} months`}
+        format={(v) => `${v}% of market face — the step-down never quotes below this`}
       />
     </div>
   );
@@ -131,7 +147,10 @@ function ClassRow({ use }: { use: BuiltClass }) {
 export function PlanEditor() {
   const game = useStore((s) => s.game)!;
   const { setPlanAuthority, setDeskMaxSf, setSignOwnAll } = useStore.getState();
-  if (!deskHoldsPen(game)) return null;
+  // Visible whether or not a desk holds the pen: the owner writes the
+  // mandate first and hands the pen second. Posted now, it takes effect the
+  // month a desk holds the pen.
+  const live = deskHoldsPen(game);
   const plan = game.leasingPlan;
   const auth = plan?.authority ?? 1e15;
   const authSf = game.deskMaxSf ?? 0;
@@ -139,12 +158,12 @@ export function PlanEditor() {
   const preview = plan ? planRowFor(plan, { bbl: "", use: "office", kind: "new" } as never) : null;
   return (
     <div className="agent-bar" style={{ display: "block" }}>
-      <div className="agent-title">The leasing plan</div>
+      <div className="agent-title">{live ? "The leasing mandate · your desk works it" : "The leasing mandate · posted, waiting for a desk"}</div>
       <div className="hint" style={{ marginBottom: 8 }}>
-        A posted sheet, not four mandate bands. The desk counters every workable
-        letter to this ask through the same tenant model you use. Exceptions —
-        authority, expansions, tours, off-package, treasury — land on the docket.
-        {preview ? ` Office is posting ${(preview.quotePct * 100).toFixed(0)}% of market.` : ""}
+        {live
+          ? "Whoever holds the pen signs inside this sheet without asking you: at or over the ask and netting your floor, it signs; under the ask, it counters to the ask through the same tenant model you use, giving away free months and fit-out only inside the caps and only as far as your floor allows. What it cannot reach — the floor, the authority, a tour, an expansion, the treasury reserve — comes to you with the reason."
+          : "Nobody signs but you until a desk holds the pen — hand it to your leasing hire or take outside coverage above. Set the sheet now anyway: the moment a desk holds the pen, it signs inside these lines and refers the rest to you with the reason."}
+        {preview ? ` Office is posting ${(preview.quotePct * 100).toFixed(0)}% of market and signing nothing under ${(neFloorOf(preview) * 100).toFixed(0)}% net effective.` : ""}
       </div>
       {CLASSES.map((u) => <ClassRow key={u} use={u} />)}
       <div style={{ marginTop: 14 }}>

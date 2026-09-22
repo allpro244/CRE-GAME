@@ -4,6 +4,7 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital } from "@/engine/lenders";
+import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
@@ -16,9 +17,29 @@ export function TheBanks() {
   const [open, setOpen] = useState<string | null>(null);
   if (!lenders.length) return null;
   const yoursTotal = lenders.reduce((a, l) => a + l.yours, 0);
+  // THE SHEET TODAY, desk by desk: the mid-cycle rate moved by standards and
+  // your file, then the window's and the desk's own cut. This is the number
+  // the owner said never moved. It moves here, and it says why.
+  const standards = underwritingStandards(game);
+  const sheetOf = (name: string) => {
+    const p = PRODUCTS.find((x) => x.lender === name && !x.mezz && x.uwDscr > 0);
+    if (!p) return null;
+    const sheet = statedLtv(game, p);
+    return { p, sheet, today: sheet.ltv * advanceFactor(game, name) };
+  };
   return (
     <>
       <div className="page-section">The banks</div>
+      <div className="hint">
+        <b>Underwriting standards today: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)} on a −1 to +1 scale).
+        {" "}The credit window and the desks' own appetite move every sheet in town, both ways: at the top of the
+        cycle the banks write five or six points over their mid-cycle rate at a notch less coverage, and at the
+        bottom ten to twelve under at a notch more — the same survey the Fed takes of loan officers, as a number
+        you can read a quarter early. On top of that, apartments get five points, warehouses two, shops two under;
+        a worn building has three held back for the repairs on the engineer's report; and a desk you have paid
+        for years stretches up to four for you. The "Sheet today" column is that number for an office building
+        with a clean file, before this desk's own appetite is taken off it.
+      </div>
       <div className="hint">
         Every desk on this street has its own balance sheet, and when it goes wrong it goes wrong at a name, not
         at the market. Capital ratio is what they have behind the book; appetite is what is left of their advance
@@ -72,7 +93,7 @@ export function TheBanks() {
             <th>Lender</th><th>Funded by</th><th className="num">Book</th><th className="num">Capital</th>
             <th className="num">Cap ratio</th><th className="num">Income / yr</th><th className="num">Delinquent</th>
             <th className="num">Charge-offs yr</th>
-            <th className="num">Appetite</th><th className="num">Your debt</th><th>Standing</th>
+            <th className="num">Appetite</th><th className="num">Sheet today</th><th className="num">Your debt</th><th>Standing</th>
           </tr>
         </thead>
         <tbody>
@@ -108,6 +129,16 @@ export function TheBanks() {
                   <td className={"num" + (l.appetite < 0.5 ? " neg" : "")}>
                     {l.failedM !== undefined ? "—" : l.appetite.toFixed(2)}
                   </td>
+                  {(() => {
+                    const sh = sheetOf(l.name);
+                    const shut = l.failedM !== undefined || l.appetite < 0.12;
+                    return (
+                      <td className={"num" + (shut ? " neg" : "")}
+                        title={sh ? `${sh.sheet.why.join(", ")}; then ${l.name}'s own appetite and the credit window — they write about ${(sh.today * 100).toFixed(0)}% of value on an office building today. Coverage and debt yield can size it smaller.` : undefined}>
+                        {shut ? "not quoting" : sh ? `${(sh.sheet.ltv * 100).toFixed(0)}% → ${(sh.today * 100).toFixed(0)}%` : "—"}
+                      </td>
+                    );
+                  })()}
                   <td className="num">{l.yours > 0 ? usd(l.yours) : "—"}</td>
                   <td className={h.bad ? "neg" : "dim"}>{h.word}</td>
                 </tr>

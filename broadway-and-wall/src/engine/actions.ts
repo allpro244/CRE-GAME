@@ -137,13 +137,18 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
   const stab = stabViewFor(rec, s.econ, gradeOf(s, rec), uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab);
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, gradeOf(s, rec));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
   // The engine has always known which one bound and never told anybody, which
   // is why a 72% lender quoting 47% looked arbitrary rather than arithmetical.
-  const capped = prod.ltv * uwBasis;
+  // TODAY'S SHEET, not the brochure's — standards, class, condition and your
+  // file with the desk have already moved it (statedLtv). "ltv" below means
+  // the loan sits at that number; "credit" means the window, the desk's
+  // appetite or your standing cut it further.
+  const ltvCap = q.statedLtv ?? prod.ltv;
+  const capped = ltvCap * uwBasis;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
@@ -165,7 +170,9 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
       : q.dyConstrained ? "dy"
       : q.principal < capped * 0.995 ? "credit"
       : "ltv",
-    ltvCap: prod.ltv, uwDscr: prod.uwDscr,
+    ltvCap, uwDscr: prod.uwDscr,
+    /** How today's sheet was built, and why the loan is under it when it is. */
+    sheetWhy: q.sheetWhy, advanceWhy: q.advanceWhy,
     /** What the lender underwrote, and how far over it you are going. */
     appraised, uwBasis, overpay,
   };

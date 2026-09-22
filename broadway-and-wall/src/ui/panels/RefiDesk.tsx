@@ -248,8 +248,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
                     // term sheet. A 65% column beside a 25%-of-value cheque is
                     // the screen contradicting itself.
                     title={px > 0 && Math.abs(x.advanceToday - x.advanceLtv) > 0.02
-                      ? `Stated ${(x.advanceLtv * 100).toFixed(0)}%; sized at ${(x.advanceToday * 100).toFixed(0)}% of value today`
-                      : undefined}
+                      ? `Sheet today ${(x.advanceLtv * 100).toFixed(0)}% (${x.sheetWhy ?? "their sheet"}); sized at ${(x.advanceToday * 100).toFixed(0)}% of value`
+                      : x.sheetWhy ? `Sheet today: ${x.sheetWhy}` : undefined}
                   >
                     {px > 0 ? `${(x.advanceToday * 100).toFixed(0)}%` : `${((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%`}
                   </td>
@@ -297,8 +297,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
           k="Structure"
           v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
             + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
-              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% today (${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% stated)`
-              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance`)
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% today (sheet ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
             + ` / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`}
         />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />

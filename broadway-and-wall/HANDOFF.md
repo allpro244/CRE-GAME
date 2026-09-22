@@ -80,6 +80,8 @@ Recent additions worth knowing about:
 | `pnpm facility` | ~2 min | the portfolio loan, both sides — it must work AND it must bite |
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
+| `pnpm advance` | ~15s | the sheet moves: standards, class, condition, your file, the fund's own margin. In `pnpm check`. |
+| `pnpm ltvdist` | ~10 min | what advance the market actually offers, every desk on every live listing, cut every way. Report, not gate. |
 | `pnpm shortage` | ~2 min | shortage-side mirror of `glut`/`vacdist`: growing vs declining seeds, jobs-shock overshoot. Report, not gate. |
 | `pnpm test` | ~22 min | states the engine should never reach |
 
@@ -175,6 +177,31 @@ another. Grep before you add another.
 ---
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
+
+- **The sheet moves — underwriting standards, class, condition, your file**
+  (Sep 2026). The owner: "you always get to borrow the same LTV". Measured
+  exact: `pnpm ltvdist` (new report, six seeds × 30 years, every desk on
+  every live listing) had the best senior advance at 53-62% between the
+  quartiles in EVERY cut — window open or shut, boom or bust, every class.
+  Three causes: product `ltv` was a brochure constant; `advanceFactor` could
+  only cut (credit index above 1 did nothing); and the debt fund was funded
+  at index + 1.1 but earned a BANK's index + 1.9 on its book, so its margin
+  factor sat on the floor forever (appetite median 0.31, flush) and the 80%
+  desk wrote 53%. Now `underwritingStandards` (−1…+1 from `creditIdx` and
+  `bankApp`) moves every desk's sheet inside its own band (`ADVANCE_BAND`,
+  up less than down), `statedLtv` adds class (+5 MF, +2 industrial, −2
+  retail), the engineer's report (−3 worn/obsolete) and your file (+4 max,
+  `relAdvance`), `sizeRest` loosens DSCR/DY at the top only, and lenders
+  carry `BOOK_SPREAD`/`NORMAL_NIM` per kind (banks numerically unchanged).
+  `buyQuote.ltvCap` is the sheet TODAY and carries `sheetWhy`/`advanceWhy`;
+  the acquisition card, refi desk and The Banks ("Sheet today" column,
+  standards word) print it. After: best permanent desk p50 60% open → 42%
+  shut; fund p50 0.97. `pnpm advance` gates it and is in `pnpm check`.
+  BASELINE.json regenerated: the six-seed check read pop −6% / land −29%,
+  a re-roll — twelve seeds on both engines give the same city distributions
+  (pop +1.8%, land +2%, buildings equal); what moved one way is the street's
+  own leverage (+5 pts) and failures (8.3 → 10.3 per 25 years), which is the
+  mechanism. ECONOMY.md "You always got to borrow the same LTV".
 
 - **A standing roll lets a suite, not the vacancy fraction** (Sep 2026).
   The rentable move exposed a gap in `buildRentRoll`: on a multi-plate leg

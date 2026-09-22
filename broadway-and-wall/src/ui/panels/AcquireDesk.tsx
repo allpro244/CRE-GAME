@@ -1124,14 +1124,14 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
                   + `Their collateral is the building, not your enthusiasm for it.`
                 : max.bind === "ltv"
-                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
+                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate today (${max.sheetWhy ?? "their sheet"}) — the ceiling, and the income clears it comfortably.`
                 : max.bind === "dscr"
                   ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
                     + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
                     + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
                   : max.bind === "dy"
                     ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
-                    : `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, cut back by the credit window and your own record. Leverage comes back when money does.`}
+                    : `Their sheet says ${(max.ltvCap * 100).toFixed(0)}% today (${max.sheetWhy ?? "their sheet"}), and you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — ${max.advanceWhy ?? "cut back by the credit window and your own record"}. Leverage comes back when money does.`}
             </div>
           )}
           {max.principal <= 0 && (

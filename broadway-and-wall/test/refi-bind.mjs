@@ -69,8 +69,12 @@ function quoteBook(g, owned, label) {
     const { quotes } = E.refiQuotes(g, parcels, bbl);
     const open = quotes.filter((q) => q.available && q.maxProceeds > 0);
     console.log(`${rec?.address ?? bbl}  ${rec?.class}  value $${(v / 1e6).toFixed(2)}M  NOI $${(noi / 1e6).toFixed(2)}M  implied cap ${cap.toFixed(2)}%`);
+    // THE SAME QUOTE THE DESK MADE: the collateral view's class, the
+    // stabilised leg and the building's condition — the sheet moves with the
+    // engineer's report now, so a legs call without it is a different loan.
+    const coll = E.debtCollateral(g, parcels, h, rec);
     for (const q of open.slice(0, 5)) {
-      const raw = E.quote(g, E.productById(q.id), v, noi, rec?.class);
+      const raw = E.quote(g, E.productById(q.id), v, noi, coll.quoteClass, false, coll.stab, h.condition);
       const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
       console.log(
         `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `

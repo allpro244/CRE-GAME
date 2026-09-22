@@ -305,6 +305,135 @@ export function advanceFactor(s: GameState, lender: string, ease = 1): number {
 }
 
 /**
+ * UNDERWRITING STANDARDS — the number the Fed's loan-officer survey has been
+ * measuring since 1990, as a signed index: −1 is the tightest the market gets,
+ * 0 is an ordinary year, +1 is the top of the cycle.
+ *
+ * WHY IT EXISTS. Measured over six seeds and thirty years of live listings
+ * (`pnpm ltvdist`), the best senior advance any desk in town would write sat
+ * at 53-62% between the first and third quartile IN EVERY CUT — credit window
+ * open or shut, expansion or recession, every era, every class, full or half
+ * empty. A stated rate was a constant on a term sheet; the only things that
+ * moved it were `advanceFactor` (which can only ever CUT — a credit index
+ * above one did nothing) and the coverage tests, which are also constants.
+ * So the sheet a borrower was quoted in 2006 was the sheet they were quoted
+ * in 2009, and the owner's complaint — "you always get to borrow the same
+ * LTV" — was arithmetically exact.
+ *
+ * WHAT ACTUALLY MOVES A SHEET. Two things, and both are already in the engine
+ * as state: whether the capital markets are open (`creditIdx`, which the
+ * phase machine drives and the banks' own books drag), and whether the
+ * desks in town have capital and margin to lend (`bankApp`, the
+ * book-weighted appetite of the live lenders). When both are strong, every
+ * desk competes for the same paper by loosening — five points on the advance,
+ * a notch off the coverage, a point off the debt-yield floor — which is
+ * exactly what 1986, 2006 and 2021 looked like. When either goes, the same
+ * desks pull ten to fifteen points and a coverage notch back, and the ones
+ * that sell their paper on close outright (`windowOpen`).
+ *
+ * The cut on the way down is bigger than the stretch on the way up, in every
+ * band below, because that asymmetry is the measured shape of the survey:
+ * standards tighten in a quarter and loosen over years.
+ */
+const clampSigned = (x: number) => Math.max(-1, Math.min(1, x));
+export function underwritingStandards(s: GameState): number {
+  const ci = s.econ.creditIdx ?? 1;
+  const window = clampSigned((ci - 0.90) / 0.22);
+  // appetite runs 0-1.15: the whole street flush is +1, the street at 0.65 is −1
+  const app = s.bankApp ?? 0.9;
+  const balance = clampSigned((app - 0.90) / 0.25);
+  return clampSigned(0.65 * window + 0.35 * balance);
+}
+
+/** One word for the standards index, for a card or a docket. */
+export function standardsWord(st: number): string {
+  return st > 0.5 ? "loose" : st > 0.15 ? "easing" : st > -0.15 ? "ordinary" : st > -0.5 ? "tight" : "shut";
+}
+
+/**
+ * HOW FAR EACH DESK'S SHEET MOVES WITH STANDARDS, in points of advance,
+ * up at +1 and down at −1. A life company barely moves — it was never the
+ * marginal lender at the top and it does not have to retreat at the bottom.
+ * The conduit and the banks are the marginal lenders, so they move most. Land
+ * money is the first to go and the last to come back, which is why its band
+ * is the widest of all.
+ */
+const ADVANCE_BAND: Record<string, { up: number; down: number }> = {
+  harbor: { up: 0.05, down: 0.10 },
+  savings: { up: 0.06, down: 0.12 },
+  savings25: { up: 0.06, down: 0.12 },
+  pelican: { up: 0.03, down: 0.06 },
+  conduit: { up: 0.05, down: 0.12 },
+  cordage: { up: 0.05, down: 0.10 },
+  mezz: { up: 0.05, down: 0.10 },
+  land: { up: 0.10, down: 0.15 },
+};
+
+/**
+ * PROPERTY TYPE MOVES THE SHEET. Apartments are the most financeable asset
+ * there is — the agencies stand behind them and every bank knows a hundred
+ * flats do not go dark at once — and they get five points over the sheet.
+ * Warehouses two. Shops two under, because retail income is one tenant's
+ * lease away from nothing. Offices are the sheet.
+ */
+const CLASS_ADVANCE: Record<string, number> = { multifamily: 0.05, industrial: 0.02, office: 0, retail: -0.02 };
+
+/**
+ * THE ENGINEER'S REPORT. A worn building closes with an immediate-repairs
+ * holdback — the desk funds the loan and keeps back the cost of the work it
+ * saw on the property condition assessment. Three points of advance is what
+ * that comes to on an ordinary tired building; an obsolete one, the same, and
+ * the life company will not look at either.
+ */
+const REPAIRS_HOLDBACK = 0.03;
+
+/**
+ * A FILE EARNS ADVANCE AS WELL AS SPREAD. Years of quiet, performing paper
+ * with one desk are worth up to four points of proceeds there and nothing
+ * anywhere else — the same relationship curve that earns the coupon discount
+ * (`relDiscount`), on the same desks: not the conduit, which sells the loan
+ * and has no memory, and not the debt fund, which prices you and does not
+ * befriend you.
+ */
+export function relAdvance(s: GameState, p: LoanProduct): number {
+  if (p.window || p.id === "cordage" || p.id === "mezz") return 0;
+  const t = Math.max(0, Math.min(1, (lenderRelOf(s, p.lender) - 20) / 80));
+  return +(0.04 * Math.pow(t, 1.35)).toFixed(4);
+}
+
+/**
+ * THE SHEET TODAY. The product's `ltv` is its mid-cycle rate; what the desk
+ * actually writes on its term sheet this month is that rate moved by
+ * standards, by the property type, by the engineer's report and by your file
+ * with them, in that order. This is BEFORE `advanceFactor` — the credit
+ * window's cut and the desk's own appetite come off this number, and the
+ * concentration tests and your standing after that. `quote` reads it; the
+ * banks page prints it; `buyQuote` reports it as `ltvCap` so the acquisition
+ * card says the number that was actually on the sheet.
+ *
+ * Clamped a hair under the covenant `maxLTV`: no desk writes a loan that is
+ * in breach of its own covenant on the day it closes.
+ */
+export function statedLtv(
+  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false,
+): { ltv: number; why: string[] } {
+  const st = underwritingStandards(s);
+  const band = ADVANCE_BAND[product.id] ?? { up: 0.05, down: 0.10 };
+  const cyc = st >= 0 ? st * band.up : st * band.down;
+  const cls = klass && klass !== "land" && product.uwDscr > 0 ? (CLASS_ADVANCE[klass] ?? 0) : 0;
+  const worn = product.uwDscr > 0 && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
+  const rel = street ? 0 : relAdvance(s, product);
+  const ltv = Math.max(0.20, Math.min(product.maxLTV - 0.03, product.ltv + cyc + cls + worn + rel));
+  const pts = (x: number) => `${x > 0 ? "+" : "−"}${Math.abs(Math.round(x * 100))}`;
+  const why: string[] = [`their ${Math.round(product.ltv * 100)}% sheet`];
+  if (Math.abs(cyc) >= 0.005) why.push(`${pts(cyc)} with standards ${standardsWord(st)}`);
+  if (cls) why.push(`${pts(cls)} for ${klass}`);
+  if (worn) why.push(`${pts(worn)} held back for the repairs on the engineer's report`);
+  if (rel >= 0.005) why.push(`${pts(rel)} for your file with them`);
+  return { ltv: +ltv.toFixed(4), why };
+}
+
+/**
  * WHAT THE MARKET WILL REFINANCE FOR A BORROWER WHO IS NOT YOU.
  *
  * A firm on this street with a balloon landing walks the same desks your own
@@ -505,6 +634,10 @@ export interface Quote {
   advanceLtvToday?: number;
   /** Why that is not the stated rate, when it is not. */
   advanceWhy?: string;
+  /** The desk's sheet TODAY — its mid-cycle advance moved by standards, class, condition and your file. */
+  statedLtv?: number;
+  /** How today's sheet was built from the mid-cycle rate, in the order the moves were made. */
+  sheetWhy?: string;
   /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
   byLtv?: number;
   byDscr?: number;
@@ -541,7 +674,7 @@ export function stabViewFor(
  * it. Everything else — the window, the desk's appetite, the three tests — is
  * the same arithmetic, because it is the same credit market.
  */
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView): Quote {
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string): Quote {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -566,8 +699,10 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
   const adv = advanceFactor(s, product.lender, crunchEase);
+  // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
+  const sheet = statedLtv(s, product, klass, condition, street);
   const byLtv = Math.min(conc.capRoom,
-    product.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
+    sheet.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
   // WHAT "ADVANCE RATE" MEANS TODAY. The desk's stated advance is a number on
   // a term sheet; what it writes is that number after the credit window, the
   // lender's own appetite, the borrower's standing and the desk's book have
@@ -577,6 +712,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // button. So the leg carries its effective rate and the reason it is not
   // the stated one, in the order the cuts were taken.
   const advanceLtvToday = price > 0 ? byLtv / price : 0;
+  const sheetWhy = street ? undefined : sheet.why.join(", ");
   const advanceWhy = (() => {
     if (street || price <= 0) return undefined;
     const parts: string[] = [];
@@ -589,7 +725,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     }
     if (st.advanceCut > 0.005) parts.push(`your standing takes ${Math.round(st.advanceCut * 100)}% off the advance`);
     if (conc.mult < 0.995 && conc.why) parts.push(conc.why);
-    if (Number.isFinite(conc.capRoom) && conc.capRoom < product.ltv * adv * (1 - st.advanceCut) * conc.mult * price) {
+    if (Number.isFinite(conc.capRoom) && conc.capRoom < sheet.ltv * adv * (1 - st.advanceCut) * conc.mult * price) {
       parts.push(`${product.lender} already holds enough of your paper — ${usdM(conc.capRoom)} is all the single-name room they have`);
     }
     return parts.length ? parts.join("; ") : undefined;
@@ -623,6 +759,8 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
       holdCapped: true,
       advanceLtvToday,
       advanceWhy,
+      statedLtv: sheet.ltv,
+      sheetWhy,
     };
   }
   if (!street && product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
@@ -630,9 +768,9 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.
   if (product.uwDscr <= 0) {
-    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy };
+    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
   }
-  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why, advanceLtvToday, advanceWhy };
+  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
 }
 
 /**
@@ -661,9 +799,16 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
  * appraisal whatever the plan says — you cannot borrow the upside twice.
  */
 function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView) {
-  void s; void price;
+  void price;
+  // THE COVERAGE TESTS MOVE WITH STANDARDS TOO, and in both directions. A
+  // crunch adds a quarter-turn of coverage and a third to the debt-yield
+  // floor (the `tight` terms, which were always here); the top of the cycle
+  // takes seven hundredths off the coverage and a tenth off the floor, which
+  // is 1.25x becoming 1.18x and 9% becoming 8% — the 2006 conduit sheet,
+  // and the reason a boom's loans are the ones that go wrong.
+  const loose = Math.max(0, underwritingStandards(s));
   // DSCR gate: size the loan so underwriting NOI covers debt service
-  const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.25 * tight);
+  const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.25 * tight - 0.07 * loose);
   const i = ratePct / 100;
   const byDscrIO = maxAnnualDS / i;
   const qp = monthlyPayment(1, ratePct, product.amortYears) * 12; // annual DS per $1
@@ -674,7 +819,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // lender still has no equity underneath them. Since 2009 the desk also
   // sizes on NOI ÷ proceeds, and in a cheap-money market this is the binding
   // constraint far more often than LTV is.
-  const dyFloor = product.debtYield * (1 + 0.35 * tight);
+  const dyFloor = product.debtYield * (1 + 0.35 * tight - 0.12 * loose);
   const byDebtYield = dyFloor > 0 ? Math.max(0, noiYr) / dyFloor : Infinity;
   const inPlace = Math.max(0, Math.round(Math.min(byLtv, byDscr, byDebtYield)));
   // THE STABILISED LEG. Capped by the as-is advance as well, because the
@@ -727,7 +872,7 @@ export function originate(
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (product.minCondition === "good" && condition !== undefined && condition !== "good") return null;
-  const full = quote(s, product, price, noiYr, klass, false, stab);
+  const full = quote(s, product, price, noiYr, klass, false, stab, condition);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0
@@ -1068,7 +1213,7 @@ export function tickLoan(
         && !(p.minCondition === "good" && h.condition !== undefined && h.condition !== "good"));
     const fee = Math.round(loan.balance * REFI_FEE);
     const sized = ladder.map((p) => {
-      const raw = quote(s, p, value, noi, quoteClass, false, stab);
+      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
     });
     // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
@@ -1095,7 +1240,7 @@ export function tickLoan(
     // No desk open at all is still an answer: a zero-proceeds quote, which walks
     // straight into the gap-cheque and workout branches below.
     const product = pick?.p ?? PRODUCTS[0];
-    const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab), principal: 0 };
+    const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab, h.condition), principal: 0 };
     let renewed = false;
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
@@ -1298,7 +1443,8 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
     return { ...empty, why: "Cordage will not look at mezz for you right now." };
   }
   const value = ownedHoldingValueFromRec(s, rec, h);
-  const room = Math.max(0, value * product.ltv - h.loan.balance);
+  // the stack tops out at the mezz desk's sheet TODAY — 85% mid-cycle, less in a crunch
+  const room = Math.max(0, value * statedLtv(s, product, rec.class, h.condition).ltv - h.loan.balance);
   const principal = Math.floor(room / 25_000) * 25_000;
   if (principal < 250_000) {
     return { ...empty, why: "No room behind the senior to the 85% stack — pay down the first lien or wait for value." };
@@ -1431,6 +1577,8 @@ export interface RefiQuote {
   bindingWhy?: string;
   /** The advance-rate half of that sentence on its own — the credit window, appetite, standing or book — so a desk whose `why` already names the haircut does not lose it. */
   advanceWhy?: string;
+  /** How today's sheet was built from the mid-cycle rate. */
+  sheetWhy?: string;
   /** What the desk advanced today as a share of value, after every cut. */
   advanceToday: number;
   /** The rent-roll haircut applied after sizing (concentration, rollover, one trade), 1 when none. */
@@ -1525,7 +1673,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
   const onFacility = !!s.facility?.bbls.includes(bbl);
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, quoteClass, false, stab);
+    const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const annualDs = p.ioM > 0
       ? (q.principal * q.ratePct) / 100
@@ -1544,7 +1692,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
       // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,
-      advanceLtv: p.ltv,
+      // The sheet TODAY — standards, class, condition and your file — not the brochure.
+      advanceLtv: raw.statedLtv ?? p.ltv,
+      sheetWhy: raw.sheetWhy,
       noiUw: noi,
       minDSCR: p.minDSCR,
       // HOLD SIZE OUTRANKS THE THREE UNDERWRITING TESTS, because it is not one
@@ -1647,7 +1797,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
   }
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
-  const full = quote(next, product, value, noi, quoteClass, false, stab);
+  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;

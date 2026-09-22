@@ -1169,3 +1169,97 @@ between the extreme fifths against the 2-2.5x the `LOC_SPREAD` comment cites
 for the business) and a small cap-rate location term; retail's is its own
 footfall gradient, by design. Both are calibration questions for
 `locationRentMult`, not for the expense line.
+
+# YOU ALWAYS GOT TO BORROW THE SAME LTV — fixed
+
+The owner's complaint, verbatim, and measured exact. `pnpm ltvdist` over six
+seeds and thirty years of live listings, every income desk quoted on every
+built listing, the best senior advance any desk would write, cut every way:
+
+    credit window open ≥0.95   p50 58%      phase expansion   p50 59%
+    credit window 0.40-0.60    p50 60%      phase recession   p50 56%
+    era disinflation           p50 59%      class multifamily p50 58%
+    era zirp                   p50 57%      class office      p50 58%
+    occupancy ≥90%             p50 59%      index rate <2%    p50 62%
+    occupancy <50%             p50 53%      index rate 6-9%   p50 55%
+    overall  p5 46%  p25 53%  p50 58%  p75 62%  p95 69%
+
+Three things made the sheet a constant. Each product's `ltv` was a number on
+a brochure that nothing moved. `advanceFactor` could only cut — a credit index
+above one did nothing, so the top of the cycle looked like the middle. And the
+debt fund, the one desk whose sheet says 80%, was funded at index + 1.1 and
+earned index + 1.9 on its book like a bank, so a bank's margin formula sat on
+its floor in every month of every run (appetite median 0.31 with capital at
+23-26% against a 22% target — flush and rationing forever) and the 80% desk
+wrote 53%, under the hometown bank.
+
+What moves a sheet in life is the loan-officer survey: standards ease at the
+top of a cycle because every desk is competing for the same paper, and
+tighten in a quarter when either the capital markets or the desks' own
+capital go. Both are already state here. `underwritingStandards` is
+0.65 × the credit window (`creditIdx`, centred at 0.90, ±0.22 to the rails)
++ 0.35 × the street's book-weighted appetite (`bankApp`, centred at 0.90,
+±0.25), clamped to −1…+1. Each desk's sheet moves within its own band around
+the mid-cycle rate — up less than down, because standards loosen over years
+and tighten in a quarter:
+
+    harbor    68%   +5 / −10        conduit   75%   +5 / −12
+    savings   72%   +6 / −12        cordage   80%   +5 / −10
+    pelican   58%   +3 / −6         mezz      85%   +5 / −10
+    land      50%  +10 / −15  (first to go, last back)
+
+then property type (apartments +5, warehouses +2, shops −2, offices the
+sheet), the engineer's report (a worn or obsolete building has 3 points held
+back for the repairs), and your file with the desk (up to +4 on the same
+relationship curve as the coupon discount; not the conduit, which sells the
+loan, nor the debt fund, which prices you). The coverage tests move with
+standards too, and only at the top — the `tight` terms already did the
+bottom: at +1 the underwritten DSCR drops 0.07 (1.25x → 1.18x) and the
+debt-yield floor 12% (9% → 7.9%), which is the 2006 conduit sheet and the
+reason a boom's loans are the ones that go wrong. `advanceFactor`, the
+concentration tests and your standing come off the sheet after, as before.
+
+The fund's book yields index + 4.5 now (bridge at +4.1 floating, mezz at +8),
+and every kind rations against its OWN normal margin (`NORMAL_NIM`: a bank's
+4.1 points, the insurer's 3.3, the conduit's 1.6 gain-on-sale, the fund's
+3.4) — the bank's original curve expressed as a share of it, so a bank is
+numerically unchanged and a conduit earning its whole margin is at 1 rather
+than at half.
+
+After, same six seeds, same cuts (`pnpm ltvdist`, `pnpm advance` gates the
+mechanism):
+
+    best senior advance, by credit window   open ≥0.95 p50 75%  ·  0.60-0.80 p50 62%  ·  <0.60 p50 54%
+    best PERMANENT desk (banks, life, conduit)   open 60%  ·  0.80-0.95 55%  ·  0.60-0.80 48%  ·  shut 42%
+    hometown bank, sheet today   open 71% → shut 59%;  written p50 60% → 42%
+    index rate <2% p50 78%  ·  6-9% p50 61%          overall p5 48%  p25 60%  p50 69%  p75 76%  p95 84%
+    Cordage appetite p50 0.31 → 0.97;  conduit 0.33 → 0.47 (shut 31% of months, as before)
+
+The banks' written advance moves less than their sheets because coverage and
+debt yield still size a low-cap building in a cheap-money era (harbor: DSCR
+binds 44% of the time with the window open) — which is the 2021 market, not a
+defect.
+
+What it did to the city. `pnpm baseline:check` on the six standing seeds
+read population −6%, land median −29% and retail vacancy doubled, which is
+the signature the file's own header warns about: a change that moves money
+changes the number of draws and re-rolls the century. Twelve seeds, both
+engines, same city, 300 months (`scratchpad/abdist.mjs`, means):
+
+                       before    after
+    population         40,384   41,101      land median $/sf   108    111
+    jobs               22,296   22,499      office rent idx   46.5   47.5
+    buildings           900.3    900.3      retail rent idx   26.4   30.5
+    floor area (M sf)   10.71    10.57      retail vacancy    7.7%   6.9%
+    street debt/basis     84%      89%      rival failures /25y  8.3   10.3
+    bankApp (mean)       0.83     0.89      city starts (sf)  17.8k  21.0k
+
+Per seed the city metrics move both ways (550991 land 69 → 183, 12007
+120 → 74); the distributions are the same. What moves one way is the credit
+market: the street carries five points more debt, starts more, and loses a
+quarter more firms over a quarter-century — a boom's loans are the ones that
+go wrong, and that is now true of the street's as well as yours. BASELINE.json
+was regenerated on this commit for that reason. The acquisition card prints the sheet and how it was built ("their
+68% sheet, +5 for multifamily, −3 held back for the repairs on the engineer's
+report"), the refinance desk carries the same, and The Banks page has a
+"Sheet today" column and the standards word at the top.

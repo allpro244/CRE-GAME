@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
+import { standardsWord, underwritingStandards } from "@/engine/debt";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
@@ -464,6 +465,10 @@ export function EconomyPage() {
             bad={e.rateRegime > 9} />
         )}
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
+        {/* THE SHEET MOVES. The window and the desks' own appetite set the
+            standards every lender in town writes to — see The Banks for the
+            sheet desk by desk. */}
+        <Big label="Underwriting standards" value={standardsWord(underwritingStandards(game))} bad={underwritingStandards(game) < -0.5} />
         <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
         <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} />
         <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} />

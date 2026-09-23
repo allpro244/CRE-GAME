@@ -178,6 +178,14 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **The leasing mandate folds per asset type** (Sep 2026). Three sheets of
+  seven sliders stacked was a wall. `PlanSheet` now renders one drop-down per
+  class (office, retail, industrial — `COMMERCIAL_PLAN_USES`, exported): the
+  head prints the posted line (ask, NE floor, free, TI) and what you hold in
+  the class (buildings, rentable feet, letters in); it opens on click and
+  remembers per class in localStorage, starting folded for a class you own
+  nothing in. A note says apartments have no sheet (flats let off the roll).
+  UI only; no engine change.
 - **The sheet moves — underwriting standards, class, condition, your file**
   (Sep 2026). The owner: "you always get to borrow the same LTV". Measured
   exact: `pnpm ltvdist` (new report, six seeds × 30 years, every desk on

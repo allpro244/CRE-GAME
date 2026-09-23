@@ -2710,7 +2710,7 @@ export function playerEquivalentPlan(): LeasingPlan {
   };
 }
 
-const COMMERCIAL_PLAN_USES: BuiltClass[] = ["office", "retail", "industrial"];
+export const COMMERCIAL_PLAN_USES: BuiltClass[] = ["office", "retail", "industrial"];
 
 /**
  * Starter sheet when a desk holds the pen and no plan is posted.

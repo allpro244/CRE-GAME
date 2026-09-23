@@ -4,6 +4,7 @@
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec, concentration, industryConcentration } from "./value";
+import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
@@ -260,7 +261,19 @@ export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string):
   let mult = 1; let why: string | undefined;
   if (klass && klass !== "land" && l.classBook) {
     const tot = Object.values(l.classBook).reduce((a, b) => a + b, 0);
-    const classCap = l.kind === "bank" ? 0.45 : l.kind === "life" ? 0.55 : l.kind === "conduit" ? 0.65 : 1;
+    // A DESK IN AN APARTMENT TOWN IS AN APARTMENT LENDER. The cap was a flat
+    // 45% of the book in one class, and in a city whose stock is half flats
+    // every bank sat over it from the first month and took a slice off every
+    // apartment loan for ever — "First Harbor is already 48% multifamily
+    // against a 45% limit", on a town that is 48% multifamily. A
+    // concentration is a book that leans further into a class than the town
+    // it lends to; the cap is the kind's floor or a quarter over the town's
+    // own mix, whichever is higher.
+    const stock = s.econ.stock;
+    const stockTot = stock ? Object.values(stock).reduce((a, b) => a + b, 0) : 0;
+    const townShare = stock && stockTot > 0 ? (stock[klass as keyof typeof stock] ?? 0) / stockTot : 0;
+    const kindCap = l.kind === "bank" ? 0.45 : l.kind === "life" ? 0.55 : l.kind === "conduit" ? 0.65 : 1;
+    const classCap = Math.min(0.95, Math.max(kindCap, townShare * 1.25));
     const share = tot > 0 ? (l.classBook[klass] ?? 0) / tot : 0;
     if (tot > 40_000_000 && classCap < 1 && share > classCap) {
       const over = (share - classCap) / Math.max(0.05, 1 - classCap);
@@ -299,9 +312,18 @@ function usdM(x: number): string {
 }
 
 export function advanceFactor(s: GameState, lender: string, ease = 1): number {
-  const tight = Math.max(0, 1 - (s.econ.creditIdx ?? 1));
+  // THE WINDOW IS COUNTED ONCE. This carried `(1 − 0.30 × tight)` as well as
+  // the desk's appetite, and when the standards band arrived (the same
+  // credit index, moving the sheet itself) a shut window cut the hometown
+  // bank twice: 68 − 10 on the sheet, then × 0.86 on the factor, to 50% —
+  // against the 58% the band was written to produce, and measured on a full
+  // apartment building at 49% of the mark and 2.1x coverage. The window now
+  // lives in `statedLtv` (with `ease` for the hometown bank's friends) and
+  // this is what its name says: this desk's own balance sheet, as a
+  // multiplier on whatever the sheet reads today.
+  void ease;
   const app = lenderAppetite(s, lender);
-  return (1 - 0.30 * tight * ease) * Math.min(1.02, 0.55 + 0.45 * app);
+  return Math.min(1.02, 0.55 + 0.45 * app);
 }
 
 /**
@@ -415,11 +437,13 @@ export function relAdvance(s: GameState, p: LoanProduct): number {
  * in breach of its own covenant on the day it closes.
  */
 export function statedLtv(
-  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false,
+  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, ease = 1,
 ): { ltv: number; why: string[] } {
   const st = underwritingStandards(s);
   const band = ADVANCE_BAND[product.id] ?? { up: 0.05, down: 0.10 };
-  const cyc = st >= 0 ? st * band.up : st * band.down;
+  // `ease` is the hometown bank cutting a friend slack in a crunch: half the
+  // retreat, none of the stretch — see crunchEase in quote.
+  const cyc = st >= 0 ? st * band.up : st * band.down * ease;
   const cls = klass && klass !== "land" && product.uwDscr > 0 ? (CLASS_ADVANCE[klass] ?? 0) : 0;
   const worn = product.uwDscr > 0 && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
   const rel = street ? 0 : relAdvance(s, product);
@@ -700,7 +724,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
   const adv = advanceFactor(s, product.lender, crunchEase);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
-  const sheet = statedLtv(s, product, klass, condition, street);
+  const sheet = statedLtv(s, product, klass, condition, street, crunchEase);
   const byLtv = Math.min(conc.capRoom,
     sheet.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
   // WHAT "ADVANCE RATE" MEANS TODAY. The desk's stated advance is a number on
@@ -717,11 +741,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     if (street || price <= 0) return undefined;
     const parts: string[] = [];
     if (adv < 0.97) {
-      parts.push(tight > 0.05 && app < 0.95
-        ? `the credit window is ${tight > 0.5 ? "shut" : "tight"} and ${product.lender} has little appetite — they advance ${Math.round(adv * 100)}% of their stated rate`
-        : tight > 0.05
-        ? `the credit window is ${tight > 0.5 ? "shut" : "tight"} — the desk advances ${Math.round(adv * 100)}% of its stated rate`
-        : `${product.lender} is short of appetite — they advance ${Math.round(adv * 100)}% of their stated rate`);
+      parts.push(`${product.lender} is short of appetite — they advance ${Math.round(adv * 100)}% of today's sheet`);
     }
     if (st.advanceCut > 0.005) parts.push(`your standing takes ${Math.round(st.advanceCut * 100)}% off the advance`);
     if (conc.mult < 0.995 && conc.why) parts.push(conc.why);
@@ -754,7 +774,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     return {
-      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined),
+      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass),
       concWhy: conc.why,
       holdCapped: true,
       advanceLtvToday,
@@ -770,7 +790,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (product.uwDscr <= 0) {
     return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
   }
-  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
+  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
 }
 
 /**
@@ -798,17 +818,20 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
  * The as-is advance still caps it. A lender lends against the lesser of cost and
  * appraisal whatever the plan says — you cannot borrow the upside twice.
  */
-function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView) {
-  void price;
-  // THE COVERAGE TESTS MOVE WITH STANDARDS TOO, and in both directions. A
-  // crunch adds a quarter-turn of coverage and a third to the debt-yield
-  // floor (the `tight` terms, which were always here); the top of the cycle
-  // takes seven hundredths off the coverage and a tenth off the floor, which
-  // is 1.25x becoming 1.18x and 9% becoming 8% — the 2006 conduit sheet,
-  // and the reason a boom's loans are the ones that go wrong.
-  const loose = Math.max(0, underwritingStandards(s));
+function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView, klass?: string) {
+  void price; void tight;
+  // THE COVERAGE TESTS MOVE WITH STANDARDS, in both directions and on the
+  // one variable. A shut window adds fifteen hundredths of coverage and a
+  // quarter to the debt-yield floor (1.25x → 1.40x, 9% → 11.25%: the 2009
+  // bank sheet); the top of the cycle takes seven hundredths off the
+  // coverage and a tenth off the floor (1.18x, 7.9%: the 2006 conduit
+  // sheet, and the reason a boom's loans are the ones that go wrong). These
+  // used to read `tight` (1 − creditIdx) on the way down and standards on
+  // the way up — two variables for one cycle.
+  const st = underwritingStandards(s);
+  const loose = Math.max(0, st), shut = Math.max(0, -st);
   // DSCR gate: size the loan so underwriting NOI covers debt service
-  const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.25 * tight - 0.07 * loose);
+  const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.15 * shut - 0.07 * loose);
   const i = ratePct / 100;
   const byDscrIO = maxAnnualDS / i;
   const qp = monthlyPayment(1, ratePct, product.amortYears) * 12; // annual DS per $1
@@ -819,7 +842,12 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // lender still has no equity underneath them. Since 2009 the desk also
   // sizes on NOI ÷ proceeds, and in a cheap-money market this is the binding
   // constraint far more often than LTV is.
-  const dyFloor = product.debtYield * (1 + 0.35 * tight - 0.12 * loose);
+  // THE DEBT-YIELD FLOOR IS LOWER ON APARTMENTS. The agencies write flats at
+  // a seven-to-eight per cent debt yield where an office desk wants nine,
+  // because a hundred households do not go dark on one date. A bank in an
+  // apartment town sizes to the same fact or writes nothing. Fifteen per
+  // cent off the floor is that gap.
+  const dyFloor = product.debtYield * (klass === "multifamily" ? 0.85 : 1) * (1 + 0.25 * shut - 0.12 * loose);
   const byDebtYield = dyFloor > 0 ? Math.max(0, noiYr) / dyFloor : Infinity;
   const inPlace = Math.max(0, Math.round(Math.min(byLtv, byDscr, byDebtYield)));
   // THE STABILISED LEG. Capped by the as-is advance as well, because the
@@ -1552,7 +1580,10 @@ export interface RefiQuote {
   ratePct: number;
   maxProceeds: number;
   ltvAtMax: number;
+  /** Coverage at the lender's maximum, on the payment the desk sized to (amortising where the product amortises inside its term). */
   dscrAtMax: number;
+  /** The same during the interest-only period, where there is one. */
+  dscrIoAtMax: number;
   debtYieldAtMax: number;
   /**
    * `maxLTV` is the covenant ceiling (breach test). `advanceLtv` is the sizing
@@ -1606,8 +1637,26 @@ export interface RefiQuote {
  * is why single-tenant net-lease deals can be financed to the eyebrows and
  * multi-tenant buildings with the same NOI cannot.
  */
-export function collateralHaircut(h: Holding, month: number, econ?: Econ): { mult: number; why?: string } {
+export function collateralHaircut(h: Holding, month: number, econ?: Econ, rec?: ParcelRecord): { mult: number; why?: string } {
   if (!h.tenants.length) return { mult: 1 };
+  // WHAT THIS IS, AND WHAT IT WAS. A desk that sees one tenant paying most of
+  // the roll, or most of the roll expiring inside the term, or every tenant
+  // in one contracting trade, does not walk — it sizes to a notch more
+  // coverage and holds a re-leasing reserve. That is worth a few points of
+  // proceeds. This used to take up to HALF the loan (floor 0.5): a full
+  // office building let to law firms was "100% of the income is the law
+  // firms" and borrowed 24% of its mark at 7.5x coverage; a 97%-let block
+  // of flats was "the biggest tenant is 71% of the roll" because its two
+  // shops at grade were graded as if they were the building, and lost 24%.
+  // A single tenant with credit on a long lease is the MOST financeable
+  // income there is, not the least.
+  //
+  // So: the flats are never graded (a hundred twelve-month leases to
+  // households are not a concentration), the commercial tests are weighted
+  // by the share of the income that is commercial, each test is capped at
+  // the points a committee actually takes, and the floor is 0.75.
+  const commSf = rec && rec.bldgArea > 0 ? Math.max(0, Math.min(1, commercialShare(rec))) : 1;
+  if (commSf <= 0.02) return { mult: 1 };
   const conc = concentration(h);
   const w = walt(h, month);
   let sfTot = 0, wCredit = 0, rollSf = 0;
@@ -1618,24 +1667,28 @@ export function collateralHaircut(h: Holding, month: number, econ?: Econ): { mul
   }
   const credit = sfTot ? wCredit / sfTot : 0;
   const rollShare = sfTot ? rollSf / sfTot : 0;
-  // concentration bites past a third of the roll, and long strong paper undoes it
-  const concHit = Math.max(0, conc - 0.35) / 0.65 * (credit >= 1.6 && w >= 8 ? 0.10 : credit >= 1.6 ? 0.20 : 0.32);
-  // and the desk discounts income that walks out the door inside the term
-  const rollHit = Math.max(0, rollShare - 0.3) / 0.7 * 0.18;
-  // AND WHAT THE TENANTS DO FOR A LIVING. Five names in one trade is one
-  // cycle, and a credit committee has seen what happens to a building let
-  // entirely to an industry that is contracting. This is the same question the
-  // single-name test asks, one level up, and it is the one that catches the
-  // rent roll that looks diversified and is not.
+  // Concentration past a third of the roll: up to ten points for weak,
+  // short paper; five if the covenant is strong OR the term is long; nothing
+  // for strong paper with a long term, which is a credit-tenant lease.
+  const concHit = Math.max(0, conc - 0.35) / 0.65
+    * (credit >= 1.6 && w >= 8 ? 0 : credit >= 1.6 || w >= 5 ? 0.05 : 0.10);
+  // Income that walks out inside two years: up to ten points once more than
+  // half of it does — the re-leasing reserve, in proceeds.
+  const rollHit = Math.max(0, rollShare - 0.5) / 0.5 * 0.10;
+  // One trade: a small building let to two firms in the same line is every
+  // small building in town, so this needs a roll of four or more names to
+  // say anything — and a trade that is contracting says it whatever the
+  // count.
   const ind = econ ? industryConcentration(h, econ) : { share: 0, sector: null, stressed: 0 };
-  const indHit = Math.max(0, ind.share - 0.5) / 0.5 * 0.16 + ind.stressed * 0.26;
-  const mult = Math.max(0.5, 1 - concHit - rollHit - indHit);
-  const why = indHit > 0.08 && ind.sector
+  const indHit = (h.tenants.length >= 4 ? Math.max(0, ind.share - 0.5) / 0.5 * 0.06 : 0) + ind.stressed * 0.15;
+  const mult = Math.max(0.75, 1 - commSf * (concHit + rollHit + indHit));
+  const why = mult >= 0.995 ? undefined
+    : indHit > 0.05 && ind.sector
     ? `${(ind.share * 100).toFixed(0)}% of the income is ${INDUSTRY_LABEL[ind.sector].toLowerCase()}${ind.stressed > 0.25 ? ", and that trade is contracting" : ""}`
-    : concHit > 0.08 && rollHit > 0.05
+    : concHit > 0.03 && rollHit > 0.03
     ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll and ${(rollShare * 100).toFixed(0)}% of it rolls inside two years`
-    : concHit > 0.08 ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll`
-    : rollHit > 0.05 ? `${(rollShare * 100).toFixed(0)}% of the roll expires inside two years`
+    : concHit > 0.03 ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll`
+    : rollHit > 0.03 ? `${(rollShare * 100).toFixed(0)}% of the roll expires inside two years`
     : undefined;
   return { mult, why };
 }
@@ -1659,7 +1712,7 @@ export function debtCollateral(
   const value = ownedHoldingValue(s, parcels, h);
   const noi = ownedHoldingNoiYr(s, parcels, h);
   const quoteClass = vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class);
-  const hair = collateralHaircut(h, s.month, s.econ);
+  const hair = collateralHaircut(h, s.month, s.econ, rec);
   const stab = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)
     ? stabViewFor(rec, s.econ, h.condition, value)
     : undefined;
@@ -1675,9 +1728,18 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const quotes = PRODUCTS.map((p) => {
     const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
-    const annualDs = p.ioM > 0
-      ? (q.principal * q.ratePct) / 100
-      : monthlyPayment(Math.max(1, q.principal), q.ratePct, p.amortYears) * 12;
+    // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
+    // the interest-only year's payment (1.71x) beside "binds coverage" from a
+    // desk that had sized to 1.40x on the amortising payment — the screen
+    // contradicting itself, and the owner reading the bigger number as the
+    // desk being stingy. A product that amortises inside its term is
+    // underwritten on the amortising payment; the IO year is a holiday, and
+    // it is reported as one.
+    const amortises = p.amortYears > 0 && p.ioM < p.termM;
+    const annualDsIo = (q.principal * q.ratePct) / 100;
+    const annualDs = amortises
+      ? monthlyPayment(Math.max(1, q.principal), q.ratePct, p.amortYears) * 12
+      : annualDsIo;
     // Mezz is labeled as sitting behind a senior, but refinance replaces
     // `h.loan` — there is no junior lien. Do not offer a product the close
     // cannot actually stack.
@@ -1689,6 +1751,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       maxProceeds: q.principal,
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
+      dscrIoAtMax: annualDsIo > 0 ? noi / annualDsIo : 0,
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
       // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,

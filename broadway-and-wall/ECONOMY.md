@@ -1263,3 +1263,100 @@ was regenerated on this commit for that reason. The acquisition card prints the 
 68% sheet, +5 for multifamily, −3 held back for the repairs on the engineer's
 report"), the refinance desk carries the same, and The Banks page has a
 "Sheet today" column and the standards word at the top.
+
+# A WONDERFUL CASH-FLOWING ASSET BORROWED LIKE A PROJECT — fixed
+
+The owner: "I have a wonderful cashflowing asset yet the best loan I can get
+is a 2.2 DSCR." Reproduced from the owner's chair (`scratchpad/refi-repro`,
+four seeds, the best cash-flowers on the opening tape, bought for cash and
+refinanced a year later):
+
+    2856 Old State St  flats   99% let   mark $1.95M   harbor $0.95M  49% of mark  2.10x
+    1940 Old State St  flats   94% let   mark $2.12M   harbor $1.11M  52%          2.30x
+    354 Old Union St   flats   97% let   mark $1.51M   harbor $0.57M  38%          2.78x
+    1448 Old State St  office  87% let   mark $3.80M   harbor $0.93M  24%          7.55x
+
+Four cuts, stacked multiplicatively, none of them what a credit committee
+does:
+
+1. **The credit window counted twice.** `advanceFactor` carried
+   `(1 − 0.30 × tight)` from before the standards band existed, and the band
+   (previous section) moved the sheet on the same credit index. A shut window
+   took the hometown bank to 68 − 10 = 58 on the sheet and then × 0.86 on the
+   factor: 50%, against the 58% the band was written to produce. My error,
+   one commit old. `advanceFactor` is now the desk's own appetite alone; the
+   window lives in `statedLtv`, once, with the hometown bank's `ease` for its
+   friends on the down band.
+
+2. **A collateral haircut that took half the loan.** `collateralHaircut`
+   stacked a single-name test (to 32 points), a rollover test (18) and a
+   trade test (16 + 26 if the trade is contracting) to a floor of 0.50, AFTER
+   the three sizing tests. So "100% of the income is the law firms" halved
+   the loan on a full office building — every small office building in town
+   is let to a few professional firms — and a block of flats read "the
+   biggest tenant is 71% of the roll" because its two shops at grade were
+   graded as if they were the building; the flats are `h.occ`, not tenants,
+   and were never in the roll the test read. A single tenant with credit on a
+   long lease is the MOST financeable income there is. Now: the flats are
+   never graded, the commercial tests are weighted by the commercial share of
+   the income (`commercialShare`), single-name is 10 points for weak short
+   paper, 5 with credit OR term, 0 with both (a credit-tenant lease),
+   rollover is 10 points once more than half the roll expires inside two
+   years (the re-leasing reserve, in proceeds), the trade test needs four
+   names or a contracting trade (6 + 15), and the floor is 0.75.
+
+3. **A bank "full" of the class its town is made of.** `concentrationRoom`
+   capped a bank's book at 45% in one class; in a city whose stock is half
+   flats every bank sat over it from the first month ("First Harbor is
+   already 48% multifamily against a 45% limit", on a town that is 48%
+   multifamily) and took a slice off every apartment loan for ever. The cap
+   is now the kind's floor or a quarter over the town's own mix, whichever is
+   higher.
+
+4. **One debt-yield floor for every class.** The agencies write flats at a
+   seven-to-eight per cent debt yield where an office desk wants nine, because
+   a hundred households do not go dark on one date. The floor on apartments
+   is 85% of the product's.
+
+And the coverage tests now move on standards in both directions (they read
+`tight` on the way down and standards on the way up — two variables for one
+cycle): 1.25x becomes 1.40x and the floor 11.25% with the window shut, 1.18x
+and 7.9% at the top.
+
+The card was also contradicting itself: it printed coverage on the
+interest-only year's payment (1.71x) beside "binds coverage" from a desk that
+had sized to 1.40x on the amortising payment. `dscrAtMax` is on the payment
+the desk sized to now, with the IO year reported as the holiday it is
+(`dscrIoAtMax`, and the refinance desk prints both).
+
+Same four buildings after, same window (shut, standards −0.9):
+
+    2856 Old State St  flats   harbor $1.09M  57% of mark  1.40x on the amortising payment  binds coverage
+    1940 Old State St  flats   harbor $1.27M  59%          advance rate
+    354 Old Union St   flats   harbor $0.79M  52%          coverage
+    1448 Old State St  office  savings $2.01M 53%          advance rate — the one lease rolls inside two years, 20 points off
+
+`pnpm refi-strong` gates the shape (the haircut cases above; the window
+counted once; coverage on standards; the flats' floor; and, from the owner's
+chair in an ordinary window, every stabilised building's best permanent
+quote sized to the sheet or to coverage) and is in `pnpm check`.
+
+What it did to the city. The street is sized by the same desks, so the
+street borrows to the sheet once as well: its opening debt is up ~5% (the
+roster's equity goes one building further) and it loses a firm or so more
+per quarter-century. Thirty-six seeds on both engines, same city, 300
+months (`scratchpad/abdist.mjs`, means):
+
+                          before    after
+    population            40,309   38,061   (−5.6%)
+    jobs                  22,201   20,828   (−6.2%)
+    buildings              894.9    895.5
+    land median $/sf        96.4     79.1
+    rival failures /25y     10.2     11.1
+    city starts (sf)       19.5k    16.1k
+
+Per seed the swing is ±20-75% (a recession that lands in year two instead
+of year six is a different century), so this is a few per cent of drift
+under heavy re-roll noise, in the direction a more levered street would
+produce, and it is recorded here rather than tuned away. BASELINE.json was
+regenerated on this commit.

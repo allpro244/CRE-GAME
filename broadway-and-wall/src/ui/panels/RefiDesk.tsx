@@ -97,7 +97,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const toYou = proceeds - payoff - fee;
   // real annuity, not "coupon times 1.28" — the old shortcut overstated a
   // 30-yr amort by a full point of proceeds at today's rates
-  const annualDs = q.ioM > 0 ? (proceeds * q.ratePct) / 100 : annualPayment(proceeds, q.ratePct, q.amortYears);
+  // The desk sizes on the amortising payment wherever the paper amortises
+  // inside its term; the IO year is a holiday and is shown as one below.
+  const amortises = q.amortYears > 0 && q.ioM < q.termM;
+  const annualDsIo = (proceeds * q.ratePct) / 100;
+  const annualDs = amortises ? annualPayment(proceeds, q.ratePct, q.amortYears) : annualDsIo;
   return (
     <div className="refi">
       <div className="deal-head">Refinance</div>
@@ -280,12 +284,12 @@ export function RefiSection({ bbl }: { bbl: string }) {
         />
         <Row
           k="Debt service"
-          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}` : "—"}
+          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}${amortises && q.ioM > 0 ? ` once it amortises (${usd(Math.round(annualDsIo))} in the ${Math.round(q.ioM / 12)}-yr interest-only period)` : ""}` : "—"}
         />
         <Row
           k="Coverage / debt yield"
           v={proceeds > 0 && annualDs > 0 && q.noiUw > 0
-            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
+            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)}${amortises && q.ioM > 0 ? ` on the amortising payment (${(q.noiUw / annualDsIo).toFixed(2)} interest-only)` : ""} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
             : "— no income to cover it"}
           bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />

@@ -80,6 +80,7 @@ Recent additions worth knowing about:
 | `pnpm facility` | ~2 min | the portfolio loan, both sides — it must work AND it must bite |
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
+| `pnpm refi-strong` | ~40s | a stabilised building refinances to the sheet or to coverage; the haircut is a notch, never on the flats. In `pnpm check`. |
 | `pnpm advance` | ~15s | the sheet moves: standards, class, condition, your file, the fund's own margin. In `pnpm check`. |
 | `pnpm ltvdist` | ~10 min | what advance the market actually offers, every desk on every live listing, cut every way. Report, not gate. |
 | `pnpm shortage` | ~2 min | shortage-side mirror of `glut`/`vacdist`: growing vs declining seeds, jobs-shock overshoot. Report, not gate. |
@@ -177,6 +178,25 @@ another. Grep before you add another.
 ---
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
+
+- **A cash-flowing asset borrows like one** (Sep 2026). The owner: "the
+  best loan I can get is a 2.2 DSCR". Reproduced: full buildings refinanced
+  at 2-7.5x and 24-52% of the mark. Four stacked cuts, fixed: the credit
+  window was counted twice (my own standards band on top of the old
+  `0.30 × tight` in `advanceFactor` — the factor is appetite-only now, the
+  window lives in `statedLtv` once); `collateralHaircut` took up to half the
+  loan and graded a block of flats by its two shops (now weighted by the
+  commercial share, flats never graded, single-name 10/5/0 by credit and
+  term, rollover 10 past half the roll, trade test needs four names or a
+  contracting trade, floor 0.75); `concentrationRoom`'s class cap is now the
+  town's own mix × 1.25 or the kind's floor; the debt-yield floor on flats
+  is 85%. Coverage/DY move on standards both ways (1.40x / 11.25% shut).
+  `dscrAtMax` is on the amortising payment (`dscrIoAtMax` for the holiday);
+  the refi desk prints both. `pnpm refi-strong` gates it, in `pnpm check`.
+  BASELINE.json regenerated: 36 seeds on both engines put the city means a
+  few per cent lower (pop −5.6%, starts −17%) under ±20-75% per-seed
+  re-roll swings — the street borrows to the sheet once too, and carries
+  it. ECONOMY.md "A wonderful cash-flowing asset borrowed like a project".
 
 - **The leasing mandate folds per asset type** (Sep 2026). Three sheets of
   seven sliders stacked was a wall. `PlanSheet` now renders one drop-down per

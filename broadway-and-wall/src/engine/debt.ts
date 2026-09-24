@@ -683,10 +683,10 @@ export interface StabView { noiYr: number; value: number }
  * the street's acquisition loan cannot invent two answers for the plan.
  */
 export function stabViewFor(
-  rec: ParcelRecord, econ: Econ, condition: Condition, basis: number,
+  rec: ParcelRecord, econ: Econ, condition: Condition, basis: number, condIdx?: number,
 ): StabView | undefined {
   const stabNoi = proFormaNOIYr(rec, econ, condition, basis);
-  const stabCap = capRateFor(rec, econ, condition);
+  const stabCap = capRateFor(rec, econ, condition, condIdx);
   if (!(stabCap > 0 && stabNoi > 0)) return undefined;
   return { noiYr: stabNoi, value: (stabNoi / stabCap) * 100 };
 }
@@ -1714,7 +1714,7 @@ export function debtCollateral(
   const quoteClass = vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class);
   const hair = collateralHaircut(h, s.month, s.econ, rec);
   const stab = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)
-    ? stabViewFor(rec, s.econ, h.condition, value)
+    ? stabViewFor(rec, s.econ, h.condition, value, h.condIdx)
     : undefined;
   return { value, noi, vacantDirt, quoteClass, hair, stab };
 }

@@ -1,8 +1,9 @@
+import { marketAppraisal } from "@/engine/value";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { Approach, GameState } from "@/engine/types";
-import { assetValue, initialCondition, resolveRec, inPlace, proFormaNOIYr } from "@/engine/value";
+import { initialCondition, resolveRec, inPlace, proFormaNOIYr } from "@/engine/value";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row } from "@/ui/panels/shared";
@@ -108,7 +109,7 @@ export function BrokerCalls() {
         const rec = resolveRec(parcels, game, bbl);
         if (!rec || !a.ask) return null;
         const cond = initialCondition(rec);
-        const v = assetValue(rec, game.econ, cond);
+        const v = marketAppraisal(game, rec, bbl, cond);
         // A broker with a file has the file — the roll came over when the call
         // did (Approach.roll). So this is in-place income off the actual
         // leases, not the class model's opinion of a building like this one.

@@ -9,7 +9,7 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { assetValue, marketAppraisal, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -111,7 +111,10 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // test. And it cuts only one way — pay UNDER the appraisal and the lender
   // still only lends against what you paid, because the deal is the best
   // evidence of value there is. That asymmetry is the rule, not a penalty.
-  const appraised = assetValue(rec, s.econ, gradeOf(s, rec));
+  // THE LENDER'S APPRAISER READS THE ROLL — see marketAppraisal. The class
+  // model's opinion of a building like this one is not an appraisal of this
+  // one, and the desk sizing the loan is the desk that will hold the roll.
+  const appraised = marketAppraisal(s, rec, bbl, gradeOf(s, rec));
   const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
   const overpay = Math.max(0, price - uwBasis);
   // A LENDER UNDERWRITES THE INCOME THE BUILDING ACTUALLY EARNS.
@@ -350,10 +353,14 @@ export function executePurchase(
   if (paper) {
     holding.tenants = paper.roll ?? [];
     if (paper.occ !== undefined) holding.occ = paper.occ;
+    if (paper.resRentPsf !== undefined) holding.resRentPsf = paper.resRentPsf;
     // ...and the grade the memorandum was priced at. The distress knock above
     // has already been applied to this value at listing time, so taking it
     // verbatim is what makes the NOI on the tape the NOI on the deed.
-    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = initialCondIdx(rec); }
+    // THE INDEX THE PAPER CARRIED, not month zero's. `initialCondIdx(rec)`
+    // read the building's age at the START of the game whatever the closing
+    // month, so a deed bought in year twenty closed newer than it was listed.
+    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = paper.condIdx ?? initialCondIdx(rec, next.month, paper.cond); }
     // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the

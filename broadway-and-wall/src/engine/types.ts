@@ -528,6 +528,16 @@ export interface Holding {
   // allowance. It costs the fit-out up front on space that may sit.
   specSuites?: { sf: number; readyM: number; use: BuiltClass; blockId?: number };
   occ?: number;        // multifamily aggregate occupancy
+  /**
+   * THE FLATS' IN-PLACE RENT, $/sf/yr on rentable feet. Apartment income
+   * read the SPOT market every month, so a 9% move in the index was a 27%
+   * move in NOI the same month on the same tenants — measured on 2856 Old
+   * State St, 99% let. A block of flats is a hundred twelve-month leases;
+   * its rent roll reaches the market as they turn, about a twelfth a month.
+   * This is that roll, walking toward the market. Undefined reads as at
+   * market (a vessel written today, an old save).
+   */
+  resRentPsf?: number;
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
    * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
@@ -837,6 +847,10 @@ export interface Listing {
    * 40 measured purchases, by as much as 62%. One quantity, one answer.
    */
   cond?: Condition;
+  /** The condition index the deed conveys — `cond` is a reading of it. */
+  condIdx?: number;
+  /** The flats' in-place rent the deed conveys — see Holding.resRentPsf. */
+  resRentPsf?: number;
   /**
    * WHOSE BUILDING THIS IS, while it is on the market.
    *
@@ -1074,6 +1088,10 @@ export interface Approach {
   roll?: Tenant[];
   occ?: number;
   cond?: Condition;
+  /** The condition index the deed conveys — the grade above is a reading of it. */
+  condIdx?: number;
+  /** The flats' in-place rent the deed conveys — see Holding.resRentPsf. */
+  resRentPsf?: number;
   /**
    * WHAT THEY WILL ACTUALLY TAKE, AND THE PLAYER MUST NEVER SEE IT.
    *

@@ -3,12 +3,13 @@
 //   AcquireDesk   buy / sell / list / ground lease / disclosed roll / vacant possession
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
+import { marketAppraisal } from "@/engine/value";
 import { memo, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import { displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
@@ -93,7 +94,7 @@ function ParcelPanelInner({
       ? leasedFeeValue(glLive, bareLandRec(parcels, game, selectedBBL) ?? rec, game.econ, game.month,
         glLive.sf ?? game.built?.[selectedBBL]?.bldgArea ?? 0)
       : holdingValue(rec, game.econ, holding, game.month))
-    : assetValue(rec, game.econ, cond);
+    : marketAppraisal(game, rec, selectedBBL, cond);
   const value = holding?.groundLeased && glLive
     ? simValue
     : displayValue(rec, game.econ, simValue);
@@ -550,7 +551,7 @@ function ParcelPanelInner({
                       on a prime block does not rent at the city average, and
                       quoting one beside the other made every in-place rent look
                       like a windfall. */}
-                  <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u).toFixed(0)}/sf market here</span>
+                  <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u, holding.condIdx).toFixed(0)}/sf market here</span>
                 </div>,
                 ...inUse.map(({ t, i }) => {
                   const near = t.endM - game.month <= 24;
@@ -599,7 +600,7 @@ function ParcelPanelInner({
               <div className="roll-row roll-group">
                 <span className="roll-name">apartments · {sf(Math.round(useSf(rec, "multifamily")))}</span>
                 <span className="roll-meta mono">
-                  {((holding.occ ?? 0) * 100).toFixed(0)}% let · ${useRentPsfYr(rec, game.econ, holding.condition, "multifamily").toFixed(0)}/sf market here
+                  {((holding.occ ?? 0) * 100).toFixed(0)}% let · ${useRentPsfYr(rec, game.econ, holding.condition, "multifamily", holding.condIdx).toFixed(0)}/sf market here
                 </span>
               </div>
             )}

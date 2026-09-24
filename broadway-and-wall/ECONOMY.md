@@ -1360,3 +1360,59 @@ of year six is a different century), so this is a few per cent of drift
 under heavy re-roll noise, in the direction a more levered street would
 produce, and it is recorded here rather than tuned away. BASELINE.json was
 regenerated on this commit.
+
+# ONE BUILDING, THREE APPRAISALS IN SIX MONTHS — fixed
+
+HANDOFF 0f, reproduced on 2856 Old State St (11,129 sf of flats, 99% let,
+`scratchpad/threeappr.mjs`) and taken apart:
+
+    parcel desk (assetValue, class model, no roll)          $2.52M
+    ask basis   (conveyedValue: the roll, taxed at nothing)  $2.76M  → ask $3.11M
+    deed        (holdingValue: the roll, taxed at the price) $2.43M
+    month 4                                                 $1.93M
+    month 5                                                 $2.95M   (+53%, same tenants, same rent)
+
+Four faults, none of them the market:
+
+1. **Rent and the cap rate read the grade as a step.** `condIdx` drifts a
+   thousandth a month; `condGrade` reads a word off it; `CONDITION_RENT_MULT`
+   and `capRateFor`'s quality spread read the WORD. At 0.5195 → 0.5200 the
+   building crossed into "standard": rent ×1.19, cap −70bp, mark +53%, in one
+   month. Both readers now interpolate between the grades' centres
+   (`condMultAt`, `qualSpreadAt`; `COND_CENTRE` 0.17 / 0.43 / 0.65 / 0.865),
+   every owned reader passes `h.condIdx`, and a reader that only has the word
+   prices at that grade's centre — the table value, so nothing that only knew
+   the word moved. The grade keeps its jobs as a label and a gate.
+2. **The seller paid no property tax.** The vessel `conveyedValue` and
+   `stampListing` built to strike the ask had no basis, `grossTaxYr` read
+   zero, and the ask was struck on a third more income than the building
+   earns. Every vessel now carries `assessed` at the standing assessment
+   (`assetValue`, the class model — what the assessor's roll says before
+   anyone pays a new price) and the index and the flats' in-place rent the
+   deed will convey (`Listing.condIdx`, `resRentPsf`; the purchase takes
+   them over verbatim, at the closing month, not month zero's age).
+3. **Three readers.** The parcel desk, the tape and `buyQuote` appraised
+   with the class model; the ask and the deed with the roll. `marketAppraisal`
+   is the one reader now — the disclosed roll capitalised at the cap the
+   roll's quality earns, taxed at the standing assessment; `holdingValue` on
+   the same vessel the deed will be marked with — used by the parcel desk,
+   the tape, the broker's calls, the acquisition card's default price and the
+   lender's appraisal. The only thing that changes at the closing is the
+   reassessment at the price, and the card says so on the tax line.
+4. **Apartment income read the spot market.** `holdingNOIYr` priced the
+   flats at this month's index × occupancy, so a 9% index move was a 27% NOI
+   move the same month on the same tenants. `Holding.resRentPsf` is the roll
+   in place: it opens at the market when the roll is written and closes a
+   twelfth of its gap to the market each month (`tickLeasing`) — loss-to-lease
+   on the way up, the lag that keeps a full building from tracking the index
+   on the way down.
+
+After, same building: $2.95M appraised, $3.00M ask basis, $2.91M marked the
+day it closed (the tax reset), then $2.74M, $2.66M, $2.53M … as the flats'
+market fell 9% over the year and the roll followed it a twelfth at a time.
+The tape against the appraiser, 1,015 listings over six seeds
+(`scratchpad/askmark.mjs`): ask / market appraisal p10 0.93, p50 1.02, p90
+1.12 (was p5 0.48 … p95 1.50 against the class model); motivated sellers
+p50 0.88; asks capitalise in-place NOI at 5.71% against a 5.82% market cap
+(was 5.12% against 6.18%). `pnpm appraisal` gates all four and is in
+`pnpm check`.

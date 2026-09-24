@@ -52,7 +52,7 @@ export function LeasingPage() {
     const or = occRead(rec, h);
     const occ = or.lettableOcc;
     const rentRoll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0)
-      + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * (h.occ ?? 0);
+      + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
     return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling }];
   });
@@ -425,7 +425,7 @@ export function LeasingPage() {
               {rows.flatMap((r) => r.h.tenants.map((t, i) => ({ t, r, i })))
                 .sort((a, b) => a.t.endM - b.t.endM)
                 .map(({ t, r, i }) => {
-                  const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition);
+                  const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
                   const d = mkt > 0 ? t.rentPsf / mkt - 1 : 0;
                   const recov = recoveryOf(t);
                   return (

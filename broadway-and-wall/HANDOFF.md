@@ -81,6 +81,7 @@ Recent additions worth knowing about:
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
 | `pnpm refi-strong` | ~40s | a stabilised building refinances to the sheet or to coverage; the haircut is a notch, never on the flats. In `pnpm check`. |
+| `pnpm appraisal` | ~60s | one appraisal: continuous condition, taxed vessels, the tape/desk/lender/deed agree, flats' income turns over. In `pnpm check`. |
 | `pnpm advance` | ~15s | the sheet moves: standards, class, condition, your file, the fund's own margin. In `pnpm check`. |
 | `pnpm ltvdist` | ~10 min | what advance the market actually offers, every desk on every live listing, cut every way. Report, not gate. |
 | `pnpm shortage` | ~2 min | shortage-side mirror of `glut`/`vacdist`: growing vs declining seeds, jobs-shock overshoot. Report, not gate. |
@@ -178,6 +179,19 @@ another. Grep before you add another.
 ---
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
+
+- **One building, one appraisal** (Sep 2026, closes §6 0f). Rent and cap
+  read the condition GRADE as a step, so a 0.0005 drift over a band edge
+  moved a full block of flats +53% in a month; the ask vessel paid no
+  property tax; the desk, the tape and the lender appraised with the class
+  model while the ask and the deed used the roll; apartment income read the
+  spot index. Now `condMultAt`/`qualSpreadAt` interpolate on `condIdx`,
+  every vessel carries `assessed` (standing assessment), `condIdx` and
+  `resRentPsf`, `marketAppraisal` is the one reader (parcel desk, tape,
+  broker, acquisition default, `buyQuote.appraised`), and the flats' roll
+  walks a twelfth a month (`Holding.resRentPsf`). Asks sit at p50 1.02 of
+  the appraisal (p10 0.93, p90 1.12). `pnpm appraisal` gates it, in `check`.
+  ECONOMY.md "One building, three appraisals in six months".
 
 - **A cash-flowing asset borrows like one** (Sep 2026). The owner: "the
   best loan I can get is a 2.2 DSCR". Reproduced: full buildings refinanced
@@ -515,8 +529,8 @@ covenant took its paydown out of cash instead, sixteen times in thirty years
 for the thin firm, and the harness counted only the recorded breach. A cure
 is a bite; it counts them now. Neither row is in `pnpm check`.
 
-**0f. One building, three appraisals in six months (playthrough 3, Hartmoor
-Landing, cheap-money opening).** 107 W 7th St, 5,004 sf of flats at demand
+**0f. ~~One building, three appraisals in six months~~ — CLOSED (Sep 2026, see §5 "One building, one appraisal"; the mechanism was the grade read as a step, an untaxed ask vessel, three appraisers and spot-priced flats). Original note kept for the trace:** (playthrough 3, Hartmoor
+Landing, cheap-money opening). 107 W 7th St, 5,004 sf of flats at demand
 23, 96% let: the parcel desk appraised it at $161-181K while it was on the
 tape at $363K (the bot paid the ask — twice the desk's own number, which is
 the bot's fault, not the game's); the month it closed, the OWNED desk read

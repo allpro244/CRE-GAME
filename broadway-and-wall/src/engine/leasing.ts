@@ -20,7 +20,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
@@ -507,11 +507,16 @@ export function conveyedValue(
 ): number {
   // holdingValue already answers land and unbuilt lots with landValue.
   const base = grade ?? condGrade(initialCondIdx(rec, s.month));
-  const cond = distress
-    ? condGrade(Math.max(0.30, (initialCondIdx(rec, s.month) ?? 0.7) - 0.10))
-    : base;
-  const vessel = { bbl, boughtM: s.month, costBasis: 0, loan: null,
-    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  const idx = Math.max(0.30, initialCondIdx(rec, s.month, grade) - (distress ? 0.10 : 0));
+  const cond = distress ? condGrade(idx) : base;
+  // THE SELLER PAYS PROPERTY TAX TOO. This vessel had no basis, so
+  // `grossTaxYr` read zero and the value the ask was struck on carried no
+  // tax at all — a third more income than the building earns, on every
+  // listing, and the first of the three appraisals in HANDOFF 0f. The
+  // standing assessment is the class-model value: what the assessor's roll
+  // says a building like this is worth before anyone pays a new price for it.
+  const vessel = { bbl, boughtM: s.month, costBasis: 0, assessed: assetValue(rec, s.econ, cond), loan: null,
+    condition: cond, condIdx: idx, tenants: [], cfHistory: [] } as unknown as Holding;
   if (rec.class !== "land" && rec.bldgArea) genRentRoll(s, rec, vessel, distress, false);  // no closing, no settlement
   return holdingValue(rec, s.econ, vessel, s.month);
 }
@@ -521,13 +526,14 @@ export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): List
   const distress = !!li.distress;
   // The grade the deed will convey: today's grade, less the notch a distressed
   // building takes at the closing. See executePurchase.
-  const cond = distress
-    ? condGrade(Math.max(0.30, (initialCondIdx(rec, s.month) ?? 0.7) - 0.10))
-    : condGrade(initialCondIdx(rec, s.month));
-  const vessel = { bbl: li.bbl, boughtM: s.month, costBasis: li.ask, loan: null,
-    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  const idx = Math.max(0.30, initialCondIdx(rec, s.month) - (distress ? 0.10 : 0));
+  const cond = condGrade(idx);
+  const vessel = { bbl: li.bbl, boughtM: s.month, costBasis: li.ask, assessed: assetValue(rec, s.econ, cond), loan: null,
+    condition: cond, condIdx: idx, tenants: [], cfHistory: [] } as unknown as Holding;
   genRentRoll(s, rec, vessel, distress, false);   // no closing, no settlement
   li.cond = cond;
+  li.condIdx = idx;
+  li.resRentPsf = vessel.resRentPsf;
   li.roll = vessel.tenants;
   if (vessel.occ !== undefined) li.occ = vessel.occ;
   return li;
@@ -561,11 +567,14 @@ export function stampApproach(s: GameState, rec: ParcelRecord, a: Approach): App
   // Nobody is in receivership on an off-market call — that building would be
   // on the tape with a distress flag. This is an ordinary owner and an
   // ordinary roll, which is why the `distressed` reading is not used here.
-  const cond = condGrade(initialCondIdx(rec, s.month));
-  const vessel = { bbl: rec.bbl, boughtM: s.month, costBasis: a.ask ?? 0, loan: null,
-    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  const idx = initialCondIdx(rec, s.month);
+  const cond = condGrade(idx);
+  const vessel = { bbl: rec.bbl, boughtM: s.month, costBasis: a.ask ?? 0, assessed: assetValue(rec, s.econ, cond), loan: null,
+    condition: cond, condIdx: idx, tenants: [], cfHistory: [] } as unknown as Holding;
   genRentRoll(s, rec, vessel, false, false);   // no closing, no settlement
   a.cond = cond;
+  a.condIdx = idx;
+  a.resRentPsf = vessel.resRentPsf;
   a.roll = vessel.tenants;
   if (vessel.occ !== undefined) a.occ = vessel.occ;
   return a;
@@ -642,6 +651,8 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     // going concern being sold, it is a shell — and that is a different deal.
     holding.occ = Math.min(0.99, Math.max(0.12,
       useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16, "leasing") : rrange(s, -0.05, 0.04, "leasing"))));
+    // the roll in place opens at today's market; it walks from here — see Holding.resRentPsf
+    holding.resRentPsf = marketRentPsfYr(rec, s.econ, holding.condition, holding.condIdx);
   }
   if (!isCommercial(rec)) return;
   // A building in place has a rent roll per component: the shops at grade were
@@ -659,7 +670,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     if (legSf < 400) continue;
     const targetOcc = Math.max(0, Math.min(0.98,
       useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
-    const market = useRentPsfYr(rec, s.econ, holding.condition, use);
+    const market = useRentPsfYr(rec, s.econ, holding.condition, use, holding.condIdx);
     // A ONE-FLOOR LEG IS LET OR IT IS NOT. Same binary a single shop has always
     // had. Multi-floor legs fill toward the occupancy target with log-normal
     // sizes (plates.SIZE_DIST — CompStak / JLL median, p95 one large plate).
@@ -812,7 +823,7 @@ export function genAnchorTenant(
   const floor = minLettableSf(rec, use);
   if (sfAnchor < floor && vacant < floor) return false;
   const sector = pickSector(s, use);
-  const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
+  const market = useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx) * discount;
   const t: Tenant = {
     name: pickName(s, sector),
     use,
@@ -1145,6 +1156,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const pace = Math.max(0.030, 0.090 - 0.75 * slack);
       const now = h.occ ?? target;
       h.occ = Math.min(0.99, Math.max(0, now + (target - now) * pace + rrange(s, -0.006, 0.006, "leasing")));
+      // AND THE RENT ROLL TURNS OVER. A twelfth of the leases reach the market
+      // each month; the rest pay what they signed. So in-place rent closes a
+      // twelfth of its gap to the market a month — loss-to-lease on the way
+      // up, the lag that keeps a full building's NOI from tracking the spot
+      // index on the way down.
+      const mkt = marketRentPsfYr(rec, s.econ, h.condition, h.condIdx);
+      const inPlace = h.resRentPsf ?? mkt;
+      h.resRentPsf = +(inPlace + (mkt - inPlace) / 12).toFixed(4);
     }
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 

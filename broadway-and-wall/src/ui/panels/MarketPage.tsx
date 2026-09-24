@@ -1,7 +1,8 @@
+import { marketAppraisal } from "@/engine/value";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
+import { marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
@@ -39,7 +40,8 @@ export function BuildingDatabase() {
       // Your own buildings price on the condition you have actually let them
       // drift to; everyone else's on the street's grade, as before.
       const cond = h?.condition ?? gradeOf(game, rec);
-      const val = assetValue(rec, game.econ, cond);
+      // the same appraiser the desk and the lender read: the disclosed roll where there is one
+      const val = marketAppraisal(game, rec, bbl, cond);
       // In-place rent where a roll exists — your own commercial leases,
       // weighted by the square feet each one covers — and the market's
       // estimate for the rest of town, which is the same model the engine

@@ -7,7 +7,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
 import {
-  assetValue, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
+  assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
   recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, ownedHoldingNoiYr, isLeasedFee,
 } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
@@ -45,7 +45,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
   const bq = buyoutQuote(game, bbl);
   const occupied = (bq?.tenants ?? 0) > 0 || (h.occ ?? 0) > 0.02;
   const resSf = useSf(rec as never, "multifamily") * (h.occ ?? 0);
-  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * BUYOUT_PREMIUM);
+  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * BUYOUT_PREMIUM);
   const clearCost = (bq?.cost ?? 0) + resCost;
   const demoCost = demolitionCost(rec, game);
   // The engine's own bar for a wrecking permit. Named on the button rather
@@ -151,8 +151,10 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
     );
   }
   const li = game.listings.find((l) => l.bbl === bbl);
-  const px = li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
+  const px = li?.ask ?? game.approaches[bbl]?.ask ?? marketAppraisal(game, rec, bbl, gradeOf(game, rec));
   const h = asIfOwned(game, bbl, px, d, rec);
+  // what the assessor's roll says today, before the sale resets it to the price
+  const standingAssessed = assetValue(rec, game.econ, d.cond ?? gradeOf(game, rec), d.condIdx);
   const st = operatingStatement(rec, game.econ, h, game.month);
   const roll = [...(d.roll ?? [])].sort((a, b) => b.sf - a.sf);
   const commSf = Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0)));
@@ -214,7 +216,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
         <Row k="Effective gross income" v={usd(st.egi)} />
         <Row k="Operating expenses" v={"−" + usd(st.opex)} />
         <Row k="Management" v={"−" + usd(st.mgmt)} />
-        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax)} />
+        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax) + (Math.abs(px - standingAssessed) > px * 0.05 ? ` (the sale resets the assessment from ${usd(standingAssessed)})` : "")} />
         <Row k="In-place NOI / yr" v={usd(st.noi)} strong bad={st.noi < 0} />
         <Row k="Going-in cap at that price" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
       </div>

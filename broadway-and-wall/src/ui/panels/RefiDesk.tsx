@@ -5,8 +5,8 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
-import { resolveRec, isVacantLandLoanCollateral } from "@/engine/value";
-import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost } from "@/engine/debt";
+import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
+import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
 import { annualPayment, Row } from "@/ui/panels/shared";
 
@@ -205,7 +205,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="page-section" style={{ marginTop: 8 }}>The market for this building</div>
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num" title="Coupon plus points and the cap premium, spread over the hold the paper runs">All-in</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
           </thead>
           <tbody>
             {[...deskQuotes]
@@ -246,6 +246,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
                     )}
                   </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
+                  <td className="num">{x.available && px > 0 ? pct(x.allInPct) : "—"}</td>
                   <td
                     className="num"
                     // The advance the desk SIZED AT today, not the one on the
@@ -265,6 +266,15 @@ export function RefiSection({ bbl }: { bbl: string }) {
               ))}
           </tbody>
         </table>
+        {(() => {
+          // THE DESK'S OWN ADVICE. The table sorts by what reaches your
+          // account, which puts the desk that advances most — and costs most
+          // — on top of every list. This line names the cheapest money that
+          // clears the payoff, and says what taking the most money costs.
+          const stabilised = !!refiRec && !!holding && physicalOcc(refiRec, holding) >= 0.85;
+          const adv = deskAdvice(quotes, payoff, stabilised);
+          return adv ? <div className="hint" style={{ marginTop: 6 }}>{adv}</div> : null;
+        })()}
       <div className="grid">
         <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />

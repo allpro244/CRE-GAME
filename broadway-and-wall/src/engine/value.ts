@@ -1882,6 +1882,28 @@ export function marketAppraisal(s: GameState, rec: ParcelRecord, bbl: string, gr
   return holdingValue(rec, s.econ, vessel, s.month);
 }
 
+/**
+ * THE SIZE OF A BUILDING IN THIS TOWN, for the desks' minimum cheques. The
+ * median value of the built stock over a $4M reference — the city the
+ * product sheet's minimums were written against — clamped 0.25 to 4. Every
+ * third parcel is enough for a median and keeps a yearly pass cheap.
+ */
+export function cityLoanScale(s: GameState, parcels: Record<string, ParcelRecord>): number {
+  const vals: number[] = [];
+  let i = 0;
+  for (const bbl of Object.keys(parcels)) {
+    if (i++ % 3 !== 0) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+    const v = assetValue(rec, s.econ, initialCondition(rec), initialCondIdx(rec, s.month));
+    if (v > 0) vals.push(v);
+  }
+  if (vals.length < 20) return 1;
+  vals.sort((a, b) => a - b);
+  const med = vals[Math.floor(vals.length / 2)];
+  return +Math.max(0.25, Math.min(4, med / 4_000_000)).toFixed(3);
+}
+
 /** The disclosure on a building the player could buy today, or null. */
 export function disclosureFor(s: GameState, bbl: string): Disclosure | null {
   const li = s.listings?.find((l) => l.bbl === bbl);

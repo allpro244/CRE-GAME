@@ -180,6 +180,24 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **All-in cost, the desk's advice, and the guarantor** (Sep 2026).
+  `allInCostPct` (coupon + points + cap premium over the hold) on every
+  quote; the refinance table has an All-in column and `deskAdvice` under it
+  (cheapest permanent desk that clears the payoff; the price of bridge money
+  on a let building); the acquisition chooser orders desks by it. Recourse
+  desks cap the loan at 2× the guarantor's net worth (`guarantorCap`,
+  `Guarantor` on `quote`; `buyQuote.bind = "guarantor"`, refi binding "your
+  guarantee") and price a name worth 3× the paper 10bp tighter. `pnpm
+  advance` gates both. ECONOMY.md "What the money costs, and who is signing
+  for it".
+
+- **The desks' minimums are written for this town** (Sep 2026). Regional
+  quoted 9% of the opening tape, life company 0%, conduit 0% in a city whose
+  median building is $1M. `loanScale` (median built value / $4M, yearly),
+  `loanMin` with floors, Pelican takes standard buildings at +25bp
+  (`conditionOk`). After: 47% / 18% / 7%. ECONOMY.md "Three of five desks
+  were furniture".
+
 - **One building, one appraisal** (Sep 2026, closes §6 0f). Rent and cap
   read the condition GRADE as a step, so a 0.0005 drift over a band edge
   moved a full block of flats +53% in a month; the ask vessel paid no
@@ -514,6 +532,16 @@ another. Grep before you add another.
 ---
 
 ## 6. OPEN FAULTS, RANKED
+
+**0g. "Development starts are all or nothing by seed" — NOT A FAULT (Sep
+2026).** The 36-seed A/B in ECONOMY.md read `econ.starts` as cumulative
+starts and found a quarter of seeds at zero over 25 years. `econ.starts` is
+the LIVE pipeline ("everything the rest of the market is building, by
+class, in square feet" — types.ts), which is zero whenever nothing is under
+construction that month. Counting deliveries (`Object.keys(s.built)`) over
+the same twelve seeds: every city delivers, 25-78 buildings and 1.2-3.7M sf
+in 25 years, steadily (e.g. 0/6/13/32/38/49 at years 0/5/10/15/20/25).
+Nothing to fix; do not read `econ.starts` as a stock.
 
 **0. `pnpm facility` was failing on the committed engine — fixed, both rows.**
 Verified identical on `c826741` with the working tree stashed: "2-3 month(s)

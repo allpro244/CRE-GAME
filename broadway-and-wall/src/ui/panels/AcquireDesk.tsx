@@ -18,7 +18,7 @@ import {
 import { sellerOf, sellerProfile, closingBand, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS } from "@/engine/debt";
+import { PRODUCTS, deskAdvice } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { mixOf, uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
@@ -989,7 +989,17 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // Same pattern as RefiSection: default "savings" often won't quote, while
   // another desk will — fall through to a desk that actually writes so Commit
   // does not silently close all-cash against a card full of loan terms.
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"));
+  // ORDERED BY WHAT THE MONEY COSTS, desks that will write first. The sheet's
+  // own order put the debt fund beside the banks as if they were peers.
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
+    .map((p) => ({ p, q: buyQuote(game, parcels, bbl, offerPrice, p.id, 1) }))
+    .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
+    .map((x) => x.p);
+  const advice = (() => {
+    const rec0 = resolveRec(parcels, game, bbl);
+    const occ = rec0 ? inPlace(rec0, game, bbl, offerPrice).occ : 0;
+    return deskAdvice(productChoices.map((p) => { const q = buyQuote(game, parcels, bbl, offerPrice, p.id, 1); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
+  })();
   const picked = (() => {
     const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
     if (product === "cash" || direct.principal > 0) return product;
@@ -1098,7 +1108,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                     : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
                   onClick={() => setProduct(p.id)}
                 >
-                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · ${(pq.ltvCap * 100).toFixed(0)}% sheet` : " · won't quote"}
                 </button>
               );
             })}
@@ -1106,6 +1116,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               All cash
             </button>
           </div>
+          {advice && <div className="hint" style={{ marginTop: 6 }}>{advice}</div>}
           {max.principal > 0 ? (
             <Slider
               label="Leverage"
@@ -1121,7 +1132,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           ) : null}
           {max.principal > 0 && (
             <div className="hint">
-              {max.bind === "appraisal"
+              {max.bind === "guarantor"
+                ? `${max.guarantorWhy ?? "The desk has capped the loan at what your balance sheet will carry."} Bank paper is recourse: they have your signature as well as the deed, and the signature has to be worth half the loan. Non-recourse desks size on the building alone.`
+                : max.bind === "appraisal"
                 ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
                   + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
                   + `Their collateral is the building, not your enthusiasm for it.`

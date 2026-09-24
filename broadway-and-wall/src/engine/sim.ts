@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
@@ -767,6 +767,8 @@ function tickMonth(
 
   // January: the assessor and the taxman make their rounds
   if (s.month % 12 === 0 && s.month > 0) {
+    // ...and the desks re-read what a building in this town is worth
+    s.loanScale = cityLoanScale(s, parcels);
     let taxable = 0;
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
@@ -1731,6 +1733,8 @@ export const advanceQuarter = advanceMonth;
 
 export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]): GameState {
   const next = cloneState(s);
+  // The desks' minimum cheques are written for the buildings in THIS town.
+  next.loanScale = cityLoanScale(next, parcels);
   // The cranes first, so the tape does not offer a lot with a frame on it.
   seedOpeningPipeline(next, parcels, bbls);
   refreshListings(next, parcels, bbls);

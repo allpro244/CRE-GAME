@@ -3,7 +3,7 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { resolveRec, concentration, industryConcentration } from "./value";
+import { resolveRec, concentration, industryConcentration, netWorth } from "./value";
 import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
@@ -53,7 +53,7 @@ export interface LoanProduct {
   maxLTV: number;
   minLoan?: number;    // below this they do not underwrite anything
   maxLoan?: number;    // above this is past the desk's hold size
-  minCondition?: "good";  // the life company does not finance tired buildings
+  minCondition?: "good" | "standard";  // the life company does not finance tired buildings
   window?: boolean;    // a desk that CLOSES with the cycle instead of tightening
 }
 
@@ -153,7 +153,10 @@ export const PRODUCTS: LoanProduct[] = [
     blurb: "Life-company money: the cheapest debt in town, for well-kept product only. Low leverage, long memory, brutal to leave early.",
     ltv: 0.58, spread: 1.15, floating: false, ioM: 24, amortYears: 30, termM: 180,
     uwDscr: 1.35, debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
-    minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "good",
+    // WELL-KEPT, NOT NEW. Life-company money wants quality — a good building,
+    // or a standard one kept up, at a quarter point more. "Good only" made
+    // the desk furniture: 5% of a generated city's stock grades good.
+    minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "standard",
   },
   {
     id: "conduit", label: "Meridian Street conduit · 10 yr, 5 yr IO", lender: "Meridian Street Capital",
@@ -186,6 +189,74 @@ export const PRODUCTS: LoanProduct[] = [
     minDSCR: 0, maxLTV: 0.70,
   },
 ];
+
+/**
+ * WHAT THE MONEY COSTS A YEAR, ALL IN. The coupon is not the price of a
+ * loan: two points at the table on three-year paper is 67bp a year, a cap
+ * on floating paper is another 40, and a sheet that reads 4.10 over is not
+ * cheaper than one at 1.70 over because it advances more. The refinance
+ * table sorted by "what reaches your account", so the debt fund — which
+ * advances the most and costs the most — sat on top of every list, and a
+ * player who read the top line took bridge money on a stabilised building.
+ * Points and the cap premium are spread over the hold the paper actually
+ * runs (its term, or seven years, whichever is shorter).
+ */
+export function allInCostPct(p: LoanProduct, ratePct: number): number {
+  const holdYrs = Math.max(1, Math.min(7, p.termM / 12));
+  const capPrem = p.floating ? 0.0125 : 0;
+  return +(ratePct + (p.points + capPrem) * 100 / holdYrs).toFixed(2);
+}
+
+/**
+ * THE DESK'S OWN ADVICE, in a line. Given every quote on a building and what
+ * the borrower needs (the payoff on a refinance; nothing on a purchase), the
+ * cheapest permanent desk that reaches it — and when the most money on the
+ * table is bridge money on a building that is already let, what that costs.
+ */
+export function deskAdvice(
+  quotes: { id: string; label: string; lender: string; maxProceeds: number; allInPct: number; bridge?: boolean; available: boolean }[],
+  need: number, stabilised: boolean,
+): string | undefined {
+  const live = quotes.filter((q) => q.available && q.maxProceeds > 0);
+  if (!live.length) return undefined;
+  const perm = live.filter((q) => !q.bridge).sort((a, b) => a.allInPct - b.allInPct);
+  const reach = perm.find((q) => q.maxProceeds >= need);
+  const most = [...live].sort((a, b) => b.maxProceeds - a.maxProceeds)[0];
+  const parts: string[] = [];
+  if (reach) parts.push(`Cheapest money that ${need > 0 ? "clears the payoff" : "will write it"}: ${reach.lender} at ${reach.allInPct.toFixed(2)}% all in.`);
+  else if (perm.length) parts.push(`No permanent desk reaches ${need > 0 ? "the payoff" : "it"}; ${perm[0].lender} is the cheapest at ${perm[0].allInPct.toFixed(2)}% all in.`);
+  if (most.bridge && stabilised && reach && most.id !== reach.id) {
+    const extra = most.maxProceeds - reach.maxProceeds;
+    parts.push(`${most.lender} offers ${usdM(extra)} more — bridge money on a building that is already let, at ${(most.allInPct - reach.allInPct).toFixed(2)} points a year more for all of it, with a balloon in ${Math.round((PRODUCTS.find((p) => p.id === most.id)?.termM ?? 36) / 12)} years.`);
+  }
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+/**
+ * WILL THIS DESK LOOK AT A BUILDING IN THIS STATE? A gate of "good" admits
+ * good; a gate of "standard" admits good and standard. Worn and obsolete
+ * buildings go to the banks and the debt fund, as they do in life.
+ */
+export function conditionOk(p: LoanProduct, condition: string | undefined): boolean {
+  if (!p.minCondition || condition === undefined) return true;
+  if (p.minCondition === "good") return condition === "good";
+  return condition === "good" || condition === "standard";
+}
+
+/**
+ * THE MINIMUM CHEQUE, IN THIS TOWN'S MONEY. A desk's minimum is a fact about
+ * its cost of underwriting against the yield on the loan, and it is written
+ * for the buildings the desk actually sees: a regional in a city of $1M
+ * buildings writes $750K loans or writes nothing. Scaled by the town's
+ * median built value over the reference (`loanScale`), floored so a desk
+ * never underwrites a loan smaller than the file costs.
+ */
+export function loanMin(s: GameState, p: LoanProduct): number {
+  if (!p.minLoan) return 0;
+  const scale = s.loanScale ?? 1;
+  const floor = p.window ? 1_000_000 : p.lender === "Pelican Life Insurance" ? 750_000 : 500_000;
+  return Math.max(floor, Math.round(p.minLoan * scale / 50_000) * 50_000);
+}
 
 /**
  * Is this desk's window open at all today? The conduit is the one that closes
@@ -662,6 +733,9 @@ export interface Quote {
   statedLtv?: number;
   /** How today's sheet was built from the mid-cycle rate, in the order the moves were made. */
   sheetWhy?: string;
+  /** Recourse paper: the loan was capped at what the guarantor's balance sheet will carry. */
+  guarantorConstrained?: boolean;
+  guarantorWhy?: string;
   /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
   byLtv?: number;
   byDscr?: number;
@@ -698,7 +772,24 @@ export function stabViewFor(
  * it. Everything else — the window, the desk's appetite, the three tests — is
  * the same arithmetic, because it is the same credit market.
  */
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string): Quote {
+/**
+ * WHO IS SIGNING FOR THIS. Bank paper is recourse (see PRODUCTS): the desk
+ * has your signature as well as the deed, and it wants the signature to be
+ * worth something. A guarantor covenant is standard on every community and
+ * regional CRE loan — net worth at some multiple of the loan, liquidity at
+ * some share of it — and it is the thing that stops a $2M sponsor buying a
+ * $20M building on a bank's balance sheet. Half the loan is the middle of
+ * practice for a small sponsor; the cap grows as you do, which is the
+ * mid-game the sponsor record never had a positive side to.
+ */
+export interface Guarantor { nw: number }
+const GUARANTOR_NW_MULT = 2.0;
+export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
+  if (!g || !p.recourse) return Infinity;
+  return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));
+}
+
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string, guarantor?: Guarantor): Quote {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -720,8 +811,12 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // quarter before it shows up in a quote.
   const app = lenderAppetite(s, product.lender);
   const conc = street ? { mult: 1, capRoom: Infinity, why: undefined as string | undefined } : concentrationRoom(s, product, klass);
+  // the life company prices a standard building a quarter point over its good-building sheet
+  const qualityAdd = product.minCondition === "standard" && condition === "standard" ? 0.25 : 0;
+  // and a guarantor worth three times the paper is worth a tenth of a point on recourse paper
+  const strongName = !street && guarantor && product.recourse && guarantor.nw >= 3 * product.ltv * price ? 0.10 : 0;
   const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
-    + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
+    + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel + qualityAdd - strongName).toFixed(2);
   const adv = advanceFactor(s, product.lender, crunchEase);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
   const sheet = statedLtv(s, product, klass, condition, street, crunchEase);
@@ -773,7 +868,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // (standing, hold size, window) all read to the borrower as "pay money
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
-    return {
+    const hq: Quote = {
       ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass),
       concWhy: conc.why,
       holdCapped: true,
@@ -782,15 +877,25 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
       statedLtv: sheet.ltv,
       sheetWhy,
     };
+    const gcap = street ? Infinity : guarantorCap(guarantor, product);
+    return hq.principal > gcap
+      ? { ...hq, principal: Math.round(gcap), guarantorConstrained: true, guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(gcap)}` }
+      : hq;
   }
-  if (!street && product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
+  if (!street && product.minLoan && byLtv < loanMin(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A site produces no income, so a coverage test would size every land loan
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.
+  const withGuarantor = (q: Quote): Quote => {
+    const cap = street ? Infinity : guarantorCap(guarantor, product);
+    if (!(q.principal > cap)) return q;
+    return { ...q, principal: Math.round(cap), guarantorConstrained: true,
+      guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(cap)}` };
+  };
   if (product.uwDscr <= 0) {
-    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
+    return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
   }
-  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy };
+  return withGuarantor({ ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
 }
 
 /**
@@ -858,7 +963,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   const principal = Math.max(inPlace, byStab);
   const onPlan = byStab > inPlace;
   return {
-    principal: product.minLoan && principal < product.minLoan ? 0 : principal,
+    principal: product.minLoan && principal < loanMin(s, product) ? 0 : principal,
     ratePct,
     // When the plan is what sized it, the in-place tests did not bind and
     // saying they did would send the borrower off to fix the wrong thing.
@@ -899,7 +1004,7 @@ export function originate(
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
-  if (product.minCondition === "good" && condition !== undefined && condition !== "good") return null;
+  if (!conditionOk(product, condition)) return null;
   const full = quote(s, product, price, noiYr, klass, false, stab, condition);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
@@ -1238,7 +1343,7 @@ export function tickLoan(
         // A desk that cannot close on this building must not be chosen as its
         // renewal: the life company only writes well-kept product, and
         // `originate` refuses at the table after the ladder has already picked.
-        && !(p.minCondition === "good" && h.condition !== undefined && h.condition !== "good"));
+        && conditionOk(p, h.condition));
     const fee = Math.round(loan.balance * REFI_FEE);
     const sized = ladder.map((p) => {
       const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
@@ -1584,6 +1689,14 @@ export interface RefiQuote {
   dscrAtMax: number;
   /** The same during the interest-only period, where there is one. */
   dscrIoAtMax: number;
+  /** Coupon plus points and cap premium spread over the hold — see allInCostPct. */
+  allInPct: number;
+  /** The guarantee sized it: the loan is capped at what your balance sheet will carry. */
+  guarantorConstrained?: boolean;
+  guarantorWhy?: string;
+  /** The lender behind the sheet, for the advice line. */
+  lender: string;
+  bridge?: boolean;
   debtYieldAtMax: number;
   /**
    * `maxLTV` is the covenant ceiling (breach test). `advanceLtv` is the sizing
@@ -1725,8 +1838,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
   const onFacility = !!s.facility?.bbls.includes(bbl);
+  const guarantor: Guarantor = { nw: netWorth(s, parcels) };
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
+    const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
     // the interest-only year's payment (1.71x) beside "binds coverage" from a
@@ -1752,6 +1866,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
       dscrIoAtMax: annualDsIo > 0 ? noi / annualDsIo : 0,
+      allInPct: allInCostPct(p, q.ratePct),
+      lender: p.lender,
+      bridge: p.bridge,
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
       // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,
@@ -1765,14 +1882,16 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       // BUILDING; a hold size is a thing about the LENDER, and telling a
       // borrower "advance rate" when the truth is "we don't write cheques that
       // big" sends them off to fix a building that is not broken.
-      binding: q.holdCapped ? "their hold size"
+      binding: q.guarantorConstrained ? "your guarantee"
+        : q.holdCapped ? "their hold size"
         : q.stabConstrained ? "stabilised plan"
         : q.dyConstrained ? "debt yield"
         : q.dscrConstrained ? "coverage"
         : "advance rate",
       bindingWhy: (() => {
         const parts: string[] = [];
-        const onAdvance = !q.holdCapped && !q.stabConstrained && !q.dyConstrained && !q.dscrConstrained;
+        const onAdvance = !q.holdCapped && !q.stabConstrained && !q.dyConstrained && !q.dscrConstrained && !q.guarantorConstrained;
+        if (q.guarantorConstrained && q.guarantorWhy) parts.push(q.guarantorWhy);
         if (onAdvance && q.advanceWhy) parts.push(q.advanceWhy);
         if (hair.mult < 0.995 && raw.principal > 0) {
           parts.push(`then the desk takes ${Math.round((1 - hair.mult) * 100)}% off for the roll`
@@ -1794,7 +1913,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       floating: p.floating,
       available: onFacility ? false
         : !productOpen(s, p) || !windowOpen(s, p) ? false
-        : p.minCondition === "good" && h.condition !== "good" ? false
+        : !conditionOk(p, h.condition) ? false
         : p.mezz ? false
         : p.uwDscr <= 0 ? vacantDirt
         : !vacantDirt && q.principal > 0,
@@ -1804,12 +1923,12 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
-        : p.minCondition === "good" && h.condition !== "good"
+        : !conditionOk(p, h.condition)
         ? "Life-company money wants a well-kept building. Renovate first."
         : p.mezz
         ? "Mezzanine sits behind a senior — use Place mezz on the refinance desk, do not replace the first lien."
         : p.minLoan && q.principal === 0 && !vacantDirt
-        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
+        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${(loanMin(s, p) / 1e6).toFixed(loanMin(s, p) >= 1e6 ? 1 : 2)}M in this town.`
         /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
            common reason a large, perfectly good building gets a small quote,
            and it was the one wall with nothing written on it. It also names
@@ -1860,7 +1979,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
   }
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
-  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition);
+  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) });
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;

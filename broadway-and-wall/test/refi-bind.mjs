@@ -74,7 +74,8 @@ function quoteBook(g, owned, label) {
     // engineer's report now, so a legs call without it is a different loan.
     const coll = E.debtCollateral(g, parcels, h, rec);
     for (const q of open.slice(0, 5)) {
-      const raw = E.quote(g, E.productById(q.id), v, noi, coll.quoteClass, false, coll.stab, h.condition);
+      // ...and the guarantor the desk read, since recourse paper prices the name
+      const raw = E.quote(g, E.productById(q.id), v, noi, coll.quoteClass, false, coll.stab, h.condition, { nw: E.netWorth(g, parcels) });
       const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
       console.log(
         `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `

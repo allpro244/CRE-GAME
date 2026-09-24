@@ -118,5 +118,50 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   ok(near(h.bookYield - g.econ.indexRate, 1.9, 1.2), `the hometown bank's book still reprices toward index + 1.9 (now index + ${(h.bookYield - g.econ.indexRate).toFixed(2)})`);
 }
 
+// --- 6. the desks' minimum cheques are written for this town --------------
+{
+  const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
+  const built = g.listings.filter((li) => { const r = E.resolveRec(parcels, g, li.bbl); return r && r.class !== "land" && r.bldgArea > 0 && !li.halfBuilt; });
+  const quotes = (id) => built.filter((li) => E.buyQuote(g, parcels, li.bbl, li.ask, id, 1).principal > 0).length / Math.max(1, built.length);
+  ok(g.loanScale !== undefined && g.loanScale > 0.2 && g.loanScale < 1, `this town's loan scale is ${g.loanScale} (median built value over a $4M reference)`);
+  const sv = E.productById("savings"), cd = E.productById("conduit"), pl = E.productById("pelican");
+  ok(E.loanMin(g, sv) < sv.minLoan && E.loanMin(g, sv) >= 500_000, `the regional's minimum cheque here is $${(E.loanMin(g, sv) / 1e6).toFixed(2)}M, not $2.5M`);
+  ok(E.loanMin(g, cd) >= 1_000_000 && E.loanMin(g, cd) < cd.minLoan, `the conduit's is $${(E.loanMin(g, cd) / 1e6).toFixed(2)}M, floored at $1M`);
+  ok(quotes("savings") >= 0.3, `the regional quotes ${(quotes("savings") * 100).toFixed(0)}% of the opening tape (was 9%)`);
+  // the life company across three towns and two dates — it is the desk most sensitive to the window and the grade
+  let pn = 0, pq = 0;
+  for (const seed of [12007, 11, 4242]) {
+    let g2 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    for (let q = 0; q < 20; q++) g2 = E.advanceQuarter(g2, parcels, bbls, adjacency);
+    for (const li of g2.listings) { const r = E.resolveRec(parcels, g2, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) continue; pn++; if (E.buyQuote(g2, parcels, li.bbl, li.ask, "pelican", 1).principal > 0) pq++; }
+  }
+  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(0)}% of ${pn} listings five years in, three towns — standard buildings at a quarter point more (was 0%)`);
+  const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
+  ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
+}
+
+// --- 7. who is signing for this: the guarantor test, and the price of a strong name
+{
+  const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
+  const mid = structuredClone(g); mid.econ.creditIdx = 1.0; mid.bankApp = 1.0;
+  const sv = E.productById("savings"), pl = E.productById("pelican"), cd = E.productById("cordage");
+  const thin = { nw: 2_000_000 }, rich = { nw: 60_000_000 };
+  const qThin = E.quote(mid, sv, 12_000_000, 900_000, "office", false, undefined, "standard", thin);
+  const qRich = E.quote(mid, sv, 12_000_000, 900_000, "office", false, undefined, "standard", rich);
+  ok(qThin.guarantorConstrained === true && qThin.principal === 4_000_000 && /worth half the loan/.test(qThin.guarantorWhy ?? ""), `a $2M sponsor at the regional on a $12M building: capped at $${(qThin.principal / 1e6).toFixed(1)}M — "${qThin.guarantorWhy}"`);
+  ok(!qRich.guarantorConstrained && qRich.principal > 6_000_000, `a $60M sponsor: not capped ($${(qRich.principal / 1e6).toFixed(1)}M)`);
+  ok(near(qThin.ratePct - qRich.ratePct, 0.10, 0.011), `and the strong name is worth a tenth of a point on recourse paper (${qThin.ratePct}% vs ${qRich.ratePct}%)`);
+  const nThin = E.quote(mid, cd, 12_000_000, 900_000, "office", false, undefined, "standard", thin), nRich = E.quote(mid, cd, 12_000_000, 900_000, "office", false, undefined, "standard", rich);
+  ok(!nThin.guarantorConstrained && nThin.principal === nRich.principal && nThin.ratePct === nRich.ratePct, `the debt fund sizes on the building alone: $${(nThin.principal / 1e6).toFixed(1)}M either way`);
+  ok(E.guarantorCap(thin, pl) === Infinity, `the life company is non-recourse — no guarantor test`);
+  ok(near(E.allInCostPct(cd, 9.0), 9.0 + (0.02 + 0.0125) * 100 / 3, 0.011), `all-in on the bridge: 9.00% coupon reads ${E.allInCostPct(cd, 9.0).toFixed(2)}% (two points and the cap over three years)`);
+  ok(near(E.allInCostPct(sv, 6.0), 6.0 + 0.008 * 100 / 7, 0.011), `all-in on the regional: 6.00% reads ${E.allInCostPct(sv, 6.0).toFixed(2)}% (eight tenths of a point over seven years)`);
+  const adv = E.deskAdvice([
+    { id: "savings", label: "Alden", lender: "Alden Savings & Trust", maxProceeds: 6_000_000, allInPct: 6.11, available: true },
+    { id: "cordage", label: "Cordage", lender: "Cordage Debt Partners", maxProceeds: 7_500_000, allInPct: 10.08, bridge: true, available: true },
+  ], 5_000_000, true);
+  ok(/Cheapest money that clears the payoff: Alden Savings & Trust at 6.11%/.test(adv ?? "") && /bridge money on a building that is already let/.test(adv ?? "") && /3.97 points a year more/.test(adv ?? ""), `the desk's advice: "${adv}"`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASS");
 process.exit(fails ? 1 : 0);

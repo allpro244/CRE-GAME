@@ -9,13 +9,13 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, marketAppraisal, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
-import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
+import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
@@ -86,13 +86,13 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const closing = Math.round(price * CLOSING_PCT);
   const deposits = incomingDeposits(s, bbl);
   if (product === "cash" || !rec) {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
   }
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0 };
+  if (!conditionOk(prod, gradeOf(s, rec))) {
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
   }
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
@@ -140,7 +140,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
   const stab = stabViewFor(rec, s.econ, gradeOf(s, rec), uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, gradeOf(s, rec));
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, gradeOf(s, rec), { nw: netWorth(s, parcels) });
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -167,7 +167,8 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     // because it is not a fact about the building — it is a fact about what
     // you agreed to pay. Telling somebody "advance rate" when the truth is
     // "you are over the appraisal" sends them off to fix the wrong thing.
-    bind: overpay > price * 0.005 ? "appraisal"
+    bind: q.guarantorConstrained ? "guarantor"
+      : overpay > price * 0.005 ? "appraisal"
       : q.stabConstrained ? "stab"
       : q.dscrConstrained ? "dscr"
       : q.dyConstrained ? "dy"
@@ -176,6 +177,9 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     ltvCap, uwDscr: prod.uwDscr,
     /** How today's sheet was built, and why the loan is under it when it is. */
     sheetWhy: q.sheetWhy, advanceWhy: q.advanceWhy,
+    /** What the money costs a year, all in — see allInCostPct. */
+    allInPct: allInCostPct(prod, q.ratePct),
+    guarantorWhy: q.guarantorWhy,
     /** What the lender underwrote, and how far over it you are going. */
     appraised, uwBasis, overpay,
   };

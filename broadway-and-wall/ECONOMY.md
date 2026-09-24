@@ -1416,3 +1416,54 @@ The tape against the appraiser, 1,015 listings over six seeds
 p50 0.88; asks capitalise in-place NOI at 5.71% against a 5.82% market cap
 (was 5.12% against 6.18%). `pnpm appraisal` gates all four and is in
 `pnpm check`.
+
+# THREE OF FIVE DESKS WERE FURNITURE — fixed
+
+Measured on the opening tape of three seeds (357 built listings, median ask
+$1.05M, p90 $3.5M): the regional quoted 9% of them ($2.5M minimum loan), the
+life company 0% ("good" buildings only — 5% of a generated city's stock —
+and a $4M minimum), the conduit 0% ($10M minimum). The hometown bank and the
+debt fund were the market.
+
+A desk's minimum cheque is a fact about its cost of underwriting against the
+yield on the loan, written for the buildings it actually sees. So it scales
+with the town: `loanScale` is the median built value over a $4M reference
+(clamped 0.25-4, read at the opening bell and every January), `loanMin`
+applies it to every product's minimum with a floor ($500K, the life
+company $750K, the conduit $1M), and the refinance desk's "below their
+minimum" line prints this town's number. The life company takes a standard
+building at a quarter point over its good-building sheet (`conditionOk`,
+`minCondition: "standard"`); worn and obsolete still go to the banks and the
+fund. After, same tape: regional 47%, life company 18%, conduit 7% (36% of
+listings over $2.5M). `pnpm advance` gates it.
+
+# WHAT THE MONEY COSTS, AND WHO IS SIGNING FOR IT
+
+Two things the debt desks never said.
+
+**All-in cost.** The refinance table sorted by what reaches your account,
+which put the debt fund — most proceeds, most expensive — on top of every
+list, and the acquisition chooser listed the desks in sheet order as if
+they were peers. `allInCostPct` is the coupon plus points and the cap
+premium spread over the hold the paper runs (its term, or seven years):
+two points and a cap on three-year bridge paper is 1.08 points a year on
+top of the coupon; eight tenths of a point on seven-year regional paper is
+0.11. Both desks print it; the acquisition chooser orders by it (desks that
+will write first); and `deskAdvice` names the cheapest permanent desk that
+clears the payoff and, when the most money on the table is bridge money on
+a building that is already let, what taking it costs a year and when the
+balloon lands.
+
+**The guarantor.** Bank paper is recourse — the desk has your signature as
+well as the deed — and every community and regional CRE loan carries a
+guarantor covenant: net worth at some multiple of the loan. Nothing tested
+it, so a $2M sponsor could sign for $20M at the hometown bank. Recourse
+desks now cap the loan at twice the guarantor's net worth (`guarantorCap`,
+the middle of practice for a small sponsor), the card says so ("wants a
+guarantor worth half the loan — your balance sheet carries $X, so they will
+sign $2X"), and a guarantor worth three times the paper is worth a tenth
+of a point on the coupon. Non-recourse desks — the life company, the
+conduit, the debt fund — size on the building alone, which is what
+non-recourse means and the reason a thin sponsor's first big building is a
+bridge deal or a life-company deal. The cap grows as you do: this is the
+positive side the sponsor record never had.

@@ -2690,6 +2690,14 @@ export interface GameState {
   cityLoans?: Record<string, CityLoan>;
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
+  /**
+   * THE SIZE OF A LOAN IN THIS TOWN. Every desk's minimum cheque was a number
+   * written for a city of $4M buildings; in a city whose median building is
+   * worth $1M the regional's $2.5M minimum quoted 9% of the tape and the
+   * conduit's $10M none of it. Median built value over the reference,
+   * clamped 0.25-4, recomputed yearly — see cityLoanScale.
+   */
+  loanScale?: number;
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
   /**

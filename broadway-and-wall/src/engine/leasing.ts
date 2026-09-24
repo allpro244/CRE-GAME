@@ -3488,6 +3488,18 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     t.deposit = (t.deposit ?? 0) + top;
   } else if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     const t = h.tenants[l.tenantIdx];
+    // RE-MEASURED AT RENEWAL. Saves from before the rentable move carry
+    // gross-sized rolls — "Leased 7,504 of 5,986" — and a renewal used to
+    // carry the gross feet forward for ever. A landlord re-measures to the
+    // rentable standard when the lease is rewritten; the tenant pays on the
+    // feet that exist. The difference is not space handed back (it never
+    // existed), so it is trimmed here before the giveback branch below.
+    {
+      const use = (t.use ?? dominantUse(rec)) as BuiltClass;
+      const others = h.tenants.reduce((a, x, i) => a + (i !== l.tenantIdx && (x.use ?? dominantUse(rec)) === use ? x.sf : 0), 0);
+      const cap = Math.max(minLettableSf(rec, use), useRentableSf(rec, use) - others);
+      if (t.sf > cap + 0.5) { t.sf = Math.round(cap); if (l.sf > cap) l.sf = Math.round(cap); }
+    }
     // THEY ARE RENEWING FOR LESS. The space they hand back is space, and it
     // turns like any other giveback before anybody can be shown it.
     if (l.sf < t.sf) {

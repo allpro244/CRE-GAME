@@ -81,6 +81,7 @@ Recent additions worth knowing about:
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
 | `pnpm refi-strong` | ~40s | a stabilised building refinances to the sheet or to coverage; the haircut is a notch, never on the flats. In `pnpm check`. |
+| `pnpm glut` | ~90s | the pencil reads vacancy; a local slump does not bleed jobs; seed 20603 keeps its people. In `pnpm check`. |
 | `pnpm appraisal` | ~60s | one appraisal: continuous condition, taxed vessels, the tape/desk/lender/deed agree, flats' income turns over. In `pnpm check`. |
 | `pnpm advance` | ~15s | the sheet moves: standards, class, condition, your file, the fund's own margin. In `pnpm check`. |
 | `pnpm ltvdist` | ~10 min | what advance the market actually offers, every desk on every live listing, cut every way. Report, not gate. |
@@ -179,6 +180,32 @@ another. Grep before you add another.
 ---
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
+
+- **A lot with a crane on it is not for sale as dirt** (Sep 2026). The
+  tape listed lots with a live city job and the builder bot bought one; the
+  job stayed in `cityJobs`, `reconcileSupplyQueue` cancelled its row, the
+  buyer's own development queued a second date on the same parcel ("live
+  city job missing from deliveryQueue" / "city deliverM 116 ≠ queue 124",
+  builder bot seed 4106). `refreshListings` skips such lots and
+  `executePurchase` refuses them; half-built receiver sales (orphaned jobs)
+  keep their own path.
+- **Gross rolls re-measure at renewal** (Sep 2026, closes the old-save
+  note in §6). A renewal trims the tenant to the rentable feet the leg has
+  left (`signLoi`), so a save from before the rentable move stops reading
+  "Leased 7,504 of 5,986" as its leases roll, without cutting a signed
+  tenant mid-term.
+
+- **A glut is a property event, not a depression** (Sep 2026). Seed
+  20603 sat in "depression" twelve years, lost 28% of its jobs and 22% of
+  its people while the nation expanded, and took 78 deliveries into 30%
+  vacancy. `jobDrift` for the local recession/depression phases runs at
+  less than half its rate outside a national recession; `devPencils` reads
+  the market's vacancy (untouched to 1.5× natural, half at 3×). 24 seeds:
+  worst jobs drawdown median 8% → 5%, p90 16% → 14%. `pnpm glut` gates it,
+  in `check`. ECONOMY.md "A glut is a property event".
+- **One reservation, two doors** (Sep 2026, #33 Phase 4.3). `reservationOf`
+  now reads `reserveMidOf` + `phaseShift` like the tape's `bidOdds`; the
+  off-market counter prints the closing band. `pnpm seller-stats` green.
 
 - **All-in cost, the desk's advice, and the guarantor** (Sep 2026).
   `allInCostPct` (coupon + points + cap premium over the hold) on every
@@ -532,6 +559,27 @@ another. Grep before you add another.
 ---
 
 ## 6. OPEN FAULTS, RANKED
+
+**0h. The retail / industrial roll seam — measured, left alone (Sep 2026).**
+Generated rolls against the market model on three seeds' whole built stock,
+by class and leg shape (`scratchpad/rollgap.mjs`, sf-weighted): office
+stacked −4.8pp, office single −2.5pp, retail stacked −4.9pp, retail single
+−6.2pp, industrial stacked −3.6pp. The gap is the `buildRentRoll` draw
+(`targetOcc + rrange(−0.14, +0.05)`, mean −4.5pp) and it is the same size
+in every class; the 17pp / 10pp figures in the earlier §5 note were the
+playtest's own later-month reading, not the generator. Single-floor legs
+are let-or-empty (retail 15% of legs empty, office 22%), which is what a
+one-shop building is; sf-weighted they land on the same target. Nothing to
+fix in the generator; if a seller's opening roll should sit nearer the
+market, the draw's centre is the one number.
+
+**0i. Zoning depth (#36) and firm entry / exit (#48 / #49) — scoped, not
+done (Sep 2026).** `pnpm zoning` and `pnpm firms` are green on this engine
+(variance → decision, rezoning moves `zoneAdj`, landmark blocks demolition;
+firm count grows, star departure queues a founder bid). What remains is
+NO_PLAYTEST_PLAN Phases 5.2 and 6 — the map lens, the district table, the
+exit-path audit and the lineage view — which are feature tracks, not
+realism faults, and are left for their own chats.
 
 **0g. "Development starts are all or nothing by seed" — NOT A FAULT (Sep
 2026).** The 36-seed A/B in ECONOMY.md read `econ.starts` as cumulative

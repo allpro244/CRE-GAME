@@ -5,7 +5,7 @@ import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, DevUse, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
-import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
+import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
@@ -197,6 +197,10 @@ export function executePurchase(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
+  // see refreshListings: a live city job is somebody else's construction site
+  if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) {
+    return { s, err: "There is a crane on that lot — somebody else's job is under way. It is not for sale until it tops out or the receiver takes it." };
+  }
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
   // Vehicle path: fundPay + live investment period draws `fund.cash`.
   // Otherwise GP cash — the balance-sheet default.
@@ -451,7 +455,7 @@ export function bidOdds(
   // seller's NUMBER, which is where they act. A recession does not make a
   // seller likelier to accept a given discount by some fixed amount of luck —
   // it lowers what they will settle for.
-  const phase = s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
+  const phase = phaseShift(s);
   const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
   const seller = sellerOf(s, parcels, bbl);
   // Kind + distress share the desk's floors. Phase / street / relationship

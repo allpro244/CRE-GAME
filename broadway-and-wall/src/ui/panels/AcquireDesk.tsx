@@ -15,7 +15,7 @@ import {
   buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
-import { sellerOf, sellerProfile, closingBand, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
+import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS, deskAdvice } from "@/engine/debt";
@@ -605,6 +605,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
 // quote by the principal component.
 
 export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
   const [frac, setFrac] = useState(0.88);
   const px = Math.round(ask * frac);
   return (
@@ -618,7 +620,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
         onChange={setFrac}
         format={() => `${usd(px)} · ${((frac - 1) * 100).toFixed(0)}%`}
         marks={[{ at: 0.88, label: "−12%" }, { at: 0.95, label: "−5%" }]}
-        hint="One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up."
+        hint={`One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up. ${(() => { const sk = sellerOf(game, parcels, bbl); const b = closingBand(sk.kind, {}); const lbl = sellerProfile(sk.kind).label; return `${lbl[0].toUpperCase()}${lbl.slice(1)} typically closes at ${(b.lo * 100).toFixed(0)}–${(b.hi * 100).toFixed(0)}% of the ask${phaseShift(game) ? ` (${phaseShift(game) > 0 ? "firmer" : "softer"} in this phase)` : ""}.`; })()}`}
       />
       <div className="btn-row">
         <button className="btn" onClick={() => useStore.getState().counterOff(bbl, px)}>

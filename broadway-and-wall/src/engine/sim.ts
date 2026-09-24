@@ -390,6 +390,14 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
+    // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT. A merchant builder's
+    // live job stayed in `cityJobs` while the tape sold the lot underneath it;
+    // the buyer's own development then queued a second delivery on the same
+    // parcel and the supply ledger held two dates for one site (`pnpm test`,
+    // builder bot, "live city job missing from deliveryQueue"). Half-built
+    // receiver sales are the exception and carry their own path: an orphaned
+    // job is what `halfBuilt` listings convey.
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) { rejects++; continue; }
     // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
     //
     // This picked a parcel at random with no memory of what had just traded,

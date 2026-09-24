@@ -1790,8 +1790,22 @@ export function tickEcon(s: GameState) {
   }
 
   // --- employment: the demand behind every lease -----------------------------
+  // A LOCAL PROPERTY SLUMP IS NOT A LOCAL DEPRESSION. The phase machine is a
+  // property cycle — vacancy, rents, capital — and its "recession" and
+  // "depression" phases bled jobs at 3.7% and 1.2% a year whether or not the
+  // nation was in one. A city whose glut kept the phase machine in
+  // "depression" for twelve years (harness seed 20603: office vacancy 30%,
+  // national recession in two of those years) lost 28% of its jobs and 22%
+  // of its people while the country expanded, and that is not what a glut
+  // does — Houston in 1986 and Dallas in 1988 lost jobs with the oil bust
+  // and the S&L failures, and recovered on the national cycle inside six
+  // years with their vacancy still in the twenties. The local phase's job
+  // drift now runs at less than half its rate when the nation is expanding;
+  // the national recession (`natPull`, below) is what costs a city jobs.
+  const natRec = (e.nat?.recM ?? 0) > 0;
   const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
-    : e.phase === "recession" ? -0.0031 : e.phase === "depression" ? -0.0010 : 0.0015;
+    : e.phase === "recession" ? (natRec ? -0.0031 : -0.0014)
+    : e.phase === "depression" ? (natRec ? -0.0010 : -0.0003) : 0.0015;
   // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
   // causal graph had a dead end where its most important feedback belongs: a
   // city that becomes ruinously expensive relative to what it pays its

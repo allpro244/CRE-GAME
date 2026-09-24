@@ -1467,3 +1467,56 @@ conduit, the debt fund — size on the building alone, which is what
 non-recourse means and the reason a thin sponsor's first big building is a
 bridge deal or a life-company deal. The cap grows as you do: this is the
 positive side the sponsor record never had.
+
+# A GLUT IS A PROPERTY EVENT, NOT A DEPRESSION — fixed
+
+Twenty-four seeds of the baseline city, 300 months (`scratchpad/phasedist`):
+the phase machine spends 22% of months in recovery, 48% in expansion, 12%
+at the peak, 17% in recession and 1% in depression; recession spells run a
+median 11 months (max 31). Jobs' worst peak-to-trough was a median 8%, p90
+16%, max 22%, and two cities in twenty-four ended more than a tenth below
+their own peak. Most of that is the shape of a business cycle. One city was
+not: harness seed 20603 sat in "depression" for twelve years with office
+vacancy at 30% and flats at 22%, lost 28% of its jobs and 22% of its people
+while the nation expanded, and took delivery of 78 buildings while it did.
+
+Two mechanisms, both wrong in the same direction:
+
+1. **The local phase bled jobs on its own.** `jobDrift` ran −3.7% a year in
+   "recession" and −1.2% in "depression" whether or not the nation was in
+   one, and a glut keeps the phase machine in depression until the slack
+   clears (`slackEma > 0.09`) — so the glut cost jobs, the jobs cost tenants,
+   the tenants cost the glut. Houston in 1986 and Dallas in 1988 lost jobs to
+   the oil bust and the S&L failures and recovered on the national cycle
+   inside six years with vacancy still in the twenties; nowhere has a
+   property glut alone taken a city down a quarter. The local phase's drift
+   runs at less than half its rate outside a national recession now
+   (recession −1.4%/yr, depression −0.4%/yr); `natPull` is what costs a city
+   jobs.
+2. **The pro forma ignored the market's vacancy.** `devPencils` underwrote
+   90% occupancy (95% for flats) whatever the market was doing, so the
+   pipeline kept starting into the glut. The lease-up assumption is the
+   market's now, with a margin: untouched to 1.5× natural vacancy, down to
+   half at 3× — at which point nothing pencils, which is what a glut is for.
+
+After, same 24 seeds: worst drawdown median 5%, p90 14%, max 23%; one city
+in twenty-four ends more than a tenth off its peak; depression 1.2% of
+months (a property depression still happens — it just stops being a
+demographic one). Seed 20603: jobs −7% at the worst against −28%, people
+−4% against −22%, office vacancy peaking at 21% against 30%. `pnpm glut`
+gates the pencil, the drift and the seed, and is in `pnpm check`.
+
+# ONE RESERVATION, TWO DOORS — fixed
+
+The tape (`bidOdds`) centred a seller's acceptance curve on `reserveMidOf`
+— the kind's floor plus a lift, less a motivated discount — shifted by the
+cycle (−0.035 in a recession, +0.025 in an expansion), and `closingBand`
+printed that centre on the offer desk as "typically closes at X–Y% of the
+ask". The negotiation path (`reservationOf`) carried its own floor, its own
+phase shifts (−0.055 / +0.03) and its own distress notches, so the same
+estate wanted two different numbers depending on whether you bid on the
+tape or rang them, and the band the desk printed was wrong for the door
+you were knocking on. Both paths read `reserveMidOf` and one `phaseShift`
+now; the certainty discount, the reputation multiplier, the tape-as-outside-
+option floor and the lender's basis rules are unchanged; the off-market
+counter prints the same band the tape does, with the phase named.

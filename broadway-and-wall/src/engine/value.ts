@@ -734,7 +734,18 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // underwrites above today's rent, which is how a pipeline overshoots.
   const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
-  const occ = k === "multifamily" ? 0.95 : 0.90;
+  // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for
+  // flats) whatever the market was doing, so the pipeline kept starting into
+  // a glut: seed 20603 delivered 78 buildings while office vacancy sat at 30%
+  // and the city lost a fifth of its people. A developer's lease-up
+  // assumption is the market's, with a margin: untouched up to one and a
+  // half times the natural vacancy, then down to half at three times it —
+  // at which point nothing pencils, which is what a glut is for.
+  const nat = NATURAL_VAC[k];
+  const vac = e.cityVac?.[k] ?? nat;
+  const excess = Math.max(0, vac - 1.5 * nat);
+  const leaseUp = Math.max(0.5, 1 - excess / (1.5 * nat));
+  const occ = (k === "multifamily" ? 0.95 : 0.90) * leaseUp;
   // the P90 site's opex, not the mean's — same station as its rent
   const opex = opexPsf(k, e, false) * Math.pow(locMult, OPEX_LOC_ELASTICITY);
   const recov = RECOVERY_RATE[k] ?? 0;

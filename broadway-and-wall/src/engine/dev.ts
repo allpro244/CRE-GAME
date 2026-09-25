@@ -529,11 +529,25 @@ export function maxRetailShare(floors: number): number {
  * lobby, which is what a quiet residential block has.
  */
 const STREET_RETAIL_DEMAND = 38;   // below this a shop at grade has no trade
-export function withStreetRetail(mix: UseMix, floors: number, demand: number, econ?: Econ): UseMix {
+export function withStreetRetail(mix: UseMix, floors: number, demand: number, econ?: Econ, force = false): UseMix {
   const lead = dominantOf(mix);
   if (lead !== "office" && lead !== "multifamily") return mix;
   if ((mix.retail ?? 0) > 0) return mix;                 // already a mixed programme
-  if (floors < 2 || demand < STREET_RETAIL_DEMAND) return mix;
+  if (floors < 2) return mix;
+  // THE OWNER'S CALL. A developer can programme shops on a quiet street or
+  // into a glutted retail market; the market then decides whether they let.
+  // `force` is that choice (DevDraft.groundRetail = "on"): the geometry's
+  // share, the street's and the market's gates skipped.
+  if (force) {
+    const share = Math.min(maxRetailShare(floors), 1.25 / floors);
+    const out: UseMix = { retail: +share.toFixed(4) };
+    const rest = 1 - share;
+    const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
+    const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
+    for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
+    return out;
+  }
+  if (demand < STREET_RETAIL_DEMAND) return mix;
   // ...AND IT IS NOT EVERY MARKET. This rule read footfall and never the
   // retail market itself, so every tower stapled shops onto a street already
   // drowning in them — measured over 80 years, retail stock grew five times
@@ -789,7 +803,7 @@ export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" },
   lender?: string,
   spec = 0.5,
   landBasisOverride?: number,
@@ -842,9 +856,11 @@ export function planDevelopment(
   // same quantity. Income, lease-up and the space market read `rentable`.
   const sf = gsf;
 
-  // Shops at grade wherever the street will carry them — see withStreetRetail.
-  // Applied before the cap, so the cap still has the last word.
-  const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50, s.econ), fl);
+  // Shops at grade wherever the street will carry them — see withStreetRetail —
+  // or wherever the owner says: "on" programmes them regardless, "off" is a
+  // lobby. Applied before the cap, so the cap still has the last word.
+  const groundRetail = custom?.groundRetail ?? "auto";
+  const mix = capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec.demandScore ?? 50, s.econ, groundRetail === "on"), fl);
   const proposedBts = custom?.bts;
   const bts = proposedBts
     && proposedBts.use !== "multifamily"
@@ -1651,7 +1667,7 @@ export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {

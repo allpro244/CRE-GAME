@@ -181,6 +181,23 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **Shops at grade are the owner's call** (Sep 2026). `DevDraft.groundRetail`
+  ("auto" | "on" | "off") on the develop desk's Programme tab for office and
+  apartment schemes; `withStreetRetail(..., force)` and `planDevelopment`'s
+  `custom.groundRetail`. "on" programmes the geometry's share whatever the
+  street says (the market lets it or not); "off" is a lobby. `pnpm
+  ground-retail` gates it, in `check`.
+- **The facades stopped being one biscuit** (Sep 2026). The pre-war stone
+  ladder had two pale stones in 42% of the hat and the era term pushed
+  everything after 1910 into them; brick's tan/buff/whitewash was 36%. Nine
+  stones (red sandstone, olive greywacke, dark granite added) with the pale
+  share at a third; ten bricks (iron-spot, orange common, yellow stock,
+  blue-grey engineering added) with the pale share at 22%; mill, ribbon,
+  moderne, civic, balcony, precast, stucco and postwar-slab families each
+  gained real material colourways (no pinks, no purples — the deco "pink
+  granite" is Chanin tapestry brick now); the highlight split-tone in
+  `grade()` is half as warm so a red wall in sun reads red. Map only.
+
 - **A lot with a crane on it is not for sale as dirt** (Sep 2026). The
   tape listed lots with a live city job and the builder bot bought one; the
   job stayed in `cityJobs`, `reconcileSupplyQueue` cancelled its row, the

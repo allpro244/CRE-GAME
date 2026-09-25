@@ -1706,7 +1706,9 @@ vec3 grade(vec3 c) {
   t = mix(vec3(lum), t, 1.40);                 // ACES eats chroma; put it back
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t *= mix(vec3(0.910, 0.958, 1.108), vec3(1.078, 1.010, 0.904), smoothstep(0.14, 0.86, lum));
+  // the warm highlight tint was a quarter of the way to sepia and every lit
+  // wall borrowed it: half as strong now, so a red wall in sun reads red
+  t *= mix(vec3(0.930, 0.966, 1.084), vec3(1.040, 1.006, 0.950), smoothstep(0.14, 0.86, lum));
   return clamp(t, 0.0, 1.0);
 }`;
 
@@ -2265,13 +2267,21 @@ void main() {
     // dark-to-pale against age: brownstone and granite are what the 1880s
     // built with, limestone and pale ashlar are the 1910s, and paint is what
     // somebody did to all of it in 1954.
-    float pk = clamp(vVar * 0.58 + vEra * 0.42, 0.0, 0.999);
-    if (pk < 0.14)        { wall = vec3(0.46, 0.35, 0.31); } // dark brownstone
-    else if (pk < 0.30)   { wall = vec3(0.55, 0.40, 0.33); } // brownstone
-    else if (pk < 0.44)   { wall = vec3(0.63, 0.60, 0.57); } // grey granite
-    else if (pk < 0.58)   { wall = vec3(0.70, 0.66, 0.61); } // soot-washed
-    else if (pk < 0.72)   { wall = vec3(0.79, 0.75, 0.66); } // pale ashlar
-    else if (pk < 0.87)   { wall = vec3(0.86, 0.81, 0.70); } // limestone
+    // NINE STONES, AND THE PALE ONES A SMALLER SHARE. Read from three hundred
+    // metres the seven-stone ladder still summed to cream: the two pale
+    // stones took 42% of the hat and the era term pushed everything after
+    // 1910 into them. A pre-war street is red sandstone, olive-grey
+    // greywacke and dark granite as much as it is limestone; the pale share
+    // is a third now and the darks and the mid-tones carry the rest.
+    float pk = clamp(vVar * 0.66 + vEra * 0.34, 0.0, 0.999);
+    if (pk < 0.11)        { wall = vec3(0.46, 0.35, 0.31); } // dark brownstone
+    else if (pk < 0.22)   { wall = vec3(0.55, 0.40, 0.33); } // brownstone
+    else if (pk < 0.32)   { wall = vec3(0.58, 0.36, 0.30); } // red sandstone
+    else if (pk < 0.43)   { wall = vec3(0.56, 0.54, 0.48); } // olive-grey greywacke
+    else if (pk < 0.54)   { wall = vec3(0.48, 0.47, 0.47); } // dark granite
+    else if (pk < 0.66)   { wall = vec3(0.70, 0.66, 0.61); } // soot-washed
+    else if (pk < 0.78)   { wall = vec3(0.79, 0.75, 0.66); } // pale ashlar
+    else if (pk < 0.90)   { wall = vec3(0.86, 0.81, 0.70); } // limestone
     else                  { wall = vec3(0.78, 0.79, 0.72); } // painted
     glassA = vec3(0.30, 0.36, 0.42); glassB = vec3(0.44, 0.52, 0.58);
   }
@@ -2279,19 +2289,30 @@ void main() {
     // The same for brick, which carries 2,403 buildings across 109 years on
     // one palette. Deep red and dark brown are 19th-century common brick; tan
     // and buff are the 1920s; whitewash and grey paint are what happened later.
-    float pk = clamp(vVar * 0.60 + vEra * 0.40, 0.0, 0.999);
-    if (pk < 0.15)        { wall = vec3(0.63, 0.34, 0.28); } // deep red
-    else if (pk < 0.29)   { wall = vec3(0.49, 0.38, 0.34); } // dark brown
-    else if (pk < 0.43)   { wall = vec3(0.72, 0.46, 0.36); } // red brick
-    else if (pk < 0.57)   { wall = vec3(0.58, 0.42, 0.34); } // brown
-    else if (pk < 0.71)   { wall = vec3(0.76, 0.62, 0.46); } // tan
-    else if (pk < 0.83)   { wall = vec3(0.80, 0.71, 0.55); } // buff
-    else if (pk < 0.93)   { wall = vec3(0.83, 0.80, 0.74); } // whitewash
+    // TEN BRICKS. Iron-spot dark, orange common, yellow stock and blue-grey
+    // engineering brick were missing, and the later pale share (tan, buff,
+    // whitewash: 36% of the hat) is what made every post-1920 block read as
+    // one biscuit. Twenty-two per cent now.
+    float pk = clamp(vVar * 0.66 + vEra * 0.34, 0.0, 0.999);
+    if (pk < 0.11)        { wall = vec3(0.63, 0.34, 0.28); } // deep red
+    else if (pk < 0.21)   { wall = vec3(0.42, 0.32, 0.30); } // iron-spot dark
+    else if (pk < 0.33)   { wall = vec3(0.72, 0.46, 0.36); } // red brick
+    else if (pk < 0.43)   { wall = vec3(0.76, 0.50, 0.32); } // orange common
+    else if (pk < 0.53)   { wall = vec3(0.58, 0.42, 0.34); } // brown
+    else if (pk < 0.62)   { wall = vec3(0.72, 0.64, 0.42); } // yellow stock
+    else if (pk < 0.70)   { wall = vec3(0.52, 0.53, 0.55); } // blue-grey engineering
+    else if (pk < 0.80)   { wall = vec3(0.76, 0.62, 0.46); } // tan
+    else if (pk < 0.88)   { wall = vec3(0.80, 0.71, 0.55); } // buff
+    else if (pk < 0.95)   { wall = vec3(0.83, 0.80, 0.74); } // whitewash
     else                  { wall = vec3(0.60, 0.55, 0.53); } // grey-painted
     glassA = vec3(0.32, 0.38, 0.44); glassB = vec3(0.50, 0.57, 0.62);
   }
   if (s == 3) { colW = 4.4; win = vec2(0.58, 0.50);
-    wall = mix(vec3(0.72, 0.63, 0.52), vec3(0.62, 0.58, 0.55), step(0.5, vVar));
+    // a mill is red brick or sooted brick before it is anything buff
+    if (vVar < 0.30)      { wall = vec3(0.60, 0.36, 0.30); } // red mill brick
+    else if (vVar < 0.55) { wall = vec3(0.50, 0.40, 0.36); } // sooted
+    else if (vVar < 0.80) { wall = vec3(0.72, 0.63, 0.52); } // buff
+    else                  { wall = vec3(0.62, 0.58, 0.55); } // grey
     glassA = vec3(0.40, 0.48, 0.54); glassB = vec3(0.58, 0.66, 0.70);
   }
   if (s == 4) { glassy = true; colW = 2.7; win = vec2(0.62, 0.58);
@@ -2317,14 +2338,19 @@ void main() {
     else if (pk < 0.68) { wall = vec3(0.70, 0.62, 0.48); }   // warm buff brick with limestone piers
     else if (pk < 0.79) { wall = vec3(0.64, 0.47, 0.36); }   // salmon-ochre brick, the Midwest and Southwest
     else if (pk < 0.90) { wall = vec3(0.52, 0.48, 0.44); }   // grey-brown schist, a dark-based tower
-    else                { wall = vec3(0.72, 0.63, 0.60); }   // pale pink granite - 40 Wall Street, 1930
+    else                { wall = vec3(0.60, 0.44, 0.34); }   // red-brown tapestry brick - Chanin Building, 1929
     // The spandrel is the whole type: window and spandrel share one deep reveal
     // and the spandrel is DARKER, so the vertical channel reads continuous from
     // the second floor to the parapet. That is why the glass runs dark here.
     glassA = vec3(0.26, 0.30, 0.35); glassB = vec3(0.40, 0.45, 0.51);
   }
   if (s == 7) { glassy = true; colW = 6.5; win = vec2(0.94, 0.46);
-    wall = mix(vec3(0.80, 0.80, 0.77), vec3(0.72, 0.74, 0.72), step(0.5, vVar));
+    // ribbon windows ran between bands of buff brick and dark red brick as
+    // often as between bands of white stone
+    if (vVar < 0.28)      { wall = vec3(0.80, 0.80, 0.77); } // white stone band
+    else if (vVar < 0.52) { wall = vec3(0.72, 0.74, 0.72); } // grey
+    else if (vVar < 0.78) { wall = vec3(0.74, 0.62, 0.44); } // buff brick band
+    else                  { wall = vec3(0.56, 0.36, 0.30); } // dark red brick band
     glassA = vec3(0.36, 0.48, 0.52); glassB = vec3(0.55, 0.68, 0.70);
   }
   if (s == 15) {
@@ -2497,7 +2523,9 @@ void main() {
     // corner, glass block, cream stucco. The 1930s answer to the deco tower,
     // built low and wide.
     glassy = true; colW = 5.9; win = vec2(0.88, 0.44);
-    wall = mix(vec3(0.84, 0.81, 0.74), vec3(0.78, 0.76, 0.71), step(0.5, vVar));
+    if (vVar < 0.40)      { wall = vec3(0.84, 0.81, 0.74); } // cream stucco
+    else if (vVar < 0.70) { wall = vec3(0.72, 0.76, 0.70); } // pale sea-green
+    else                  { wall = vec3(0.70, 0.68, 0.64); } // warm grey
     glassA = vec3(0.44, 0.54, 0.56); glassB = vec3(0.64, 0.75, 0.76);
   }
   if (s == 29) {
@@ -2505,7 +2533,9 @@ void main() {
     // still there but it has lost its capitals, and the windows sit at the
     // back of very deep piers. Pale granite, and mostly shadow.
     colW = 4.3; win = vec2(0.34, 0.70);
-    wall = mix(vec3(0.80, 0.78, 0.73), vec3(0.72, 0.70, 0.66), step(0.5, vVar));
+    if (vVar < 0.45)      { wall = vec3(0.80, 0.78, 0.73); } // pale granite
+    else if (vVar < 0.75) { wall = vec3(0.66, 0.65, 0.62); } // grey granite
+    else                  { wall = vec3(0.62, 0.52, 0.42); } // brown sandstone
     glassA = vec3(0.20, 0.25, 0.30); glassB = vec3(0.34, 0.41, 0.47);
   }
   if (s == 30) {
@@ -2542,9 +2572,11 @@ void main() {
     // and which side of each cell is dark tells you where the sun is.
     colW = 3.05; win = vec2(0.62, 0.60);
     float pk = clamp(vVar, 0.0, 0.999);
-    if (pk < 0.40)      { wall = vec3(0.76, 0.75, 0.71); } // white cement
-    else if (pk < 0.72) { wall = vec3(0.68, 0.66, 0.62); } // grey precast
-    else                { wall = vec3(0.74, 0.69, 0.59); } // buff aggregate
+    if (pk < 0.32)      { wall = vec3(0.76, 0.75, 0.71); } // white cement
+    else if (pk < 0.58) { wall = vec3(0.68, 0.66, 0.62); } // grey precast
+    else if (pk < 0.78) { wall = vec3(0.74, 0.69, 0.59); } // buff aggregate
+    else if (pk < 0.90) { wall = vec3(0.52, 0.52, 0.52); } // charcoal exposed aggregate
+    else                { wall = vec3(0.66, 0.56, 0.46); } // brown river-gravel aggregate
     glassA = vec3(0.24, 0.29, 0.33); glassB = vec3(0.38, 0.45, 0.50);
   }
   if (s == 34) {
@@ -2582,10 +2614,11 @@ void main() {
     // openings and a trim band. Every city is full of it and it had none.
     colW = 3.4; win = vec2(0.40, 0.54);
     float pk = clamp(vVar, 0.0, 0.999);
-    if (pk < 0.26)      { wall = vec3(0.80, 0.74, 0.62); } // beige
-    else if (pk < 0.48) { wall = vec3(0.74, 0.66, 0.58); } // taupe
-    else if (pk < 0.68) { wall = vec3(0.80, 0.70, 0.62); } // peach
-    else if (pk < 0.86) { wall = vec3(0.70, 0.72, 0.70); } // grey-green
+    if (pk < 0.22)      { wall = vec3(0.80, 0.74, 0.62); } // beige
+    else if (pk < 0.40) { wall = vec3(0.74, 0.66, 0.58); } // taupe
+    else if (pk < 0.56) { wall = vec3(0.72, 0.58, 0.44); } // terracotta wash
+    else if (pk < 0.72) { wall = vec3(0.70, 0.72, 0.70); } // grey-green
+    else if (pk < 0.86) { wall = vec3(0.60, 0.62, 0.58); } // olive
     else                { wall = vec3(0.66, 0.60, 0.56); } // mushroom
     glassA = vec3(0.28, 0.33, 0.38); glassB = vec3(0.43, 0.50, 0.56);
   }
@@ -2604,8 +2637,9 @@ void main() {
     // parapet. The relentlessness is the identification.
     colW = 3.7; win = vec2(0.54, 0.50);
     float pk = clamp(vVar, 0.0, 0.999);
-    if (pk < 0.42)      { wall = vec3(0.66, 0.44, 0.36); } // red brick
-    else if (pk < 0.74) { wall = vec3(0.74, 0.66, 0.53); } // buff brick
+    if (pk < 0.36)      { wall = vec3(0.66, 0.44, 0.36); } // red brick
+    else if (pk < 0.58) { wall = vec3(0.74, 0.66, 0.53); } // buff brick
+    else if (pk < 0.78) { wall = vec3(0.50, 0.38, 0.34); } // dark brown brick
     else                { wall = vec3(0.62, 0.58, 0.54); } // grey brick
     glassA = vec3(0.30, 0.35, 0.40); glassB = vec3(0.46, 0.53, 0.58);
   }
@@ -2622,7 +2656,10 @@ void main() {
     // it and a rail across it. From the air it reads as a striped building,
     // and the stripe is a real shadow rather than a painted band.
     glassy = true; colW = 3.6; win = vec2(0.88, 0.74);
-    wall = mix(vec3(0.84, 0.83, 0.80), vec3(0.74, 0.74, 0.73), step(0.5, vVar));
+    if (vVar < 0.35)      { wall = vec3(0.84, 0.83, 0.80); } // white render
+    else if (vVar < 0.60) { wall = vec3(0.74, 0.74, 0.73); } // grey render
+    else if (vVar < 0.82) { wall = vec3(0.70, 0.54, 0.40); } // brick slab edge
+    else                  { wall = vec3(0.56, 0.58, 0.60); } // slate-grey panel
     glassA = vec3(0.36, 0.46, 0.52); glassB = vec3(0.56, 0.68, 0.74);
   }
   if (s == 42) {

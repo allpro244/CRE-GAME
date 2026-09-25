@@ -650,6 +650,14 @@ export interface DevDraft {
   spec: number;
   split: { retail: number; office: number; multifamily: number };
   reuseTarget?: "multifamily" | "mixed";
+  /**
+   * SHOPS AT GRADE ON AN OFFICE OR APARTMENT BUILDING. "auto" is the
+   * street's call (footfall and the retail market — see withStreetRetail);
+   * "on" programmes the ground floor as shops whatever the street says,
+   * and the market decides whether they let; "off" is a lobby and a bigger
+   * ground floor for the main use.
+   */
+  groundRetail?: "auto" | "on" | "off";
 }
 
 export interface BtsCommitment {

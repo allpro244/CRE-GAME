@@ -175,13 +175,16 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [split, setSplitRaw] = useState<{ retail: number; office: number; multifamily: number }>(
     saved?.split ?? { retail: 15, office: 45, multifamily: 40 },
   );
+  // SHOPS AT GRADE ON YOUR OWN OFFICE OR APARTMENT BUILDING — your call, not
+  // only the street's. See DevDraft.groundRetail and withStreetRetail.
+  const [groundRetail, setGroundRetailRaw] = useState<"auto" | "on" | "off">(saved?.groundRetail ?? "auto");
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split });
-  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail });
+  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -195,6 +198,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const setBank = touch(setBankRaw);
   const setSpec = touch(setSpecRaw);
   const setSplit = touch(setSplitRaw);
+  const setGroundRetail = touch(setGroundRetailRaw);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -211,9 +215,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
   const btsOffer = game.holdings[bbl]?.btsOffer;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank, spec);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts }, bank, spec);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const nb = blockReport(game, parcels, rec.block);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
@@ -292,6 +296,23 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
             ))}
           </div>
+          {(use === "office" || use === "multifamily") && fl >= 2 && (
+            <div className="page-section" style={{ marginTop: 8 }}>
+              <div className="page-section-head">Shops at grade</div>
+              <div className="btn-row">
+                {([["auto", "As the street allows"], ["on", "Always"], ["off", "Never — a lobby"]] as const).map(([v, label]) => (
+                  <button key={v} className={"btn" + (groundRetail === v ? " btn-on" : "")} onClick={() => setGroundRetail(v)}>{label}</button>
+                ))}
+              </div>
+              <div className="hint">
+                {groundRetail === "auto"
+                  ? "The planner programmes a shop floor where the footfall and the retail market will carry one, and a lobby where they will not."
+                  : groundRetail === "on"
+                    ? `A shop floor whatever the street says — ${plan?.mix?.retail ? `${(plan.mix.retail * 100).toFixed(0)}% of the building` : "the ground floor"}, let by the retail market on its own terms; on a quiet block it may sit empty.`
+                    : "No shops: a lobby and a bigger ground floor for the main use. Nothing at grade to let, nothing at grade to sit empty."}
+              </div>
+            </div>
+          )}
           {(use === "office" || use === "retail" || use === "industrial") && (
             <div className="page-section" style={{ marginTop: 8 }}>
               <div className="page-section-head">Delivery strategy</div>
@@ -701,7 +722,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail }, plan.lender, spec)}
                   title={!canFund
                     ? `Equity short — needs ${usd(equityRequired)} all-in`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}

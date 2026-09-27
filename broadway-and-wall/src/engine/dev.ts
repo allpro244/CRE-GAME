@@ -2415,7 +2415,19 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // condCeiling reads it forever.
   const built = parcels[d.bbl] ?? rec;
   if (built) built.buildSpec = d.spec ?? 0.5;
-  h.condIdx = Math.min(condCeiling(built ?? { yearBuilt: 2000 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
+  // THE CEILING OF THE BUILDING YOU JUST BUILT, NOT OF THE DIRT IT STANDS ON.
+  // `parcels[bbl]` is the STATIC record. On a lot that was land it carries
+  // yearBuilt 0, so condCeiling read a two-thousand-year-old ruin and clamped
+  // every ground-up delivery to 0.58 — "standard", for life — while the word
+  // above said "good". Every reader takes the index, not the word: the rent
+  // multiplier, the cap spread, the arrival factor on the leasing desk, and
+  // the plan's own hurdle, which had priced the scheme at "good". Measured on
+  // four deliveries: value at delivery 4-56% of basis. The record written to
+  // s.built a few lines up carries the real year; a conversion keeps the old
+  // bones' year on purpose (see condCeiling — no capital makes 1930 new).
+  const bones = d.mode === "reuse" ? (built ?? { yearBuilt: START_YEAR }) : (s.built[d.bbl] as { yearBuilt: number });
+  (s.built[d.bbl] as { buildSpec?: number }).buildSpec = d.spec ?? 0.5;
+  h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;

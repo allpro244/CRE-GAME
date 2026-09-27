@@ -1520,3 +1520,75 @@ you were knocking on. Both paths read `reserveMidOf` and one `phaseShift`
 now; the certainty discount, the reputation multiplier, the tape-as-outside-
 option floor and the lender's basis rules are unchanged; the off-market
 counter prints the same band the tape does, with the phase named.
+
+---
+
+# THE PLAYTHROUGH'S FOUR MARKS (Sep 2026)
+
+Four places where a desk printed one number and the world ran on another,
+found by playing thirty years three times through the engine's own actions
+(`PLAYTHROUGH_2026-09.md`). None of them is a coefficient; each is a reader
+that had two answers.
+
+## A delivered building's condition
+
+`deliver()` wrote the word "good" and computed the index off the static
+land record, whose year built is zero, so every ground-up delivery carried
+condIdx 0.58 — the floor of `condCeiling` — while the plan had priced the
+scheme at "good". The index is what every reader takes. Measured, one
+79K sf apartment tower that cleared its hurdle at 6.69% against 6.64%:
+
+    at delivery        before 23.9M (55% of basis)   after 34.3M (80%)
+    at 91% let         before 26.6M (62%)            after 39.8M (92%)
+    NOI at 91% let     before 1.12M                  after 1.53M  (plan 2.63M pre-tax)
+    rent at delivery   before $34.5 (standard)       after $44.4 (good, 0.93)
+
+The remaining gap to the plan is the assessment at cost (the appeal desk
+exists for it) and three years of rent movement during the build. The
+ceiling is now read off the record `deliver()` had just written; a
+conversion keeps the old bones' year because no capital makes 1930 new.
+
+## A matured note
+
+A balloon nobody would take out sat past maturity for as long as the coupon
+cleared: 61 building-months in three campaigns, one for years. Now, after
+twelve serviced months, a desk with capital documents an extension (the
+forbearance desk's own fee, bump and sweep, once per note) and anyone else
+files; a covenant file open at maturity becomes a balloon file; the extended
+maturity closes the file so the takeout ladder quotes fresh. Two invariants
+hold it (`balloon`), and `test/balloon-holdover.mjs` walks the extension, the
+refusal of a second one, and a receiver's filing.
+
+## A marketed bid list
+
+Bids were drawn from 86% to 109% of the owner's mark in an expansion. The
+mark is made of the compressed cap rate, so the process paid the boom twice:
+
+    accepted bid / appraisal, marketed sales    before (n=36)   after (n=56)
+    p25                                         105%            102%
+    p50                                         108%            105%
+    p90                                         113%            111%
+
+Bids now centre on the mark (88–106% in an expansion, 88–97% in a crunch),
+and best and final sharpens by 0.5–3.5% instead of 0.5–5.5%. The residual
+few per cent is the max of a handful of draws, which is what a competitive
+process is for. The outliers above 130% in the after-run were the rollover
+reserve (below) lifting off a listing mark when the tenant renewed during
+marketing — the reserve is capped at a quarter of the mark for that reason.
+
+## In-place NOI, and the roll about to roll
+
+`holdingNOIYr(…, month)` is cash; a tenant in free rent is zero in it. The
+desks printed that as in-place NOI, the lender underwrote it, Portfolio and
+Debt summed it, and the appraisal (which had always capitalised the
+contract) disagreed with all of them. `contractNoiYr` is the desk reading
+now; cash stays cash where cash is meant.
+
+The mark also carries `rolloverReserve`: for every commercial lease inside
+twelve months, `(1 − p) × (downtime + TI + commission)` with `p` the leasing
+desk's own renewal read, fading in over the final year, capped at 25% of the
+mark. It is the reserve an appraiser carries and it turns the expiry cliff
+into a slope on the way down. It does not change the cliff's depth — the
+55/45 in-place/stabilised blend does that, and the appraiser's fix (a partly
+vacant standing building at stabilised value less lease-up cost, the
+`leaseUpMarkAt` arithmetic beyond a first lease-up) is the next measured cut.

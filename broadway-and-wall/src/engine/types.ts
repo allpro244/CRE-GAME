@@ -346,6 +346,8 @@ export interface Loan {
   prepay?: "open" | "stepdown" | "yieldmaint";
   prepayUntilM?: number;
   kicker?: number;            // participating paper: the lender's cut of the gain
+  /** Extensions documented on this note at or past maturity. Nobody extends twice — see workout.ts holdoverDecision. */
+  extensions?: number;
   principal: number;
   balance: number;
   ratePct: number;       // current coupon (floating reprices each quarter)

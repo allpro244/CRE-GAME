@@ -10,7 +10,7 @@ import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
 import {
-  ownedHoldingNoiYr, ownedHoldingNoiYrFromRec, ownedHoldingValue,
+  ownedHoldingNoiYrFromRec, ownedHoldingValue, ownedContractNoiYr,
   ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
   isVacantLandLoanCollateral,
 } from "./value";
@@ -1823,7 +1823,10 @@ export function debtCollateral(
 } {
   const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
   const value = ownedHoldingValue(s, parcels, h);
-  const noi = ownedHoldingNoiYr(s, parcels, h);
+  // Contract rent, abatements as a reserve — how a desk underwrites a roll.
+  // The cash reading zeroed an anchor for its free months and the whole
+  // sheet moved with it (see value.ts contractNoiYr).
+  const noi = ownedContractNoiYr(s, parcels, h);
   const quoteClass = vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class);
   const hair = collateralHaircut(h, s.month, s.econ, rec);
   const stab = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)

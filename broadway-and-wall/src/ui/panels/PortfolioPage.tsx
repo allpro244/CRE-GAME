@@ -4,7 +4,7 @@ import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass, GameState } from "@/engine/types";
-import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
+import { ownedHoldingValue, managedRentPsfYr, resolveRec, isLeasedFee, ownedContractNoiYr } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
@@ -80,7 +80,7 @@ export function PortfolioPage() {
     const v = rec ? ownedHoldingValue(game, parcels, h) : 0;
     // Deed NOI — building roll or ground coupon. Same number the header CF
     // annualises (before firm-level construction / facility / revolver).
-    const noi = ownedHoldingNoiYr(game, parcels, h);
+    const noi = ownedContractNoiYr(game, parcels, h);
     // Facility replaces the deed mortgage — allocated share is the lien that
     // still sits on this row once the pool is papered.
     const facBal = allocatedAmount(game, parcels, h.bbl);

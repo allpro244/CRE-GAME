@@ -20,7 +20,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
@@ -4041,3 +4041,45 @@ export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameStat
   if (on) next.lois = next.lois.filter((l) => l.bbl !== bbl);
   return next;
 }
+
+/**
+ * WHAT A BUYER TAKES OFF THE PRICE FOR THE ROLL THAT IS ABOUT TO ROLL.
+ *
+ * An appraiser running a DCF does not capitalise a tenant with nine months
+ * left as if they were a bond. They ask whether the tenant renews and, where
+ * the answer is probably not, they carry the downtime, the fit-out and the
+ * commission it takes to re-let the space. This engine capitalised every
+ * contract to its last day and then dropped the mark by a third the month the
+ * lease ended — measured 55 one-month moves of more than 35% across three
+ * campaigns, most of them a known expiry landing. The reserve is the expected
+ * re-letting cost of every commercial lease inside twelve months, weighted by
+ * the renewal read the leasing desk already prints (`renewalIntent`): downtime
+ * at `reletMonths`, TI at the middle of the market's ask band over an
+ * ordinary five-year re-let (the same draw a new letter makes), a 4.5%
+ * commission. It fades in over the final year so the mark glides toward the
+ * expiry instead of falling off it. Flats are let unit by unit off the roll and
+ * carry no such cliff; a tenant already in default is already in the mark.
+ */
+export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): number {
+  if (h.groundLeased || !h.tenants.length) return 0;
+  let reserve = 0;
+  for (const t of h.tenants) {
+    if (t.defaulted) continue;
+    const left = t.endM - s.month;
+    if (left <= 0 || left > 12) continue;
+    const use = (t.use ?? rec.class) as BuiltClass;
+    if (use === "multifamily") continue;
+    const p = clamp(renewalIntent(s, rec, h, t).p, 0, 1);
+    if (p >= 0.999) continue;
+    const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+    const termYrs = 5;
+    const rent = Math.max(t.rentPsf, managedRentPsfYr(rec, s.econ, h, use));
+    const downtime = rent * t.sf * (reletMonths(use) / 12);
+    const ti = ((lo + hi) / 2) * termYrs * t.sf;
+    const lc = rent * t.sf * termYrs * 0.045;
+    const ramp = 0.35 + 0.65 * (1 - left / 12);
+    reserve += (1 - p) * (downtime + ti + lc) * ramp;
+  }
+  return Math.round(reserve);
+}
+registerRolloverReader(rolloverReserve);

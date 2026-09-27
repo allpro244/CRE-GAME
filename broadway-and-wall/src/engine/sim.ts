@@ -902,9 +902,22 @@ function tickMonth(
       // queue behind both. A note whose monthly coupon the firm can still
       // fund (cash or line) is also off-limits — that is a performing debt,
       // not salvage for the general creditors.
-      const owned = Object.values(s.holdings)
-        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]
+      const seizable = (filedToo: boolean) => Object.values(s.holdings)
+        .filter((h) => !s.developments[h.bbl] && (filedToo || !s.workouts?.[h.bbl])
           && !(h.loan && couponFundable(s, parcels, h)));
+      let owned = seizable(false);
+      // THE RUN DOES NOT END WITH EQUITY ON THE BOOK. A twelve-year campaign
+      // in the playable ended on "the creditors took everything, and it
+      // wasn't enough" with one building still owned — $3.14M of appraisal
+      // against the paper, $887K of net worth printed on the same card —
+      // because that building had a covenant file open and the file kept it
+      // off this list while the line sat over-advanced. A file outranks the
+      // bailiff for as long as there is anything else to take or any line to
+      // draw. When there is neither, the bankruptcy sale runs the filed
+      // building through the same waterfall — the mortgagee's lien is paid off
+      // the top and its file closes with the deed — and the surplus clears
+      // the hole. Only a book with nothing saleable at all ends the run.
+      if (!owned.length && locAvailable(s, parcels) <= 0 && fundableNow(s, parcels) <= 0) owned = seizable(true);
       if (owned.length) {
         // creditors take the most valuable thing you own
         let pick = owned[0], pickV = -Infinity;

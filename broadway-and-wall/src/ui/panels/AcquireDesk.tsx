@@ -8,8 +8,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
 import {
   assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
-  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, ownedHoldingNoiYr, isLeasedFee,
-} from "@/engine/value";
+  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
   buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
@@ -514,7 +513,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   // number a seller needs is what a buyer will compute: in-place income off
   // the leases actually in place, against a tax bill struck at the new price.
   const saleNoi = fee && saleH
-    ? ownedHoldingNoiYr(game, parcels, saleH)
+    ? ownedContractNoiYr(game, parcels, saleH)
     : saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
       ? holdingNOIYr(saleRec, game.econ,
           asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),

@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
-import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
 import { PRODUCTS, productById, payOffDue, rateCapCost } from "@/engine/debt";
 import { fundableNow, locRate } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
@@ -146,7 +146,7 @@ export function DebtPage() {
       return {
         h, rec,
         v: rec ? ownedHoldingValue(game, parcels, h) : 0,
-        noi: rec ? ownedHoldingNoiYr(game, parcels, h) : 0,
+        noi: rec ? ownedContractNoiYr(game, parcels, h) : 0,
       };
     })
     .filter((r) => r.rec);
@@ -534,7 +534,7 @@ export function DebtPage() {
                       <div className="dim" style={{ fontSize: 11 }}>{CLASS_LABEL[c.rec.class] ?? c.rec.class}</div>
                     </td>
                     <td className="num">{usd(c.value)}</td>
-                    <td className="num">{usd(Math.round(ownedHoldingNoiYr(game, parcels, c.h)))}</td>
+                    <td className="num">{usd(Math.round(ownedContractNoiYr(game, parcels, c.h)))}</td>
                     <td className="num dim">{c.loan > 0 ? usd(c.loan) : "—"}</td>
                   </tr>
                 ))}

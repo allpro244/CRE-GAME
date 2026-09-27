@@ -2402,7 +2402,17 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     // percentile of the exploit beat the disciplined reference median by 40%.
     // Now [0.86, 1.09] at peak: E[max of 3] ~1.03, E[max of 6] ~1.06, which is
     // what the calibration always claimed.
-    const price = Math.round(value * (0.86 + 0.20 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
+    // BIDS CENTRE ON THE MARK. The mark already carries the cycle — the cap
+    // rate compressed in the boom is what `value` is made of — so a bid list
+    // drawn from 86% to 109% of it was paying the boom twice: over 36
+    // marketed sales in three campaigns the accepted bid ran 108% of the
+    // appraisal at the median and 113% at the ninetieth, against a tape where
+    // the same player bought at or under the mark. Real marketed processes in
+    // rising markets clear a few per cent over a current appraisal, not a
+    // tenth; the max of a handful of draws around the mark, plus best and
+    // final, is where that few per cent comes from. In a crunch the draw sits
+    // under the mark, which is what "the whisper was a work of fiction" means.
+    const price = Math.round(value * (0.88 + 0.16 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
     // A buyer stretching past the pack is the one most likely to find a reason
     // to come back to you about it later.
     const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s, "sales") - 0.5) * 0.3));
@@ -2463,7 +2473,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
     // The ones who can afford to be patient are the ones who walk.
     const pWalk = 0.30 * (1 - b.credibility) + (next.econ.phase === "recession" ? 0.18 : 0);
     if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
-    const bump = 1 + rrange(next, 0.005, 0.055) * b.credibility;
+    const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
     b.price = Math.round(b.price * bump);
     if (b.price > before) lifted++;

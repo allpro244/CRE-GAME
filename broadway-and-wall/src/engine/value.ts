@@ -2057,7 +2057,7 @@ export function inPlace(
     if (own.groundLeased) {
       return { noi: ownedHoldingNoiYrFromRec(s, rec, own), occ: 1, disclosed: true, h: own };
     }
-    return { noi: holdingNOIYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
+    return { noi: contractNoiYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
   }
   if (rec.class === "land" || !rec.bldgArea) {
     return { noi: noiAfterTaxYr(rec, s.econ, "standard", price), occ: 0, disclosed: true, h: null };
@@ -2068,7 +2068,38 @@ export function inPlace(
     return { noi: noiAfterTaxYr(rec, s.econ, cond, price), occ: occupancy(rec, s.econ), disclosed: false, h: null };
   }
   const h = asIfOwned(s, bbl, price, d, rec);
-  return { noi: holdingNOIYr(rec, s.econ, h, s.month), occ: physicalOcc(rec, h), disclosed: true, h };
+  return { noi: contractNoiYr(rec, s.econ, h, s.month), occ: physicalOcc(rec, h), disclosed: true, h };
+}
+
+/**
+ * IN-PLACE NOI IS THE CONTRACT, NOT THIS MONTH'S CHEQUE.
+ *
+ * `holdingNOIYr(…, month)` is the cash statement: a tenant inside a free-rent
+ * period contributes nothing to it, which is right for the bank balance and
+ * wrong for every desk that printed it as "In-place NOI / yr". Measured over
+ * three campaigns: 56 one-month NOI moves of more than 50% on buildings over
+ * half let — an anchor's two abated months read as the income falling by
+ * two thirds and coming back, with the appraisal and the lender's coverage
+ * moving with it. An appraiser and a lender both underwrite the contract
+ * rent and carry the abatement as a reserve — which is exactly what
+ * `holdingValue` already did with its `contractNoi` and `remainingAbatement`.
+ * This is that reading, for the desks: every lease counts at its contract
+ * rent; a gut renovation still reads as one (nothing is earned while the
+ * crews are in). The cash tick keeps `holdingNOIYr(…, month)`.
+ */
+export function contractNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, month: number): number {
+  const inGut = h.renovatingUntilM !== undefined && month < h.renovatingUntilM;
+  return holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY);
+}
+
+/** The canonical deed NOI on the contract basis — ground coupon on a leased fee, contract rent on a building. */
+export function ownedContractNoiYr(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  const rec = resolveRec(parcels, s, h.bbl);
+  if (!rec) return 0;
+  if (h.groundLeased) return ownedHoldingNoiYrFromRec(s, rec, h);
+  return contractNoiYr(rec, s.econ, h, s.month);
 }
 
 // The landlord's share of the property-tax bill: net leases reimburse it,
@@ -2690,7 +2721,29 @@ export function ownedHoldingValueFromRec(
     };
     return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
   }
-  return holdingValue(rec, s.econ, h, s.month);
+  const v = holdingValue(rec, s.econ, h, s.month);
+  // The roll that is about to roll — see leasing.ts rolloverReserve. Registered
+  // rather than imported because leasing.ts imports this file.
+  // Capped at a quarter of the mark: a re-tenanting bill bigger than that is
+  // a project, and projects are priced by the lease-up mark, not by a reserve.
+  // (Measured without the cap: a one-tenant shop worth $110 a foot carried a
+  // third of its value in reserve and sold at 148% of its own listing mark
+  // three months later when the tenant renewed.)
+  const roll = rolloverReader && rec.class !== "land" && rec.bldgArea > 0 ? Math.min(rolloverReader(s, rec, h), v * 0.25) : 0;
+  return roll > 0 ? Math.max(landAppraisalFloor(rec, s.econ, true), v - roll) : v;
+}
+
+/**
+ * THE ROLLOVER READER, supplied by leasing.ts at module load. The reserve a
+ * buyer takes off the price for commercial leases inside twelve months that
+ * the renewal read says are leaving needs `renewalIntent`, which lives in the
+ * leasing engine; that module imports this one, so the reader is registered
+ * rather than imported. Absent (a bundle that never loaded leasing.ts) the
+ * mark is the plain capitalised contract, as before.
+ */
+let rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | null = null;
+export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: Holding) => number): void {
+  rolloverReader = fn;
 }
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {

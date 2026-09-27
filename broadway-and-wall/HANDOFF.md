@@ -81,6 +81,10 @@ Recent additions worth knowing about:
 | `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
 | `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
 | `pnpm refi-strong` | ~40s | a stabilised building refinances to the sheet or to coverage; the haircut is a notch, never on the flats. In `pnpm check`. |
+| `pnpm delivered-condition` | ~60s | a ground-up delivery opens at the top of the condition scale and rents like it; a conversion keeps its bones. In `pnpm check`. |
+| `pnpm balloon-holdover` | ~20s | a serviced balloon file is extended once by a desk with capital or filed on; never extended twice; a receiver files. In `pnpm check`. |
+| `pnpm insolvency-sale` | ~15s | at the twelfth insolvent month with no line and nothing unfiled left, a filed building is sold through the waterfall and the run continues; the line is drawn first; an unfiled building goes first. In `pnpm check`. |
+| `pnpm deepplay` | ~4 min/seed | a thirty-year playthrough through every desk's own action, invariants and a non-finite walk every month, ratios every year, every refusal counted in the engine's words. Report, not gate; `PLAYTHROUGH_2026-09.md` is what it found first. |
 | `pnpm glut` | ~90s | the pencil reads vacancy; a local slump does not bleed jobs; seed 20603 keeps its people. In `pnpm check`. |
 | `pnpm appraisal` | ~60s | one appraisal: continuous condition, taxed vessels, the tape/desk/lender/deed agree, flats' income turns over. In `pnpm check`. |
 | `pnpm advance` | ~15s | the sheet moves: standards, class, condition, your file, the fund's own margin. In `pnpm check`. |
@@ -181,6 +185,48 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **A deep playthrough, and what it found** (Sep 2026). Three seeds ×
+  thirty years played through the engine's own actions (buy, letters, refi,
+  appeal, renovate, build, sell, line, staff, facility, notes, off-market,
+  ground lease, variance, conversion), invariants and a non-finite walk
+  every month, ratios every year; plus a twelve-year campaign in the
+  playable with every desk photographed and the DOM scanned. Report:
+  `PLAYTHROUGH_2026-09.md`. Fixed: (1) every ground-up delivery was clamped
+  to condIdx 0.58 for life — `condCeiling` read the STATIC land record's
+  `yearBuilt 0` — while the word said "good" and the plan had priced the
+  scheme at "good"; delivery now reads the record it just wrote (a
+  conversion keeps its bones). The one scheme that cleared its hurdle went
+  from 55% of basis at delivery to 80%, NOI at stabilisation +37%.
+  `pnpm delivered-condition`, in `check`; an invariant flags a fresh
+  delivery under 0.85. (2) A balloon nobody would take out sat past
+  maturity forever, serviced, "still waiting on a takeout" — 61
+  building-months of it. `workout.ts holdoverDecision`: after twelve
+  serviced months a desk with capital documents the extension (fee, bump,
+  sweep, `Loan.extensions`, once), anybody else files; a file of any cause
+  open at maturity becomes a balloon file; the extension's own maturity
+  closes the file so the ladder quotes fresh. Two balloon invariants;
+  `pnpm balloon-holdover`, in `check`. (3) Marketed bids were drawn 86–109%
+  of a mark that already carried the boom — accepted bids ran 108% of
+  appraisal at the median; now 88–106%, median 105%. (4) "In-place NOI" was
+  the cash month — a tenant in free rent read as zero and the desks, the
+  lender and Portfolio moved with it (56 one-month NOI moves over 50%);
+  `contractNoiYr` / `ownedContractNoiYr` read the contract, the cash tick
+  stays cash. (5) The mark now carries a rollover reserve for commercial
+  leases inside a year (`leasing.ts rolloverReserve`, registered into
+  `ownedHoldingValue`, capped at a quarter of the mark) — a glide, not a
+  cure: the 55/45 in-place/stabilised blend still cliffs a third of the
+  value when a big tenant leaves, and the appraiser's fix (stabilised less
+  lease-up cost, what `leaseUpMark` does for a first lease-up) is the next
+  cut and a BASELINE move. (6) The playable campaign ended on "the creditors
+  took everything" with a building still owned and $887K of net worth on the
+  same card — a covenant file kept the deed off the twelfth-month seizure
+  list while the line sat over-advanced; `sim.ts` now runs a filed building
+  through the same waterfall when there is nothing else to take and no line
+  to draw, and the run ends only with nothing saleable left.
+  `pnpm insolvency-sale`, in `check`. Left, measured: empty-for-years buildings were
+  the bot's unfunded fit-outs; a 30% district rent fall on one seed wants
+  its own re-run; land floors swing 3×; a lease-up bridge at negative
+  coverage is a bridge.
 - **The desks answer first; the long rooms got a rail** (Sep 2026). UI only,
   no engine change. Asked "where does the UI feel good and bad", the honest
   answer was: good wherever it reads like a document, bad wherever it has to
@@ -603,6 +649,29 @@ another. Grep before you add another.
 ---
 
 ## 6. OPEN FAULTS, RANKED
+
+**0j. The mark cliffs when a big tenant leaves — improved, open (Sep 2026).**
+`holdingValue` is 55% in-place capitalised, 45% stabilised, so a building
+that loses a 30% tenant loses about a third of its mark the month the lease
+ends, and gets it back as the space re-lets. Measured in the playthrough: 55
+one-month appraisal moves over 35% in three campaigns, most of them a known
+expiry. `rolloverReserve` now takes the expected re-letting cost off the mark
+over the final year of every commercial lease, which turns the cliff into a
+slope on the way down but does not change its depth. An appraiser marks a
+partly vacant standing building at stabilised value less lease-up cost and
+downtime — exactly what `leaseUpMarkAt` does inside a building's first
+lease-up (38 months commercial, 19 residential) and stops doing after. The
+cut is to let that mark apply to any building with a hole in it, compared
+against the blend, and it moves every standing value in BASELINE.json; do it
+as its own measured commit. See `PLAYTHROUGH_2026-09.md` §5.
+
+**0k. TI cannot be amortised into rent; a loan cannot be paid down in part
+(Sep 2026).** The two walls a principal hits that the engine does not offer
+a door for. 189 letters in three campaigns were refused for want of the
+fit-out cheque; in life the tenant repays it over the term. `respondLOI`'s
+counter wants an `amortizeTi` flag; `payOffLoan` wants a partial-paydown
+sibling (the covenant cure already computes the number). Both small; both
+listed in `PLAYTHROUGH_2026-09.md` with the rest of the limitations.
 
 **0h. The retail / industrial roll seam — measured, left alone (Sep 2026).**
 Generated rolls against the market model on three seeds' whole built stock,

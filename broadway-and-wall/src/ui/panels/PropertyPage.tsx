@@ -18,6 +18,8 @@ export function PropertyPage() {
   const bbl = useStore((s) => s.selectedBBL);
   const [tab, setTab] = useState<PropTab>("summary");
   const fundingDue = !!bbl && !game.holdings[bbl] && !!game.talks?.[bbl]?.agreed;
+  // The desk the map card asked for by name ("Open the Build desk"), read once.
+  const askedTab = useStore((s) => s.propertyTab);
   // A different building is a different file. Opening one and landing on the
   // last building's mortgage tab is how you misread a balance. The exception
   // is a signed purchase contract: opening it from Deals should show the
@@ -26,7 +28,16 @@ export function PropertyPage() {
     const holding = bbl ? game.holdings[bbl] : undefined;
     if (bbl && holding?.devDraft && !game.developments[bbl]) setTab("build");
     else setTab(fundingDue ? "deal" : "summary");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bbl, fundingDue]);
+  // The asked-for desk wins over the default above (declared after it, so it
+  // runs after it on the same mount), and is consumed once. Clearing it must
+  // not re-run the default — that is why this is its own effect.
+  useEffect(() => {
+    if (!askedTab) return;
+    setTab(askedTab);
+    useStore.setState({ propertyTab: null });
+  }, [askedTab]);
   if (!bbl) return <div className="hint">Nothing selected.</div>;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return <div className="hint">Unknown parcel.</div>;

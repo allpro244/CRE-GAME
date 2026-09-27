@@ -9180,6 +9180,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private groundSheen: THREE.Mesh | null = null;
   private aoGround: THREE.Mesh | null = null;
   visible = true;
+  /**
+   * PAUSED: the city still draws whenever MapLibre repaints, but the
+   * animation clock stops asking for frames. Set while a desk page covers
+   * the map — water and walkers under a blurred backdrop were costing a core
+   * that the page's own tables needed, and Advance under an open desk was
+   * paying for both.
+   */
+  paused = false;
 
   constructor(
     private volumes: BuildingVolume[],
@@ -9243,6 +9251,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * skip the second city draw more readily. Off by default so a capable
    * machine still gets the native photograph.
    */
+  /** Stop (or resume) the animation clock; resuming asks for one frame so the city catches up. */
+  setPaused(on: boolean) {
+    if (this.paused === on) return;
+    this.paused = on;
+    if (!on && this.map) this.map.triggerRepaint();
+  }
+
   setPreferFps(on: boolean) {
     if (this.preferFps === on) return;
     this.preferFps = on;
@@ -12338,6 +12353,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const animGap = this.frameEma > 40 ? 66 : 33;
       if (
         now - this.lastFrame > animGap
+        && !this.paused
         && typeof document !== "undefined"
         && !document.hidden
       ) {

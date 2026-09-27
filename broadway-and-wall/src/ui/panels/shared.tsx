@@ -304,11 +304,38 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
 export function Row({ k, v, strong, bad, title }: {
   k: ReactNode; v: string; strong?: boolean; bad?: boolean; title?: string;
 }) {
+  // A sentence of a value ("$4.15M total · $1.83M drawn as it rises over ~35
+  // mo") wrapped to three ragged lines in the map card's right-hand column.
+  // Past a line's worth it is marked long; the narrow card drops it under its
+  // label, left-aligned, and the wide desks — where it fits — ignore the mark.
+  const long = v.length > 34;
   return (
     <>
       <div className="k" title={title}>{k}</div>
-      <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "")} title={title}>{v}</div>
+      <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "") + (long ? " v-long" : "")} title={title}>{v}</div>
     </>
+  );
+}
+
+/**
+ * THE ONE NUMBER A DESK IS FOR.
+ *
+ * Every desk in this game prints its facts at one size in one face, which is
+ * honest and also means the yield on cost that decides a build, the coverage
+ * that decides a refinance and the all-in cost that decides a stack looked
+ * exactly like the label beside them. This block is that number, once per
+ * desk, large, with the sentence that says which way it cuts. It never
+ * replaces the rows underneath it — those are the working — it is the answer.
+ */
+export function Verdict({ label, value, tone = "flat", note, title }: {
+  label: string; value: string; tone?: "good" | "bad" | "warn" | "flat"; note?: ReactNode; title?: string;
+}) {
+  return (
+    <div className={"verdict verdict-" + tone} title={title}>
+      <div className="verdict-label">{label}</div>
+      <div className="verdict-value mono">{value}</div>
+      {note && <div className="verdict-note">{note}</div>}
+    </div>
   );
 }
 

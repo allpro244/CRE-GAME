@@ -25,8 +25,8 @@ import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
-import { RefiSection } from "@/ui/panels/RefiDesk";
-import { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
+import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
+import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
@@ -227,9 +227,9 @@ function ParcelPanelInner({
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => useStore.getState().setPage("property")}
+              onClick={() => useStore.getState().openProperty(selectedBBL, "build")}
             >
-              Open Build desk →
+              Open the Build desk →
             </button>
           </div>
         );
@@ -757,7 +757,10 @@ function ParcelPanelInner({
               </button>
             )}
           </div>
-          <RefiSection bbl={selectedBBL} />
+          {/* The docked card gets the answer and a door; the desk itself —
+              four lenders, a dial and a before/after sheet — is a room's
+              worth of reading and opens as one. */}
+          {tab === undefined ? <RefiGlance bbl={selectedBBL} /> : <RefiSection bbl={selectedBBL} />}
         </div>
       )}
 
@@ -963,7 +966,7 @@ function ParcelPanelInner({
       {/* Lessee builds on a live ground lease — do not offer Break ground beside the coupon desk. */}
       {on("build") && holding && !dev && rec.class === "land"
         && !holding.groundLeased && !game.groundLeases?.[selectedBBL]
-        && <DevelopSection bbl={selectedBBL} />}
+        && (tab === undefined ? <DevelopGlance bbl={selectedBBL} /> : <DevelopSection bbl={selectedBBL} />)}
       {on("build") && holding && !dev && isBuilt && <ReuseSection bbl={selectedBBL} />}
 
       {/* THE LAND DESK — assemble contiguous owned lots into one site.

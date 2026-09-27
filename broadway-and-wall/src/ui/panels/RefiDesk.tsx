@@ -8,7 +8,7 @@ import { monthLabel } from "@/engine/types";
 import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
 import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
-import { annualPayment, Row } from "@/ui/panels/shared";
+import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
 
 export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
@@ -340,6 +340,33 @@ export function RefiSection({ bbl }: { bbl: string }) {
         hint={`${usd(annualDs)} a year of debt service against ${usd(Math.round(q.noiUw))} of NOI. `
           + `${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
       />
+      {/* THE ANSWER, AT THE AMOUNT ON THE DIAL. Coverage after the refinance
+          is what a lender tests and what a borrower loses sleep over; the
+          all-in cost is what the money costs. Both were rows in a grid of
+          twelve. */}
+      {(() => {
+        if (proceeds <= 0) return null;
+        const dscrAfter = annualDs > 0 && q.noiUw > 0 ? q.noiUw / annualDs : null;
+        const cfAfter = q.noiUw - annualDs;
+        const tone = cfAfter < 0 || (dscrAfter !== null && dscrAfter < q.minDSCR) ? "bad"
+          : dscrAfter !== null && dscrAfter < q.minDSCR * 1.15 ? "warn" : "good";
+        const room = dscrAfter !== null ? ` · covenant ${q.minDSCR.toFixed(2)}x` : "";
+        return (
+          <Verdict
+            label={`${q.label} · ${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`}
+            value={dscrAfter !== null ? `${dscrAfter.toFixed(2)}x · ${pct(q.allInPct)} all-in` : `${pct(q.allInPct)} all-in`}
+            tone={tone}
+            note={(cfAfter < 0
+              ? `The building does not cover this debt service — ${usd(Math.abs(Math.round(cfAfter / 12)))} a month from elsewhere.`
+              : dscrAfter !== null && dscrAfter < q.minDSCR
+                ? `In breach the day it funds${room}.`
+                : dscrAfter !== null && dscrAfter < q.minDSCR * 1.15
+                  ? `Thin: one tenant leaving takes you through the covenant${room}.`
+                  : `Coverage with room to lose a tenant${room}.`)
+              + ` ${toYou >= 0 ? `${usd(toYou)} to you at closing.` : `${usd(-toYou)} to pay in at closing.`}`}
+          />
+        );
+      })()}
       {/* THE WHOLE DEAL AT WHATEVER THE DIAL SAYS, SIDE BY SIDE WITH THE ONE
           YOU HAVE.
           A refinance is not a question about proceeds, it is a question about
@@ -430,6 +457,67 @@ export function RefiSection({ bbl }: { bbl: string }) {
         >
           {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * THE REFINANCE DESK, FROM THE MAP CARD: the answer and a door.
+ *
+ * The full desk is four lenders, a dial and a before/after sheet — a room's
+ * worth of reading that used to render inside a card a third of the screen
+ * wide. The card now says what the best desk would write today and opens the
+ * room. "Best" is the desk's own advice line where it has one; failing that
+ * the cheapest money that clears the payoff, and failing that the desk that
+ * advances most.
+ */
+export function RefiGlance({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const holding = game.holdings[bbl];
+  const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
+  const privateN = (game.privateBorrowQuotes ?? []).filter((q) => q.bbl === bbl).length;
+  const open = () => useStore.getState().openProperty(bbl, "money");
+  const live = quotes.filter((x) => x.available && x.maxProceeds > 0);
+  if (!live.length) {
+    return (
+      <div className="refi">
+        <div className="deal-head">Refinance</div>
+        <div className="hint">
+          No desk will quote against this today
+          {privateN ? ` — ${privateN} private bridge${privateN === 1 ? "" : "s"} on offer` : ""}. Appraised at {usd(value)}
+          {payoff > 0 ? `, ${usd(payoff)} outstanding` : ""}.
+        </div>
+        <div className="btn-row"><button className="btn btn-sm" onClick={open}>Open the refinance desk →</button></div>
+      </div>
+    );
+  }
+  const net = (x: (typeof live)[number]) => {
+    const px = Math.round(x.maxProceeds);
+    const cap = x.floating ? Math.round(px * 0.0125) : 0;
+    const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + cap;
+    return px - payoff - f;
+  };
+  const clears = live.filter((x) => net(x) >= 0).sort((a, b) => a.allInPct - b.allInPct);
+  const best = clears[0] ?? [...live].sort((a, b) => b.maxProceeds - a.maxProceeds)[0];
+  const toYou = net(best);
+  const refiRec = resolveRec(parcels, game, bbl);
+  const stabilised = !!refiRec && !!holding && physicalOcc(refiRec, holding) >= 0.85;
+  const advice = deskAdvice(quotes, payoff, stabilised);
+  const tone = best.dscrAtMax < best.minDSCR ? "bad" : best.dscrAtMax < best.minDSCR * 1.15 ? "warn" : "good";
+  return (
+    <div className="refi">
+      <div className="deal-head">Refinance</div>
+      <Verdict
+        label={`Best money today · ${best.label}`}
+        value={`${usd(Math.round(best.maxProceeds))} at ${pct(best.allInPct)}`}
+        tone={tone}
+        note={`${best.dscrAtMax.toFixed(2)}x coverage at the maximum · ${(best.ltvAtMax * 100).toFixed(0)}% LTV · ${toYou >= 0 ? `${usd(toYou)} to you` : `${usd(-toYou)} to pay in`} after the payoff and fees. ${live.length} of ${quotes.length} desks will quote.`}
+      />
+      {advice && <div className="hint">{advice}</div>}
+      <div className="btn-row">
+        <button className="btn btn-sm" onClick={open}>Open the refinance desk →</button>
       </div>
     </div>
   );

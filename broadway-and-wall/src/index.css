@@ -198,7 +198,7 @@ body {
 .panel {
   /* --topbar-h is measured and published by TopBar; the fallback is the
      one-row height at a typical desktop width. */
-  position: absolute; top: calc(var(--topbar-h, 91px) + 10px); right: 14px; width: 330px;
+  position: absolute; top: calc(var(--topbar-h, 91px) + 10px); right: 14px; width: 362px;
   max-height: calc(100% - var(--topbar-h, 91px) - 28px);
   overflow-y: auto;
   background: linear-gradient(to bottom, rgba(249, 245, 234, 0.95), rgba(243, 237, 220, 0.92));
@@ -798,12 +798,24 @@ body {
 }
 .slider-off { opacity: 0.45; }
 .slider-hint { font-size: 11px; color: var(--ink-dim); font-style: italic; margin-top: 2px; }
-.slider-marks { display: flex; gap: 4px; margin-top: 2px; }
+/* The marks sit UNDER THEIR POSITION on the track — "¼ ½ all" used to be
+   three words in a row at the left, which is a legend, not a scale. */
+.slider-marks { position: relative; height: 20px; margin-top: 1px; }
 .slider-mark {
-  font-size: 10px; background: none; border: none; color: var(--ink-dim);
-  cursor: pointer; padding: 1px 5px; border-radius: 3px;
+  position: absolute; top: 0; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.2px;
+  background: none; border: 1px solid transparent; color: var(--ink-dim);
+  cursor: pointer; padding: 2px 6px; border-radius: 3px; white-space: nowrap;
 }
-.slider-mark:hover { background: rgba(43,37,26,0.08); }
+.slider-mark::before {
+  content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 4px;
+  background: rgba(96, 76, 34, 0.45);
+}
+.slider-mark.at-min { transform: none; }
+.slider-mark.at-min::before { left: 6px; }
+.slider-mark.at-max { transform: translateX(-100%); }
+.slider-mark.at-max::before { left: auto; right: 6px; }
+.slider-mark:hover { color: var(--ink); background: rgba(43,37,26,0.06); border-color: rgba(96, 76, 34, 0.22); }
 .slider-mark.on { color: var(--ink); font-weight: 700; }
 
 /* The top bar stays above the page overlay: a page is a room you can read
@@ -1023,7 +1035,11 @@ body {
 /* Horizontal scroll is forbidden on every panel. Tables compact; the page
    never grows sideways. Vertical scroll is the overflow. */
 html, body, #root { overflow-x: hidden; }
-.page-backdrop, .page-sheet, .page { overflow-x: hidden; max-width: 100%; }
+/* The page itself clips rather than hides: `overflow: hidden` made it a
+   scroll container of its own, which is what kept the section rail from
+   sticking against the backdrop that actually scrolls. */
+.page-backdrop, .page-sheet { overflow-x: hidden; max-width: 100%; }
+.page { overflow-x: clip; max-width: 100%; }
 .scroll-x { overflow-x: hidden; max-width: 100%; }
 .page-portfolio .tbl-book { margin-top: 8px; }
 .tbl-book td { vertical-align: top; }
@@ -2176,3 +2192,76 @@ html, body, #root { overflow-x: hidden; }
   .cycle-digest { left: 10px; right: auto; bottom: calc(46vh + 18px); }
   .panel { z-index: 21; }
 }
+
+
+/* ======================================================================
+   THE ANSWER, THE RAIL AND THE NARROW CARD — the pass that gave each desk
+   one decisive number, gave long pages a way to jump, and stopped the map
+   card's right-hand column wrapping sentences three lines deep.
+   ====================================================================== */
+
+/* THE ONE NUMBER A DESK IS FOR (ui/panels/shared Verdict). */
+.verdict {
+  margin: 8px 0 10px;
+  padding: 10px 14px 9px;
+  border-left: 4px solid rgba(96, 76, 34, 0.35);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgba(255, 253, 246, 0.5);
+}
+.verdict-label {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--ink-dim);
+}
+.verdict-value {
+  font-size: 26px; line-height: 1.1; font-weight: 700; color: var(--ink);
+  margin-top: 2px; font-variant-numeric: tabular-nums;
+}
+.verdict-note { font-size: 12.5px; color: var(--ink-dim); line-height: 1.42; margin-top: 4px; }
+.verdict-good { border-left-color: var(--teal); }
+.verdict-good .verdict-value { color: #23625b; }
+.verdict-warn { border-left-color: var(--warning); }
+.verdict-bad { border-left-color: var(--danger); background: rgba(168, 64, 46, 0.06); }
+.verdict-bad .verdict-value { color: #8e2c20; }
+.panel .verdict-value { font-size: 22px; }
+.panel .verdict-note { font-size: 12px; }
+
+/* THE SECTION RAIL. Sticky under the top bar while the room scrolls beneath
+   it; one chip per heading on the page, the one in view lit. Built from the
+   page's own headings (ui/RightPanel SectionNav), so a desk that adds a
+   section gets a chip without asking. */
+.page-nav {
+  position: sticky;
+  /* Measured: the sticky offset counts from the backdrop's CONTENT edge,
+     which already sits topbar + 12px down — so zero is directly under the
+     top bar, and the topbar-height calc that seemed obvious parked the rail
+     a whole bar too low. */
+  top: 0;
+  z-index: 4;
+  display: flex; flex-wrap: wrap; gap: 4px 5px;
+  margin: -6px -34px 14px;
+  padding: 7px 34px 7px;
+  background: linear-gradient(to bottom, rgba(249, 245, 235, 0.985), rgba(246, 241, 227, 0.95));
+  border-bottom: 1px solid rgba(146, 110, 40, 0.2);
+  box-shadow: 0 6px 12px -10px rgba(48, 38, 16, 0.35);
+}
+.page-nav-chip {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px;
+  padding: 3px 9px; border-radius: 10px;
+  border: 1px solid rgba(96, 76, 34, 0.2);
+  background: rgba(255, 253, 246, 0.6);
+  color: var(--ink-dim); cursor: pointer; white-space: nowrap;
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.page-nav-chip:hover { color: var(--ink); border-color: rgba(96, 76, 34, 0.45); }
+.page-nav-chip.on {
+  color: var(--ink); background: rgba(176, 127, 30, 0.14); border-color: rgba(176, 127, 30, 0.55);
+}
+@media (max-width: 900px) {
+  .page-nav { margin-inline: -16px; padding-inline: 16px; }
+}
+
+/* THE NARROW CARD'S RIGHT-HAND COLUMN. The label column no longer takes
+   whatever it wants; a sentence of a value drops under its label instead of
+   wrapping ragged against the right edge. The wide desks keep two columns. */
+.panel .grid { grid-template-columns: auto minmax(0, 1fr); }
+.panel .grid .v-long { grid-column: 1 / -1; text-align: left; margin-top: -3px; padding-left: 10px; border-left: 2px solid rgba(146, 110, 40, 0.18); }

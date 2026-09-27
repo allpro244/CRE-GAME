@@ -181,6 +181,33 @@ another. Grep before you add another.
 
 ## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
+- **The desks answer first; the long rooms got a rail** (Sep 2026). UI only,
+  no engine change. Asked "where does the UI feel good and bad", the honest
+  answer was: good wherever it reads like a document, bad wherever it has to
+  act like a tool. So: (1) `Verdict` (`ui/panels/shared`) — one large number
+  per decision desk with the sentence that says which way it cuts: yield on
+  cost against the hurdle on Build, coverage after the refinance and the
+  all-in cost on Refinance, all-in cost against the going-in cap on the
+  acquisition stack. (2) The map card no longer hosts the whole build or
+  refinance desk in a column a third of the screen wide: `DevelopGlance` and
+  `RefiGlance` price the scheme / name the best money and open the Property
+  page on that tab (`openProperty(bbl, tab)`, `propertyTab` in the store).
+  (3) `SectionNav` (`ui/RightPanel`): a sticky chip rail built from each
+  page's own headings (`.page-section-head`, `.deal-head`, the bare
+  `.page-section` labels Debt uses), the one in view lit, shown at three
+  sections or more; `setPage(page, jump)` lands on a named section, which is
+  how Capital → Refinance opens Debt on "Loan by loan". Two traps, both
+  measured: the scan must be a passive effect (the parent's ref is attached
+  after a child's layout effect), and a sticky `top` inside `.page-backdrop`
+  counts from its content edge, so `top: 0` is directly under the top bar.
+  (4) The card's value column: a value past a line's worth (`v-long`) drops
+  under its label instead of wrapping three lines ragged right; the card is
+  362px. (5) Docket subjects wrap rather than truncate; slider marks sit under
+  their place on the track; Draw/Repay no longer read "$0" when nothing is
+  set; a gold halo (`bw-select-halo`) marks the selected lot from altitude;
+  and the map's animation clock pauses under an open desk
+  (`ThreeBuildings.setPaused`) so a page and an Advance under it are not
+  sharing the GPU with walkers nobody can see.
 - **Shops at grade are the owner's call** (Sep 2026). `DevDraft.groundRetail`
   ("auto" | "on" | "off") on the develop desk's Programme tab for office and
   apartment schemes; `withStreetRetail(..., force)` and `planDevelopment`'s

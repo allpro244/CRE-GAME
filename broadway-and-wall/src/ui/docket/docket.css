@@ -5,7 +5,7 @@
 /* Two classes, deliberately: component stylesheets bundle BEFORE index.css,
    so a bare .docket would lose the width tie to .year-rail's 340px. */
 .year-rail.docket {
-  width: min(380px, calc(100vw - 28px));
+  width: min(430px, calc(100vw - 28px));
 }
 
 /* Under 900px the map HUD moves to the docket's top-left perch (index.css).
@@ -105,9 +105,10 @@
   color: var(--ink);
   line-height: 1.35;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* The subject line wraps to a second line rather than cutting at
+     "Motivated seller: 378 E…" — the part after the colon was the point. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* The sentence itself is a link when the row has somewhere to go. */
 .docket-title-link {

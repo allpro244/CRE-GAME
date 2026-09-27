@@ -25,7 +25,7 @@ import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
-import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint } from "@/ui/panels/shared";
+import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -1153,6 +1153,22 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           )}
           {max.principal <= 0 && (
             <div className="hint">{picked === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+          )}
+          {/* THE ANSWER FOR THE STACK ON THE DIAL: what the money costs all
+              in against what the building earns going in. Positive leverage
+              or negative, in one line, before the commit stage asks you to
+              sign. */}
+          {principal > 0 && rec && rec.class !== "land" && rec.bldgArea > 0 && (
+            <Verdict
+              label={`${productChoices.find((p) => p.id === picked)?.label ?? "Debt"} · ${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV`}
+              value={`${max.allInPct.toFixed(2)}% all-in`}
+              tone={negLev || cf < 0 ? "bad" : dscrNow !== null && dscrNow < 1.25 ? "warn" : "good"}
+              note={(negLev
+                ? `Negative leverage: the money costs more than the ${goingInPct.toFixed(2)}% the building earns going in — every dollar borrowed lowers your return.`
+                : `Positive leverage over a ${goingInPct.toFixed(2)}% going-in cap.`)
+                + (dscrNow !== null ? ` DSCR ${dscrNow.toFixed(2)}x` : "")
+                + ` · year-one cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} of equity.`}
+            />
           )}
           <div className="btn-row" style={{ marginTop: 10 }}>
             <button type="button" className="btn" onClick={() => setStage("thesis")}>◂ Thesis</button>

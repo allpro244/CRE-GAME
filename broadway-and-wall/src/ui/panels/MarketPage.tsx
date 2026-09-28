@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
-import { buyBoxSet, inBuyBox, type BuyBox } from "@/engine/buybox";
+import { buyBoxSet, inBuyBox, landPencils, type BuyBox } from "@/engine/buybox";
 import { starterPicks } from "@/engine/standing";
 import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
@@ -702,7 +702,7 @@ export function MarketPage() {
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
                       {!yours && game.watch?.includes(li.bbl) && <span className="chip chip-watch" style={{ marginRight: 6 }} title="A building you are watching">★</span>}
                       {!yours && buyBoxSet(game.buyBox) && inBuyBox(game, parcels, li.bbl, li.ask) && (
-                        <span className="chip chip-pencils" style={{ marginRight: 6 }} title="Inside your buy box — product, going-in yield and ticket">IN YOUR BOX</span>
+                        <span className="chip chip-pencils" style={{ marginRight: 6 }} title="Inside your buy box — product, going-in yield, ticket, or dirt that pencils">IN YOUR BOX</span>
                       )}
                       {notToYou && (
                         <span className="chip chip-cold" style={{ marginRight: 6 }} title={held!.name}>
@@ -715,12 +715,10 @@ export function MarketPage() {
                           saying so here saves opening forty lots to find the two that work. */}
                       {!built && !yours && rec.lotArea > 0 && (() => {
                         const lr = landRead(rec, game.econ);
-                        const askPsf = li.ask / rec.lotArea;
                         if (lr.builder <= 0) return null;
                         // The buyer pays the ask plus 2% closing, which lands in
-                        // the basis; a lot priced at exactly the residual reads
-                        // 0.998 on the desk the day you own it. Compare all-in.
-                        const works = askPsf * 1.02 <= lr.builder;
+                        // the basis; the same test the buy box applies.
+                        const { pencils: works, askPsf } = landPencils(rec, game.econ, li.ask);
                         return (
                           <span className={"chip" + (works ? " chip-pencils" : "")} style={{ marginRight: 6 }}
                             title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at the rents the trade underwrites, after cost, carry and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf, $${(askPsf * 1.02).toFixed(0)} with closing.`}>
@@ -987,6 +985,11 @@ function BuyBoxEditor() {
           </button>
         );
       })}
+      <button type="button" className={"lens-btn" + (box.land ? " lens-on" : "")} aria-pressed={!!box.land}
+        title="Lots whose ask plus closing is inside a builder's residual at today's rents — the dirt that pencils"
+        onClick={() => set({ ...box, land: !box.land || undefined })}>
+        Land that pencils
+      </button>
       <label className="buybox-field">yield ≥
         <input type="number" step="0.25" min="0" max="20" value={box.minCap ?? ""} placeholder="any"
           onChange={(e) => set({ ...box, minCap: e.target.value === "" ? undefined : Number(e.target.value) })} />%

@@ -42,7 +42,9 @@ export function newGoal(id: GoalId, month: number, s?: GameState): Goal {
 
 /** Goals a player could take on now: not the current one, and not already met. */
 export function goalsOpen(s: GameState, parcels?: ParcelTable | null): GoalDef[] {
+  const met = new Set([...(s.pastGoals ?? []), ...(s.goal ? [s.goal] : [])].filter((g) => g.doneM !== undefined).map((g) => g.id));
   return GOALS.filter((d) => {
+    if (met.has(d.id)) return false;
     if (s.goal && s.goal.id === d.id && s.goal.doneM === undefined && s.goal.failedM === undefined) return false;
     const trial = { ...s, goal: newGoal(d.id, s.month, s) } as GameState;
     return goalVerdict(trial, parcels) !== "done";

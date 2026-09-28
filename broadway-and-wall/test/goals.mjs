@@ -34,6 +34,9 @@ check(E.goalVerdict(bld) === null, "Builder set late is not met by deliveries al
 const rich = { ...late, nwHistory: [...late.nwHistory, 120e6] };
 const open = E.goalsOpen(rich, parcels).map((d) => d.id);
 check(!open.includes("nw100") && open.includes("nw500"), `$100M is not offered to a $120M firm; $500M is (${open.join(", ")})`);
+// A goal already met is not offered again, even when its live condition lapses.
+const metBefore = { ...late, goal: { ...E.newGoal("landlord", 0), doneM: 100 } };
+check(!E.goalsOpen(metBefore, parcels).some((d) => d.id === "landlord"), "a goal met earlier is not offered again");
 // Manager: a fund raised after the goal, settled and not failed.
 const mg = { ...late, goal: E.newGoal("manager", 240, late) };
 check(E.goalProgress(mg).share === 0, "Manager with no fund reads 0");

@@ -2393,6 +2393,21 @@ varying float vCut;
 // burnished rather than yellow: it has to sit on red brick and on blue glass
 // and be the same metal on both
 const vec3 OWN_GOLD = vec3(1.00, 0.72, 0.30);
+// WHAT THE DEED IS DOING, in the owned channel (see setOwned): 1 owned,
+// +2 on the market, +4 per step of lender trouble (1 covenant sweep — the
+// cash is trapped; 2 a workout file — notice, forbearance or foreclosure).
+float stListed() { return mod(floor(vState.x * 0.5 + 0.001), 2.0); }
+float stDistress() { return floor(vState.x * 0.25 + 0.001); }
+// The parapet metal carries the state. Gold is yours and well; rust is a
+// swept loan; red is a lender with a file open. A building you have listed
+// breathes — a slow swell of the band, two and a half seconds, which is a
+// broker's board read from the air rather than a colour it never had.
+vec3 ownMetal() {
+  float d = stDistress();
+  vec3 c = d > 1.5 ? vec3(0.95, 0.24, 0.17) : d > 0.5 ? vec3(0.96, 0.47, 0.18) : OWN_GOLD;
+  float swell = stListed() * (0.5 + 0.5 * sin(uTime * 2.513));
+  return c * (1.0 + 0.55 * swell) + vec3(0.10, 0.09, 0.07) * swell;
+}
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * (uLensN - 1.0);
   vec3 c = uLensRamp[0];
@@ -7711,11 +7726,14 @@ void main() {
     // setback tier carries its own, which is how a gilded tower actually reads.
     float bw = max(1.15, zfw * 1.5);
     float band = smoothstep(vTop - bw - zfw, vTop - bw, vZ);
-    vec3 gilt = OWN_GOLD * (light * 0.80 + 0.26);
+    vec3 gilt = ownMetal() * (light * 0.80 + 0.26);
     col = mix(col, gilt, band * 0.92);
     // and a faint warmth down the whole building, so it stays tellable at the
-    // distance where the band itself has gone sub-pixel
-    col *= mix(vec3(1.0), vec3(1.05, 1.02, 0.95), 1.0 - band);
+    // distance where the band itself has gone sub-pixel — a colder, redder
+    // cast when the lender is in the building, so trouble is tellable there too
+    float dz = stDistress();
+    vec3 warm = dz > 1.5 ? vec3(1.07, 0.95, 0.93) : dz > 0.5 ? vec3(1.06, 0.99, 0.93) : vec3(1.05, 1.02, 0.95);
+    col *= mix(vec3(1.0), warm, 1.0 - band);
   }
   float hi = vState.z;
   if (hi > 0.01) {
@@ -8216,7 +8234,7 @@ void main() {
     // the gilt margin round the deck of a building you own, inside the parapet
     float ew = max(0.7, ufw * 1.5);
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
-    outc = mix(outc, OWN_GOLD * (light * 0.80 + 0.26), edge * 0.88);
+    outc = mix(outc, ownMetal() * (light * 0.80 + 0.26), edge * 0.88);
   }
   if (vState.z > 0.01) {
     float sel = step(0.75, vState.z);
@@ -9622,7 +9640,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private lensRampUni = { value: Array.from({ length: 6 }, () => new THREE.Vector3(1, 1, 1)) };
   private lensNUni = { value: 2 };
   private selHUni = { value: 30 };
-  private ownedNow = new Set<string>();
+  private ownedNow = new Map<string, number>();
+  /** A listed holding's parapet breathes, so the clock has to run for it. */
+  private statusAnim = false;
   private lensNow = new Map<string, number>();
   private hiNow = new Map<string, number>();
   private selActive = false;
@@ -9743,11 +9763,23 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * YOUR BUILDINGS, ON THE BUILDINGS. The gilt parapet band and deck margin in
    * FRAG / ROOF_FRAG. Diffed, so a purchase uploads one texel.
    */
-  setOwned(owned: Set<string>) {
+  setOwned(owned: Set<string>, status?: Map<string, { listed?: boolean; distress?: 0 | 1 | 2 }>) {
+    // The owned channel carries the holding's state as well (STATE_GLSL
+    // stListed / stDistress): 1 + 2·listed + 4·distress. Diffed per deed on
+    // the encoded value, so listing one building uploads one texel.
+    const next = new Map<string, number>();
+    let anim = false;
+    for (const bbl of owned) {
+      const st = status?.get(bbl);
+      const v = 1 + (st?.listed ? 2 : 0) + 4 * Math.max(0, Math.min(2, st?.distress ?? 0));
+      if (st?.listed) anim = true;
+      next.set(bbl, v);
+    }
     let changed = false;
-    for (const bbl of this.ownedNow) if (!owned.has(bbl)) { this.setDeedState(bbl, 0, 0); changed = true; }
-    for (const bbl of owned) if (!this.ownedNow.has(bbl)) { this.setDeedState(bbl, 0, 1); changed = true; }
-    this.ownedNow = new Set(owned);
+    for (const [bbl] of this.ownedNow) if (!next.has(bbl)) { this.setDeedState(bbl, 0, 0); changed = true; }
+    for (const [bbl, v] of next) if (this.ownedNow.get(bbl) !== v) { this.setDeedState(bbl, 0, v); changed = true; }
+    this.ownedNow = next;
+    this.statusAnim = anim;
     if (changed) { this.sceneDirty++; this.map?.triggerRepaint(); }
   }
 
@@ -13571,7 +13603,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // schedule work at all.
     // A selected building sweeps, and a tween moves — both need the clock
     // running and the next frame asked for, water or no water.
-    const selAnim = this.selActive;
+    const selAnim = this.selActive || this.statusAnim;
     if (this.stepTweens(performance.now())) this.map.triggerRepaint();
     if (this.stepDusk(performance.now())) this.map.triggerRepaint();
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {

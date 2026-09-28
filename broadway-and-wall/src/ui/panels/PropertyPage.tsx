@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
@@ -181,6 +182,12 @@ export function PropertyPage() {
           );
         })()}
         <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />
+        {h && (() => {
+          // The same ledger read the Portfolio's "Returns to date" prints.
+          const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
+          if (!r) return null;
+          return <Big label="Your return to date" value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${(r.irr * 100).toFixed(1)}% IRR` : ""}`} bad={r.multiple < 1} />;
+        })()}
       </div>
       <div className="prop-head">
         <div>

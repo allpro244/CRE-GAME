@@ -357,6 +357,10 @@ export interface DevPlan {
   requiredYield: number;
   /** YoC / requiredYield. Below 1 destroys value; above 1 clears the hurdle. */
   hurdleRatio: number;
+  /** Stabilised NOI, $/yr — the numerator of yield on cost. */
+  stabNoi: number;
+  /** The tax-loaded exit yield the mark uses (the hurdle's own), %. Value on completion = stabNoi ÷ this. */
+  exitYield: number;
   /** 0..1, 0.5 = market standard. What you chose to build to. */
   spec: number;
   bts?: BtsCommitment;
@@ -1146,6 +1150,7 @@ export function planDevelopment(
     use, mix, floors: fl, coverage: cov, contract, sf,
     far: +(gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
+    stabNoi, exitYield: exitYieldPct,
     ltc, ltcMax, commitment, interestReserve, ratePct,
     lender: cq.lender, points: cq.points, pointsCost,
     equity: projectCost - commitment,
@@ -1251,6 +1256,7 @@ export function planAdaptiveReuse(
     commitment, interestReserve, pointsCost,
     equity, equityAtClose: Math.round(equity * 0.55),
     basisTotal, yieldOnCost, yieldOnCostExLand, requiredYield, hurdleRatio,
+    stabNoi: stabilizedNoi,
     months: Math.max(9, Math.round(base.months * 0.70)),
     lenderNote: hurdleRatio < 1
       ? `Conversion yield is ${yieldOnCost.toFixed(2)}% against ${requiredYield.toFixed(2)}% required.`

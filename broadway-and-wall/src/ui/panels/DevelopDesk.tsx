@@ -279,12 +279,51 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             k="Programme"
             v={`${sf(plan.sf)} · ${fl} fl · ${devUseLabel(use)} · ${plan.months} mo`}
           />
+          {/* THE SCHEME IN DOLLARS. Yield on cost against the hurdle is the
+              developer's read; what the player is deciding is whether to turn
+              this much money into that much building. Value on completion is
+              the stabilised NOI at the tax-loaded exit yield the mark uses —
+              the hurdle's own figure — less everything the job costs to that
+              point (land, construction, reserve, fees). */}
+          {plan.exitYield > 0 && (() => {
+            const worth = plan.stabNoi / (plan.exitYield / 100);
+            const profit = worth - plan.basisTotal;
+            return (
+              <Row
+                k="Worth on completion"
+                v={`${usd(worth)} stabilised · ${profit >= 0 ? "profit" : "loss"} ${usd(Math.abs(profit))} on ${usd(plan.basisTotal)} all-in`}
+                bad={profit < 0}
+                title={`Stabilised NOI ${usd(plan.stabNoi)} a year at a ${plan.exitYield.toFixed(2)}% exit yield (cap rate, tax-loaded). Before the developer margin the hurdle also asks for.`}
+              />
+            );
+          })()}
           {nb && Math.abs(nb.drift) >= 0.5 && (
             <Row k="Neighbourhood" v={`${nb.drift > 0 ? "+" : ""}${nb.drift.toFixed(0)} demand since 2000 on this block`} />
           )}
         </div>
       )}
       {plan && <LocSplitHint need={closeCheque} game={game} parcels={parcels} />}
+      <BestSchemes
+        onPick={(u, f) => { setUse(u); setFloors(f); }}
+        sweep={() => {
+          // Every use at a spread of heights up to its envelope, at the
+          // dials already set (footprint, contract, lender, spec). Ranked
+          // by the same hurdle ratio the verdict reads.
+          const out: { use: DevUse; floors: number; hurdle: number; equity: number; profit: number }[] = [];
+          for (const u of USES) {
+            const top = maxFloorsFor(rec, cov, u);
+            const steps = Array.from(new Set([2, 4, 6, 8, 12, 16, 20, 25, 30, 40, 50, top].filter((x) => x >= 1 && x <= top)));
+            for (const f of steps) {
+              const p = planDevelopment(game, parcels, bbl, u, f, cov, contract, undefined,
+                { mix: u === "mixed" ? customMix : undefined, groundRetail }, bank, spec);
+              if (!p) continue;
+              out.push({ use: u, floors: f, hurdle: p.hurdleRatio, equity: p.equity + p.pointsCost,
+                profit: p.exitYield > 0 ? p.stabNoi / (p.exitYield / 100) - p.basisTotal : 0 });
+            }
+          }
+          return out.sort((a, b) => b.hurdle - a.hurdle).slice(0, 3);
+        }}
+      />
 
       <div className="btn-row" style={{ marginBottom: 8 }} role="tablist" aria-label="Build desk">
         {BUILD_TABS.map((t) => (
@@ -810,6 +849,43 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
       <div className="btn-row">
         <button className="btn btn-sm" onClick={open}>Open the Build desk →</button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * THE BEST THREE SCHEMES ON THIS LOT, ON REQUEST. Finding them meant clicking
+ * through five uses and dragging the height — a measured sweep found 1.07 on a
+ * lot whose default read 0.72. Computed on the click, not every render.
+ */
+function BestSchemes({ sweep, onPick }: {
+  sweep: () => { use: DevUse; floors: number; hurdle: number; equity: number; profit: number }[];
+  onPick: (u: DevUse, f: number) => void;
+}) {
+  const [rows, setRows] = useState<ReturnType<typeof sweep> | null>(null);
+  return (
+    <div style={{ margin: "4px 0 10px" }}>
+      <button type="button" className="btn btn-sm" onClick={() => setRows(sweep())}>
+        {rows ? "Search again" : "Find the best schemes on this lot"}
+      </button>
+      {rows && (rows.length === 0
+        ? <div className="hint">No scheme prices on this lot at these dials.</div>
+        : (
+          <table className="tbl" style={{ marginTop: 6 }}>
+            <thead><tr><th>Scheme</th><th className="num">vs hurdle</th><th className="num">Profit</th><th className="num">Equity all-in</th><th /></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`${r.use}${r.floors}`} onClick={() => onPick(r.use, r.floors)}>
+                  <td>{devUseLabel(r.use)} · {r.floors} fl</td>
+                  <td className={"num" + (r.hurdle < 1 ? " neg" : "")}>{r.hurdle.toFixed(2)}×</td>
+                  <td className={"num" + (r.profit < 0 ? " neg" : "")}>{usd(r.profit)}</td>
+                  <td className="num">{usd(r.equity)}</td>
+                  <td><span className="lnk">use this</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
     </div>
   );
 }

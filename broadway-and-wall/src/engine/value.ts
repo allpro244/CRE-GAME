@@ -65,8 +65,14 @@ export function zonePermits(
  */
 const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs
 export function demandIdx(demandScore: number): number {
-  return Math.pow(Math.max(0, demandScore) / 100, 1 / DEMAND_GAMMA);
+  // One-entry memo: the pro forma asks this of the same lot dozens of times in
+  // a row, and a pow is the whole cost. Pure, so the number cannot change.
+  if (Object.is(demandScore, lastDemandIn)) return lastDemandOut;
+  lastDemandIn = demandScore;
+  return (lastDemandOut = Math.pow(Math.max(0, demandScore) / 100, 1 / DEMAND_GAMMA));
 }
+let lastDemandIn: number = NaN;
+let lastDemandOut: number = NaN;
 /** The reshaped score expressed back on the old 0-100 economic scale. */
 export function demandLinear(demandScore: number): number {
   return 100 * demandIdx(demandScore);
@@ -694,10 +700,93 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
 const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
-  return landRead(rec, econ).psf;
+  // A PURE-PERFORMANCE MEMO — it changes no number. `landRead` runs two full
+  // residuals (four uses × up to three schemes × one pro forma each) and the
+  // tick asks it for the same lot many times a month: every rival mark, every
+  // appraisal floor, every listing. The answer depends on exactly the fields
+  // named in `landMarketMatches` / `landLotMatches` and nothing else, so it is
+  // reused when every one of them is identical (Object.is) to the last call's.
+  // A previous cut fingerprinted every scalar on the market and cost what it
+  // saved; comparing the read-set in place costs a few dozen property reads.
+  // If you make landRead (or anything it calls — residualScheme,
+  // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
+  // marketConstructionQuote...) read a NEW field of the market or the lot,
+  // add it to the matching list below or this memo will serve a stale price.
+  if (!landMarketMatches(econ)) LAND_MEMO.clear();
+  const hit = LAND_MEMO.get(rec.bbl);
+  const heat = econ.districtHeat?.[rec.district ?? "—"];
+  if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
+  const psf = readLand(rec, econ, false).psf;
+  LAND_MEMO.set(rec.bbl, {
+    lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
+    zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
+    district: rec.district, yearBuilt: rec.yearBuilt, heat, psf,
+  });
+  return psf;
+}
+
+type LandMemoEntry = {
+  lotArea: number; farMaxComm: number; farMaxRes: number; zoneDist: unknown; demandScore: number;
+  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined; psf: number;
+};
+const LAND_MEMO = new Map<string, LandMemoEntry>();
+/** The market fields landRead reads, flattened, as of the entries in LAND_MEMO. */
+let LAND_MKT: unknown[] | null = null;
+const LAND_DICTS = [
+  "locIdxMeanBy", "cityVac", "structTight", "sublet", "stock",
+  "rentIdx", "effRentIdx", "rentExp", "capRate", "capExp",
+] as const;
+const LAND_SCALARS = [
+  "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
+  "creditIdx", "phase", "constructionAppetite", "vintageMean",
+] as const;
+const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
+const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
+
+function landMarketMatches(econ: Econ): boolean {
+  const e = econ as unknown as Record<string, unknown>;
+  let snap = LAND_MKT;
+  let same = snap !== null;
+  if (!snap) snap = LAND_MKT = new Array(LAND_MKT_LEN);
+  let i = 0;
+  for (const k of LAND_SCALARS) {
+    const v = e[k];
+    if (same && !Object.is(snap[i], v)) same = false;
+    snap[i++] = v;
+  }
+  for (const k of LAND_DICTS) {
+    const d = e[k] as Record<string, unknown> | undefined | null;
+    const present = d ? 1 : 0;
+    if (same && snap[i] !== present) same = false;
+    snap[i++] = present;
+    for (const u of LAND_CLASSES) {
+      const v = d?.[u];
+      if (same && !Object.is(snap[i], v)) same = false;
+      snap[i++] = v;
+    }
+  }
+  return same;
+}
+
+function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | undefined): boolean {
+  return Object.is(m.lotArea, rec.lotArea) && Object.is(m.farMaxComm, rec.farMaxComm)
+    && Object.is(m.farMaxRes, rec.farMaxRes) && Object.is(m.zoneDist, rec.zoneDist)
+    && Object.is(m.demandScore, rec.demandScore) && Object.is(m.landPsf, rec.landPsf)
+    && Object.is(m.district, rec.district) && Object.is(m.yearBuilt, rec.yearBuilt)
+    && Object.is(m.heat, heat);
 }
 
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
+  return readLand(rec, econ, true);
+}
+
+/**
+ * `whole` false is for `landPsfNow`, which keeps only the price: the holder's
+ * bid can only set the price when the builder's residual is not positive, so
+ * on a lot that pencils the second residual is not run and `holder` comes back
+ * as 0. The price is the same number either way.
+ */
+function readLand(rec: ParcelRecord, econ: Econ, whole: boolean): LandRead {
   // LOCATION PRICES DIRT AT THE LEVEL, NOT ONLY IN THE CYCLE.
   //
   // Demand used to enter only as a multiplier on `cycleDev`, so a block that
@@ -727,7 +816,9 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // important line in a city and the game could not draw it before.
   const scheme = residualScheme(rec, econ);
   const builder = scheme?.psf ?? 0;
-  const holder = (residualScheme(rec, econ, PEAK_RENT_MULT)?.psf ?? 0) * WAIT_DISCOUNT;
+  const holder = whole || !(builder > 0)
+    ? (residualScheme(rec, econ, PEAK_RENT_MULT)?.psf ?? 0) * WAIT_DISCOUNT
+    : 0;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
   //
@@ -1291,6 +1382,16 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
 // numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
 // 0.87, against 0.885 / 0.915 / 0.955 / 0.930.
 
+/**
+ * `occHash(bbl + use)` and `occHash("trouble:" + bbl + use)`, memoised per lot:
+ * pure functions of the strings, and hashing them was a tenth of the pro forma.
+ */
+const OCC_HASHES = new Map<string, Record<string, [number, number]>>();
+function occHashes(bbl: string, use: string): [number, number] {
+  let byUse = OCC_HASHES.get(bbl);
+  if (!byUse) { byUse = Object.create(null) as Record<string, [number, number]>; OCC_HASHES.set(bbl, byUse); }
+  return byUse[use] ??= [occHash(bbl + use), occHash("trouble:" + bbl + use)];
+}
 function occHash(key: string): number {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -1350,13 +1451,12 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   const loc = 0.22 * (demandIdx(rec.demandScore) - locPivot);
   // the building's own character, ±11pp commercial, ±6pp residential — and
   // skewed downward, because the tail of this distribution is a tail of pain
-  const u = occHash(rec.bbl + use);
+  const [u, u2] = occHashes(rec.bbl, use);
   const idio = (apt ? 0.12 : 0.22) * (u - 0.62);
   // ...and one building in eight is simply TROUBLED: the dark lobby, the
   // unleasable plates, the entrance on the wrong street. These are the 50-65%
   // buildings every market carries, they are persistent, and they are the
   // entire value-add trade — the discount is real and so is the reason.
-  const u2 = occHash("trouble:" + rec.bbl + use);
   const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
   // THE SPACE MARKET WAS NOT WIRED TO A SINGLE BUILDING.
   //

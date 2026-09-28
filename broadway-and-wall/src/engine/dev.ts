@@ -836,6 +836,9 @@ export function refreshDevelopmentFeasibility(
   const REDEV_N = 72;
   const infillRatios: number[] = [];
   const chosen = new Set<string>();
+  // nothing in this pass builds, demolishes or merges, so the cornice of a
+  // block is the same number every time it is asked
+  const datumMemo: DatumMemo = new Map();
   let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
   const yrNow = START_YEAR + Math.floor(s.month / 12);
   let landCount = 0, redevCount = 0;
@@ -886,7 +889,7 @@ export function refreshDevelopmentFeasibility(
         // sampler asks for that and no more. It is not the legal maximum — the
         // cornice datum and its scarcity push still bind — but it is the same
         // question the start path asks, which is the whole point.
-        const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), use);
+        const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), use, datumMemo);
         const floors = Math.max(2, Math.min(infill, maxFloorsFor(rec, 0.62, use)));
         // ...and PUBLISH what that envelope is worth against the legal one, so
         // the land market can price the building the city will actually permit.
@@ -911,7 +914,7 @@ export function refreshDevelopmentFeasibility(
     if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
     // Only sites that can grow housable floor under today's cornice/shortage.
     const leadGuess = rec.class as BuiltClass;
-    const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadGuess);
+    const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadGuess, datumMemo);
     const targetSf = rec.lotArea * 0.62 * infill;
     if (targetSf < rec.bldgArea * 1.12) continue;
     chosen.add(bbl);
@@ -2314,19 +2317,56 @@ function blockGeo(parcels: ParcelTable): BlockGeo {
   return geo;
 }
 
-export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: string): number {
+export function blockDatumFloors(
+  s: GameState, parcels: ParcelTable, block: string, memo?: Map<string, number>,
+): number {
   const { byBlock, neigh } = blockGeo(parcels);
   let datum = 0;
   for (const { b, w } of neigh.get(block) ?? [{ b: block, w: 1 }]) {
-    for (const bbl of byBlock.get(b) ?? []) {
-      const r = resolveRec(parcels, s, bbl);
-      if (!r || r.class === "land" || !(r.floors > 0)) continue;
-      const adjusted = r.floors * w;
-      if (adjusted > datum) datum = adjusted;
+    let top = memo?.get(b);
+    if (top === undefined) {
+      top = blockTopFloors(s, parcels, byBlock.get(b));
+      memo?.set(b, top);
     }
+    // w > 0, and multiplying by a positive constant is monotone in floating
+    // point, so the block's tallest times w is exactly the largest
+    // floors * w over its lots — the number the per-lot loop used to find.
+    const adjusted = top * w;
+    if (adjusted > datum) datum = adjusted;
   }
   return Math.floor(datum);
 }
+
+/**
+ * The tallest standing building on one block, 0 when there is none. Only
+ * class and floors are read, so this skips resolveRec's full copy of the
+ * record: they are the delivered building's (s.built) when there is one, and
+ * the deed's own otherwise — including on a merged-away child, which
+ * resolveRec returns without consulting s.built.
+ */
+function blockTopFloors(s: GameState, parcels: ParcelTable, lots: string[] | undefined): number {
+  if (!lots) return 0;
+  const built = s.built;
+  const merged = s.merged;
+  let top = 0;
+  for (const bbl of lots) {
+    const rec = parcels[bbl];
+    if (!rec) continue;
+    const d = merged?.[bbl] ? undefined : built?.[bbl];
+    const cls = d ? d.class : rec.class;
+    const floors = d ? d.floors : rec.floors;
+    if (cls === "land" || !(floors > 0)) continue;
+    if (floors > top) top = floors;
+  }
+  return top;
+}
+
+/**
+ * A per-block memo for `cityInfillCap` / `blockDatumFloors`, for a caller that
+ * asks about many lots in one pass. Valid only while nothing is built,
+ * demolished or merged — make a fresh one for each such pass.
+ */
+export type DatumMemo = Map<string, number>;
 
 /** How high the market will speculatively build on this lot TODAY. */
 export function cityInfillCap(
@@ -2334,8 +2374,9 @@ export function cityInfillCap(
   rec: { block: string; lotArea: number; farMaxComm?: number; farMaxRes?: number },
   maturity: number,
   use: BuiltClass = "office",
+  datumMemo?: DatumMemo,
 ): number {
-  const datum = blockDatumFloors(s, parcels, rec.block);
+  const datum = blockDatumFloors(s, parcels, rec.block, datumMemo);
   // one increment above the datum; the increment itself grows as the town
   // matures and its comps deepen — 2 floors in year one, 6 by year 65
   //

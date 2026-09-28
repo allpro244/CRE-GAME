@@ -36,7 +36,7 @@ export function NewsPage() {
   return (
     <div>
       <div className="hint">
-        The last {(game.news ?? []).length} items off the wire, newest first. Anything with a ✈ is about a
+        The last {(game.news ?? []).length} items off the wire, newest first. Anything marked ✈ is about a
         specific place — a building, or a civic work. Click it and the camera goes there.
       </div>
       <div className="btn-row" style={{ marginBottom: 8, flexWrap: "wrap" }}>

@@ -695,6 +695,9 @@ body {
 }
 
 /* game-over as a page */
+.setting-row { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 8px; }
+.setting-row > .btn { flex: none; margin-top: 2px; }
+.setting-text { flex: 1; min-width: 0; }
 .gameover-page { text-align: center; padding: 30px 10px; }
 /* eight tiles in two even rows, not seven and an orphan */
 .gameover-page .stat-strip.gameover-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }

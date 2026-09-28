@@ -23,7 +23,7 @@ export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
-import { mixOf } from "./mix";
+import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
 import {
@@ -3640,7 +3640,7 @@ export function tickCityGrowth(
       s.news.unshift({
         q: s.month, kind: "info",
         text: near
-          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${rec.district} — that is space competing with yours.`
+          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${districtLabel(rec)} — that is space competing with yours.`
           : `A ${j.floors}-story ${j.use} building opened at ${rec.address}, the tallest thing to top out in a while.`,
       });
     }

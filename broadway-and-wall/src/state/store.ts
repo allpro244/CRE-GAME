@@ -7,6 +7,7 @@ import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDige
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
+import { openResearchOn } from "@/ui/researchTab";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -23,6 +24,7 @@ import {
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio, offerStreetBook, acceptStreetBook } from "@/engine/portfoliosale";
+import { offerTakePrivate } from "@/engine/takeprivate";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap, payOffLoan, paydownLoan, placeMezz } from "@/engine/debt";
 import { sellLandLeaseBack, buyLandBack } from "@/engine/leasehold";
@@ -348,6 +350,8 @@ interface AppState {
   offerStreetBook: (id: string, price: number) => void;
   /** Take the receiver's last number. */
   acceptStreetBook: (id: string) => void;
+  /** Offer for a whole rival firm — see engine/takeprivate.offerTakePrivate. */
+  takePrivate: (firmId: string, price: number, financing: "cash" | "debt") => void;
   bidAuction: (bids: Record<string, number>) => void;
   payOffAtDiscount: (bbl: string) => void;
   handBackKeys: (bbl: string) => void;
@@ -765,6 +769,7 @@ export const useStore = create<AppState>((set, get) => ({
   openAttention: (key) => {
     const st0 = get();
     const route = routeAttention(key, st0.game);
+    if (route.rtab) openResearchOn(route.rtab);
     // One entry for the whole jump, recorded before anything moves: a notice
     // that changes both the deed and the room is still one move away from where
     // the player was standing.
@@ -1586,6 +1591,15 @@ export const useStore = create<AppState>((set, get) => ({
       set({ game: r.s, page: "portfolio" });
       toast(r.msg ?? "Bought the book.");
     }
+    void persist(r.s);
+  },
+  takePrivate: (firmId, price, financing) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = offerTakePrivate(game, parcels, firmId, price, financing);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Done.", r.refused ? "err" : "ok");
     void persist(r.s);
   },
   acceptStreetBook: (id) => {

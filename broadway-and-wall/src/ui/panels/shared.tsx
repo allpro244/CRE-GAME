@@ -219,10 +219,7 @@ export function workStage(
  * about the click you just made in this browser, and it has no business
  * travelling in a save.
  */
-export let pendingRTab: string | null = null;
-export const openResearchOn = (tab: string) => { pendingRTab = tab; };
-/** Clear after ResearchPage reads the handoff (cannot assign through an import binding). */
-export const clearPendingRTab = () => { pendingRTab = null; };
+export { pendingRTab, openResearchOn, clearPendingRTab } from "@/ui/researchTab";
 
 export function Big({ label, value, bad, title }: { label: string; value: string; bad?: boolean; title?: string }) {
   return (

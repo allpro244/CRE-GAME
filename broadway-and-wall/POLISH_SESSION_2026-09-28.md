@@ -72,5 +72,8 @@ trolley on sites. See the commit messages on `ThreeBuildings.ts` and `MapView.ts
 - Report letter H (the glut is seen) moved OK → BAND with the pro-forma reconciliation:
   rate-policy drift during the glut +1.31pp vs a ≤ +0.35 band. Informational; worth a look.
 - Sale instructions act on single offers, not a marketed campaign's bid list.
-- landRead cost: a per-month memo of the residual per lot would recover most of the tick time.
+- landRead cost: a memo keyed on the market object plus a fingerprint of every scalar on the
+  lot and the market hit 64% of calls but saved nothing — fingerprinting the market each call
+  cost what the pro forma did. A cheaper invalidation (a market version counter bumped where the
+  tick mutates econ) would be the way to recover the time.
 - Late game: platform sale / listing using `sellStake` + `listPortfolio` machinery.

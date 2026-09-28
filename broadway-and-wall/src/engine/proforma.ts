@@ -75,6 +75,49 @@ const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  * neighbourhood effect all follow from the components.
  */
 export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
+
+/**
+ * HOW MUCH OF THE LOT A NEW BUILDING MAY COVER, BY USE — one limit, read by the
+ * Develop desk and the land residual alike.
+ *
+ * The desk let every use cover 90% of the lot and the residual held offices
+ * and flats to 70%, so the desk's land value ran 1.2-1.9x the market's and a
+ * lot bought at the residual planned at 1.02-1.07 instead of 1.00 (ECONOMY.md,
+ * small-lot diagnosis). One quantity, two answers. The plate here is one
+ * footprint carried the full height, so each limit is the share of the lot a
+ * typical building of that use actually covers, not the ground floor alone.
+ * Facts about codes, with the reading taken stated:
+ *
+ *   flats       0.70  NYC Quality Housing maximum lot coverage for an interior
+ *                     lot is 60-70% (R6 60, R7 65, R8-R10 70; ZR 23-153 as it
+ *                     stood before 2024); light-and-air and rear-yard rules hold most
+ *                     codes to 60-80%. The top of the interior range.
+ *   offices     0.80  Commercial districts carry no coverage cap on a
+ *                     commercial building, but above the first storey a 20 ft
+ *                     rear yard is required (ZR 33-26): 80% of a 100 ft deep
+ *                     standard lot. Full-lot is a base, not a building — a
+ *                     tower over it sets back further (C5/C6 tower coverage
+ *                     40-50%, ZR 33-45), and the player can draw that lower.
+ *   shops       0.85  One and two storeys. The ground floor may run to the lot
+ *   sheds       0.85  line (rear-yard permitted obstruction, ZR 33-23 / 43-23)
+ *                     and the second storey takes the rear yard; sheds give
+ *                     up yard to loading berths (ZR 44-50) rather than light.
+ *                     A judgement between the two, the residual's long-standing
+ *                     figure.
+ *
+ * A programme is held to the strictest use in it that stacks: one plate runs
+ * the full height, so flats over shops take the flats' rear yard.
+ */
+export const MAX_COVERAGE: Record<BuiltClass, number> = {
+  multifamily: 0.70, office: 0.80, retail: 0.85, industrial: 0.85,
+};
+/** The site coverage a new building of this programme may take. */
+export function maxCoverageFor(use: DevUse, mix?: UseMix): number {
+  const m = devMix(use, mix);
+  let cap = 1;
+  for (const k of Object.keys(m) as BuiltClass[]) if ((m[k] ?? 0) > 0) cap = Math.min(cap, MAX_COVERAGE[k] ?? 1);
+  return cap;
+}
 /**
  * YOU DECIDE THE STACK.
  *
@@ -582,7 +625,11 @@ export interface ProFormaInput {
   coverage: number;
   contract?: Contract;
   spec?: number;
-  custom?: { mix?: UseMix; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" };
+  custom?: {
+    mix?: UseMix; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off";
+    /** The massing is a structure already standing (a conversion, a takeover): no new-build coverage limit. */
+    shell?: boolean;
+  };
   /**
    * The floor area the scheme may reach, as FAR. The desk plans against the
    * legal envelope; the residual against what the city will actually permit
@@ -642,10 +689,13 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const contract: Contract = o.contract ?? "gmp";
   if (!Number.isFinite(o.floors) || !Number.isFinite(o.coverage) || !Number.isFinite(spec)) return null;
   const custom = o.custom;
-  const cov = Math.max(0.08, Math.min(0.9, o.coverage));
   // The mix has to be known before the height, because a programme that is
   // all shops is a two-storey building whatever the envelope allows.
   const raw = devMix(o.use, custom?.mix);
+  // ...and before the footprint: the coverage limit is the use's (MAX_COVERAGE).
+  // A shell that already stands keeps the footprint it has — a conversion or a
+  // half-built takeover is not a new building's massing.
+  const cov = Math.max(0.08, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
   const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
   const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was

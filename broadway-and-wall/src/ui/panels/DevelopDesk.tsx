@@ -18,7 +18,7 @@ const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
-  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE,
+  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -211,7 +211,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // ...AND ON ITS FOOTPRINT. Floors without the coverage they were priced at
   // is a different building: the residual's scheme is (use, floors, coverage),
   // and only all three together reproduce the pro forma the tape solved.
-  const [cov, setCovRaw] = useState(saved?.cov ?? seedScheme?.coverage ?? 0.6);
+  const [covDial, setCovRaw] = useState(saved?.cov ?? seedScheme?.coverage ?? 0.6);
   const [floors, setFloorsRaw] = useState(saved?.floors ?? (seedScheme && seedScheme.floors > 0 ? seedScheme.floors : 8));
   const [contract, setContractRaw] = useState<Contract>(saved?.contract ?? "gmp");
   const [ltcWant, setLtcWantRaw] = useState(saved?.ltcWant ?? 1);   // share of the lender's max you take
@@ -232,8 +232,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail });
-  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail });
+  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -248,6 +248,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const setSpec = touch(setSpecRaw);
   const setSplit = touch(setSplitRaw);
   const setGroundRetail = touch(setGroundRetailRaw);
+  // THE FOOTPRINT IS THE USE'S TO TAKE (MAX_COVERAGE) — the limit the land
+  // residual prices the dirt at. A held 85% dial on a switch to flats reads
+  // as the 70% the flats may cover, and the slider ends there.
+  const covCap = maxCoverageFor(use, use === "mixed"
+    ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 } : undefined);
+  const cov = Math.min(covDial, covCap);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -509,11 +515,11 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             label="Footprint"
             value={cov}
             min={0.08}
-            max={0.9}
+            max={covCap}
             step={0.01}
             onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v, use))); }}
             format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
-            marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
+            marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: covCap, label: `max ${Math.round(covCap * 100)}%` }]}
             hint={(() => {
               // THE SLIDER USED TO PROMISE THE OPPOSITE OF WHAT IT DOES HERE.
               //
@@ -527,14 +533,16 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               // Rather than assert either story, ask the same function the
               // planner asks, at a wider and a narrower dial, and report what
               // it says about THIS lot.
-              const wider = maxFloorsFor(rec, Math.min(0.9, cov + 0.15), use);
+              const wider = maxFloorsFor(rec, Math.min(covCap, cov + 0.15), use);
               const slimmer = maxFloorsFor(rec, Math.max(0.08, cov - 0.15), use);
+              const capNote = ` ${devUseLabel(use)} may cover ${Math.round(covCap * 100)}% of the lot at most — ${
+                use === "multifamily" || covCap <= 0.7 ? "flats keep a rear yard for light and air" : use === "office" ? "above the ground floor a commercial building keeps a rear yard" : "the ground floor can run to the line; loading and the upper storey take the rest"}.`;
               const dir = wider > maxFl
-                ? `Widening to ${Math.round(Math.min(0.9, cov + 0.15) * 100)}% carries ${wider} floors — the plate, not the envelope, is what is holding the height down.`
+                ? `Widening to ${Math.round(Math.min(covCap, cov + 0.15) * 100)}% carries ${wider} floors — the plate, not the envelope, is what is holding the height down.`
                 : slimmer > maxFl
                   ? `Narrowing to ${Math.round(Math.max(0.08, cov - 0.15) * 100)}% carries ${slimmer} floors on the same envelope.`
                   : `${maxFl} floors either way — you are between the two ceilings.`;
-              return `${dir} On a big site you can put up something small and keep the rest of the land.`;
+              return `${dir} On a big site you can put up something small and keep the rest of the land.${capNote}`;
             })()}
           />
           {/* WHAT THE SITE YIELDS, AND WHAT IT IMPLIES — see plateVerdict. The
@@ -653,7 +661,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               { label: "Standard", cov: 0.6, spec: 0.5 },
               { label: "Tower", cov: 0.32, spec: 0.55 },
               { label: "Signature", cov: 0.48, spec: 0.88 },
-            ] as const).map((p) => (
+            ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
               <button
                 key={p.label}
                 type="button"
@@ -865,7 +873,9 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const saved = game.holdings[bbl]?.devDraft;
   const use: DevUse = saved?.use ?? deskZoning(rec, game.econ, undefined, 1).legal[0] ?? "office";
-  const cov = saved?.cov ?? 0.6;
+  const covCap = maxCoverageFor(use, use === "mixed" && saved?.split
+    ? { retail: saved.split.retail / 100, office: saved.split.office / 100, multifamily: saved.split.multifamily / 100 } : undefined);
+  const cov = Math.min(saved?.cov ?? 0.6, covCap);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(saved?.floors ?? 8, maxFl);
   const contract: Contract = saved?.contract ?? "gmp";

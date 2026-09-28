@@ -85,12 +85,13 @@ export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 export {
   MIXED_STACK, normalizeMix, devMix, dominantOf, CONTRACT_PREMIUM, reserveFor, specCostMult,
   farMaxFor, maxRetailShare, withStreetRetail, capRetail, maxFloorsFor,
+  MAX_COVERAGE, maxCoverageFor,
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor,
+  developmentProForma, landCarryFactor, MAX_COVERAGE,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
@@ -426,7 +427,7 @@ export function buildClimate(s: GameState): number {
 /**
  * THE LARGEST BUILDING THE PLANNER WILL DRAW ON A LOT — the same
  * `min(plate x floors, envelope)` `planDevelopment` strikes, taken over the
- * footprints the Build desk offers (8% to 90% of the lot). Zoning alone
+ * footprints the Build desk offers (8% of the lot to each use's MAX_COVERAGE). Zoning alone
  * (lot x FAR) overstates a small lot several times over, because slenderness
  * and the core stop it going up long before the FAR runs out.
  */
@@ -435,10 +436,13 @@ export function maxBuildable(
 ): { gsf: number; floors: number; coverage: number } {
   const envelope = rec.lotArea * farMaxFor(rec);
   let best = { gsf: 0, floors: 1, coverage: 0.6 };
-  for (let c = 0.08; c <= 0.9001; c += 0.01) {
-    const fl = maxFloorsFor(rec, c);
-    const gsf = Math.min(rec.lotArea * c * fl, envelope);
-    if (gsf > best.gsf + 1) best = { gsf: Math.round(gsf / 100) * 100, floors: fl, coverage: c };
+  // Each use at the footprints it may take (MAX_COVERAGE) and the height it stacks to.
+  for (const use of BUILT_CLASSES) {
+    for (let c = 0.08; c <= MAX_COVERAGE[use] + 1e-4; c += 0.01) {
+      const fl = maxFloorsFor(rec, c, use);
+      const gsf = Math.min(rec.lotArea * c * fl, envelope);
+      if (gsf > best.gsf + 1) best = { gsf: Math.round(gsf / 100) * 100, floors: fl, coverage: c };
+    }
   }
   return best;
 }
@@ -472,6 +476,8 @@ export function planDevelopment(
      * if the district has since been remapped. Nothing else sets this.
      */
     vested?: boolean;
+    /** The massing is a structure already standing: no new-build coverage limit (MAX_COVERAGE). */
+    shell?: boolean;
   },
   lender?: string,
   spec = 0.5,
@@ -671,7 +677,7 @@ export function planAdaptiveReuse(
   const planUse: DevUse = "mixed"; // custom programme must travel through devMix
   const base = planDevelopment(
     s, parcels, bbl, planUse, rec.floors, coverage, "gmp",
-    undefined, { mix: reuseMix }, undefined, 0.5, opportunity,
+    undefined, { mix: reuseMix, shell: true }, undefined, 0.5, opportunity,
   );
   if (!base) return null;
   // Reuse keeps structure and much of the envelope, but replaces interiors,
@@ -1314,7 +1320,7 @@ export function takeoverDevelopment(
   const use = half.use as DevUse;
   const floors = Math.max(1, Math.round(half.floors));
   const coverage = Math.max(0.08, Math.min(0.9, half.sf / Math.max(1, rec.lotArea * floors)));
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp", undefined, { vested: true });
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp", undefined, { vested: true, shell: true });
   if (!plan) return;
   const done = Math.max(0, Math.min(0.95, half.progress));
   // What is left to build, plus the lease-up money — which the dead sponsor's

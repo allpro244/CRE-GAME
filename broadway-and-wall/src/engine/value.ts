@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon } from "./proforma";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -472,18 +472,23 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  * site coverage. The coverage is chosen so the scheme sits inside the envelope
  * the city will permit (`far`), which means the desk — planning against the
  * legal envelope — draws exactly the same building from the same two numbers.
- * Offices and flats at 70% of the lot; shops and sheds, which are flat, at up
- * to 85%. `developmentProForma` then applies the structure clamp the desk
+ * Each use at its own coverage limit (`MAX_COVERAGE`: flats 70%, offices 80%,
+ * shops and sheds 85%). `developmentProForma` then applies the structure clamp the desk
  * applies, and the scheme reports what it actually drew.
  */
 function residualFloorChoices(use: BuiltClass, far: number): { floors: number; coverage: number }[] {
   const cap = USE_FLOORS_MAX[use];
-  const envelopeFl = Math.max(1, Math.round(far / 0.7));
-  const maxFl = cap !== undefined ? Math.min(cap, envelopeFl) : envelopeFl;
-  // Shops and sheds: the one-storey box as well as the two-storey one — the
-  // single storey has no stair to pay for (see the note below).
+  // THE COVERAGE IS THE USE'S, AND THE DESK'S (MAX_COVERAGE, proforma.ts). The
+  // residual held offices and flats to 70% and shops and sheds to 85% while
+  // the desk let all four cover 90%, so the desk's land value ran 1.2-1.9x
+  // the market's on the same lot. One limit now, read by both.
+  const covMax = MAX_COVERAGE[use];
+  const envelopeFl = Math.max(1, Math.round(far / covMax));
+  // Shops and sheds: every storey up to the use's cap — the one-storey box has
+  // no stair to pay for (see the note below), and the two-storey one is drawn
+  // even where it cannot fill its plate, because the desk can draw it too.
   const floors = cap !== undefined
-    ? [...new Set([1, maxFl])]
+    ? Array.from({ length: cap }, (_, i) => i + 1)
     // A builder picks the height that maximises residual, not the zoning
     // maximum. Pricing every office/multifamily lot as a tower made
     // heightPremium sink those uses while the desk (capped at 14, coverage
@@ -500,9 +505,9 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
     // with a positive residual on lots the land market read as having no
     // builder at all (measured: 21 of 434 vacant 3-5k sf lots, 20 of 287
     // 5-8k, at coverage the residual also uses; tools/smalllot-lines.mjs).
-    : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, maxFl)).concat(maxFl))];
+    : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, envelopeFl)).concat(envelopeFl))];
   return floors.map((fl) => {
-    const usable = Math.min(far, fl * (cap !== undefined ? 0.85 : 0.7));
+    const usable = Math.min(far, fl * covMax);
     return { floors: fl, coverage: usable / fl };
   }).filter((c) => c.coverage > 0);
 }

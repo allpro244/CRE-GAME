@@ -1897,29 +1897,93 @@ before → after are office 49.4 → 51.1, flats 38.9 → 40.3, shops
 31.1 → 30.1 and sheds 14.6 → 14.4, against a cross-seed range of
 24-78 for office. There is no level shift. `pnpm gate` passes.
 
-## Found and not fixed: the desk is looser than the land market
+## The desk was looser than the land market — both fixed
 
-Both of these make small lots look *better* to the player than the market
-prices them. Neither explains the shortfall. Both are fake #3.
+Both made small lots look *better* to the player than the market priced
+them, and both were fake #3. Neither explained the small-lot shortfall, and
+fixing them makes the desk slightly less generous, not more.
 
-- **The desk ignores zoning use.** `zonePermits` (R = flats; M = sheds;
-  sheds on C only below demand 45) governs the residual, the city and the
-  rivals. `startDevelopment` never asks. The desk used to say "anything may be
-  built here"; it now shows the lot's zoning and still builds anything. In the core-fix run, 4 of the 10 affordable plans that
-  cleared ≥1.0 were uses the zoning does not host (e.g. two storeys of shops
-  at 1.23 on an R6 lot the tape prices as flats only). Fixing this means
-  every harness bot that starts "office" on arbitrary dirt must pick a
-  permitted use, including `conserve` and `invariants`, which are gates.
-- **The desk lets flats and offices cover 90% of the lot. The residual
-  allows 70%.** With the desk capped at the residual's coverage, the
-  desk's best residual equals the engine's exactly (median ratio 1.00).
-  With 0.8-0.9 allowed, it runs 1.2-1.9× the engine's. That is why a lot
-  bought at the residual plans at 1.02-1.07, not 1.00. For flats the
-  residual is the realistic side: light and air, and rear yards hold
-  residential coverage to 60-80% in most codes. For offices in commercial
-  districts, full coverage is common and the residual is the strict side.
-  The fix is a per-use coverage limit shared by both, and it moves land
-  prices city-wide.
+**Zoning use.** `zonePermits` (R = flats; M = sheds, flats only once
+industry has left and never while sheds are short; sheds on C only below
+demand 45) governed the residual, the city and the rivals.
+`startDevelopment` never asked it. In the core-fix run, 4 of the 10
+affordable plans that cleared ≥1.0 were uses the zoning does not host (e.g.
+two storeys of shops at 1.23 on an R6 lot the tape prices as flats only).
+
+- `zoneUseBar` (value.ts) is the same rule asked of a whole programme, with
+  the reason in words. A mixed stack needs every use permitted except shops
+  at grade, up to the street-retail share the pro forma programmes on any
+  lot (the accessory ground floor a residential overlay allows).
+- `planDevelopment` returns no plan for a barred use. `startDevelopment`,
+  `proposeBuildToSuit` and `startAdaptiveReuse` refuse with the reason. A
+  takeover of a half-built job is vested and keeps its use.
+- The desk offers only the permitted uses, names the others with the
+  reason, and says that the board's variance (the Zoning section) buys
+  envelope, not use. No use variance exists in the engine; the city maps
+  use district by district (`zoneUse`, fringe C to M when sheds are short).
+- **The rivals had the same fault.** `useForZone` weighted flats on M by how
+  much industry had left, even while sheds were short, so a rival drew a
+  use `zonePermits` refuses (2 starts in 3 seeds × 25 years). It now asks
+  `zonePermits`. The pro forma refused those starts a line after the rolls
+  were spent, so the rng path is unchanged and BASELINE moved 0 of 39.
+- The harness bots pick a permitted use through the engine's rule
+  (`test/permitted-use.mjs`), including `conserve` and `invariants`. The
+  rule was not loosened for them.
+
+**Site coverage: one limit per use, `MAX_COVERAGE` (proforma.ts).** The
+desk let every use cover 90% of the lot. The residual held offices and
+flats to 70% and shops and sheds to 85%. The plate is one footprint carried
+the full height, so each limit is the share of the lot a typical building
+of that use covers:
+
+| use | limit | source |
+|---|---|---|
+| flats | 0.70 | NYC Quality Housing interior-lot coverage is 60-70% (R6 60, R7 65, R8-R10 70). Light-and-air and rear-yard rules hold most codes to 60-80%. |
+| offices | 0.80 | Commercial districts have no coverage cap on a commercial building, but above the first storey they require a 20 ft rear yard (ZR 33-26), which is 80% of a 100 ft deep lot. A tower sets back further (40-50%, ZR 33-45), and the player can draw that. |
+| shops, sheds | 0.85 | These are one or two storeys. The ground floor may run to the lot line and the upper storey takes the rear yard. Sheds give up yard to loading berths. This is a judgement between the two, and it is the residual's long-standing figure. |
+
+The only part of the residual that changed is offices, from 70% to 80%.
+Flats come down to the residual's figure on the desk. A mixed programme
+takes the strictest use in it (flats over shops keep the flats' rear yard).
+A standing shell (conversion, takeover) keeps its footprint. Shops and
+sheds now rung at every storey up to their cap: 1 and 2. The old
+`round(far / 0.7)` dropped the two-storey box on low-FAR dirt the desk
+could draw.
+
+Measured:
+
+- **Desk against market** (`tools/smalllot-lines.mjs`, 2 seeds, year 10,
+  vacant lots with a positive builder bid, zoning-legal sweep). The desk's
+  best residual over the engine's was median 1.30 (p10 1.07, p90 1.90).
+  It is now 1.00 (p10 0.82, p90 1.00). Five lots in 276 remain above 1.1×.
+  All are 17-18 storey flats, where the desk plans against the legal
+  envelope and the residual against the one the city permits
+  (`infillShare`). That split is deliberate and documented at the
+  residual.
+- **A lot bought at the residual** (`tools/smalllot.mjs`, 3 seeds × 12
+  years, H@resid). It planned at 1.022-1.037 on lots under 8k sf. It now
+  plans at 0.995-1.000. `test/residual-recon.mjs` reads 1.000 at p05, p50
+  and p95.
+- **City-wide land, same state, two engines** (`tools/coverage-move.mjs`).
+  At months 60 and 180 (3 seeds, 8,112 lot-reads), 22 lots moved (0.3%),
+  all where offices set the price. At months 192, 252 and 300 (4 seeds,
+  16,224 reads), 1,127 moved (6.9%). The late-run prime ground is where
+  offices bid. Office-priced lots rose a median of 27.5% (p90 47.6%). The
+  residual is leveraged: a plate 14% larger at the same cost per foot adds
+  more than 14% to what is left for the dirt. Of the flats-priced lots, 285
+  flipped to an office price-setter. The city-wide median did not move
+  (141.9 → 141.8), and p90 rose 7% (1,131 → 1,210).
+- **BASELINE** (`pnpm baseline:check`, 6 seeds). The rng path re-rolls (16
+  of 39 moved; land.p90 +32%, affordableLotShare +12%, demolished +17%,
+  employed +5.6%). Over 14 seeds × 25 years (ten-year means), before →
+  after, with the standard error of the difference: land.p90 1,062 → 1,396
+  (+31% ± 16%), land.med 145.4 → 145.7 (0.1% ± 11%),
+  dev.affordableLotShare 0.151 → 0.165 (+9% ± 14%), rentIdx office 54.0
+  → 55.9 (+3% ± 13%), flats 40.8 → 39.8 (−2% ± 7%), employed −3.5% ± 3.9%,
+  demolished +10% ± 14%. Every metric is within about one standard error
+  except land.p90, which is the office-land move above (same-state +7% at
+  p90, amplified by the path). No rail binds more often. `BASELINE.json` is
+  regenerated.
 
 ## What a small firm realistically does instead (suggested, not built)
 

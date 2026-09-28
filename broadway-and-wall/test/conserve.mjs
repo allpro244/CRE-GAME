@@ -156,22 +156,80 @@ for (const seed of SEEDS) {
     // that whole arm of the ledger unreconciled, so it buys one cheap lot and
     // builds on it. One job, not a programme: the point is coverage, not a
     // developer strategy.
+    //
+    // IT BUILDS WHAT IT CAN PAY FOR AND SURVIVE. This used to buy the first
+    // cheap lot and put four storeys of office on it, whatever the Develop
+    // desk said. Diagnosed, not assumed (seeds 73303 / 11 / 22 / 33 / 4242, on
+    // the engine before AND after the occupancy-based lease-up mark — same
+    // lots, same plans, death months 59/98/61/75/49 before and 60/98/50/83/49
+    // after): every one of those jobs planned at a hurdle of 0.12 to 0.40 — a
+    // building worth 14% to 47% of what it cost — on a $3.7M to $6.1M budget,
+    // 1.5x to 2.4x the firm's whole equity. Delivery marked it $2.9M to $5.0M
+    // under its basis, net worth went negative, and the creditors ended the
+    // run. The lease-up change moved those delivery marks by 10-16% (it
+    // strikes the as-is mark off the building's own blend rather than a
+    // market as-if-stabilised it would never reach) and moved no death by
+    // more than eleven months. That was the bot, not the economy.
+    //
+    // The obvious fix is the one a real developer uses — build only when value
+    // on completion covers cost, hurdle x (1 + DEV_MARGIN) >= 1 — and it was
+    // measured and it does not work here: on the lots this bot can afford
+    // (ask under a quarter of its cash), the best scheme over every use and
+    // one to eight storeys planned at a hurdle of 0.36 to 0.79 across 240
+    // months on all seven seeds. Nothing a $2.5M firm can buy the dirt for
+    // pencils (see ECONOMY.md on approached-owner land quoting at option
+    // value), so that rule never broke ground and `dev` went dead in the
+    // coverage line. The crane is a COVERAGE DEVICE — it is here to walk the
+    // draw schedule and the completion through the ledger, not to make money —
+    // so it is sized as one: of the schemes whose WHOLE equity fits above the
+    // working balance (playdev's rule), it builds the one that loses least,
+    // and only if that loss is a quarter of net worth or less, the same
+    // fraction the bot keeps back as its working balance. A bot that must
+    // build something underwater builds the smallest thing it can survive.
+    //
+    // Measured after: it breaks ground on five seeds (one- and two-storey
+    // industrial, $0.4M to $0.6M), every ledger category still moves, and the
+    // run reconciles 2,242 months where it had fallen to 858. The bot still
+    // dies — in years 23 to 33, of a slow bleed on a one-building book, which
+    // is the next thing to read if this number falls again.
     if (!Object.keys(g.developments ?? {}).length && !built && g.cash > START * 0.8) {
-      const lot = [...g.listings].find((li) => {
-        const rec = E.resolveRec(parcels, g, li.bbl);
-        return rec && rec.class === "land" && !g.holdings[li.bbl] && li.ask < g.cash * 0.25;
-      });
-      if (lot) {
-        const r = E.executePurchase(g, parcels, lot.bbl, lot.ask, "cash", false, 1);
-        if (!r.err) g = r.s;
+      const canLose = 0.25 * E.netWorth(g, parcels);
+      const scheme = (bbl, basis) => {
+        const rec = E.resolveRec(parcels, g, bbl);
+        if (!rec || rec.class !== "land") return null;
+        const budget = g.cash - (basis ?? 0) - START * 0.25;
+        let best = null;
+        for (const use of ["office", "multifamily", "retail", "industrial"]) {
+          const top = Math.min(E.maxFloorsFor(rec, 0.6, use), 8);
+          for (let fl = 1; fl <= top; fl++) {
+            const p = E.planDevelopment(g, parcels, bbl, use, fl, 0.6, "gmp", undefined, undefined, undefined, 0.5, basis);
+            if (!p || !(p.stabNoi > 0) || !(p.yieldOnCost > 0) || p.equity > budget) continue;
+            // All-in basis less value on completion, both off the desk's own
+            // numbers: basis = NOI / yield on cost, value = NOI / exit yield.
+            const loss = p.stabNoi * 100 * (1 / p.yieldOnCost - 1 / p.exitYield);
+            if (loss > canLose) continue;
+            if (!best || loss < best.loss) best = { p, use, fl, loss };
+          }
+        }
+        return best;
+      };
+      if (!Object.keys(g.holdings).some((b) => E.resolveRec(parcels, g, b)?.class === "land")) {
+        const lot = [...g.listings].find((li) => {
+          const rec = E.resolveRec(parcels, g, li.bbl);
+          return rec && rec.class === "land" && !g.holdings[li.bbl] && li.ask < g.cash * 0.25
+            && scheme(li.bbl, li.ask);
+        });
+        if (lot) {
+          const r = E.executePurchase(g, parcels, lot.bbl, lot.ask, "cash", false, 1);
+          if (!r.err) g = r.s;
+        }
       }
-      const dirt = Object.keys(g.holdings).find((b) => {
-        const rec = E.resolveRec(parcels, g, b);
-        return rec && rec.class === "land" && !g.developments[b] && !g.holdings[b].sale;
-      });
-      if (dirt) {
-        const d = E.startDevelopment(g, parcels, dirt, "office", 4);
-        if (!d.err) { g = d.s; built = true; }
+      for (const dirt of Object.keys(g.holdings)) {
+        if (g.developments[dirt] || g.holdings[dirt].sale) continue;
+        const pick = scheme(dirt);
+        if (!pick) continue;
+        const d = E.startDevelopment(g, parcels, dirt, pick.use, pick.fl, 0.6, "gmp");
+        if (!d.err) { g = d.s; built = true; break; }
       }
     }
 

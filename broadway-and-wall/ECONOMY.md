@@ -1650,3 +1650,23 @@ retail vacancy 4.62% → 3.82%, multifamily occupancy gap −0.445 → −0.022,
 land +2.7%, floor area −1.4%, employment +1.7%. A buyer who no longer pays for
 tenants who have left bids for space they can actually let, which is the
 correction, not a tuning.
+
+## The lease-up mark follows occupancy, not the calendar
+
+`leaseUpMark` priced a new building "as is on completion" for a fixed 19 or 38
+months after delivery and then handed it to the ordinary blend. Measured at
+the window's edge on the same state: an office 88% let fell 24.5% in one month,
+flats 65% let fell 44%, and 882 unowned records stepped down by up to 21.9%.
+Inside the window the calendar also ran backwards — an office still empty at
+month 37 marked 13% above its opening day. The mark now applies while
+occupancy is below the corner's stabilised level (`stabilisedOccupancy`),
+deducts only the gap to that level, reads the time still to run off the
+market's lease-up curve, and fades out between one and two spans (that bound
+is judgement, not calibration). Worst step across the old edge is now ~1%.
+
+Baseline moved 20 of 39 (land p90 +81%, multifamily rent index +38%, retail
+occupancy gap 0.16 → 1.55, demolitions 26 → 17). Most of that is the six
+baseline seeds reshuffling: on a 12-seed sweep of ten-year means, office rent
+moved +7% and median land 134.9 → 149.9 against a 2.7× seed-to-seed spread.
+The modest real shift is buildings no longer being marked below what they are
+worth for having been built recently.

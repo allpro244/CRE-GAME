@@ -12620,8 +12620,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // has no model matrix in its lighting), so every piece below is built in
     // place — translated into its geometry — rather than positioned by mesh
     // transform, or its shading would be computed at the city origin.
-    const lawn = this.propMaterial(0x7e9e5c, false);
-    const dirt = this.propMaterial(0x8a7a55, false);
+    // Paler than the Lambert colours they replace: the prop shader's own
+    // ground-contact occlusion takes a flat sheet at z 0.08 down to 62%, so
+    // the old swatches came out as a dark bottle-green plate.
+    const lawn = this.propMaterial(0xaec487, false);
+    const dirt = this.propMaterial(0xb3a37f, false);
     const stone = this.propMaterial(0x8e8676, false);
     const civic = this.propMaterial(0xe8e4d8, false);
     const roof = this.propMaterial(0x5a4a3a, false);

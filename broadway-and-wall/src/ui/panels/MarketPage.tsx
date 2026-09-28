@@ -720,7 +720,7 @@ export function MarketPage() {
                         const works = askPsf <= lr.builder;
                         return (
                           <span className={"chip" + (works ? " chip-pencils" : "")} style={{ marginRight: 6 }}
-                            title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at today's rents, after cost and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf.`}>
+                            title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at the rents the trade underwrites, after cost, carry and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf.`}>
                             {works ? "PENCILS" : `BUILDER $${lr.builder.toFixed(0)}/SF`}
                           </span>
                         );

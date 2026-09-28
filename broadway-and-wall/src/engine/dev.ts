@@ -10,12 +10,12 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, locOpexMult, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  noiYr, taxBorneShare, rentableRatio, rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -77,174 +77,22 @@ const clone = (s: GameState): GameState => cloneState(s);
 // re-exported here, where every existing caller still finds them.
 export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 
-/**
- * A PROGRAMME, not a class. You do not build "mixed use" — you build shops at
- * grade with offices and flats above, and the budget is the sum of those three
- * jobs. "mixed" here is shorthand for a canonical stack, and the whole of what
- * it means is the mix below: cost, rent, lease-up, lender appetite and
- * neighbourhood effect all follow from the components.
- */
-export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
-/**
- * YOU DECIDE THE STACK.
- *
- * "Mixed use" used to mean one canonical 15/45/40 building and nothing else,
- * which is not a programme — it is a preset. A developer picking mixed use is
- * making the most consequential decision on the site: how much retail the
- * frontage will actually carry, whether the middle is offices or flats, and
- * what that does to the cost, the exit cap and the lender's appetite. All of
- * which already fall out of the mix; there was simply no way to choose it.
- *
- * The custom split is normalised and floored — a leg under three per cent is
- * not a use, it is a lobby — and the canonical stack remains the default so
- * the decision is opt-in rather than homework.
- */
-export function normalizeMix(m: UseMix): UseMix {
-  const keys = (Object.keys(m) as BuiltClass[]).filter((k) => (m[k] ?? 0) >= 0.03);
-  const tot = keys.reduce((a, k) => a + (m[k] ?? 0), 0);
-  if (!keys.length || tot <= 0) return { ...MIXED_STACK };
-  const out: UseMix = {};
-  for (const k of keys) out[k] = +((m[k] ?? 0) / tot).toFixed(4);
-  return out;
-}
-export function devMix(use: DevUse, custom?: UseMix): UseMix {
-  if (use !== "mixed") return { [use]: 1 };
-  return custom ? normalizeMix(custom) : { ...MIXED_STACK };
-}
-export function dominantOf(mix: UseMix): BuiltClass {
-  return (Object.keys(mix) as BuiltClass[]).sort((a, b) => (mix[b] ?? 0) - (mix[a] ?? 0))[0] ?? "office";
-}
-/** Weighted average of a per-use number across a programme. */
-function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
-  let sum = 0, w = 0;
-  for (const u of Object.keys(mix) as BuiltClass[]) { const s = mix[u] ?? 0; sum += f(u) * s; w += s; }
-  return w > 0 ? sum / w : 0;
-}
-/** How much of a programme carries genuine leasing risk before it is built. */
-/** Share of the job that can take a named commercial pre-let. Industrial is
- *  named-tenant space too — excluding it made every shed open empty no matter
- *  how tight the market was while the shell went up. Flats still lease after
- *  C of O, not off a hole in the ground. */
-function specShare(mix: UseMix): number {
-  return (mix.office ?? 0) + (mix.retail ?? 0) + (mix.industrial ?? 0);
-}
-const CONSTR_SPREAD = 2.4;     // over the index, interest-only
+// THE PRO FORMA MOVED DOWN A LAYER TOO, for the same reason: the land residual
+// has to solve the desk's own pro forma for the price of the dirt, and it can
+// only do that if there is one. See proforma.ts. Re-exported so every caller
+// still finds these here.
+export {
+  MIXED_STACK, normalizeMix, devMix, dominantOf, CONTRACT_PREMIUM, reserveFor, specCostMult,
+  farMaxFor, maxRetailShare, withStreetRetail, capRetail, maxFloorsFor,
+} from "./proforma";
+export type { ConstructionQuote } from "./proforma";
+import {
+  devMix, dominantOf, overMix, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
+  withStreetRetail, capRetail, reserveFor,
+  developmentProForma, landCarryFactor,
+} from "./proforma";
+import type { ConstructionQuote } from "./proforma";
 
-/**
- * THE CONTRACT.
- *
- * Cost-plus is cheaper on paper and leaves you holding the bag: the price
- * moves with the market between groundbreak and topping out, and every change
- * order is yours. A guaranteed maximum price costs four points more and buys
- * the contractor's balance sheet — escalation stops being your problem and
- * most overruns die at the GMP line.
- *
- * In a boom, when costs are running, the GMP premium is the cheapest money on
- * the board. In a flat market it is four points of nothing. Reading which one
- * you are in is the job.
- */
-export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus: 0 };
-
-/**
- * Construction lenders underwrite lease risk, not blueprints, and they
- * underwrite it in a straight line: the more of the building that is already
- * spoken for, the more of the cost they will fund. Spec commercial in a
- * recession gets nothing at all. Residential and industrial carry less lease
- * risk because the space is fungible.
- */
-// EVERYTHING IS BUILT ON SPEC.
-//
-// The old model made you buy anchors before a slab was poured, and paid you
-// for it in leverage and punished you for it in months. That is a real thing
-// that happens on a minority of large single-tenant jobs, and it was wrong as
-// the universal precondition for putting up a building: the overwhelming
-// majority of commercial development is started empty, on the developer's read
-// of the market, and let while it is going up. Leasing during construction is
-// now the mechanic — see tickConstructionLeasing — which is both what actually
-// happens and a far more interesting decision, because the market can turn
-// underneath you while the steel is going in.
-//
-// Credit tightens the ceiling in a downturn, and industrial and housing carry
-// more than offices and shops, because they always have.
-function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1, spaceTight = 1): number {
-  const spec = specShare(mix);
-  // flats and sheds are the financeable end of the market
-  const safeLtc = 0.70;
-  const specLtc = 0.70;
-  const base = specLtc * spec + safeLtc * (1 - spec);
-  const tight = phase === "recession" || phase === "depression" ? 0.72 : phase === "peak" ? 0.94 : 1;
-  // Construction paper in this town is written by the regional bank, and the
-  // regional bank has a balance sheet you can read on Research. When it is
-  // eating losses it does not tighten the market's terms — it tightens YOURS,
-  // and a bank that has stopped lending stops financing buildings first,
-  // because a half-built tower is the worst collateral there is.
-  const app = Math.min(1.05, 0.5 + 0.5 * appetite);
-  // Space-market tightness (vacancy below natural / unmet structural demand)
-  // is why banks fund into a shortage — same signal classAppetite already
-  // reads. Caps keep this from becoming free leverage in a boom label alone.
-  const space = Math.max(0.9, Math.min(1.12, spaceTight));
-  return Math.max(0, Math.min(0.72, base * tight * app * space * Math.min(1.12, Math.max(0.55, creditIdx))));
-}
-
-/** Mix-weighted construction advance boost from class vacancy / structural tightness. */
-function constructionSpaceTight(e: Econ, mix: UseMix): number {
-  let w = 0, t = 0;
-  for (const u of BUILT_CLASSES) {
-    const share = mix[u] ?? 0;
-    if (share <= 0) continue;
-    const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
-    const gap = vac - NATURAL_VAC[u]; // negative = tight
-    const struct = e.structTight?.[u] ?? 0;
-    // Up to ~12% more advance when the class is short space; asymptotic cap
-    // replaces a hard rail that bound 73% of calls at 1.12 (pnpm rails).
-    const tightSignal = -gap * 6 + struct * 1.4;
-    const boost = Math.max(0.9, 1 + 0.12 * Math.tanh(tightSignal / 0.22));
-    t += share * boost;
-    w += share;
-  }
-  return w > 0 ? t / w : 1;
-}
-
-/**
- * THE CONSTRUCTION DESKS.
- *
- * Alden wrote every construction loan in this town by fiat, which made the
- * most dangerous paper in banking the one loan you could not shop. Three desks
- * quote it now, priced off the same balance sheets everything else reads: the
- * hometown bank writes small jobs cheaply for names it knows and stops at its
- * hold size, the regional remains the volume desk, and the debt fund will
- * finance a hole in the ground in any market — at fund prices, which is the
- * whole business model. Personality is not invented here: appetite comes off
- * each desk's capital, the relationship discount off the same file the perm
- * quotes read, and a desk in receivership quotes nothing at all.
- */
-export interface ConstructionQuote {
-  lender: string;
-  ratePct: number;
-  ltcMax: number;
-  points: number;   // origination, as a share of the commitment — cash at close
-  open: boolean;
-  why?: string;
-}
-
-const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale: number; cap: number; holdShare?: number; fund?: boolean }[] = [
-  // Small, cheap, and they remember you: the hometown bank's hold stops at
-  // $9M, so on anything bigger it funds its piece and no more.
-  // A HOLD LIMIT IS A SHARE OF A BALANCE SHEET, not a number of dollars.
-  // This was a flat $9M, which is right for a small local desk in the town
-  // that shipped and meaningless in a town four times the size — the same
-  // hometown bank, still the hometown bank, but a $9M hold against jobs that
-  // cost ten times that is not "they only fund their piece", it is a desk that
-  // never appears. 6.4% of its own book is what $9M was against the $140M it
-  // used to carry, and the book is now derived from the city (see initLenders),
-  // so this follows the town without being told about it.
-  { name: "First Harbor Bank", spread: 2.15, points: 0.008, scale: 0.92, cap: 0.65, holdShare: 0.064 },
-  // The regional — the historical monopoly desk, and still the volume quote.
-  { name: CONSTRUCTION_LENDER, spread: CONSTR_SPREAD, points: 0.010, scale: 1, cap: 0.70 },
-  // Committed capital and no depositors: they quote through the cycle, and the
-  // coupon is why nobody borrows from them twice unless they have to.
-  { name: "Cordage Debt Partners", spread: 4.00, points: 0.020, scale: 1.05, cap: 0.75, fund: true },
-];
 
 /**
  * WHICH DESK WROTE THE PAPER, for a job the player did not underwrite.
@@ -261,7 +109,7 @@ const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale:
  * be additive. Same technique, and the same reason, as genRentRoll.
  */
 export function openConstructionDesks(s: GameState): { name: string; cap: number; appetite: number }[] {
-  return CONSTRUCTION_DESKS
+  return constructionDesks()
     .map((d) => ({ name: d.name, cap: d.cap, appetite: lenderAppetite(s, d.name) }))
     .filter((d) => d.appetite >= 0.12);
 }
@@ -278,45 +126,21 @@ export function pickConstructionDesk(s: GameState, key: string): string | undefi
 }
 
 export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
-  const e = s.econ;
-  const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
-  const space = constructionSpaceTight(e, mix);
-  return CONSTRUCTION_DESKS.map((d) => {
+  return constructionDesks().map((d) => {
     const app = lenderAppetite(s, d.name);
     const bank = lenderByName(s, d.name);
-    // The fund prices the cycle instead of leaving it: its advance rate reads
-    // through a recession the way its perm sheet does, at its coupon.
-    const base = d.fund
-      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app), space)
-      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
-    const uncapped = Math.min(d.cap, base * d.scale);
-    // The 1.1 approximates the interest-reserve gross-up, so the solved
-    // commitment lands at the hold size rather than a tenth over it.
     const maxCommit = d.holdShare && bank ? bank.book * d.holdShare : undefined;
-    const ltcMax = maxCommit && costTotal > 0 ? Math.min(uncapped, maxCommit / (costTotal * 1.1)) : uncapped;
     const rel = d.fund ? 0 : Math.min(0.4, Math.max(0, (lenderRelOf(s, d.name) - 20) * 0.005));
-    const ratePct = +(e.indexRate + d.spread * (1 + (d.fund ? 0 : 0.9 * tight)) + Math.max(0, 1 - app) * (d.fund ? 0.3 : 0.8) - rel).toFixed(2);
-    const open = app >= 0.12 && ltcMax > 0.02;
+    const q = deskQuote(s.econ, d, mix, costTotal, app, rel, maxCommit);
     const why = bank?.failedM !== undefined ? `${d.name} is in receivership — nobody is answering the phone.`
       : app < 0.12 ? `${d.name} has stopped writing new paper — their capital will not carry it.`
-      : ltcMax <= 0.02 ? `${d.name} will not touch spec construction in this market.`
-      : maxCommit && ltcMax < uncapped - 0.005 ? `A job this size is past ${d.name}'s hold — they will only fund $${(maxCommit / 1e6).toFixed(0)}M of it.`
+      : q.ltcMax <= 0.02 ? `${d.name} will not touch spec construction in this market.`
+      : maxCommit && q.held ? `A job this size is past ${d.name}'s hold — they will only fund $${(maxCommit / 1e6).toFixed(0)}M of it.`
       : undefined;
-    return { lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open, why };
+    return { lender: q.lender, ratePct: q.ratePct, ltcMax: q.ltcMax, points: q.points, open: q.open, why };
   });
 }
 
-/**
- * What a lender sets aside to carry a construction loan to delivery.
- *
- * Average outstanding across an S-curve draw is a bit over half the
- * commitment; the 1.16 gross-up covers interest compounding on itself and the
- * schedule contingency every lender builds in, because a job that opens four
- * months late still has to be carried for those four months.
- */
-export function reserveFor(commitment: number, ratePct: number, months: number): number {
-  return commitment * 0.58 * (ratePct / 100) * (months / 12) * 1.16;
-}
 
 export interface DevPlan {
   use: DevUse;
@@ -332,6 +156,8 @@ export interface DevPlan {
   contingency: number;
   demo: number;
   landBasis: number;    // what the site cost you — sunk, but in the yield
+  /** Holding the dirt at the land rate while the building goes up — in the basis, not the budget. */
+  landCarry: number;
   basisTotal: number;   // construction plus land: the denominator of yield on cost
   leaseUp: number;    // fit-out, commissions and carry until it is full
   costTotal: number;
@@ -368,29 +194,6 @@ export interface DevPlan {
   lenderNote?: string;
 }
 
-/**
- * THE SPECIFICATION PREMIUM.
- *
- * A budget building and a trophy building on the same lot are not the same
- * project, and the difference is mostly hard cost: the curtain wall, the
- * floor-to-floor, the lift count, the lobby, the plant. Roughly thirty per cent
- * either side of market standard, which is about the real spread between a
- * value-engineered box and a building people want their name on.
- *
- * What the money buys is in `condCeiling` and it is PERMANENT — the building
- * ages more slowly and keeps a higher ceiling forever — plus a better roll,
- * because the tenants who pay the top of the market will not take space in a
- * building that leaks.
- */
-export const specCostMult = (spec: number) => 1 + 0.62 * (clamp01(spec) - 0.5);
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
-
-// The buildable envelope, and nothing else. Ashport has no use districts —
-// any class on any lot — so the only limit is how much floor area the FAR
-// allows, and how much of the lot you choose to cover with it.
-export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): number {
-  return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
-}
 /**
  * How high a building can PHYSICALLY go on this floor plate — zoning is one
  * limit, engineering is the other, and the old code only knew about zoning,
@@ -481,134 +284,6 @@ export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = {
   industrial: INDUSTRIAL_FLOORS_MAX,
 };
 
-/**
- * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold
- * two opinions about it. Two floor plates of shops is the whole allowance, so
- * in a building of any height the shops are 2/n of it — a quarter of an eight
- * storey stack, eight per cent of a twenty-five storey one. `capRetail`
- * enforces it on the programme after the fact; the development card reads it
- * to bound the dial before the fact, because a slider that offered 95% shops
- * on a twenty-five storey stack was describing a building — 88,730 sf of
- * retail on a 4,218 sf lot, twenty-one FAR of shops — that the planner then
- * quietly rebuilt as 7,472 sf under an office tower.
- */
-export function maxRetailShare(floors: number): number {
-  return floors > 0 ? Math.min(1, RETAIL_FLOORS_MAX / floors) : 1;
-}
-
-/**
- * THE GROUND FLOOR IS SHOPS, AND THAT IS WHERE URBAN RETAIL COMES FROM.
- *
- * Nobody builds a parade of standalone shops in a city with land worth
- * building on — they build the offices and the flats the market wants and put
- * the retail at grade underneath, because the ground floor of a tower is worth
- * more as a shop than as a lobby and the tenants upstairs want somewhere to
- * buy lunch. Almost all the retail floor space added to a dense city in the
- * last century arrived this way.
- *
- * The model had every piece of this and never joined them. `MIXED_STACK` put
- * 15% retail in a building only when a developer explicitly chose "mixed";
- * `capRetail` and `maxRetailShare` already knew retail is a ground-floor thing
- * capped at two plates. But an office or a housing programme carried no retail
- * at all, so the only shops the city ever built were standalone ones — capped
- * at two storeys, and therefore tiny. Measured over fifty years: 27 retail
- * groundbreakings averaging 13,300 sf, against office at 70,200. Retail stock
- * grew 0.04%/yr.
- *
- * MORE LAND DOES NOT FIX THAT, and it was worth checking before building
- * anything, because it was the obvious first idea. The size dial IS more land.
- * Retail stock growth over fifty years: -0.12%/yr on a Hamlet, -0.04% on the
- * standard island, +0.05% on a Great City, and +0.04% on a Great City opened
- * at 42% vacant — four times the island and half again the dirt, and the line
- * does not move. It was never a land constraint. It was a form constraint.
- *
- * THE SHARE IS ONE FLOOR OUT OF N, which is the mechanism rather than a
- * number: a four-storey walk-up is a quarter shops, a forty-storey tower is
- * two and a half per cent, and it falls out of the geometry with nothing to
- * tune. The 1.25 is real — a retail ground floor is taller and deeper than the
- * plates above it, typically 18-22 feet against 11-14, so it is worth more
- * than its share of the stack.
- *
- * IT IS NOT EVERY STREET. Shops need footfall, so this reads the same demand
- * score the rest of the engine prices off. A quiet residential block gets a
- * lobby, which is what a quiet residential block has.
- */
-const STREET_RETAIL_DEMAND = 38;   // below this a shop at grade has no trade
-export function withStreetRetail(mix: UseMix, floors: number, demand: number, econ?: Econ, force = false): UseMix {
-  const lead = dominantOf(mix);
-  if (lead !== "office" && lead !== "multifamily") return mix;
-  if ((mix.retail ?? 0) > 0) return mix;                 // already a mixed programme
-  if (floors < 2) return mix;
-  // THE OWNER'S CALL. A developer can programme shops on a quiet street or
-  // into a glutted retail market; the market then decides whether they let.
-  // `force` is that choice (DevDraft.groundRetail = "on"): the geometry's
-  // share, the street's and the market's gates skipped.
-  if (force) {
-    const share = Math.min(maxRetailShare(floors), 1.25 / floors);
-    const out: UseMix = { retail: +share.toFixed(4) };
-    const rest = 1 - share;
-    const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-    const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
-    for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
-    return out;
-  }
-  if (demand < STREET_RETAIL_DEMAND) return mix;
-  // ...AND IT IS NOT EVERY MARKET. This rule read footfall and never the
-  // retail market itself, so every tower stapled shops onto a street already
-  // drowning in them — measured over 80 years, retail stock grew five times
-  // faster than retail demand (+41% vs +8%), median retail vacancy ran 15.5%
-  // against an 8.5% natural rate, and real retail rents bled −2.6%/yr for
-  // fifty years while the by-product kept arriving. A developer facing a
-  // glutted street programmes a lobby, amenity space, or a bigger residential
-  // ground floor — not another vacant shopfront. The share fades linearly
-  // with retail slack and is gone 8pp over natural (shape parameter: the
-  // depth at which ground-floor retail visibly stops being programmed —
-  // post-2008 and post-2020 corridors — not a fitted number).
-  const natR = NATURAL_VAC.retail;
-  const slack = Math.max(0, (econ?.cityVac?.retail ?? natR) - natR);
-  const street = Math.max(0, 1 - slack / 0.08);
-  const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
-  if (share <= 0.01) return mix;
-  const out: UseMix = { retail: +share.toFixed(4) };
-  const rest = 1 - share;
-  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-  const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
-  for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
-  return out;
-}
-
-/**
- * AND THEY DO NOT STACK INSIDE A MIXED BUILDING EITHER.
- *
- * The two-storey cap was enforced on the pure-retail PROGRAMME — a label —
- * and never on the retail floor AREA. So a mixed-use building dialled to a
- * high retail share sailed straight past it. Measured across 400 vacant lots:
- * at the default 15/45/40 stack, untouched by the player, 55 plans breached
- * the cap and the worst carried nine floors of shops; at a 50% dial every
- * single plan breached; at 100% the worst was a sixty-one storey shop, thirty
- * times over, which delivered as class "retail", 61 floors, and tripped the
- * massing invariant in a live save.
- *
- * The cap belongs on the area: retail floor area may not exceed two floor
- * plates. Anything over that is redistributed to the other uses, because a
- * developer who cannot put shops on the ninth floor puts offices there — they
- * do not shrink the building.
- */
-export function capRetail(mix: UseMix, floors: number): UseMix {
-  const share = mix.retail ?? 0;
-  if (share <= 0 || floors <= 0) return mix;
-  const maxShare = maxRetailShare(floors);
-  if (share <= maxShare) return mix;
-  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-  const rest = others.reduce((a, [, v]) => a + v, 0);
-  // A programme that is nothing BUT shops has nowhere to put the overflow —
-  // that is a two-storey shop building, and the caller caps the floors.
-  if (rest <= 0) return { retail: 1 };
-  const out: UseMix = { retail: +maxShare.toFixed(4) };
-  const scale = (1 - maxShare) / rest;
-  for (const [k, v] of others) out[k] = +(v * scale).toFixed(4);
-  return out;
-}
 
 /**
  * WHAT IT WOULD COST TO BUILD THIS BUILDING AGAIN, TODAY.
@@ -745,40 +420,6 @@ export function buildClimate(s: GameState): number {
   return Math.max(0.10, Math.min(2.5, Math.pow(Math.max(0.05, vtr), Q_ELASTICITY)));
 }
 
-export function maxFloorsFor(
-  rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number, use?: DevUse,
-): number {
-  // THE TOP FLOOR DOES NOT HAVE TO BE A FULL PLATE, AND ROUNDING IT AWAY MADE A
-  // BIGGER FOOTPRINT BUILD A SMALLER BUILDING.
-  //
-  // This was `floor(FAR / coverage)`, which discards the fractional top floor.
-  // The floor count then multiplies the footprint, so the loss lands on the
-  // area — and because the discarded fraction depends on how coverage divides
-  // into FAR, the area is not monotone in coverage at all. On a 10,000 sf lot
-  // at FAR 4 it went:
-  //
-  //     coverage 0.50  ->  8 floors  ->  40,000 sf
-  //     coverage 0.60  ->  6 floors  ->  36,000 sf
-  //     coverage 0.70  ->  5 floors  ->  35,000 sf
-  //     coverage 0.80  ->  5 floors  ->  40,000 sf
-  //
-  // Widening the footprint from half the lot to seven tenths cost 5,000 sf of
-  // building. That is not a trade-off anybody chose; it is a rounding artefact
-  // wearing the costume of a design decision, and it is what the owner reported
-  // as "the higher of a footprint you use, the smaller the building will be".
-  //
-  // Zoning caps AREA, not floors. A builder allowed 4.0 FAR who wants a plate
-  // covering 70% of the site puts up five full floors and a sixth that is
-  // partially set back — which is what the top of a real building looks like
-  // and why setbacks exist. So the storey allowance rounds UP, and
-  // `planDevelopment` caps the resulting area at the envelope, so the last
-  // floor is the part that gives way rather than the whole building.
-  const zoning = Math.max(1, Math.ceil(farMaxFor(rec) / Math.max(0.08, coverage)));
-  const plate = (rec.lotArea ?? 0) * Math.max(0.08, coverage);
-  const physical = rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
-  const byUse = use ? MAX_FLOORS_BY_USE[use] : undefined;
-  return byUse === undefined ? physical : Math.min(physical, byUse);
-}
 
 /**
  * THE LARGEST BUILDING THE PLANNER WILL DRAW ON A LOT — the same
@@ -817,13 +458,6 @@ export function retailWantsMixed(rec: { farMaxComm: number; farMaxRes: number; l
 // use, which is exactly the trade a real developer weighs.
 const RETAIL_YIELDS_ABOVE = 6;
 
-// The parcel as it will exist once the building is up — what the rent, the
-// cap rate and the leasing costs all have to be read against.
-function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number, spec = 0.5) {
-  const mix = devMix(use);
-  return { ...(rec as object), class: dominantOf(mix), mix, bldgArea: sf, floors, buildSpec: spec } as never;
-}
-
 export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
@@ -857,181 +491,24 @@ export function planDevelopment(
   // ltcWanted was already defended against this below. It was never the only
   // way in — the caller supplies floors, coverage and spec too.
   if (!Number.isFinite(floors) || !Number.isFinite(coverage) || !Number.isFinite(spec)) return null;
-  const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
-  // The mix has to be known before the height, because a programme that is
-  // all shops is a two-storey building whatever the envelope allows.
-  const raw = devMix(use, custom?.mix);
-  const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
-  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : use)));
-  // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
-  // why assembling paid nothing. Zoning counts gross and the contractor bills
-  // gross; you let rentable. The core, the two stairs, the risers and the
-  // corridor take a bite out of every floor that is mostly FIXED — so a big
-  // plate gives up a tenth of itself and a narrow one gives up a third.
-  const plate = rec.lotArea * cov;
-  // GROSS is what we store and what zoning/cost read. Rentable is what you
-  // let — `rentableRatio`, not the plate-efficiency INDEX (median = 1.0),
-  // which is why every new building's income used to be struck on cores.
-  const envelope = rec.lotArea * farMaxFor(rec);
-  const gsf = Math.round(Math.min(rec.lotArea * cov * fl, envelope) / 100) * 100;
-  const rentable = Math.round((gsf * rentableRatio(plate)) / 100) * 100;
-  if (rentable < 2000) return null;
-  // Stored area is GROSS so citygen buildings and player buildings are the
-  // same quantity. Income, lease-up and the space market read `rentable`.
-  const sf = gsf;
 
-  // Shops at grade wherever the street will carry them — see withStreetRetail —
-  // or wherever the owner says: "on" programmes them regardless, "off" is a
-  // lobby. Applied before the cap, so the cap still has the last word.
-  const groundRetail = custom?.groundRetail ?? "auto";
-  const mix = capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec.demandScore ?? 50, s.econ, groundRetail === "on"), fl);
-  const proposedBts = custom?.bts;
-  const bts = proposedBts
-    && proposedBts.use !== "multifamily"
-    && proposedBts.use in mix
-    && proposedBts.sf > 0
-    ? { ...proposedBts, sf: Math.min(rentable * (mix[proposedBts.use] ?? 0), proposedBts.sf) }
-    : undefined;
-  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, rentable))) : 0;
-
-  // the budget is the sum of the jobs, not a number attached to a label
-  // ...priced on GROSS. You pay for the core; you do not let it.
-  const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
-  const softCost = Math.round(hardCost * SOFT_COST);
-  const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
-  const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
-
-  // THE LEASE-UP RESERVE.
-  //
-  // A building is not finished when the scaffolding comes down; it is finished
-  // when it is full, and getting there costs money that never appears in the
-  // headline budget: fit-out for every tenant, commissions to the brokers who
-  // found them, and the carry on an empty building for months. Every job is
-  // spec, so the whole building carries this — letting it during construction
-  // is what claws it back.
-  // AND THE OPERATING DEFICIT, WHICH IS THE PART THAT KILLED PEOPLE.
-  //
-  // The old reserve carried TEN MONTHS of operating cost. A commercial
-  // building takes thirty-eight months to fill — that is the lease-up curve
-  // the space market itself runs — and for every one of those months the
-  // mini-perm charges interest on the whole balance. Ten months of opex on a
-  // job carrying a $620k-a-year coupon is not a reserve, it is a down payment
-  // on one.
-  //
-  // Traced end to end: a $11.5M office job delivered on programme, on budget,
-  // with $0.6M of contingency handed back. Its reserve ran dry sixteen months
-  // later, with the building 65% empty and still filling exactly as the model
-  // said it would. The lender took it. Nothing had gone wrong — the budget
-  // simply did not contain the cost of owning the thing until it earned.
-  //
-  // A real development budget carries an operating deficit reserve sized to
-  // the gap between debt service and income across the whole absorption
-  // period. It is expensive, it is financed, and it is the single biggest
-  // reason a marginal deal does not pencil. That is the point.
-  const openSf = rentable;
-  // apartments have no fit-out, but they do have concessions and marketing
-  const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
-  const asBuilt0 = asBuiltRec(rec, use, sf, fl, spec);
-  // Underwrite the rent tenants are actually paying after market-wide
-  // concessions, not the asking-rent headline. This is the same effective-rent
-  // index the class order pro forma reads.
-  const effectiveRentFactor = overMix(mix, (u) =>
-    (s.econ.effRentIdx?.[u] ?? s.econ.rentIdx[u]) / Math.max(1, s.econ.rentIdx[u]));
-  const rentPsf0 = marketRentPsfYr(asBuilt0, s.econ, "good") * effectiveRentFactor;
-  const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
-  // LEASE-UP DURATION IS A MARKET NUMBER. The old reserve assumed 19 months
-  // for every apartment project and 38 for every commercial project, whether
-  // vacancy was 2% or 20%. Scale that observed base duration by availability
-  // against natural vacancy: tight markets fill faster; gluts take longer.
-  const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
-  const availability = overMix(mix, (u) =>
-    (s.econ.cityVac?.[u] ?? NATURAL_VAC[u])
-      + (s.econ.sublet?.[u] ?? 0) / Math.max(1, s.econ.stock?.[u] ?? CITY_STOCK[u]));
-  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
-  // Floor used to be 0.5 — even a bone-dry street kept half a glut's lease-up
-  // budget. Structural unmet demand shortens the curve further: the looking
-  // book is already there. Cap still 2× in a real glut.
-  const struct = overMix(mix, (u) => s.econ.structTight?.[u] ?? 0);
-  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
-  // Logistic curve to ~[0.35, 2] — the old clamp pinned the floor 50% of months.
-  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
-  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
-  const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false) * locOpexMult(rec, s.econ, u));
-  const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
-  const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
-  // Mean occupancy across the absorption curve the market actually runs
-  // (0.2 + 0.8·t^0.75 over the span) is 0.657 of stabilised. Useful for the
-  // opex carry, which is a total; useless for the deficit, which is not.
-  const fillOcc = stabOcc0 * 0.657;
-  // Debt service during lease-up is interest-only on the takeout, which is
-  // sized off construction cost — a circular reference resolved the honest
-  // way, by estimating it off the cost known so far rather than pretending it
-  // is zero.
-  const preReserve = hardCost + softCost + demo + contingency;
-
-  // The construction lender funds construction. It does not refinance the
-  // equity you already sank into the ground.
-  // The lender's max is the ceiling; how much of it you TAKE is your call.
-  // Less debt is a slower clock and a smaller reserve; more is more building
-  // per dollar of equity and a harder landing if lease-up runs long.
+  // THE PRO FORMA IS THE ONE THE LAND RESIDUAL SOLVES. Everything from the
+  // massing to the exit yield is `developmentProForma` (proforma.ts); what is
+  // left here is the desk's own business — which lender you picked, and what
+  // you paid for the dirt.
   // The quote is the chosen desk's, not the town's. Rival and city jobs never
   // pass a lender, so they land on the regional — the historical default.
-  //
-  // Quoted on the construction cost before the reserves, because the reserves
-  // are sized off the leverage and the leverage cannot wait for them. The
-  // difference to the desk's own sizing is a rounding error; the difference to
-  // the borrower of getting the reserve wrong is the building.
-  const cqs = constructionQuotes(s, mix, preReserve);
-  const cq = cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
-  let ltcMax = cq.open ? cq.ltcMax : 0;
-  // A bankable lease turns speculative construction into contracted credit.
-  // The boost is bounded by anchor share and covenant; it cannot exceed an
-  // ordinary senior construction advance.
-  if (bts && bts.credit >= 1) {
-    const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare;
-    ltcMax = Math.max(ltcMax, btsAdvance);
-  }
-  // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
-  // the commitment, then the equity, then the firm's cash, and the first thing
-  // anyone sees is a balance sheet reading NaN twenty months later. Anything
-  // that is not a real number is simply not a request.
-  const wanted = Number.isFinite(ltcWanted as number) ? (ltcWanted as number) : ltcMax;
-  const ltc = Math.max(0, Math.min(ltcMax, wanted));
-  const ratePct = cq.ratePct;
-
-  // THE DEFICIT IS AN INTEGRAL, NOT AN AVERAGE.
-  //
-  // Averaging income across the whole lease-up and comparing it to average
-  // debt service reserves nothing, because the stream is deeply negative for
-  // eighteen months and positive for twenty, and the two cancel. A reserve
-  // sized that way is exactly zero on a job that needs half a million dollars
-  // — which is the arithmetic that took the first building. What the reserve
-  // has to cover is the SHORTFALL WHILE THERE IS ONE: sum the months the
-  // building cannot pay its own coupon, and ignore the months it can, because
-  // by then the money has already been spent.
-  const dsMonthly = (preReserve * ltc * ((s.econ.indexRate + 2.1) / 100)) / 12;
-  let deficit = 0;
-  for (let t = 0; t < carryMonths; t++) {
-    const occT = stabOcc0 * Math.min(1, 0.2 + 0.8 * Math.pow(t / carryMonths, 0.75));
-    const noiT = (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12;
-    deficit += Math.max(0, dsMonthly - noiT);
-  }
-  deficit = Math.round(deficit);
-  const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
-  // TI tracks construction cost. Lease commissions are already a fraction of
-  // today's rent (months × rate) — multiplying them by costIdx double-counts
-  // a century of rent inflation and made lease-up reserves larger than hard
-  // cost late-century, so densify could not clear a structural office short
-  // even when stab NOI / build cost cleared the hurdle. Same split
-  // `leaseUpValue` already uses for the vacant-building fill cheque.
-  const specLeaseUp = Math.round(openSf * (tiPsf * s.econ.costIdx + lcPsf)) + carry + deficit;
-  const anchorCost = bts
-    ? Math.round(bts.sf * bts.tiPsf * s.econ.costIdx
-      + bts.rentPsf * bts.sf * (bts.termM / 12) * 0.02)
-    : 0;
-  const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
+  const pf = developmentProForma(rec, s.econ, {
+    use, floors, coverage, contract, spec, custom, ltcWanted,
+    quote: (mix, preReserve) => {
+      const cqs = constructionQuotes(s, mix, preReserve);
+      return cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
+    },
+  });
+  if (!pf) return null;
+  const { mix, hardCost, softCost, demo, contingency, leaseUp, costTotal, months, ltc, ltcMax,
+    commitment, interestReserve, ratePct, pointsCost, stabNoi, exitCap, exitYieldPct, bts, btsShare } = pf;
 
   // THE DIRT IS PART OF THE DEAL.
   //
@@ -1044,95 +521,19 @@ export function planDevelopment(
   //
   // It is NOT charged as cash — you already paid for it, and charging twice
   // would be its own lie — but it belongs in the denominator, because that is
-  // what yield on cost means.
+  // what yield on cost means. So does what it costs to hold it while the
+  // building goes up (landCarryFactor): the residual prices dirt net of that
+  // wait, and a desk that ignored it passed every lot bought at the residual.
   const landBasis = Math.round(
     landBasisOverride ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ),
   );
-  const buildCost = hardCost + softCost + demo + contingency + leaseUp + anchorCost;
-  const costTotal = buildCost;
-  const basisTotal0 = buildCost + landBasis;
-
-  // Foundations, core, facade and fit-out: use the same class schedule the
-  // market's delivery controls are calibrated to, then move toward its slow
-  // end as height rises. The old player-only `10 + floors*0.85` made a
-  // fourteen-storey office a 22-month job while every other office builder
-  // took 30–44; after unifying the hurdle that split showed up immediately as
-  // a 21-month breaks→deliveries cycle.
-  const scheduleClass = dominantOf(mix);
-  const [monthsLo, monthsHi] = BUILD_MONTHS[scheduleClass];
-  const heightShare = Math.max(0, Math.min(1, (fl - 1) / 20));
-  const months = Math.round(monthsLo + (monthsHi - monthsLo) * heightShare);
-
-  // THE INTEREST RESERVE, SIZED TO ACTUALLY DO ITS JOB.
-  //
-  // A construction lender does not send the borrower a bill. It sizes a pot
-  // inside its own commitment, advances the interest to itself out of that pot
-  // every month, and takes the whole thing out — principal and capitalised
-  // interest together — when the perm lender refinances it at delivery. The
-  // borrower's cash goes into the building, not into carry. That is the
-  // standard structure and it was not what this was doing.
-  //
-  // The old figure was simple interest on 55% of the commitment for the
-  // scheduled term. But interest here CAPITALISES — it is added to the balance
-  // and earns interest itself — and the schedule slips, sometimes by months,
-  // and the reserve was never resized when it did. So it ran dry on nearly
-  // every job and dumped carry on the player mid-build, which is exactly the
-  // thing that does not happen in the real world.
-  //
-  // Sized on the average outstanding balance, grossed up for compounding and
-  // for a schedule that runs long. Anything left over is released at delivery.
-  //
-  // The reserve is part of the project's cost, and the commitment has to cover
-  // its own carry as well as the building — otherwise the loan funds
-  // (commitment - reserve) of construction, the equity funds the rest, and the
-  // two together come up exactly one reserve short of paying for the job. That
-  // shortfall was landing on the player as a capital call at the worst point
-  // of the S-curve.
-  //
-  // Since the reserve is a function of the commitment and the commitment is a
-  // function of the reserve, solve it rather than iterate:
-  //     C = ltc * (cost + rC)  =>  C = ltc*cost / (1 - ltc*r)
-  const rFrac = costTotal > 0 ? reserveFor(1, ratePct, months) : 0;
-  const commitment = Math.round((ltc * costTotal) / Math.max(0.35, 1 - ltc * rFrac));
-  const interestReserve = Math.round(reserveFor(commitment, ratePct, months));
+  const landCarry = Math.round(landBasis * pf.landCarryRate);
   // financing cost is a line in every development budget, and it belongs in
   // the basis the yield is measured against
   const projectCost = costTotal + interestReserve;
-
-  // Yield on cost against today's stabilised rents — the number a developer
-  // actually lives by, and the spread to the exit cap is the whole margin.
-  const asBuilt = asBuiltRec(rec, use, sf, fl, spec);
-  // ORIGINATION IS A COST OF THE PROJECT, not a fee that happens next to it.
-  // The interest reserve was already in here for exactly this reason; the
-  // points are the same kind of money — a line in every development budget,
-  // paid in cash at close, capitalised into project cost by every developer
-  // who has ever filled one in. Leaving them out understated the basis by
-  // about a point of the loan and made yield on cost fractionally generous on
-  // every deal in the game. It is computed here rather than added to
-  // costTotal because the commitment is sized off costTotal — putting it
-  // upstream would be circular.
-  const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
-  const basisTotal = basisTotal0 + interestReserve + pointsCost;
-  // ONE VALUATION IDENTITY. The pro forma used to invent a parallel NOI
-  // (flat 90% occ, tax stripped off basis, capitalised at a bare exit cap)
-  // while `assetValue` / `holdingValue` marked the same finished building a
-  // third lower — ECONOMY.md open finding #3. Stabilised NOI is now the same
-  // stack the street marks with (`noiYr(..., true)`), and the exit yield is
-  // the same tax-loaded capitalisation `assetValue` uses. BTS overlays the
-  // committed share on top of that market read.
-  const marketStabNoi = noiYr(asBuilt, s.econ, "good", true);
-  let stabNoi = marketStabNoi;
-  if (btsShare > 0 && bts) {
-    const opex = overMix(mix, (u) => opexPsf(u, s.econ, false) * locOpexMult(asBuilt, s.econ, u));
-    const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
-    const egiPsf = bts.rentPsf + opex * recovery;
-    const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);
-    stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
-  }
-  const exitCap = capRateFor(asBuilt, s.econ, "good");
-  const exitYieldPct = exitCap + TAX_RATE * 100 * taxBorneShare(asBuilt);
+  const basisTotal = pf.nonLandBasis + landBasis + landCarry;
   const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
-  const buildBasis = Math.max(0, basisTotal - landBasis);
+  const buildBasis = Math.max(0, pf.nonLandBasis);
   const yieldOnCostExLand = buildBasis > 0 ? (stabNoi / buildBasis) * 100 : 0;
   // Hurdle against the tax-loaded exit the mark will actually use — not a
   // bare cap that made every tower look like 1.78x on a job that marks at 1.03x.
@@ -1147,12 +548,12 @@ export function planDevelopment(
       : undefined;
 
   const plan: DevPlan = {
-    use, mix, floors: fl, coverage: cov, contract, sf,
-    far: +(gsf / rec.lotArea).toFixed(1), farMax,
-    hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
+    use, mix, floors: pf.floors, coverage: pf.coverage, contract, sf: pf.gsf,
+    far: +(pf.gsf / rec.lotArea).toFixed(1), farMax,
+    hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, landCarry, basisTotal,
     stabNoi, exitYield: exitYieldPct,
     ltc, ltcMax, commitment, interestReserve, ratePct,
-    lender: cq.lender, points: cq.points, pointsCost,
+    lender: pf.lender, points: pf.points, pointsCost,
     equity: projectCost - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are
     // in the ground, which is why a development eats your balance sheet at the
@@ -1244,8 +645,12 @@ export function planAdaptiveReuse(
   const interestReserve = Math.round(base.interestReserve * scale);
   const pointsCost = Math.round(base.pointsCost * scale);
   const equity = Math.max(0, costTotal + interestReserve - commitment);
-  const basisTotal = opportunity + costTotal + interestReserve + pointsCost;
-  const stabilizedNoi = base.yieldOnCost / 100 * base.basisTotal;
+  // The shell is held through the conversion just as dirt is held through a
+  // new build — same land-rate carry, on the conversion's shorter schedule.
+  const reuseMonths = Math.max(9, Math.round(base.months * 0.70));
+  const landCarry = Math.round(opportunity * landCarryFactor(reuseMonths));
+  const basisTotal = opportunity + landCarry + costTotal + interestReserve + pointsCost;
+  const stabilizedNoi = base.stabNoi;
   const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal) * 100;
   const reuseBuild = costTotal + interestReserve + pointsCost;
   const yieldOnCostExLand = reuseBuild > 0 ? stabilizedNoi / reuseBuild * 100 : 0;
@@ -1259,9 +664,9 @@ export function planAdaptiveReuse(
     hardCost, softCost, demo, contingency, costTotal,
     commitment, interestReserve, pointsCost,
     equity, equityAtClose: Math.round(equity * 0.55),
-    basisTotal, yieldOnCost, yieldOnCostExLand, requiredYield, hurdleRatio,
+    landCarry, basisTotal, yieldOnCost, yieldOnCostExLand, requiredYield, hurdleRatio,
     stabNoi: stabilizedNoi,
-    months: Math.max(9, Math.round(base.months * 0.70)),
+    months: reuseMonths,
     lenderNote: hurdleRatio < 1
       ? `Conversion yield is ${yieldOnCost.toFixed(2)}% against ${requiredYield.toFixed(2)}% required.`
       : base.lenderNote,
@@ -3038,7 +2443,7 @@ export function cityInfillCap(
  *   pre-certification phase routinely runs a year or two; 12-30 months all in
  *   is the ordinary range. A site earns nothing while it waits, so the whole
  *   basis carries at the 12% the trade applies to land — the same rate
- *   `BUILD_DISCOUNT` and `WAIT_DISCOUNT` in value.ts are struck at.
+ *   `landCarryFactor` (proforma.ts) and `WAIT_DISCOUNT` in value.ts are struck at.
  *
  *   RISK. Applications fail, and the ones that fail have already spent the
  *   money. A developer who wins six of ten funds the four out of the six, so
@@ -3058,7 +2463,7 @@ export function cityInfillCap(
  * cycle. This charges the wait as carry and leaves the schedule alone.
  */
 const ENTITLE_PSF = 6;          // $/buildable sf, opening-year dollars
-const ENTITLE_DISCOUNT = 0.12;  // the rate the trade applies to land
+// The land rate is LAND_CARRY_RATE (proforma.ts), through landCarryFactor — one rate for dirt that waits.
 
 export function entitlementPremium(
   floorsWanted: number, byRight: number, gsf: number,
@@ -3069,7 +2474,7 @@ export function entitlementPremium(
   const direct = gsf * ENTITLE_PSF * Math.max(0.2, costIdx) * (1 + 1.2 * reach);
   const months = 12 + 9 * reach;
   const carry = (Math.max(0, landBasis) + direct)
-    * (Math.pow(1 + ENTITLE_DISCOUNT, months / 12) - 1);
+    * landCarryFactor(months);
   const odds = clamp(0.88 - 0.30 * reach, 0.30, 0.88);
   return (direct + carry) / odds;
 }

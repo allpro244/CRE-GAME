@@ -1592,3 +1592,48 @@ into a slope on the way down. It does not change the cliff's depth — the
 55/45 in-place/stabilised blend does that, and the appraiser's fix (a partly
 vacant standing building at stabilised value less lease-up cost, the
 `leaseUpMarkAt` arithmetic beyond a first lease-up) is the next measured cut.
+
+# THE TAPE AND THE DESK WERE TWO PRO FORMAS — one now (`proforma.ts`)
+
+The land market's builder residual (`landRead` → `residualScheme`) and the
+Develop desk (`planDevelopment`) price the same building from opposite ends:
+at a land basis equal to the residual, the desk's hurdle must read exactly
+1.0 for the residual's own scheme. Measured on 867 lots (3 seeds × months
+0/60/150/300), it read p05 0.81 / p50 1.10 / p95 1.54, 13% within ±3% — the
+tape said PENCILS on lots the desk scored 0.71 and said no on lots the desk
+passed. Every line was written twice and nine of them disagreed: massing
+(residual 70% coverage with no structure clamp; desk opened at 60%), street
+retail (desk programmed it, residual did not — and the desk then valued the
+building without it), GMP premium, rent (desk took concessions off twice for
+lease-up; read spot while the residual read `rentExp`), income (flat 90/95%
+vs `noiYr` stabilised), exit cap (through-cycle vs spot) and tax load,
+lease-up (deficit reserve only on the desk; size-scaled carry only on the
+residual), finance (flat 65% LTC / index+2.1 / 2.5 yrs / no points vs the
+desk's quote, schedule and origination) and time (fixed 2.5-year discount vs
+nothing).
+
+**Shipped:** `developmentProForma` is the desk's pro forma; `planDevelopment`
+calls it with the chosen lender and the price paid, and the residual solves
+the same function for land with the volume desk's market quote
+(`marketConstructionQuote`, whose bank appetite `tickLenders` publishes on
+econ) and the lot as if vacant. Both underwrite the expected market
+(`underwritingEcon`: `rentExp`, `capExp`) — a building planned today is let
+and sold years from now, and spot underwriting of dirt was already measured
+to draw land down 83-93%. Both charge land carry at the 12% land rate for
+the scheme's own construction schedule (`landCarryFactor`), replacing the
+fixed BUILD_DISCOUNT. The desk opens on the residual's coverage as well as
+its use and floors. After: 1,095 lots, every one at hurdle 1.000.
+`test/residual-recon.mjs` (in `pnpm check`) holds it to ±3%; it fails on the
+old code (16 of 201 inside).
+
+What moved (BASELINE, 6 seeds × 300 months, medians): land p10 +76%, median
++30%, p90 −8%, affordable lots 0.074 → 0.111; floor area −9%, buildings −3%,
+demolitions 12 → 26. Land rose where the residual had been under-reading
+income (flat occupancy, no plate premium, no shops at grade) and where the
+fixed 2.5-year wait overstated a short schedule (a two-storey shed or shop
+goes up in 12-19 months: +12-18% on those lots; towers carry longer and lose
+4-8%). Floor area fell because the desk — which the named firms' `claimJob`
+also underwrites with — now pays for the dirt's time and prices the expected
+rather than the spot market: with those two terms switched off on the desk
+alone the same build recovers to 10.74M sf of the 11.07M, and the remaining
+~3% is the unified stack itself.

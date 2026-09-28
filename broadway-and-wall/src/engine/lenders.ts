@@ -143,8 +143,11 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
 const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.9, conduit: 1.9, fund: 4.5 };
 const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 1.6, fund: 3.4 };
 
-/** Who writes construction paper in this town. */
-export const CONSTRUCTION_LENDER = "Alden Savings & Trust";
+/** Who writes construction paper in this town. Defined in types.ts, which
+ * imports nothing, so the pro forma (proforma.ts, under value.ts) can name the
+ * volume desk without pulling this module into its import cycle. */
+import { CONSTRUCTION_LENDER } from "./types";
+export { CONSTRUCTION_LENDER };
 
 export function lenderBlurb(name: string): string {
   return KIND[name]?.blurb ?? "";
@@ -810,6 +813,12 @@ export function tickLenders(s: GameState) {
     const pull = Math.max(0.45, Math.min(1.2, 0.45 + 0.6 * sysApp));
     e.creditIdx = Math.max(0.4, Math.min(1.25, e.creditIdx + 0.025 * (pull - e.creditIdx)));
   }
+  // The volume construction desk's appetite, published for the land market.
+  // Every builder in town borrows from the same desks the player does, so the
+  // residual (proforma.ts, marketConstructionQuote) prices dirt against this
+  // bank's actual terms — a wounded Alden lends less to everybody, not only
+  // to you. value.ts is handed only (rec, econ), which is why it travels here.
+  e.constructionAppetite = +lenderAppetite(s, CONSTRUCTION_LENDER).toFixed(4);
 }
 
 /**

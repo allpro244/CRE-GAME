@@ -16,7 +16,7 @@ import { portfolioQuote, portfolioSettlement, onFundBook } from "@/engine/portfo
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
 import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, usdSigned, pctSigned } from "@/ui/format";
 import { ListSection, GroundLeaseSection, describeInstructions } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
@@ -306,7 +306,7 @@ export function PortfolioPage() {
         {(() => {
           const cost = rows.reduce((a, r) => a + r.h.costBasis, 0);
           const g = totV - cost;
-          return <Big label="Unrealised gain" value={`${g > 0 ? "+" : ""}${usd(g)} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
+          return <Big label="Unrealised gain" value={`${usdSigned(g)} · ${cost > 0 ? pctSigned(g / cost, 0) : "0%"}`} bad={g < 0} />;
         })()}
         {/* THE BOOK'S OCCUPANCY, HERE TOO — the same function the top bar and
             Leasing read, so the number at the top of the screen can be

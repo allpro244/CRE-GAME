@@ -108,14 +108,19 @@ if (atOffer) {
 
 // ---- C: decline anything below a number no offer reaches
 {
+  // Run past the month the control run's first offer landed: when offers
+  // arrive is the market's business (it moved from month 11 to month 57 when
+  // the land pro forma was reconciled), and a fixed three years made this
+  // fixture hostage to it.
   const { g: g0, bbl } = setUp(SEED, { declineBelow: 1e12 });
   let g = g0, raised = 0, declines = 0;
-  for (let m = 0; m < 36; m++) {
+  const horizon = Math.max(36, (offerM >= 0 ? offerM - g0.month : HZ) + 12);
+  for (let m = 0; m < horizon; m++) {
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     raised += offerKeys(g, bbl).length;
     declines += g.news.filter((n) => n.q === g.month && /turned down .* on your standing instruction/.test(n.text)).length;
   }
-  check(!!g.holdings[bbl]?.sale, "C: still owned and still listed after three years");
+  check(!!g.holdings[bbl]?.sale, `C: still owned and still listed after ${Math.round(horizon / 12)} years`);
   check(!(g.exits ?? []).some((x) => x.bbl === bbl), "C: no exit");
   check(raised === 0, `C: no offer attention item was ever raised for it (${raised})`);
   check(declines > 0, `C: offers did arrive and the broker turned them down (${declines} on the tape)`);
@@ -128,6 +133,16 @@ if (atOffer) {
   const g = clone(atOffer);
   g.cash = 0;
   g.holdings[ctl.bbl].sale.offer.price = 1_000;
+  // Build the shortfall rather than hope the roll carries one: a tenant's
+  // deposit leaves with the deed, and a token price does not cover it.
+  // A mortgage the token price cannot pay off does the same on a vacant one.
+  const hD = g.holdings[ctl.bbl];
+  if (hD.tenants.length) hD.tenants[0].deposit = Math.max(hD.tenants[0].deposit ?? 0, 50_000);
+  else hD.loan = {
+    product: "harbor", principal: 100_000, balance: 100_000, ratePct: 6, spread: 2, ioUntilM: g.month + 36,
+    amortYears: 30, maturityM: g.month + 60, monthlyPmt: 500, minDSCR: 1.2, maxLTV: 0.8, sweep: false,
+    cleanQs: 0, originM: g.month - 12, origValue: 1_000_000, prepay: "open", prepayUntilM: g.month - 1,
+  };
   g.holdings[ctl.bbl].sale.instructions = { acceptAtOrAbove: 1 };
   const man = E.acceptSaleOffer(clone(g), parcels, ctl.bbl, false);
   check(!man.err && man.s.cash < 0, `D: precondition — the manual close would leave cash at ${M(man.s.cash)}`);

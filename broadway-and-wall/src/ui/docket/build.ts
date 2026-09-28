@@ -18,6 +18,7 @@ import type { ParcelTable } from "@/data/types";
 import { attentionItems, MILESTONES } from "@/engine/sim";
 import { netWorth } from "@/engine/value";
 import { planIsLive } from "@/engine/leasing";
+import { positiveLeverage } from "@/engine/standing";
 import { usd } from "@/ui/format";
 import type { Page } from "@/state/store";
 
@@ -235,6 +236,29 @@ export function buildDocket(
         sub: `${h.how ? `${h.how} · ` : ""}${12 - month} mo of year one left`,
         page: h.page,
       });
+    }
+  }
+
+  // (e) IDLE CAPITAL, AFTER YEAR ONE. A firm sitting mostly in cash earns the
+  // deposit rate while the tape carries buildings whose going-in yield beats
+  // the cheapest money that would write them — that spread is the whole
+  // premise of the business, and the year card was the only place it was
+  // said. Offered when the desk is quiet and cash is most of the stamped book
+  // (nwHistory — no appraisal walk here); snoozable like any row.
+  const nwNow = game.nwHistory.at(-1) ?? 0;
+  if (month >= 12 && parcels && nwNow > 0 && game.cash / nwNow > 0.6 && !live.some((it) => it.urgent)) {
+    const key = `idle:${Math.floor(month / 12)}`;
+    if (!((snooze[key] ?? -1) > month)) {
+      const pl = positiveLeverage(game, parcels);
+      if (pl.count > 0 && pl.best) {
+        live.push({
+          key,
+          cat: "capital",
+          title: `${Math.round((game.cash / nwNow) * 100)}% of the book is cash — ${pl.count} of ${pl.of} on the tape earn more than money costs`,
+          sub: `widest: ${addr(pl.best.bbl)} at ${pl.best.cap.toFixed(1)}% against ${pl.best.coupon.toFixed(1)}%`,
+          bbl: pl.best.bbl,
+        });
+      }
     }
   }
 

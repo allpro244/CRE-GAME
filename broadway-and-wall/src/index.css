@@ -2326,3 +2326,10 @@ html, body, #root { overflow-x: hidden; }
 }
 /* The milestone banner sits below the lane, so a month-close toast cannot cover it. */
 .milestone-flash { top: calc(var(--topbar-h, 91px) + 150px); }
+
+/* A story about a deed you hold carries a gold rule (NewsPage "Your book"). */
+.news-item.news-mine { box-shadow: inset 3px 0 0 var(--gold); padding-left: 9px; }
+.chip-pencils { background: #3a7d46; color: #fdfbf4; }
+/* A table nobody clicks: no pointer, no row hover. */
+.tbl.tbl-static tbody tr { cursor: default; }
+.tbl.tbl-static tbody tr:hover td { background-color: transparent; }

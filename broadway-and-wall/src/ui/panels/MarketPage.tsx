@@ -934,7 +934,7 @@ export function LandValueChart() {
         );
       })()}
       <div className="grid">
-        <Row k="Land index" v={e.landIdx.toFixed(2)} strong />
+        <Row k="Land index" v={(e.landIdx * 100).toFixed(0)} strong />
         <Row k="Over the last year" v={`${yrs(12) >= 0 ? "+" : ""}${(yrs(12) * 100).toFixed(1)}%`} bad={yrs(12) < 0} />
         <Row k="Over the last five" v={`${yrs(60) >= 0 ? "+" : ""}${(yrs(60) * 100).toFixed(1)}%`} bad={yrs(60) < 0} />
         <Row k="Over the last twenty" v={`${yrs(240) >= 0 ? "+" : ""}${(yrs(240) * 100).toFixed(1)}%`} bad={yrs(240) < 0} />

@@ -1763,3 +1763,184 @@ bought a few points over the residual plans at 0.95-0.99: a building worth
 11-16% more than it cost, thinner than a merchant builder needs. The note
 (dev.ts) and both Develop panels now say that. The start is not gated on the
 hurdle, so the player can still take the thinner margin.
+
+# A $2.5M FIRM AND THE SMALL LOT — mostly real economics; two artefacts fixed, two found
+
+The finding was that a firm at the default $2.5M start cannot find a lot it
+can afford whose development clears hurdle 1.0 in twenty years, on any of
+seven seeds, and that the best affordable small-lot plans reach 0.79. The
+question was whether that is how land works or an artefact. Instruments:
+`tools/smalllot.mjs` walks every vacant listing annually for 7 seeds × 20
+years and plans the Develop desk's best scheme at the ask, over use ×
+coverage (0.35-0.9) × floors (1-4, 6, max). Cash need is land + 2% closing +
+equity + points + the 6% change-order margin `startDevelopment` requires.
+`tools/smalllot-lines.mjs` breaks the cost lines out per rentable foot.
+`tools/smalllot-size.mjs` re-reads every vacant lot at seven sizes with
+location, zoning and market held fixed.
+
+**The finding mostly reproduces. The 0.79 ceiling does not.** With the
+desk's full dial range, an affordable listing at ≥1.0 turns up rarely: 8 to
+10 lot-years in 140 seed-years. Five of seven seeds see at least one. The
+median affordable plan is 0.45-0.62. Ceilings in the 0.79 range come from
+sweeping fewer schemes.
+
+## Why small listed lots do not pencil (current engine, 7 seeds × 20 yrs)
+
+| lot sf | listings | priced by builder / holder / texture | residual ≤ 0 | best affordable hurdle, median / max | ≥1.0 |
+|---|---|---|---|---|---|
+| < 3k | 43 | 1 / 0 / 42 | 86% | 0.46 / 1.04 | 1 |
+| 3-5k | 107 | 11 / 1 / 95 | 79% | 0.57 / 1.11 | 5 |
+| 5-8k | 101 | 23 / 0 / 78 | 59% | 0.57 / 1.20 | 4 |
+| 8-15k | 20 | 6 / 0 / 14 | 45% | 0.47 / 0.94 | 0 |
+
+There are three reasons, in order of size. All three are real.
+
+1. **Most small lots on the tape are dirt with no building in it.** On
+   59-86% of small listings, no use covers its own construction and the
+   trade's margin at underwritten rents. The ask is then the
+   sales-comparison texture floor (`readLand`), about $55-65/sf. That is not
+   a builder's bid. Even with free land, the median small lot's best scheme
+   yields 3.9-4.6% ex-land against a ~7% requirement (hurdle ~0.6), so the
+   dirt price is not what kills it. Most dirt does not pencil. The parcel
+   panel said so ("Nothing pencils today … the street sets it, not the
+   income"), and so did the desk's note. The Marketplace row said nothing:
+   the chip rendered only when a builder bid existed. It now reads **NO
+   BUILDER BID**.
+2. **Small vacant lots sit on weaker streets.** Vacant lots under 8k sf have
+   median demand 31-33 and FAR ~6. Lots over 8k sf have demand 43-44 and FAR
+   13-14. Best-scheme NOI per rentable foot is ~$22 on the small lots against
+   ~$28-30 on the large ones. That is the generated city's geography, and it
+   is also how cities look: big vacant parcels are the assembled or
+   institutional sites.
+3. **Where a small lot does pencil, it is priced for a building a $2.5M firm
+   cannot finance.** On builder-priced listings (ask = the trade's
+   residual), the trade's best scheme clears at a median of 1.02. But it is a
+   median 40,700 gsf building needing **$9.6M** of cash. The firm can fund a
+   plan on only 14 of 41 such lots, and the best of those plans at a median
+   of **0.81**. A smaller building on the same dirt still carries land
+   priced for the bigger one. This is the ordinary mechanism that keeps small
+   developers off good sites: land clears at its highest and best use, and
+   the highest and best use is bigger than your balance sheet.
+
+**Size alone, holding everything else** (`smalllot-size.mjs`, 947 vacant
+lots, two seeds, year 10, five storeys of flats at 70% coverage, pre-fix):
+
+| lot sf | 2,000 | 3,000 | 4,500 | 7,000 | 10,000 | 25,000 |
+|---|---|---|---|---|---|---|
+| rentable / gross | 0.71 | 0.73 | 0.80 | 0.84 | 0.87 | 0.91 |
+| all-in non-land $/rentable sf | 441 | 430 | 395 | 373 | 362 | 355 |
+| NOI $/rentable sf | 22.1 | 22.3 | 22.2 | 22.5 | 22.5 | 22.6 |
+| exit yield | 5.85 | 5.85 | 5.85 | 5.85 | 5.85 | 5.85 |
+| lots with a positive residual | 25% | 25% | 30% | 35% | 38% | 41% |
+
+The only size-dependent line is **plate efficiency**, the core. Rent, the
+exit cap, soft cost, contingency, points and the lease-up reserve per foot
+are flat in size.
+
+## The candidates, line by line
+
+- **Fixed or minimum costs.** None exist. Soft cost is 16% of hard,
+  contingency 6%, points a share of the commitment. No construction desk has
+  a minimum loan (First Harbor has a hold *maximum*). The perm minimums
+  (`loanMin`) bind at takeout, not in the hurdle. If anything the game is
+  generous to small jobs here. Real small projects carry near-fixed design,
+  permit, legal and lender-fee minimums that are a larger share of a $2M job
+  than of a $20M one.
+- **The core. This was an artefact, and it is fixed.** `coreLoss` charged
+  420 sf a floor (two stairs ~340, a lift ~60, risers ~20) on every storey
+  of every building. A one-storey building has no stair and no lift. Under
+  the 2010 ADA Standards 206.2.3 Exc. 1, a private building under three
+  storeys, or under 3,000 sf a storey, needs no lift. `rentableRatio(plate,
+  floors)` now reads both rules, and five storeys and up always have a lift.
+  Paired on the same states, the fix lifts the best affordable small-lot
+  hurdle by **1-4%** (median 0.490 → 0.500, 0.579 → 0.589, 0.540 → 0.551
+  by band). It is honest and it is small. It does not explain the gap.
+- **Price on a rail.** The texture floor sets the ask on most small lots.
+  That is the third bid in the auction, not a clamp on a variable, and
+  REALISM_AUDIT already records it as an open finding (reservation versus
+  transaction price). A player who buys such a lot is paying the street's
+  comparable-sales price for dirt with no building in it. The parcel panel,
+  the desk and now the tape all say so.
+- **Small new buildings.** Flats have no plate rent effect. Office, shops and
+  sheds lose 5-8% of rent per halving of the plate below 4,300 sf (floor
+  0.85). New small buildings get no class-B treatment and no cap-rate
+  premium. That is not an artefact against small lots.
+- **Two more low-rise lines, not changed.** `BUILD_MONTHS` starts office at
+  30 months and flats at 22 for a one-storey building. Real low-rise
+  schedules run 10-18 months. The lease-up reserve's size factor also only
+  lengthens big schemes and never shortens small ones. Together they are
+  worth about **3%** of hurdle on a small job: land carry at 12% for the
+  extra year, plus the interest reserve. Both constants also drive the
+  city's start-to-delivery lag, so they belong to a separate change measured
+  against the cycle.
+
+## The residual could not see the bottom of the ladder — fixed
+
+`residualFloorChoices` priced office and flats at 8 storeys, 14 storeys and
+the envelope, and shops and sheds only at two storeys. The desk can draw one
+to four. On fringe dirt, that low-rise range is the only building that
+covers its cost. So the desk found schemes with a positive residual on lots
+where the tape said no builder bid (fake #3). At the residual's own coverage
+that was 21 of 434 vacant 3-5k sf lots and 20 of 287 5-8k sf lots. Rungs 1,
+2 and 4 are now in the residual, and 1 for shops and sheds.
+`test/small-lot-rungs.mjs` asks the desk for every zoning-legal 1-, 2- and
+4-storey scheme and requires the builder bid to cover it. It fails on the
+old engine (25 lots) and passes now, and it is in `pnpm check`.
+
+**Baseline move, attributed.** On the same states, land moves by ≤1% at
+p10, median and p90, and builder-priced vacant lots go 85→85, 25→26 and
+45→46 on three seeds. The residual only ever gains schemes. `BASELINE.json`
+moved more than that (rentIdx office −10%, flats −12%, land.p90 −38%). That
+is the re-roll the file warns about: any change to rentable feet changes
+the rng path. Over 14 seeds × 25 years (ten-year means), the rent indices
+before → after are office 49.4 → 51.1, flats 38.9 → 40.3, shops
+31.1 → 30.1 and sheds 14.6 → 14.4, against a cross-seed range of
+24-78 for office. There is no level shift. `pnpm gate` passes.
+
+## Found and not fixed: the desk is looser than the land market
+
+Both of these make small lots look *better* to the player than the market
+prices them. Neither explains the shortfall. Both are fake #3.
+
+- **The desk ignores zoning use.** `zonePermits` (R = flats; M = sheds;
+  sheds on C only below demand 45) governs the residual, the city and the
+  rivals. `startDevelopment` never asks. The desk used to say "anything may be
+  built here"; it now shows the lot's zoning and still builds anything. In the core-fix run, 4 of the 10 affordable plans that
+  cleared ≥1.0 were uses the zoning does not host (e.g. two storeys of shops
+  at 1.23 on an R6 lot the tape prices as flats only). Fixing this means
+  every harness bot that starts "office" on arbitrary dirt must pick a
+  permitted use, including `conserve` and `invariants`, which are gates.
+- **The desk lets flats and offices cover 90% of the lot. The residual
+  allows 70%.** With the desk capped at the residual's coverage, the
+  desk's best residual equals the engine's exactly (median ratio 1.00).
+  With 0.8-0.9 allowed, it runs 1.2-1.9× the engine's. That is why a lot
+  bought at the residual plans at 1.02-1.07, not 1.00. For flats the
+  residual is the realistic side: light and air, and rear yards hold
+  residential coverage to 60-80% in most codes. For offices in commercial
+  districts, full coverage is common and the residual is the strict side.
+  The fix is a per-use coverage limit shared by both, and it moves land
+  prices city-wide.
+
+## What a small firm realistically does instead (suggested, not built)
+
+A real $2.5M developer does not compete for dirt priced for a $10M building.
+Four paths are real at this scale, and most are one step from mechanisms
+already in the engine:
+
+- **Pick the site its balance sheet can build.** A one- or two-storey
+  flex/industrial box or a two-storey shop on fringe C or M dirt: cash need
+  $0.5-1.8M, 12-19 months. The rare ≥1.0 affordable plans in the tables are
+  mostly this. Now that the residual prices these rungs, the tape shows them
+  as PENCILS rather than hiding them.
+- **Bring in equity.** Real small developers bring in outside money or put
+  up the land for a promote. `jv.ts` and the fund vehicle exist. A
+  land-contribution JV, where the developer supplies site and
+  entitlement/management and the partner writes 80-90% of the equity, is
+  the standard path onto a $10M job.
+- **Take the land on option, not title.** A few percent down for 12-24
+  months while the lot is entitled and the equity is raised. That is the
+  holder's bid, turned into a strategy.
+- **Walk-up infill and ground-floor retail with flats over.** These are now
+  modelled correctly (no lift, one-storey box with no core). They pencil
+  where rents support them, which on this map is the better C and R streets,
+  not the fringe.

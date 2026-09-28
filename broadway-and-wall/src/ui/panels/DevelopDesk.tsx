@@ -252,7 +252,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         {saved && <span className="dim"> · scheme held</span>}
       </div>
       <div className="hint">
-        {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · anything may be built here.
+        {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · zoned {rec.zoneDist}.
       </div>
 
       {/* THE ANSWER FIRST. Yield on cost against the hurdle is the number a

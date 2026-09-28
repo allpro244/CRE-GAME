@@ -94,7 +94,7 @@ for (const seed of SEEDS) {
         const bl = bestLegal.length ? bestLegal.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a)) : null;
         const al = bestLegal.filter((x) => x.need <= START);
         const ba = al.length ? al.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a)) : null;
-        builderPriced.push({ lot: rec.lotArea, h: bl?.plan.hurdleRatio, need: bl?.need, sf: bl?.plan.sf, hAff: ba?.plan.hurdleRatio ?? 0 });
+        builderPriced.push({ lot: rec.lotArea, h: bl?.plan.hurdleRatio, need: bl?.need, sf: bl?.plan.sf, hAff: ba?.plan.hurdleRatio });
       }
       if (aff.length) {
         b.afford++;
@@ -139,7 +139,8 @@ for (let i = 0; i < bands.length; i++) {
   const bp = builderPriced;
   console.log(`\nBUILDER-PRICED listings (ask = the trade's residual), zoning-legal plans: ${bp.length}`);
   console.log(`  best plan: median hurdle ${med(bp.map((x) => x.h)).toFixed(3)}, median cash need $${(med(bp.map((x) => x.need)) / 1e6).toFixed(2)}M, median ${Math.round(med(bp.map((x) => x.sf))).toLocaleString()} gsf`);
-  console.log(`  best plan the firm can fund: median hurdle ${med(bp.map((x) => x.hAff)).toFixed(3)}; >=1.0 on ${bp.filter((x) => x.hAff >= 1).length} of ${bp.length}; best plan fundable on ${bp.filter((x) => x.need <= START).length}`);
+  const fundable = bp.filter((x) => x.hAff !== undefined);
+  console.log(`  a fundable plan exists on ${fundable.length} of ${bp.length}; best of those: median hurdle ${med(fundable.map((x) => x.hAff)).toFixed(3)}, >=1.0 on ${fundable.filter((x) => x.hAff >= 1).length}; the trade's best plan itself fundable on ${bp.filter((x) => x.need <= START).length}`);
 }
 console.log("\nbest affordable plan per seed:");
 for (const r of perSeed) console.log(`  ${r.seed}: ${r.seedBestAff.toFixed(3)} ${JSON.stringify(r.seedBestAffLot)}`);

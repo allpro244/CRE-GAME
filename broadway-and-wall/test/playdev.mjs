@@ -13,6 +13,15 @@
 //   pnpm playdev              one run, 50 years
 //   SEEDS=8 pnpm playdev      a distribution
 //   HOLD=1 pnpm playdev       hold everything instead of trading out
+//
+// IT ASSERTS ITS OWN COVERAGE. For a stretch of commits this printed "0 sites ·
+// 0 built" and exited 0 — a harness measuring development that had not
+// measured any. Across the run it must buy a site, break ground, deliver a
+// building and sign a lease on it, or it exits 1 naming the dead stages and
+// what the site screen saw (conserve's rule: an identity is only worth the
+// question it was asked, and a bot's second failure mode is stopping).
+import { assertFreshBundle } from "./fresh.mjs";
+assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,6 +39,75 @@ const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07
 const USES = ["multifamily", "office", "retail", "industrial"];
 
 const GRANT = Number(process.env.GRANT ?? 0);
+// startDevelopment's own closing and change-order terms (actions.ts CLOSING_PCT,
+// dev.ts commitCap) — the bot budgets for the cheque the engine will ask for.
+const CLOSING = 0.02;
+const CHANGE_ORDERS = 0.06;
+
+// THE DESK'S WHOLE DIAL, AT THE PRICE YOU WOULD PAY.
+//
+// This bot used to screen a lot with ONE scheme — every use at 60% coverage
+// and the tallest storey count maxFloorsFor gave for 60% — priced on
+// `landValue` rather than the ask it was about to bid, and it broke ground only
+// on a scheme from a floor sweep still held at 60%. Measured on the base
+// engine (seed 7919, 20 years): the tape offered land in most years, the bot
+// could afford every lot it saw, and its one scheme per lot planned at a
+// hurdle of 0.16 to 0.91 — median 0.44 — so it bought nothing and built
+// nothing in fifty years, on the base engine and on this one. It printed "0
+// sites · 0 built" and exited 0: the harness that is supposed to measure
+// development had not measured any since the small-lot economics landed
+// (ECONOMY.md, "Why small listed lots do not pencil").
+//
+// Those economics are real and are NOT changed here: most small dirt does not
+// pencil, and where it does it is usually priced for a building bigger than
+// a $2.5M balance sheet. What a real small developer does is what the desk
+// lets a player do — draw the one- and two-storey box, at the coverage the
+// use may take (MAX_COVERAGE), and price it at the cheque it will actually
+// write. So the bot sweeps use x coverage x floors, prices the dirt at its bid
+// plus closing, and counts a scheme only if the whole equity, the points and
+// the change-order margin fit above its reserve. The hurdle is still the
+// market's own: hurdleRatio >= 1, the rule underwriteDevelopment gives the
+// city's crane. No threshold was moved to make a number look better.
+const covsFor = (use) => {
+  const top = E.MAX_COVERAGE[use] ?? 0.7;
+  return [...new Set([0.4, 0.55, 0.7, top].filter((c) => c <= top + 1e-9))];
+};
+function bestScheme(g, bbl, landBasis, budget) {
+  const rec = E.resolveRec(parcels, g, bbl);
+  if (!rec || rec.class !== "land") return { pick: null, bestH: 0 };
+  const e = g.econ;
+  let pick = null, bestH = 0;
+  for (const use of USES) {
+    if (E.zoneUseBar(rec, use, e)) continue;   // only what the zoning hosts
+    for (const cov of covsFor(use)) {
+      // Scale the job to the cheque. A developer with six million does not
+      // start a twenty-million job and hope; they build what they can fund
+      // and do it again next year.
+      const maxFl = Math.min(E.maxFloorsFor(rec, cov, use), 14);
+      for (let fl = maxFl; fl >= 1; fl--) {
+        const plan = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp",
+          undefined, undefined, undefined, 0.5, landBasis);
+        if (!plan || !Number.isFinite(plan.hurdleRatio)) continue;
+        bestH = Math.max(bestH, plan.hurdleRatio);
+        // THE WHOLE EQUITY, not the first cheque. equityAtClose is 55% of
+        // it; the rest is drawn on the S-curve over the next two years and
+        // it has to be there. Reserving only the close is how a developer
+        // gets seized in month fourteen with the frame up.
+        const need = plan.equity + plan.pointsCost + plan.costTotal * CHANGE_ORDERS;
+        if (need > budget) continue;   // cannot fund it — try smaller
+        if (plan.hurdleRatio < 1) continue;
+        const gap = NAT[use] - (e.cityVac?.[use] ?? NAT[use]);
+        const spread = plan.yieldOnCost - plan.exitCap;
+        // Score by hurdle that clears, not by tallest plate — biggest
+        // affordable mid-rises were starving the cheque while a shorter
+        // job would have broken ground.
+        const scoreP = plan.hurdleRatio + gap * 2 + spread * 0.05;
+        if (!pick || scoreP > pick.scoreP) pick = { plan, use, fl, cov, spread, scoreP };
+      }
+    }
+  }
+  return { pick, bestH };
+}
 
 function play(seed, verbose) {
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
@@ -44,9 +122,10 @@ function play(seed, verbose) {
   // bankroll became a choice.
   const openCash = g.cash;
   const log = [];
-  const st = { land: 0, built: 0, sold: 0, leases: 0, refis: 0, stalled: 0, noSite: 0, noPencil: 0, loisSeen: 0, countered: 0, passed: 0, emptyMo: 0, vacSf: 0 };
+  const st = { lotsSeen: 0, lotsPencil: 0, bestLotH: 0, refused: 0, delivered: 0, land: 0, built: 0, sold: 0, leases: 0, refis: 0, stalled: 0, noSite: 0, noPencil: 0, loisSeen: 0, countered: 0, passed: 0, emptyMo: 0, vacSf: 0 };
   let peakNW = 0, drawdown = 0;
   const trace = [];
+  const delivered = new Set();
 
   for (let m = 0; m < MONTHS; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
@@ -175,28 +254,21 @@ function play(seed, verbose) {
         const rec = E.resolveRec(parcels, g, l.bbl);
         if (!rec || rec.class !== "land") continue;      // <-- the whole rule
         if (rec.lotArea < 2500) continue;
-        // is there a use that pencils on this site today?
-        let bestPlan = null;
-        for (const use of USES) {
-          if (E.zoneUseBar(rec, use, g.econ)) continue;   // only what the zoning hosts
-          const fl = Math.min(E.maxFloorsFor(rec, 0.6), 14);
-          const plan = E.planDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
-          if (!plan) continue;
-          const spread = plan.yieldOnCost - plan.exitCap;
-          if (!bestPlan || spread > bestPlan.spread) bestPlan = { plan, spread, use };
-        }
-        if (!bestPlan || bestPlan.plan.hurdleRatio < 1) continue;
-        const score = bestPlan.spread + rec.demandScore / 400;
-        if (!best || score > best.score) best = { l, score, rec, ...bestPlan };
+        st.lotsSeen++;
+        // is there a use that pencils on this site today, at our bid, that
+        // we could fund after paying for the dirt?
+        const px = Math.round(l.ask * 0.9);
+        const q = E.buyQuote(g, parcels, l.bbl, px, "land", 0.5);
+        const { pick, bestH } = bestScheme(g, l.bbl, px * (1 + CLOSING), g.cash - reserve - q.equity);
+        st.bestLotH = Math.max(st.bestLotH, bestH);
+        if (!pick) continue;
+        st.lotsPencil++;
+        const score = pick.spread + rec.demandScore / 400;
+        if (!best || score > best.score) best = { l, score, rec, px, q, ...pick };
       }
       if (best) {
-        const px = Math.round(best.l.ask * 0.9);
-        const q = E.buyQuote(g, parcels, best.l.bbl, px, "land", 0.5);
-        // and leave enough behind to actually build on it
-        if (q.equity < Math.max(0, g.cash - reserve) * 0.45) {
-          const r = E.negotiate(g, parcels, best.l.bbl, px);
-          if (!r.err) g = r.s;
-        }
+        const r = E.negotiate(g, parcels, best.l.bbl, best.px);
+        if (!r.err) g = r.s;
       } else st.noSite++;
     }
     for (const t of Object.values(g.talks ?? {})) {
@@ -206,8 +278,13 @@ function play(seed, verbose) {
         if (!r.err) { g = r.s; trace.push(`  m${g.month} BOUGHT SITE ${M(t.agreedPrice)} · cash ${M(g.cash)}`); st.land++; }
         continue;
       }
+      // Take the counter only if the building still pencils and still fits
+      // the purse at THEIR price — the dirt is the one cost that is sunk the
+      // day you close.
       const rec = E.resolveRec(parcels, g, t.bbl);
-      const ok = rec && rec.class === "land" && t.theirPrice < E.landValue(rec, e) * 1.12;
+      const q = rec ? E.buyQuote(g, parcels, t.bbl, t.theirPrice, "land", 0.5) : null;
+      const ok = rec && rec.class === "land"
+        && !!bestScheme(g, t.bbl, t.theirPrice * (1 + CLOSING), g.cash - reserve - q.equity).pick;
       if (ok) { const r = E.acceptCounter(g, parcels, t.bbl); if (!r.err) g = r.s; }
       else if (t.final) { g = E.walkAway(g, parcels, t.bbl).s; }
       else {
@@ -219,44 +296,21 @@ function play(seed, verbose) {
     // ---- BREAK GROUND ------------------------------------------------------
     if (g.cash > reserve) {
       for (const h of Object.values(g.holdings)) {
-        const rec = parcels[h.bbl];
+        const rec = E.resolveRec(parcels, g, h.bbl);
         if (!rec || rec.class !== "land" || g.developments[h.bbl]) continue;
-        let pick = null;
         // the whole equity of the new job, on top of everything already committed
-        const budget = g.cash - reserve;
-        for (const use of USES) {
-          if (E.zoneUseBar(rec, use, g.econ)) continue;   // only what the zoning hosts
-          // Scale the job to the cheque. A developer with six million does not
-          // start a twenty-million job and hope; they build what they can fund
-          // and do it again next year.
-          const maxFl = Math.min(E.maxFloorsFor(rec, 0.6), 14);
-          for (let fl = maxFl; fl >= 1; fl--) {
-            const plan = E.planDevelopment(g, parcels, h.bbl, use, fl, 0.6, "gmp");
-            if (!plan) continue;
-            // THE WHOLE EQUITY, not the first cheque. equityAtClose is 55% of
-            // it; the rest is drawn on the S-curve over the next two years and
-            // it has to be there. Reserving only the close is how a developer
-            // gets seized in month fourteen with the frame up.
-            if (plan.equity > budget) continue;   // cannot fund it — try smaller
-            const gap = NAT[use] - (e.cityVac?.[use] ?? NAT[use]);
-            const spread = plan.yieldOnCost - plan.exitCap;
-            // Score by hurdle that clears, not by tallest plate — biggest
-            // affordable mid-rises were starving the cheque while a shorter
-            // job would have broken ground.
-            const scoreP = plan.hurdleRatio + gap * 2 + spread * 0.05;
-            if (plan.hurdleRatio >= 1 && (!pick || scoreP > pick.scoreP)) {
-              pick = { plan, use, fl, scoreP };
-            }
-          }
-        }
+        const { pick } = bestScheme(g, h.bbl, undefined, g.cash - reserve);
         if (!pick) { st.noPencil++; continue; }
-        const r = E.startDevelopment(g, parcels, h.bbl, pick.use, pick.fl, 0.6, "gmp");
+        const r = E.startDevelopment(g, parcels, h.bbl, pick.use, pick.fl, pick.cov, "gmp");
         if (!r.err) {
           g = r.s; st.built++;
-          trace.push(`  m${g.month} BREAK GROUND ${pick.use} ${pick.fl}fl · cost ${M(pick.plan.costTotal)} · equity ${M(pick.plan.equity)} · at close ${M(pick.plan.equityAtClose)} · YoC ${pick.plan.yieldOnCost.toFixed(2)} vs exit ${pick.plan.exitCap.toFixed(2)} · cash after ${M(g.cash)}`);
+          trace.push(`  m${g.month} BREAK GROUND ${pick.use} ${pick.fl}fl @${Math.round(pick.cov * 100)}% · cost ${M(pick.plan.costTotal)} · equity ${M(pick.plan.equity)} · at close ${M(pick.plan.equityAtClose)} · hurdle ${pick.plan.hurdleRatio.toFixed(2)} · YoC ${pick.plan.yieldOnCost.toFixed(2)} vs exit ${pick.plan.exitCap.toFixed(2)} · cash after ${M(g.cash)}`);
           break;
-        } else trace.push(`  m${g.month} start refused: ${r.err}`);
+        } else { st.refused++; trace.push(`  m${g.month} start refused: ${r.err}`); }
       }
+    }
+    for (const h of Object.values(g.holdings)) {
+      if (h.deliveredM !== undefined) delivered.add(h.bbl);
     }
 
     for (const h of Object.values(g.holdings)) {
@@ -283,6 +337,7 @@ function play(seed, verbose) {
   const nwFinal = E.netWorth(g, parcels);
   board.push({ name: "You", eq: nwFinal });
   board.sort((a, b) => b.eq - a.eq);
+  st.delivered = delivered.size;
   return {
     g, st, nw: nwFinal, peakNW, drawdown, log, trace,
     rank: board.findIndex((b) => b.name === "You") + 1, field: board.length, top: board[0],
@@ -308,5 +363,18 @@ if (SEEDS > 1) {
   const nws = out.map((r) => r.nw).sort((a, b) => a - b);
   console.log(`\nDEVELOPER ONLY across ${SEEDS} runs: worst ${M(nws[0])}  median ${M(nws[Math.floor(nws.length / 2)])}  best ${M(nws[nws.length - 1])}` +
     `  ·  ${out.filter((r) => r.g.gameOver).length} failed  ·  median rank ${out.map((r) => r.rank).sort((a, b) => a - b)[Math.floor(out.length / 2)]}`);
+}
+
+// ---- COVERAGE: did it develop anything at all? --------------------------------
+const tot = (k) => out.reduce((a, r) => a + (r.st[k] ?? 0), 0);
+const stages = { "sites bought": tot("land"), "ground broken": tot("built"), "buildings delivered": tot("delivered"), "leases signed": tot("leases") };
+console.log(`\ncoverage: ${Object.entries(stages).map(([k, v]) => `${k} ${v}`).join(" · ")}` +
+  `\n          site screen: ${tot("lotsSeen")} lot-months seen · ${tot("lotsPencil")} pencilled and fit the purse` +
+  ` · best hurdle seen ${Math.max(...out.map((r) => r.st.bestLotH)).toFixed(2)} · ${tot("refused")} starts refused`);
+const dead = Object.entries(stages).filter(([, v]) => !(v > 0)).map(([k]) => k);
+if (dead.length) {
+  console.log(`\nFAIL — the developer never got past: ${dead.join(", ")}. This run measured nothing about development.` +
+    `\nRead the site-screen line above before touching any threshold: see ECONOMY.md, "Why small listed lots do not pencil".\n`);
+  process.exit(1);
 }
 console.log("");

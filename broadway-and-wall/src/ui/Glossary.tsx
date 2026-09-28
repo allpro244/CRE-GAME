@@ -69,6 +69,24 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
   remnant: {
     def: "A leftover bite of a plate too small for a standard suite. Priced at a discount; often a must-take for the sitting neighbour, because nobody else can lease it.",
   },
+  "stabilised pro-forma": {
+    def: "What the building would earn full at market rent and normal vacancy — the income after lease-up, not the income you buy.",
+  },
+  "net effective": {
+    def: "The rent a lease is really worth once free months and the fit-out you pay for are spread over its term — below the face rent it quotes.",
+  },
+  "letter of intent": {
+    def: "A tenant's written offer on size, term, rent, free months and fit-out. Not yet a lease: sign it and the lease follows; counter and they may walk.",
+  },
+  "earnest money": {
+    def: "The deposit that goes hard when a price is agreed. Fail to close in time and the seller keeps it.",
+  },
+  "cash-on-cash": {
+    def: "A year's cash after debt service ÷ the equity you put in — the return on your own money, before any gain on sale.",
+  },
+  "debt yield": {
+    def: "NOI ÷ loan amount. A lender's floor that ignores the rate: at 8% a lender is paid back from income alone in twelve and a half years.",
+  },
   "leasing plan": {
     def: "The posted asking sheet the desk and you both clear against — quote, hold-out, package, dollar authority. Not four mandate bands.",
   },

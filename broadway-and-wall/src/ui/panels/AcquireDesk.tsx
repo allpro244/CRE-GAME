@@ -5,7 +5,7 @@ import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
+import type { Approach, BuiltClass, GroundReview, SaleInstructions } from "@/engine/types";
 import {
   assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
   recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
@@ -22,6 +22,8 @@ import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
+import { Gloss } from "@/ui/Glossary";
+import { leasingOdds } from "@/engine/absorption";
 import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
@@ -226,6 +228,60 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
   );
 }
 
+/** "$4.2M", "4200000", "4,200,000" → dollars; blank → undefined; junk → NaN. */
+function parseDollars(txt: string): number | undefined {
+  const t = txt.trim().replace(/[$,\s]/g, "");
+  if (!t) return undefined;
+  const m = /^(\d+(?:\.\d+)?)([kKmM])?$/.exec(t);
+  if (!m) return NaN;
+  const mult = m[2] ? (m[2].toLowerCase() === "m" ? 1e6 : 1e3) : 1;
+  return Math.round(parseFloat(m[1]) * mult);
+}
+
+function instructionsFrom(accept: string, decline: string): { ins: SaleInstructions | null; bad: boolean } {
+  const a = parseDollars(accept);
+  const d = parseDollars(decline);
+  const bad = Number.isNaN(a) || Number.isNaN(d) || (a !== undefined && d !== undefined && d > a);
+  if (a === undefined && d === undefined) return { ins: null, bad };
+  return { ins: { ...(a !== undefined ? { acceptAtOrAbove: a } : {}), ...(d !== undefined ? { declineBelow: d } : {}) }, bad };
+}
+
+/**
+ * STANDING INSTRUCTIONS. The two numbers a seller gives the broker so every
+ * call does not come to them. Blank means "ring me".
+ */
+function InstructionFields({ accept, decline, setAccept, setDecline }: {
+  accept: string; decline: string; setAccept: (v: string) => void; setDecline: (v: string) => void;
+}) {
+  return (
+    <>
+      <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <span className="dim">Accept any offer at or above $</span>
+        <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
+          value={accept} onChange={(e) => setAccept(e.target.value)} />
+      </div>
+      <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <span className="dim">Decline anything below $</span>
+        <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
+          value={decline} onChange={(e) => setDecline(e.target.value)} />
+      </div>
+      <div className="hint">
+        Standing instructions: the broker acts on these the month an offer lands, without stopping the clock.
+        A take closes as an ordinary sale (never a 1031) unless it would leave you short after tax and payoff;
+        anything between the two numbers still comes to you, and so does a marketed bid list. Leave both blank to take every call yourself.
+      </div>
+    </>
+  );
+}
+
+export function describeInstructions(ins: SaleInstructions | undefined): string | null {
+  if (!ins) return null;
+  const parts: string[] = [];
+  if (ins.acceptAtOrAbove !== undefined) parts.push(`take ≥ ${usd(ins.acceptAtOrAbove)}`);
+  if (ins.declineBelow !== undefined) parts.push(`pass < ${usd(ins.declineBelow)}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
@@ -237,6 +293,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const [counterOn, setCounterOn] = useState<number | null>(null);
   const [counterPx, setCounterPx] = useState(0);
   const [acceptConfirm, setAcceptConfirm] = useState<null | { exchange?: boolean; bidIndex?: number }>(null);
+  // standing instructions to the broker — prefilled empty
+  const [insAccept, setInsAccept] = useState("");
+  const [insDecline, setInsDecline] = useState("");
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
@@ -283,6 +342,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           <Row k="vs. appraisal" v={((sale.ask / apMid(bbl, value) - 1) * 100).toFixed(1) + "%"} />
           <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
           {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
+          {describeInstructions(sale.instructions) && (
+            <Row k="Broker's instructions" v={describeInstructions(sale.instructions)!} />
+          )}
         </div>
         {/* THE BID LIST. Everybody who turned up, at once. The spread across
             it is the information: tight means the market agrees with you and
@@ -461,6 +523,26 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               : "No offers yet. Overpriced listings sit; the market talks back slowly."}
           </div>
         )}
+        {!sale.unsolicited && (() => {
+          const { ins, bad } = instructionsFrom(insAccept, insDecline);
+          return (
+            <>
+              <div className="page-section" style={{ marginTop: 2 }}>Standing instructions</div>
+              <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
+              <div className="btn-row">
+                <button className="btn" disabled={bad || !ins}
+                  onClick={() => { useStore.getState().setSaleInstructions(bbl, ins); setInsAccept(""); setInsDecline(""); }}>
+                  Give the broker these numbers
+                </button>
+                {sale.instructions && (
+                  <button className="btn" onClick={() => useStore.getState().setSaleInstructions(bbl, null)}>
+                    Withdraw instructions
+                  </button>
+                )}
+              </div>
+            </>
+          );
+        })()}
         {/* MOVE THE PRICE WITHOUT PULLING THE SIGN DOWN.
             Changing an ask used to mean delisting and relisting, which throws
             away the campaign, the bid list and the time the building has been
@@ -576,11 +658,14 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           A decision with two numbers on it is a decision; a decision with an
           adjective on it is a paragraph. Both buttons now carry the fee in
           dollars, and the ask is on both of them. */}
+      <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row">
-        <button className="btn btn-buy" onClick={() => listSale(bbl, price, "marketed")}>
+        <button className="btn btn-buy" disabled={instructionsFrom(insAccept, insDecline).bad}
+          onClick={() => listSale(bbl, price, "marketed", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => listSale(bbl, price)}>
+        <button className="btn" disabled={instructionsFrom(insAccept, insDecline).bad}
+          onClick={() => listSale(bbl, price, "quiet", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Sell it quietly · {usd(price)}
           {quietFeeRate(game) <= 0.0001 ? " · no fee" : ` less ${usd(Math.round(price * quietFeeRate(game)))} fee`}
         </button>
@@ -856,11 +941,41 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       {goingInPct !== null && (
         <div className="grid">
           <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
-          <Row k="Going-in cap at your number" v={`${goingInPct.toFixed(2)}%`} strong />
+          <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss> at your number</>} v={`${goingInPct.toFixed(2)}%`} strong />
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
-          <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
+          <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
           {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+          {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
+              always printed. The market's cap for the class is the econ's own
+              index, the same one every appraisal reads. */}
+          {rec && rec.class !== "land" && (() => {
+            const mkt = game.econ.capRate[rec.class as keyof typeof game.econ.capRate];
+            if (!(mkt > 0)) return null;
+            const d = goingInPct - mkt;
+            return (
+              <Row k="The market pays" v={`${mkt.toFixed(2)}% for ${rec.class} today — ${d > 0.4 ? "your number buys the income cheap" : d < -0.4 ? "your number is rich for the income in place" : "your number is about market"}`} />
+            );
+          })()}
+          {/* CAN YOU CLOSE IT. Earnest money goes hard when the price is
+              agreed; a newcomer could agree a price they could not fund. */}
+          {(() => {
+            const purse = spendable(game, parcels).total;
+            const outright = Math.round(offerPriceRounded * 1.02);
+            const levered = Math.round(offerPriceRounded * 0.37);
+            return (
+              <Row k="Money to close" v={`${usd(outright)} outright · ~${usd(levered)} on a typical 65% loan · you can raise ${usd(purse)}`} bad={purse < levered} />
+            );
+          })()}
+          {/* WHETHER TENANTS WILL COME — the leasing desk's own pace, read on
+              the disclosed roll before you own it rather than after. */}
+          {ip?.h && rec && rec.class !== "land" && (() => {
+            const odds = leasingOdds(game, parcels, rec, ip.h, rec.class as BuiltClass);
+            if (!odds || odds.availSf <= 0) return null;
+            return (
+              <Row k="Letting prospects" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% chance of a letter a month${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85% let` : " · not reaching 85% at today's pace"}`} bad={odds.loiOdds < 0.05} />
+            );
+          })()}
         </div>
       )}
       {/* ACROSS THE TABLE — and now with their accounts on it. The blurb says
@@ -1022,8 +1137,21 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     const occ = rec0 ? inPlace(rec0, game, bbl, offerPrice).occ : 0;
     return deskAdvice(productChoices.map((p) => { const q = quoteOf(p.id); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
   })();
+  // NEGATIVE LEVERAGE, SAID BEFORE THE CHOICE RATHER than as a red row on
+  // the commit stage after it. When even the cheapest desk that will write
+  // costs more than the building yields in place, every borrowed dollar
+  // lowers the return on the equity — so a firm that can pay cash opens on
+  // cash, with the reason, and can still pick a loan.
+  const goingIn = (() => {
+    const r0 = resolveRec(parcels, game, bbl);
+    return r0 && offerPrice > 0 ? (inPlace(r0, game, bbl, offerPrice).noi / offerPrice) * 100 : 0;
+  })();
+  const cheapestLoan = productChoices.map((p) => quoteOf(p.id)).filter((q) => q.principal > 0).sort((a, b) => a.allInPct - b.allInPct)[0];
+  const allNegLev = !!cheapestLoan && goingIn > 0 && cheapestLoan.allInPct > goingIn;
+  const canCash = spendable(game, parcels).total >= Math.round(offerPrice * 1.02);
   const picked = (() => {
     if (product === null) {
+      if (allNegLev && canCash) return "cash";
       const first = productChoices.find((p) => quoteOf(p.id).principal > 0);
       return first?.id ?? "cash";
     }
@@ -1104,7 +1232,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 <Row k={ip?.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(noi)} bad={noi < 0} />
                 {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
                 <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} strong />
-                <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
+                <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
               </>
             ) : (
               <Row k="Price" v={usd(offerPrice)} strong />
@@ -1143,6 +1271,12 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </button>
           </div>
           {advice && <div className="hint" style={{ marginTop: 6 }}>{advice}</div>}
+          {allNegLev && (
+            <div className="hint neg" style={{ marginTop: 4 }}>
+              Every desk that will write this costs more than it yields: the cheapest is {cheapestLoan!.allInPct.toFixed(2)}% all-in against a {goingIn.toFixed(2)}% going-in yield.
+              Borrowing lowers your return on this building{canCash ? " — the desk opens on cash for that reason" : ""}. A loan still buys you a bigger book with the same money, at a thinner margin.
+            </div>
+          )}
           {max.principal > 0 ? (
             <Slider
               label="Leverage"
@@ -1387,6 +1521,9 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
   const quiet = quietFeeRate(game);
   const over = appraisal > 0 ? ask / appraisal - 1 : 0;
   const leasedFee = !!game.groundLeases?.[bbl];
+  const [insAccept, setInsAccept] = useState("");
+  const [insDecline, setInsDecline] = useState("");
+  const instr = instructionsFrom(insAccept, insDecline);
   return (
     <div style={{ padding: "8px 2px" }}>
       {leasedFee && (
@@ -1409,11 +1546,12 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
             ? "Under appraisal. It will go quickly, and every buyer in town will know why."
             : "About where the market is."}
       />
+      <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row" style={{ marginTop: 6 }}>
-        <button className="btn btn-buy" onClick={() => { listSale(bbl, ask, "marketed"); onDone(); }}>
+        <button className="btn btn-buy" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "marketed", instr.ins ?? undefined); onDone(); }}>
           Run a process · less {usd(Math.round(ask * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => { listSale(bbl, ask); onDone(); }}>
+        <button className="btn" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "quiet", instr.ins ?? undefined); onDone(); }}>
           Sell it quietly · {quiet <= 0.0001 ? "no fee" : `less ${usd(Math.round(ask * quiet))} fee`}
         </button>
       </div>

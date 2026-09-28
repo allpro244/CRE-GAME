@@ -3,6 +3,9 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
+import { buyBoxSet, inBuyBox, type BuyBox } from "@/engine/buybox";
+import { starterPicks } from "@/engine/standing";
+import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
@@ -247,6 +250,7 @@ export function MarketPage() {
   const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
   return (
     <div>
+      {Object.keys(game.holdings).length === 0 && <StarterBlock go={go} />}
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
         <button
@@ -585,6 +589,7 @@ export function MarketPage() {
           page that nobody else can bid on and the one thing that disappears on
           a schedule; the listings will still be there next month. */}
       <BrokerCalls />
+      <BuyBoxEditor />
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -696,6 +701,9 @@ export function MarketPage() {
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
                       {!yours && game.watch?.includes(li.bbl) && <span className="chip chip-watch" style={{ marginRight: 6 }} title="A building you are watching">★</span>}
+                      {!yours && buyBoxSet(game.buyBox) && inBuyBox(game, parcels, li.bbl, li.ask) && (
+                        <span className="chip chip-pencils" style={{ marginRight: 6 }} title="Inside your buy box — product, going-in yield and ticket">IN YOUR BOX</span>
+                      )}
                       {notToYou && (
                         <span className="chip chip-cold" style={{ marginRight: 6 }} title={held!.name}>
                           NOT TO YOU
@@ -949,5 +957,79 @@ export function LandValueChart() {
           `CityFigures` — the correct destination, since the deltas are struck
           off the history the charts there draw — and not duplicated here. */}
     </>
+  );
+}
+
+/**
+ * THE BUY BOX, EDITED WHERE THE TAPE IS READ. Standing criteria the brokers
+ * are told: product, a floor on going-in yield, a ceiling on the ticket. A
+ * first look outside it no longer stops the clock; listings inside it wear a
+ * chip. Empty means "anything" — the old behaviour.
+ */
+function BuyBoxEditor() {
+  const game = useStore((s) => s.game)!;
+  const box: BuyBox = game.buyBox ?? {};
+  const set = (b: BuyBox) => useStore.getState().setBuyBox(buyBoxSet(b) ? b : undefined);
+  const USES = [["office", "Office"], ["retail", "Retail"], ["multifamily", "Multifamily"], ["industrial", "Industrial"]] as const;
+  const on = buyBoxSet(box);
+  return (
+    <div className="buybox">
+      <span className="buybox-label">Your buy box</span>
+      {USES.map(([u, label]) => {
+        const sel = box.uses?.includes(u) ?? false;
+        return (
+          <button key={u} type="button" className={"lens-btn" + (sel ? " lens-on" : "")} aria-pressed={sel}
+            onClick={() => set({ ...box, uses: sel ? (box.uses ?? []).filter((x) => x !== u) : [...(box.uses ?? []), u] })}>
+            {label}
+          </button>
+        );
+      })}
+      <label className="buybox-field">yield ≥
+        <input type="number" step="0.25" min="0" max="20" value={box.minCap ?? ""} placeholder="any"
+          onChange={(e) => set({ ...box, minCap: e.target.value === "" ? undefined : Number(e.target.value) })} />%
+      </label>
+      <label className="buybox-field">ticket ≤ $
+        <input type="number" step="0.5" min="0" value={box.maxAsk ? box.maxAsk / 1e6 : ""} placeholder="any"
+          onChange={(e) => set({ ...box, maxAsk: e.target.value === "" ? undefined : Math.round(Number(e.target.value) * 1e6) })} />M
+      </label>
+      {on && <button type="button" className="btn btn-sm" onClick={() => set({})}>Clear</button>}
+      <span className="buybox-note">{on ? "Only first looks inside the box stop the clock." : "Empty — every affordable first look stops the clock."}</span>
+    </div>
+  );
+}
+
+/**
+ * A FIRM WITH NO BUILDINGS SEES THREE FIRST. The tape sits under a stat strip,
+ * a paragraph, the distress pipeline and the brokers' calls; a newcomer had
+ * to scroll past all of it to reach a row. The three best going-in yields
+ * among let buildings the firm could buy outright — the tape's own sort, cut
+ * to what is actually within reach.
+ */
+function StarterBlock({ go }: { go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const picks = starterPicks(game, parcels, spendable(game, parcels).total, 3);
+  if (!picks.length) return null;
+  return (
+    <div className="starter-block">
+      <div className="page-section-head">Where to start — the best yields you can buy outright</div>
+      {picks.map((p) => {
+        const rec = resolveRec(parcels, game, p.bbl);
+        return (
+          <button key={p.bbl} type="button" className="starter-row" onClick={() => go(p.bbl)}>
+            <span className="starter-addr">{rec?.address ?? p.bbl}</span>
+            <span className="dim">{rec ? useLabel(rec) : ""}</span>
+            <span className="mono">{p.cap.toFixed(1)}% going-in</span>
+            <span className="mono">{Math.round(p.occ * 100)}% let</span>
+            <span className="mono">{usd(p.cash)} to close</span>
+            <span className="lnk">Open →</span>
+          </button>
+        );
+      })}
+      <div className="hint" style={{ marginBottom: 0 }}>
+        Going-in yield is the income in place over the price. Buying outright is the simplest first deal; the
+        property file shows what a loan would do to it.
+      </div>
+    </div>
   );
 }

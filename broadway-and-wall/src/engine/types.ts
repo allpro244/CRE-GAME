@@ -609,7 +609,17 @@ export interface Holding {
     callM?: number;                    // when offers are due
     bids?: Bid[];                      // the list, once they are in
     round?: number;                    // 0 first round, 1 best and final
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string };
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean };
+    /**
+     * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
+     * personally — they tell the broker "anything at or over this, take it;
+     * anything under that, don't bother me", and the broker acts inside the
+     * month without stopping the clock. Both optional. The broker never runs a
+     * 1031 (an exchange is a tax election only the owner makes), and an accept
+     * that would leave the account short after tax and payoff is `held` for the
+     * owner's signature instead. See applySaleInstructions in actions.ts.
+     */
+    instructions?: SaleInstructions;
   };
   /**
    * THE SCHEME ON THE DESK. Survives leaving the lot to read the books.
@@ -649,6 +659,12 @@ export type Contract = "gmp" | "costplus";
  * without losing the dials. Not a commitment — cleared when ground breaks.
  */
 export type DevDraftTab = "programme" | "design" | "financing";
+/** What the listing broker may do without calling you. See Holding.sale.instructions. */
+export interface SaleInstructions {
+  acceptAtOrAbove?: number;
+  declineBelow?: number;
+}
+
 export interface DevDraft {
   tab: DevDraftTab;
   use: DevUse;
@@ -2815,6 +2831,8 @@ export interface GameState {
   privateQuoteCool?: Record<string, number>;
   /** Player preference: whether broker first looks / off-market files may stop the clock. */
   brokerStops?: "affordable" | "never";
+  /** Standing acquisition criteria (see buybox.ts). */
+  buyBox?: import("./buybox").BuyBox;
   /** How many funds this firm has raised — Fund I, II, III. */
   fundsRaised?: number;
   nextPrivateBorrowId?: number;

@@ -186,6 +186,15 @@ export default function StartMenu() {
               })()}
 
               <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
+              {/* FIRST RUN: the highlighted choices ARE the standard game. Twenty-one
+                  options in four columns read as homework to someone who has not
+                  played; they are all pre-set, and this says so. */}
+              {!resume && loadRuns().length === 0 && (
+                <div className="start-first">
+                  First time here? Everything highlighted below is the standard game — a young town, $2.50M, age 35.
+                  Press <strong>Break ground</strong> at the bottom and the Marketplace will show you where to start.
+                </div>
+              )}
 
               <div className="start-cols">
                 {/* HOW BIG, which is a decision about what game you are playing

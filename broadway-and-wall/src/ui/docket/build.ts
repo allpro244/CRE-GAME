@@ -16,9 +16,11 @@ import type { GameState, Loan } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { attentionItems, MILESTONES } from "@/engine/sim";
-import { netWorth } from "@/engine/value";
-import { planIsLive } from "@/engine/leasing";
-import { positiveLeverage } from "@/engine/standing";
+import { netWorth, resolveRec } from "@/engine/value";
+import { planIsLive, loiSigningCost, vacantSf } from "@/engine/leasing";
+import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
+import { positiveLeverage, starterPick } from "@/engine/standing";
+import { fundableNow } from "@/engine/credit";
 import { usd } from "@/ui/format";
 import type { Page } from "@/state/store";
 
@@ -94,6 +96,11 @@ export function buildDocket(
   const items: DocketItem[] = [];
   const month = game.month;
   const addr = (bbl: string) => parcels?.[bbl]?.address ?? bbl;
+  const letterTerms = (l: (typeof game.lois)[number]) => {
+    const mkt = parcels ? loiMarketPsf(game, parcels, l) : 0;
+    const vs = mkt > 0 ? ` (${l.rentPsf >= mkt ? "+" : "−"}${Math.abs(Math.round((l.rentPsf / mkt - 1) * 100))}% vs market)` : "";
+    return `Letter of intent · ${Math.round(l.sf).toLocaleString()} sf · ${(l.termM / 12).toFixed(l.termM % 12 ? 1 : 0)} yrs · $${l.rentPsf.toFixed(2)}/sf${vs}${l.freeM ? ` · ${l.freeM} mo free` : ""} · ${usd(loiSigningCost(l))} to sign`;
+  };
 
   // (a) The standing conditions — everything the engine itself says needs the
   // principal. The label is the engine's, verbatim; Open routes through the
@@ -106,7 +113,11 @@ export function buildDocket(
       cat: catForKey(a.key),
       urgent: urgentKey(a.key) || (letter?.referred ? true : undefined),
       title: a.label,
-      sub: letter?.docketReason,
+      // THE TERMS ON THE ROW. Sign / Counter / Decline sat on a line that
+      // said only "LOI from X" — a blind decision. The letter's own size,
+      // term, rent against the market the Deals desk quotes, and the cheque
+      // to sign it, in one line; the leasing desk's reason after it.
+      sub: letter ? [letterTerms(letter), letter.docketReason].filter(Boolean).join(" · ") : undefined,
       attnKey: a.key,
       leaseId: planIsLive(game) && letter ? leaseId : undefined,
       bbl: letter?.bbl,
@@ -223,13 +234,29 @@ export function buildDocket(
       // the Deals desk, and the first exit, which is sold from your own book.
       const HOW: Record<string, { page: Page; how: string }> = {
         deed1: { page: "market", how: "buy a building off the tape" },
-        lease1: { page: "deals", how: "letters from tenants land on the Deals desk" },
+        // Letters only come for vacant space: a full building's first letter
+        // waits on a lease expiring. Said, rather than promised.
+        lease1: { page: "deals", how: Object.values(game.holdings).some((h) => { const r = parcels ? resolveRec(parcels, game, h.bbl) : null; return !!r && vacantSf(r, h) > 0; })
+          ? "tenants write for your vacant space — letters land on the Deals desk"
+          : "your space is let, so letters come as leases turn over — or buy a building with room in it" },
         tower1: { page: "market", how: "buy a lot and break ground on it" },
         exit1: { page: "portfolio", how: "list a building for more than you paid" },
         nw25: { page: "market", how: "grow the book" },
       };
       const h = HOW[next.id] ?? { page: "market" as Page, how: "" };
-      live.push({
+      // THE FIRST DEED, NAMED. A page of listings is not advice; one building
+      // with its yield and its cheque is.
+      const pick = next.id === "deed1" ? starterPick(game, parcels, fundableNow(game, parcels)) : null;
+      if (pick) {
+        live.push({
+          key: `milestone:${next.id}`,
+          cat: "world",
+          title: `Start here: ${addr(pick.bbl)} — ${pick.cap.toFixed(1)}% going-in, ${Math.round(pick.occ * 100)}% let`,
+          sub: `${usd(pick.cash)} to buy outright, closing included · the best yield on the tape you can afford · ${12 - month} mo of year one left`,
+          bbl: pick.bbl,
+          page: "property",
+        });
+      } else live.push({
         key: `milestone:${next.id}`,
         cat: "world",
         title: next.label,

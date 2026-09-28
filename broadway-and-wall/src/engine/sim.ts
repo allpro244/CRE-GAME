@@ -12,6 +12,8 @@ import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
+import { tickLeaseholds } from "./leasehold";
+import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -552,6 +554,7 @@ function tickMonth(
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickGroundLeases(s, parcels);
+  tickLeaseholds(s);
   tickBuildToSuit(s, parcels);
   tickSales(s, parcels, adjacency);
   // The dirt reprices off what the dirt has been fetching — after the month's
@@ -614,7 +617,7 @@ function tickMonth(
     // Vehicle deeds keep their cash in the vehicle — promote needs a
     // counterparty, and GP liquidity is not LP capital.
     if (h.fundOwned && s.fund && !s.fund.settled) s.fund.cash += cf;
-    else monthCF += cf;
+    else monthCF += splitMonthCf(s, h, cf);   // a JV partner takes (or funds) its share
 
     // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
     // owner watches, stamped at the same moment the month's NOI is booked so
@@ -801,7 +804,9 @@ function tickMonth(
       const deprCapacity = improvements - (h.deprTaken ?? 0);
       const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
-      taxable += noi - interest - depr; // losses net against gains across the portfolio
+      // A partnership passes its income through: on a JV deed the owner is
+      // taxed on their share (depreciation already runs on their basis alone).
+      taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
     }
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
@@ -944,7 +949,8 @@ function tickMonth(
         // was $0 and tickFacility then silently dropped the BBL. Same money
         // pump a voluntary sale pays releaseCost to stop.
         const release = releaseCost(s, parcels, pick.bbl);
-        const toBorrower = net - lien - breakFee - release;
+        // A JV partner takes its share of any surplus that reaches the owners.
+        const toBorrower = ownersShareOfProceeds(pick, net - lien - breakFee - release);
         const shortfall = Math.max(0, lien + breakFee - net);
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.

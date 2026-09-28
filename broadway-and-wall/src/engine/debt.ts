@@ -19,6 +19,7 @@ import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
+import { JV_CONSENT } from "./jv";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -653,6 +654,7 @@ export function payOffLoan(
   const rec = resolveRec(parcels, next, bbl);
   if (!h?.loan) return { s, err: "Nothing to pay off on that deed." };
   if (!rec) return { s, err: "Unknown parcel." };
+  if (h.jv) return { s, err: JV_CONSENT };
   if (next.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
   }
@@ -726,6 +728,7 @@ export function paydownLoan(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0?.loan) return { s, err: "Nothing to pay down on that deed." };
+  if (h0.jv) return { s, err: JV_CONSENT };
   if (!resolveRec(parcels, s, bbl)) return { s, err: "Unknown parcel." };
   if (s.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Pay the facility down there — the mortgage is not what holds the lien." };
@@ -1654,6 +1657,7 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
 export function placeMezz(
   s: GameState, parcels: ParcelTable, bbl: string,
 ): { s: GameState; err?: string; msg?: string } {
+  if (s.holdings[bbl]?.jv) return { s, err: JV_CONSENT };
   const q = mezzQuote(s, parcels, bbl);
   if (!q.available || q.principal < 250_000) {
     return { s, err: q.why ?? "No mezz quote." };
@@ -2072,6 +2076,13 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // with cash (negative net draw) is principal repayment and goes to debtSvc.
   const netDraw = qd.principal - oldBal;
   next.cash += netDraw - fee;
+  // A JV partner shares the refinance both ways: its share of a cash-out is
+  // distributed, its share of a pay-down (and the fee) is called.
+  if (h.jv) {
+    const part = Math.round((netDraw - fee) * h.jv.share);
+    if (part > 0) { next.cash -= part; logBooks(next, "lpDistributed", part); }
+    else if (part < 0) { next.cash -= part; logBooks(next, "lpCalled", -part); }
+  }
   coverCashShortfall(next, parcels);
   logBooks(next, "debtSvc", fee);
   if (netDraw > 0) logBooks(next, "borrowed", netDraw);

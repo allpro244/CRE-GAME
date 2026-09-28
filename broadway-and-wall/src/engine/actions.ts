@@ -21,6 +21,7 @@ import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
+import { ownersShareOfProceeds, jvConsent } from "./jv";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -690,6 +691,8 @@ export function assembleLots(
   if (roots.length < 2) return { s, err: "Assemblage takes at least two lots." };
   for (const r of roots) {
     if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
+    { const why = jvConsent(s.holdings[r]); if (why) return { s, err: why }; }
+    if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
     const why = assembleBlocker(s, parcels, r);
     if (why) return { s, err: why };
   }
@@ -876,6 +879,8 @@ export function offerGroundLease(
   s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
+  { const why = jvConsent(s.holdings[bbl]); if (why) return { s, err: why }; }
+  if (s.holdings[bbl].groundRentOut) return { s, err: "You are the ground lessee here — the land is somebody else's to lease." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
   if (s.holdings[bbl].groundOffer) return { s, err: "It is already on offer. A ground lessee comes when one comes." };
   if (s.holdings[bbl].btsOffer || s.btsProspects?.[bbl]) {
@@ -2645,16 +2650,20 @@ export function saleProceedsToSeller(
   s: GameState, parcels: ParcelTable, h: Holding, price: number,
 ): {
   net: number; gain: number; tax: number; kick: number; breakFee: number;
-  release: number; loanPayoff: number; toSeller: number;
+  release: number; loanPayoff: number; toSeller: number; partner: number;
 } {
-  const { net, gain, tax } = saleTaxQuote(h, price, s);
+  const { net, gain } = saleTaxQuote(h, price, s);
+  // A JV deed: each side is taxed on its own share (the basis is already the
+  // owner's alone), and the partner is paid its share at the closing table.
+  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
   const stack = stackPayoff(h, s.month);
   const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
   const loanPayoff = stack.balance;
-  const toSeller = net - loanPayoff - kick - breakFee - release;
-  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller };
+  const toOwners = net - loanPayoff - kick - breakFee - release;
+  const toSeller = ownersShareOfProceeds(h, toOwners);
+  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller };
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {
@@ -2664,7 +2673,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { gain, tax } = saleTaxQuote(h, offer.price, s);
+  const { gain } = saleTaxQuote(h, offer.price, s);
+  const tax = h.jv ? saleTaxQuote(h, Math.round(offer.price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, offer.price, s).tax;
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
@@ -3517,6 +3527,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
     return { s, err: "The ground lessee controls the improvement — you do not gut their building." };
   }
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
+  { const why = jvConsent(h); if (why) return { s, err: why }; }
   if (h.condition === "good") return { s, err: "Already in top condition." };
   if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };
   if (isCommercial(rec)) {

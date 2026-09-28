@@ -8,6 +8,7 @@ export { START_YEAR };
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
+import { gpInterestInFund } from "./fund";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -2130,7 +2131,7 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
 // in-place NOI from the actual rent roll (owned assets, Phase 3 onward)
 export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
   if (h.renovatingUntilM !== undefined && currentQ < h.renovatingUntilM) {
-    return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
+    return -Math.max(0, rec.bldgArea) * 1.2 - (h.groundRentOut?.rentYr ?? 0); // dark during the gut; the ground rent is not
   }
   // A ground-leased lot does not carry: the lessee pays the taxes and the
   // insurance, which is what "absolutely net" means. Its income arrives
@@ -2159,7 +2160,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
     const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
-    return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
+    return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h) - (h.groundRentOut?.rentYr ?? 0);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
@@ -2186,7 +2187,10 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   const egi = baseRent + recoveredOpex + recoveredTax;
   const opexBill = opexNowPsf * rentableSf(rec);               // the owner pays it all, then bills it out
   const mgmt = egi * MGMT_FEE;
-  return egi - opexBill - mgmt - taxBill;
+  // A LEASEHOLD PAYS ITS GROUND RENT BEFORE ANYTHING ELSE. It is an operating
+  // cost of the building, not a financing cost, so every reader of NOI — the
+  // month's cash, the DSCR test, the lender's sizing — sees it.
+  return egi - opexBill - mgmt - taxBill - (h.groundRentOut?.rentYr ?? 0);
 }
 
 /**
@@ -2221,7 +2225,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   if (h.groundLeased) {
     return {
       baseRent: 0, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi: 0,
-      opex: 0, mgmt: 0, reserve: 0, tax: 0, noi: 0,
+      opex: 0, mgmt: 0, reserve: 0, tax: 0, noi: 0, groundRent: 0,
       leasedSf: 0, vacantSf: 0, leakage: 0, opexPsf: 0, taxPsf: 0,
     };
   }
@@ -2232,6 +2236,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   // function nets — collections, the flat opex load, the 7% reserve for turns
   // and roofs, the full tax bill — and the two can never quote different NOIs
   // for one building.
+  const groundRent = h.groundRentOut?.rentYr ?? 0;
   if (rec.class === "multifamily") {
     const occ = h.occ ?? occupancy(rec, econ);
     const letSf = rentableSf(rec);
@@ -2244,7 +2249,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
       opex: opexBill, mgmt: egi * MGMT_FEE, reserve: egi * APT_RESERVE, tax: taxBill,
-      noi: egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - taxBill,
+      noi: egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - taxBill - groundRent, groundRent,
       leasedSf: Math.round(letSf * occ), vacantSf: Math.round(letSf * (1 - occ)),
       // gross leases bill nothing back; the whole expense stack is the owner's
       leakage: opexBill + taxBill > 0 ? 1 : 0,
@@ -2270,11 +2275,11 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   const opexBill = opexNowPsf * rentableSf(rec);
   const egi = baseRent + recOpex + recTax;
   const mgmt = egi * MGMT_FEE;
-  const noi = egi - opexBill - mgmt - taxBill;
+  const noi = egi - opexBill - mgmt - taxBill - groundRent;
   const billed = opexBill + taxBill;
   return {
     baseRent, freeRent: free, recoveredOpex: recOpex, recoveredTax: recTax, egi,
-    opex: opexBill, mgmt, tax: taxBill, noi,
+    opex: opexBill, mgmt, tax: taxBill, noi, groundRent,
     leasedSf, vacantSf: Math.max(0, rentableSf(rec) - leasedSf),
     // what you pay and never bill back, as a share of the whole expense stack
     leakage: billed > 0 ? Math.max(0, billed - recOpex - recTax) / billed : 0,
@@ -2613,6 +2618,30 @@ export function bareLandRec(
  * landValue (which ignores the coupon) and not an empty-building appraisal
  * (which pretends the lessee's tower is yours to let).
  */
+/**
+ * THE GROUND-LEASE YIELD — what a ground rent is capitalised at, as a cap rate
+ * on the rent in force. A ground rent is the most senior claim on a building
+ * (it is paid before the mortgage, and the fee owner takes the improvements if
+ * it is not), so it prices like a long bond with a small spread: about half
+ * the policy rate plus two points, never under 3.2%. One number for the leased
+ * fee you own (`leasedFeeValue`) and the fee you sold (`leaseholdGroundPv`).
+ */
+export function groundYieldPct(econ: Econ): number {
+  return Math.max(3.2, econ.indexRate * 0.55 + 2.1);
+}
+
+/**
+ * WHAT THE GROUND RENT UNDER A LEASEHOLD IS WORTH — to the fee owner, and so
+ * what comes off the building's value. Struck at the same yield the fee sold
+ * at, so selling the dirt is value-neutral before costs: the owner swaps land
+ * value for cash and takes on a senior, rising rent. Any gain from the deal is
+ * liquidity and the absence of a lender, not an arbitrage in the mark.
+ */
+export function leaseholdGroundPv(h: Holding, econ: Econ): number {
+  const g = h.groundRentOut;
+  return g ? Math.round(g.rentYr / (groundYieldPct(econ) / 100)) : 0;
+}
+
 export function leasedFeeValue(
   gl: import("./types").GroundLease,
   bare: ParcelRecord,
@@ -2620,7 +2649,7 @@ export function leasedFeeValue(
   month: number,
   improvementSf = 0,
 ): number {
-  const yld = Math.max(3.2, econ.indexRate * 0.55 + 2.1);
+  const yld = groundYieldPct(econ);
   const yearsLeft = Math.max(0.25, (gl.endM - month) / 12);
   const disc = Math.pow(1 + yld / 100, yearsLeft);
   const annuity = 1 - 1 / disc;
@@ -2730,6 +2759,8 @@ export function ownedHoldingValueFromRec(
   // third of its value in reserve and sold at 148% of its own listing mark
   // three months later when the tenant renewed.)
   const roll = rolloverReader && rec.class !== "land" && rec.bldgArea > 0 ? Math.min(rolloverReader(s, rec, h), v * 0.25) : 0;
+  // A leasehold owns no dirt, so there is no land floor under its mark.
+  if (h.groundRentOut) return roll > 0 ? Math.max(0, v - roll) : v;
   return roll > 0 ? Math.max(landAppraisalFloor(rec, s.econ, true), v - roll) : v;
 }
 
@@ -2768,7 +2799,10 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // "expired", because the clock never moved. Ground-up development wore it
   // worst, because a developer's whole roll is leases they signed themselves.
   const inGut = month !== undefined && h.renovatingUntilM !== undefined && month < h.renovatingUntilM;
-  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY);
+  // A leasehold is marked as the freehold less the ground rent's value, so the
+  // in-place leg is struck on the NOI before the ground rent and the rent is
+  // taken off once, at the end, at the yield it trades at.
+  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY) + (h.groundRentOut?.rentYr ?? 0);
   // AND YOU CANNOT DIVIDE A NEGATIVE NOI BY A CAP RATE AT ALL.
   //
   // A building with no tenants pays operating costs and taxes and bills
@@ -2810,8 +2844,8 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // on a tower that opened this month.
   const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll);
   const floor = landAppraisalFloor(rec, econ, asIs !== null);
-  if (asIs !== null) return Math.max(floor, Math.max(blended, asIs) - abate);
-  return Math.max(floor, blended - abate);
+  const freehold = asIs !== null ? Math.max(floor, Math.max(blended, asIs) - abate) : Math.max(floor, blended - abate);
+  return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
 }
 
 export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
@@ -2861,11 +2895,21 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // a borrower whose net worth ignores their largest liability is being shown
   // a number that would let them borrow against it twice.
   nw -= s.facility?.balance ?? 0;
+  // THE FUND IS MOSTLY THE LPs' MONEY. Vehicle deeds used to count at 100%
+  // here while the vehicle's cash counted at nothing, so the co-invest left
+  // net worth at the raise and the LPs' capital arrived in it the day it
+  // bought a building. The sponsor owns what the waterfall would pay them.
+  const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
+  let fundNav = liveFund ? liveFund.cash : 0;
   for (const h of Object.values(s.holdings)) {
     const v = ownedHoldingValue(s, parcels, h);
     gav += v;
-    nw += v - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
+    const eq = v - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
+    if (liveFund && h.fundOwned) { fundNav += eq; continue; }
+    // A JV partner owns its share of the equity, not of the building.
+    nw += eq * (1 - (h.jv?.share ?? 0));
   }
+  if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
   // This booked `costTotal` — the WHOLE build budget — the instant a shovel

@@ -509,6 +509,14 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
+  /**
+   * YOU SOLD THE LAND AND KEPT THE BUILDING. A ground rent the owner pays out,
+   * senior to everything, stepping every year; see leasehold.ts. `rentYr` is
+   * the rent in force; `price` is what the fee sold for; `holder` the buyer.
+   */
+  /** A minority partner in this one deed — see jv.ts. `share` of the equity is theirs. */
+  jv?: { partner: string; share: number; sinceM: number; price: number };
+  groundRentOut?: { holder: string; rentYr: number; stepPct: number; startM: number; endM: number; lastStepM: number; price: number };
   // The lot is on OFFER for a ground lease — a listing, not a deal. Ground
   // lessees are scarce, so a counterparty arrives stochastically through
   // tickGroundLeases, at odds set by the corner's live demand and the same

@@ -220,6 +220,34 @@ export function LoiCounterDraft({
         ]}
         hint="Compounded every anniversary. Steeper than 2.5% raises net effective; flatter gives it away."
       />
+      {/* THE TENANT BUILDS IT. A landlord short of the fit-out cheque does not
+          lend it to the tenant; he lets them build their own space and takes
+          it back in the rent. The preset sets the allowance to nothing and
+          solves for the rent that leaves the tenant exactly where their own
+          letter put them (the same netEffectivePsf the tenant is scored on,
+          so the odds of a yes do not move); the cash to sign falls to the
+          commission. What it costs is the rent: TI_VALUE says a tenant values
+          a dollar of fit-out at 75 cents, spread over the term. */}
+      {(loi.openTiPsf ?? loi.tiPsf) > 0 && (
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn"
+            title="No allowance; a lower rent that leaves the tenant's net effective where their letter put it. Cash to sign falls to the commission."
+            onClick={() => {
+              let lo = 0.3 * cRent, hi = 2 * Math.max(cRent, market);
+              for (let i = 0; i < 40; i++) {
+                const mid = (lo + hi) / 2;
+                if (netEffectivePsf(view, mid, 0, cFreeC, cBump) < theirNe) lo = mid; else hi = mid;
+              }
+              setCTi(0);
+              setCRent(Math.floor(((lo + hi) / 2) * 4) / 4);
+            }}
+          >
+            They build it · no allowance, rent to match
+          </button>
+        </div>
+      )}
       <div className={"loi-ne" + (pushy ? " neg" : soft ? "" : "")}>
         Your NE ${yourNe.toFixed(2)}/sf
         {" · "}

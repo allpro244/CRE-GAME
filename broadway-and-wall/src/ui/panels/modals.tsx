@@ -894,6 +894,7 @@ function DecisionBody({
           {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
           {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
+          {proceeds.partner > 0 && <Row k={`To ${h.jv?.partner ?? "your partner"} (${Math.round((h.jv?.share ?? 0) * 100)}%)`} v={usd(proceeds.partner)} bad />}
           <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
           {proceeds.tax > 0 && <Row k="Capital-gains tax" v={usd(proceeds.tax)} bad />}
           <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />

@@ -171,8 +171,8 @@ of its own cost-ordered list.
   is the one worth a proper look. A plausible cause is that land no longer
   opens 30–45% rich, so prime lots stop being sold into the wrong decade, but
   that is a hypothesis, not a measurement.
-- **Carried from September, still true:** TI cannot be amortised into rent,
-  and there is no sale-leaseback or JV.
+- **Carried from September:** fit-out in the rent, a sale-leaseback and a JV
+  on one deed. All three were done in the third round, below.
 
 ## Second round — the rest of the list
 
@@ -217,6 +217,78 @@ of its own cost-ordered list.
 - **Small ones — DONE.** The top-bar era column clipped "disinflation"; it is
   now sized to the longest name. `deepplay` prints the game-over cause
   instead of `[object Object]`.
+
+## Third round — the rest of the rest
+
+- **The top-end land rise was the re-roll.** Paired town by town (before →
+  after the concession fix) the land p90 went 532→948, 502→480, 1212→1212,
+  542→357, 907→725 and 102→748. That is two up, three down and one
+  unchanged. The median's jump is almost all town 20603, whose economy
+  collapsed in the old draw (office effective rent 16) and did not in the
+  new (46). Nothing to fix.
+- **Fit-out in the rent — "They build it" (counter desk).** Tested as a
+  hypothesis first. The counter could already cut the allowance, and the
+  tenant already prices a cut allowance as 75 cents on the dollar over the
+  term (`TI_VALUE`). The wall the bot hit was the cheque at signing, and
+  amortising landlord TI into rent does not remove the cheque. What does is
+  the ordinary alternative: the tenant builds its own space for a lower
+  rent. The preset sets the allowance to zero and solves for the rent that
+  leaves the tenant's net effective where its letter put it, so the odds of a
+  yes do not move. On ten real letters, the cash to sign fell 60–80% and the
+  rent 2–11%. The "you're short" refusal now names it.
+- **Sale-leaseback — the landlord's form (`leasehold.ts`).** An occupier's
+  sale-leaseback means nothing to a player who never occupies space. The
+  landlord's version is selling the land under your building to long money
+  and leasing it back for 99 years. The engine had no way for the player to
+  pay ground rent, so this builds one:
+  - The fee sells at land value; the rent is that price times
+    `groundYieldPct`, the yield the owned leased fee was already valued at,
+    now one function; it steps 2% a year.
+  - `holdingNOIYr` deducts the rent, so the cash, the DSCR and every lender
+    see it.
+  - The building marks at freehold value less the rent at that same yield,
+    so the deal is value-neutral before its costs. `pnpm leasehold`: net
+    worth −$24K against $24K of costs, NOI down by exactly the rent, 24
+    months reconciled.
+  - A mortgage bigger than the land cannot be cleared by selling the land,
+    and the quote refuses and says why.
+  - Land you sold cannot be demolished, converted, assembled or ground-leased
+    out.
+  - It can be bought back at the rent's current value. That is market risk:
+    in the test, rates fell and the fee cost $837K against $656K two years
+    earlier.
+  - Known gap: the fee buyer is not an owner on the map, and after you sell
+    the leasehold the next owner holds it freehold. No player money moves
+    through that gap.
+- **A JV on one deed (`jv.ts`).** Sell a passive partner 25% or 49% at a
+  12% minority discount (the shallow end of the 10–25% appraisers take for
+  lack of control and marketability):
+  - The partner takes its share of each month's cash after debt and funds
+    its share of a shortfall, the fit-out cheque, make-ready, demising and
+    the capital plan (booked as `lpDistributed` / `lpCalled`).
+  - At any exit it is paid at the closing table, and you are taxed on your
+    share. A partnership passes its income through, so income tax is on
+    your share too.
+  - Net worth carries your share of the equity.
+  - New debt, a pay-down, a payoff, mezz, a renovation, a capital programme,
+    a conversion, demolition, selling the land, a facility pledge or a
+    portfolio package all need consent, which means a buy-out at the full
+    pro-rata share.
+  - A refinance is allowed (a balloon has to be answerable) and its cash is
+    shared both ways.
+  - `pnpm jv`: net worth moves by exactly the discount, counsel and tax;
+    24 months reconciled; the sale split; the buy-out.
+- **The fund had two faults of its own, found while mapping the JV:**
+  - The waterfall took its 20% promote on everything after the pref,
+    including the LPs' returned capital, so selling a building at cost paid
+    the sponsor a fifth of the investors' money. It now runs pref, then
+    capital, then promote on profit only, with the 3% co-invest taking its
+    share of each tier (`waterfall`, pinned in `pnpm jv`).
+  - Net worth counted vehicle buildings at 100% and vehicle cash at nothing.
+    The co-invest therefore left net worth at the raise, and the LPs'
+    capital arrived in it the day it bought a building. Net worth now holds
+    `gpInterestInFund`, what that waterfall would pay the sponsor today.
+    Standing a vehicle up leaves net worth unchanged.
 
 ## Tests touched, and why
 

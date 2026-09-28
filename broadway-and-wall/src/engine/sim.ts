@@ -1150,7 +1150,11 @@ export function advanceMonth(
 export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: number) => boolean }[] = [
   { id: "deed1", label: "First deed recorded", test: (s) => Object.keys(s.holdings).length + s.exits.length >= 1 },
   { id: "lease1", label: "First lease signed", test: (s) => Object.values(s.holdings).some((h) => h.tenants.some((t) => t.startM > h.boughtM)) },
-  { id: "tower1", label: "First development delivered", test: (s) => Object.keys(s.built).some((b) => !s.cityBuilt.includes(b)) },
+  // YOUR delivery, counted where deliver() counts it. `built` also records
+  // every demolition in town (a lot set back to land), the city's and the
+  // rivals' included, so "anything in built the city did not build" fired on
+  // somebody else's wrecking ball — measured on two first years in eight.
+  { id: "tower1", label: "First development delivered", test: (s) => (s.delivered ?? 0) >= 1 },
   { id: "exit1", label: "First profitable exit", test: (s) => s.exits.some((e) => !e.forced && e.gain > 0) },
   { id: "nw25", label: "Net worth $25M", test: (_s, nw) => nw >= 25e6 },
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },

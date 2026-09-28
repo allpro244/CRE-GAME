@@ -38,6 +38,9 @@ check(E.yearReview(g, 7, E.MILESTONES, E.START_YEAR) === null, "no review of a y
 const r0 = E.yearReview(g, 0, E.MILESTONES, E.START_YEAR);
 check(!!r0 && r0.milestones.includes("First deed recorded") && r0.deedsIn >= 1, "year one names the first deed");
 
+const pl = E.positiveLeverage(g, parcels);
+check(pl.count <= pl.of && (!pl.best || pl.best.cap > pl.best.coupon), `positive leverage on the tape: ${pl.count} of ${pl.of}${pl.best ? ` (widest ${pl.best.cap.toFixed(1)}% against ${pl.best.coupon.toFixed(1)}%)` : ""}`);
+
 // a death closes a career; the run goes on
 const n0 = g.careers?.length ?? 0;
 g.principal.diesM = g.month + 1;

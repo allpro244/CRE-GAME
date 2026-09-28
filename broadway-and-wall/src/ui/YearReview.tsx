@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
-import { yearReview, ordinal, careerCard } from "@/engine/standing";
+import { yearReview, ordinal, careerCard, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
 import { START_YEAR } from "@/engine/types";
 import { openResearchOn } from "@/ui/panels/shared";
@@ -26,7 +26,7 @@ export default function YearReview() {
   const moved = r.rank0 - r.rank1;
   const parcels = useStore.getState().parcels;
   const addr = (bbl: string) => parcels?.[bbl]?.address ?? bbl;
-  const go = (page: "research" | "books") => {
+  const go = (page: "research" | "books" | "market") => {
     if (page === "research") openResearchOn("street");
     useStore.getState().setPage(page);
     dismiss();
@@ -74,10 +74,22 @@ export default function YearReview() {
           </div>
         )}
         {r.next && <div className="year-review-next">Next on the ladder: <strong>{r.next.label}</strong></div>}
+        {(() => {
+          const pl = parcels ? positiveLeverage(game, parcels) : null;
+          if (!pl || pl.of === 0) return null;
+          return (
+            <div className="year-review-next">
+              {pl.count > 0 && pl.best
+                ? <>On the tape now: <strong>{pl.count} of {pl.of}</strong> buildings earn more than the cheapest money costs — the widest is <a className="lnk" onClick={() => { useStore.getState().openProperty(pl.best!.bbl, "deal"); dismiss(); }}>{addr(pl.best.bbl)}</a> at {pl.best.cap.toFixed(1)}% against {pl.best.coupon.toFixed(1)}%.</>
+                : <>On the tape now: none of the {pl.of} buildings earns more than the cheapest money costs — borrowing to buy works against you this year.</>}
+            </div>
+          );
+        })()}
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-primary" onClick={dismiss}>On to {r.year + 1}</button>
           <button type="button" className="btn" onClick={() => go("research")}>The street</button>
           <button type="button" className="btn" onClick={() => go("books")}>The books</button>
+          <button type="button" className="btn" onClick={() => go("market")}>The tape</button>
         </div>
       </div>
     </div>

@@ -16,6 +16,9 @@ import { netWorth } from "./value";
 import { markRival } from "./rivals";
 import { firmName } from "./firm";
 import { firmCapital, TIER_LABEL } from "./firmCapital";
+import { inPlace, resolveRec } from "./value";
+import { buyQuote } from "./actions";
+import { PRODUCTS } from "./debt";
 
 /** A rival's net equity — gross assets as marked, less debt, plus cash. The one expression. */
 export const rivalEquity = (m: { aum: number }, r: { debt: number; cash: number }) => m.aum - r.debt + r.cash;
@@ -216,4 +219,32 @@ export function careerCard(
     best: bestM ? { rank: bestM.rank, of: bestM.of, year: startYear + bestM.y } : null,
     bought, sold, milestones: got, tax: c.tax, verdict,
   };
+}
+
+/**
+ * WHAT IS WORTH A LOOK ON THE TAPE: listed buildings whose going-in yield
+ * beats the cheapest money a desk will write against them — positive
+ * leverage, the first test any buyer runs. The same two numbers the
+ * financing card sets side by side (the in-place NOI at the ask, and the
+ * cheapest all-in coupon of a desk that will lend); no opinion of its own.
+ */
+export function positiveLeverage(s: GameState, parcels: ParcelTable): { count: number; of: number; best: { bbl: string; cap: number; coupon: number } | null } {
+  let count = 0, of = 0;
+  let best: { bbl: string; cap: number; coupon: number } | null = null;
+  for (const li of s.listings ?? []) {
+    const rec = resolveRec(parcels, s, li.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || li.halfBuilt || !(li.ask > 0)) continue;
+    of++;
+    const cap = (inPlace(rec, s, li.bbl, li.ask).noi / li.ask) * 100;
+    let coupon = Infinity;
+    for (const p of PRODUCTS) {
+      if (p.mezz || p.id === "land") continue;
+      const q = buyQuote(s, parcels, li.bbl, li.ask, p.id, 1);
+      if (q.principal > 0 && q.allInPct < coupon) coupon = q.allInPct;
+    }
+    if (!Number.isFinite(coupon) || !(cap > coupon)) continue;
+    count++;
+    if (!best || cap - coupon > best.cap - best.coupon) best = { bbl: li.bbl, cap, coupon };
+  }
+  return { count, of, best };
 }

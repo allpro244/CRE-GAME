@@ -30,6 +30,7 @@ import { recordPropertyEvent } from "./history";
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { pmTenantCareMult, rentMultFor } from "./staff";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
+import { money } from "./money";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -75,10 +76,6 @@ function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?
   return op + tax;
 }
 
-const money = (n: number) =>
-  n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M`
-  : n >= 10_000 ? `$${Math.round(n / 1000)}K`
-  : `$${Math.round(n).toLocaleString()}`;
 
 const POOL: Record<Sector, string[]> = {
   finance: ["Meridian Capital", "Harborline Securities", "Crown & Weir", "Bellamy Fund Group", "Quayside Partners"],
@@ -2224,9 +2221,9 @@ export function buildSpecSuites(
   if (liq.total < q.cost) {
     return {
       s,
-      err: `Pre-building that runs $${(q.cost / 1e6).toFixed(2)}M and you can raise `
-        + `$${(liq.total / 1e6).toFixed(2)}M — $${(liq.cash / 1e6).toFixed(2)}M of cash and `
-        + `$${(liq.line / 1e6).toFixed(2)}M on the line.`,
+      err: `Pre-building that runs ${money(q.cost)} and you can raise `
+        + `${money(liq.total)} — ${money(liq.cash)} of cash and `
+        + `${money(liq.line)} on the line.`,
     };
   }
   const next: GameState = cloneState(s);
@@ -2237,7 +2234,7 @@ export function buildSpecSuites(
   };
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Pre-building ${(q.sf / 1000).toFixed(0)}k sf of ${use} at ${rec.address} — $${(q.cost / 1e6).toFixed(2)}M, ready ${monthLabel(q.readyM)}. `
+    text: `Pre-building ${(q.sf / 1000).toFixed(0)}k sf of ${use} at ${rec.address} — ${money(q.cost)}, ready ${monthLabel(q.readyM)}. `
       + `Turnkey space leases faster and dearer, and it is your money sitting in an empty suite until it does.`,
   });
   return { s: next, msg: "Pre-build under way." };

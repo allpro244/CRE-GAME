@@ -5,6 +5,7 @@
 // was, who owned it, or who occupied a material share of it.
 import type { GameState, PropertyEvent } from "./types";
 import { monthLabel } from "./types";
+import { money } from "./money";
 
 export const PROPERTY_HISTORY_CAP = 24;
 
@@ -47,8 +48,6 @@ export function propertyTimeline(s: GameState, bbl: string): PropertyEvent[] {
   return out.sort((a, b) => b.m - a.m);
 }
 
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 
 export function describePropertyEvent(e: PropertyEvent): { when: string; title: string; detail: string } {
   const when = monthLabel(e.m);

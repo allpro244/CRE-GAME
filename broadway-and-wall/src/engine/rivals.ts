@@ -46,6 +46,7 @@ import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyPr
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
+import { money } from "./money";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -403,10 +404,10 @@ export function claimJob(
   s.news.unshift({
     q: s.month, kind: "event",
     text: nearPlayer
-      ? `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${(cost / 1e6).toFixed(1)}M, `
+      ? `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${money(cost)}, `
         + `due ${START_YEAR + Math.floor(deliverM / 12)}. That is next door to yours. Your corner is worth more the day it tops out and your tenants have somewhere else to go the day it opens.`
       : `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-        + `${(cost / 1e6).toFixed(1)}M, due ${START_YEAR + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
+        + `${money(cost)}, due ${START_YEAR + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
   });
   return best;
 }
@@ -494,7 +495,7 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
       s.news.unshift({
         q: s.month, kind: "event",
         text: `Merchant builders have stopped work — the city's construction pool could not fund `
-          + `the remaining $${(cashNeed / 1e6).toFixed(2)}M call on an anonymous job.`,
+          + `the remaining ${money(cashNeed)} call on an anonymous job.`,
       });
     } else {
       // Schedule slips with the funding month — otherwise a deferred job would
@@ -626,7 +627,7 @@ export function fundJobs(s: GameState) {
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has stopped work with the construction facility fully drawn. `
-            + `The remaining $${(cashNeed / 1e6).toFixed(2)}M call was more than the sponsor could fund.`,
+            + `The remaining ${money(cashNeed)} call was more than the sponsor could fund.`,
         });
         continue;
       }
@@ -794,9 +795,9 @@ function orphanToTape(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: relist
-        ? `The stalled frame at ${rec.address} is back on the tape at $${(ask / 1e6).toFixed(2)}M. Nobody wanted it last time and the steel has not got any newer.`
+        ? `The stalled frame at ${rec.address} is back on the tape at ${money(ask)}. Nobody wanted it last time and the steel has not got any newer.`
         : `The receiver is clearing a half-finished building at ${rec.address} — ${(progress * 100).toFixed(0)}% complete, `
-          + `$${(ask / 1e6).toFixed(2)}M for the site and the frame. Somebody else's problem is on the market.`,
+          + `${money(ask)} for the site and the frame. Somebody else's problem is on the market.`,
     });
   }
 }
@@ -1719,7 +1720,7 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   const rec = resolveRec(parcels, s, j.bbl);
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${taker.name} has taken out the stalled building at ${rec?.address ?? j.bbl} for $${(price / 1e6).toFixed(2)}M. `
+    text: `${taker.name} has taken out the stalled building at ${rec?.address ?? j.bbl} for ${money(price)}. `
       + `The cranes are back and that space is coming after all.`,
   });
 }
@@ -2369,8 +2370,8 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   s.news.unshift({
     q: s.month, kind: (yourStreet || known) ? "event" : "info",
     text: (r.dumped ?? 1) <= 1
-      ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
-      : `${r.name}, again: ${sell.rec.address} at ${(px / 1e6).toFixed(2)}M. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
+      ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${money(px)} — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
+      : `${r.name}, again: ${sell.rec.address} at ${money(px)}. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
   });
   return true;
 }
@@ -2485,11 +2486,11 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
-      + `The paper was non-recourse, so the ${(Math.max(0, owed - ask) / 1e6).toFixed(2)}M it is short is the bank's problem, not theirs. `
+      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `
       + (off > 0.06
-        ? `${desk} has put it straight out at ${(ask / 1e6).toFixed(2)}M — ${(off * 100).toFixed(0)}% under the mark, which is the loan and not the value. `
+        ? `${desk} has put it straight out at ${money(ask)} — ${(off * 100).toFixed(0)}% under the mark, which is the loan and not the value. `
           + `They are not pricing the building, they are clearing the balance sheet. `
-        : `${desk} has the capital to market it properly, so it goes out at ${(ask / 1e6).toFixed(2)}M and there is no bargain in it. `)
+        : `${desk} has the capital to market it properly, so it goes out at ${money(ask)} and there is no bargain in it. `)
       + `They still own ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}.`,
   });
   recordPropertyEvent(s, worst.bbl, {
@@ -2632,9 +2633,9 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       if (newsChance(s, "refi:" + r.id, 0.25)) {
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} could not refinance ${rec.address} in full — ${desk} would write ${(refi.principal / 1e6).toFixed(1)}M against ${(due / 1e6).toFixed(1)}M outstanding, `
+          text: `${r.name} could not refinance ${rec.address} in full — ${desk} would write ${money(refi.principal)} against ${money(due)} outstanding, `
             + `bound by ${refi.binding}. The desk re-papered it to ${monthLabel(until)} rather than take the keys, and the cash flow is swept until then. `
-            + `They are ${(gap / 1e6).toFixed(1)}M short and they have bought ${Math.round((until - s.month) / 12 * 10) / 10} years, not a solution.`,
+            + `They are ${money(gap)} short and they have bought ${Math.round((until - s.month) / 12 * 10) / 10} years, not a solution.`,
         });
       }
       continue;
@@ -2653,7 +2654,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
         if (newsChance(s, "balloon:" + bbl, 0.4)) {
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners to clear the balloon on ${rec.address}. `
+            text: `${r.name} has called ${money(got)} from their partners to clear the balloon on ${rec.address}. `
               + `The money that went out over the years is going back in. That is what an investor base is FOR, and it is why the old houses outlast the clever ones.`,
           });
         }
@@ -2665,7 +2666,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    the bank's — which is what non-recourse means.
     clearExtended(r, bbl);
     deedInLieu(s, parcels, r,
-      `The balloon came due and nobody would refinance it: ${(refi.principal / 1e6).toFixed(1)}M against ${(due / 1e6).toFixed(1)}M outstanding.`);
+      `The balloon came due and nobody would refinance it: ${money(refi.principal)} against ${money(due)} outstanding.`);
     return;   // one workout at a time; the rest of the ladder is next month's problem
   }
 }
@@ -3052,7 +3053,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${r.name} is letting go of ${rec.address} — the corner they came over the top of you for in ${monthLabel(beat.m)}. `
-              + `They paid ${(beat.theirs / 1e6).toFixed(2)}M; they will take ${(ask / 1e6).toFixed(2)}M, and they are showing it to you before the tape.`,
+              + `They paid ${money(beat.theirs)}; they will take ${money(ask)}, and they are showing it to you before the tape.`,
           });
           continue;
         }
@@ -3155,7 +3156,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (got > 0 && r.cash >= 0 && newsChance(s, "call:" + r.id, 0.2)) {
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners. They were not going to sell a building over a bad year, and they did not have to.`,
+          text: `${r.name} has called ${money(got)} from their partners. They were not going to sell a building over a bad year, and they did not have to.`,
         });
       }
       // 2. SELL SOMETHING. The one that covers the hole, not one drawn out of a

@@ -44,10 +44,9 @@ import { clearRivalClaims, forgetDeed } from "./rivals";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
 import { ownersShareOfProceeds } from "./jv";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 
 /** Down the day you register, forfeit if you cannot close. */
 export const DEPOSIT_PCT = 0.10;

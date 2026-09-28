@@ -20,6 +20,7 @@ import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
 import { JV_CONSENT } from "./jv";
+import { money } from "./money";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -1267,7 +1268,7 @@ export function tickLoan(
         if (loan.sweep || (loan.breachMs ?? 0) > 0) {
           s.news.unshift({
             q, kind: "info",
-            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `$${(pay / 1e6).toFixed(2)}M` : `$${Math.round(pay / 1000)}K`} of equity into the loan, and the test passes again. `
+            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} of equity into the loan, and the test passes again. `
               + `A sponsor with the money does not hand back a building over a technical default.`,
           });
         }
@@ -1308,7 +1309,7 @@ export function tickLoan(
         q, kind: "warn",
         text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
           + `${productById(loan.product).lender} has moved it to their workout desk — inject `
-          + `${cure >= 1e6 ? `$${(cure / 1e6).toFixed(2)}M` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
+          + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
           + `to restructure, or hand back the deed. They will not file while the note stays current.`,
       });
     }
@@ -1469,7 +1470,7 @@ export function tickLoan(
         s.news.unshift({
           q, kind: "deal",
           text: `The balloon at ${rec.address} renewed with ${product.lender} — the same `
-            + `$${(rolled / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% for ${Math.round(product.termM / 12)} years, `
+            + `${money(rolled)} at ${qd.ratePct.toFixed(2)}% for ${Math.round(product.termM / 12)} years, `
             + `$${fresh.monthlyPmt.toLocaleString()} a month, $${(fee / 1000).toFixed(0)}K of fee. `
             + `Nothing came out and nothing went in: a bank does not hand you equity unasked, and cash-out is a refi you choose.`,
         });
@@ -1490,7 +1491,7 @@ export function tickLoan(
         s.news.unshift({
           q, kind: "deal",
           text: `Balloon at ${rec.address}: no clean refinancing, so you retired the `
-            + `$${(payoff / 1e6).toFixed(2)}M note${mezzDue ? ` and ${((mezzDue) / 1e6).toFixed(2)}M of mezz` : ""} out of firm liquidity. The building is free and clear.`,
+            + `${money(payoff)} note${mezzDue ? ` and ${money((mezzDue))} of mezz` : ""} out of firm liquidity. The building is free and clear.`,
         });
       } else if (fundableNow(s, parcels) >= shortfall) {
         const paid = fundCashNeed(s, parcels, shortfall);
@@ -1519,7 +1520,7 @@ export function tickLoan(
         }
         s.news.unshift({
           q, kind: "warn",
-          text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a $${(shortfall / 1e6).toFixed(2)}M check to close the gap.`,
+          text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a ${money(shortfall)} check to close the gap.`,
         });
       } else {
         // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
@@ -1533,9 +1534,9 @@ export function tickLoan(
         s.news.unshift({
           q, kind: "warn",
           text: `The balloon came due at ${rec.address} and no desk will refinance the whole of it — today's market writes `
-            + `$${(qd.principal / 1e6).toFixed(2)}M against a $${(loan.balance / 1e6).toFixed(2)}M balance plus a `
-            + `$${(fee / 1000).toFixed(0)}K fee: $${(shortfall / 1e6).toFixed(2)}M short, and you can raise `
-            + `$${(room / 1e6).toFixed(2)}M of it from cash and the line. `
+            + `${money(qd.principal)} against a ${money(loan.balance)} balance plus a `
+            + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short, and you can raise `
+            + `${money(room)} of it from cash and the line. `
             + `${productById(loan.product).lender} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
             + `pay the difference, ask them to extend, sell it, or hand back the deed before they file.`,
         });
@@ -1595,7 +1596,7 @@ function serviceMezz(
       h.mezz = null;
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `Mezz balloon at ${rec.address} retired — $${(m.balance / 1e6).toFixed(2)}M back to `
+        text: `Mezz balloon at ${rec.address} retired — ${money(m.balance)} back to `
           + `${m.holder ?? "Cordage Debt Partners"}.`,
       });
     } else {
@@ -1603,7 +1604,7 @@ function serviceMezz(
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `The mezz balloon came due at ${rec.address} and you cannot clear `
-          + `$${(m.balance / 1e6).toFixed(2)}M. Cordage has put the junior in workout.`,
+          + `${money(m.balance)}. Cordage has put the junior in workout.`,
       });
     }
   }
@@ -1703,12 +1704,12 @@ export function placeMezz(
   bumpLenderRel(next, "Cordage Debt Partners", 2);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Cordage stacked $${(q.principal / 1e6).toFixed(2)}M of mezz behind the senior at ${rec.address} — `
+    text: `Cordage stacked ${money(q.principal)} of mezz behind the senior at ${rec.address} — `
       + `${q.ratePct.toFixed(2)}%, ${(q.points * 100).toFixed(1)} points, due ${monthLabel(next.month + q.termM)}. `
-      + `You cleared $${(net / 1e6).toFixed(2)}M. The coupon is why nobody does this twice.`,
+      + `You cleared ${money(net)}. The coupon is why nobody does this twice.`,
   });
   sweepLocIdleCash(next, { announce: true });
-  return { s: next, msg: `Mezz closed — $${(q.principal / 1e6).toFixed(2)}M.` };
+  return { s: next, msg: `Mezz closed — ${money(q.principal)}.` };
 }
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {
@@ -1731,8 +1732,8 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   if (room.total < cost) {
     return {
       s,
-      err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium and you can raise `
-        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and $${(room.line / 1e6).toFixed(2)}M on the line.`,
+      err: `The cap desk wants ${money(cost)} premium and you can raise `
+        + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
     };
   }
   const strike = +(next.econ.indexRate + 0.5).toFixed(2);
@@ -1740,7 +1741,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Rate cap bought at ${rec.address}: index capped at ${strike.toFixed(2)}% for three years ($${(cost / 1e6).toFixed(2)}M premium).`,
+    text: `Rate cap bought at ${rec.address}: index capped at ${strike.toFixed(2)}% for three years (${money(cost)} premium).`,
   });
   return { s: next };
 }
@@ -2069,7 +2070,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     return {
       s,
       err: penalty > 0
-        ? `Proceeds don't cover the payoff. Breaking the old loan early costs $${(penalty / 1e6).toFixed(2)}M in ${h.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment"}.`
+        ? `Proceeds don't cover the payoff. Breaking the old loan early costs ${money(penalty)} in ${h.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment"}.`
         : mezzBal > 0
           ? "Proceeds don't cover the senior and the mezz — you're underwater on this refi."
           : "Proceeds don't cover the payoff — you're underwater on this refi.",
@@ -2103,10 +2104,10 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (next.workouts?.[bbl]) delete next.workouts[bbl];
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Refinanced ${rec.address}: $${(qd.principal / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% (${product.label})`
-      + (mezzBal > 0 ? `, retiring $${(mezzBal / 1e6).toFixed(2)}M of mezz` : "")
-      + (penalty > 0 ? `, after $${(penalty / 1e6).toFixed(2)}M to break the old paper` : "")
-      + (capPremium > 0 ? `, plus $${(capPremium / 1e6).toFixed(2)}M for the rate cap` : "")
+    text: `Refinanced ${rec.address}: ${money(qd.principal)} at ${qd.ratePct.toFixed(2)}% (${product.label})`
+      + (mezzBal > 0 ? `, retiring ${money(mezzBal)} of mezz` : "")
+      + (penalty > 0 ? `, after ${money(penalty)} to break the old paper` : "")
+      + (capPremium > 0 ? `, plus ${money(capPremium)} for the rate cap` : "")
       + ".",
   });
   // Cash-out proceeds pay the revolver before they sit idle.

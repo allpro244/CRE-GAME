@@ -15,6 +15,7 @@ import { netWorth, ownedHoldingValue } from "./value";
 import {
   ageYears, makePlayerPrincipal, prng, seedCareer, type Person,
 } from "./people";
+import { money } from "./money";
 
 /**
  * Top federal estate tax rate — IRC §2001. Calibrated industry constant.
@@ -160,7 +161,7 @@ export function settlePlayerEstate(s: GameState, parcels: ParcelTable): void {
     kind: "event",
     text: tax > 0
       ? `${dead.name} has died at ${age}. The estate is $${(gross / 1e6).toFixed(1)}M; `
-        + `tax of $${(tax / 1e6).toFixed(2)}M is due by ${monthLabel(s.month + ESTATE_FILE_M)}. `
+        + `tax of ${money(tax)} is due by ${monthLabel(s.month + ESTATE_FILE_M)}. `
         + `You continue as ${heir.name}. The buildings stay. The phone book does not.`
       : `${dead.name} has died at ${age}. The estate sits under the exclusion — no tax due. `
         + `You continue as ${heir.name}. The buildings stay. The phone book does not.`,
@@ -177,7 +178,7 @@ export function elect6166(s: GameState): { s: GameState; err?: string } {
   bill.installmentMo = Math.round(bill.remaining / (SECTION_6166_YEARS * 12));
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `§6166 election filed — estate tax of $${(bill.remaining / 1e6).toFixed(2)}M `
+    text: `§6166 election filed — estate tax of ${money(bill.remaining)} `
       + `stretches over ${SECTION_6166_YEARS} years `
       + `(~$${(bill.installmentMo / 1000).toFixed(0)}k/mo).`,
   });
@@ -222,7 +223,7 @@ export function tickEstateBill(s: GameState): void {
   if (!bill.elect6166 && s.month === bill.deadlineM && pay < dueNow) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `Estate tax of $${((dueNow - pay) / 1e6).toFixed(2)}M is past due and unpaid. `
+      text: `Estate tax of ${money((dueNow - pay))} is past due and unpaid. `
         + `Elect §6166 or sell buildings — the bill does not go away.`,
     });
   }

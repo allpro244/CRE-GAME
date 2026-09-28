@@ -8,6 +8,7 @@ import type { BooksYear, GameState } from "./types";
 import { logBooks, cloneState} from "./types";
 import { netWorth } from "./value";
 import { sponsorStanding } from "./sponsor";
+import { money } from "./money";
 
 /**
  * THE ADVANCE RATE, against net worth.
@@ -52,8 +53,8 @@ export function operatingReserve(s: GameState): number {
 /** Line amounts in news — never "$0.00M" for a $4k cheque. */
 function locMoney(n: number): string {
   const a = Math.abs(n);
-  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (a >= 1_000) return `$${Math.round(n / 1e3)}k`;
+  if (a >= 1e6) return `${money(n)}`;
+  if (a >= 1_000) return `$${Math.round(n / 1e3)}K`;
   return `$${Math.round(n).toLocaleString()}`;
 }
 

@@ -45,6 +45,7 @@ import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
+import { money } from "./money";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -491,7 +492,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
     maybeEarlyLook(s, listing, rec.address);
     if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
-      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at $${(ask / 1e6).toFixed(2)}M — well under appraisal. It won't last.` });
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at ${money(ask)} — well under appraisal. It won't last.` });
     }
   }
 }
@@ -586,7 +587,7 @@ function tickMonth(
     logBooks(s, "taxes", s.exchange.deferredTax);
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `The 1031 clock ran out — $${(s.exchange.deferredTax / 1e6).toFixed(2)}M of deferred capital-gains tax comes due.`,
+      text: `The 1031 clock ran out — ${money(s.exchange.deferredTax)} of deferred capital-gains tax comes due.`,
     });
     s.exchange = null;
   }
@@ -853,7 +854,7 @@ function tickMonth(
     const yr = settleIncomeTax(taxable, s.taxLossCarry ?? 0);
     const priorCarry = Math.max(0, s.taxLossCarry ?? 0);
     s.taxLossCarry = yr.carry;
-    const M = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
+    const M = (n: number) => n >= 1e6 ? `${money(n)}` : `$${Math.round(n / 1000)}K`;
     if (yr.tax > 1000) {
       s.cash -= yr.tax;
       s.taxesPaid = (s.taxesPaid ?? 0) + yr.tax;
@@ -1045,12 +1046,12 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
+          text: `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
             + (lien > 0 || release > 0
               ? shortfall > 0
-                ? `It did not cover the $${(lien / 1e6).toFixed(2)}M mortgage${pick.loan?.recourse ? `, and you signed for the $${(shortfall / 1e6).toFixed(2)}M shortfall` : `, and the paper was non-recourse`}. `
-                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and $${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M of surplus reached you. `
-              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${owed > 0 ? ` and $${(owed / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
+                ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `
+                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and ${money(Math.max(0, toBorrower))} of surplus reached you. `
+              : `${money(Math.max(0, toBorrower))} reached you after the costs of the sale${owed > 0 ? ` and ${money(owed)} of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = s.cash < 0 ? 12 : 0;
@@ -1085,7 +1086,7 @@ function tickMonth(
     if (emptySf > 8000 && liquid < Math.max(400_000, emptySf * 0.35) && s.month % 6 === 0) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `You have ${(emptySf / 1000).toFixed(0)}k sf waiting on leases and only ${liquid >= 1e6 ? `$${(liquid / 1e6).toFixed(2)}M` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line — signing costs land before rent does.`,
+        text: `You have ${(emptySf / 1000).toFixed(0)}k sf waiting on leases and only ${liquid >= 1e6 ? `${money(liquid)}` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line — signing costs land before rent does.`,
       });
     }
   }
@@ -1637,11 +1638,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push(t.agreed
       ? {
         key: `contract:${t.bbl}`,
-        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
+        label: `Under contract at ${money((t.agreedPrice ?? t.theirPrice))} — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
       }
       : {
         key: `talks:${t.bbl}:${t.theirPrice}`,
-        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""} · ${idle}`,
+        label: `${t.sellerName} is at ${money(t.theirPrice)}${t.final ? " — their final word" : ""} · ${idle}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {
@@ -1758,10 +1759,10 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({
       key: `estate:${bill.deathM}`,
       label: bill.elect6166
-        ? `Estate tax instalment — $${(bill.remaining / 1e6).toFixed(2)}M remaining under §6166`
+        ? `Estate tax instalment — ${money(bill.remaining)} remaining under §6166`
         : left <= 0
-          ? `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M is past due`
-          : `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M due ${monthLabel(bill.deadlineM)} — ${left} month${left === 1 ? "" : "s"}`,
+          ? `Estate tax of ${money(bill.remaining)} is past due`
+          : `Estate tax of ${money(bill.remaining)} due ${monthLabel(bill.deadlineM)} — ${left} month${left === 1 ? "" : "s"}`,
     });
   }
   // Milestones stay in the news tape; they are not decisions that should stop Skip.
@@ -1851,7 +1852,7 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   if (boughtIn + inKind > 0) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
-      text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for $${(paidTotal / 1e6).toFixed(2)}M, paid through the waterfall.` : ""}`
+      text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, paid through the waterfall.` : ""}`
         + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages, and the promote on them is waived.` : ""}`,
     });
   }

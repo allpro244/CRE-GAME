@@ -67,11 +67,12 @@ import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
+import { money } from "./money";
 
 /** Facility money in news copy — never "$0.03M" for a $30k shortfall. */
 function dollars(n: number): string {
   const a = Math.abs(n);
-  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e6) return `${money(n)}`;
   if (a >= 1_000) return `$${Math.round(n / 1e3)}K`;
   return `$${Math.round(n).toLocaleString()}`;
 }
@@ -363,7 +364,7 @@ export function openFacility(
   const fees = Math.round(draw * 0.01) + points;
   const cost = qt.payoff + qt.penalties + fees;
   if (draw + s.cash < cost) {
-    return { s, err: `The proceeds do not clear the existing paper — $${((cost - draw) / 1e6).toFixed(2)}M short after $${(qt.penalties / 1e6).toFixed(2)}M of prepayment penalties.` };
+    return { s, err: `The proceeds do not clear the existing paper — ${money((cost - draw))} short after ${money(qt.penalties)} of prepayment penalties.` };
   }
   const next: GameState = cloneState(s);
   const replacing = !!next.facility;
@@ -422,7 +423,7 @@ export function openFacility(
     q: next.month, kind: "deal",
     text: `${qt.lender} has ${replacing ? "refinanced the book with" : "papered"} a $${(draw / 1e6).toFixed(1)}M facility across ${pool.length} buildings at `
       + `${qt.ratePct.toFixed(2)}% — ${qt.quality.why}. `
-      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of existing paper repaid` + (qt.penalties > 0 ? ` and $${(qt.penalties / 1e6).toFixed(2)}M of penalties to break it. ` : ". ") : "")
+      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of existing paper repaid` + (qt.penalties > 0 ? ` and ${money(qt.penalties)} of penalties to break it. ` : ". ") : "")
       + `The pool is crossed: every deed in it stands behind the whole balance, and you have signed personally.`,
   });
   return { s: next };
@@ -474,9 +475,9 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   if (room.total < price) {
     return {
       s,
-      err: `The release price is $${(price / 1e6).toFixed(2)}M and you can raise `
-        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and `
-        + `$${(room.line / 1e6).toFixed(2)}M on the line.`,
+      err: `The release price is ${money(price)} and you can raise `
+        + `${money(room.total)} — ${money(room.cash)} of cash and `
+        + `${money(room.line)} on the line.`,
     };
   }
   const next: GameState = cloneState(s);
@@ -487,7 +488,7 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   const rec = resolveRec(parcels, next, bbl);
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Released ${rec?.address ?? bbl} from the facility for $${(paid / 1e6).toFixed(2)}M — `
+    text: `Released ${rec?.address ?? bbl} from the facility for ${money(paid)} — `
       + `${Math.round((RELEASE_PREMIUM - 1) * 100)}% over its allocated share. Balance $${(nf.balance / 1e6).toFixed(1)}M.`,
   });
   if (nf.balance <= 0) {
@@ -601,9 +602,9 @@ export function refinanceFacility(
   if (room.total < need) {
     return {
       s,
-      err: `Closing costs $${(need / 1e6).toFixed(2)}M — $${(fees / 1e6).toFixed(2)}M of fees and points`
-        + (f.balance > draw ? ` plus a $${((f.balance - draw) / 1e6).toFixed(2)}M paydown, because ${qt.lender} will only write $${(draw / 1e6).toFixed(1)}M against a $${(f.balance / 1e6).toFixed(1)}M balance` : "")
-        + `. You can raise $${(room.total / 1e6).toFixed(2)}M.`,
+      err: `Closing costs ${money(need)} — ${money(fees)} of fees and points`
+        + (f.balance > draw ? ` plus a ${money((f.balance - draw))} paydown, because ${qt.lender} will only write $${(draw / 1e6).toFixed(1)}M against a $${(f.balance / 1e6).toFixed(1)}M balance` : "")
+        + `. You can raise ${money(room.total)}.`,
     };
   }
   const terms = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
@@ -615,13 +616,13 @@ export function refinanceFacility(
     text: `${qt.lender} has refinanced the facility — $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
       + `${qt.ratePct.toFixed(2)}% for ${Math.round(qt.termM / 12)} years, against ${r.oldRate.toFixed(2)}% on the old paper. `
       + `$${Math.round(terms.monthlyPmt / 1000)}K a month, ${terms.dscr.toFixed(2)}x covered against a ${qt.minDSCR.toFixed(2)}x covenant`
-      + (r.cashOut > 0 ? `, and $${(r.cashOut / 1e6).toFixed(2)}M of it came out as cash.` : ".")
+      + (r.cashOut > 0 ? `, and ${money(r.cashOut)} of it came out as cash.` : ".")
       + ` The pool stays crossed and the guarantee stays signed.`,
   });
   return {
     s: next,
     msg: r.cashOut > 0
-      ? `Refinanced at ${qt.ratePct.toFixed(2)}% — $${(r.cashOut / 1e6).toFixed(2)}M out.`
+      ? `Refinanced at ${qt.ratePct.toFixed(2)}% — ${money(r.cashOut)} out.`
       : `Refinanced at ${qt.ratePct.toFixed(2)}%, due ${monthLabel(next.month + qt.termM)}.`,
   };
 }
@@ -840,7 +841,7 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
         delete f.sweep;
         s.news.unshift({
           q, kind: "info",
-          text: `Cured the facility covenant with a $${(pay / 1e6).toFixed(2)}M paydown. Balance $${(f.balance / 1e6).toFixed(1)}M.`,
+          text: `Cured the facility covenant with a ${money(pay)} paydown. Balance $${(f.balance / 1e6).toFixed(1)}M.`,
         });
       }
       // ...and a cure that repaid the whole line is a repayment: the pool is
@@ -1078,7 +1079,7 @@ function accelerate(s: GameState, parcels: ParcelTable): number {
     q, kind: "warn",
     text: `The receiver has sold the pool. ${taken.length} buildings gone for $${(gross / 1e6).toFixed(1)}M against a `
       + `$${(f.balance / 1e6).toFixed(1)}M balance`
-      + (surplus > 0 ? `, and $${(surplus / 1e6).toFixed(2)}M came back to you.` : ` — nothing came back.`)
+      + (surplus > 0 ? `, and ${money(surplus)} came back to you.` : ` — nothing came back.`)
       + (f.recourse ? " The facility was recourse, so what it did not cover follows you." : ""),
   });
   // Recourse means the shortfall is yours, not the lender's problem.

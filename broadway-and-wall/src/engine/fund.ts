@@ -14,6 +14,7 @@
 import type { GameState } from "./types";
 import { cloneState, logBooks, monthLabel } from "./types";
 import { markSponsor, sponsorStanding } from "./sponsor";
+import { money } from "./money";
 
 /** Preferred return — annual, accrued on contributed capital. Industry constant. */
 export const FUND_PREF = 0.08;
@@ -147,7 +148,7 @@ export function fundRaiseQuote(s: GameState): {
   // (81–274 times a run for one bot). Say it here, with the number.
   const gpNeed = Math.round(size * FUND_GP_COINVEST);
   if (s.cash < gpNeed) {
-    return { ok: false, size, reason: `LPs would back a $${(size / 1e6).toFixed(0)}M fund, but the GP co-invest is $${(gpNeed / 1e6).toFixed(2)}M in cash — the line cannot fund a ten-year commitment — and you hold $${(Math.max(0, s.cash) / 1e6).toFixed(2)}M.` };
+    return { ok: false, size, reason: `LPs would back a $${(size / 1e6).toFixed(0)}M fund, but the GP co-invest is ${money(gpNeed)} in cash — the line cannot fund a ten-year commitment — and you hold ${money(Math.max(0, s.cash))}.` };
   }
   return {
     ok: true, size,
@@ -175,7 +176,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
   // likewise fenced to `fund.cash` in `executePurchase`, for the same reason
   // from the other side.
   if (next.cash < gpCommit) {
-    return { s, err: `GP co-invest is $${(gpCommit / 1e6).toFixed(2)}M and you do not have it.` };
+    return { s, err: `GP co-invest is ${money(gpCommit)} and you do not have it.` };
   }
   // First close: call GP co-invest + ~40% of LP immediately into the vehicle;
   // rest sits uncalled. Shape: 30–50% reserve practice (rivals.ts).
@@ -396,7 +397,7 @@ export function chargeFundEquity(s: GameState, amount: number): { err?: string }
   }
   const want = Math.round(amount);
   if ((s.fund?.cash ?? 0) < want) {
-    return { err: `The vehicle is short $${((want - (s.fund?.cash ?? 0)) / 1e6).toFixed(2)}M.` };
+    return { err: `The vehicle is short ${money((want - (s.fund?.cash ?? 0)))}.` };
   }
   s.fund!.cash -= want;
   return {};
@@ -434,7 +435,7 @@ export function tickFund(s: GameState): void {
   if (s.month === f.lifeEndM) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `Your fund has reached the end of its life. Remaining vehicle cash is $${(f.cash / 1e6).toFixed(2)}M; `
+      text: `Your fund has reached the end of its life. Remaining vehicle cash is ${money(f.cash)}; `
         + (deeds > 0
           ? `${deeds} building${deeds === 1 ? "" : "s"} still to sell — the LPs grant a ${FUND_EXTENSION_M}-month extension, and anything unsold by ${monthLabel(f.lifeEndM + FUND_EXTENSION_M)} is bought in by you at NAV.`
           : `LPs expect distributions. A sponsor who cannot finish does not raise the next one.`),
@@ -465,14 +466,14 @@ export function settleFund(s: GameState): void {
     markSponsor(s, "forced", "fund wind-down", Math.max(0, f.called - f.distributed));
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `The fund returned $${(f.distributed / 1e6).toFixed(2)}M against $${(f.called / 1e6).toFixed(2)}M called `
+      text: `The fund returned ${money(f.distributed)} against ${money(f.called)} called `
         + `(${(dpi * 100).toFixed(0)}¢ on the dollar). Nobody will back you again.`,
     });
   } else {
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `Fund wound down — LPs received $${(f.distributed / 1e6).toFixed(2)}M on $${(f.called / 1e6).toFixed(2)}M called `
-        + `(${dpi.toFixed(2)}x). Promote to the house: $${(f.promotePaid / 1e6).toFixed(2)}M.`,
+      text: `Fund wound down — LPs received ${money(f.distributed)} on ${money(f.called)} called `
+        + `(${dpi.toFixed(2)}x). Promote to the house: ${money(f.promotePaid)}.`,
     });
   }
 }

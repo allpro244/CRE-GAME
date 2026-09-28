@@ -35,6 +35,7 @@ import { recordComp } from "./comps";
 import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } from "./actions";
 import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -45,8 +46,6 @@ function occOf(rec: { bldgArea: number; floors: number }, h: Holding): number {
   const res = useRentableSf(rec as never, "multifamily") * (h.occ ?? 0);
   return Math.min(1, (comm + res) / Math.max(1, rentableSf(rec)));
 }
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 
 /** How long a portfolio stays on the market before the process goes stale. */
 const RUN_M = 9;

@@ -2117,10 +2117,14 @@ html, body, #root { overflow-x: hidden; }
 
 .cycle-digest {
   position: absolute;
-  left: 14px;
+  /* BESIDE THE MAP HUD, NOT ON IT. Both cards anchored left:14 / bottom:16,
+     so once the first-run primer offer was answered the digest sat squarely
+     on the goal card and "On the tape for you". It takes the slot to the
+     HUD's right (HUD 300px + a 10px gutter). */
+  left: calc(14px + min(300px, 100vw - 28px) + 10px);
   right: auto;
   bottom: 16px;
-  width: min(340px, calc(100vw - 28px));
+  width: min(320px, calc(100vw - 28px));
   z-index: 22;
   border: 1px solid var(--card-line);
   border-radius: var(--r-md);

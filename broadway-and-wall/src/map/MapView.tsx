@@ -536,19 +536,99 @@ export default function MapView() {
   }, [pageOpen, mapReady]);
 
   // GO TO PROPERTY. An explicit request from a list somewhere in the panel —
-  // unlike the gentle ease above, this one always moves and always zooms in
-  // far enough to actually see the building.
+  // unlike the gentle ease above, this one always moves, and it FRAMES the
+  // building rather than arriving at a zoom.
+  //
+  // It used to be zoom 16.1 and pitch 52 for everything. That is a good shot
+  // of a six-storey walk-up and a bad one of both neighbours on the scale:
+  // a forty-floor tower lost its crown off the top of the frame, a corner
+  // shop was a speck, and whichever of them it was sat dead centre in a
+  // window whose right third is covered by the parcel card — so the building
+  // you asked to see was framed for a screen you cannot see all of. Four
+  // things fix it, all of them what a photographer does walking up to a
+  // building they have been sent to shoot:
+  //
+  //   SIZE      the subject is the larger of the lot's span and (most of) the
+  //             building's height, and it is made to fill about a third of
+  //             the visible frame — tall buildings get pulled back from,
+  //             small ones walked up to
+  //   PITCH     a tower is looked at more from the side, so its facade and
+  //             not just its roof is the picture
+  //   BEARING   stand with the sun over a shoulder, so the faces toward the
+  //             lens are the lit ones; of the two three-quarter views either
+  //             side of the sun line, the one nearer the current bearing, so
+  //             the camera never spins round the block to get there
+  //   PADDING   whatever UI actually covers the map right now is measured and
+  //             kept out of the frame, so the building lands in the middle of
+  //             the part of the map you can see
   const flyTo = useStore((s) => s.flyTo);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyTo || !parcels) return;
     const rec = parcels[flyTo.bbl];
     if (!rec) return;
+    const layer = threeRef.current;
+    const fr = layer?.buildingFrame(flyTo.bbl) ?? null;
+    const container = map.getContainer();
+    const box = container.getBoundingClientRect();
+    // HOW MUCH OF THE MAP IS UNDER A PANEL, measured rather than assumed —
+    // the layout belongs to the panels and changes without telling the map.
+    // Walk in from each edge along three rows until a pixel belongs to the
+    // map again.
+    const covered = (fromRight: boolean) => {
+      let most = 0;
+      for (const fy of [0.3, 0.5, 0.7]) {
+        const y = box.top + box.height * fy;
+        let d = 0;
+        for (; d < box.width * 0.55; d += 12) {
+          const x = fromRight ? box.right - 2 - d : box.left + 2 + d;
+          const hit = document.elementFromPoint(x, y);
+          if (!hit || container.contains(hit)) break;
+        }
+        most = Math.max(most, d);
+      }
+      return most;
+    };
+    const padR = covered(true), padL = covered(false);
+    const availW = Math.max(240, box.width - padR - padL);
+    const availH = Math.max(240, box.height);
+    const height = fr?.height ?? Math.max(4, (rec.floors || 1) * 3.55);
+    const radius = fr?.radius ?? Math.sqrt(Math.max(100, rec.lotArea || 400) / 10.764) * 0.6;
+    const pitch = Math.max(50, Math.min(63, 50 + height / 9));
+    // the subject: lot or building, whichever is bigger on screen at this
+    // pitch, and never less than a small block's worth of context
+    const subject = Math.max(34, radius * 2.4, height * 1.05);
+    const mpp = subject / (0.36 * Math.min(availW, availH));
+    const lat = rec.centroid[1];
+    const zoom = Math.max(15.0, Math.min(18.4, Math.log2((78271.517 * Math.cos((lat * Math.PI) / 180)) / mpp)));
+    let bearing = map.getBearing();
+    if (layer) {
+      const back = layer.sunBackBearing();
+      const wrap = (a: number) => ((a + 540) % 360) - 180;
+      const a1 = wrap(back - 28), a2 = wrap(back + 28);
+      bearing = Math.abs(wrap(a1 - bearing)) <= Math.abs(wrap(a2 - bearing)) ? a1 : a2;
+    }
+    // AIM AT THE MIDDLE OF THE BUILDING, NOT ITS FOOTING. In a pitched view a
+    // point half-way up a tower lands on screen where the ground point
+    // (h/2)·tan(pitch) further along the view direction would, so the camera
+    // centres on that ground point and the whole height sits in frame.
+    const lift = (height * 0.45) * Math.tan((pitch * Math.PI) / 180);
+    const br = (bearing * Math.PI) / 180;
+    const mPerDegLat = 111320, mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180);
+    const center: [number, number] = [
+      rec.centroid[0] + (Math.sin(br) * lift) / mPerDegLng,
+      rec.centroid[1] + (Math.cos(br) * lift) / mPerDegLat,
+    ];
     map.flyTo({
-      center: rec.centroid,
-      zoom: Math.max(map.getZoom(), 16.1),
-      pitch: Math.max(map.getPitch(), 52),
-      duration: 1400,
+      center,
+      zoom,
+      pitch,
+      bearing,
+      padding: { top: 24, bottom: 24, left: padL, right: padR },
+      duration: 1700,
+      curve: 1.25,
+      // ease-in-out cubic: leaves gently, arrives gently
+      easing: (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
       essential: true,
     });
   }, [flyTo, parcels]);
@@ -607,6 +687,14 @@ export default function MapView() {
     for (const bbl of ownedRef.current) if (!nowOwned.has(bbl)) setState(bbl, { owned: false });
     for (const bbl of nowOwned) if (!ownedRef.current.has(bbl)) setState(bbl, { owned: true });
     ownedRef.current = nowOwned;
+    // ...and on the buildings themselves: the gilt parapet (ThreeBuildings
+    // setOwned). Every deed of an assemblage you hold is yours, so the
+    // folded children are gilded with their parent.
+    {
+      const gilt = new Set(nowOwned);
+      for (const [child, parent] of Object.entries(game.merged ?? {})) if (nowOwned.has(parent)) gilt.add(child);
+      threeRef.current?.setOwned(gilt);
+    }
 
     const nowListed = new Set(game.listings.map((l) => l.bbl));
     for (const h of Object.values(game.holdings)) if (h.sale) nowListed.add(h.bbl);
@@ -768,84 +856,131 @@ export default function MapView() {
   // name labels: districts, parks, water — DOM markers, no glyph server needed.
   // Photo frame silences them with the rest of the chrome: a model photograph
   // has no captions. They come back with the effect re-run on exit.
+  //
+  // KEPT, NOT REBUILT. This effect keys on the paint signature (a new civic
+  // work can add a name), and it used to tear down and re-create every label
+  // in the city each time the month turned — a hundred DOM nodes destroyed and
+  // re-inserted, and every one of them flashing through its opacity
+  // transition, for a change that is almost always no change at all. Labels
+  // now live in a keyed map across runs: a name that is still wanted keeps its
+  // node, a new one is added, a gone one removed.
+  //
+  // AND THEY SCALE WITH THE ZOOM, a little. A fixed-size label is a big label
+  // over a small city on the wide shot and a small label over a big street at
+  // the dive; a gentle scale (0.85x to 1.2x over the playable range) keeps the
+  // names in proportion to the places they name without ever becoming
+  // unreadable or shouting. Applied to an inner span, because MapLibre owns
+  // the marker element's transform.
   const photoFrame = useStore((s) => s.photoFrame);
+  const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || photoFrame) return;
-    const markers: maplibregl.Marker[] = [];
-    let onZoom: (() => void) | null = null;
-    let disposed = false;
-    Promise.resolve(city?.context as { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] } | null)
-      .then((fc) => {
-        if (disposed || !fc) return;
-        for (const f of fc.features) {
-          if (f.properties.kind !== "label") continue;
-          const el = document.createElement("div");
-          el.className = "map-label map-label-" + f.properties.labelKind;
-          el.textContent = f.properties.name;
-          markers.push(new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates).addTo(map));
-        }
-        const game = useStore.getState().game;
-        const parcels = useStore.getState().parcels;
-        if (game && parcels) {
-          const civic = civicCollection(
-            game, parcels,
-            city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
-            city?.context as GeoJSON.FeatureCollection | null,
-          );
-          for (const f of civic.features) {
-            const name = f.properties?.name as string | undefined;
-            if (!name) continue;
-            let ll: [number, number] | null = null;
-            if (f.geometry.type === "Point") ll = f.geometry.coordinates as [number, number];
-            else if (f.geometry.type === "Polygon") {
-              const ring = f.geometry.coordinates[0] as [number, number][];
-              let cx = 0, cy = 0;
-              for (const p of ring) { cx += p[0]; cy += p[1]; }
-              ll = [cx / ring.length, cy / ring.length];
-            }
-            if (!ll) continue;
-            const el = document.createElement("div");
-            el.className = "map-label map-label-civic";
-            el.textContent = name;
-            markers.push(new maplibregl.Marker({ element: el }).setLngLat(ll).addTo(map));
+    if (!map || !mapReady) return;
+    const live = labelsRef.current;
+    const want = new Map<string, { name: string; cls: string; ll: [number, number] }>();
+    if (!photoFrame) {
+      const fc = city?.context as { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] } | null;
+      for (const f of fc?.features ?? []) {
+        if (f.properties.kind !== "label") continue;
+        const cls = "map-label map-label-" + f.properties.labelKind;
+        want.set(cls + "|" + f.properties.name + "|" + f.geometry.coordinates.join(","),
+          { name: f.properties.name, cls, ll: f.geometry.coordinates });
+      }
+      const game = useStore.getState().game;
+      const parcelsNow = useStore.getState().parcels;
+      if (game && parcelsNow) {
+        const civic = civicCollection(
+          game, parcelsNow,
+          city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
+          city?.context as GeoJSON.FeatureCollection | null,
+        );
+        for (const f of civic.features) {
+          const name = f.properties?.name as string | undefined;
+          if (!name) continue;
+          let ll: [number, number] | null = null;
+          if (f.geometry.type === "Point") ll = f.geometry.coordinates as [number, number];
+          else if (f.geometry.type === "Polygon") {
+            const ring = f.geometry.coordinates[0] as [number, number][];
+            let cx = 0, cy = 0;
+            for (const p of ring) { cx += p[0]; cy += p[1]; }
+            ll = [cx / ring.length, cy / ring.length];
           }
+          if (!ll) continue;
+          const cls = "map-label map-label-civic";
+          want.set(cls + "|" + name + "|" + ll[0].toFixed(6) + "," + ll[1].toFixed(6), { name, cls, ll });
         }
-        const fade = () => {
-          const z = map.getZoom();
-          for (const m of markers) {
-            const el = m.getElement();
-            const kind = el.className.includes("district") ? "district"
-              : el.className.includes("park") ? "park"
-              : el.className.includes("station") || el.className.includes("civic") ? "station"
-              : "water";
-            const on =
-              kind === "district" ? z >= 12.2 && z <= 15.6 :
-              kind === "park" ? z >= 13.2 :
-              kind === "station" ? z >= 13.6 :
-              z <= 14.5;
-            el.style.opacity = on ? "1" : "0";
-          }
-        };
-        onZoom = fade;
-        map.on("zoom", fade);
-        fade();
-      })
-      .catch(() => { /* labels are decoration — never block the map */ });
+      }
+    }
+    for (const [key, mk] of live) {
+      if (!want.has(key)) { mk.remove(); live.delete(key); }
+    }
+    for (const [key, w] of want) {
+      if (live.has(key)) continue;
+      const el = document.createElement("div");
+      el.className = w.cls;
+      const span = document.createElement("span");
+      span.style.display = "inline-block";
+      span.style.transformOrigin = "50% 50%";
+      span.style.transform = "scale(var(--bw-label-scale, 1))";
+      span.textContent = w.name;
+      el.appendChild(span);
+      live.set(key, new maplibregl.Marker({ element: el }).setLngLat(w.ll).addTo(map));
+    }
+    const fade = () => {
+      const z = map.getZoom();
+      map.getContainer().style.setProperty("--bw-label-scale",
+        String(Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12))));
+      for (const m of live.values()) {
+        const el = m.getElement();
+        const kind = el.className.includes("district") ? "district"
+          : el.className.includes("park") ? "park"
+          : el.className.includes("station") || el.className.includes("civic") ? "station"
+          : "water";
+        const on =
+          kind === "district" ? z >= 12.2 && z <= 15.6 :
+          kind === "park" ? z >= 13.2 :
+          kind === "station" ? z >= 13.6 :
+          z <= 14.5;
+        const o = on ? "1" : "0";
+        if (el.style.opacity !== o) el.style.opacity = o;
+      }
+    };
+    map.on("zoom", fade);
+    fade();
     return () => {
-      disposed = true;
       // the zoom listener used to outlive its markers — every paintSig tick
       // left one more orphaned fade() walking a dead marker list
-      if (onZoom) map.off("zoom", onZoom);
-      markers.forEach((m) => m.remove());
+      map.off("zoom", fade);
     };
   }, [mapReady, city, paintSig, photoFrame]);
+  // the markers themselves go only with the map
+  useEffect(() => () => {
+    for (const m of labelsRef.current.values()) m.remove();
+    labelsRef.current.clear();
+  }, [city]);
 
-  // mesh tints: gold selection, teal neighbors, warm hover. Ownership is the
-  // rooftop pin (`bw-owned-pts`), not a yellow wash — a building you own still
-  // shows the masonry or glass it was built with.
+  // SELECTION AND HOVER ARE LIGHT, NOT PAINT. They used to be tints in the
+  // effect below: the picked site multiplied by [1.5, 1.14, 0.5], which turned
+  // any building — brick, limestone, blue glass — into the same mustard slab
+  // at exactly the moment the player had asked to look at it. The shader now
+  // draws a gold rim, a gilt parapet and a slow scan up the facade instead
+  // (ThreeBuildings setHighlight), and the building keeps its own face.
+  //
+  // Its own effect, too: the tint pass below walks the whole owner index, and
+  // it used to re-run on every mouse move because hover was one of its keys.
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   const mapFilter = useStore((s) => s.mapFilter);
+  useEffect(() => {
+    const layer = threeRef.current;
+    if (!layer || !mapReady) return;
+    const game = useStore.getState().game;
+    const site = selectedBBL ? (game ? siteDeeds(game, selectedBBL) : [selectedBBL]) : [];
+    layer.setHighlight(site, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
+  }, [selectedBBL, hoveredBBL, mapReady, mergedN]);
+
+  // mesh tints: teal neighbors, the owners lens, the market. Ownership is the
+  // gilt band on the building itself, not a yellow wash — a building you own
+  // still shows the masonry or glass it was built with.
   useEffect(() => {
     const game = useStore.getState().game;
     const layer = threeRef.current;
@@ -894,9 +1029,9 @@ export default function MapView() {
           if (!siteSet.has(n)) tints.set(n, [0.72, 1.12, 1.04]);
         }
       }
-      for (const d of site) tints.set(d, [1.5, 1.14, 0.5]);
+      // the site itself is lit by setHighlight, and keeps its own colour
+      for (const d of site) tints.delete(d);
     }
-    if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
 
     // Map filter: dim everything outside the book / crane set without hiding it.
     if (game && mapFilter !== "all") {
@@ -914,7 +1049,7 @@ export default function MapView() {
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
+  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -1127,17 +1262,53 @@ export default function MapView() {
   }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
+  //
+  // THE CITY STAYS UP UNDER A LENS. Every analysis lens used to call
+  // ghostBuildings(true): the whole three.js layer switched off and flat grey
+  // MapLibre extrusions stood in for it, so the moment you asked where the
+  // demand was, the buildings the demand was FOR disappeared — and with them
+  // every cue (height, age, what is already standing) that makes a heat map
+  // mean anything. The layer now stays, desaturates its walls and paints the
+  // ROOFS with the same ramp the ground carries (ThreeBuildings.setLens), so
+  // the heat map covers the whole city seen from above rather than the gaps
+  // between its buildings.
+  //
+  // AND EVERY BRANCH STARTS FROM THE DEFAULTS. The old shape restored the
+  // default paint only in the final else, so moving from one lens straight to
+  // another inherited whatever the first had set — the listings lens recoloured
+  // the lot lines red and nothing ever put them back, even on the way out to
+  // no lens at all. Reset, then override: a lens is only ever its own paint.
   useEffect(() => {
     const game = useStore.getState().game;
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const ghostBuildings = (on: boolean) => {
-      if (threeRef.current) {
-        threeRef.current.visible = !on;
-        map.triggerRepaint();
-        map.setLayoutProperty("bw-bldg-3d", "visibility", on ? "visible" : "none");
+    const layer = threeRef.current;
+    if (layer) {
+      if (!layer.visible) { layer.visible = true; map.triggerRepaint(); }
+      // the flat extrusions are the no-mesh fallback only
+      map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
+    }
+    // ---- reset: every property any lens touches, straight from the style
+    {
+      const defs = gameLayers();
+      const paintOf = (id: string, prop: string) => {
+        const l = defs.find((x) => x.id === id);
+        return l && "paint" in l && l.paint ? (l.paint as Record<string, unknown>)[prop] : undefined;
+      };
+      const layoutOf = (id: string, prop: string) => {
+        const l = defs.find((x) => x.id === id);
+        return l && "layout" in l && l.layout ? (l.layout as Record<string, unknown>)[prop] : undefined;
+      };
+      for (const [id, prop] of [
+        ["bw-parcel-fill", "fill-color"], ["bw-parcel-fill", "fill-opacity"],
+        ["bw-parcel-line", "line-color"], ["bw-bldg-3d", "fill-extrusion-opacity"],
+      ] as const) {
+        if (map.getLayer(id)) map.setPaintProperty(id, prop, paintOf(id, prop) as never);
       }
-    };
+      for (const id of ["bw-forsale-pts", "bw-forsale-halo"]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", (layoutOf(id, "visibility") as "visible" | "none" | undefined) ?? "visible");
+      }
+    }
     // NEIGHBOURHOODS UNDER THE LENSES. The heat map answers "where is it hot"
     // but not "what is that place called", so while either market lens is up
     // the district names come up full-strength at every zoom (the CSS side of
@@ -1171,45 +1342,80 @@ export default function MapView() {
       }, map.getLayer("bw-owned-pts") ? "bw-owned-pts" : undefined);
     }
     if (map.getLayer("bw-hood-line")) map.setLayoutProperty("bw-hood-line", "visibility", hoods ? "visible" : "none");
+
+    // ONE RAMP, TWO SURFACES. Each lens's stops are its own (demand is
+    // measured 2-100, the envelope in per cent, land in dollars), so the roof
+    // is handed a position on [0, 1] with stop i at i/(n-1) — which is exactly
+    // how the parcel fill's `interpolate` spaces the same colours — and the
+    // roof over a lot and the lot around it come out the same colour.
+    const toT = (v: number, stops: number[]) => {
+      const n = stops.length;
+      if (v <= stops[0]) return 0;
+      for (let i = 0; i < n - 1; i++) {
+        if (v <= stops[i + 1]) return (i + (v - stops[i]) / Math.max(1e-9, stops[i + 1] - stops[i])) / (n - 1);
+      }
+      return 1;
+    };
+    const roofLens = (vals: Map<string, number>, stops: number[], ramp: string[]) => {
+      const t = new Map<string, number>();
+      for (const [bbl, v] of vals) t.set(bbl, toT(v, stops));
+      layer?.setLens(t, ramp);
+    };
+
     if (lens === "demand" && parcels) {
-      ghostBuildings(true);
+      const stops = [5, 30, 50, 70, 92];
+      const ramp = ["#eef0e8", "#cfe0d5", "#93c4b1", "#4f9887", "#1e6a60"];
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "interpolate", ["linear"], LIVE_DEMAND,
-        5, "#eef0e8", 30, "#cfe0d5", 50, "#93c4b1", 70, "#4f9887", 92, "#1e6a60",
+        ...stops.flatMap((s, i) => [s, ramp[i]]),
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
-      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.18 as never);
+      // the same live figure the fill reads: the parcel's score plus its
+      // block's drift, on the engine's own clamp
+      const vals = new Map<string, number>();
+      for (const bbl of Object.keys(parcels)) {
+        const r = parcels[bbl];
+        vals.set(bbl, Math.max(2, Math.min(100, r.demandScore + (game?.blockD?.[r.block] ?? 0))));
+      }
+      roofLens(vals, stops, ramp);
       return;
     }
     if (lens === "zoning" && game && parcels) {
-      ghostBuildings(true);
       // Dark where the envelope is spent, bright where it is not. The ramp is
       // deliberately steep at the bottom: the difference between a lot that is
       // 95% built out and one that is 80% built out is the difference between
       // nothing and a deal, and a linear ramp buries it.
+      const stops = [0, 10, 25, 50, 75, 100];
+      const ramp = ["#3b3327", "#6b5836", "#9c7f3c", "#c9a23f", "#e3c766", "#f5e6a8"];
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "interpolate", ["linear"], ["coalesce", ["feature-state", "room"], 0],
-        0, "#3b3327", 10, "#6b5836", 25, "#9c7f3c", 50, "#c9a23f", 75, "#e3c766", 100, "#f5e6a8",
+        ...stops.flatMap((s, i) => [s, ramp[i]]),
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.85 as never);
-      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
+      // zoneRef was filled by the zoning effect above, which runs first in
+      // the same commit; a lot it has no number for is 0 on the fill too
+      const vals = new Map<string, number>();
+      for (const bbl of Object.keys(parcels)) vals.set(bbl, zoneRef.current.get(bbl) ?? 0);
+      roofLens(vals, stops, ramp);
       return;
     }
     if (lens === "leases" && game && parcels) {
-      ghostBuildings(true);
       // Mute lots with no state (−1); owned roll-risk paints warm. leaseSoon is 0–100.
+      const stops = [0, 25, 50, 75, 100];
+      const ramp = ["#3a3428", "#6b5230", "#b07a2e", "#d4a03a", "#f0c96a"];
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "case",
         ["<", ["coalesce", ["feature-state", "leaseSoon"], -1], 0], "#d8d2c4",
         ["interpolate", ["linear"], ["coalesce", ["feature-state", "leaseSoon"], 0],
-          0, "#3a3428", 25, "#6b5230", 50, "#b07a2e", 75, "#d4a03a", 100, "#f0c96a"],
+          ...stops.flatMap((s, i) => [s, ramp[i]])],
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
-      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
+      // only your buildings carry a number; everything else stays pale card
+      roofLens(new Map(leaseRef.current), stops, ramp);
       return;
     }
     if (lens === "listings" && game) {
-      ghostBuildings(false);
+      layer?.setLens(null);
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "case",
         ["boolean", ["feature-state", "listed"], false], "#c8452f",
@@ -1231,35 +1437,29 @@ export default function MapView() {
       return;
     }
     if (lens === "land" && game && parcels) {
-      ghostBuildings(true);
       // percentile stops over CURRENT land $/sf so the ramp stays contrasty
+      const nowPsf = (bbl: string) => {
+        const r = parcels[bbl];
+        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
+        return r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev);
+      };
       const vals: number[] = [];
       const bbls = Object.keys(parcels);
       const step = Math.max(1, Math.floor(bbls.length / 4000));
-      for (let i = 0; i < bbls.length; i += step) {
-        const r = parcels[bbls[i]];
-        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
-        vals.push(r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev));
-      }
+      for (let i = 0; i < bbls.length; i += step) vals.push(nowPsf(bbls[i]));
       vals.sort((a, b) => a - b);
       const q = (p: number) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
       const stops = [q(0.05), q(0.35), q(0.6), q(0.82), q(0.97)];
       map.setPaintProperty("bw-parcel-fill", "fill-color", landLensColor(game.econ.landIdx, game.econ.cycleDev, stops) as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
-      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.18 as never);
-    } else {
-      ghostBuildings(false);
-      // restore the default paints straight from the style definition
-      const fill = gameLayers().find((l) => l.id === "bw-parcel-fill");
-      const bldg = gameLayers().find((l) => l.id === "bw-bldg-3d");
-      if (fill && "paint" in fill && fill.paint) {
-        map.setPaintProperty("bw-parcel-fill", "fill-color", (fill.paint as Record<string, unknown>)["fill-color"] as never);
-        map.setPaintProperty("bw-parcel-fill", "fill-opacity", (fill.paint as Record<string, unknown>)["fill-opacity"] as never);
-      }
-      if (bldg && "paint" in bldg && bldg.paint) {
-        map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", (bldg.paint as Record<string, unknown>)["fill-extrusion-opacity"] as never);
-      }
+      const all = new Map<string, number>();
+      for (const bbl of bbls) all.set(bbl, nowPsf(bbl));
+      // the colours landLensColor interpolates between, in its order
+      roofLens(all, stops, ["#f0ead8", "#e3c876", "#cf9738", "#a85f1d", "#6e3414"]);
+      return;
     }
+    // no lens (or owners, which paints through the tints): the city's own face
+    layer?.setLens(null);
   }, [lens, paintSig, parcels, mapReady]);
 
   // hover tooltip: address before you commit to a click. Photo frame drops it

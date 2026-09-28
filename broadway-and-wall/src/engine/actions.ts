@@ -251,10 +251,10 @@ export function executePurchase(
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
   // netted out of the cheque are a liability transfer, not a cheaper building.
   const pointsFee = bq.pointsFee ?? 0;
-  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl);
+  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl, fromFund);
   // the fee found its way to a named shop, and the shop will remember
   creditBrokerFee(next, bbl);
-  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl);
+  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl, fromFund);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
@@ -2696,6 +2696,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const tax = h.jv ? saleTaxQuote(h, Math.round(offer.price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, offer.price, s).tax;
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
+  // The vehicle's gain is the vehicle's: rolling it into the sponsor's own
+  // exchange would move the fund's tax bill onto the GP's next purchase.
+  if (exchange && h.fundOwned && s.fund && !s.fund.settled) {
+    return { s, err: "A fund deed's gain belongs to the vehicle — it cannot roll into your own 1031." };
+  }
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
@@ -2727,8 +2732,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // balance-sheet movement, not income and not expense.
   //
   // This survived because conserve's bot never sold anything. It sells now.
-  logBooks(next, "sold", toSeller + kick + breakFee, bbl);
-  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee, bbl);
+  logBooks(next, "sold", toSeller + kick + breakFee, bbl, intoFund);
+  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee, bbl, intoFund);
   // The release is a repayment of principal, not an expense — it comes out of
   // the proceeds and goes against the balance, so `sold` is struck net of it
   // for the same reason it is struck net of the mortgage payoff.

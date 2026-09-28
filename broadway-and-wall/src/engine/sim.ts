@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, vehicleReimburse } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -627,9 +627,13 @@ function tickMonth(
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
     // Vehicle deeds keep their cash in the vehicle — promote needs a
-    // counterparty, and GP liquidity is not LP capital.
-    if (h.fundOwned && s.fund && !s.fund.settled) s.fund.cash += cf;
-    else monthCF += splitMonthCf(s, h, cf);   // a JV partner takes (or funds) its share
+    // counterparty, and GP liquidity is not LP capital. The two `logBooks`
+    // lines above already settled this month's NOI into `fund.cash` and the
+    // debt service out of it (see settleVehicleDeedFlow in types.ts), so the
+    // net arrives in the operating account here only to be matched by what
+    // they moved. A month whose debt service outruns the NOI is the vehicle's
+    // to fund — its cash, then a capital call — never silently the sponsor's.
+    monthCF += splitMonthCf(s, h, cf);   // a JV partner takes (or funds) its share
 
     // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
     // owner watches, stamped at the same moment the month's NOI is booked so
@@ -779,6 +783,13 @@ function tickMonth(
     // ...and the desks re-read what a building in this town is worth
     s.loanScale = cityLoanScale(s, parcels);
     let taxable = 0;
+    // THE VEHICLE'S INCOME IS NOT THE SPONSOR'S. A fund deed's NOI, interest
+    // and depreciation used to run through the sponsor's return at 100% — the
+    // GP paid the LPs' income tax out of its own account. It is struck on its
+    // own line and the vehicle pays it, the same convention the vehicle's sale
+    // tax has always followed (acceptSaleOffer takes it off fund.cash).
+    const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
+    let fundTaxable = 0;
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
@@ -818,7 +829,20 @@ function tickMonth(
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
+      if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
       taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
+    }
+    if (liveFund) {
+      const fy = settleIncomeTax(fundTaxable, liveFund.taxLossCarry ?? 0);
+      liveFund.taxLossCarry = fy.carry;
+      if (fy.tax > 0) {
+        // Written from the operating account and reimbursed by the vehicle at
+        // once — its cash, a capital call, or a GP advance (vehicleReimburse).
+        s.cash -= fy.tax;
+        s.taxesPaid = (s.taxesPaid ?? 0) + fy.tax;
+        logBooks(s, "taxes", fy.tax);
+        vehicleReimburse(s, fy.tax);
+      }
     }
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
@@ -981,6 +1005,8 @@ function tickMonth(
           s.cash -= tax;
           s.taxesPaid = (s.taxesPaid ?? 0) + tax;
           logBooks(s, "taxes", tax);
+          // A vehicle deed's gain is the vehicle's, as on a voluntary sale.
+          if (pick.fundOwned && s.fund && !s.fund.settled) vehicleReimburse(s, tax);
         }
         if (shortfall > 0 && (pick.loan || pick.mezz)) {
           if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, pick.bbl); }

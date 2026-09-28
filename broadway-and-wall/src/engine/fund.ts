@@ -66,6 +66,19 @@ export interface PlayerFund {
    * at NAV (see windDownFund in sim.ts).
    */
   extendedTo?: number;
+  /**
+   * GP ADVANCES OUTSTANDING. What the sponsor paid for the vehicle's buildings
+   * when the vehicle had neither cash nor commitments left to call — an LPA
+   * lets the GP advance to protect an investment, and repays it ahead of any
+   * distribution. The sponsor's receivable, the vehicle's liability; carried
+   * at cost (no interest accrues — a simplification, stated). See
+   * settleVehicleDeedFlow in types.ts.
+   */
+  gpAdvance?: number;
+  /** The vehicle's own loss carryforward — its income is struck apart from the sponsor's (sim.ts, January). */
+  taxLossCarry?: number;
+  /** Last month the vehicle made a scheduled distribution. */
+  lastDistM?: number;
 }
 
 /** Two one-year extensions — the common LPA term for a closed-end real estate fund. */
@@ -257,8 +270,18 @@ export function waterfall(f: PlayerFund, amount: number): { pref: number; capita
 export function applyDistribute(s: GameState, amount: number): number {
   const f = s.fund;
   if (!f || f.settled) return 0;
-  const want = Math.round(Math.min(amount, f.cash));
+  let want = Math.round(Math.min(amount, f.cash));
   if (want <= 0) return 0;
+  // A GP advance is repaid before the waterfall sees a dollar — it was a loan
+  // to the vehicle, not capital in it.
+  const adv = Math.min(want, Math.max(0, Math.round(f.gpAdvance ?? 0)));
+  if (adv > 0) {
+    f.gpAdvance = (f.gpAdvance ?? 0) - adv;
+    f.cash -= adv;
+    s.cash += adv;
+    want -= adv;
+    if (want <= 0) return 0;
+  }
   const w = waterfall(f, want);
   f.cash -= want;
   f.prefAccrued -= w.pref;
@@ -280,8 +303,61 @@ export function applyDistribute(s: GameState, amount: number): number {
  */
 export function gpInterestInFund(f: PlayerFund | undefined, nav: number): number {
   if (!f || f.settled || !(nav > 0)) return 0;
-  const w = waterfall(f, nav);
-  return w.promote + w.toGpCoinvest;
+  // The GP advance comes back first — the sponsor's receivable, as far as the
+  // vehicle's NAV reaches — and the waterfall runs on what is left.
+  const adv = Math.min(nav, Math.max(0, f.gpAdvance ?? 0));
+  const rest = nav - adv;
+  if (!(rest > 0)) return adv;
+  const w = waterfall(f, rest);
+  return adv + w.promote + w.toGpCoinvest;
+}
+
+/** The floor under the vehicle's reserve — the same $250K float as `LOC_CASH_RESERVE` in credit.ts. */
+export const FUND_RESERVE_FLOOR = 250_000;
+
+/**
+ * THE VEHICLE'S WORKING-CAPITAL RESERVE. What a distribution leaves behind so
+ * the fund can pay its own buildings' bills without a call: six months of debt
+ * service on its deeds, never under the $250K float — the sponsor treasury's
+ * own rule (`operatingReserve`, credit.ts) applied to the other purse. Nothing
+ * once the vehicle owns nothing.
+ */
+export function fundReserve(s: GameState): number {
+  let pmt = 0, deeds = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (!h.fundOwned) continue;
+    deeds++;
+    pmt += (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0);
+  }
+  return deeds ? Math.max(FUND_RESERVE_FLOOR, Math.round(6 * pmt)) : 0;
+}
+
+/**
+ * SCHEDULED DISTRIBUTIONS. A closed-end LPA recycles proceeds only during the
+ * investment period; after it, the GP distributes sale proceeds and excess
+ * operating cash, quarterly being the ordinary cadence. This was manual only,
+ * so a vehicle past its investment period sat on its sale proceeds for years
+ * while the pref accrued on capital that had already come home. Mutates `s`.
+ * Returns the dollars sent through the waterfall (0 when nothing was due).
+ */
+export function scheduledDistribution(s: GameState): number {
+  const f = s.fund;
+  if (!f || f.settled || s.month <= f.investEndM) return 0;
+  if ((s.month - f.raisedM) % 3 !== 0) return 0;
+  const excess = Math.floor(f.cash - fundReserve(s));
+  if (excess <= 0) return 0;
+  const before = f.distributed + f.promotePaid;
+  applyDistribute(s, excess);
+  f.lastDistM = s.month;
+  const out = f.distributed + f.promotePaid - before;
+  if (out >= 100_000) {
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `The fund distributed $${(out / 1e6).toFixed(2)}M to its partners this quarter, as its LPA requires after the `
+        + `investment period; $${(Math.max(0, f.cash) / 1e6).toFixed(2)}M stays in the vehicle as its reserve.`,
+    });
+  }
+  return excess;
 }
 
 /**
@@ -327,6 +403,7 @@ export function tickFund(s: GameState): void {
   // Pref on net contributed capital still outstanding.
   const netOut = Math.max(0, f.called - f.distributed);
   f.prefAccrued += netOut * (f.pref / 12);
+  scheduledDistribution(s);
 
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned).length;
   // The LPs' calendar, told ahead: two years and one year out from the end of

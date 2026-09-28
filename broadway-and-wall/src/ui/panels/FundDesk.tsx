@@ -1,6 +1,6 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, gpInterestInFund, waterfall } from "@/engine/fund";
+import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, gpInterestInFund, waterfall, fundReserve } from "@/engine/fund";
 import { ownedHoldingValue, resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 import { Big, Row } from "@/ui/panels/shared";
@@ -96,6 +96,12 @@ export function FundDesk() {
             <Row k="Fund life" v={`ends ${monthLabel(f.lifeEndM)}`} />
             <Row k="Waterfall" v={`${(FUND_PREF * 100).toFixed(0)}% pref · ${(FUND_PROMOTE * 100).toFixed(0)}% promote`} />
             <Row k="Vehicle deeds" v={`${fundDeeds}`} />
+            <Row k="Distributions" v={game.month > f.investEndM
+              ? `quarterly, cash over a ${usd(fundReserve(game))} reserve${f.lastDistM !== undefined ? ` · last ${monthLabel(f.lastDistM)}` : ""}`
+              : `recycled until ${monthLabel(f.investEndM)}, then quarterly`} />
+            {(f.gpAdvance ?? 0) > 0 && (
+              <Row k="Your advances to the vehicle" v={`${usd(f.gpAdvance ?? 0)} · repaid before any distribution`} bad />
+            )}
           </div>
           <div className="btn-row">
             <button className="btn" disabled={f.uncalled <= 0} title={f.uncalled <= 0 ? "Every committed dollar is already called" : undefined}

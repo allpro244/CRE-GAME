@@ -114,6 +114,7 @@ export function CompsSheet() {
               series={KL.map((k) => ({ label: CLASS_LABEL[k], color: C[k], pts: hist.map((h) => h.cap?.[k] ?? game.econ.capRate[k]) }))}
               yFmt={(v) => `${v.toFixed(1)}%`}
               xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
+              xAt={(i) => monthLabel(hist[i]?.q ?? 0)}
             />
             <div className="hint">
               {KL.map((k) => (

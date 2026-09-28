@@ -182,6 +182,9 @@ export function SettingsPage() {
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />
         <Row k="P" v="Photo frame — hide all chrome for a clean skyline still" />
         <Row k="Escape" v="Close the open page (or exit photo frame)" />
+        <Row k="1 – 9" v="Open a desk: Portfolio, Market, Deals, Leasing, Debt, Books, Research, Economy, News" />
+        <Row k="⌘K / Ctrl K" v="Search every building, desk and firm" />
+        <Row k="?" v="Every key on one card, from anywhere" />
       </div>
       <div className="hint">
         Time shortcuts are disabled while a blocking decision card is on screen; answer or dismiss the card first.

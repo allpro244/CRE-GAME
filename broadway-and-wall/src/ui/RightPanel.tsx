@@ -25,6 +25,8 @@ import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
 } from "@/ui/panels/modals";
 
+import { PAGE_KEYS } from "@/ui/Shortcuts";
+
 export { liveBrokerCalls } from "@/ui/panels/broker";
 
 export default function GamePanels() {
@@ -46,8 +48,12 @@ export default function GamePanels() {
         if (st0.game) st0.setPaletteOpen(!st0.paletteOpen);
         return;
       }
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      // A dropdown owns its arrow and letter keys, and Space on a focused
+      // button presses that button — it must not also advance the month.
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (e.code === "Space" && tag === "BUTTON") return;
       if (e.key === "Escape") {
         const st0 = useStore.getState();
         if (st0.photoFrame) {
@@ -73,6 +79,11 @@ export default function GamePanels() {
         if (st.photoFrame) st.setPhotoFrame(false);
         else st.setMapOnly(!st.mapOnly);
         return;
+      }
+      // Desk hotkeys, 1-9 — the list and the "?" card share PAGE_KEYS.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[1-9]$/.test(e.code) && !document.querySelector(".modal-backdrop")) {
+        const hit = PAGE_KEYS.find((k) => k.key === e.code.slice(5));
+        if (hit) { e.preventDefault(); setPage(page === hit.page ? "none" : hit.page); return; }
       }
       if (st.advancing) return;
       const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";

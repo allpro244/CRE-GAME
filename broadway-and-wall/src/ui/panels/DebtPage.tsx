@@ -372,10 +372,10 @@ export function DebtPage() {
             <Row k="Recourse" v={fac.recourse ? "yes — you signed personally" : "non-recourse"} bad={fac.recourse} />
           </div>
           <div className="btn-row">
-            <button className="btn" disabled={game.cash < 1_000_000} onClick={() => payFac(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}>
+            <button className="btn" disabled={game.cash < 1_000_000} title={game.cash < 1_000_000 ? `A paydown needs at least $1.00M in cash — you have ${usd(game.cash)}` : undefined} onClick={() => payFac(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}>
               Pay down {usd(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}
             </button>
-            <button className="btn" disabled={game.cash < fac.balance} onClick={() => payFac(fac.balance)}>
+            <button className="btn" disabled={game.cash < fac.balance} title={game.cash < fac.balance ? `Short ${usd(fac.balance - game.cash)} of the balance` : undefined} onClick={() => payFac(fac.balance)}>
               Repay in full · {usd(fac.balance)}
             </button>
             <button className={"btn" + (refiFac ? " btn-on" : "")} disabled={fac.accelM !== undefined}

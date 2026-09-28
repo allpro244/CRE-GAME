@@ -240,6 +240,7 @@ export function PropertyPage() {
             <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
           <button className="btn" disabled={game.cash < taxAppeal.fee}
+            title={game.cash < taxAppeal.fee ? `The filing costs ${usd(taxAppeal.fee)} — you have ${usd(game.cash)}` : undefined}
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
           </button>

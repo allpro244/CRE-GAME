@@ -72,6 +72,7 @@ export function TheBanks() {
               bands={[{ at: 1, label: "own target", color: "#8b8370" }, { at: 0.22, label: "seized" }]}
               yFmt={(v) => `${v.toFixed(1)}×`}
               xLabels={[`${Math.round(m / 4)} yrs ago`, "now"]}
+              xAt={(i) => { const q = m - 1 - i; return q === 0 ? "now" : `${q} qtr${q === 1 ? "" : "s"} ago`; }}
             />
             <div className="hint">
               {withHist.map((l, i) => (

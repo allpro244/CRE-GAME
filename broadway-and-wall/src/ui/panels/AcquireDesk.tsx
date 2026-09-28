@@ -1005,26 +1005,34 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // does not silently close all-cash against a card full of loan terms.
   // ORDERED BY WHAT THE MONEY COSTS, desks that will write first. The sheet's
   // own order put the debt fund beside the banks as if they were peers.
+  // One quote per desk per render: the chooser, the advice line and the pick
+  // all read the same desk, and buyQuote walks the whole credit stack each time.
+  const qCache = new Map<string, ReturnType<typeof buyQuote>>();
+  const quoteOf = (id: string) => {
+    let q = qCache.get(id);
+    if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
+    return q;
+  };
   const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
-    .map((p) => ({ p, q: buyQuote(game, parcels, bbl, offerPrice, p.id, 1) }))
+    .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);
   const advice = (() => {
     const rec0 = resolveRec(parcels, game, bbl);
     const occ = rec0 ? inPlace(rec0, game, bbl, offerPrice).occ : 0;
-    return deskAdvice(productChoices.map((p) => { const q = buyQuote(game, parcels, bbl, offerPrice, p.id, 1); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
+    return deskAdvice(productChoices.map((p) => { const q = quoteOf(p.id); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
   })();
   const picked = (() => {
     if (product === null) {
-      const first = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);
+      const first = productChoices.find((p) => quoteOf(p.id).principal > 0);
       return first?.id ?? "cash";
     }
-    const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
+    const direct = quoteOf(product);
     if (product === "cash" || direct.principal > 0) return product;
-    const alt = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);
+    const alt = productChoices.find((p) => quoteOf(p.id).principal > 0);
     return alt?.id ?? "cash";
   })();
-  const max = buyQuote(game, parcels, bbl, offerPrice, picked, 1);
+  const max = quoteOf(picked);
   const principal = Math.round(max.principal * lev);
   const equity = max.equity > 0 && lev >= 0.999
     ? max.equity
@@ -1114,7 +1122,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
         <div className="deal-stage" role="tabpanel">
           <div className="btn-row" style={{ marginTop: 4 }}>
             {productChoices.map((p) => {
-              const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
+              const pq = quoteOf(p.id);
               return (
                 <button
                   key={p.id}

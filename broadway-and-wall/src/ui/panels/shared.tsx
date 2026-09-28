@@ -1,3 +1,4 @@
+import { LineChart } from "@/ui/Chart";
 import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
@@ -110,24 +111,28 @@ export function apMid(bbl: string, value: number): number {
   return appraise(bbl, value).mid;
 }
 
+/**
+ * THE FIRM'S LIFE IN ONE LINE — Books and the game-over card. It was a bare
+ * polyline: no scale, no dates, no way to read a value off it, on the one
+ * chart every run ends on. Now the ordinary LineChart: a y-axis in dollars,
+ * the first and last month, and a hover that names any month on the line.
+ */
 export function NWChart({ data, height = 120 }: { data: number[]; height?: number }) {
   if (!data || data.length < 2) return null;
-  const W = 720, H = height, PAD = 6;
   const step = Math.max(1, Math.floor(data.length / 360));
   const pts: number[] = [];
-  for (let i = 0; i < data.length; i += step) pts.push(data[i]);
-  if (pts[pts.length - 1] !== data[data.length - 1]) pts.push(data[data.length - 1]);
-  const lo = Math.min(0, ...pts), hi = Math.max(1, ...pts);
-  const x = (i: number) => PAD + (i / (pts.length - 1)) * (W - 2 * PAD);
-  const y = (v: number) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
-  const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const zero = y(0);
+  const at: number[] = [];
+  for (let i = 0; i < data.length; i += step) { pts.push(data[i]); at.push(i); }
+  if (at[at.length - 1] !== data.length - 1) { pts.push(data[data.length - 1]); at.push(data.length - 1); }
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="nw-chart" role="img" aria-label="Net worth over time">
-      <polygon points={`${x(0)},${zero} ${line} ${x(pts.length - 1)},${zero}`} className="nw-fill" />
-      {lo < 0 && <line x1={PAD} x2={W - PAD} y1={zero} y2={zero} className="nw-zero" />}
-      <polyline points={line} className="nw-line" fill="none" />
-    </svg>
+    <LineChart
+      series={[{ label: "Net worth", color: "#b07f1e", pts }]}
+      height={height}
+      yFmt={usd}
+      zeroBase
+      xLabels={[monthLabel(0), monthLabel(data.length - 1)]}
+      xAt={(i) => monthLabel(at[i] ?? 0)}
+    />
   );
 }
 
@@ -223,7 +228,9 @@ export function Big({ label, value, bad, title }: { label: string; value: string
   return (
     <div className="big-stat" title={title}>
       <div className="big-label">{label}</div>
-      <div className={"big-value mono" + (bad ? " v-bad" : "")}>{value}</div>
+      {/* A long reading (a band, a label, "3.8 yrs avg") steps down a size
+          rather than breaking across two or three lines of a tile. */}
+      <div className={"big-value mono" + (bad ? " v-bad" : "") + (value.length > 14 ? " big-value-xl" : value.length > 9 ? " big-value-long" : "")}>{value}</div>
     </div>
   );
 }

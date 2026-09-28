@@ -120,18 +120,18 @@ export function AssetHistory({ bbl }: { bbl: string }) {
       <div className="chart-stack">
         <div className="chart-cap">Occupancy · % of the building let</div>
         <LineChart
-          series={[{ label: "Occupied", color: "#5aa9e6", pts: occ }]}
-          xLabels={xs} height={104} yFmt={(v) => v.toFixed(0) + "%"}
+          series={[{ label: "Occupied", color: "#2f7a72", pts: occ }]}
+          xLabels={xs} height={104} yFmt={(v) => v.toFixed(0) + "%"} xAt={(i) => monthLabel(rows[i][0])}
         />
         <div className="chart-cap">In-place rent · $/sf/yr on let space</div>
         <LineChart
-          series={[{ label: "In place", color: "#e0a34a", pts: rent }]}
-          xLabels={xs} height={104} yFmt={(v) => "$" + v.toFixed(0)}
+          series={[{ label: "In place", color: "#b07f1e", pts: rent }]}
+          xLabels={xs} height={104} yFmt={(v) => "$" + v.toFixed(2)} xAt={(i) => monthLabel(rows[i][0])}
         />
         <div className="chart-cap">Net operating income · $/yr</div>
         <LineChart
-          series={[{ label: "NOI", color: "#6fcf97", pts: noi }]}
-          xLabels={xs} height={104} zeroBase
+          series={[{ label: "NOI", color: "#3a7d46", pts: noi }]}
+          xLabels={xs} height={104} zeroBase yFmt={usd} xAt={(i) => monthLabel(rows[i][0])}
         />
       </div>
     </div>

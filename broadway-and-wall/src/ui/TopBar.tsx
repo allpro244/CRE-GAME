@@ -187,6 +187,7 @@ export default function TopBar() {
         dCf: null as number | null, dCfSince: null as number | null,
         dRateBp: null as number | null,
         standing: null as ReturnType<typeof streetStanding> | null,
+        dRank: 0,
       };
     }
     const parcels = useStore.getState().parcels;
@@ -286,8 +287,12 @@ export default function TopBar() {
     // Research, which is to say the one number that says who is winning was
     // the one the player never saw. Same ranking the league table prints.
     const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? streetStanding(deferredGame, parcels, nw) : null;
+    // Places gained or lost since the last advance — the same ranking on the
+    // pre-advance snapshot the other deltas already read.
+    const standPrev = standing && prevOk && parcels ? streetStanding(prevOk, parcels) : null;
+    const dRank = standing && standPrev ? standPrev.rank - standing.rank : 0;
     return {
-      standing,
+      standing, dRank,
       nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
@@ -297,7 +302,7 @@ export default function TopBar() {
   }, [deferredGame, deferredPrev]);
   const {
     nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp, standing,
+    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp, standing, dRank,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -556,9 +561,10 @@ export default function TopBar() {
             {standing && (
               <Stat
                 label="Street"
-                value={`${ordinal(standing.rank)} / ${standing.of}`}
+                value={`${ordinal(standing.rank)} / ${standing.of}${dRank > 0 ? ` ▲${dRank}` : dRank < 0 ? ` ▼${-dRank}` : ""}`}
                 keep
-                w={70}
+                w={96}
+                bad={dRank < 0}
                 title={standing.above
                   ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
                   : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}

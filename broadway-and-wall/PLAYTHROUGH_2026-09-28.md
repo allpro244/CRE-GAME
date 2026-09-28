@@ -336,6 +336,22 @@ economics; it needed telling.
   street and the years in town.
 - **Fixed on the way:** zoning news printed the district's internal key
   ("theropewalk has been downzoned") instead of its name.
+- **What is worth a look, on the same card.** The count of listed buildings
+  whose going-in yield beats the cheapest all-in coupon a desk will write
+  (`positiveLeverage`, the same two numbers the financing card compares),
+  with the widest spread linked. It tracks the cycle: 0 of 6 in a
+  dear-money opening at an 8% policy rate, 9 of 9 when money costs 2%.
+- **The Street chip shows movement** since the last advance (▲ / ▼).
+- **The year-one nudge sends you to the right desk.** It sent every
+  milestone to the Marketplace, including the first lease (a letter on
+  the Deals desk) and the first exit (sold from your own book). Each rung
+  now opens its own desk and says how it is climbed.
+- **"First development delivered" fired on other people's wrecking balls.**
+  `s.built` also records every demolition in town, and the milestone's test
+  counted anything in it the city had not built. In two first years out of
+  eight, a player who never built anything got the milestone. It now reads
+  the player's own delivery count, and `delivered-condition` checks that it
+  fires on a real delivery.
 
 ## Tests touched, and why
 

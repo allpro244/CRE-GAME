@@ -217,12 +217,23 @@ export function buildDocket(
     const nw = netWorth(game, parcels);
     const next = MILESTONES.find((m) => YEAR_ONE_IDS.includes(m.id) && !m.test(game, nw));
     if (next && !((snooze[`milestone:${next.id}`] ?? -1) > month)) {
+      // WHERE EACH RUNG IS CLIMBED. This sent every milestone to the
+      // Marketplace — including the first lease, which arrives as a letter on
+      // the Deals desk, and the first exit, which is sold from your own book.
+      const HOW: Record<string, { page: Page; how: string }> = {
+        deed1: { page: "market", how: "buy a building off the tape" },
+        lease1: { page: "deals", how: "letters from tenants land on the Deals desk" },
+        tower1: { page: "market", how: "buy a lot and break ground on it" },
+        exit1: { page: "portfolio", how: "list a building for more than you paid" },
+        nw25: { page: "market", how: "grow the book" },
+      };
+      const h = HOW[next.id] ?? { page: "market" as Page, how: "" };
       live.push({
         key: `milestone:${next.id}`,
         cat: "world",
         title: next.label,
-        sub: `${12 - month} mo of year one left`,
-        page: "market",
+        sub: `${h.how ? `${h.how} · ` : ""}${12 - month} mo of year one left`,
+        page: h.page,
       });
     }
   }

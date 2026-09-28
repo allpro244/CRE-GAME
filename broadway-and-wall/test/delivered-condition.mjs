@@ -47,6 +47,7 @@ for (let m = 0; m < 72 && deliveredAt < 0; m++) {
   if (!g.developments[l.bbl]) deliveredAt = m;
 }
 check(deliveredAt >= 0, `delivered after ${deliveredAt + 1} months`);
+check(g.milestones?.tower1 !== undefined, "and it is your first development delivered — the milestone fires on your own delivery");
 const h = g.holdings[l.bbl];
 const built = E.resolveRec(parcels, g, l.bbl);
 check(h.condition === "good", `the word is "good" (${h.condition})`);

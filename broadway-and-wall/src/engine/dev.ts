@@ -14,7 +14,7 @@ import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPenci
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
-  developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
+  developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
   rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
@@ -544,7 +544,20 @@ export function planDevelopment(
     : hurdleRatio < 1
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
         + `(${exitCap.toFixed(2)}% exit, tax-loaded to ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
-        + `That is a way to build a building for more than it is worth.`
+        // WHAT A SHORT HURDLE ACTUALLY SAYS. The required yield carries the
+        // developer's margin, so the finished building is worth
+        // hurdle × (1 + DEV_MARGIN) of everything in the basis — the same
+        // capitalisation the mark uses. This sentence used to call every plan
+        // under 1.0 "a way to build a building for more than it is worth",
+        // which is only true under 1/(1 + DEV_MARGIN) ≈ 0.85. Land on this
+        // tape clears at the builder residual — hurdle 1.0 exactly — so a lot
+        // bought a few points over it plans at 0.95-0.99: a building worth
+        // 11-16% more than it cost, and the desk was telling the player it
+        // would lose money.
+        + (hurdleRatio * (1 + DEV_MARGIN) >= 1
+          ? `Finished, it would be worth ${((hurdleRatio * (1 + DEV_MARGIN) - 1) * 100).toFixed(0)}% more than it cost — `
+            + `short of the ${(DEV_MARGIN * 100).toFixed(0)}% margin a merchant builder needs, which is why nobody else is building it.`
+          : `That is a way to build a building for more than it is worth.`)
       : undefined;
 
   const plan: DevPlan = {

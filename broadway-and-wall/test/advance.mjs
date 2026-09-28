@@ -140,10 +140,17 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   let pn = 0, pq = 0;
   for (const seed of [12007, 11, 4242]) {
     let g2 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
-    for (let q = 0; q < 20; q++) g2 = E.advanceQuarter(g2, parcels, bbls, adjacency);
-    for (const li of g2.listings) { const r = E.resolveRec(parcels, g2, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) continue; pn++; if (E.buyQuote(g2, parcels, li.bbl, li.ask, "pelican", 1).principal > 0) pq++; }
+    // Two dates, as the comment above says: one snapshot of three towns' tape
+    // was 25-31 built listings, and a sample-size guard of 25 then failed on
+    // which buildings happened to be on the tape that month: 31 on PR #165,
+    // 25 once the street's buy committee read total return (quote share
+    // 35% and 28%). Both dates together: 62 listings, 19%.
+    for (const at of [20, 36]) {
+      while (g2.month < at) g2 = E.advanceQuarter(g2, parcels, bbls, adjacency);
+      for (const li of g2.listings) { const r = E.resolveRec(parcels, g2, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) continue; pn++; if (E.buyQuote(g2, parcels, li.bbl, li.ask, "pelican", 1).principal > 0) pq++; }
+    }
   }
-  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(0)}% of ${pn} listings five years in, three towns — standard buildings at a quarter point more (was 0%)`);
+  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(0)}% of ${pn} listings at months 20 and 36, three towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
   ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }

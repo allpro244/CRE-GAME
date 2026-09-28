@@ -15,7 +15,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
 import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
 import { usd, sf } from "@/ui/format";
-import { ListSection, GroundLeaseSection } from "@/ui/panels/AcquireDesk";
+import { ListSection, GroundLeaseSection, describeInstructions } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
 import { siteDeeds } from "@/engine/actions";
@@ -533,7 +533,7 @@ export function PortfolioPage() {
                       : "default") : null,
                     dv ? "building" : null,
                     h.loan?.sweep ? "sweep" : null,
-                    h.sale ? "listed" : null,
+                    h.sale ? (describeInstructions(h.sale.instructions) ? `listed · ${describeInstructions(h.sale.instructions)}` : "listed") : null,
                     h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "reno" : null,
                     h.program ? "capex" : null,
                     siteDeeds(game, h.bbl).length > 1 ? "assembled" : null,

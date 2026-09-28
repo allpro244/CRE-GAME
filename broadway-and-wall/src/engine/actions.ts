@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
-import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
+import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
@@ -2215,7 +2215,11 @@ export function counterOffMarket(
 // decide. Overprice it and the phone stays quiet.
 export function listForSale(
   s: GameState, parcels: ParcelTable, bbl: string, ask: number, mode: "quiet" | "marketed" = "quiet",
+  instructions?: SaleInstructions,
 ): { s: GameState; err?: string } {
+  const instrErr = instructions ? saleInstructionsError(instructions) : null;
+  if (instrErr) return { s, err: instrErr };
+  const instr = instructions ? cleanInstructions(instructions) : undefined;
   // A merged deed has no land left in it — selling it alone would hand over a
   // piece of paper and keep the dirt. The site sells as a site.
   if (s.merged?.[bbl]) return { s, err: "That deed is part of an assemblage. Sell the site, not the piece." };
@@ -2275,6 +2279,7 @@ export function listForSale(
     next.holdings[bbl].sale = {
       ask: Math.round(ask), listedM: next.month, mode: "marketed",
       callM: next.month + weeks, round: 0,
+      ...(instr ? { instructions: instr } : {}),
     };
     next.news.unshift({
       q: next.month, kind: "info",
@@ -2283,7 +2288,7 @@ export function listForSale(
     });
     return { s: next };
   }
-  next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month, mode: "quiet" };
+  next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month, mode: "quiet", ...(instr ? { instructions: instr } : {}) };
   next.news.unshift({ q: next.month, kind: "info", text: `${rec.address} goes to market at $${(ask / 1e6).toFixed(2)}M. No broker, no campaign — you wait for the phone.` });
   return { s: next };
 }
@@ -2831,6 +2836,113 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
   return next;
 }
 
+/** Why a set of standing instructions is not one a broker could act on, or null. */
+export function saleInstructionsError(ins: SaleInstructions): string | null {
+  const { acceptAtOrAbove: a, declineBelow: d } = ins;
+  if (a !== undefined && (!Number.isFinite(a) || a <= 0)) return "Name a real number to accept at.";
+  if (d !== undefined && (!Number.isFinite(d) || d <= 0)) return "Name a real number to decline below.";
+  if (a !== undefined && d !== undefined && d > a) {
+    return "The floor is above the number you would take — the broker could not act on both.";
+  }
+  return null;
+}
+
+function cleanInstructions(ins: SaleInstructions): SaleInstructions | undefined {
+  const out: SaleInstructions = {};
+  if (ins.acceptAtOrAbove !== undefined) out.acceptAtOrAbove = Math.round(ins.acceptAtOrAbove);
+  if (ins.declineBelow !== undefined) out.declineBelow = Math.round(ins.declineBelow);
+  return out.acceptAtOrAbove === undefined && out.declineBelow === undefined ? undefined : out;
+}
+
+/**
+ * TELL THE BROKER WHAT YOU WILL TAKE. Pass `{}` (or null) to withdraw the
+ * instructions and take every call yourself again. Reads no dice.
+ */
+export function setSaleInstructions(
+  s: GameState, bbl: string, ins: SaleInstructions | null,
+): { s: GameState; err?: string } {
+  const h = s.holdings[bbl];
+  if (!h?.sale) return { s, err: "That is not on the market." };
+  if (h.sale.unsolicited) return { s, err: "They rang you — there is no listing to instruct a broker on." };
+  const err = ins ? saleInstructionsError(ins) : null;
+  if (err) return { s, err };
+  const next = clone(s);
+  const sale = next.holdings[bbl].sale!;
+  const clean = ins ? cleanInstructions(ins) : undefined;
+  if (clean) sale.instructions = clean;
+  else delete sale.instructions;
+  // A new instruction is a new signature: an offer held for the owner is
+  // looked at again under it.
+  if (sale.offer?.held) delete sale.offer.held;
+  return { s: next };
+}
+
+// Replace the working state in place with a successor produced by an action
+// (the monthly tick mutates `s`; the actions return a fresh clone). Same move
+// as the package close in portfoliosale.ts, plus dropping keys the action
+// deleted — `facility` and `exchange` can both go away on a close.
+function adoptState(s: GameState, n: GameState) {
+  for (const k of Object.keys(s) as (keyof GameState)[]) if (!(k in n)) delete (s as Partial<GameState>)[k];
+  Object.assign(s, n);
+}
+
+/**
+ * THE BROKER ACTS ON STANDING INSTRUCTIONS.
+ *
+ * Runs after the month's offers have landed. An offer at or over the owner's
+ * number closes through acceptSaleOffer — the same waterfall, ledger lines,
+ * deed-ledger close and exit record as a manual accept, never as a 1031. An
+ * offer under the floor is passed on through declineSaleOffer. Anything in
+ * between is left on the desk as it always was.
+ *
+ * Draws no dice of its own, and does nothing at all on a listing without
+ * instructions, so a game that never sets them runs the same month it did.
+ */
+export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
+  for (const bbl of Object.keys(s.holdings)) {
+    const h = s.holdings[bbl];
+    const sale = h?.sale;
+    const offer = sale?.offer;
+    const ins = sale?.instructions;
+    if (!sale || !offer || !ins || sale.unsolicited || sale.bids?.length) continue;
+    if (s.month > offer.expiresM) continue;
+    const address = resolveRec(parcels, s, bbl)?.address ?? bbl;
+    const px = `$${(offer.price / 1e6).toFixed(2)}M`;
+    if (ins.acceptAtOrAbove !== undefined && offer.price >= ins.acceptAtOrAbove) {
+      if (offer.held) continue;
+      const r = acceptSaleOffer(s, parcels, bbl, false);
+      // A SHORT SALE NEEDS THE OWNER. If closing leaves the account (or the
+      // fund, for a vehicle deed) below zero after the payoff and the tax, the
+      // broker does not sign it — the owner has to find the money first.
+      const fundShort = !!(r.s.fund && s.fund && r.s.fund.cash < 0 && r.s.fund.cash < s.fund.cash);
+      const cashShort = r.s.cash < 0 && r.s.cash < s.cash;
+      if (r.err || fundShort || cashShort) {
+        offer.held = true;
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `${px} on ${address} clears your standing number, but the broker will not sign it for you — `
+            + (r.err ? r.err : "after the payoff and the tax it would leave you short.")
+            + " It is on your desk.",
+        });
+        continue;
+      }
+      adoptState(s, r.s);
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `Your broker accepted ${px} for ${address} on your standing instruction `
+          + `(anything at or over $${(ins.acceptAtOrAbove / 1e6).toFixed(2)}M).`,
+      });
+    } else if (ins.declineBelow !== undefined && offer.price < ins.declineBelow) {
+      adoptState(s, declineSaleOffer(s, bbl));
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Your broker turned down ${px} for ${address} on your standing instruction `
+          + `(nothing under $${(ins.declineBelow / 1e6).toFixed(2)}M). The listing stays up.`,
+      });
+    }
+  }
+}
+
 // Monthly: buyers circle listed assets. Offer flow scales with how honest
 // the ask is, the market phase, and how long it has sat. A live offer on a
 // well-priced asset sometimes draws a second bidder who pushes the number.
@@ -3328,6 +3440,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       });
     }
   }
+  // The broker works the offers that just landed before anyone rings you.
+  applySaleInstructions(s, parcels);
 }
 
 // Monthly: other buyers work the same tape you do. Fairly-priced listings get

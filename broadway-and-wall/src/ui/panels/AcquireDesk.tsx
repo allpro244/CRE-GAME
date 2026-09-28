@@ -5,7 +5,7 @@ import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
+import type { Approach, BuiltClass, GroundReview, SaleInstructions } from "@/engine/types";
 import {
   assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
   recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
@@ -228,6 +228,60 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
   );
 }
 
+/** "$4.2M", "4200000", "4,200,000" → dollars; blank → undefined; junk → NaN. */
+function parseDollars(txt: string): number | undefined {
+  const t = txt.trim().replace(/[$,\s]/g, "");
+  if (!t) return undefined;
+  const m = /^(\d+(?:\.\d+)?)([kKmM])?$/.exec(t);
+  if (!m) return NaN;
+  const mult = m[2] ? (m[2].toLowerCase() === "m" ? 1e6 : 1e3) : 1;
+  return Math.round(parseFloat(m[1]) * mult);
+}
+
+function instructionsFrom(accept: string, decline: string): { ins: SaleInstructions | null; bad: boolean } {
+  const a = parseDollars(accept);
+  const d = parseDollars(decline);
+  const bad = Number.isNaN(a) || Number.isNaN(d) || (a !== undefined && d !== undefined && d > a);
+  if (a === undefined && d === undefined) return { ins: null, bad };
+  return { ins: { ...(a !== undefined ? { acceptAtOrAbove: a } : {}), ...(d !== undefined ? { declineBelow: d } : {}) }, bad };
+}
+
+/**
+ * STANDING INSTRUCTIONS. The two numbers a seller gives the broker so every
+ * call does not come to them. Blank means "ring me".
+ */
+function InstructionFields({ accept, decline, setAccept, setDecline }: {
+  accept: string; decline: string; setAccept: (v: string) => void; setDecline: (v: string) => void;
+}) {
+  return (
+    <>
+      <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <span className="dim">Accept any offer at or above $</span>
+        <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
+          value={accept} onChange={(e) => setAccept(e.target.value)} />
+      </div>
+      <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <span className="dim">Decline anything below $</span>
+        <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
+          value={decline} onChange={(e) => setDecline(e.target.value)} />
+      </div>
+      <div className="hint">
+        Standing instructions: the broker acts on these the month an offer lands, without stopping the clock.
+        A take closes as an ordinary sale (never a 1031) unless it would leave you short after tax and payoff;
+        anything between the two numbers still comes to you, and so does a marketed bid list. Leave both blank to take every call yourself.
+      </div>
+    </>
+  );
+}
+
+export function describeInstructions(ins: SaleInstructions | undefined): string | null {
+  if (!ins) return null;
+  const parts: string[] = [];
+  if (ins.acceptAtOrAbove !== undefined) parts.push(`take ≥ ${usd(ins.acceptAtOrAbove)}`);
+  if (ins.declineBelow !== undefined) parts.push(`pass < ${usd(ins.declineBelow)}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
@@ -239,6 +293,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const [counterOn, setCounterOn] = useState<number | null>(null);
   const [counterPx, setCounterPx] = useState(0);
   const [acceptConfirm, setAcceptConfirm] = useState<null | { exchange?: boolean; bidIndex?: number }>(null);
+  // standing instructions to the broker — prefilled empty
+  const [insAccept, setInsAccept] = useState("");
+  const [insDecline, setInsDecline] = useState("");
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
@@ -285,6 +342,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           <Row k="vs. appraisal" v={((sale.ask / apMid(bbl, value) - 1) * 100).toFixed(1) + "%"} />
           <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
           {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
+          {describeInstructions(sale.instructions) && (
+            <Row k="Broker's instructions" v={describeInstructions(sale.instructions)!} />
+          )}
         </div>
         {/* THE BID LIST. Everybody who turned up, at once. The spread across
             it is the information: tight means the market agrees with you and
@@ -463,6 +523,26 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               : "No offers yet. Overpriced listings sit; the market talks back slowly."}
           </div>
         )}
+        {!sale.unsolicited && (() => {
+          const { ins, bad } = instructionsFrom(insAccept, insDecline);
+          return (
+            <>
+              <div className="page-section" style={{ marginTop: 2 }}>Standing instructions</div>
+              <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
+              <div className="btn-row">
+                <button className="btn" disabled={bad || !ins}
+                  onClick={() => { useStore.getState().setSaleInstructions(bbl, ins); setInsAccept(""); setInsDecline(""); }}>
+                  Give the broker these numbers
+                </button>
+                {sale.instructions && (
+                  <button className="btn" onClick={() => useStore.getState().setSaleInstructions(bbl, null)}>
+                    Withdraw instructions
+                  </button>
+                )}
+              </div>
+            </>
+          );
+        })()}
         {/* MOVE THE PRICE WITHOUT PULLING THE SIGN DOWN.
             Changing an ask used to mean delisting and relisting, which throws
             away the campaign, the bid list and the time the building has been
@@ -578,11 +658,14 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           A decision with two numbers on it is a decision; a decision with an
           adjective on it is a paragraph. Both buttons now carry the fee in
           dollars, and the ask is on both of them. */}
+      <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row">
-        <button className="btn btn-buy" onClick={() => listSale(bbl, price, "marketed")}>
+        <button className="btn btn-buy" disabled={instructionsFrom(insAccept, insDecline).bad}
+          onClick={() => listSale(bbl, price, "marketed", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => listSale(bbl, price)}>
+        <button className="btn" disabled={instructionsFrom(insAccept, insDecline).bad}
+          onClick={() => listSale(bbl, price, "quiet", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Sell it quietly · {usd(price)}
           {quietFeeRate(game) <= 0.0001 ? " · no fee" : ` less ${usd(Math.round(price * quietFeeRate(game)))} fee`}
         </button>
@@ -1438,6 +1521,9 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
   const quiet = quietFeeRate(game);
   const over = appraisal > 0 ? ask / appraisal - 1 : 0;
   const leasedFee = !!game.groundLeases?.[bbl];
+  const [insAccept, setInsAccept] = useState("");
+  const [insDecline, setInsDecline] = useState("");
+  const instr = instructionsFrom(insAccept, insDecline);
   return (
     <div style={{ padding: "8px 2px" }}>
       {leasedFee && (
@@ -1460,11 +1546,12 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
             ? "Under appraisal. It will go quickly, and every buyer in town will know why."
             : "About where the market is."}
       />
+      <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row" style={{ marginTop: 6 }}>
-        <button className="btn btn-buy" onClick={() => { listSale(bbl, ask, "marketed"); onDone(); }}>
+        <button className="btn btn-buy" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "marketed", instr.ins ?? undefined); onDone(); }}>
           Run a process · less {usd(Math.round(ask * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => { listSale(bbl, ask); onDone(); }}>
+        <button className="btn" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "quiet", instr.ins ?? undefined); onDone(); }}>
           Sell it quietly · {quiet <= 0.0001 ? "no fee" : `less ${usd(Math.round(ask * quiet))} fee`}
         </button>
       </div>

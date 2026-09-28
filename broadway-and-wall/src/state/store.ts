@@ -1,13 +1,13 @@
 import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft } from "@/engine/types";
+import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
-import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
@@ -312,7 +312,9 @@ interface AppState {
   ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
   opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }) => void;
   brokerAll: (on: boolean) => void;
-  listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
+  listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed", instructions?: SaleInstructions) => void;
+  /** Standing instructions to the listing broker; null withdraws them. */
+  setSaleInstructions: (bbl: string, instructions: SaleInstructions | null) => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
@@ -1296,13 +1298,23 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  listSale: (bbl, ask, mode = "quiet") => {
+  listSale: (bbl, ask, mode = "quiet", instructions) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = listForSale(game, parcels, bbl, ask, mode);
+    const r = listForSale(game, parcels, bbl, ask, mode, instructions);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(mode === "marketed" ? "Campaign under way. Offers are due on the date." : "On the market. Now we wait.");
+    void persist(r.s);
+  },
+
+  setSaleInstructions: (bbl, instructions) => {
+    const { game } = get();
+    if (!game) return;
+    const r = setSaleInstructions(game, bbl, instructions);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.s.holdings[bbl]?.sale?.instructions ? "The broker has your numbers." : "Instructions withdrawn — every call comes to you.");
     void persist(r.s);
   },
 

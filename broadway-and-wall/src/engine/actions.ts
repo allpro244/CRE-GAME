@@ -220,7 +220,9 @@ export function executePurchase(
   // in a separate account; the GP's corporate line is not a source for it, and
   // letting it be would have the GP silently guaranteeing fund deals. A
   // vehicle short of capital calls capital.
-  const purse = fromFund ? (s.fund?.cash ?? 0) : fundableNow(s, parcels);
+  // A vehicle short of capital calls capital — from the LPs' uncalled
+  // commitment, as the deal closes.
+  const purse = fromFund ? (s.fund?.cash ?? 0) + (s.fund?.uncalled ?? 0) : fundableNow(s, parcels);
   if (purse < bq.equity) {
     return {
       s,
@@ -235,8 +237,16 @@ export function executePurchase(
   // single number: the cheque books to `bought` NET of the financing points
   // and GROSS of deposits that never moved in cash (see below). Drawing and
   // booking are still paired — they are just paired across three lines.
-  if (fromFund && next.fund) next.fund.cash -= bq.equity;
-  else fundCashNeed(next, parcels, bq.equity);
+  if (fromFund && next.fund) {
+    const call = Math.max(0, Math.min(next.fund.uncalled, bq.equity - next.fund.cash));
+    if (call > 0) {
+      next.fund.uncalled -= call;
+      next.fund.called += call;
+      next.fund.cash += call;
+      logBooks(next, "lpCalled", call); // LP equity in for this deal — not income
+    }
+    next.fund.cash -= bq.equity;
+  } else fundCashNeed(next, parcels, bq.equity);
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
   // netted out of the cheque are a liability transfer, not a cheaper building.

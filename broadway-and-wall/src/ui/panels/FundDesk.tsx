@@ -1,6 +1,7 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE } from "@/engine/fund";
+import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, gpInterestInFund, waterfall } from "@/engine/fund";
+import { ownedHoldingValue, resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 import { Big, Row } from "@/ui/panels/shared";
 
@@ -10,6 +11,7 @@ import { Big, Row } from "@/ui/panels/shared";
  */
 export function FundDesk() {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
   const { raiseFund, callFundCapital, distributeFund, setFundPay } = useStore.getState();
   const q = fundRaiseQuote(game);
   const f = game.fund;
@@ -38,6 +40,56 @@ export function FundDesk() {
             <Big label="Promote paid" value={usd(f.promotePaid)} />
             <Big label="Pref accrued" value={usd(f.prefAccrued)} bad={f.prefAccrued > 0} />
           </div>
+          {(() => {
+            // WHAT THE VEHICLE IS WORTH, AND WHAT WINDING IT DOWN TODAY PAYS.
+            // NAV is the same equity portfolioMark counts (vehicle cash plus
+            // each deed's mark less its debt); the sponsor's line is the one
+            // already inside the top bar's net worth; the LP line is the
+            // waterfall applied to NAV. The success test at wind-down is DPI
+            // 1.0x on called capital — this says where the fund stands against it.
+            const deeds = Object.values(game.holdings).filter((h) => h.fundOwned).map((h) => {
+              const v = ownedHoldingValue(game, parcels, h);
+              const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
+              return { h, v, debt, eq: v - debt, addr: resolveRec(parcels, game, h.bbl)?.address ?? h.bbl };
+            });
+            const nav = f.cash + deeds.reduce((a, d) => a + d.eq, 0);
+            const gp = gpInterestInFund(f, nav);
+            const w = waterfall(f, Math.max(0, nav));
+            const dpi = f.called > 0 ? f.distributed / f.called : 0;
+            const tvpi = f.called > 0 ? (f.distributed + Math.max(0, nav)) / f.called : 0;
+            const endDpi = f.called > 0 ? (f.distributed + w.pref + w.capital + w.split) / f.called : 0;
+            return (
+              <>
+                <div className="stat-strip">
+                  <Big label="Vehicle NAV" value={usd(nav)} bad={nav < 0} />
+                  <Big label="Your interest" value={usd(gp)} />
+                  <Big label="DPI · TVPI" value={`${dpi.toFixed(2)}× · ${tvpi.toFixed(2)}×`} bad={tvpi < 1} />
+                </div>
+                <div className={"hint" + (endDpi < 1 ? " neg" : "")}>
+                  At today&rsquo;s marks, winding the vehicle down now would return {Math.round(endDpi * 100)}&cent; on each dollar
+                  called — {endDpi >= 1 ? "capital back, the fund counts as a success" : "short of capital, and a fund that misses is the last one you raise"}.
+                  {f.extendedTo !== undefined
+                    ? ` In extension: anything unsold by ${monthLabel(f.extendedTo)} you buy in at NAV.`
+                    : ` Life ends ${monthLabel(f.lifeEndM)}; unsold buildings then get a two-year extension, then a buy-in at NAV.`}
+                </div>
+                {deeds.length > 0 && (
+                  <table className="tbl" style={{ marginTop: 8 }}>
+                    <thead><tr><th>Vehicle deed</th><th className="num">Mark</th><th className="num">Debt</th><th className="num">Equity</th></tr></thead>
+                    <tbody>
+                      {deeds.map((d) => (
+                        <tr key={d.h.bbl} onClick={() => useStore.getState().openProperty(d.h.bbl, "summary")}>
+                          <td>{d.addr}{d.h.sale ? " · listed" : ""}</td>
+                          <td className="num">{usd(d.v)}</td>
+                          <td className="num">{usd(d.debt)}</td>
+                          <td className={"num" + (d.eq < 0 ? " neg" : "")}>{usd(d.eq)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            );
+          })()}
           <div className="grid">
             <Row k="Vintage" v={`${monthLabel(f.raisedM)} · $${(f.size / 1e6).toFixed(0)}M`} />
             <Row k="Investment period" v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"}`} />

@@ -121,6 +121,14 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 // street is not empty. Four named firms on a town this size is thin, and
 // it is what a century of gluts produces. Raising the pencil back or
 // padding the count would be a rail.
+//
+// PR #165 failed this (7777 ended at 2, 4242 at 3) and #164 passed it by one
+// firm; both were the same fault, and it was in entry and exit, not the floor.
+// The pitch and the buy committee read going-in yield alone against a coupon
+// the cap rate had fallen under, and a new fund handed its called capital
+// back before buying anything. Fixed in rivals.ts (SPREAD_FULL,
+// YIELD_OVER_COUPON, the investment period); now 26 · 24 · 21 · 19 · 15 · 14 ·
+// 12 · 9 · 8 · 13 and 30 · 27 · 27 · 20 · 14 · 14 · 14 · 13 · 12 · 14.
 {
   const SEEDS = [7777, 4242];
   let allSpinouts = [];

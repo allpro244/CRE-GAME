@@ -2013,3 +2013,101 @@ already in the engine:
   modelled correctly (no lift, one-storey box with no core). They pencil
   where rents support them, which on this map is the better C and R streets,
   not the fringe.
+
+# THE STREET THINNED TO TWO — entry and exit read the wrong return (Sep 2026)
+
+`test/firms.mjs` failed on PR #165: seed 7777 ran 26 · 22 · 18 · 11 · 11 ·
+10 · 8 · 8 · 4 · 2 firms by decade and 4242 ended at 3. The base (#164)
+passed by one firm. The test floor was not the problem. The model was.
+
+**Both builds collapse.** 6 seeds × 100 years, no player. #164 ran
+29.7 · 27.0 · 21.3 · 12.5 · 10.0 · 8.7 · 7.8 · 5.8 · 6.0 · 5.0 and #165 ran
+29.7 · 27.0 · 21.0 · 13.0 · 11.2 · 9.5 · 6.5 · 5.0 · 3.8 · 3.3. Exits were
+37.8 and 42.0 per century. 72-75% of them were empty-book wind-ups (the husk
+rule). The rest were arrears, mostly pe and opportunistic. Takeovers and
+succession were zero in an unplayed run. Entry was 1-4 firms a decade.
+
+**Why entry stalled.** `firmEntryPitch` multiplies leverage × product ×
+thin. Product sat at 0.8-1.0 all century (a thin street has plenty to buy).
+Leverage was the going-in cap over the coupon, as a share of `SPREAD_FULL`
+= 1.7. That was calibrated when the spread was positive in 59.4% of months
+(p50 +1.20). The cap block has since been re-levelled (it capitalises
+against the index less expected inflation). Re-measured, the spread was
+positive in 35.8% (#164) and 41.3% (#165) of months, median −0.48 and −0.33.
+So the leverage term was zero in about 59% of months. In one #165 decade it
+was zero in 98% of months, and in seed 7777's last decade in 100%. Nothing
+could raise a fund in the median year.
+
+**Why exits ran ahead.** Two faults, both measured on the husks:
+
+- *Entrants gave their capital back before they bought anything.* A new fund
+  distributed 35% a month of called capital above the $2M reserve. A
+  distribution counts as "deployed", so the empty-book clock started at
+  once. 72 of the 106 entrant husks had never held a deed, and 105 had
+  "distributed".
+- *Incumbents sold down and their committees could not rebuy.* `rivalBuys`'
+  hurdle (`YIELD_OVER_COUPON`, family +1.40, core +1.10) was read against
+  the same going-in-over-coupon spread. With that spread at p50 −0.4, a
+  family office cleared its own hurdle in well under one month in ten. 94
+  of the 145 opening-roster husks had not bought one building all century
+  (median 111 months since their last purchase). They sold on the hold
+  clock and were wound up with the proceeds.
+
+**The fix: three places now read the return the business reads.**
+
+1. **The pitch is total return over the coupon.** That is going-in yield plus
+   `underwrittenGrowthPct` (the 2% contractual bump, or expected inflation
+   when it runs higher). It is the same growth the cap-rate target already
+   capitalises (market.ts), so there is one answer to what a buyer expects
+   rent to do. A fund is sold on an IRR, and positive leverage on an IRR
+   means the unlevered return beats the cost of debt. 2005-07, the biggest
+   raising years on record, were raised at going-in yields at or under the
+   mortgage coupon. `SPREAD_FULL` was re-anchored by its own stated method,
+   the p90 of positive months: +3.53 on #165 and +3.39 on #164, so 3.5. The
+   spread is now positive in about 95% of months, p50 +1.9. The raise still
+   refuses when there is nothing to buy (product) and when there is no
+   spread.
+2. **The committee reads the same number.** A fund raised on "total return
+   beats the coupon" whose committee refused anything without a going-in
+   spread was fake #3. The hurdles did not move. Only the spread they are
+   read against changed.
+3. **A new fund recycles through its investment period.** It follows
+   `FUND_INVEST_M`, the LPA the player's own vehicle runs on
+   (`scheduledDistribution`). No distributions happen for 60 months after the
+   close. A fund that has not deployed by then starts distributing, and the
+   husk rule winds it up. That is what happens to a blind pool that cannot
+   find deals.
+
+**Result**, same six seeds: 29.7 · 28.0 · 25.2 · 18.2 · 14.5 · 13.8 · 12.8 ·
+10.3 · 10.3 · 12.0. No seed ends under 7. `firms.mjs` reads 7777 as
+26 · 24 · 21 · 19 · 15 · 14 · 12 · 9 · 8 · 13 and 4242 as 30 · 27 · 27 · 20
+· 14 · 14 · 14 · 13 · 12 · 14. Rival purchases per century rose from 1,086
+to 2,045. Arrears exits rose (pe from 26 to 73 across the 6 centuries). More
+firms now buy at thin going-in yields with leverage, and more of them get
+caught, which is the realistic direction. Named-firm entry is still an
+output of deal flow. The street thins from an opening roster the town never
+carried to about a dozen firms, and nothing floors it.
+
+**Why #165 made it worse, and whether that is realistic.** The zoning and
+coverage rule removed illegal schemes. City starts fell from 134.5 to 114.2
+per century and rival purchases from 1,266 to 1,086. Exits rose by about 4
+per century. The per-seed end count moved −1.7 firms (paired t ≈ −2, 6
+seeds). The rival-income channel was not the cause: named firms claimed
+0.5-1 jobs a century on both builds. #165 tipped a street that was already
+collapsing for the reasons above, and fewer legal schemes is the correct
+direction.
+
+**Baseline.** 14 seeds × 25 years, paired, #165 → this: no metric moved at
+|t| ≥ 2. The largest moves were land.med −18.5% (t −1.05), vac.office −17.6%
+(t −1.48) and land.p90 +14.5% (t 0.65). Summed rail binding fell from 0.32
+to 0.17. The six-seed record moves as a re-roll, because the pitch now draws
+on the rivals stream in months it used to skip. `BASELINE.json` is
+regenerated.
+
+**Still open.** Merchant builders buy only land. Land has no in-place income,
+so the yield committee refuses every lot that is not a distress sale, and
+merchants can build only through `claimJob`. In unplayed runs, named firms
+claimed about one or two city jobs a century, far below the 45-48 deliveries
+a run quoted earlier in this file. A land purchase should be underwritten on
+the residual (`underwriteDevelopment`), not on yield. That is not changed
+here.

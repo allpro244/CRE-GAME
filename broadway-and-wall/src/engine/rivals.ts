@@ -1452,6 +1452,22 @@ const DEPLOY_YR = 2;
  * 27.5 · 27.0 · 26.0 and 49.3 firms have ever existed. So this town carries
  * about eighteen shops, the number is an OUTPUT of how many trades a year there
  * are to go round, and it is not a floor, a cap or a target.
+ *
+ * THAT MEASUREMENT DID NOT SURVIVE THE CAP-RATE RE-LEVEL, and nothing noticed
+ * until `pnpm firms` failed on PR #165. Re-run on #164 and #165 (6 seeds x 100
+ * years, no player): 29.7 · 27.0 · 21.3 · 12.5 · 10.0 · 8.7 · 7.8 · 5.8 · 6.0 ·
+ * 5.0 and 29.7 · 27.0 · 21.0 · 13.0 · 11.2 · 9.5 · 6.5 · 5.0 · 3.8 · 3.3. The
+ * leverage term read ZERO in 59% of months, because the going-in cap had
+ * fallen under the coupon in most of them (see SPREAD_FULL), and three
+ * quarters of all exits were empty-book wind-ups: entrants that handed their
+ * first close back before buying anything, and incumbents that sold down on
+ * the hold clock and whose committees then refused every building on the
+ * same going-in test (see YIELD_OVER_COUPON). With the pitch, the committee
+ * and the investment period each reading what the business reads, same six
+ * seeds: 29.7 · 28.0 · 25.2 · 18.2 · 14.5 · 13.8 · 12.8 · 10.3 · 10.3 · 12.0,
+ * no seed under 8 after year 30. Entry still answers to product: this is the
+ * street thinning from an opening roster the town's deal flow never carried
+ * to the dozen or so it does, not a floor.
  */
 /**
  * Entry pitch — leverage × product × thin, as a monthly hazard against RAISE_M.

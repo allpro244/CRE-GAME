@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund, settleFund } from "./fund";
+import { tickFund, settleFund, gpCapitalShare } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -627,9 +627,13 @@ function tickMonth(
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
     // Vehicle deeds keep their cash in the vehicle — promote needs a
-    // counterparty, and GP liquidity is not LP capital.
-    if (h.fundOwned && s.fund && !s.fund.settled) s.fund.cash += cf;
-    else monthCF += splitMonthCf(s, h, cf);   // a JV partner takes (or funds) its share
+    // counterparty, and GP liquidity is not LP capital. The two `logBooks`
+    // lines above already settled this month's NOI into `fund.cash` and the
+    // debt service out of it (see settleVehicleDeedFlow in types.ts), so the
+    // net arrives in the operating account here only to be matched by what
+    // they moved. A month whose debt service outruns the NOI is the vehicle's
+    // to fund — its cash, then a capital call — never silently the sponsor's.
+    monthCF += splitMonthCf(s, h, cf);   // a JV partner takes (or funds) its share
 
     // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
     // owner watches, stamped at the same moment the month's NOI is booked so
@@ -779,6 +783,16 @@ function tickMonth(
     // ...and the desks re-read what a building in this town is worth
     s.loanScale = cityLoanScale(s, parcels);
     let taxable = 0;
+    // THE VEHICLE'S INCOME IS NOT THE SPONSOR'S — AND NOT THE VEHICLE'S TO
+    // PAY TAX ON. A real estate fund is a partnership: it files a return and
+    // pays nothing, and each partner is taxed on its allocated share. A fund
+    // deed's NOI, interest and depreciation are struck on their own line and
+    // the sponsor carries its co-invest share of the result into its own
+    // return (a loss nets against its other income, as a K-1 loss does). The
+    // LPs' shares are taxed on the LPs' returns, off this book. The promote is
+    // taxed when it is paid (fund.ts applyDistribute).
+    const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
+    let fundTaxable = 0;
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
@@ -818,8 +832,13 @@ function tickMonth(
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
+      if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
       taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
     }
+    if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
+    // Carried interest received this year — the sponsor's own income.
+    taxable += s.promoteIncomeYr ?? 0;
+    s.promoteIncomeYr = 0;
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
     // the sweep reads the policy rate, the after-tax yield is the honest one:
@@ -977,10 +996,13 @@ function tickMonth(
         // A forced disposition is a taxable one. The bill on a gain you never
         // saw in cash is the thing that finishes a distressed sponsor, and it
         // is the reason handing back the keys beats being levied.
-        if (tax > 0) {
-          s.cash -= tax;
-          s.taxesPaid = (s.taxesPaid ?? 0) + tax;
-          logBooks(s, "taxes", tax);
+        // A vehicle deed's gain passes through: the sponsor pays its
+        // co-invest share, the vehicle pays nothing (sponsorsSaleTax).
+        const owed = pick.fundOwned && s.fund && !s.fund.settled ? Math.round(tax * gpCapitalShare(s.fund)) : tax;
+        if (owed > 0) {
+          s.cash -= owed;
+          s.taxesPaid = (s.taxesPaid ?? 0) + owed;
+          logBooks(s, "taxes", owed);
         }
         if (shortfall > 0 && (pick.loan || pick.mezz)) {
           if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, pick.bbl); }
@@ -1008,7 +1030,7 @@ function tickMonth(
           s.exits.push(ex);
         }
         if (s.groundLeases?.[pick.bbl]) transferGroundLeaseOffBook(s, pick.bbl);
-        s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
+        moveDeposit(s, s.holdings[pick.bbl], -depositsOn(s.holdings[pick.bbl]));   // the deposits go with the deed
         s.lastTradeM = s.lastTradeM ?? {};
         s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
@@ -1026,7 +1048,7 @@ function tickMonth(
               ? shortfall > 0
                 ? `It did not cover the $${(lien / 1e6).toFixed(2)}M mortgage${pick.loan?.recourse ? `, and you signed for the $${(shortfall / 1e6).toFixed(2)}M shortfall` : `, and the paper was non-recourse`}. `
                 : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and $${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M of surplus reached you. `
-              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
+              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${owed > 0 ? ` and $${(owed / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = s.cash < 0 ? 12 : 0;
@@ -1765,7 +1787,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
  * book, and the GP's promote on it is waived — which is how a sponsor who
  * cannot finish closes a fund.
  */
-function windDownFund(s: GameState, parcels: ParcelTable) {
+export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
@@ -1782,6 +1804,11 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
     if (price > 0 && paid >= price) {
       f.cash += paid;
+      // The tenants' deposits come across with the deed: the vehicle held
+      // them, the sponsor owes them from here on.
+      const dep = depositsOn(h);
+      f.cash -= dep;
+      s.cash += dep;
       paidTotal += paid;
       delete h.fundOwned;
       // The vehicle's cash and the sponsor's now share one deed: its equity
@@ -1800,7 +1827,7 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     poolDeedLedger(s, h.bbl);
     closeDeedLedger(s, s.exits[s.exits.length - 1]);
     if (s.groundLeases?.[h.bbl]) transferGroundLeaseOffBook(s, h.bbl);
-    s.cash -= depositsOn(h);   // the deposits go with the deed
+    moveDeposit(s, h, -depositsOn(h));   // the deposits go with the deed, out of the vehicle that held them
     s.lastTradeM = s.lastTradeM ?? {};
     s.lastTradeM[h.bbl] = s.month;
     delete s.holdings[h.bbl];

@@ -27,7 +27,7 @@
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Workout } from "./types";
-import { logBooks, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { ownedHoldingValue, resolveRec } from "./value";
@@ -506,7 +506,7 @@ export function deedInLieu(
   });
   recordComp(next, rec, Math.round(bal), w.lender, firmShort(next), true, h.condition);
   if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
-  next.cash -= depositsOn(next.holdings[bbl]!);
+  moveDeposit(next, next.holdings[bbl], -depositsOn(next.holdings[bbl]!));
   next.lastTradeM = next.lastTradeM ?? {};
   next.lastTradeM[bbl] = next.month;
   delete next.holdings[bbl];

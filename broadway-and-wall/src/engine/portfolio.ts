@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding } from "./types";
-import { logBooks, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -267,6 +267,18 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
 }
 
 /** Take a bundle to market. */
+/** Is this deed on the live fund's book (rather than the sponsor's balance sheet)? */
+export function onFundBook(s: GameState, bbl: string): boolean {
+  return !!(s.holdings[bbl]?.fundOwned && s.fund && !s.fund.settled);
+}
+
+/** A bundle with deeds on both the fund's book and the sponsor's. */
+export function mixesVehicles(s: GameState, bbls: string[]): boolean {
+  let fund = 0;
+  for (const b of bbls) if (onFundBook(s, b)) fund++;
+  return fund > 0 && fund < bbls.length;
+}
+
 export function listPortfolio(
   s: GameState, parcels: ParcelTable, bbls: string[], ask: number,
 ): { s: GameState; err?: string; msg?: string } {
@@ -285,6 +297,12 @@ export function listPortfolio(
     };
   }
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b]);
+  // THE LPs' BUILDINGS AND THE SPONSOR'S DO NOT SHARE A PRICE. One number for
+  // a mixed bundle is the GP deciding, on both sides, how much of it the fund
+  // gets — the conflict an LPAC exists to refuse. Bundle either book, not both.
+  if (mixesVehicles(s, clean)) {
+    return { s, err: "That bundle mixes the fund's buildings with your own. One price across both is a conflict the LPs' advisory committee would refuse — sell the fund's deeds as their own book." };
+  }
   // A partner's building does not go into somebody else's package without them.
   if (clean.some((b) => s.holdings[b]?.jv)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
   if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
@@ -530,6 +548,8 @@ export interface PortfolioSettlement {
   facilityDue: number;
   /** Cash that reaches you: proceeds less tax less any facility payoff. */
   netToYou: number;
+  /** The bundle is the fund's book: `netToYou` is what reaches the vehicle, not the sponsor. */
+  toFund: boolean;
 }
 
 export function portfolioSettlement(
@@ -581,6 +601,7 @@ export function portfolioSettlement(
     release: sum((l) => l.release),
     tax, toSeller, facilityDue,
     netToYou: toSeller - tax - facilityDue,
+    toFund: live.length > 0 && onFundBook(s, live[0]),
   };
 }
 
@@ -603,19 +624,33 @@ export function acceptPortfolioBid(
   const live = ps.bbls.filter((b) => next.holdings[b]);
   const book = portfolioSettlement(next, parcels, live, bid.price);
   if (book.totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
+  // Refused at the door (listPortfolio, the unsolicited approach); refused
+  // here too, because a vehicle can wind down under a live process.
+  if (mixesVehicles(next, live)) {
+    return { s, err: "That book now mixes the fund's buildings with your own — one price across both is a conflict the LPs would refuse. Pull it and sell each book on its own." };
+  }
+  // THE FUND'S BOOK SETTLES INTO THE FUND. Each fund deed's leg — proceeds
+  // and deposits — runs through `fund.cash` exactly as acceptSaleOffer runs a
+  // single fund sale; the tax is the sponsor's co-invest share, from its own
+  // account. This paid every leg to the sponsor: measured, a bundle
+  // of four fund deeds lifted sponsor cash +$4.29M and net worth +36% in one
+  // click, with the LPs' buildings gone and their vehicle not a dollar richer.
+  const intoFund = live.length > 0 && onFundBook(next, live[0]);
+  if (exchange && intoFund) return { s, err: "The fund's gain belongs to the vehicle — it cannot roll into your own 1031." };
 
   // Same waterfall as acceptSaleOffer, deed by deed: loan and mezzanine,
   // kicker, break fee, facility release, deposits (including assemblage
   // children). The old path booked kick/break as debtSvc while also netting
   // them out of sold — conserve saw money appear — and skipped release + child
   // deposits entirely.
-  let cashToYou = 0, taxTotal = 0, gainTotal = 0;
+  let cashToYou = 0, taxTotal = 0, gainTotal = 0, toFund = 0;
   book.legs.forEach((leg) => {
     const bbl = leg.bbl;
     const h = next.holdings[bbl];
     const rec = resolveRec(parcels, next, bbl)!;
     const price = leg.price;
-    cashToYou += leg.toSeller;
+    if (intoFund) toFund += leg.toSeller;
+    else cashToYou += leg.toSeller;
     if (next.facility?.bbls.includes(bbl)) {
       next.facility.balance = Math.max(0, next.facility.balance - leg.release);
       next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
@@ -626,8 +661,8 @@ export function acceptPortfolioBid(
     // Each deed's leg books on its own ledger — the portfolio closes as one
     // price, but it settles as nine separate sales, and the firm's books see
     // exactly the same total as one line did.
-    logBooks(next, "sold", leg.toSeller + leg.kick + leg.breakFee, bbl);
-    if (leg.kick + leg.breakFee > 0) logBooks(next, "debtSvc", leg.kick + leg.breakFee, bbl);
+    logBooks(next, "sold", leg.toSeller + leg.kick + leg.breakFee, bbl, intoFund);
+    if (leg.kick + leg.breakFee > 0) logBooks(next, "debtSvc", leg.kick + leg.breakFee, bbl, intoFund);
     {
       const ex: Exit = {
         bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
@@ -638,11 +673,12 @@ export function acceptPortfolioBid(
     }
     recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
-    next.cash -= depositsOn(h);
+    // The deposits go with the deed, out of the purse the sale lands in.
+    moveDeposit(next, h, -depositsOn(h));
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
       if (parent !== bbl) continue;
       delete next.merged![child];
-      next.cash -= depositsOn(next.holdings[child]);
+      moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
       delete next.holdings[child];
       if (next.workouts?.[child]) delete next.workouts[child];
     }
@@ -671,6 +707,7 @@ export function acceptPortfolioBid(
   }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
+  if (intoFund && next.fund) next.fund.cash += toFund;
   // `sold` and the fees were booked leg by leg above, and the pool payoff
   // against `sold` with them.
   if (exchange && taxTotal > 0) {
@@ -679,6 +716,9 @@ export function acceptPortfolioBid(
       deadlineM: next.month + EXCHANGE_WINDOW_M,
     };
   } else if (taxTotal > 0) {
+    // The sponsor's own tax: on the fund's deeds, its co-invest share of the
+    // vehicle's gain (sponsorsSaleTax, via saleProceedsToSeller) — the
+    // vehicle is a partnership and pays none.
     next.cash -= taxTotal;
     next.taxesPaid = (next.taxesPaid ?? 0) + taxTotal;
     logBooks(next, "taxes", taxTotal);
@@ -687,7 +727,10 @@ export function acceptPortfolioBid(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Closed the portfolio: ${live.length} buildings to ${bid.name} at ${money(bid.price)}, `
-      + `${money(cashToYou)} to you after payoffs. `
+      + (intoFund
+        ? `${money(toFund)} to the fund after payoffs — the LPs' buildings, the LPs' proceeds. `
+          + (cashToYou < 0 ? `${money(-cashToYou)} of your own went to the facility. ` : "")
+        : `${money(cashToYou)} to you after payoffs. `)
       + (exchange
         ? `1031 clock running — redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} of tax comes due.`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),
@@ -789,10 +832,15 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
       if (!rec || rec.class === "land") continue;
       const h = s.holdings[bbl];
       if (occOf(rec, h) < 0.8) continue;   // they want the good ones
-      const arr = byClass.get(rec.class) ?? [];
-      arr.push(bbl); byClass.set(rec.class, arr);
+      // A slice is wholly on one book: the fund's deeds and the sponsor's are
+      // two sellers, and an approach for a mix would land the GP in the same
+      // conflict listPortfolio refuses.
+      const key = `${rec.class}${onFundBook(s, bbl) ? "\u0000fund" : ""}`;
+      const arr = byClass.get(key) ?? [];
+      arr.push(bbl); byClass.set(key, arr);
     }
-    const best = [...byClass.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    const bestKey = [...byClass.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    const best = bestKey ? [bestKey[0].split("\u0000")[0], bestKey[1]] as const : undefined;
     if (best && best[1].length >= 3) {
       const bbls = best[1].slice(0, 6);
       const q = portfolioQuote(s, parcels, bbls);

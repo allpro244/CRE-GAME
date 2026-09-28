@@ -14,6 +14,9 @@ touching any of the systems below; each bullet names where it lives.
 | A realised fund demoted the firm a tier | realised fund scores 0.75 on the vehicle pillar | — |
 | Adaptive reuse hurdle used the bare cap, ground-up the tax-loaded exit | both use the tax-loaded exit yield | — |
 | `test/fund.mjs` asserted the pre-#143 waterfall | updated to pref → capital → split, co-invest pro rata | `test/fund.mjs` |
+| Portfolio sale of fund deeds paid every leg to the sponsor (+$4.29M cash, +36% NW in a click); mixed bundles and mixed unsolicited approaches allowed | fund legs settle into `fund.cash` like `acceptSaleOffer`; mixed bundles refused (`mixesVehicles`); approaches are per class *and* per book; no 1031 on a fund gain | `test/fund-plumbing.mjs` |
+| Sponsor paid the fund deeds' leasing, capex, payoffs, cures and income tax (~20% of vehicle NOI) | every deed-tagged `logBooks` on a live fund deed settles against the vehicle (`settleVehicleDeedFlow`, types.ts): its cash → a capital call → a recorded GP advance repaid first; the vehicle's income tax is struck on its own line | `test/fund-plumbing.mjs` |
+| No automatic distributions — proceeds sat in `fund.cash` for years while pref accrued | after `investEndM`, quarterly distribution of cash over `fundReserve` through the waterfall (`scheduledDistribution`, fund.ts) | `test/fund-plumbing.mjs` |
 
 ## New systems
 

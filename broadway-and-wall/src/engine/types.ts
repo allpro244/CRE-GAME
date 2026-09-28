@@ -2898,6 +2898,8 @@ export interface GameState {
    * not the same animal on a return. Absent on older saves and read as zero.
    */
   depositInterestYr?: number;
+  /** Promote received from the live fund this calendar year — taxed in January with the sponsor's income (fund.ts applyDistribute). */
+  promoteIncomeYr?: number;
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
@@ -3057,9 +3059,15 @@ export interface GameState {
 // Write a cash flow into the current year's ledger bucket — and the month's.
 // Name the deed (`bbl`) when the cheque belongs to one building, and the same
 // dollars also land on that deed's equity ledger (see GameState.deedCf).
-export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl?: string) {
-  if (bbl) tagDeed(s, key, amt, bbl);
-  else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
+export function logBooks(
+  s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl?: string,
+  /** The caller already moved this dollar through `s.fund.cash` — do not settle it again. */
+  vehicleDirect = false,
+) {
+  if (bbl) {
+    tagDeed(s, key, amt, bbl);
+    if (!vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
+  } else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
@@ -3098,6 +3106,105 @@ const DEED_SIGN: Partial<Record<keyof Omit<BooksYear, "yr">, 1 | -1>> = {
   noi: 1, sold: 1, borrowed: 1, lpCalled: 1,
   debtSvc: -1, leasing: -1, capex: -1, dev: -1, bought: -1, lpDistributed: -1,
 };
+
+/**
+ * A VEHICLE DEED'S CASH IS THE VEHICLE'S. Every property cheque in the engine
+ * is written from (or paid into) the sponsor's operating account — `s.cash` —
+ * and booked against the deed it is for. On a deed the fund owns that is the
+ * wrong purse: the sponsor was paying the LPs' leasing commissions, TI, capex,
+ * balloon gaps and cures out of its own money (measured ~20% of the vehicle's
+ * NOI), which flattered the fund's DPI and the promote on it, and a cash-out
+ * refi on a fund deed paid the loan proceeds to the GP.
+ *
+ * So the deed ledger is the settlement instruction. When a dollar is booked to
+ * a live fund deed and the caller did not move it through `fund.cash` itself
+ * (`vehicleDirect`), it settles between the two accounts at once, the way a
+ * manager's advances on behalf of a fund are reimbursed at cost:
+ *
+ *   - money OUT of the building (a cost): the vehicle reimburses the sponsor
+ *     from `fund.cash`; short, it calls uncalled commitments (LPAs allow calls
+ *     for the expenses of existing investments after the investment period);
+ *     still short, what the sponsor paid stays a GP ADVANCE to the fund
+ *     (`fund.gpAdvance`) — repaid before any distribution, and carried as the
+ *     sponsor's receivable in net worth (`gpInterestInFund`).
+ *   - money INTO the building (NOI, sale proceeds, loan proceeds): it goes to
+ *     the vehicle, after first repaying any outstanding GP advance.
+ *
+ * `lpCalled` / `lpDistributed` on a deed are a JV partner's flows, never the
+ * vehicle's (a fund deed cannot take a JV partner — jv.ts), so they stay put.
+ * A transfer between `cash` and `fund.cash` is inside the firm: conserve
+ * reconciles their sum and sees only the `lpCalled` a call books.
+ */
+function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl: string) {
+  const f = s.fund;
+  if (!f || f.settled || !amt || !Number.isFinite(amt)) return;
+  if (key === "lpCalled" || key === "lpDistributed") return;
+  const sign = DEED_SIGN[key];
+  if (!sign) return;
+  if (!s.holdings[bbl]?.fundOwned) return;
+  const signed = sign * amt; // + into the owner's account, − out of it
+  if (signed > 0) vehicleCollect(s, signed);
+  else vehicleReimburse(s, -signed);
+}
+
+/**
+ * THE DEPOSITS SIT WHERE THE DEED DOES. A tenant's security deposit is held by
+ * the landlord of record, and on a fund deed that is the vehicle: collected
+ * into `fund.cash` at signing, returned from it at expiry, true-down or
+ * clearance, and handed over from it when the deed leaves (sale, foreclosure,
+ * in kind to the liquidating trust). Every deposit cash movement on a deed
+ * goes through here; `amt` > 0 is collected, < 0 returned. No books entry — a
+ * deposit is a liability moving with its cash, which conserve sees as
+ * Δdeposits against Δ(cash + fund.cash).
+ */
+export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
+  if (!amt) return;
+  if (h?.fundOwned && s.fund && !s.fund.settled) s.fund.cash += amt;
+  else s.cash += amt;
+}
+
+/** Deposits the vehicle holds — on the live fund's deeds. */
+export function fundDepositsHeld(s: GameState): number {
+  if (!s.fund || s.fund.settled) return 0;
+  let n = 0;
+  for (const h of Object.values(s.holdings)) if (h.fundOwned) for (const t of h.tenants) n += t.deposit ?? 0;
+  return n;
+}
+
+/** The sponsor's account holds `amt` of the vehicle's money: repay any GP advance, send the rest to `fund.cash`. Mutates `s`. */
+export function vehicleCollect(s: GameState, amt: number) {
+  const f = s.fund;
+  if (!f || f.settled || !(amt > 0)) return;
+  const repay = Math.min(amt, Math.max(0, f.gpAdvance ?? 0));
+  if (repay > 0) f.gpAdvance = (f.gpAdvance ?? 0) - repay; // the sponsor keeps it: its loan back
+  const rest = amt - repay;
+  s.cash -= rest;
+  f.cash += rest;
+}
+
+/**
+ * The sponsor's account paid `amt` of the vehicle's cost: the vehicle pays it
+ * back from its cash, then from a capital call, and whatever it still cannot
+ * pay is a GP advance. Mutates `s`. Returns the advance this created.
+ */
+export function vehicleReimburse(s: GameState, amt: number): number {
+  const f = s.fund;
+  if (!f || f.settled || !(amt > 0)) return 0;
+  const short = amt - Math.max(0, f.cash);
+  if (short > 0 && f.uncalled > 0) {
+    const call = Math.min(short, f.uncalled);
+    f.uncalled -= call;
+    f.called += call;
+    f.cash += call;
+    logBooks(s, "lpCalled", call); // LP equity in for the vehicle's own costs — not income
+  }
+  const pay = Math.min(amt, Math.max(0, f.cash));
+  f.cash -= pay;
+  s.cash += pay;
+  const adv = amt - pay;
+  if (adv > 0) f.gpAdvance = (f.gpAdvance ?? 0) + adv;
+  return adv;
+}
 
 /**
  * TEST HOOK. Off in the game. When `on`, every booking also writes to a probe

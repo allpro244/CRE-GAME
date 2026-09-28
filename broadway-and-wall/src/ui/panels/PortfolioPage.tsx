@@ -12,7 +12,7 @@ import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
 import { payOffDue } from "@/engine/debt";
-import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
+import { portfolioQuote, portfolioSettlement, onFundBook } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
 import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
@@ -440,10 +440,21 @@ export function PortfolioPage() {
              listed on its own — which `listPortfolio` de-lists for you anyway —
              so the one button for "sell the whole book" quietly left buildings
              behind. The only deeds it cannot take are the ones under a crane,
-             which no sale of any kind will convey. */
+             which no sale of any kind will convey.
+             AND "EVERYTHING" IS ONE BOOK. The fund's deeds are the LPs' and
+             cannot share a price with the sponsor's (listPortfolio refuses a
+             mix), so this picks your own balance sheet, and the fund's book
+             has its own button. */
           <button className="btn"
-            onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl]).map((r) => r.h.bbl))}>
-            Pick everything
+            onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl] && !onFundBook(game, r.h.bbl)).map((r) => r.h.bbl))}>
+            Pick everything of yours
+          </button>
+        )}
+        {bundling && rows.some((r) => onFundBook(game, r.h.bbl)) && (
+          <button className="btn"
+            onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl] && onFundBook(game, r.h.bbl)).map((r) => r.h.bbl))}
+            title="The fund's buildings, as their own book — the proceeds go to the vehicle">
+            Pick the fund's book
           </button>
         )}
       </div>
@@ -507,18 +518,32 @@ export function PortfolioPage() {
                    job is still drawing its loan and still due to deliver. A
                    deed on its own listing can: the bundle pulls it off the
                    market on the way past, which is what the engine does. */
-                <td onClick={(ev) => {
-                  ev.stopPropagation();
-                  if (dv) return;
-                  setBundle(bundle.includes(h.bbl) ? bundle.filter((x) => x !== h.bbl) : [...bundle, h.bbl]);
-                }} style={{ cursor: dv ? "default" : "pointer", userSelect: "none" }}
-                  title={dv
-                    ? "Under construction — deliver the building before it can be sold"
-                    : h.sale
-                      ? "Listed on its own. Ticking it pulls that listing and puts the deed in the bundle."
-                      : "Add to the bundle"}>
-                  {dv ? "·" : bundle.includes(h.bbl) ? "☑" : "☐"}
-                </td>
+                (() => {
+                  // One book per bundle: a fund deed cannot join a bundle of
+                  // the sponsor's, nor the other way round.
+                  const fundDeed = onFundBook(game, h.bbl);
+                  const otherBook = !bundle.includes(h.bbl) && bundle.length > 0
+                    && onFundBook(game, bundle[0]) !== fundDeed;
+                  const blocked = !!dv || otherBook;
+                  return (
+                    <td onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (blocked) return;
+                      setBundle(bundle.includes(h.bbl) ? bundle.filter((x) => x !== h.bbl) : [...bundle, h.bbl]);
+                    }} style={{ cursor: blocked ? "default" : "pointer", userSelect: "none" }}
+                      title={dv
+                        ? "Under construction — deliver the building before it can be sold"
+                        : otherBook
+                          ? (fundDeed
+                            ? "The fund's building — the LPs' book cannot share a price with yours. Clear the picks to bundle the fund's deeds."
+                            : "Your own building — it cannot share a price with the fund's book. Clear the picks to bundle your own deeds.")
+                          : h.sale
+                            ? "Listed on its own. Ticking it pulls that listing and puts the deed in the bundle."
+                            : fundDeed ? "Add to the bundle (the fund's book — proceeds go to the vehicle)" : "Add to the bundle"}>
+                      {dv || otherBook ? "·" : bundle.includes(h.bbl) ? "☑" : "☐"}{fundDeed ? " F" : ""}
+                    </td>
+                  );
+                })()
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
               <td>
@@ -885,7 +910,7 @@ export function PortfolioProceeds({ book }: { book: PortfolioSettlement }) {
         <Row k="Facility repaid in full at the table" v={usd(book.facilityDue)} bad />
       )}
       {book.tax > 0 && <Row k="Capital-gains tax" v={usd(book.tax)} bad />}
-      <Row k="Net to you" v={usd(book.netToYou)} strong bad={book.netToYou < 0} />
+      <Row k={book.toFund ? "Net to the fund — the LPs' proceeds, not yours" : "Net to you"} v={usd(book.netToYou)} strong bad={book.netToYou < 0} />
     </>
   );
 }
@@ -923,10 +948,13 @@ export function PortfolioBidActions({
     <>
       <div className={rowClass}>
         <button className="btn btn-buy" onClick={() => { acceptPortfolio(false); onDone?.(); }}>
-          Close it · net {usd(book.netToYou)}
+          Close it · net {usd(book.netToYou)}{book.toFund ? " to the fund" : ""}
         </button>
         <button className="btn" onClick={() => { acceptPortfolio(true); onDone?.(); }}
-          title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due">
+          disabled={book.toFund}
+          title={book.toFund
+            ? "The fund's gain belongs to the vehicle — it cannot roll into your own 1031"
+            : "Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"}>
           Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
         </button>
         {!bid.countered && (

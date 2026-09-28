@@ -7,7 +7,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { BalanceSnapshot, BooksMonth, BooksYear, GameState } from "./types";
-import { logBooks, deedCfProbe, deedIrr } from "./types";
+import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
@@ -63,7 +63,8 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
   let propGross = 0, mortgages = 0, landOnly = 0, bldgCount = 0, landCount = 0;
   let mezz = 0, partners = 0, fundNav = 0, fundDeeds = 0;
   const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
-  if (liveFund) fundNav = liveFund.cash;
+  // Net of the deposits the vehicle holds for its own tenants — portfolioMark's arithmetic.
+  if (liveFund) fundNav = liveFund.cash - fundDepositsHeld(s);
   const byClass: Record<string, { n: number; gross: number; debt: number }> = {};
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
@@ -107,7 +108,7 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     notesVal += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
   }
 
-  const deposits = depositsHeld(s);
+  const deposits = depositsHeld(s) - fundDepositsHeld(s);
   const locBal = s.loc?.balance ?? 0;
   const locLim = locLimit(s, parcels);
   const facility = s.facility?.balance ?? 0;

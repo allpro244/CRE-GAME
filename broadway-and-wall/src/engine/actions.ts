@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -22,6 +22,7 @@ import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { ownersShareOfProceeds, jvConsent } from "./jv";
+import { gpCapitalShare } from "./fund";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -251,10 +252,10 @@ export function executePurchase(
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
   // netted out of the cheque are a liability transfer, not a cheaper building.
   const pointsFee = bq.pointsFee ?? 0;
-  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl);
+  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl, fromFund);
   // the fee found its way to a named shop, and the shop will remember
   creditBrokerFee(next, bbl);
-  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl);
+  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl, fromFund);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
@@ -391,13 +392,9 @@ export function executePurchase(
     if (fromFund && next.fund) next.fund.cash += extra;
     else next.cash += extra;
   } else {
+    // genRentRoll settles the deposits through moveDeposit, which already puts
+    // a vehicle deed's into fund.cash.
     genRentRoll(next, rec, holding, wasDistress);
-    // genRentRoll settles deposits onto GP cash; a vehicle deed moves them over.
-    if (fromFund && next.fund) {
-      const dep = depositsOn(holding);
-      next.cash -= dep;
-      next.fund.cash += dep;
-    }
   }
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
@@ -2658,6 +2655,20 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
 }
 
 /**
+ * THE SPONSOR'S TAX ON A SALE — what leaves the sponsor's own account at the
+ * closing. A JV deed: each side is taxed on its own share (the basis is
+ * already the owner's alone). A live fund's deed: the vehicle is a
+ * partnership and pays no entity tax; its gain passes through, and the
+ * sponsor owes only its co-invest share of it (gpCapitalShare). The LPs'
+ * shares are taxed on the LPs' returns, off this book.
+ */
+export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
+  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
+  if (h.fundOwned && s.fund && !s.fund.settled) return Math.round(tax * gpCapitalShare(s.fund));
+  return tax;
+}
+
+/**
  * WHAT REACHES THE SELLER — one helper for the offer modal and the close.
  *
  * The modal used to show `saleTaxQuote.net − loan − tax` and omit the
@@ -2672,9 +2683,7 @@ export function saleProceedsToSeller(
   release: number; loanPayoff: number; toSeller: number; partner: number;
 } {
   const { net, gain } = saleTaxQuote(h, price, s);
-  // A JV deed: each side is taxed on its own share (the basis is already the
-  // owner's alone), and the partner is paid its share at the closing table.
-  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
+  const tax = sponsorsSaleTax(s, h, price);
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
   const stack = stackPayoff(h, s.month);
   const breakFee = stack.penalty;
@@ -2693,9 +2702,14 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const { gain } = saleTaxQuote(h, offer.price, s);
-  const tax = h.jv ? saleTaxQuote(h, Math.round(offer.price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, offer.price, s).tax;
+  const tax = sponsorsSaleTax(s, h, offer.price);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
+  // The vehicle's gain is the vehicle's: rolling it into the sponsor's own
+  // exchange would move the fund's tax bill onto the GP's next purchase.
+  if (exchange && h.fundOwned && s.fund && !s.fund.settled) {
+    return { s, err: "A fund deed's gain belongs to the vehicle — it cannot roll into your own 1031." };
+  }
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
@@ -2706,8 +2720,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const breakFee = px.breakFee;
   const release = px.release;
   const toSeller = px.toSeller;
-  // Vehicle deed: proceeds and tax sit on fund.cash so the promote has a
-  // counterparty. GP cash is untouched on a fund exit.
+  // Vehicle deed: the proceeds sit on fund.cash so the promote has a
+  // counterparty. The vehicle pays no tax on them — the sponsor's share of
+  // the gain is taxed on the sponsor, below.
   const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
   if (intoFund && next.fund) next.fund.cash += toSeller;
   else next.cash += toSeller;
@@ -2727,8 +2742,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // balance-sheet movement, not income and not expense.
   //
   // This survived because conserve's bot never sold anything. It sells now.
-  logBooks(next, "sold", toSeller + kick + breakFee, bbl);
-  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee, bbl);
+  logBooks(next, "sold", toSeller + kick + breakFee, bbl, intoFund);
+  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee, bbl, intoFund);
   // The release is a repayment of principal, not an expense — it comes out of
   // the proceeds and goes against the balance, so `sold` is struck net of it
   // for the same reason it is struck net of the mortgage payoff.
@@ -2745,8 +2760,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
-    if (intoFund && next.fund) next.fund.cash -= tax;
-    else next.cash -= tax;
+    // The sponsor's own tax — on a fund deed, its co-invest share of the
+    // vehicle's gain, from its own account (sponsorsSaleTax).
+    next.cash -= tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + tax;
     logBooks(next, "taxes", tax);
   }
@@ -2770,9 +2786,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
     // is exactly the size of a small building's roll. The parent's deposits
     // were handed over correctly a few lines below; the children's were not.
-    const childDep = depositsOn(next.holdings[child]);
-    if (intoFund && next.fund) next.fund.cash -= childDep;
-    else next.cash -= childDep;
+    moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
@@ -2784,9 +2798,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
   {
-    const dep = depositsOn(next.holdings[bbl]);
-    if (intoFund && next.fund) next.fund.cash -= dep;
-    else next.cash -= dep;
+    moveDeposit(next, next.holdings[bbl], -depositsOn(next.holdings[bbl]));
   }
   // Somebody owns it now, and they will hold it for years — the tape does
   // not get it back next quarter.
@@ -3686,6 +3698,8 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.renovatingUntilM = next.month + RENO_MONTHS;
+  // Their deposits go back with them — out of whichever purse held them.
+  moveDeposit(next, nh, -depositsOn(nh));
   nh.tenants = []; // remaining tenants are bought out as part of the job
   if (rec.class === "multifamily") nh.occ = 0;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);

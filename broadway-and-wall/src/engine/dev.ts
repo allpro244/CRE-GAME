@@ -1249,7 +1249,11 @@ export function planAdaptiveReuse(
   const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal) * 100;
   const reuseBuild = costTotal + interestReserve + pointsCost;
   const yieldOnCostExLand = reuseBuild > 0 ? stabilizedNoi / reuseBuild * 100 : 0;
-  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, base.exitCap);
+  // THE SAME EXIT THE GROUND-UP DESK AND THE MARK USE. This passed the bare
+  // cap rate while planDevelopment passes the tax-loaded exit yield, so a
+  // conversion cleared a lower bar than a new building on the same lot for
+  // the same finished product — one hurdle, two answers.
+  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, base.exitYield);
   return {
     ...base,
     hardCost, softCost, demo, contingency, costTotal,

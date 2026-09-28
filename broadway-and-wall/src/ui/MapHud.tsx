@@ -212,7 +212,7 @@ export default function MapHud() {
 
       {game?.goal && (() => {
         const g = game.goal;
-        const p = goalProgress(game);
+        const p = goalProgress(game, parcels);
         if (!p) return null;
         const left = Math.max(0, Math.ceil((g.deadlineM - game.month) / 12));
         return (

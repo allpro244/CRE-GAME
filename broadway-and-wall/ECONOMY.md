@@ -1637,3 +1637,16 @@ also underwrites with — now pays for the dirt's time and prices the expected
 rather than the spot market: with those two terms switched off on the desk
 alone the same build recovers to 10.74M sf of the 11.07M, and the remaining
 ~3% is the unified stack itself.
+
+## A listing's rent roll ages
+
+Listings carry a synthetic rent roll so rivals and appraisers can price in-place
+income. The roll was drawn once and never aged: a tenant whose lease ended in
+month 40 was still paying in month 200, as far as every buyer on the tape could
+see. Now expired leases drop off the roll each month (sim.ts, listing tick).
+Measured by attribution — the same batch with only this line disabled moves 0 of
+39 baseline metrics; with it, 8 move: office rent index 41.95 → 48.94 (+16.7%),
+retail vacancy 4.62% → 3.82%, multifamily occupancy gap −0.445 → −0.022, median
+land +2.7%, floor area −1.4%, employment +1.7%. A buyer who no longer pays for
+tenants who have left bids for space they can actually let, which is the
+correction, not a tuning.

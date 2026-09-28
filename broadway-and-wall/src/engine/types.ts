@@ -452,6 +452,8 @@ export interface Holding {
   condIdx?: number;
   /** Last month the capital plan went unfunded — firm cash could not cover the bill. */
   planCutM?: number;
+  /** The first month of the current unfunded stretch — the capital-plan stop fires once per stretch, not monthly. */
+  planCutSinceM?: number;
   /**
    * HOW YOU HAVE DECIDED TO RUN IT — the two standing decisions, taken once
    * and lived with for years, which is how an operator actually sets a policy.

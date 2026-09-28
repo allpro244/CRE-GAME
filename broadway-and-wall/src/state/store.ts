@@ -453,7 +453,7 @@ function queueYearReview(prev: GameState, next: GameState, set: (partial: Partia
   if (got.length) set({ milestoneFlash: got });
   // THE RUN'S GOAL: met, or out of time. Stamped on the state that is about
   // to be persisted, so it is decided once.
-  const verdict = goalVerdict(next);
+  const verdict = goalVerdict(next, useStore.getState().parcels);
   if (verdict && next.goal) {
     next.goal = verdict === "done" ? { ...next.goal, doneM: next.month } : { ...next.goal, failedM: next.month };
     set({ goalCard: verdict });

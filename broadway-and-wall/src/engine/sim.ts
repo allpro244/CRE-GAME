@@ -330,7 +330,16 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // appear, and costs nothing: the roll is deterministic per building and
   // drawn from a private stream. See stampListing.
   for (const li of s.listings) {
-    if (li.roll) continue;
+    // A DISCLOSED ROLL AGES WITH THE CALENDAR. It was stamped once and never
+    // looked at again, so a lease that ended while the building sat on the
+    // tape was still printed — and valued, and ranked top of every yield sort —
+    // until the buyer closed and the tenant was already gone (measured: 94%
+    // let on the tape, 39% the month after closing, mark −41%). A lease past
+    // its end leaves the roll the month it ends, as it would on your own book.
+    if (li.roll) {
+      if (li.roll.some((t) => t.endM < s.month)) li.roll = li.roll.filter((t) => t.endM >= s.month);
+      continue;
+    }
     const r = resolveRec(parcels, s, li.bbl);
     if (r) stampListing(s, r, li);
   }
@@ -868,6 +877,11 @@ function tickMonth(
   // start taking things. One asset a month, sold at a distressed bid, until the
   // balance is square. You only lose when the line is exhausted and there is
   // nothing left to take.
+  // EIGHT YEARS IN A ROW, NOT EIGHT YEARS IN TOTAL. This counted every
+  // negative month of the whole run and never reset, so a firm that had been
+  // briefly overdrawn a few times over decades was ended while solvent
+  // (measured: a $17.7M net worth firm, run over at month 235).
+  if (s.cash >= 0) s.underwaterMs = 0;
   if (s.cash < 0) {
     s.insolventMs++;
     s.underwaterMs = (s.underwaterMs ?? 0) + 1;
@@ -876,7 +890,7 @@ function tickMonth(
     }
     if ((s.underwaterMs ?? 0) >= 96) {
       s.gameOver = {
-        cause: "Insolvency: seven years underwater and the hole still grows. The run ends here.",
+        cause: "Insolvency: eight years underwater without a month above water, and the hole still grows. The run ends here.",
       };
       s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
     } else if (s.insolventMs >= 12) {
@@ -1165,9 +1179,14 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   // somebody else's wrecking ball — measured on two first years in eight.
   { id: "tower1", label: "First development delivered", test: (s) => (s.delivered ?? 0) >= 1 },
   { id: "exit1", label: "First profitable exit", test: (s) => s.exits.some((e) => !e.forced && e.gain > 0) },
+  // An exit whose own equity ledger (s.deedCf, closed into the Exit) earned a
+  // fifth a year — the sponsor's number, levered and before tax.
+  { id: "irr20", label: "An exit at a 20% IRR", test: (s) => s.exits.some((e) => !e.forced && (e.irr ?? -1) >= 0.2) },
   { id: "nw25", label: "Net worth $25M", test: (_s, nw) => nw >= 25e6 },
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },
+  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed) || (s.fundsRaised ?? 0) >= 2 },
   { id: "nw500", label: "Net worth $500M", test: (_s, nw) => nw >= 500e6 },
+  { id: "street1", label: "Top of the street", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
   { id: "ten", label: "Ten buildings under management", test: (s) => Object.keys(s.holdings).length >= 10 },
   { id: "twentyfive", label: "A quarter-hundred holdings", test: (s) => Object.keys(s.holdings).length >= 25 },
@@ -1426,9 +1445,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
           }
         }
       }
+      // ONCE PER STRETCH. planCutM is re-stamped every month the plan goes
+      // unfunded, and keying the stop on it stopped the clock twelve times a
+      // year for the same condition (38–79 stops in a stressed run). The key
+      // is the stretch's first month; the notice stays on the desk while it lasts.
       if (h.planCutM === s.month) {
         out.push({
-          key: `capital-plan:${h.bbl}:${h.planCutM}`,
+          key: `capital-plan:${h.bbl}:${h.planCutSinceM ?? h.planCutM}`,
           // NAME THE CONDITION THAT ACTUALLY FIRED. The plan now funds off cash
           // OR the undrawn line, so `planCutM` is set when both are gone — and
           // a notice that says "from cash" sends the player to look for cash

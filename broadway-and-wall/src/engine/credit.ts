@@ -27,6 +27,27 @@ export const LOC_SPREAD = 4.0;    // prime + 400bps
  * Everything above this goes to the most expensive money first.
  */
 export const LOC_CASH_RESERVE = 250_000;
+/** Default interest margin on an over-advanced revolver, per year — a loan-agreement term (commonly 2–5%). */
+export const LOC_DEFAULT_MARGIN = 0.05;
+
+/**
+ * THE OPERATING RESERVE — one figure for the treasury. Six months of debt
+ * service (mortgages, facility, the line itself), never under the float
+ * above. The leasing agent refuses to sign below it and the attention list
+ * alarms below it; the sweep used to pay the line down to $250K regardless,
+ * so any levered firm with a drawn line sat permanently under its own
+ * reserve and every letter was referred to the principal (28–74 stops a run).
+ * Now the sweep keeps what the agent needs.
+ */
+export function operatingReserve(s: GameState): number {
+  const mortgages = Object.values(s.holdings)
+    .reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0);
+  const facility = s.facility
+    ? (s.facility.balance * s.facility.ratePct) / 100 / 12
+    : 0;
+  const line = ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + LOC_SPREAD)) / 100 / 12;
+  return Math.max(LOC_CASH_RESERVE, Math.round(6 * (mortgages + facility + line)));
+}
 
 /** Line amounts in news — never "$0.00M" for a $4k cheque. */
 function locMoney(n: number): string {
@@ -53,8 +74,9 @@ export function sweepLocIdleCash(
   opts?: { announce?: boolean },
 ): number {
   if (!s.loc || s.loc.balance <= 0) return 0;
-  if (s.cash <= LOC_CASH_RESERVE) return 0;
-  const sweep = Math.min(s.loc.balance, Math.floor(s.cash - LOC_CASH_RESERVE));
+  const keep = operatingReserve(s);
+  if (s.cash <= keep) return 0;
+  const sweep = Math.min(s.loc.balance, Math.floor(s.cash - keep));
   if (sweep <= 0) return 0;
   s.loc.balance -= sweep;
   s.cash -= sweep;
@@ -354,8 +376,19 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
       // out of the firm with no entry behind it, and `pnpm conserve` calls
       // that vanishing. It is default interest on a revolver the borrower
       // cannot clear — debt service, the expensive kind.
+      //
+      // AT A DEFAULT RATE, NOT A QUARTER OF THE HOLE A MONTH. This charged 25%
+      // of the over-advance every month from the third — 300% a year, never
+      // reducing the balance, and the charge cut net worth, which cut the
+      // limit, which grew the over-advance. Measured: debt service $0.65M →
+      // $3.2M a month on a $14.4M line over three years, net worth $28.9M →
+      // −$117.8M. That was a thumb on the scale ("teeth"), not a price. A
+      // revolver in default accrues the contract rate plus a default margin
+      // (commonly +2–5% a year in the loan agreement; 5% here) on the amount
+      // in default; the lender's remedy is the collateral, which is the
+      // insolvency clock this default already starts.
       if (s.locOverMs >= 3) {
-        const penalty = Math.round(stillOver * 0.25);
+        const penalty = Math.round(stillOver * LOC_DEFAULT_MARGIN / 12);
         s.cash -= penalty;
         logBooks(s, "debtSvc", penalty);
       }

@@ -39,5 +39,40 @@ if (found) {
   const other = ["office", "retail", "multifamily", "industrial"].find((u) => u !== rec.class);
   check(!E.inBuyBox({ ...found, buyBox: { uses: [other] } }, parcels, li.bbl, li.ask), `a ${rec.class} listing is outside a ${other}-only box`);
 }
+
+// LAND THAT PENCILS — a lot is in a land box only when its ask plus closing sits
+// inside a builder's residual; the same test the Marketplace chip reads.
+{
+  let gl = E.firstListings(E.newGame(777, parcels, 40_000_000), parcels, bbls);
+  let yes = null, no = null;
+  for (let m = 0; m < 240 && !(yes && no); m++) {
+    gl = E.advanceMonth(gl, parcels, bbls, adjacency);
+    if (gl.gameOver) gl = { ...gl, gameOver: null, cash: 40_000_000 };
+    for (const li of gl.listings) {
+      const rec = E.resolveRec(parcels, gl, li.bbl);
+      if (rec?.class !== "land" || !(rec.lotArea > 0)) continue;
+      const p = E.landPencils(rec, gl.econ, li.ask);
+      if (p.pencils && !yes) yes = { g: gl, li };
+      if (!p.pencils && !no) no = { g: gl, li };
+    }
+  }
+  check(!!yes && !!no, `the tape shows lots that pencil and lots that do not (${!!yes} / ${!!no})`);
+  const box = { land: true };
+  if (yes) check(E.inBuyBox({ ...yes.g, buyBox: box }, parcels, yes.li.bbl, yes.li.ask), "a lot that pencils is inside a land box");
+  if (no) check(!E.inBuyBox({ ...no.g, buyBox: box }, parcels, no.li.bbl, no.li.ask), "a lot that does not pencil is outside it");
+  if (yes) {
+    // Hand-check the residual test: at exactly the residual less closing it
+    // pencils; a dollar a foot over and it does not.
+    const rec = E.resolveRec(parcels, yes.g, yes.li.bbl);
+    const lr = E.landRead(rec, yes.g.econ);
+    const at = Math.floor((lr.builder / 1.02) * rec.lotArea);
+    check(E.landPencils(rec, yes.g.econ, at).pencils && !E.landPencils(rec, yes.g.econ, (lr.builder / 1.02 + 1) * rec.lotArea).pencils,
+      "the line is the builder's residual less 2% closing");
+    check(!E.inBuyBox({ ...yes.g, buyBox: { uses: ["office"] } }, parcels, yes.li.bbl, yes.li.ask), "a product box without land leaves the dirt out");
+    const built = yes.g.listings.find((l) => E.resolveRec(parcels, yes.g, l.bbl)?.class !== "land");
+    if (built) check(!E.inBuyBox({ ...yes.g, buyBox: box }, parcels, built.bbl, built.ask), "a land-only box leaves standing buildings out");
+  }
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");
 process.exit(bad ? 1 : 0);

@@ -23,7 +23,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
-import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
+import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve } from "./credit";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
 
@@ -1262,6 +1262,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         h.condIdx += wear * plan.lift;
         h.lastCapM = q;
       } else if (want > 0) {
+        // A new stretch starts unless last month was cut too.
+        if (h.planCutM !== q - 1 || h.planCutSinceM === undefined) h.planCutSinceM = q;
         h.planCutM = q;
       }
       // A building can never be made better than its bones allow — see
@@ -2597,13 +2599,7 @@ export function loiSigningMonths(loi: LOI, feeRate: number): number {
  * good lease and bankrupting the firm that owns it.
  */
 export function agentCashReserve(s: GameState): number {
-  const mortgages = Object.values(s.holdings)
-    .reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0);
-  const facility = s.facility
-    ? (s.facility.balance * s.facility.ratePct) / 100 / 12
-    : 0;
-  const line = ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
-  return Math.max(250_000, Math.round(6 * (mortgages + facility + line)));
+  return operatingReserve(s);
 }
 
 /**

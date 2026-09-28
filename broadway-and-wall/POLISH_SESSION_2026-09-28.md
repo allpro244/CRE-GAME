@@ -67,10 +67,28 @@ trolley on sites. See the commit messages on `ThreeBuildings.ts` and `MapView.ts
 - **Review fixes**: underwater fund deeds never bought in, in-kind exits pooled, autosave is
   max-wait with serialized writes (Play used to never save), dead-branch rewind points pruned.
 
+## Reviewer batch 4 (PR #154)
+
+- Revolver over-advance charges a 5%/yr default margin on the excess (was 25% a month).
+- `operatingReserve` (credit.ts) — max($250K, six months of debt service) — is the one
+  reserve the LOC sweep and the leasing agent keep.
+- Listing rent rolls age: expired leases drop off (sim.ts). This alone moved 8 baseline
+  metrics (office rent index +16.7%); see ECONOMY.md "A listing's rent roll ages".
+- Underwater counter resets on a month above water; capital-plan stops fire once per streak.
+- Landlord goal counts flats and JV share; returns-to-date floors non-recourse equity at 0.
+- Fund quote refuses a raise the GP cannot co-invest in.
+- Buy box: **land that pencils** (`landPencils`, buybox.ts) — one function for the box and
+  the Marketplace PENCILS chip.
+- A "refinance at maturity" instruction was considered and dropped: `serviceLoan` already
+  rolls a maturing performing loan to the cheapest desk that sizes the whole balance.
+
 ## Open, measured, not done
 
 - Report letter H (the glut is seen) moved OK → BAND with the pro-forma reconciliation:
   rate-policy drift during the glut +1.31pp vs a ≤ +0.35 band. Informational; worth a look.
 - Sale instructions act on single offers, not a marketed campaign's bid list.
-- landRead cost: a per-month memo of the residual per lot would recover most of the tick time.
+- landRead cost: a memo keyed on the market object plus a fingerprint of every scalar on the
+  lot and the market hit 64% of calls but saved nothing — fingerprinting the market each call
+  cost what the pro forma did. A cheaper invalidation (a market version counter bumped where the
+  tick mutates econ) would be the way to recover the time.
 - Late game: platform sale / listing using `sellStake` + `listPortfolio` machinery.

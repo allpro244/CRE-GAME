@@ -1165,9 +1165,14 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   // somebody else's wrecking ball — measured on two first years in eight.
   { id: "tower1", label: "First development delivered", test: (s) => (s.delivered ?? 0) >= 1 },
   { id: "exit1", label: "First profitable exit", test: (s) => s.exits.some((e) => !e.forced && e.gain > 0) },
+  // An exit whose own equity ledger (s.deedCf, closed into the Exit) earned a
+  // fifth a year — the sponsor's number, levered and before tax.
+  { id: "irr20", label: "An exit at a 20% IRR", test: (s) => s.exits.some((e) => !e.forced && (e.irr ?? -1) >= 0.2) },
   { id: "nw25", label: "Net worth $25M", test: (_s, nw) => nw >= 25e6 },
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },
+  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed) || (s.fundsRaised ?? 0) >= 2 },
   { id: "nw500", label: "Net worth $500M", test: (_s, nw) => nw >= 500e6 },
+  { id: "street1", label: "Top of the street", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
   { id: "ten", label: "Ten buildings under management", test: (s) => Object.keys(s.holdings).length >= 10 },
   { id: "twentyfive", label: "A quarter-hundred holdings", test: (s) => Object.keys(s.holdings).length >= 25 },

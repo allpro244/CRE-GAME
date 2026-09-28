@@ -717,10 +717,10 @@ export default function TopBar() {
                   }}
                 >
                   {job.label}
+                  {job.pages.length > 1 ? <span className="nav-caret" aria-hidden="true">▾</span> : null}
                   {job.id === "acquire" ? <Badge n={badge} /> : null}
                   {job.id === "capital" && debtSwept ? " · ⚠" : job.id === "capital" && debtHot ? " · !" : ""}
                   {job.id === "world" ? <Badge n={unread} /> : null}
-                  {job.pages.length > 1 ? <span className="nav-caret" aria-hidden="true">▾</span> : null}
                 </button>
                 {jobOpen === job.id && (
                   <div className="nav-menu nav-job-menu" role="menu">
@@ -902,7 +902,9 @@ export default function TopBar() {
  * the slot even at zero so appearing and disappearing costs nothing either.
  */
 function Badge({ n }: { n: number }) {
-  return <span className="nav-badge">{n > 0 ? `· ${n}` : ""}</span>;
+  // A count pinned to the button's corner: no layout slot, so the label never
+  // moves when it appears, and no empty 28px gap when there is nothing to count.
+  return n > 0 ? <span className="nav-badge" aria-label={`${n} waiting`}>{n}</span> : null;
 }
 
 /**

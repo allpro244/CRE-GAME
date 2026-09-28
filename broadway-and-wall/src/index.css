@@ -404,6 +404,11 @@ body {
 .chip-listed { background: var(--teal); color: #fdfbf4; }
 .chip-reno { background: #7a5f9e; color: #fdfbf4; }
 .hint { font-size: 13px; color: var(--ink-dim); font-style: italic; line-height: 1.5; padding: 6px 0; }
+/* The Primer is the one page meant to be READ start to finish. As .hint it was
+   eight screens of grey italic at 1,050px a line; body ink, upright, at a
+   reading measure. */
+.primer-prose .hint { font-style: normal; color: var(--ink); font-size: 14px; line-height: 1.6; max-width: 76ch; }
+.primer-prose .hint i { font-style: italic; }
 
 /* ---- news ---- */
 .news { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.45; }
@@ -1497,11 +1502,20 @@ html, body, #root { overflow-x: hidden; }
    control to its right, on almost every Advance — which is precisely when the
    player's cursor is resting on one. The count now lives in a reserved box, so
    the label keeps its place whether the number is absent, one digit or three.
-   Tabular figures so 11 and 33 are also the same width. */
+   (It was an inline 28px slot, which left an empty gap after Acquire and World
+   whenever nothing was waiting; it is now a pip on the button's corner, out of
+   flow, so neither the label nor its neighbours ever move.) */
 .nav-badge {
-  display: inline-block; min-width: 28px; text-align: left;
+  position: absolute; top: -6px; right: -7px;
+  min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 9px;
+  background: #b07f1e; color: #fffaf0;
+  font: 600 10px/17px var(--mono); text-align: center;
   font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1.5px rgba(250, 247, 238, 0.95);
+  pointer-events: none;
 }
+.nav-job > .nav-btn { position: relative; }
 
 /* ---- 2026 interface hierarchy --------------------------------------------
    The map is the product; the chrome is the instrument panel around it.
@@ -1806,6 +1820,20 @@ html, body, #root { overflow-x: hidden; }
   }
   .brand { grid-column: 1; }
   .topbar-right { grid-column: 2; }
+}
+@media (max-width: 1180px) {
+  /* Measured at 1024: jobs (~480px) + six worded lenses (~450) + the clock
+     (~240) ran the jobs row under the lens buttons — "World" and "Economy"
+     printed on top of Market and Land. Below 1180 the lenses go to their glyph
+     (each keeps its title), the cluster captions go, and the summary tightens
+     so Book stops wrapping onto a row of its own. */
+  .nav-cluster::before { display: none; }
+  .nav-cluster-map .lens-btn { font-size: 0; width: 28px; height: 27px; padding: 0; }
+  .nav-cluster-map .lens-btn::first-letter { font-size: 13px; }
+  .topbar-summary,
+  .topbar-summary .topbar-vital,
+  .topbar-summary .topbar-stats { gap: 10px; }
+  .topbar-summary .topbar-stats { padding-left: 10px; }
 }
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }
@@ -2303,7 +2331,9 @@ html, body, #root { overflow-x: hidden; }
 .stat-strip { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); }
 .stat-strip .big-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-strip .big-value.big-value-long { font-size: 16px; }
-.stat-strip .big-value.big-value-xl { font-size: 13.5px; }
+/* The longest readings are ranges ("$1.30M – $1.47M") — an ellipsis there
+   cut the top of the appraisal off. They wrap at the dash instead. */
+.stat-strip .big-value.big-value-xl { font-size: 13.5px; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
 
 /* THE KEYS card — see Shortcuts.tsx */
 .kbd-card { max-width: 560px; text-align: left; }
@@ -2383,8 +2413,11 @@ html, body, #root { overflow-x: hidden; }
 @media (max-width: 560px) { .gloss-entry { grid-template-columns: 1fr; gap: 2px; } }
 
 /* Goal picker — start screen. */
-.start-goals { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 14px; }
-.start-goals-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--chart-dim, #93aab6); align-self: center; margin-right: 4px; }
+.start-goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); align-items: stretch; gap: 8px; margin: 0 0 14px; }
+.start-goals-label { grid-column: 1 / -1; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--chart-dim, #93aab6); }
+.start-goals .start-goal { max-width: none; }
+.start-goal:hover { border-color: rgba(216,169,74,0.6); background: rgba(255,255,255,0.07); }
+.start-goal:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .next-goals-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
 .next-goals-row .start-goal { max-width: 220px; text-align: left; color: #2b2317; background: rgba(60,45,20,0.04); border-color: rgba(60,45,20,0.22); }
 .next-goals-row .start-goal span { color: #6a5d49; }

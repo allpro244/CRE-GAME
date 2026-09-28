@@ -117,7 +117,11 @@
   border: 0;
   padding: 0;
   margin: 0;
+  /* \`font: inherit\` alone reset the 12px above to the rail's body size, so a
+     linked row read at twice the size of an unlinked one */
   font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
 }

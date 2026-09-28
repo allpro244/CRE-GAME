@@ -400,6 +400,67 @@ function contribution(cls: BuiltClass, sf: number): { j: number; r: number; a: n
 // than a tower is now EMERGENT rather than asserted, which is the only kind of
 // answer worth having.
 
+/**
+ * THE NEIGHBOURHOOD AS ARRAYS — a pure-performance view for tickDemand. The
+ * blocks are numbered in `model.blocks` order and each block's neighbour list
+ * becomes (index, weight) arrays in its own order; both are fixed for the
+ * life of the model. `flatOccupancy` then lays one month's occupied stock out
+ * the same way, keeping each block's classes in their Object.keys order so
+ * the sums come out in the order the Map-and-object loop added them. It
+ * returns null — use the plain loop — if a class it does not know turns up.
+ */
+const CLASS_CODE: Record<string, number> = Object.assign(Object.create(null), { office: 0, industrial: 1, retail: 2, multifamily: 3 });
+type NbIndex = { ids: string[]; at: Map<string, number>; nb: { idx: Int32Array; w: Float64Array }[] };
+const NB_INDEX = new WeakMap<DemandModel, NbIndex | null>();
+function nbIndex(model: DemandModel): NbIndex | null {
+  let hit = NB_INDEX.get(model);
+  if (hit !== undefined) return hit;
+  const ids = [...model.blocks.keys()];
+  const at = new Map<string, number>();
+  ids.forEach((id, i) => at.set(id, i));
+  hit = { ids, at, nb: [] };
+  for (const b of model.blocks.values()) {
+    const idx = new Int32Array(b.neighbours.length);
+    const w = new Float64Array(b.neighbours.length);
+    for (let t = 0; t < b.neighbours.length; t++) {
+      const q = at.get(b.neighbours[t].id);
+      if (q === undefined) { hit = null; break; }
+      idx[t] = q;
+      w[t] = b.neighbours[t].w;
+    }
+    if (!hit) break;
+    hit.nb.push({ idx, w });
+  }
+  NB_INDEX.set(model, hit);
+  return hit;
+}
+function flatOccupancy(
+  model: DemandModel, occ: Map<string, Partial<Record<BuiltClass, number>>>,
+): { start: Int32Array; codes: Uint8Array; vals: Float64Array; nb: NbIndex["nb"] } | null {
+  const ix = nbIndex(model);
+  if (!ix) return null;
+  const start = new Int32Array(ix.ids.length + 1);
+  let n = 0;
+  for (const id of ix.ids) { const st = occ.get(id); if (st) n += Object.keys(st).length; }
+  const codes = new Uint8Array(n);
+  const vals = new Float64Array(n);
+  let e = 0;
+  for (let q = 0; q < ix.ids.length; q++) {
+    start[q] = e;
+    const st = occ.get(ix.ids[q]);
+    if (!st) continue;
+    for (const k of Object.keys(st) as BuiltClass[]) {
+      const c = CLASS_CODE[k];
+      if (c === undefined) return null;
+      codes[e] = c;
+      vals[e] = st[k] ?? 0;
+      e++;
+    }
+  }
+  start[ix.ids.length] = e;
+  return { start, codes, vals, nb: ix.nb };
+}
+
 /** A canonical mixed-use stack, for the "what should I build here" probe. */
 const MIXED_PROBE: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
@@ -1016,14 +1077,37 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
   // ---- what each block's surroundings now justify --------------------------
   const raw = new Map<string, number>();
+  const flat = flatOccupancy(model, occ);
+  let bi = 0;
   for (const b of model.blocks.values()) {
     let j = 0, r = 0, a = 0;
-    for (const n of b.neighbours) {
-      const st = occ.get(n.id);
-      if (!st) continue;
-      for (const k of Object.keys(st) as BuiltClass[]) {
-        const c = contribution(k, (st[k] ?? 0) * n.w);
-        j += c.j; r += c.r; a += c.a;
+    if (flat) {
+      // The same sums as the loop below, in the same order, over arrays
+      // instead of a Map lookup and an Object.keys per neighbour. The zero
+      // legs contribution() adds (r += 0 for an office...) are dropped: the
+      // accumulators start at +0 and only ever take finite or NaN addends, so
+      // adding +0 can never change one.
+      const nb = flat.nb[bi++];
+      for (let t = 0; t < nb.idx.length; t++) {
+        const q = nb.idx[t], w = nb.w[t];
+        for (let e = flat.start[q], end = flat.start[q + 1]; e < end; e++) {
+          const sf = flat.vals[e] * w;
+          switch (flat.codes[e]) {
+            case 0: j += sf / 230; break;
+            case 1: j += sf / 550; break;
+            case 2: j += sf / 420; a += sf; break;
+            default: r += sf / 900; break;
+          }
+        }
+      }
+    } else {
+      for (const n of b.neighbours) {
+        const st = occ.get(n.id);
+        if (!st) continue;
+        for (const k of Object.keys(st) as BuiltClass[]) {
+          const c = contribution(k, (st[k] ?? 0) * n.w);
+          j += c.j; r += c.r; a += c.a;
+        }
       }
     }
     const acres = b.nbLandArea / 43_560;

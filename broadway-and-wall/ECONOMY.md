@@ -2020,7 +2020,8 @@ already in the engine:
 10 · 8 · 8 · 4 · 2 firms by decade and 4242 ended at 3. The base (#164)
 passed by one firm. The test floor was not the problem. The model was.
 
-**Both builds collapse.** 6 seeds × 100 years, no player. #164 ran
+**Both builds collapse.** 6 seeds (7777, 4242, 11, 22, 33, 44) × 100 years,
+no player, `tools/firm-flows.mjs`. #164 ran
 29.7 · 27.0 · 21.3 · 12.5 · 10.0 · 8.7 · 7.8 · 5.8 · 6.0 · 5.0 and #165 ran
 29.7 · 27.0 · 21.0 · 13.0 · 11.2 · 9.5 · 6.5 · 5.0 · 3.8 · 3.3. Exits were
 37.8 and 42.0 per century. 72-75% of them were empty-book wind-ups (the husk

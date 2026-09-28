@@ -41,6 +41,8 @@ export const MODULES = [
   "jv",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
+  // buybox is the sponsor's standing acquisition criteria (what a first look must match).
+  "buybox",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the

@@ -196,6 +196,8 @@ interface AppState {
   /** Continuous play: 0 off, 1 about a month a second, 2 fast. Pauses itself on anything Yr would stop on. */
   autoplay: 0 | 1 | 2;
   setAutoplay: (v: 0 | 1 | 2) => void;
+  /** Standing acquisition criteria: what a broker's first look must match to stop the clock. */
+  setBuyBox: (b: import("@/engine/buybox").BuyBox | undefined) => void;
   /** Star / unstar a building to follow: the docket says when it lists. */
   toggleWatch: (bbl: string) => void;
   advanceYear: () => void;
@@ -786,6 +788,14 @@ export const useStore = create<AppState>((set, get) => ({
 
   autoplay: 0,
   setAutoplay: (autoplay) => set({ autoplay }),
+  setBuyBox: (b) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, buyBox: b };
+    if (!b) delete next.buyBox;
+    set({ game: next });
+    void persist(next);
+  },
   toggleWatch: (bbl) => {
     const { game } = get();
     if (!game) return;

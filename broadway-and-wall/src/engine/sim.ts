@@ -27,6 +27,7 @@ import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
 import { tickFund, settleFund } from "./fund";
+import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs } from "./rivals";
@@ -1347,9 +1348,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // what the firm can fund today, and never when the player has said so. The
   // Marketplace still shows every one.
   let purse: number | null = null;
-  const canClose = (ask: number) => {
+  const canClose = (ask: number, bbl?: string) => {
     if (s.brokerStops === "never") return false;
     if (!parcels) return true;
+    // Outside the player's own buy box it is not a decision either.
+    if (bbl && !inBuyBox(s, parcels, bbl, ask)) return false;
     purse ??= fundableNow(s, parcels);
     return purse >= ask * (1 - TYPICAL_LTV) + ask * 0.02;
   };
@@ -1357,7 +1360,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // Marketplace already lists live broker calls. Stopping Skip every month
     // a file sits on the phone is noise — stop only when the conversation is
     // about to lapse and a decision is actually required.
-    if (a.inbound && !a.refused && a.ask && canClose(a.ask)) {
+    if (a.inbound && !a.refused && a.ask && canClose(a.ask, bbl)) {
       const left = a.q + APPROACH_LIFE_M - s.month;
       if (left <= 2) {
         out.push({
@@ -1376,7 +1379,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const li of s.listings) {
     if (li.earlyUntilM === undefined || s.month >= li.earlyUntilM) continue;
     const left = li.earlyUntilM - s.month;
-    if (left > 2 || !canClose(li.ask)) continue;
+    if (left > 2 || !canClose(li.ask, li.bbl)) continue;
     const shop = s.brokerRel?.[li.via ?? ""]?.name ?? "A house broker";
     out.push({
       key: `early-look:${li.bbl}:${li.listedM}`,

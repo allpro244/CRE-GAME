@@ -100,8 +100,9 @@ export function ExitsRecord() {
         </span>
         {rec.median !== null && <span>median price/basis <span className="mono">{rec.median.toFixed(2)}x</span></span>}
         {rec.eqMedian !== null && (
-          <span title={`Over the ${rec.eqN} exit${rec.eqN === 1 ? "" : "s"} with a complete equity ledger`}>
+          <span title={`Over the ${rec.eqN} exit${rec.eqN === 1 ? "" : "s"} with a complete equity ledger — pooled deeds (fund, facility, older saves) have no per-deed equity to report`}>
             median equity multiple <span className="mono">{rec.eqMedian.toFixed(2)}x</span>
+            {rec.eqN < rec.n && <span className="dim"> ({rec.eqN} of {rec.n})</span>}
           </span>
         )}
         <span>forced{" "}

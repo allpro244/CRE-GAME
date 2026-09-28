@@ -352,40 +352,75 @@ function BalanceSheet() {
         <div className="page-section">
           <div className="page-section-head">Holdings detail · {holdings.length} deed{holdings.length === 1 ? "" : "s"}</div>
           <div>
+            {/* ONE EQUITY, ONE ANSWER. The rows used to read value less the senior
+                loan at 100% for every deed, fund and partner deeds included, and
+                summed to a number the balance sheet above never shows. Rows now
+                carry the whole stack (mezz too) and a "your share" column that
+                consolidates the way the sheet does: a JV partner owns its slice;
+                a fund deed is the LPs' until the waterfall says otherwise, so the
+                vehicle is one line — your interest in it — not the sum of its
+                deeds. */}
             <table className="tbl">
               <thead>
                 <tr>
                   <th>Address</th>
                   <th className="num">Value</th>
                   <th className="num">Debt</th>
-                  <th className="num">Equity</th>
+                  <th className="num">Deed equity</th>
+                  <th className="num" title="What the balance sheet counts as yours: after a JV partner's share; a fund deed counts through your interest in the fund">Your share</th>
                 </tr>
               </thead>
               <tbody>
-                {holdings.map((h) => {
-                  const rec = resolveRec(parcels, game, h.bbl);
-                  if (!rec) return null;
-                  const v = ownedHoldingValue(game, parcels, h);
-                  const debt = h.loan?.balance ?? 0;
-                  const eq = v - debt;
-                  const ltv = v > 0 ? debt / v : 0;
-                  return (
-                    <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
-                      <td>
-                        <div>{rec.address ?? h.bbl}</div>
-                        <div className="dim" style={{ fontSize: 11 }}>{rec.class} · basis {usd(h.costBasis ?? 0)}</div>
-                      </td>
-                      <td className="num">{usd(v)}</td>
-                      <td className={"num" + (ltv > 0.75 ? " neg" : "")}>
-                        {debt ? usd(debt) : "—"}
-                        {debt ? <div className="dim" style={{ fontSize: 11 }}>{(ltv * 100).toFixed(0)}% LTV</div> : null}
-                      </td>
-                      <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  const liveFund = !!game.fund && !game.fund.settled;
+                  const groups: { key: string; label: string; rows: typeof holdings }[] = [
+                    { key: "own", label: "Balance sheet", rows: holdings.filter((h) => !(liveFund && h.fundOwned)) },
+                    { key: "fund", label: "Your fund — the LPs' vehicle", rows: liveFund ? holdings.filter((h) => h.fundOwned) : [] },
+                  ].filter((g) => g.rows.length);
+                  return groups.flatMap((g) => {
+                    let totEq = 0, totMine = 0;
+                    const rows = g.rows.map((h) => {
+                      const rec = resolveRec(parcels, game, h.bbl);
+                      if (!rec) return null;
+                      const v = ownedHoldingValue(game, parcels, h);
+                      const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
+                      const eq = v - debt;
+                      const ltv = v > 0 ? debt / v : 0;
+                      const jv = h.jv?.share ?? 0;
+                      const mine = g.key === "fund" ? null : eq * (1 - jv);
+                      totEq += eq;
+                      if (mine !== null) totMine += mine;
+                      return (
+                        <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
+                          <td>
+                            <div>{rec.address ?? h.bbl}</div>
+                            <div className="dim" style={{ fontSize: 11 }}>{rec.class} · basis {usd(h.costBasis ?? 0)}{jv > 0 ? ` · JV, partner ${Math.round(jv * 100)}%` : ""}</div>
+                          </td>
+                          <td className="num">{usd(v)}</td>
+                          <td className={"num" + (ltv > 0.75 ? " neg" : "")}>
+                            {debt ? usd(debt) : "—"}
+                            {debt ? <div className="dim" style={{ fontSize: 11 }}>{(ltv * 100).toFixed(0)}% LTV{h.mezz ? " incl. mezz" : ""}</div> : null}
+                          </td>
+                          <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
+                          <td className={"num" + ((mine ?? 0) < 0 ? " neg" : "")}>{mine === null ? <span className="dim">via fund</span> : usd(mine)}</td>
+                        </tr>
+                      );
+                    });
+                    const fundMine = g.key === "fund" ? (sheet.fundInterest ?? 0) : totMine;
+                    return [
+                      <tr key={`h-${g.key}`}><td colSpan={5} className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", paddingTop: 10 }}>{g.label} · {g.rows.length}</td></tr>,
+                      ...rows,
+                      <tr key={`t-${g.key}`} style={{ fontWeight: 600 }}>
+                        <td>{g.key === "fund" ? "Your interest in the vehicle" : "Your equity in these deeds"}</td>
+                        <td /><td />
+                        <td className={"num" + (totEq < 0 ? " neg" : "")}>{usd(totEq)}</td>
+                        <td className={"num" + (fundMine < 0 ? " neg" : "")} title={g.key === "fund" ? "Co-invest and promote at NAV — what the waterfall would pay you today" : undefined}>{usd(fundMine)}</td>
+                      </tr>,
+                    ];
+                  });
+                })()}
                 {!holdings.length && (
-                  <tr><td colSpan={4} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
+                  <tr><td colSpan={5} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
                 )}
               </tbody>
             </table>

@@ -365,7 +365,7 @@ export function LoiTermsGrid({
         bad={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "gross"}
       />
       <Row
-        k="Net effective"
+        k={<Gloss term="net effective">Net effective</Gloss>}
         v={`$${nowNe.toFixed(2)}/sf · ${((nowNe / market - 1) * 100).toFixed(0)}% vs market asking ~$${market.toFixed(2)}`}
         strong
         bad={nowNe < market * 0.9}
@@ -374,7 +374,7 @@ export function LoiTermsGrid({
         <Row k="Opening NE" v={`$${theirNe.toFixed(2)}/sf`} />
       )}
       <Row k="vs. face market" v={`${((loi.rentPsf / market - 1) * 100).toFixed(1)}% on face rent`} bad={loi.rentPsf < market * 0.9} />
-      <Row k="TI allowance" v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
+      <Row k={<Gloss term="TI">TI allowance</Gloss>} v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
       <Row k="Free rent" v={loi.freeM > 0 ? `${loi.freeM} months` : "none"} />
       <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
       {h?.broker && (

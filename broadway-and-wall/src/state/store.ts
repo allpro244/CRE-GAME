@@ -423,6 +423,7 @@ interface AppState {
  * A DECEMBER CLOSED DURING THIS ADVANCE — put the year's review up. A skip
  * across several years shows the last one; the earlier ones are on Books.
  */
+const tierFlashed = new Map<number, number>();
 function queueYearReview(prev: GameState, next: GameState, set: (partial: Partial<AppState>) => void) {
   const before = prev.yearMarks?.at(-1)?.y ?? -1;
   const last = next.yearMarks?.at(-1);
@@ -437,7 +438,13 @@ function queueYearReview(prev: GameState, next: GameState, set: (partial: Partia
   // a wobble back up to where it already was is not news.
   const t0 = firmTier(prev), t1 = firmTier(next);
   const bestMarked = Math.max(-1, ...(prev.yearMarks ?? []).map((m) => m.tier ?? -1));
-  if (t1.tier > t0.tier && t1.tier > bestMarked) got.push(`Standing: ${t1.label}`);
+  // ...and never twice in a session for the same run: a tier wobbling across
+  // a line inside one year flashed on every crossing.
+  const flashed = tierFlashed.get(next.seed) ?? -1;
+  if (t1.tier > t0.tier && t1.tier > bestMarked && t1.tier > flashed) {
+    got.push(`Standing: ${t1.label}`);
+    tierFlashed.set(next.seed, t1.tier);
+  }
   if (got.length) set({ milestoneFlash: got });
   // A sale that closed inside an advance (an accepted bid settling, an
   // exchange completing) gets the same card as one closed by hand.
@@ -617,6 +624,10 @@ async function writeRewind(game: GameState) {
   if (rewoundYears.has(key)) return;
   rewoundYears.add(key);
   const all = await listSaves();
+  // The first autosave of the year stands: a later session mid-year must not
+  // overwrite January with June. (A reload onto an earlier branch clears the
+  // future points in loadFrom.)
+  if (all.some((m) => m.slot === key)) return;
   await saveGame(key, game);
   const mine = all.filter((m) => m.slot.startsWith(pre)).sort((a, b) => b.month - a.month);
   const stale = [
@@ -627,20 +638,46 @@ async function writeRewind(game: GameState) {
   for (const m of stale) await deleteSave(m.slot);
 }
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
-let persistSeq = 0;
 function persist(game: GameState) {
-  const seq = ++persistSeq;
-  if (persistTimer !== null) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    const write = () => {
-      if (seq !== persistSeq) return;
-      void writeRewind(game).catch(() => { /* a missing rewind point is not worth an error */ })
-        .finally(() => { void saveGame(AUTO_SLOT, game).catch(() => { /* private mode / quota: named save UI reports failures */ }); });
-    };
-    if (typeof requestIdleCallback === "function") requestIdleCallback(write, { timeout: 3000 });
-    else setTimeout(write, 0);
-  }, 1500);
+  // MAX-WAIT, NOT DEBOUNCE. Resetting the timer on every call meant continuous
+  // Play (a month every 0.3–1.3s) never saved at all — thirty years could be
+  // lost to one closed tab. The first call arms the timer; later calls only
+  // replace what it will write.
+  pendingGame = game;
+  if (persistTimer !== null) return;
+  persistTimer = setTimeout(flushPersist, 1500);
+}
+let pendingGame: GameState | null = null;
+// Writes run one after another, newest last: an older write can never land
+// on 'auto' after a newer one (a slow rewind listing used to let it).
+let writeChain: Promise<void> = Promise.resolve();
+function flushPersist() {
+  if (persistTimer !== null) { clearTimeout(persistTimer); persistTimer = null; }
+  const g = pendingGame;
+  pendingGame = null;
+  if (!g) return;
+  const write = () => {
+    writeChain = writeChain.then(async () => {
+      try { await saveGame(AUTO_SLOT, g); } catch { /* private mode / quota: named save UI reports failures */ }
+      try { await writeRewind(g); } catch { /* a missing rewind point is not worth an error */ }
+    });
+  };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(write, { timeout: 3000 });
+  else setTimeout(write, 0);
+}
+function cancelPersist() {
+  pendingGame = null;
+  if (persistTimer !== null) { clearTimeout(persistTimer); persistTimer = null; }
+}
+if (typeof window !== "undefined") {
+  // Closing the tab mid-Play flushes what is pending rather than dropping it.
+  window.addEventListener("pagehide", () => {
+    if (!pendingGame) return;
+    const g = pendingGame;
+    pendingGame = null;
+    if (persistTimer !== null) { clearTimeout(persistTimer); persistTimer = null; }
+    void saveGame(AUTO_SLOT, g).catch(() => {});
+  });
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -1653,7 +1690,12 @@ export const useStore = create<AppState>((set, get) => ({
     const n = r.s.exits?.length ?? 0;
     // An exchange parks the proceeds with the intermediary, so the account's
     // movement is not the sale's cash — the card leaves that row off.
-    if (n > (game.exits?.length ?? 0)) set({ exitCard: { i: n - 1, cash: exchange ? undefined : r.s.cash - game.cash } });
+    // The close sweeps idle cash against a drawn line, so the account's move
+    // understates the proceeds by the paydown — added back. A vehicle deed's
+    // proceeds land in the fund, not the account: no row.
+    const fundDeed = !!game.holdings[bbl]?.fundOwned;
+    const paydown = (game.loc?.balance ?? 0) - (r.s.loc?.balance ?? 0);
+    if (n > (game.exits?.length ?? 0)) set({ exitCard: { i: n - 1, cash: exchange || fundDeed ? undefined : r.s.cash - game.cash + paydown } });
     toast(exchange ? "Closed — the 1031 clock is running." : "Closed. Cash is position.");
     void persist(r.s);
   },
@@ -2108,6 +2150,17 @@ export const useStore = create<AppState>((set, get) => ({
     // docket snoozes go with it: they are absolute months, and a snooze set
     // at month 100 would sit on a loaded month-50 save for four game years.
     set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {} });
+    // THE BRANCH NOT TAKEN. Rewind points later than the month just loaded
+    // belong to a run that no longer exists; the next game-over card must not
+    // offer them. The years from here on are re-stamped as this branch plays.
+    cancelPersist();
+    rewoundYears.clear();
+    void (async () => {
+      const pre = rewindPrefix(saved.seed);
+      for (const m of await listSaves()) {
+        if (m.slot.startsWith(pre) && m.month > saved.month) await deleteSave(m.slot);
+      }
+    })().catch(() => {});
     toast(`Loaded “${slot}”.`);
   },
 
@@ -2149,7 +2202,10 @@ export const useStore = create<AppState>((set, get) => ({
     // reload with no city to build is instant — the generation happens when
     // the player presses Break ground, not on the way to the menu.
     // Do not offer the campaign the player just chose to end as Continue.
-    void deleteSave(AUTO_SLOT).finally(() => location.reload());
+    // Drop anything queued for the autosave first — the pagehide flush would
+    // otherwise write the campaign just ended back into 'auto'.
+    cancelPersist();
+    void writeChain.finally(() => deleteSave(AUTO_SLOT)).finally(() => location.reload());
   },
 
   /**

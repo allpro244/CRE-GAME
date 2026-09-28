@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import { useStore } from "@/state/store";
@@ -57,10 +57,15 @@ export function popsFor(prev: GameState, next: GameState, parcels: ParcelTable, 
 export default function EventPops({ mapRef, mapReady }: { mapRef: RefObject<maplibregl.Map | null>; mapReady: boolean }) {
   const game = useStore((s) => s.game);
   const photoFrame = useStore((s) => s.photoFrame);
+  // One advance, one rise. Every later action makes a new game object with
+  // the same prevForDigest; without this the last month replayed on each.
+  const lastPrev = useRef<GameState | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     const { prevForDigest: prev, parcels, adjacency } = useStore.getState();
     if (!mapReady || !map || !game || !prev || !parcels || photoFrame || prev === game) return;
+    if (prev === lastPrev.current) return;
+    lastPrev.current = prev;
     if (prev.month >= game.month || game.month - prev.month > 36) return;
     const pops = popsFor(prev, game, parcels, adjacency);
     if (!pops.length) return;

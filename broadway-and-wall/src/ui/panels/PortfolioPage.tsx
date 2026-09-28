@@ -1,6 +1,7 @@
-import { useState, Fragment } from "react";
+import { useMemo, useState, Fragment } from "react";
 import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
+import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass, GameState } from "@/engine/types";
@@ -394,6 +395,7 @@ export function PortfolioPage() {
           wall, the roll and the top exposures; these are the same quantities
           with their shape put back — which YEAR the debt lands, which year
           the leases roll, and where the eggs actually sit. */}
+      <ReturnsToDate />
       <MaturityWall />
       <Rollover />
       <Concentration />
@@ -1140,3 +1142,45 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
   );
 }
 
+
+/**
+ * WHAT EACH BUILDING HAS EARNED ON YOUR MONEY SO FAR. The exit card reports a
+ * levered IRR when a deed sells; this is the same ledger read on the deeds
+ * still held, with today's equity at the mark as the terminal value (before
+ * selling costs). Under a year held, no IRR — a few months annualise into noise.
+ */
+function ReturnsToDate() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const rows = useMemo(() => returnsToDate(game, parcels), [game, parcels]);
+  if (!rows.length) return null;
+  const pct = (x: number | null) => (x === null ? "—" : `${x >= 0 ? "" : "−"}${Math.abs(x * 100).toFixed(1)}%`);
+  return (
+    <div className="page-section">
+      <div className="page-section-head">Returns to date — on your equity, before tax</div>
+      <table className="tbl">
+        <thead>
+          <tr><th>Building</th><th className="num">Held</th><th className="num">Equity in</th><th className="num">Cash back</th><th className="num">Equity at mark</th><th className="num">Multiple</th><th className="num">IRR</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.bbl} onClick={() => useStore.getState().openProperty(r.bbl, "summary")}>
+              <td>{resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}</td>
+              <td className="num">{r.years < 1 ? `${Math.round(r.years * 12)} mo` : `${r.years.toFixed(1)} yr`}</td>
+              <td className="num">{usd(r.equityIn)}</td>
+              <td className="num">{usd(r.cashBack)}</td>
+              <td className={"num" + (r.equityNow < 0 ? " neg" : "")}>{usd(r.equityNow)}</td>
+              <td className={"num" + (r.multiple < 1 ? " neg" : "")}>{r.multiple.toFixed(2)}×</td>
+              <td className={"num" + ((r.irr ?? 0) < 0 ? " neg" : "")}>{pct(r.irr)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="hint">
+        Every property dollar booked against the building — the equity that bought it, rent after debt service,
+        leasing and capital work, refinancing proceeds — with today&rsquo;s equity at the mark as if sold at no cost.
+        A building bought before the ledger existed, pooled in a facility, or held in the fund is left out.
+      </div>
+    </div>
+  );
+}

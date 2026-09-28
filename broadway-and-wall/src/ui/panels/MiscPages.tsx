@@ -4,6 +4,7 @@ import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { usd } from "@/ui/format";
 import { soundOn, setSoundOn, play } from "@/ui/Sounds";
+import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
 
 export function PrimerPage() {
@@ -87,7 +88,47 @@ export function PrimerPage() {
       <div className="hint">
         That is the vocabulary. Everything else the game will teach you by charging you for it.
       </div>
+      <PrimerGlossary />
     </div>
+  );
+}
+
+/**
+ * EVERY UNDERLINED WORD, IN ONE PLACE. A dotted word anywhere in the game
+ * opens the Primer; it used to open it at the top, a page away from the word.
+ * It now lands here, on the entry, lit for a moment.
+ */
+function PrimerGlossary() {
+  const [lit, setLit] = useState<string | null>(null);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const go = () => {
+      const k = pendingTerm.key;
+      if (!k) return;
+      pendingTerm.key = null;
+      const el = document.getElementById(glossId(k));
+      if (!el) return;
+      el.scrollIntoView({ block: "center" });
+      setLit(glossId(k));
+      if (t) clearTimeout(t);
+      t = setTimeout(() => setLit(null), 2200);
+    };
+    go();
+    window.addEventListener("bw:gloss", go);
+    return () => { window.removeEventListener("bw:gloss", go); if (t) clearTimeout(t); };
+  }, []);
+  return (
+    <>
+      <div className="page-section">Glossary — every underlined word</div>
+      <div className="gloss-list">
+        {glossaryEntries().map((e) => (
+          <div key={e.key} id={glossId(e.key)} className={"gloss-entry" + (lit === glossId(e.key) ? " gloss-lit" : "")}>
+            <span className="gloss-key">{e.key}</span>
+            <span className="gloss-def">{e.def}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

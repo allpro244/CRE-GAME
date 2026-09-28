@@ -1104,6 +1104,7 @@ export function pledgeable(s: GameState, parcels: ParcelTable): { bbl: string; r
     if (!rec || (!glIncome && (rec.class === "land" || !rec.bldgArea))) continue;
     if (s.workouts?.[h.bbl]) continue;
     if (h.sale) continue;
+    if (h.jv || h.groundRentOut) continue;   // a partner's consent, or land you do not own, is not a crossed lien's collateral
     out.push({
       bbl: h.bbl, rec, h,
       value: ownedHoldingValue(s, parcels, h),

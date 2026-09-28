@@ -34,6 +34,7 @@ import {
   syncSupplyViews,
 } from "./supply";
 import { recordPropertyEvent } from "./history";
+import { JV_CONSENT } from "./jv";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -1261,6 +1262,8 @@ export function startAdaptiveReuse(
   s: GameState, parcels: ParcelTable, bbl: string,
   target: "multifamily" | "mixed" = "multifamily", customMix?: UseMix,
 ): { s: GameState; err?: string; msg?: string } {
+  if (s.holdings[bbl]?.jv) return { s, err: JV_CONSENT };
+  if (s.holdings[bbl]?.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
   const eligible = adaptiveReuseEligibility(s, parcels, bbl);
   if (!eligible.ok) return { s, err: eligible.why };
   const rec = resolveRec(parcels, s, bbl)!;
@@ -1895,6 +1898,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (h.groundLeased || s.groundLeases?.[bbl]) {
     return { s, err: "The ground lessee controls the improvement. You cannot demolish their building." };
   }
+  if (h.jv) return { s, err: JV_CONSENT };
+  if (h.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
@@ -2658,6 +2663,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
     return { s, err: "The ground lessee controls the improvement — their capital plan, not yours." };
   }
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to improve on a vacant lot." };
+  if (h.jv) return { s, err: JV_CONSENT };
   if (h.program) return { s, err: "A capital program is already running." };
   // A PROGRAMME COMES ROUND AGAIN. These were once-per-building-forever, which
   // over a century is three capital decisions and then nothing — no answer to

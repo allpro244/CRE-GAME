@@ -43,6 +43,7 @@ import { takeDeed, FILE_COST } from "./notes";
 import { clearRivalClaims, forgetDeed } from "./rivals";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
+import { ownersShareOfProceeds } from "./jv";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -443,7 +444,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       // what is left after all of it, which is why a surplus is so rare.
       const { net } = saleTaxQuote(h, gross, s);
       const shortfall = Math.max(0, bal - net);
-      const surplus = Math.max(0, net - bal);
+      // The law hands the surplus to the owners — a JV partner takes its share.
+      const surplus = ownersShareOfProceeds(h, Math.max(0, net - bal));
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }
       if (shortfall > 0) {
         if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }

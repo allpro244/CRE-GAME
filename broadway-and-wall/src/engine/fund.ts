@@ -47,6 +47,8 @@ export interface PlayerFund {
   promotePaid: number;
   /** Pref accrued unpaid (simplified). */
   prefAccrued: number;
+  /** Contributed capital already returned, LP and GP alike. Promote waits for all of it. */
+  capReturned?: number;
   investEndM: number;
   lifeEndM: number;
   pref: number;
@@ -178,32 +180,62 @@ export function callFundCapital(s: GameState, amount: number): { s: GameState; e
 }
 
 /**
- * Pref-first waterfall, then promote on the remainder. Mutates `s` in place.
- * Returns LP dollars booked to `lpDistributed` (promote is a GP transfer).
+ * THE WATERFALL, IN THE ORDER EVERY LPA WRITES IT: the pref, then the capital
+ * back, and only then the promote on what is left. Pure — what an `amount`
+ * would pay each side today, given the fund's state.
+ *
+ * This used to take the promote on everything after the pref, the LPs' own
+ * returned capital included: a fund that sold its first building at cost paid
+ * the sponsor 20% of the investors' money back to them. The GP's co-invest is
+ * capital like any other and takes its pro-rata share of every tier below the
+ * promote.
+ */
+export function waterfall(f: PlayerFund, amount: number): { pref: number; capital: number; split: number; promote: number; toGpCoinvest: number; toLp: number } {
+  let rest = Math.max(0, Math.round(amount));
+  const pref = Math.min(rest, Math.max(0, Math.round(f.prefAccrued)));
+  rest -= pref;
+  const capital = Math.min(rest, Math.max(0, f.called - (f.capReturned ?? 0)));
+  rest -= capital;
+  const promote = Math.round(rest * f.promote);
+  const split = rest - promote;
+  const gpFrac = f.called > 0 ? Math.min(1, f.gpCommit / f.called) : 0;
+  const toGpCoinvest = Math.round((pref + capital + split) * gpFrac);
+  return { pref, capital, split, promote, toGpCoinvest, toLp: pref + capital + split - toGpCoinvest };
+}
+
+/**
+ * Distribute through the waterfall. Mutates `s` in place. Returns LP dollars
+ * booked to `lpDistributed`; the promote and the co-invest's share move from
+ * the vehicle to GP cash, which is a transfer inside the firm.
  */
 export function applyDistribute(s: GameState, amount: number): number {
   const f = s.fund;
   if (!f || f.settled) return 0;
   const want = Math.round(Math.min(amount, f.cash));
   if (want <= 0) return 0;
+  const w = waterfall(f, want);
   f.cash -= want;
-  let rest = want;
-  // Pref first — LPs are whole on the hurdle before the GP takes a dollar.
-  const prefPay = Math.min(rest, Math.max(0, Math.round(f.prefAccrued)));
-  f.prefAccrued -= prefPay;
-  f.distributed += prefPay;
-  rest -= prefPay;
-  let toGp = 0;
-  if (rest > 0) {
-    toGp = Math.round(rest * f.promote);
-    const toLp = rest - toGp;
-    f.distributed += toLp;
-    f.promotePaid += toGp;
-    s.cash += toGp;
-  }
-  const toLpTotal = want - toGp;
-  if (toLpTotal > 0) logBooks(s, "lpDistributed", toLpTotal);
-  return toLpTotal;
+  f.prefAccrued -= w.pref;
+  f.capReturned = (f.capReturned ?? 0) + w.capital;
+  // `distributed` is every dollar to the capital accounts — LP and co-invest —
+  // so DPI and the pref base stay on the same footing as `called`.
+  f.distributed += w.pref + w.capital + w.split;
+  f.promotePaid += w.promote;
+  s.cash += w.promote + w.toGpCoinvest;
+  if (w.toLp > 0) logBooks(s, "lpDistributed", w.toLp);
+  return w.toLp;
+}
+
+/**
+ * WHAT THE GP OWNS OF THE FUND TODAY: what the co-invest and the promote would
+ * take if the vehicle were wound up at `nav` — the waterfall, applied to the
+ * whole of it. This, not the buildings at 100%, is the sponsor's net worth in
+ * a vehicle that is mostly other people's money.
+ */
+export function gpInterestInFund(f: PlayerFund | undefined, nav: number): number {
+  if (!f || f.settled || !(nav > 0)) return 0;
+  const w = waterfall(f, nav);
+  return w.promote + w.toGpCoinvest;
 }
 
 /**

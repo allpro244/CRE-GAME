@@ -24,6 +24,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook } from "./credit";
+import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
@@ -1257,7 +1258,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // once per building per month. Asking it only when the account is
       // actually short keeps the ordinary case free.
       if (want > 0 && (s.cash >= want || fundableNow(s, parcels) >= want)) {
-        fundAndBook(s, parcels, want, "capex");
+        partnerFunds(s, h, fundAndBook(s, parcels, want, "capex"));
         h.condIdx += wear * plan.lift;
         h.lastCapM = q;
       } else if (want > 0) {
@@ -1291,6 +1292,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx) + mergeCost;
       s.cash -= turnCost;
       logBooks(s, "capex", turnCost);
+      partnerFunds(s, h, turnCost);
       // THE DEPOSIT GOES BACK. It was never yours: it arrived as cash at
       // signing and sat as a liability against your net worth for the whole
       // term. A tenant who left owing you nothing takes it with them; one who
@@ -1413,6 +1415,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (merge > 0) {
         s.cash -= merge;
         logBooks(s, "capex", merge);
+        partnerFunds(s, h, merge);
       }
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
       h.makeReady = [...(h.makeReady ?? []), {
@@ -3443,12 +3446,14 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   const cost = loiSigningCost(l, feeRate);
   s.cash -= cost;
   logBooks(s, "leasing", cost);
+  partnerFunds(s, h, cost);
   // Demising walls are construction. $9/sf of the smaller piece × costIdx,
   // booked as capex so conserve can see it.
   const demise = Math.max(0, Math.round(l.demiseCost ?? 0));
   if (demise > 0) {
     s.cash -= demise;
     logBooks(s, "capex", demise);
+    partnerFunds(s, h, demise);
   }
   if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     // THE SPACE NEXT DOOR. The old floor keeps its rent and the new floor takes
@@ -3671,7 +3676,12 @@ export function respondLOI(
       const short = Math.ceil((cost - next.cash) / 1000) * 1000;
       const avail = locAvailable(next, parcels);
       if (short > avail) {
-        return `Signing costs ${money(cost)}. You're short ${money(short)} and the line only has ${money(avail)} left.`;
+        // Say what would make it signable: most of the cheque is usually the
+        // fit-out, and a tenant who builds their own space at a lower rent is
+        // the ordinary answer when the landlord cannot write it.
+        const ti = Math.round(l.tiPsf * l.sf);
+        return `Signing costs ${money(cost)}. You're short ${money(short)} and the line only has ${money(avail)} left.`
+          + (ti > 0 ? ` ${money(ti)} of it is the fit-out — counter with "They build it" and the tenant funds their own space at a lower rent.` : "");
       }
       const d = drawLoc(next, parcels, short);
       if (d.err) return d.err;

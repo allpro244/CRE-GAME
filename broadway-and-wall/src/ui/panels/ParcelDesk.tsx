@@ -20,6 +20,8 @@ import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
+import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
+import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engine/jv";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
@@ -693,6 +695,7 @@ function ParcelPanelInner({
                 <Row k="Replacement reserve" v={"−" + mo(os.reserve)} />
               )}
               <Row k="Property tax" v={"−" + mo(os.tax)} />
+              {(os.groundRent ?? 0) > 0 && <Row k="Ground rent" v={"−" + mo(os.groundRent)} title={`To ${holding.groundRentOut?.holder ?? "the fee owner"} — you sold the land and lease it back.`} />}
               <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
               {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
               <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
@@ -1131,6 +1134,8 @@ function ParcelPanelInner({
       {on("deal") && !holding && isBuilt && <DisclosedRoll bbl={selectedBBL} />}
 
       {on("deal") && holding && <SaleSection bbl={selectedBBL} value={value} />}
+      {on("deal") && holding && isBuilt && !holding.groundLeased && <StakeSection bbl={selectedBBL} />}
+      {on("deal") && holding && isBuilt && !holding.groundLeased && <LeaseholdSection bbl={selectedBBL} />}
 
       {on("summary") && holding && (
         <div className="deal">
@@ -1139,7 +1144,7 @@ function ParcelPanelInner({
             <Row k="Basis" v={usd(holding.costBasis)} />
             {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={"−" + usd(holding.deprTaken!)} />}
             <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
-            <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0) - (holding.mezz?.balance ?? 0))} strong />
+            <Row k={holding.jv ? `Equity · your ${Math.round((1 - holding.jv.share) * 100)}%` : "Equity"} v={usd((value - (holding.loan?.balance ?? 0) - (holding.mezz?.balance ?? 0)) * (1 - (holding.jv?.share ?? 0)))} strong />
           </div>
         </div>
       )}
@@ -1226,6 +1231,134 @@ function PaydownRow({ bbl }: { bbl: string }) {
         Pay down{valid ? ` · ${usd(amt + pen)}` : ""}
       </button>
       {valid && pen > 0 && <span className="hint">includes {usd(pen)} to prepay early</span>}
+    </div>
+  );
+}
+
+/**
+ * SELL THE LAND, KEEP THE BUILDING. The quote before the button: what the dirt
+ * sells for, the rent it costs you from here, what reaches you after the
+ * mortgage and the tax, and what it does to the building's mark — which falls
+ * by the land's price, because the deal is value-neutral before its costs.
+ * On a leasehold: the rent in force and what buying the land back costs today.
+ */
+function LeaseholdSection({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.holdings[bbl];
+  if (!h) return null;
+  const g = h.groundRentOut;
+  if (g) {
+    const cost = landBuybackCost(game, h);
+    return (
+      <div className="deal">
+        <div className="deal-head">Leasehold · the land is {g.holder}'s</div>
+        <div className="grid">
+          <Row k="Ground rent" v={`${usd(g.rentYr)} a year · rising ${(g.stepPct * 100).toFixed(0)}% every ${monthLabel(g.lastStepM + 12).split(" ")[0]}`} />
+          <Row k="Term" v={`to ${monthLabel(g.endM)}`} />
+          <Row k="Land sold for" v={usd(g.price)} />
+          <Row k="Buy it back today" v={usd(cost)} title="The ground rent at today's ground-lease yield, plus the transfer and counsel." />
+        </div>
+        <div className="btn-row">
+          <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyLandBack(bbl)}>
+            Buy the land back · {usd(cost)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const q = leaseholdQuote(game, parcels, bbl);
+  return (
+    <div className="deal">
+      <div className="deal-head">Sell the land, keep the building</div>
+      <div className="hint">
+        A long-money buyer takes the dirt and leases it back to you for 99 years. You keep the building and every
+        lease in it; the rent comes off your NOI before the mortgage does, and it rises every year whatever your own
+        rents do. It is cash without a lender — no coupon to reset, no balloon, no covenant.
+      </div>
+      {q.price > 0 && (
+        <div className="grid">
+          <Row k="The land sells for" v={usd(q.price)} />
+          <Row k="Ground rent" v={`${usd(q.rentYr)} a year · ${q.yieldPct.toFixed(2)}% · +${(LEASEHOLD_STEP * 100).toFixed(0)}% a year`} />
+          <Row k="Costs" v={"−" + usd(q.costs)} />
+          {q.payoff > 0 && <Row k="Mortgage retired" v={"−" + usd(q.payoff)} />}
+          {q.tax > 0 && <Row k="Tax on the land's gain" v={"−" + usd(q.tax)} />}
+          <Row k="To you" v={usd(q.toOwner)} strong bad={q.toOwner < 0} />
+          <Row k="The building marks at" v={`${usd(q.valueAfter)} (was ${usd(q.valueBefore)})`} />
+        </div>
+      )}
+      {!q.ok && q.why && <div className="hint">{q.why}</div>}
+      <div className="btn-row">
+        <button className="btn" disabled={!q.ok} onClick={() => useStore.getState().sellLandLeaseBack(bbl)}>
+          Sell the land · {usd(Math.max(0, q.toOwner))} to you
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A PARTNER IN THIS BUILDING. Sell a quarter or just under half to a passive
+ * investor at a minority discount; they take their share of every cheque and
+ * fund their share of every call, and the big decisions wait on them. On a JV
+ * deed: who, how much, and what buying them out costs today.
+ */
+function StakeSection({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const [share, setShare] = useState(JV_SHARES[0]);
+  const h = game.holdings[bbl];
+  if (!h) return null;
+  if (h.jv) {
+    const cost = buyoutCost(game, parcels, h);
+    return (
+      <div className="deal">
+        <div className="deal-head">Partner · {h.jv.partner} owns {Math.round(h.jv.share * 100)}%</div>
+        <div className="hint">
+          They take {Math.round(h.jv.share * 100)}% of every month's cash and of any sale, and fund the same share of every
+          capital call. New debt, a pay-down, a renovation, a conversion or selling the land needs their consent — which
+          means buying them out.
+        </div>
+        <div className="grid">
+          <Row k="They paid" v={`${usd(h.jv.price)} · ${monthLabel(h.jv.sinceM)}`} />
+          <Row k="Buy them out today" v={usd(cost)} title="Their full pro-rata share of today's equity — control is what you are buying — plus counsel and transfer." />
+        </div>
+        <div className="btn-row">
+          <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyOutPartner(bbl)}>
+            Buy them out · {usd(cost)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const q = stakeQuote(game, parcels, bbl, share);
+  return (
+    <div className="deal">
+      <div className="deal-head">Sell a share to a partner</div>
+      <div className="hint">
+        Equity without a lender: a passive investor buys a minority stake at {Math.round(JV_MINORITY_DISCOUNT * 100)}% under
+        its share of the equity. You keep running it; they take their share of the cash and fund their share of the calls,
+        and the big decisions need them.
+      </div>
+      <div className="btn-row">
+        {JV_SHARES.map((sh) => (
+          <button key={sh} className={"btn" + (sh === share ? " btn-on" : "")} onClick={() => setShare(sh)}>{Math.round(sh * 100)}%</button>
+        ))}
+      </div>
+      {q.equity > 0 && (
+        <div className="grid">
+          <Row k="Equity in the building" v={usd(q.equity)} />
+          <Row k={`Their ${Math.round(share * 100)}% pays`} v={usd(q.price)} />
+          {q.tax > 0 && <Row k="Tax on your gain" v={"−" + usd(q.tax)} />}
+          <Row k="To you" v={usd(q.toOwner)} strong />
+        </div>
+      )}
+      {!q.ok && q.why && <div className="hint">{q.why}</div>}
+      <div className="btn-row">
+        <button className="btn" disabled={!q.ok} onClick={() => useStore.getState().sellStake(bbl, share)}>
+          Sell {Math.round(share * 100)}% · {usd(Math.max(0, q.toOwner))} to you
+        </button>
+      </div>
     </div>
   );
 }

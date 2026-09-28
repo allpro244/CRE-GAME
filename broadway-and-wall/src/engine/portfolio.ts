@@ -285,6 +285,8 @@ export function listPortfolio(
     };
   }
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b]);
+  // A partner's building does not go into somebody else's package without them.
+  if (clean.some((b) => s.holdings[b]?.jv)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
   if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
   if (clean.some((b) => s.workouts?.[b])) {
     return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };

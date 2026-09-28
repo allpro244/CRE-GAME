@@ -25,6 +25,8 @@ import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, 
 import { buyPortfolio, offerStreetBook, acceptStreetBook } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap, payOffLoan, paydownLoan, placeMezz } from "@/engine/debt";
+import { sellLandLeaseBack, buyLandBack } from "@/engine/leasehold";
+import { sellStake, buyOutPartner } from "@/engine/jv";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
@@ -266,6 +268,10 @@ interface AppState {
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
   paydownLoan: (bbl: string, amount: number) => void;
+  sellLandLeaseBack: (bbl: string) => void;
+  sellStake: (bbl: string, share: number) => void;
+  buyOutPartner: (bbl: string) => void;
+  buyLandBack: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" }, lender?: string, spec?: number) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
@@ -905,6 +911,46 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Mezz closed.");
+    void persist(r.s);
+  },
+
+  sellStake: (bbl, share) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = sellStake(game, parcels, bbl, share);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Stake sold.");
+    void persist(r.s);
+  },
+
+  buyOutPartner: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyOutPartner(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "All yours again.");
+    void persist(r.s);
+  },
+
+  sellLandLeaseBack: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = sellLandLeaseBack(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Land sold.");
+    void persist(r.s);
+  },
+
+  buyLandBack: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyLandBack(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Freehold again.");
     void persist(r.s);
   },
 

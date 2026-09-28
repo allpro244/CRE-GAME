@@ -180,7 +180,7 @@ export function PropertyPage() {
             />
           );
         })()}
-        <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) : "—"} />
+        <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />
       </div>
       <div className="prop-head">
         <div>

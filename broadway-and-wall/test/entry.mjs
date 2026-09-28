@@ -35,6 +35,10 @@ export const MODULES = [
   "estate",
   // fund is the player vehicle — second cash account, raise, promote.
   "fund",
+  // leasehold is the landlord sale-leaseback: sell the land, keep the building.
+  "leasehold",
+  // jv is a minority partner in one deed; fund.ts carries the waterfall.
+  "jv",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the

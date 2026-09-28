@@ -7,7 +7,14 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Contract, DevUse } from "@/engine/types";
-import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead } from "@/engine/value";
+import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN } from "@/engine/value";
+
+// What a plan short of its hurdle is still worth over its cost. The required
+// yield carries the merchant builder's margin, so value / basis is
+// hurdle × (1 + DEV_MARGIN) — the same capitalisation the mark uses.
+const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
+  ? ` Finished, it would still be worth ${((h * (1 + DEV_MARGIN) - 1) * 100).toFixed(0)}% more than it cost — thinner than the ${(DEV_MARGIN * 100).toFixed(0)}% a merchant builder needs.`
+  : " Finished, it would be worth less than it cost.";
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
@@ -258,7 +265,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
             ? `Pencils — ${plan.requiredYield.toFixed(2)}% required on cost, ${((plan.hurdleRatio - 1) * 100).toFixed(0)}% of margin over it. ${usd(closeCheque)} of your money the day you break ground.`
-            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost and the scheme earns ${plan.yieldOnCost.toFixed(2)}%. Change the programme, the height or the footprint, or wait for rents.`}
+            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost and the scheme earns ${plan.yieldOnCost.toFixed(2)}%. Change the programme, the height or the footprint, or wait for rents.${shortNote(plan.hurdleRatio)}`}
         />
       )}
       {/* ALWAYS-VISIBLE SUMMARY — the cheque never lives under a tab. */}
@@ -844,7 +851,7 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
             ? `Pencils against ${plan.requiredYield.toFixed(2)}% required. ${usd(closeCheque)} of your money at groundbreak, ${usd(plan.equity + plan.pointsCost)} all in, ${plan.months} months to deliver.`
-            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost. The desk has the height, footprint and programme to move it.`}
+            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost. The desk has the height, footprint and programme to move it.${shortNote(plan.hurdleRatio)}`}
         />
       ) : (
         <div className="hint">No scheme prices on this lot at these dials — {sf(rec.lotArea)} of land, envelope {farMaxFor(rec).toFixed(1)} FAR.</div>

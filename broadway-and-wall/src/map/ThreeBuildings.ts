@@ -9236,7 +9236,13 @@ void main() {
   // Monte Carlo over four million samples of the sum as written above. Change
   // the amplitudes and this number changes with them.
   float crest = mix(smoothstep(0.86, 1.02, h), 0.0054, farFlat);
-  col += vec3(0.075) * crest * (0.5 + 0.8 * shoal);
+  // WHITE WATER IS LIT, NOT LUMINOUS. The foam, the wet edge and the rime
+  // below were constant near-whites, so after dark — with the sea body, the
+  // sand and the sky all taken down by the hour — the whole island sat in a
+  // bright ring of surf, the one surface in the frame still at noon. They
+  // take the same multiply the ground does.
+  vec3 whiteK = DUSK > 0.001 ? duskGroundK(DUSK) : vec3(1.0);
+  col += vec3(0.075) * whiteK * crest * (0.5 + 0.8 * shoal);
 
   // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
   //
@@ -9261,7 +9267,7 @@ void main() {
   // shot suffered from. This is a WET EDGE — the darker of the two lines where
   // water meets sand — not a painted surf stroke, so it reads at the dive
   // camera and disappears into the coastline at altitude.
-  col = mix(col, vec3(0.845, 0.882, 0.910),
+  col = mix(col, vec3(0.845, 0.882, 0.910) * whiteK,
             wash * 0.38 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
@@ -9274,7 +9280,7 @@ void main() {
     float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
     float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
                             * sin(p.x * 0.017 - p.y * 0.023);
-    col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
+    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.80, 0.0, 1.0));
   }
 
   // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.

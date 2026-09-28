@@ -1627,6 +1627,48 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
+// THE HOUR, AS A NUMBER. The month decides where the sun stands and how warm
+// it is; the hour decides how much of it is left. 0 is the calibrated
+// afternoon every other constant in this file was tuned under, 0.5 is the
+// sun on the horizon, 1 is the blue hour after it — lamps, lit floors and a
+// sky gone indigo. It deliberately does NOT move the sun: the shadow bake is
+// keyed to the month and costs a full depth pass, so the evening is carried
+// by the light's colour and strength, which is also what the eye reads first.
+//
+// Shared, as functions of one argument, by every shader that has to agree
+// about it — the light rig, the harbour, and the multiply that darkens the
+// MapLibre ground and sky this layer did not draw. Three shaders asking one
+// question, one answer.
+const DUSK_GLSL = /* glsl */ `
+// what is left of the sun: warm and weaker toward the horizon, gone after it
+vec3 duskSunK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(1.04, 0.72, 0.46), smoothstep(0.0, 0.52, d));
+  return k * (1.0 - 0.96 * smoothstep(0.40, 0.92, d));
+}
+// the sky dome's own light: lilac as the sun goes, indigo after it
+vec3 duskSkyK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.70, 0.64, 0.70), smoothstep(0.10, 0.60, d));
+  // (the dome is already blue in SKY_COL; this is chosen so the product is
+  // a dim, faintly blue night and not an indigo enamel on every roof)
+  return mix(k, vec3(0.36, 0.33, 0.31), smoothstep(0.55, 1.0, d));
+}
+// the multiply laid over ground the sun has left: golden, then blue
+vec3 duskGroundK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.90, 0.74, 0.62), smoothstep(0.0, 0.50, d));
+  return mix(k, vec3(0.22, 0.26, 0.40), smoothstep(0.45, 1.0, d));
+}
+// the band of sky just over the sea: it burns, then it holds a glow the
+// zenith has already lost
+vec3 duskHorizonK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(1.0, 0.70, 0.50), smoothstep(0.05, 0.50, d));
+  return mix(k, vec3(0.46, 0.38, 0.52), smoothstep(0.50, 1.0, d));
+}
+vec3 duskZenithK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.70, 0.62, 0.78), smoothstep(0.10, 0.55, d));
+  return mix(k, vec3(0.17, 0.20, 0.38), smoothstep(0.50, 1.0, d));
+}
+`;
+
 // The light rig. One sun, a sky dome, and a warm bounce off the pavement —
 // which is what actually makes massing read: cool light from above, warm
 // light from below, and a real shadow between them. Everything lands in a
@@ -1644,11 +1686,18 @@ const LIGHT_GLSL = /* glsl */ `
 // going black.
 uniform vec3 uSunDir;
 uniform vec3 uSunCol;
-uniform vec2 uWeather; // rain, overcast
+uniform vec4 uWeather; // rain, overcast, dusk (the hour — see DUSK_GLSL), spare
 #define RAIN uWeather.x
 #define OVERCAST uWeather.y
+#define DUSK uWeather.z
 #define SUN_DIR uSunDir
-#define SUN_COL (uSunCol * mix(1.0, 0.46, OVERCAST))
+` + DUSK_GLSL + /* glsl */ `
+#define SUN_COL (uSunCol * mix(1.0, 0.46, OVERCAST) * duskSunK(DUSK))
+// Lit windows, lamps and headlights: on in the low winter sun (the month's
+// own dusk) and all the way on once the hour has gone.
+float nightK() {
+  return max(1.0 - smoothstep(0.10, 0.42, SUN_DIR.z), smoothstep(0.30, 0.80, DUSK));
+}
 // THE FILL WAS DOING THE SUN'S JOB. A sky term this bright lands about
 // two-thirds of full illumination on a surface the sun cannot see at all,
 // which is why a city lit at 28 degrees — an angle chosen precisely so the
@@ -1662,8 +1711,8 @@ uniform vec2 uWeather; // rain, overcast
 // shade-face-to-lit-face ratio is the only massing cue that survives the
 // distance — it has to carry the modelling on its own out there, and at 0.408
 // it was not quite deep enough to.
-const vec3 SKY_COL = vec3(0.376, 0.464, 0.640);
-const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
+#define SKY_COL (vec3(0.376, 0.464, 0.640) * duskSkyK(DUSK))
+#define GND_COL (vec3(0.372, 0.318, 0.248) * mix(1.0, 0.30, smoothstep(0.35, 0.95, DUSK)))
 
 vec3 hemiLight(vec3 n, float ao) {
   // THE GROUND HALF OF THIS IS A BOUNCE, AND IT WAS NOT LIT.
@@ -1726,7 +1775,10 @@ vec3 grade(vec3 c) {
   t = clamp(t, 0.0, 1.0);
 
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.40);                 // ACES eats chroma; put it back
+  // ACES eats chroma; put it back — but not after dark, when the only
+  // chroma left in a shaded wall is the sky's indigo, and pumping that turns
+  // every snow roof into a sheet of blue enamel. Night vision is desaturated.
+  t = mix(vec3(lum), t, mix(1.40, 0.92, smoothstep(0.45, 1.0, DUSK)));
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
   // the warm highlight tint was a quarter of the way to sepia and every lit
@@ -1896,7 +1948,16 @@ vec3 airColour(vec3 p, vec3 cam) {
   // glow down-sun is the half of aerial perspective that says LATE LIGHT
   // rather than just distance.
   vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
-  return mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+  haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+  // AND THE AIR KEEPS THE HOUR. Down-sun it holds the last of the light the
+  // longest — the warm lobe goes rose before it goes out — and away from the
+  // sun it goes to the blue the zenith is going to.
+  if (DUSK > 0.001) {
+    vec3 eve = mix(vec3(0.36, 0.38, 0.54), vec3(0.94, 0.60, 0.46), pow(toSun, 1.6));
+    haze = mix(haze, eve, smoothstep(0.08, 0.55, DUSK));
+    haze = mix(haze, vec3(0.14, 0.17, 0.28), smoothstep(0.55, 1.0, DUSK));
+  }
+  return haze;
 }
 
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
@@ -1937,10 +1998,17 @@ uniform vec4 uSeason;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
 uniform vec3 uCamP;
 uniform vec2 uFade;       // (start, end) metres — 0 disables
+// THE PART OF A PROP THAT IS A LIGHT: local x and z it starts above, and its
+// class (see PROP_FRAG's glow). A lamp's head is the only user; zero is off.
+uniform vec3 uGlowBox;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  vE = uGlowBox.z * step(uGlowBox.x, position.x) * step(uGlowBox.y, position.z);
   float bare = uSeason.z * step(0.5, uFoliage) * step(uFoliage, 1.5);
   vec3 p = position;
   p.xy *= mix(1.0, 0.32, bare);
@@ -1998,10 +2066,19 @@ uniform float uTime;
 uniform float uActivity;
 attribute vec4 aWalk;    // street dir x, y · patrol length m · speed m/s
 attribute vec2 aWalk2;   // phase 0..1 · breath threshold 0..1
+// 1 on the running traffic: its nose and tail are lamps after dark
+uniform float uLights;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  // class 2 on the face that points where the car is going, 3 on the one
+  // that points back. Off the LOCAL normal, so a whole face carries one
+  // class and nothing is interpolated across the doors.
+  vE = uLights * (2.0 * step(0.9, normal.x) + 3.0 * step(0.9, -normal.x));
   float breath = 0.62 + 0.38 * sin(uTime * 0.018 + 1.7);
   // The slow breath keeps the pavement moving; the simulation decides how
   // many people are there to move. A weak labour market or empty buildings
@@ -2024,11 +2101,36 @@ const PROP_VERT_PLAIN = /* glsl */ `
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  vE = 0.0;
   vN = normalize(normal);
   vW = position;
   vC = vec3(1.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// A LAMP'S POOL ON THE PAVEMENT. The lamp head lights (PROP_FRAG's class 1),
+// but a street at night is read by what the lamps light, not by the lamps: a
+// soft warm disc on the ground under every head. Additive, on a flat quad per
+// lamp, and the whole mesh is switched off by day so it costs nothing then.
+const POOL_VERT = /* glsl */ `
+varying vec2 vQ;
+void main() {
+  vQ = position.xy;
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+}`;
+const POOL_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vQ;
+uniform vec4 uWeather;
+void main() {
+  float r = length(vQ);
+  float k = smoothstep(0.30, 0.85, uWeather.z);
+  float fall = pow(max(1.0 - r, 0.0), 2.2);
+  gl_FragColor = vec4(vec3(0.34, 0.24, 0.12) * fall * k, 0.0);
 }`;
 
 const SHADOW_GLSL = /* glsl */ `
@@ -6931,7 +7033,9 @@ void main() {
   // roughly October to February, so a summer noon pays nothing and the
   // lit-window read is a winter-afternoon fact — which is when the lights in
   // a working building would actually be on.
-  float duskK = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
+  // ...and the hour can throw it too: the same switch, fed by whichever of
+  // the month's low sun and the evening (DUSK) says it is later. See nightK.
+  float duskK = nightK();
   float letBand = -1.0;
   if (vLit >= 0.0) {
     float bandH = fh * 3.0;
@@ -7405,8 +7509,16 @@ void main() {
     // lift proportional to the building's own occupancy and its glass share —
     // so at three kilometres a let tower reads warm against a vacant one
     // that reads cold, which is the game's subject on its own skyline.
-    float perWin = letBand * (0.22 + 0.78 * winMask * (0.45 + 0.55 * wid));
-    float faceAvg = clamp(vLit, 0.0, 1.0) * (0.30 + 0.70 * win.x * win.y);
+    // (the floor under the per-window term is the fit-out's spill onto the
+    // piers between openings; after dark the piers go dark and the windows
+    // carry it, which is the whole difference between a lit building and a
+    // lamp shade)
+    float pier = mix(0.22, 0.04, smoothstep(0.35, 0.9, DUSK));
+    float perWin = letBand * (pier + (1.0 - pier) * winMask * (0.45 + 0.55 * wid));
+    // (and after dark the far read leans on the windows' own share rather
+    // than a wash over the whole face, or a let tower is a lamp shade)
+    float faceAvg = clamp(vLit, 0.0, 1.0) * (0.30 + 0.70 * win.x * win.y)
+                  * mix(1.0, 0.62, smoothstep(0.35, 1.0, DUSK));
     glowK += duskK * mix(perWin, faceAvg, lod) * 0.30;
   }
 
@@ -7485,7 +7597,10 @@ void main() {
   // December dusk peak) lands near 0.29 before grading, which the filmic
   // curve keeps at the edge of the 0.86 bloom bright-pass: the very
   // brightest frontages may just kiss the bloom, and that is the photograph.
-  col += vec3(1.00, 0.72, 0.35) * glowK;
+  // After dark the interior is most of what the building is: the same
+  // decision, turned up, so a let floor carries across the harbour and just
+  // clears the bloom's knee while a vacant one stays a dark gap in the stack.
+  col += vec3(1.00, 0.72, 0.35) * glowK * (1.0 + 1.1 * smoothstep(0.35, 1.0, DUSK));
 
   // GRAZING SKY, WHICH IS WHAT SEPARATES A BUILDING FROM THE ONE BEHIND IT.
   //
@@ -8069,8 +8184,8 @@ const CATCHER_FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vPos;
 uniform vec4 uSeason;
-uniform vec2 uWeather; // rain, overcast
-` + SHADOW_GLSL + /* glsl */ `
+uniform vec4 uWeather; // rain, overcast, dusk, spare
+` + SHADOW_GLSL + DUSK_GLSL + /* glsl */ `
 // THE TABLE HAS A GRAIN. Two octaves of world-anchored value noise — this is
 // the drafting-table half of the ground fix: the MapLibre fills are flat
 // hexes, so at the establishing zoom the island interior read as one
@@ -8134,6 +8249,11 @@ void main() {
               + wc * wa * (1.0 - a) * (1.0 - sa)
               + gcol * ga * (1.0 - a) * (1.0 - sa) * (1.0 - wa);
   vec3  outC = outA > 0.0001 ? outCA / outA : sc;
+  // After dark there is no sun to be shadowed from, and the ground this
+  // lays its snow and grain on has already been dimmed by the post
+  // multiply — so the sheet dims with it rather than glowing on top.
+  outC *= duskGroundK(uWeather.z);
+  outA *= 1.0 - 0.55 * smoothstep(0.50, 1.0, uWeather.z) * (1.0 - sa);
   gl_FragColor = vec4(outC, outA);
 }`;
 
@@ -8444,6 +8564,25 @@ const AO_MULT_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D uAoTex;
+uniform float uDusk;
+uniform mat4 uInvProj;
+` + DUSK_GLSL + /* glsl */ `
+// THE HOUR REACHES THE GROUND THIS LAYER DID NOT DRAW. The pavement, the
+// parks, the far sea and the sky are MapLibre's; the only hand this layer
+// has on them is this multiply, so the evening goes down here with the
+// occlusion. Sky and ground are told apart by the eye ray itself: a ray
+// that climbs never meets the ground, and how steeply it climbs is where
+// in the dome it is — burning at the horizon, indigo overhead. The far
+// ground takes the horizon's colour as it approaches it, so the two meet
+// without a seam, which is what the fog is doing there in daylight too.
+vec3 duskMul(vec2 uv) {
+  vec4 a = uInvProj * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+  vec4 b = uInvProj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 d = normalize(b.xyz / b.w - a.xyz / a.w);
+  vec3 hor = duskHorizonK(uDusk);
+  if (d.z >= 0.0) return mix(hor, duskZenithK(uDusk), smoothstep(0.0, 0.45, d.z));
+  return mix(hor, duskGroundK(uDusk), smoothstep(0.015, 0.16, -d.z));
+}
 void main() {
   vec2 a = texture2D(uAoTex, vUv).rg;
   // Cool, because ambient occlusion is the absence of SKY light and the sky
@@ -8453,6 +8592,7 @@ void main() {
   // thing than the absence of sky — and bluer still, because what is left
   // lighting it is the dome.
   tint *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), a.g * 0.80);
+  if (uDusk > 0.001) tint *= duskMul(vUv);
   gl_FragColor = vec4(tint, 1.0);
 }`;
 
@@ -8913,6 +9053,13 @@ void main() {
   // two arrive through the SAME Fresnel weight rather than through a second
   // pass keyed on how far away the camera happens to be.
   vec3 skyC = mix(sky, horizonC, pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  // The hour, on the harbour: the body goes the colour the ground went, and
+  // what the surface mirrors is the dome at the angle it is mirrored from —
+  // the burning band low down, the indigo overhead.
+  if (DUSK > 0.001) {
+    body *= duskGroundK(DUSK);
+    skyC *= mix(duskZenithK(DUSK), duskHorizonK(DUSK), pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  }
   vec3 col = mix(body, skyC, fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
   // angle — that Fresnel curve is the whole reason a harbour mirrors the far
@@ -9025,7 +9172,11 @@ void main() {
   // and the two renderers now converge on one colour from any distance and any
   // angle. Labelled for what it is: a compositing constraint, imposed because a
   // MapLibre fill has no atmosphere and cannot be given one.
-  vec3 outc = mix(grade(col), uSeaFar, airFrac(vec3(vXY, 0.0), uCam));
+  // and the far sea has to land on what the post multiply makes of
+  // MapLibre's — the same function of the same eye ray (see AO_MULT_FRAG)
+  vec3 seaFar = uSeaFar;
+  if (DUSK > 0.001) seaFar *= mix(duskHorizonK(DUSK), duskGroundK(DUSK), smoothstep(0.015, 0.16, V.z));
+  vec3 outc = mix(grade(col), seaFar, airFrac(vec3(vXY, 0.0), uCam));
 
   // THE SEA HAS NO EDGE AND THIS MESH DOES, AND WHAT HIDES THAT EDGE HAS TO
   // BELONG TO THE MESH.
@@ -9079,7 +9230,7 @@ void main() {
   // renderer, flat and unhazed because a fill cannot be anything else. Landing
   // on any other colour is how you get a band across the world's edge, which
   // the style file has a comment worrying about and which was in fact there.
-  outc = mix(outc, uSeaFar, smoothstep(800.0, 3000.0, vDepth));
+  outc = mix(outc, seaFar, smoothstep(800.0, 3000.0, vDepth));
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -9088,11 +9239,30 @@ precision highp float;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
 ` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
+// THE STREET'S OWN LIGHTS. A sodium-warm lamp head, and on the running
+// traffic a pair of headlamps on the nose and a pair of tail lamps on the
+// back — two spots at the corners of the face, not the whole bumper, which
+// is what makes a moving pair of points read as a car from the air. Emitted
+// before the grade, the same way the facade's window light is, so they sit on
+// the bloom's knee at night and are nothing at all by day.
+vec3 propGlow() {
+  if (vE < 0.1) return vec3(0.0);
+  float nk = nightK();
+  if (nk < 0.001) return vec3(0.0);
+  // class 1 is a lamp; a fractional class is the same lamp turned down (a
+  // ferry saloon is lit, it is not a street light)
+  if (vE < 1.5) return vec3(1.00, 0.78, 0.46) * 1.9 * vE * nk;
+  float spot = step(0.46, abs(vL.y)) * step(0.42, vL.z) * step(vL.z, 0.92);
+  vec3 c = vE < 2.5 ? vec3(1.00, 0.94, 0.80) * 2.2 : vec3(0.95, 0.10, 0.06) * 1.3;
+  return c * spot * nk;
+}
 void main() {
   vec3 n = normalize(vN);
   vec3 base = uColor * vC;
@@ -9133,7 +9303,7 @@ void main() {
   } else {
     light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
   }
-  gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
+  gl_FragColor = vec4(aerial(grade(base * light + propGlow()), vW, uCam), uOpacity);
 }`;
 
 /** GLSL's smoothstep, on the CPU side, for uniforms that ease. */
@@ -9316,7 +9486,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private sunColUni = { value: new THREE.Vector3(1.26, 1.09, 0.82) };
   private seasonUni = { value: new THREE.Vector4(0, 0, 0, 1) };
   private seasonBase = new THREE.Vector4(0, 0, 0, 1);
-  private weatherUni = { value: new THREE.Vector2(0, 0) };
+  private weatherUni = { value: new THREE.Vector4(0, 0, 0, 0) };
   private weatherSnow = 0;
   private simMonth = -1;
   private sunDirty = false;
@@ -9326,6 +9496,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
   private hasPonds = false;
+  /** warm discs under the street lamps, drawn only after dark */
+  private lampPools: THREE.InstancedMesh | null = null;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private shadowTexelM = 4400 / 3072;
@@ -9595,6 +9767,62 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   /** Step the demolition / delivery tweens; true while any is running. */
+  // ---- the hour ------------------------------------------------------------
+  // Where the evening is (weatherUni.z, read in the shaders as DUSK) and where
+  // it is going. Eased per frame so a change of mode — Play starting, the photo
+  // frame going up — reads as the light going, not as a switch.
+  private duskTarget = 0;
+  private duskT = 0;
+  private duskClock = 0;
+  /**
+   * THE HOUR. 0 is the calibrated afternoon, 0.5 sunset, 1 the blue hour.
+   * The month still owns the sun's bearing and the shadow bake; this only
+   * changes how much light is left, so it costs no re-bake and can move every
+   * frame. `instant` skips the ease (tests, and a first paint).
+   */
+  setDayPhase(target: number, instant = false) {
+    const t = Math.max(0, Math.min(1, Number.isFinite(target) ? target : 0));
+    this.duskTarget = t;
+    if (instant) { this.duskT = t; this.applyDusk(t); }
+    this.map?.triggerRepaint();
+  }
+
+  /** The hour the frame is actually being drawn at (for tests and probes). */
+  dayPhase(): number { return this.weatherUni.value.z; }
+
+  private applyDusk(d: number) {
+    this.weatherUni.value.z = d;
+    if (this.lampPools) this.lampPools.visible = d > 0.3;
+    this.sceneDirty++;
+    if (!this.postOK || !this.brightMat) return;
+    const night = smoothstep(0.35, 1.0, d);
+    // lit floors and lamps are meant to spill after dark; in daylight the
+    // knee stays where January's snow roofs put it
+    this.brightMat.uniforms.uThresh.value = 0.86 - 0.24 * night;
+    this.compMat.uniforms.uBloomAmt.value = 0.20 + 0.22 * night;
+    this.compMat.uniforms.uGlare.value = 0.26 * (1 - smoothstep(0.30, 0.75, d));
+    this.aoMultMat.uniforms.uDusk.value = d;
+  }
+
+  /** One ease step toward the target hour. True while it is still moving. */
+  private stepDusk(now: number): boolean {
+    const dt = this.duskClock ? Math.min(0.25, (now - this.duskClock) / 1000) : 0;
+    this.duskClock = now;
+    const cur = this.duskT;
+    const goal = this.duskTarget;
+    if (Math.abs(goal - cur) < 0.002) {
+      if (this.weatherUni.value.z !== goal) { this.duskT = goal; this.applyDusk(goal); }
+      return false;
+    }
+    // about three seconds for a full evening, whichever way it runs
+    const step = Math.sign(goal - cur) * Math.min(Math.abs(goal - cur), dt * 0.34);
+    this.duskT = cur + step;
+    // Quantised, because every change dirties the post cache: the eye cannot
+    // tell a 0.004 step in the light, and the idle-frame reuse can.
+    if (Math.abs(this.duskT - this.weatherUni.value.z) >= 0.004) this.applyDusk(this.duskT);
+    return true;
+  }
+
   private stepTweens(now: number): boolean {
     if (!this.tweens.size) return false;
     for (const [key, tw] of this.tweens) {
@@ -9748,7 +9976,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         blending: THREE.CustomBlending,
         blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor,
         blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-        uniforms: { uAoTex: { value: null } },
+        uniforms: { uAoTex: { value: null }, uDusk: { value: 0 }, uInvProj: { value: new THREE.Matrix4() } },
       });
       this.shaftMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: SHAFT_FRAG, depthTest: false, depthWrite: false,
@@ -10878,7 +11106,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // is CLONED per mesh because instanced attributes live on the geometry
     // and the walkers' must not leak onto the parked cars' shared copy.
     const addWalkers = (
-      geom: THREE.BufferGeometry, items: Walker[], palette: [number, number, number][],
+      geom: THREE.BufferGeometry, items: Walker[], palette: [number, number, number][], lights = false,
     ) => {
       if (!items.length) return;
       const g = geom.clone();
@@ -10891,6 +11119,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       mat.vertexShader = WALKER_VERT;
       mat.uniforms.uTime = this.timeUni;
       mat.uniforms.uActivity = this.activityUni;
+      mat.uniforms.uLights = { value: lights ? 1 : 0 };
       const mesh = new THREE.InstancedMesh(g, mat, items.length);
       const m = new THREE.Matrix4();
       let maxLen = 0;
@@ -10964,9 +11193,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     };
 
-    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0, foliage = 0) => {
+    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0, foliage = 0, glow?: [number, number]) => {
       if (!items.length) return;
-      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color, true, foliage), items.length);
+      // a prop with a light in it owns its material: the glow box is a uniform
+      const mat = this.propMaterial(color, true, foliage, [0, 0], !!glow);
+      if (glow) (mat.uniforms.uGlowBox.value as THREE.Vector3).set(glow[0], glow[1], 1);
+      const mesh = new THREE.InstancedMesh(geom, mat, items.length);
       const m = new THREE.Matrix4();
       const cols = new Float32Array(items.length * 3);
       items.forEach((p, i) => {
@@ -11038,7 +11270,35 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     add(treeCanopyGeom(), 0x71904f, sp[0], 0.34, 1);
     add(columnarCanopyGeom(), 0x6d8a4c, sp[1], 0.30, 1);
     add(coniferCanopyGeom(), 0x4e6f4a, sp[2], 0.26, 2);
-    add(lampGeom(), 0x4e5459, lamps, 0.06);
+    // the head of the lamp (x past the arm's elbow, z at the lantern) lights
+    add(lampGeom(), 0x4e5459, lamps, 0.06, 0, [0.74, 4.28]);
+    if (lamps.length) {
+      const g = new THREE.PlaneGeometry(2, 2);
+      const mat = new THREE.ShaderMaterial({
+        vertexShader: POOL_VERT, fragmentShader: POOL_FRAG,
+        uniforms: { uWeather: this.weatherUni },
+        transparent: true, depthWrite: false,
+        // add light, leave alpha alone — see the ground sheen for why
+        // AdditiveBlending will not do
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      });
+      const mesh = new THREE.InstancedMesh(g, mat, lamps.length);
+      const m = new THREE.Matrix4();
+      lamps.forEach((p, i) => {
+        // under the head, which hangs a metre out along the arm
+        const hx = p.x + Math.cos(p.rot) * p.s, hy = p.y + Math.sin(p.rot) * p.s;
+        m.makeScale(7.5, 7.5, 1).setPosition(hx, hy, 0.12);
+        mesh.setMatrixAt(i, m);
+      });
+      mesh.userData.noShadow = true;
+      mesh.visible = false;
+      this.finishInstances(mesh);
+      this.scene.add(mesh);
+      this.lampPools = mesh;
+    }
     add(pileGeom(), 0x5c4a34, piles, 0.08);
     // Manufactured things do not come in random proportions. Benches and
     // railings go in rigid — uniform scale, exact bearing — because a rail
@@ -11103,7 +11363,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     addCars(cars);
     addPeople(people);
     addWalkers(personGeom(), walkers, COAT);
-    addWalkers(carGeom(), movers, CAR_COLORS);
+    addWalkers(carGeom(), movers, CAR_COLORS, true);
   }
 
   /**
@@ -11544,6 +11804,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uFoliage: { value: foliage },
         uCamP: this.camUni,
         uFade: { value: new THREE.Vector2(fade[0], fade[1]) },
+        uGlowBox: { value: new THREE.Vector3(0, 0, 0) },
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -12950,7 +13211,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
     const p = Math.max(0, Math.min(1, Number.isFinite(precipitation) ? precipitation : 0));
     const cloud = Math.max(0, Math.min(1, Number.isFinite(overcast) ? overcast : 0));
-    this.weatherUni.value.set(kind === "rain" ? p : 0, cloud);
+    this.weatherUni.value.x = kind === "rain" ? p : 0;
+    this.weatherUni.value.y = cloud;
     this.weatherSnow = kind === "snow" ? 0.32 + p * 0.62 : 0;
     this.applySeason();
     this.sceneDirty++;
@@ -13029,6 +13291,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // running and the next frame asked for, water or no water.
     const selAnim = this.selActive;
     if (this.stepTweens(performance.now())) this.map.triggerRepaint();
+    if (this.stepDusk(performance.now())) this.map.triggerRepaint();
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
@@ -13223,6 +13486,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     //    in the buffer, before anything of ours covers it.
     // m is spent (base holds the product) — reuse it for the inverse
     const invProj = m.copy(this.camera.projectionMatrix).invert();
+    if (this.weatherUni.value.z > 0.001) (this.aoMultMat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
     {
       const u = this.aoCalcMat.uniforms;
       u.uDepth.value = this.sceneRT.depthTexture;
@@ -13357,7 +13621,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     // must match the resting value in initPost — this is the same knob,
     // re-asserted every frame so stale shafts cannot linger after a skip
-    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras ? 0.36 : 0.0;
+    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras
+      ? 0.36 * (1 - smoothstep(0.30, 0.75, this.weatherUni.value.z)) : 0.0;
 
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);

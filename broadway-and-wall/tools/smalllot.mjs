@@ -42,7 +42,13 @@ export function plansFor(g, parcels, bbl, ask) {
       for (const fl of fls) {
         const plan = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, undefined, undefined, 0.5, ask * (1 + CLOSING));
         if (!plan || !(plan.costTotal > 0)) continue;
-        out.push({ use, cov, fl, plan, need: cashNeed(ask, plan) });
+        // WHAT THE ZONING WILL HOST. The desk does not ask; the land market
+        // does (`zonePermits` in the residual). `lead` reads the dominant use
+        // only; `strict` also refuses shops at grade on an R lot.
+        const permits = (u) => E.zonePermits(rec.zoneDist, u, rec.demandScore, g.econ);
+        const lead = permits(E.dominantOf(plan.mix));
+        const strict = Object.entries(plan.mix).every(([u, v]) => !(v > 0) || permits(u));
+        out.push({ use, cov, fl, plan, need: cashNeed(ask, plan), lead, strict });
       }
     }
   }
@@ -51,8 +57,9 @@ export function plansFor(g, parcels, bbl, ask) {
 
 const bands = [[0, 3000], [3000, 5000], [5000, 8000], [8000, 15000], [15000, Infinity]];
 const bandOf = (a) => bands.findIndex(([lo, hi]) => a >= lo && a < hi);
-const acc = bands.map(() => ({ n: 0, afford: 0, affordClear: 0, bestH: [], bestAffH: [], winner: {}, askOverBuilder: [], residNeg: 0, hAtResid: [] }));
+const acc = bands.map(() => ({ n: 0, afford: 0, affordClear: 0, affClearLead: 0, affClearStrict: 0, bestAffLead: [], bestH: [], bestAffH: [], winner: {}, askOverBuilder: [], residNeg: 0, hAtResid: [] }));
 const perSeed = [];
+const builderPriced = [];
 
 for (const seed of SEEDS) {
   const built = makeCity("somewhere", 1);
@@ -79,11 +86,29 @@ for (const seed of SEEDS) {
       const best = ps.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a));
       b.bestH.push(best.plan.hurdleRatio);
       const aff = ps.filter((x) => x.need <= START);
+      // PRICED FOR A BUILDING YOU CANNOT FINANCE? On a builder-priced lot the
+      // ask is the residual of the trade's best scheme; what matters to a small
+      // firm is what the best scheme IT can fund plans at on that price.
+      if (read.winner === "builder") {
+        const bestLegal = ps.filter((x) => x.lead);
+        const bl = bestLegal.length ? bestLegal.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a)) : null;
+        const al = bestLegal.filter((x) => x.need <= START);
+        const ba = al.length ? al.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a)) : null;
+        builderPriced.push({ lot: rec.lotArea, h: bl?.plan.hurdleRatio, need: bl?.need, sf: bl?.plan.sf, hAff: ba?.plan.hurdleRatio ?? 0 });
+      }
       if (aff.length) {
         b.afford++;
         const ba = aff.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a));
         b.bestAffH.push(ba.plan.hurdleRatio);
         if (ba.plan.hurdleRatio >= 1) b.affordClear++;
+        const legal = aff.filter((x) => x.lead);
+        if (legal.length) {
+          const bl = legal.reduce((a, x) => (x.plan.hurdleRatio > a.plan.hurdleRatio ? x : a));
+          b.bestAffLead.push(bl.plan.hurdleRatio);
+          if (bl.plan.hurdleRatio >= 1) b.affClearLead++;
+          if (process.env.DUMP_CLEAR && bl.plan.hurdleRatio >= 1) console.log(`  clears legally: s${seed} m${m} ${l.bbl} lot ${rec.lotArea} ${rec.zoneDist} ${bl.use} ${bl.plan.floors}fl cov ${bl.plan.coverage} H ${bl.plan.hurdleRatio.toFixed(3)} need $${(bl.need / 1e6).toFixed(2)}M mix ${JSON.stringify(bl.plan.mix)}`);
+        }
+        if (aff.some((x) => x.strict && x.plan.hurdleRatio >= 1)) b.affClearStrict++;
         if (ba.plan.hurdleRatio > seedBestAff) {
           seedBestAff = ba.plan.hurdleRatio;
           seedBestAffLot = { m, bbl: l.bbl, lot: rec.lotArea, far: E.farMaxFor(rec), ask: l.ask, winner: read.winner, builder: read.builder, use: ba.use, fl: ba.plan.floors, cov: ba.plan.coverage, sf: ba.plan.sf, need: ba.need, h: ba.plan.hurdleRatio };
@@ -103,12 +128,18 @@ for (const seed of SEEDS) {
 }
 
 console.log(`\nSTART $${(START / 1e6).toFixed(1)}M, ${SEEDS.length} seeds x ${YEARS} yrs, vacant lots on the tape, sampled annually\n`);
-console.log("lot sf        n   winner(b/h/t)     resid<=0  ask/resid(med)  bestH med/p90   afford  affH med/max  aff>=1  H@resid(med)");
+console.log("lot sf        n   winner(b/h/t)     resid<=0  ask/resid(med)  bestH med/p90   afford  affH med/max  aff>=1  legal: affH med/max  >=1 lead/strict  H@resid(med)");
 for (let i = 0; i < bands.length; i++) {
   const b = acc[i];
   const [lo, hi] = bands[i];
   const w = b.winner;
-  console.log(`${String(lo).padStart(5)}-${String(hi === Infinity ? "" : hi).padEnd(6)} ${String(b.n).padStart(4)}   ${String(w.builder ?? 0).padStart(4)}/${String(w.holder ?? 0).padStart(4)}/${String(w.texture ?? 0).padStart(4)}   ${(b.residNeg / Math.max(1, b.n) * 100).toFixed(0).padStart(5)}%   ${med(b.askOverBuilder).toFixed(2).padStart(8)}      ${med(b.bestH).toFixed(3)}/${q(b.bestH, 0.9).toFixed(3)}   ${String(b.afford).padStart(5)}   ${med(b.bestAffH).toFixed(3)}/${(b.bestAffH.length ? Math.max(...b.bestAffH) : NaN).toFixed(3)}  ${String(b.affordClear).padStart(5)}   ${med(b.hAtResid).toFixed(3)}`);
+  console.log(`${String(lo).padStart(5)}-${String(hi === Infinity ? "" : hi).padEnd(6)} ${String(b.n).padStart(4)}   ${String(w.builder ?? 0).padStart(4)}/${String(w.holder ?? 0).padStart(4)}/${String(w.texture ?? 0).padStart(4)}   ${(b.residNeg / Math.max(1, b.n) * 100).toFixed(0).padStart(5)}%   ${med(b.askOverBuilder).toFixed(2).padStart(8)}      ${med(b.bestH).toFixed(3)}/${q(b.bestH, 0.9).toFixed(3)}   ${String(b.afford).padStart(5)}   ${med(b.bestAffH).toFixed(3)}/${(b.bestAffH.length ? Math.max(...b.bestAffH) : NaN).toFixed(3)}  ${String(b.affordClear).padStart(5)}   ${med(b.bestAffLead).toFixed(3)}/${(b.bestAffLead.length ? Math.max(...b.bestAffLead) : NaN).toFixed(3)}   ${String(b.affClearLead).padStart(4)}/${String(b.affClearStrict).padEnd(4)}   ${med(b.hAtResid).toFixed(3)}`);
+}
+{
+  const bp = builderPriced;
+  console.log(`\nBUILDER-PRICED listings (ask = the trade's residual), zoning-legal plans: ${bp.length}`);
+  console.log(`  best plan: median hurdle ${med(bp.map((x) => x.h)).toFixed(3)}, median cash need $${(med(bp.map((x) => x.need)) / 1e6).toFixed(2)}M, median ${Math.round(med(bp.map((x) => x.sf))).toLocaleString()} gsf`);
+  console.log(`  best plan the firm can fund: median hurdle ${med(bp.map((x) => x.hAff)).toFixed(3)}; >=1.0 on ${bp.filter((x) => x.hAff >= 1).length} of ${bp.length}; best plan fundable on ${bp.filter((x) => x.need <= START).length}`);
 }
 console.log("\nbest affordable plan per seed:");
 for (const r of perSeed) console.log(`  ${r.seed}: ${r.seedBestAff.toFixed(3)} ${JSON.stringify(r.seedBestAffLot)}`);

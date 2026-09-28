@@ -373,7 +373,7 @@ function ParcelPanelInner({
         {isBuilt && rec.bldgArea > 0 && (() => {
           const letSf = Math.round(rentableSf(rec));
           const rem = holding ? unlettableRemainderSf(rec, holding) : 0;
-          const ratio = rentableRatio(plateOf(rec));
+          const ratio = rentableRatio(plateOf(rec), rec.floors);
           const split = isMixedUse(rec)
             ? usesOf(rec).map((u) => `${sf(Math.round(useRentableSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")
             : null;

@@ -9,14 +9,14 @@
 //
 //   node tools/smalllot-lines.mjs           4 seeds, year 10
 //   SEEDS=2 YEAR=15 node tools/smalllot-lines.mjs
-import * as E from "../test/.engine.mjs";
+const E = await import(process.env.ENGINE ?? "../test/.engine.mjs");
 import { makeCity } from "../src/citygen/index.mjs";
 
 const ALL_SEEDS = [550991, 12007, 73303, 4242, 91117, 20603, 31337];
 const SEEDS = ALL_SEEDS.slice(0, Number(process.env.SEEDS ?? 4));
 const YEAR = Number(process.env.YEAR ?? 10);
 const USES = (process.env.USES ?? "office,multifamily,retail,industrial,mixed").split(",");
-const COVS = [0.35, 0.5, 0.65, 0.8, 0.9];
+const COVS = (process.env.COVS ?? "0.35,0.5,0.65,0.8,0.9").split(",").map(Number);
 const med = (a) => { const s = [...a].filter(Number.isFinite).sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : NaN; };
 
 const bands = [[0, 3000], [3000, 5000], [5000, 8000], [8000, 15000], [15000, Infinity]];
@@ -37,7 +37,10 @@ for (const seed of SEEDS) {
     if (!rec || rec.class !== "land" || !rec.lotArea || g.holdings[bbl] || g.developments[bbl]) continue;
     const read = E.landRead(rec, g.econ);
     let best = null;
+    const permits = (u) => E.zonePermits(rec.zoneDist, u, rec.demandScore, g.econ);
     for (const use of USES) {
+      // LEGAL=1 asks only what the zoning hosts — the question the land market asks.
+      if (process.env.LEGAL && (use === "mixed" ? !["office", "retail", "multifamily"].every(permits) : !permits(use))) continue;
       for (const cov of COVS) {
         const top = E.maxFloorsFor(rec, cov, use === "retail" || use === "industrial" ? use : undefined);
         for (const fl of [...new Set([1, 2, 3, 4, Math.min(top, 6), Math.min(top, 8), top].filter((f) => f >= 1 && f <= top))]) {

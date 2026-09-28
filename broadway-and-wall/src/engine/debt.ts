@@ -683,7 +683,7 @@ export function payOffLoan(
   if (paid < due) {
     return { s, err: `Could not raise the $${due.toLocaleString()} payoff.` };
   }
-  logBooks(next, "debtSvc", due);
+  logBooks(next, "debtSvc", due, bbl);
   h.loan = null;
   if (h.mezz) h.mezz = null;
   if (next.workouts?.[bbl]) delete next.workouts[bbl];
@@ -747,7 +747,7 @@ export function paydownLoan(
   }
   const paid = fundCashNeed(next, parcels, due, { allowLoc: false });
   if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash.` };
-  logBooks(next, "debtSvc", due);
+  logBooks(next, "debtSvc", due, bbl);
   loan.balance = Math.max(0, loan.balance - amt);
   const io = next.month < loan.ioUntilM;
   const yearsLeft = Math.max(1, loan.amortYears - (next.month - loan.originM) / 12);
@@ -1252,7 +1252,7 @@ export function tickLoan(
     const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
     if (pay > 0) {
       loan.balance = Math.max(0, loan.balance - pay);
-      logBooks(s, "debtSvc", pay);
+      logBooks(s, "debtSvc", pay, h.bbl);
       const yearsLeft2 = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
       loan.monthlyPmt = io
         ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
@@ -1457,7 +1457,7 @@ export function tickLoan(
             : monthlyPayment(rolled, fresh.ratePct, fresh.amortYears),
         );
         const feePaid = fundCashNeed(s, parcels, fee);
-        logBooks(s, "debtSvc", feePaid);
+        logBooks(s, "debtSvc", feePaid, h.bbl);
         renewed = true;
         // THE DOCKET HAS TO SAY IT RENEWED. A balloon rolling onto new paper at
         // a new rate for a new term is one of the largest events in a levered
@@ -1484,7 +1484,7 @@ export function tickLoan(
       const mezzDue = h.mezz?.balance ?? 0;
       if (fundableNow(s, parcels) >= payoff + mezzDue) {
         const paid = fundCashNeed(s, parcels, payoff + mezzDue);
-        logBooks(s, "debtSvc", paid);
+        logBooks(s, "debtSvc", paid, h.bbl);
         h.loan = null;
         if (h.mezz) h.mezz = null;
         s.news.unshift({
@@ -1502,7 +1502,7 @@ export function tickLoan(
         // ledger month by month over fifty years: three of the four
         // unexplained movements in the sample were this line, matching the
         // news item to the penny, and it cost one seed $1.17M of silence.
-        logBooks(s, "debtSvc", paid);
+        logBooks(s, "debtSvc", paid, h.bbl);
         // Size at the haircut quote the shortfall maths used — originating at
         // lev=1 with no hair (and the wrong class on land) used to write a
         // bigger loan than "today's market only refinances $X" claimed.
@@ -1566,9 +1566,16 @@ function serviceMezz(
   }
   m.monthlyPmt = Math.ceil((m.balance * m.ratePct) / 100 / 12);
   const pmt = m.monthlyPmt;
+  // THE COUPON IS PAID ONCE, THROUGH THE SAME DOOR AS THE SENIOR'S. This paid
+  // and booked it here AND returned it into the holding's debt cash, which the
+  // month then paid and booked again — every mezz deed carried its junior
+  // coupon twice (the ledger balanced, because both halves were booked). The
+  // returned figure is now the only payment, so it comes out of the deed's
+  // own month (fund cash for a vehicle deed, split with a JV partner) exactly
+  // as the senior's does.
+  let coupon = 0;
   if (fundableNow(s, parcels) >= pmt) {
-    const paid = fundCashNeed(s, parcels, pmt);
-    logBooks(s, "debtSvc", paid);
+    coupon = pmt;
     m.arrearsMs = 0;
   } else {
     m.arrearsMs = (m.arrearsMs ?? 0) + 1;
@@ -1584,7 +1591,7 @@ function serviceMezz(
   if (s.month >= m.maturityM && !s.workouts?.[h.bbl]) {
     if (fundableNow(s, parcels) >= m.balance) {
       const paid = fundCashNeed(s, parcels, m.balance);
-      logBooks(s, "debtSvc", paid);
+      logBooks(s, "debtSvc", paid, h.bbl);
       h.mezz = null;
       s.news.unshift({
         q: s.month, kind: "deal",
@@ -1600,7 +1607,7 @@ function serviceMezz(
       });
     }
   }
-  return pmt;
+  return coupon;
 }
 
 export interface MezzQuote {
@@ -1668,8 +1675,8 @@ export function placeMezz(
   const points = Math.round(q.principal * q.points);
   const net = q.principal - points;
   next.cash += net;
-  logBooks(next, "borrowed", q.principal);
-  logBooks(next, "debtSvc", points);
+  logBooks(next, "borrowed", q.principal, bbl);
+  logBooks(next, "debtSvc", points, bbl);
   h.mezz = {
     product: "mezz",
     holder: "Cordage Debt Partners",
@@ -1729,7 +1736,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
     };
   }
   const strike = +(next.econ.indexRate + 0.5).toFixed(2);
-  fundAndBook(next, parcels, cost, "debtSvc");
+  fundAndBook(next, parcels, cost, "debtSvc", { bbl });
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -2080,13 +2087,13 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // distributed, its share of a pay-down (and the fee) is called.
   if (h.jv) {
     const part = Math.round((netDraw - fee) * h.jv.share);
-    if (part > 0) { next.cash -= part; logBooks(next, "lpDistributed", part); }
-    else if (part < 0) { next.cash -= part; logBooks(next, "lpCalled", -part); }
+    if (part > 0) { next.cash -= part; logBooks(next, "lpDistributed", part, bbl); }
+    else if (part < 0) { next.cash -= part; logBooks(next, "lpCalled", -part, bbl); }
   }
   coverCashShortfall(next, parcels);
-  logBooks(next, "debtSvc", fee);
-  if (netDraw > 0) logBooks(next, "borrowed", netDraw);
-  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
+  logBooks(next, "debtSvc", fee, bbl);
+  if (netDraw > 0) logBooks(next, "borrowed", netDraw, bbl);
+  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw, bbl);
   h.loan = newLoan;
   // A takeout retires the stack — mezz does not survive a senior refinance.
   if (h.mezz) h.mezz = null;

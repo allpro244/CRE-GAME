@@ -3,8 +3,8 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
-import type { Bid, BuiltClass, DevUse, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
-import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
+import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
+import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -241,10 +241,10 @@ export function executePurchase(
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
   // netted out of the cheque are a liability transfer, not a cheaper building.
   const pointsFee = bq.pointsFee ?? 0;
-  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee);
+  logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl);
   // the fee found its way to a named shop, and the shop will remember
   creditBrokerFee(next, bbl);
-  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee);
+  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
@@ -731,7 +731,7 @@ export function assembleLots(
   const sorted = [...roots].sort((a, b) => siteLotArea(s, parcels, b) - siteLotArea(s, parcels, a));
   const parent = sorted[0];
   const next = clone(s);
-  fundAndBook(next, parcels, cost, "dev");
+  fundAndBook(next, parcels, cost, "dev", { bbl: parent });
   if (!next.merged) next.merged = {};
 
   for (const root of sorted.slice(1)) {
@@ -741,6 +741,10 @@ export function assembleLots(
     // forbade parent-of-parent, and resolveRec dropped the orphaned area.
     for (const d of siteDeeds(next, root)) {
       if (d === parent) continue;
+      // The site's equity is every lot's equity: fold the lot's ledger in. A
+      // lot that was already a child had its ledger folded into its old root,
+      // which is one of the deeds being folded here.
+      if (!next.merged[d]) mergeDeedLedger(next, d, parent, next.holdings[d].boughtM);
       next.merged[d] = parent;
       next.holdings[parent].costBasis += next.holdings[d].costBasis;
       next.holdings[d].costBasis = 0;
@@ -1159,7 +1163,7 @@ export function defaultGroundLease(
       // it on cash AND line and the improvement still goes, which is the
       // penalty for writing short ground paper in the first place.
       if (buyout > 0 && (s.cash >= buyout || fundableNow(s, parcels) >= buyout)) {
-        fundAndBook(s, parcels, buyout, "bought");
+        fundAndBook(s, parcels, buyout, "bought", { bbl });
         revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
         recordPropertyEvent(s, bbl, {
           kind: "default",
@@ -1376,7 +1380,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
           const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
           // Same cheque at expiry as on default above, funded the same way.
           if (buyout > 0 && (s.cash >= buyout || fundableNow(s, parcels) >= buyout)) {
-            fundAndBook(s, parcels, buyout, "bought");
+            fundAndBook(s, parcels, buyout, "bought", { bbl });
             revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
             s.news.unshift({
               q: s.month, kind: "event",
@@ -2708,8 +2712,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // balance-sheet movement, not income and not expense.
   //
   // This survived because conserve's bot never sold anything. It sells now.
-  logBooks(next, "sold", toSeller + kick + breakFee);
-  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
+  logBooks(next, "sold", toSeller + kick + breakFee, bbl);
+  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee, bbl);
   // The release is a repayment of principal, not an expense — it comes out of
   // the proceeds and goes against the balance, so `sold` is struck net of it
   // for the same reason it is struck net of the mortgage payoff.
@@ -2732,7 +2736,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     logBooks(next, "taxes", tax);
   }
   next.exits = next.exits ?? [];
-  next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
+  {
+    const ex: Exit = { bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain };
+    closeDeedLedger(next, ex);
+    next.exits.push(ex);
+  }
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was
@@ -3551,7 +3559,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
     };
   }
   const next = clone(s);
-  fundAndBook(next, parcels, cost, "capex");
+  fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.renovatingUntilM = next.month + RENO_MONTHS;
   nh.tenants = []; // remaining tenants are bought out as part of the job

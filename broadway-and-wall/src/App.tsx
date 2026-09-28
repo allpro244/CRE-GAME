@@ -9,6 +9,7 @@ import YearReview, { CareerCard, MilestoneFlash, ExitCard } from "@/ui/YearRevie
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
 import Sounds from "@/ui/Sounds";
+import RunRecorder from "@/ui/RunRecords";
 import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
@@ -53,6 +54,7 @@ export default function App() {
       {playing && <Shortcuts />}
       {playing && <AutoPlay />}
       {playing && <Sounds />}
+      {playing && <RunRecorder />}
       {playing && !photoFrame && <PrimerOffer />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />

@@ -58,7 +58,18 @@ export interface PlayerFund {
   settled?: boolean;
   /** True when LPs did not get their capital back. Blocks the next raise. */
   failed?: boolean;
+  /**
+   * THE EXTENSION. A fund whose life ends with buildings still in it does not
+   * vanish on the date: LPAs grant the GP extensions to sell out (two one-year
+   * extensions is the market norm). Until this month the vehicle keeps
+   * operating and selling; at it, whatever is left is bought in by the sponsor
+   * at NAV (see windDownFund in sim.ts).
+   */
+  extendedTo?: number;
 }
+
+/** Two one-year extensions — the common LPA term for a closed-end real estate fund. */
+export const FUND_EXTENSION_M = 24;
 
 /** Live vehicle still inside its life (not yet settled). */
 export function fundIsLive(s: GameState): boolean {
@@ -282,16 +293,32 @@ export function tickFund(s: GameState): void {
   const netOut = Math.max(0, f.called - f.distributed);
   f.prefAccrued += netOut * (f.pref / 12);
 
+  const deeds = Object.values(s.holdings).filter((h) => h.fundOwned).length;
+  // The LPs' calendar, told ahead: two years and one year out from the end of
+  // life, with the buildings still to sell.
+  if (deeds > 0 && (s.month === f.lifeEndM - 24 || s.month === f.lifeEndM - 12)) {
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `Your fund's life ends ${monthLabel(f.lifeEndM)} with ${deeds} building${deeds === 1 ? "" : "s"} still in the vehicle. `
+        + `The LPs are paid from sales; what is unsold at the end of any extension you buy in at NAV.`,
+    });
+  }
   if (s.month === f.lifeEndM) {
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `Your fund has reached the end of its life. Remaining vehicle cash is $${(f.cash / 1e6).toFixed(2)}M; `
-        + `LPs expect distributions. A sponsor who cannot finish does not raise the next one.`,
+        + (deeds > 0
+          ? `${deeds} building${deeds === 1 ? "" : "s"} still to sell — the LPs grant a ${FUND_EXTENSION_M}-month extension, and anything unsold by ${monthLabel(f.lifeEndM + FUND_EXTENSION_M)} is bought in by you at NAV.`
+          : `LPs expect distributions. A sponsor who cannot finish does not raise the next one.`),
     });
   }
 
   if (s.month >= f.lifeEndM) {
-    settleFund(s);
+    // A vehicle with buildings in it cannot settle on cash alone — that was
+    // how the LPs' buildings stayed on the sponsor's books at 100% the day the
+    // fund closed. It runs into its extension; sim.ts buys in what is left.
+    if (deeds === 0) settleFund(s);
+    else if (f.extendedTo === undefined) f.extendedTo = f.lifeEndM + FUND_EXTENSION_M;
   }
 }
 

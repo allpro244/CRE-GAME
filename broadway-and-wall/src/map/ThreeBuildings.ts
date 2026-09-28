@@ -1586,6 +1586,13 @@ attribute vec2 aCcv;   // corner sign at each end: +1 convex, -1 concave
 attribute vec3 aTint;
 attribute float aLit;
 attribute float aRet;
+// WHICH BUILDING THIS VERTEX BELONGS TO — an index into uState, the one
+// texel of per-building state every surface of that building reads. See
+// ThreeBuildings.stateTex for why state lives in a texture rather than in
+// more per-vertex attributes.
+attribute float aBid;
+uniform sampler2D uState;
+uniform float uStateW;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
@@ -1593,6 +1600,12 @@ varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 varying float vLit;
 varying float vRet;
+// x owned, y lens position (-1 no value, -2 not a lot), z highlight
+// (0.5 hover, 1 selected), w metres the building is lowered into the ground
+varying vec4 vState;
+// drawn height, for the ground cut while a building is sinking or rising
+// (1.0 — never cut — when it is not)
+varying float vCut;
 void main() {
   vNormal = normal;
   vTint = aTint;
@@ -1601,7 +1614,17 @@ void main() {
   vLit = aLit;
   vRet = aRet;
   vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh; vEra = aEra;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  int bid = int(aBid + 0.5);
+  int sw = int(uStateW + 0.5);
+  vState = texelFetch(uState, ivec2(bid % sw, bid / sw), 0);
+  // THE BUILDING GOES DOWN INTO THE GROUND, NOT FLAT ONTO IT. Everything the
+  // facade shader draws is keyed to vPos, which stays the ORIGINAL position,
+  // so the windows ride down with the wall instead of concertinaing — a
+  // wrecking sequence, and the same move played backwards is a delivery.
+  vec3 p = position;
+  p.z -= vState.w;
+  vCut = vState.w > 0.0 ? p.z : 1.0;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
 // The light rig. One sun, a sky dome, and a warm bounce off the pavement —
@@ -2166,6 +2189,54 @@ float sunVis(vec3 p, vec3 n) {
   return sum * (1.0 / 16.0);
 }`;
 
+/**
+ * WHAT THE GAME IS SAYING ABOUT A BUILDING, AS OPPOSED TO WHAT IT IS MADE OF.
+ *
+ * Three things the player needs to read off the skyline used to be painted as
+ * albedo multiplies through aTint: the selection was `[1.5, 1.14, 0.5]`, which
+ * turned whatever the building was built of into the same mustard slab and
+ * buried the facade the player had just clicked to look at; ownership was not
+ * on the mesh at all (a pin floating over the roof); and every analysis lens
+ * switched the whole three.js layer off and put up flat grey extrusions, so the
+ * city you were analysing vanished at the moment you were analysing it.
+ *
+ * Each is now a LIGHT rather than a paint. Ownership is a gilt band under the
+ * parapet and a gilt margin round the deck — the way a model-maker marks the
+ * client's lots, legible from any side and leaving every other square metre of
+ * masonry and glass exactly as it was. Selection is a rim of gold light plus a
+ * slow bright band travelling up the facade, which says "this one" without
+ * saying it in a colour the building never had. A lens desaturates the walls
+ * and paints the ROOFS with the same ramp the ground carries, because from a
+ * pitched camera the roofs are what you see of a city, and a heat map that
+ * stops at the kerb is a heat map with the buildings cut out of it.
+ *
+ * The state rides in vState (see VERT); the ramp is up to six colours spaced
+ * evenly on [0, 1] — the CPU maps each lens's own stops onto that axis, so the
+ * roof and the parcel fill under it agree colour for colour.
+ */
+const STATE_GLSL = /* glsl */ `
+uniform float uLensOn;
+uniform vec3 uLensRamp[6];
+uniform float uLensN;
+uniform float uTime;
+uniform float uSelH;
+varying vec4 vState;
+varying float vCut;
+// burnished rather than yellow: it has to sit on red brick and on blue glass
+// and be the same metal on both
+const vec3 OWN_GOLD = vec3(1.00, 0.72, 0.30);
+vec3 lensRamp(float t) {
+  float x = clamp(t, 0.0, 1.0) * (uLensN - 1.0);
+  vec3 c = uLensRamp[0];
+  for (int i = 1; i < 6; i++) {
+    float fi = float(i);
+    if (fi > uLensN - 0.5) break;
+    c = mix(c, uLensRamp[i], clamp(x - (fi - 1.0), 0.0, 1.0));
+  }
+  return c;
+}
+`;
+
 const FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vNormal;
@@ -2178,7 +2249,7 @@ varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+` + STATE_GLSL + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -2214,6 +2285,8 @@ float grainFade(float cellM, float mpp) {
 }
 
 void main() {
+  // the part of a sinking (or rising) building that is below the pavement
+  if (vCut < -0.02) discard;
   int s = int(vStyle + 0.5);
   vec3 n = normalize(vNormal);
   float vis = sunVis(vPos, n);
@@ -7432,6 +7505,61 @@ void main() {
   float graze = pow(1.0 - clamp(dot(n, eyeV), 0.0, 1.0), 4.0);
   col += SKY_COL * graze * (glassy ? 0.34 : 0.085) * mix(0.55, 1.0, ao);
 
+  // ---- WHAT THE GAME IS SAYING ABOUT IT (see STATE_GLSL) --------------------
+  //
+  // Band widths are floored at a pixel and a half of the wall's own height
+  // gradient: a one-metre gilt band is the right object up close and a
+  // shimmering one-pixel line at the establishing zoom, and the rule the
+  // masonry grain follows — never draw a feature smaller than a pixel —
+  // applies just as much to a feature the game put there.
+  float zfw = max(fwidth(vZ), 0.02);
+  if (uLensOn > 0.5 && vState.y > -1.5) {
+    // THE WALLS GO QUIET UNDER A LENS so the roofs can carry the data. Not
+    // grey card: a fifth of the material's own colour stays, so brick still
+    // reads warmer than glass and the city is still recognisably this city.
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(lum * 1.04 + 0.025), col, 0.20);
+    if (vState.y >= 0.0) {
+      // and a wash of the lens colour, lit, so a tall building tells you its
+      // value from the side as well as from above
+      col = mix(col, lensRamp(vState.y) * (light * 0.82 + 0.10), 0.30);
+    }
+  }
+  if (vState.x > 0.5 && vZ <= vTop + 0.1) {
+    // YOURS. A gilt band under the parapet of every volume you own — each
+    // setback tier carries its own, which is how a gilded tower actually reads.
+    float bw = max(1.15, zfw * 1.5);
+    float band = smoothstep(vTop - bw - zfw, vTop - bw, vZ);
+    vec3 gilt = OWN_GOLD * (light * 0.80 + 0.26);
+    col = mix(col, gilt, band * 0.92);
+    // and a faint warmth down the whole building, so it stays tellable at the
+    // distance where the band itself has gone sub-pixel
+    col *= mix(vec3(1.0), vec3(1.05, 1.02, 0.95), 1.0 - band);
+  }
+  float hi = vState.z;
+  if (hi > 0.01) {
+    float sel = step(0.75, hi);
+    // a rim of gold light round the silhouette, strongest where the wall turns
+    // away from the eye — it outlines the building without touching its face
+    float rim = pow(1.0 - clamp(abs(dot(n, eyeV)), 0.0, 1.0), 2.4);
+    col *= 1.0 + 0.07 * hi;
+    col += OWN_GOLD * rim * (0.06 + 0.20 * sel);
+    if (sel > 0.5) {
+      // THE SWEEP. A soft bright band climbs the whole building every four
+      // and a half seconds — slow enough to read as a scan, not a flash. It
+      // travels the SELECTED BUILDING's height (uSelH), not this volume's, so
+      // a setback tower scans as one object rather than one per tier.
+      float span = max(uSelH, 8.0) + 10.0;
+      float sz = fract(uTime * 0.22) * span - 5.0;
+      float sweep = exp(-pow((vZ - sz) / max(1.8, zfw * 2.0), 2.0));
+      col += OWN_GOLD * sweep * 0.26;
+      // and the parapet line, brighter than an owned one
+      float bw2 = max(1.15, zfw * 1.5);
+      float top = smoothstep(vTop - bw2 - zfw, vTop - bw2, vZ) * step(vZ, vTop + 0.1);
+      col = mix(col, OWN_GOLD * (light * 0.9 + 0.40), top * 0.9);
+    }
+  }
+
   gl_FragColor = vec4(aerial(grade(col), vPos, uCam), uOpacity);
 }`;
 
@@ -7446,8 +7574,7 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
-uniform float uTime;
-` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+` + STATE_GLSL + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -7456,6 +7583,7 @@ float rnoise(vec2 p) {
              mix(rhash(i + vec2(0.0, 1.0)), rhash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 void main() {
+  if (vCut < -0.02) discard;
   int s = int(vStyle + 0.5);
   vec3 roof;
   roof = vec3(0.76, 0.76, 0.74);   // the default, before any family overrides it
@@ -7890,6 +8018,32 @@ void main() {
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
   vec3 outc = roof * light * vTint;
+
+  // ---- THE GAME'S STATE ON THE DECK (see STATE_GLSL) ------------------------
+  // Only on decks that are flat: the edge-distance vU is a real distance on a
+  // capped roof and a constant nought on a pitched slope, where an edge rule
+  // would gild the whole slate.
+  float flatDeck = step(0.92, n.z);
+  float ufw = max(fwidth(vU), 0.02);
+  if (uLensOn > 0.5 && vState.y > -1.5) {
+    // THE LENS LIVES ON THE ROOFS. A lot the lens has no number for is pale
+    // card, like the unlettered lots on the ground around it.
+    vec3 rc = vState.y >= 0.0 ? lensRamp(vState.y) : vec3(0.80, 0.79, 0.76);
+    outc = rc * (light * 0.78 + 0.16);
+  }
+  if (vState.x > 0.5) {
+    // the gilt margin round the deck of a building you own, inside the parapet
+    float ew = max(0.7, ufw * 1.5);
+    float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
+    outc = mix(outc, OWN_GOLD * (light * 0.80 + 0.26), edge * 0.88);
+  }
+  if (vState.z > 0.01) {
+    float sel = step(0.75, vState.z);
+    outc *= 1.0 + 0.08 * vState.z;
+    float ew = max(1.6, ufw * 1.5);
+    float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
+    outc = mix(outc, OWN_GOLD * (light * 0.9 + 0.40), edge * 0.9 * sel);
+  }
 
   vec3 Vr = normalize(uCam - vPos);
   // A ROOF IS NOT PERFECTLY MATTE EITHER. Membrane, asphalt, slate and metal
@@ -9141,7 +9295,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // each Group's rotation.z off the shared clock, so the slew costs one
   // property write per crane per frame. Rebuilding dynJobs clears this list
   // alongside the meshes it points into; a stock-only rebuild leaves it alone.
-  private cranes: { g: THREE.Group; bear: number; w: number; phase: number }[] = [];
+  private cranes: { g: THREE.Group; bear: number; w: number; phase: number; trolley: THREE.Object3D; jib: number; tro: number }[] = [];
   // The last occupancy and retail maps the game handed over. Kept because a
   // stock rebuild replaces those meshes, and by the time it does, this month's
   // occupancy pass has already run — MapView's occupancy effect is declared
@@ -9188,6 +9342,272 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * paying for both.
    */
   paused = false;
+
+  // ---- per-building state --------------------------------------------------
+  //
+  // ONE TEXEL PER BUILDING, NOT ANOTHER ATTRIBUTE PER VERTEX.
+  //
+  // Ownership, the lens value, the hover/selection highlight and the sink used
+  // by the demolition and delivery tweens are all facts about a BUILDING, and
+  // a building here is thousands of vertices. Carrying them as vertex
+  // attributes means a hover — one building — writing and uploading every
+  // vertex of that building, and a lens toggle writing the whole city. Stored
+  // as one RGBA texel per building and fetched in the vertex shader through a
+  // single `aBid` index laid down at build time, a state change is a
+  // sixteen-byte texSubImage2D however big the building is, and the whole
+  // table for a six-thousand-lot city is a quarter of a megabyte.
+  //
+  // Two keys per deed: the bbl itself for the generator's static sheet, and
+  // "d:" + bbl for the dynamic meshes the game puts up on it. They share owned,
+  // lens and highlight (written together) but NOT the sink channel — a
+  // redevelopment sinks the old building while the new site stands on the
+  // same deed, and one texel cannot be both going down and staying up.
+  //
+  //   x  owned (0/1)
+  //   y  lens position 0..1, -1 no value, -2 not a lot at all (lawns, deco)
+  //   z  highlight: 0.5 hover, 1 selected
+  //   w  metres the building is lowered into the ground (tweens)
+  private bidByKey = new Map<string, number>();
+  private readonly stateW = 256;
+  private stateData = new Float32Array(256 * 4);
+  private stateTex: THREE.DataTexture | null = null;
+  // a DataTexture's FIRST upload must be whole — update ranges applied to a
+  // freshly allocated texture would leave every other texel undefined
+  private stateFresh = true;
+  private stateTexUni = { value: null as THREE.DataTexture | null };
+  private stateWUni = { value: 256 };
+  private lensOnUni = { value: 0 };
+  private lensRampUni = { value: Array.from({ length: 6 }, () => new THREE.Vector3(1, 1, 1)) };
+  private lensNUni = { value: 2 };
+  private selHUni = { value: 30 };
+  private ownedNow = new Set<string>();
+  private lensNow = new Map<string, number>();
+  private hiNow = new Map<string, number>();
+  private selActive = false;
+  /** Height of each deed's building, metres — for the sweep and the tweens. */
+  private heightByKey = new Map<string, number>();
+  // ---- partial-upload records ----
+  // What each per-vertex attribute currently holds, by deed, so a change
+  // rewrites and uploads only the buildings that actually changed.
+  private tintNow = new Map<string, [number, number, number]>();
+  private occNow = new Map<string, number>();
+  private retNow = new Map<string, number>();
+  // ---- tweens ----
+  private tweens = new Map<string, { from: number; to: number; t0: number; dur: number; ease: (t: number) => number; done?: () => void }>();
+  /** false until the first skyline sync: a loaded save does not replay its own history. */
+  private primed = false;
+  private prevDyn = new Map<string, { h: number; construction: boolean }>();
+  // ---- idle-frame cache ----
+  // Bumped by anything that changes what the city LOOKS like, so the
+  // screen-space passes know when last frame's answer is stale.
+  private sceneDirty = 0;
+  private postKeyFrames = 0;
+  private scratchM1 = new THREE.Matrix4();
+  private scratchM2 = new THREE.Matrix4();
+  private scratchM3 = new THREE.Matrix4();
+  private scratchM4 = new THREE.Matrix4();
+  private scratchV3 = new THREE.Vector3();
+  private scratchV3b = new THREE.Vector3();
+  private scratchV2 = new THREE.Vector2();
+  private viewH = 900;
+  private flipZ = new THREE.Matrix4().makeScale(1, 1, -1);
+  private reCull: THREE.Object3D[] = [];
+  private parkCull = (o: THREE.Object3D) => {
+    if (o.frustumCulled) { o.frustumCulled = false; this.reCull.push(o); }
+  };
+  private postKeyProj = new Float64Array(16).fill(NaN);
+  private postKeyDirty = -1;
+  private postKeyW = 0;
+  private postKeyH = 0;
+
+  /** The texel index for a state key, allocated (and the table grown) on first use. */
+  private bidOf(key: string): number {
+    let bid = this.bidByKey.get(key);
+    if (bid !== undefined) return bid;
+    bid = this.bidByKey.size + 1;          // texel 0 is "not a building"
+    this.bidByKey.set(key, bid);
+    if ((bid + 1) * 4 > this.stateData.length) this.growState(bid + 1);
+    this.stateData.set([0, -1, 0, 0], bid * 4);
+    // a dynamic key inherits what the game has already said about its deed
+    if (key.startsWith("d:")) {
+      const sb = this.bidByKey.get(key.slice(2));
+      if (sb !== undefined) {
+        for (let c = 0; c < 3; c++) this.stateData[bid * 4 + c] = this.stateData[sb * 4 + c];
+      }
+    }
+    this.markState(bid);
+    return bid;
+  }
+
+  private growState(minTexels: number) {
+    const rows = Math.max(1, Math.ceil((minTexels * 1.5 + 64) / this.stateW));
+    const next = new Float32Array(this.stateW * rows * 4);
+    next.set(this.stateData.subarray(0, Math.min(this.stateData.length, next.length)));
+    this.stateData = next;
+    // texel 0 — lawns, deco, harbour furniture — is never a lot
+    this.stateData.set([0, -2, 0, 0], 0);
+    this.stateTex?.dispose();
+    const tex = new THREE.DataTexture(this.stateData, this.stateW, rows, THREE.RGBAFormat, THREE.FloatType);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    this.stateTex = tex;
+    this.stateTexUni.value = tex;
+    this.stateFresh = true;
+  }
+
+  private markState(bid: number) {
+    if (!this.stateTex) return;
+    if (!this.stateFresh) this.stateTex.addUpdateRange(bid * 4, 4);
+    this.stateTex.needsUpdate = true;
+  }
+
+  /** Write one channel for a deed — both its static and its dynamic building. */
+  private setDeedState(bbl: string, ch: 0 | 1 | 2, v: number) {
+    for (const key of [bbl, "d:" + bbl]) {
+      const bid = this.bidByKey.get(key);
+      if (bid === undefined) continue;
+      if (this.stateData[bid * 4 + ch] === v) continue;
+      this.stateData[bid * 4 + ch] = v;
+      this.markState(bid);
+    }
+  }
+
+  private setSink(key: string, m: number) {
+    const bid = this.bidByKey.get(key);
+    if (bid === undefined) return;
+    if (this.stateData[bid * 4 + 3] === m) return;
+    this.stateData[bid * 4 + 3] = m;
+    this.markState(bid);
+  }
+
+  /** The tallest point of a deed's generator building, read off the geometry. */
+  private staticHeight(bbl: string): number {
+    const known = this.heightByKey.get(bbl);
+    if (known !== undefined) return known;
+    let h = 0;
+    for (const { attr, r } of this.rangesByBBL.get(bbl) ?? []) {
+      const pa = this.posAttrs[attr];
+      if (!pa || attr > 1) continue;
+      const arr = pa.array as Float32Array;
+      for (let i = r.start; i < r.start + r.count; i++) if (arr[i * 3 + 2] > h) h = arr[i * 3 + 2];
+    }
+    this.heightByKey.set(bbl, h);
+    return h;
+  }
+
+  /**
+   * YOUR BUILDINGS, ON THE BUILDINGS. The gilt parapet band and deck margin in
+   * FRAG / ROOF_FRAG. Diffed, so a purchase uploads one texel.
+   */
+  setOwned(owned: Set<string>) {
+    let changed = false;
+    for (const bbl of this.ownedNow) if (!owned.has(bbl)) { this.setDeedState(bbl, 0, 0); changed = true; }
+    for (const bbl of owned) if (!this.ownedNow.has(bbl)) { this.setDeedState(bbl, 0, 1); changed = true; }
+    this.ownedNow = new Set(owned);
+    if (changed) { this.sceneDirty++; this.map?.triggerRepaint(); }
+  }
+
+  /**
+   * SELECTION AND HOVER AS LIGHT. `selected` is every deed of the picked site
+   * (an assemblage is one building); `hover` gets a subtle lift only.
+   */
+  setHighlight(selected: string[], hover: string | null) {
+    const next = new Map<string, number>();
+    if (hover) next.set(hover, 0.5);
+    for (const b of selected) next.set(b, 1);
+    for (const [bbl] of this.hiNow) if (!next.has(bbl)) this.setDeedState(bbl, 2, 0);
+    for (const [bbl, v] of next) if (this.hiNow.get(bbl) !== v) this.setDeedState(bbl, 2, v);
+    this.hiNow = next;
+    this.selActive = selected.length > 0;
+    let h = 0;
+    for (const b of selected) {
+      h = Math.max(h, this.heightByKey.get("d:" + b) ?? 0, this.flattened.has(b) ? 0 : this.staticHeight(b));
+    }
+    this.selHUni.value = h;
+    this.sceneDirty++;
+    this.map?.triggerRepaint();
+  }
+
+  /**
+   * AN ANALYSIS LENS, PAINTED ON THE ROOFS. `values` is each deed's position on
+   * the ramp in 0..1 (the caller maps its lens's own stops onto that axis);
+   * `ramp` is two to six sRGB hex colours spaced evenly along it. Null turns
+   * the lens off and the city goes back to its own materials.
+   */
+  setLens(values: Map<string, number> | null, ramp: string[] = []) {
+    if (!values) {
+      for (const [bbl] of this.lensNow) this.setDeedState(bbl, 1, -1);
+      this.lensNow = new Map();
+      this.lensOnUni.value = 0;
+    } else {
+      const n = Math.max(2, Math.min(6, ramp.length));
+      for (let i = 0; i < 6; i++) {
+        const hex = (ramp[Math.min(i, ramp.length - 1)] ?? "#cccccc").replace("#", "");
+        const v = parseInt(hex, 16);
+        // sRGB as written, NOT through THREE.Color — its colour management
+        // would linearise these, and every other albedo in these shaders is
+        // authored in display values
+        this.lensRampUni.value[i].set(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
+      }
+      this.lensNUni.value = n;
+      for (const [bbl] of this.lensNow) if (!values.has(bbl)) this.setDeedState(bbl, 1, -1);
+      for (const [bbl, t] of values) {
+        const c = Math.max(0, Math.min(1, t));
+        if (this.lensNow.get(bbl) !== c) this.setDeedState(bbl, 1, c);
+      }
+      this.lensNow = new Map(values);
+      this.lensOnUni.value = 1;
+    }
+    this.sceneDirty++;
+    this.map?.triggerRepaint();
+  }
+
+  /**
+   * HOW BIG A BUILDING IS, FOR THE CAMERA. The radius of the deed's lot in
+   * metres and the height of whatever stands on it now — the game's building
+   * if it put one up, the generator's otherwise (nought once demolished).
+   */
+  buildingFrame(bbl: string): { radius: number; height: number } | null {
+    const ring = this.lotRing(bbl);
+    if (!ring || ring.length < 3) return null;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    let radius = 0;
+    for (const [x, y] of ring) radius = Math.max(radius, Math.hypot(x - cx, y - cy));
+    const dyn = this.heightByKey.get("d:" + bbl);
+    const height = dyn !== undefined && this.prevDyn.has(bbl) ? dyn
+      : this.flattened.has(bbl) ? 0 : this.staticHeight(bbl);
+    return { radius, height };
+  }
+
+  /**
+   * The compass bearing, in MapLibre's degrees, of a camera standing with the
+   * sun at its back — the bearing from which the lit faces of a building face
+   * the lens. The sun vector points from the ground TOWARD the sun (x east,
+   * y north), so looking away from it is looking along its negation.
+   */
+  sunBackBearing(): number {
+    const s = this.sunDirUni.value;
+    return (Math.atan2(-s.x, -s.y) * 180) / Math.PI;
+  }
+
+  /** Step the demolition / delivery tweens; true while any is running. */
+  private stepTweens(now: number): boolean {
+    if (!this.tweens.size) return false;
+    for (const [key, tw] of this.tweens) {
+      const t = Math.min(1, Math.max(0, (now - tw.t0) / tw.dur));
+      this.setSink(key, tw.from + (tw.to - tw.from) * tw.ease(t));
+      if (t >= 1) {
+        this.tweens.delete(key);
+        tw.done?.();
+      }
+    }
+    this.sceneDirty++;
+    return true;
+  }
 
   constructor(
     private volumes: BuildingVolume[],
@@ -9242,6 +9662,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const end = () => { this.camMoving = false; this.map.triggerRepaint(); };
       for (const e of ["movestart", "zoomstart", "rotatestart", "pitchstart"] as const) map.on(e, start);
       for (const e of ["moveend", "zoomend", "rotateend", "pitchend"] as const) map.on(e, end);
+      const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
+      measure();
+      map.on("resize", measure);
     }
   }
 
@@ -9390,7 +9813,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** Match the targets to the drawing buffer; rebuild them when it changes. */
   private ensurePostSize(): boolean {
     if (!this.postOK || !this.postQuad) return false;
-    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const size = this.renderer.getDrawingBufferSize(this.scratchV2);
     if (size.x < 4 || size.y < 4) return false;
     // Prefer-FPS rebuilds with fewer samples; the sample count is part of the
     // identity of the target, so a change here has to tear it down too.
@@ -10084,12 +10507,38 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uShadowOn: { value: 0 },
       uShadowSpan: { value: 5999 }, uShadowTexelM: { value: 4400 / 3072 },
       uTime: this.timeUni,
+      // per-building state — see bidByKey
+      uState: this.stateTexUni,
+      uStateW: this.stateWUni,
+      uLensOn: this.lensOnUni,
+      uLensRamp: this.lensRampUni,
+      uLensN: this.lensNUni,
+      uSelH: this.selHUni,
     });
+    // THE STATE TABLE, SIZED FOR EVERY DEED THE CITY HAS. Static buildings
+    // and lots get their texel now; the dynamic "d:" keys are allocated as
+    // the game builds, with room left for them so the table rarely regrows.
+    {
+      const deeds = new Set<string>();
+      for (const { bbl } of wallRanges) deeds.add(bbl);
+      for (const { bbl } of roofRanges) deeds.add(bbl);
+      for (const b of Object.keys(this.ctxPoints.lots ?? {})) deeds.add(b);
+      this.growState(deeds.size * 2 + 2);
+      for (const b of deeds) this.bidOf(b);
+    }
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
 
     const wallGeom = mkGeom(W);
     const roofGeom = mkGeom(R);
+    // every vertex learns which deed it belongs to — deco and harbour work
+    // stay on texel 0, which no state ever touches
+    for (const [geom, list] of [[wallGeom, wallRanges], [roofGeom, roofRanges]] as const) {
+      const n = geom.getAttribute("position").count;
+      const bid = new Float32Array(n);
+      for (const { bbl, r } of list) bid.fill(this.bidOf(bbl), r.start, r.start + r.count);
+      geom.setAttribute("aBid", new THREE.Float32BufferAttribute(bid, 1));
+    }
     this.scene.add(new THREE.Mesh(wallGeom, this.wallMat));
     this.scene.add(new THREE.Mesh(roofGeom, this.roofMat));
     this.tintAttrs = [wallGeom.getAttribute("aTint") as THREE.BufferAttribute, roofGeom.getAttribute("aTint") as THREE.BufferAttribute];
@@ -10903,6 +11352,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     g.setAttribute("aTint", fill(1, 3));
     g.setAttribute("aSeg", fill(0, 2));
     g.setAttribute("aCcv", fill(0, 2));
+    // no data, and texel 0: turf is never a lot, never owned, never lensed.
+    // Declared rather than left to the generic attribute default, which in a
+    // context shared with MapLibre is whatever the last draw left behind.
+    g.setAttribute("aLit", fill(-1, 1));
+    g.setAttribute("aRet", fill(-1, 1));
+    g.setAttribute("aBid", fill(0, 1));
     const mesh = new THREE.Mesh(g, this.roofMat!);
     mesh.frustumCulled = false;
     mesh.userData.noShadow = true;
@@ -11476,6 +11931,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.cranes.length = 0;
       this.jobsSig = jobsSig;
     }
+    const nextDyn = new Map<string, { h: number; construction: boolean }>();
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -11492,8 +11948,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // means nought: the original mesh is already flattened by the line above,
       // and now nothing replaces it.
       if (!(item.heightM > 0) || item.cls === "land") continue;
-      if (item.construction ? !rebuildJobs : !rebuildStock) continue;
+      if (item.construction ? !rebuildJobs : !rebuildStock) {
+        // not rebuilt this call, so not re-risen either: it keeps the height
+        // it was last drawn at for the next comparison
+        const kept = this.prevDyn.get(item.bbl);
+        if (kept) nextDyn.set(item.bbl, kept);
+        continue;
+      }
       const host = item.construction ? this.dynJobs : this.dynStock;
+      const childStart = host.children.length;
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
@@ -11704,6 +12167,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           urnGeom().scale(p.s, p.s, p.s).translate(p.x, p.y, p.z));
         if (urns.length) host.add(new THREE.Mesh(mergeGeoms(urns), this.propMaterial(0xa9a293, false)));
       }
+      const dynBid = this.bidOf("d:" + item.bbl);
       const mk = (D: typeof T) => {
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.Float32BufferAttribute(D.pos, 3));
@@ -11755,6 +12219,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aTint", tintA);
         g.setAttribute("aLit", litA);
         g.setAttribute("aRet", retA);
+        // Construction shells included: a site can be selected, owned and
+        // lensed like anything else, and it rises floor by floor on the tween.
+        g.setAttribute("aBid", new THREE.Float32BufferAttribute(new Float32Array(verts).fill(dynBid), 1));
         return g;
       };
       host.add(new THREE.Mesh(mk(T), this.wallMat));
@@ -11878,7 +12345,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // the street telling the town what is coming. The news says somebody
         // broke ground; this is the street corroborating it.
         {
-          const fp = tiers[0].fp;
+          // Round the LOT LINE, half a metre in, not round the building's
+          // inset plate — a hoarding fences the site, and the site is the deed.
+          const fp = insetRing(ring, 0.5) ?? ring;
           const FH = 2.6;
           const panels: THREE.BufferGeometry[] = [];
           let bestLen = 0, bx = 0, by = 0, bnx = 0, bny = 0;
@@ -11963,10 +12432,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.2, 2.0).translate(-back, 0, mastH - 1.6), grey),
           // operator's cab, at the slewing ring
           new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.9).translate(1.6, 0, mastH - 3.4), grey),
-          // the hoist line and the hook block — the part that says it is working
-          new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2).translate(jib * tro, 0, (mastH - 1.4 + hook) / 2), grey),
-          new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(jib * tro, 0, hook), grey),
         );
+        // THE TROLLEY RUNS. The hoist line and the hook block hang off a
+        // carriage of their own that render() walks in and out along the jib —
+        // a crane that only slews is parked on a turntable; one whose hook
+        // travels is placing a load.
+        const trolley = new THREE.Group();
+        trolley.position.x = jib * tro;
+        trolley.add(
+          new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.3, 0.5).translate(0, 0, mastH - 2.3), grey),
+          // the hoist line and the hook block — the part that says it is working
+          new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2).translate(0, 0, (mastH - 1.4 + hook) / 2), grey),
+          new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(0, 0, hook), grey),
+        );
+        slew.add(trolley);
         host.add(slew);
         // One lazy sweep every 22-38 seconds, period and phase hashed off the
         // deed like everything else about this crane, so two sites never move
@@ -11975,33 +12454,131 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           g: slew, bear,
           w: (Math.PI * 2) / (44 + hash01(k ^ 0xe1, this.citySeed) * 32),
           phase: hash01(k ^ 0xf3, this.citySeed) * Math.PI * 2,
+          trolley, jib, tro,
         });
-        // SITE HOARDING. A job with no fence around it is a building that grew.
-        for (let i = 0; i < ring.length; i++) {
-          const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
-          const dx = b2[0] - a2[0], dy = b2[1] - a2[1];
-          const L = Math.hypot(dx, dy);
-          if (L < 3) continue;
-          host.add(new THREE.Mesh(
-            new THREE.BoxGeometry(L, 0.22, 2.2)
-              .rotateZ(Math.atan2(dy, dx))
-              .translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, 1.1),
-            orange));
+        // ---- THE FRAME TELLS YOU HOW FAR ALONG IT IS -----------------------
+        //
+        // A site under a crane was a plain box the height of its progress, so
+        // month three and month thirty of a forty-storey job read as the same
+        // object at different heights. What a building site actually shows
+        // the street is its SLABS: a pale concrete edge at every floor poured
+        // so far, and on the top one the timber formwork of the floor being
+        // poured now, with the rack hoist climbing the face beside it. All of
+        // it is merged per site — three draws however tall the frame is.
+        {
+          const fp = tiers[0].fp as [number, number][];
+          const FLOOR = 3.55;   // the city's storey, as MapView builds with
+          const levels = Math.max(0, Math.floor(h / FLOOR));
+          const slabs: THREE.BufferGeometry[] = [];
+          const form: THREE.BufferGeometry[] = [];
+          const edgeBox = (a2: [number, number], b2: [number, number], z: number, th: number, out: number) => {
+            const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+            const L = Math.hypot(ex, ey);
+            if (L < 1) return null;
+            let nx = -ey / L, ny = ex / L;
+            if (((a2[0] + b2[0]) / 2 - cx) * nx + ((a2[1] + b2[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+            return new THREE.BoxGeometry(L + out * 2, 0.5, th)
+              .rotateZ(Math.atan2(ey, ex))
+              .translate((a2[0] + b2[0]) / 2 + nx * out * 0.5, (a2[1] + b2[1]) / 2 + ny * out * 0.5, z);
+          };
+          for (let lv = 1; lv <= levels; lv++) {
+            const z = lv * FLOOR;
+            if (z > h - 0.2) break;
+            for (let i = 0; i < fp.length; i++) {
+              const g = edgeBox(fp[i], fp[(i + 1) % fp.length], z, 0.34, 0.22);
+              if (g) slabs.push(g);
+            }
+          }
+          // the pour in progress: a timber skirt round the top deck
+          for (let i = 0; i < fp.length; i++) {
+            const g = edgeBox(fp[i], fp[(i + 1) % fp.length], h + 0.55, 1.1, 0.3);
+            if (g) form.push(g);
+          }
+          if (slabs.length) host.add(new THREE.Mesh(mergeGeoms(slabs), this.propMaterial(0xcfcac0, false)));
+          if (form.length) host.add(new THREE.Mesh(mergeGeoms(form), this.propMaterial(0xb98a52, false)));
+          // the rack hoist, on the face opposite the crane
+          let bi = 0, bl = -1;
+          for (let i = 0; i < fp.length; i++) {
+            const a2 = fp[i], b2 = fp[(i + 1) % fp.length];
+            const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            if (L > bl) { bl = L; bi = i; }
+          }
+          if (bl > 8 && h > 7) {
+            const a2 = fp[bi], b2 = fp[(bi + 1) % fp.length];
+            const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+            let nx = -ey / bl, ny = ex / bl;
+            const mxE = (a2[0] + b2[0]) / 2, myE = (a2[1] + b2[1]) / 2;
+            if ((mxE - cx) * nx + (myE - cy) * ny < 0) { nx = -nx; ny = -ny; }
+            const hx = mxE + nx * 1.3 + (ex / bl) * bl * 0.2, hy = myE + ny * 1.3 + (ey / bl) * bl * 0.2;
+            const ang = Math.atan2(ey, ex);
+            host.add(new THREE.Mesh(mergeGeoms([
+              new THREE.BoxGeometry(0.5, 0.5, h + 3).translate(0, 0.5, (h + 3) / 2),
+              new THREE.BoxGeometry(1.8, 1.4, 2.4).translate(0, -0.5, Math.max(1.2, h * 0.55)),
+            ]).rotateZ(ang).translate(hx, hy, 0), this.propMaterial(0xd4a23a, false)));
+          }
         }
+        // (There was a second fence here — an orange box per lot edge, one
+        // mesh and one draw call each, standing on the same line as the
+        // painted hoarding above. A site is fenced once; the hoarding is the
+        // one with the project board, and it is one merged draw.)
+      }
+      // ---- AND IT RISES ------------------------------------------------------
+      //
+      // Nothing about a building used to change smoothly: a month's progress
+      // on a frame, a delivery, a new site — each was a snap between one
+      // rebuild and the next. Now whatever is TALLER than it was last sync
+      // comes up out of the ground by the difference, over the same second
+      // and a bit the demolition takes going down. It is the state texture's
+      // sink channel doing it (see VERT), so a rising tower costs one texel a
+      // frame. Only what changed moves: this whole group is rebuilt whenever
+      // any one building in it changes, and the other forty stay put.
+      const key = "d:" + item.bbl;
+      const topZ = Math.max(h, crownZ);
+      this.heightByKey.set(key, topZ);
+      nextDyn.set(item.bbl, { h: topZ, construction: item.construction });
+      const prev = this.prevDyn.get(item.bbl);
+      const rise = !this.primed ? 0 : prev ? Math.max(0, topZ - prev.h) : topZ;
+      if (rise > 0.4) {
+        // The roof kit waits for the roof. Plant arriving before the building
+        // it stands on would hang in the air for the length of the rise; the
+        // crane and the hoarding are the site itself and stay.
+        const hidden: THREE.Object3D[] = [];
+        if (!item.construction) {
+          for (let ci = childStart; ci < host.children.length; ci++) {
+            const o = host.children[ci] as THREE.Mesh;
+            if (o.material === this.wallMat || o.material === this.roofMat) continue;
+            if (o.visible) { o.visible = false; hidden.push(o); }
+          }
+        }
+        this.setSink(key, rise);
+        this.tweens.set(key, {
+          from: rise, to: 0, t0: performance.now(), dur: 1200,
+          ease: (t) => 1 - Math.pow(1 - t, 3),
+          done: () => { for (const o of hidden) o.visible = true; },
+        });
+      } else {
+        this.tweens.delete(key);
+        this.setSink(key, 0);
       }
     }
+    this.prevDyn = nextDyn;
+    this.primed = true;
     // Re-dress the fresh meshes from the last maps the game sent (see
     // lastOcc/lastRet at their declaration for why waiting on the feed's own
-    // cadence is a month too late). Idempotent on the static sheets, and a
-    // building delivered THIS tick gets its value here too, because the
-    // occupancy pass that just ran computed it against a registry the bbl
-    // already stood in. Job frames have no occupancy slots, so a crane-only
-    // month leaves the last maps alone.
+    // cadence is a month too late). Only the dynamic slots are written: the
+    // static sheets already hold these values, and re-uploading the whole
+    // city's occupancy every time one crane moves is exactly the waste the
+    // partial uploads exist to remove. A building delivered THIS tick gets its
+    // value here too, because the occupancy pass that just ran computed it
+    // against a registry the bbl already stood in. Job frames have no
+    // occupancy slots, so a crane-only month leaves them alone.
     if (rebuildStock) {
-      if (this.lastOcc.size) this.setOccupancy(this.lastOcc);
-      if (this.lastRet.size) this.setRetail(this.lastRet);
+      for (const [bbl, c] of this.tintNow) this.writeTint(bbl, c, 2);
+      for (const [bbl, v] of this.lastOcc) this.writeScalar(this.litAttrs, bbl, Math.max(0, Math.min(1, v)), 2);
+      for (const [bbl, v] of this.lastRet) this.writeScalar(this.retAttrs, bbl, v, 2);
     }
     this.sunDirty = true;
+    this.sceneDirty++;
     this.map.triggerRepaint();
   }
 
@@ -12029,14 +12606,31 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (const bbl of works.flatten) {
       if (!this.flattened.has(bbl)) this.flattenLot(bbl);
     }
-    this.disposeGroupContents(this.civicGroup, true);
-    const lawn = new THREE.MeshLambertMaterial({ color: 0x7e9e5c });
-    const dirt = new THREE.MeshLambertMaterial({ color: 0x8a7a55 });
-    const stone = new THREE.MeshLambertMaterial({ color: 0x6e6758 });
-    const civic = new THREE.MeshLambertMaterial({ color: 0xe8e4d8 });
-    const roof = new THREE.MeshLambertMaterial({ color: 0x5a4a3a });
-    const canopy = new THREE.MeshLambertMaterial({ color: 0x3a4550 });
-    const leaf = new THREE.MeshLambertMaterial({ color: 0x5f7d45 });
+    this.disposeGroupContents(this.civicGroup);
+    // THE CITY'S OWN WORKS WERE BLACK. These were MeshLambertMaterial, and a
+    // Lambert material is lit by three.js lights — of which this scene has
+    // none, because every surface here carries its own sun, sky, bounce,
+    // baked shadow and haze in its shader (LIGHT_GLSL). So a park the city
+    // paid for arrived as a black plate with black cones on it, and a station
+    // as a black box: unlit ambient is zero. The prop material is the lit one
+    // the rest of the street furniture uses, so the works now sit in the same
+    // light, cast into the same shadow map and haze into the same distance.
+    //
+    // PROP_VERT_PLAIN reads the geometry's own coordinates as world space (it
+    // has no model matrix in its lighting), so every piece below is built in
+    // place — translated into its geometry — rather than positioned by mesh
+    // transform, or its shading would be computed at the city origin.
+    // Paler than the Lambert colours they replace: the prop shader's own
+    // ground-contact occlusion takes a flat sheet at z 0.08 down to 62%, so
+    // the old swatches came out as a dark bottle-green plate.
+    const lawn = this.propMaterial(0xaec487, false);
+    const dirt = this.propMaterial(0xb3a37f, false);
+    const stone = this.propMaterial(0x8e8676, false);
+    const civic = this.propMaterial(0xe8e4d8, false);
+    const roof = this.propMaterial(0x5a4a3a, false);
+    const canopy = this.propMaterial(0x3a4550, false);
+    const leaf = this.propMaterial(0x5f7d45, false, 1);
+    const trees: THREE.BufferGeometry[] = [];
     const fill = (ll: [number, number][], z: number, mat: THREE.Material) => {
       const ring = ll.map((q) => this.project(q));
       if (ring.length < 3) return;
@@ -12049,7 +12643,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const i of t) pos.push(ring[i][0], ring[i][1], z);
       }
       g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-      g.computeVertexNormals();
+      // straight up, whatever the ring's winding: the prop shader does not
+      // flip a back face's normal, so a clockwise ring would have been lit
+      // from underneath
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(
+        new Float32Array(pos.length).map((_, i) => (i % 3 === 2 ? 1 : 0)), 3));
       this.civicGroup.add(new THREE.Mesh(g, mat));
       return ring;
     };
@@ -12070,9 +12668,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
         if (Math.hypot(x - cx, y - cy) < Math.min(maxX - minX, maxY - minY) * 0.28) continue;
         const h = 4.2 + (i % 3) * 0.7;
-        const tree = new THREE.Mesh(new THREE.ConeGeometry(1.6, h, 5), leaf);
-        tree.position.set(x, y, h / 2 + 0.1);
-        this.civicGroup.add(tree);
+        // cones stand on +y by default; this city's up is +z
+        trees.push(new THREE.ConeGeometry(1.6, h, 5).rotateX(Math.PI / 2).translate(x, y, h / 2 + 0.1));
       }
     };
     for (const r of works.parks) {
@@ -12081,22 +12678,19 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     for (const r of works.sites) fill(r, 0.08, dirt);
     for (const b of works.bridges) fill(b.ring, b.open ? 4.2 : 2.4, stone);
+    // the leafy ones merged: a park is one draw, not one per tree
+    if (trees.length) this.civicGroup.add(new THREE.Mesh(mergeGeoms(trees), leaf));
     for (const s of works.stations) {
       const [x, y] = this.project(s.ll);
       const h = s.open ? 7.2 : 3.4;
-      const box = new THREE.Mesh(new THREE.BoxGeometry(14, 9, h), civic);
-      box.position.set(x, y, h / 2);
-      this.civicGroup.add(box);
+      this.civicGroup.add(new THREE.Mesh(new THREE.BoxGeometry(14, 9, h).translate(x, y, h / 2), civic));
       if (s.open) {
-        const cap = new THREE.Mesh(new THREE.BoxGeometry(15.4, 10.2, 1.4), roof);
-        cap.position.set(x, y, h + 0.7);
-        this.civicGroup.add(cap);
-        const shed = new THREE.Mesh(new THREE.BoxGeometry(16, 4.2, 3.2), canopy);
-        shed.position.set(x, y + 6.2, 1.6);
-        this.civicGroup.add(shed);
+        this.civicGroup.add(new THREE.Mesh(new THREE.BoxGeometry(15.4, 10.2, 1.4).translate(x, y, h + 0.7), roof));
+        this.civicGroup.add(new THREE.Mesh(new THREE.BoxGeometry(16, 4.2, 3.2).translate(x, y + 6.2, 1.6), canopy));
       }
     }
     this.sunDirty = true;
+    this.sceneDirty++;
     this.map.triggerRepaint();
   }
 
@@ -12110,49 +12704,148 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   private flattenLot(bbl: string) {
     this.flattened.add(bbl);
-    const ranges = this.rangesByBBL.get(bbl);
-    if (ranges) {
-      for (const { attr, r } of ranges) {
-        const pa = this.posAttrs[attr];
-        if (!pa) continue;
-        const arr = pa.array as Float32Array;
-        for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.02);
-        pa.needsUpdate = true;
-      }
-    }
+    // AND IT GOES DOWN RATHER THAN VANISHING. After the first sync (a loaded
+    // save does not replay its demolitions) the building sinks into its lot
+    // over 1.2 s, accelerating like something falling, and only THEN is the
+    // geometry actually clamped — so everything that asks the mesh how tall
+    // a demolished building is (the playtests, the shadow bake) still gets
+    // the answer "flat" from the moment the tween ends. The roof furniture
+    // goes at once: a water tank riding a building down into the pavement is
+    // not a wrecking sequence, it is a lift.
     this.hideProps(bbl);
+    const h = this.primed ? this.staticHeight(bbl) : 0;
+    this.heightByKey.set(bbl, 0);
+    if (h > 0.5 && this.bidByKey.has(bbl)) {
+      this.tweens.set(bbl, {
+        from: 0, to: h + 0.5, t0: performance.now(), dur: 1200,
+        ease: (t) => t * t * t,
+        done: () => { this.clampLot(bbl); this.setSink(bbl, 0); this.sunDirty = true; },
+      });
+    } else {
+      this.clampLot(bbl);
+    }
+    this.sceneDirty++;
     this.map.triggerRepaint();
+  }
+
+  /** The geometry half of a demolition: every vertex of the deed to the pavement. */
+  private clampLot(bbl: string) {
+    const ranges = this.rangesByBBL.get(bbl);
+    if (!ranges) return;
+    for (const { attr, r } of ranges) {
+      const pa = this.posAttrs[attr];
+      if (!pa) continue;
+      const arr = pa.array as Float32Array;
+      for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.02);
+      // THIS BUILDING'S VERTICES, NOT THE CITY'S. needsUpdate alone re-sends
+      // the whole static sheet — every position in town — to knock down one
+      // house.
+      pa.addUpdateRange(r.start * 3, r.count * 3);
+      pa.needsUpdate = true;
+    }
+    this.sceneDirty++;
+    this.map?.triggerRepaint();
   }
 
   /** Scale a building's rooftop and facade props to nothing. */
   private hideProps(bbl: string) {
     const list = this.propsByBBL.get(bbl);
     if (!list) return;
-    const m = new THREE.Matrix4();
+    const m = this.scratchM1;
+    const zero = this.scratchV3.set(0, 0, 0);
     for (const { mesh, i } of list) {
       mesh.getMatrixAt(i, m);
-      m.scale(new THREE.Vector3(0, 0, 0));
+      m.scale(zero);
       mesh.setMatrixAt(i, m);
       mesh.instanceMatrix.needsUpdate = true;
     }
   }
 
+  /**
+   * THE TINTS, UPLOADED BY THE BUILDING. This used to restore every vertex of
+   * the city to its base tint and re-send all of it, on every hover — the
+   * whole static sheet crossing the bus because the mouse moved one lot over.
+   * Now it diffs against what it wrote last time (tintNow) and rewrites only
+   * the deeds whose tint actually changed, each one as its own update range.
+   */
   setTints(tints: Map<string, [number, number, number]>) {
-    for (let i = 0; i < this.tintAttrs.length; i++) {
-      (this.tintAttrs[i].array as Float32Array).set(this.baseTints[i]);
+    let touched = 0;
+    for (const [bbl] of this.tintNow) {
+      if (!tints.has(bbl)) { this.writeTint(bbl, null); touched++; }
     }
-    for (const [bbl, [r, g, b]] of tints) {
-      const ranges = this.rangesByBBL.get(bbl);
-      if (!ranges) continue;
-      for (const { attr, r: range } of ranges) {
-        const arr = this.tintAttrs[attr].array as Float32Array;
-        for (let i = range.start; i < range.start + range.count; i++) {
-          arr[i * 3] = r; arr[i * 3 + 1] = g; arr[i * 3 + 2] = b;
-        }
-      }
+    for (const [bbl, c] of tints) {
+      const p = this.tintNow.get(bbl);
+      if (p && p[0] === c[0] && p[1] === c[1] && p[2] === c[2]) continue;
+      this.writeTint(bbl, c);
+      touched++;
     }
-    for (const attr of this.tintAttrs) attr.needsUpdate = true;
+    this.tintNow = new Map(tints);
+    if (!touched) return;
+    this.settleRanges(this.tintAttrs);
+    this.sceneDirty++;
     this.map.triggerRepaint();
+  }
+
+  /** One deed's tint, or its base tint back (null), into attribute slots >= minAttr. */
+  private writeTint(bbl: string, c: [number, number, number] | null, minAttr = 0) {
+    const ranges = this.rangesByBBL.get(bbl);
+    if (!ranges) return;
+    for (const { attr, r } of ranges) {
+      if (attr < minAttr) continue;
+      const a = this.tintAttrs[attr];
+      if (!a) continue;
+      const arr = a.array as Float32Array;
+      if (c) {
+        for (let i = r.start; i < r.start + r.count; i++) {
+          arr[i * 3] = c[0]; arr[i * 3 + 1] = c[1]; arr[i * 3 + 2] = c[2];
+        }
+      } else {
+        arr.set(this.baseTints[attr].subarray(r.start * 3, (r.start + r.count) * 3), r.start * 3);
+      }
+      a.addUpdateRange(r.start * 3, r.count * 3);
+      a.needsUpdate = true;
+    }
+  }
+
+  /** One deed's scalar (occupancy, retail) into attribute slots >= minAttr. */
+  private writeScalar(attrs: THREE.BufferAttribute[], bbl: string, v: number, minAttr = 0) {
+    const ranges = this.rangesByBBL.get(bbl);
+    if (!ranges) return;
+    for (const { attr, r } of ranges) {
+      if (attr < minAttr) continue;
+      const a = attrs[attr];
+      if (!a) continue;
+      (a.array as Float32Array).fill(v, r.start, r.start + r.count);
+      a.addUpdateRange(r.start, r.count);
+      a.needsUpdate = true;
+    }
+  }
+
+  /**
+   * A MONTH MOVES EVERY BUILDING'S OCCUPANCY, and six thousand small
+   * bufferSubData calls cost more than one large one. Three merges adjacent
+   * ranges — and the static sheet lays deeds out in walk order, so most of a
+   * city-wide change merges into a few runs anyway — but past a few hundred
+   * surviving ranges one whole upload is the cheaper call.
+   */
+  private settleRanges(attrs: THREE.BufferAttribute[]) {
+    for (const a of attrs) if (a.updateRanges.length > 384) a.clearUpdateRanges();
+  }
+
+  /** Diff a per-deed scalar map against what was last written. */
+  private diffScalar(attrs: THREE.BufferAttribute[], prev: Map<string, number>, next: Map<string, number>, f: (v: number) => number): number {
+    let touched = 0;
+    for (const [bbl] of prev) {
+      if (!next.has(bbl)) { this.writeScalar(attrs, bbl, -1); touched++; }
+    }
+    for (const [bbl, v0] of next) {
+      const v = f(v0);
+      if (prev.has(bbl) && f(prev.get(bbl)!) === v) continue;
+      this.writeScalar(attrs, bbl, v);
+      touched++;
+    }
+    if (touched) this.settleRanges(attrs);
+    return touched;
   }
 
   /**
@@ -12166,17 +12859,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setOccupancy(occ: Map<string, number>) {
     if (!this.litAttrs.length) return;
     this.lastOcc = occ; // kept for the dynamic-group rebuild to re-apply
-    for (const a of this.litAttrs) (a.array as Float32Array).fill(-1);
-    for (const [bbl, v] of occ) {
-      const ranges = this.rangesByBBL.get(bbl);
-      if (!ranges) continue;
-      const f = Math.max(0, Math.min(1, v));
-      for (const { attr, r } of ranges) {
-        const arr = this.litAttrs[attr].array as Float32Array;
-        arr.fill(f, r.start, r.start + r.count);
-      }
-    }
-    for (const a of this.litAttrs) a.needsUpdate = true;
+    const n = this.diffScalar(this.litAttrs, this.occNow, occ, (v) => Math.max(0, Math.min(1, v)));
+    this.occNow = new Map(occ);
+    if (!n) return;
+    this.sceneDirty++;
     this.map.triggerRepaint();
   }
 
@@ -12236,16 +12922,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setRetail(ret: Map<string, number>) {
     if (!this.retAttrs.length) return;
     this.lastRet = ret; // kept for the dynamic-group rebuild to re-apply
-    for (const a of this.retAttrs) (a.array as Float32Array).fill(-1);
-    for (const [bbl, f] of ret) {
-      const ranges = this.rangesByBBL.get(bbl);
-      if (!ranges) continue;
-      for (const { attr, r } of ranges) {
-        const arr = this.retAttrs[attr].array as Float32Array;
-        arr.fill(f, r.start, r.start + r.count);
-      }
-    }
-    for (const a of this.retAttrs) a.needsUpdate = true;
+    const n = this.diffScalar(this.retAttrs, this.retNow, ret, (v) => v);
+    this.retNow = new Map(ret);
+    if (!n) return;
+    this.sceneDirty++;
     this.map.triggerRepaint();
   }
 
@@ -12254,6 +12934,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const next = Math.max(0.25, Math.min(1.05, Number.isFinite(activity) ? activity : 1));
     if (Math.abs(next - this.activityUni.value) < 0.005) return;
     this.activityUni.value = next;
+    this.sceneDirty++;
     this.map?.triggerRepaint();
   }
 
@@ -12272,6 +12953,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.weatherUni.value.set(kind === "rain" ? p : 0, cloud);
     this.weatherSnow = kind === "snow" ? 0.32 + p * 0.62 : 0;
     this.applySeason();
+    this.sceneDirty++;
     this.map?.triggerRepaint();
   }
 
@@ -12296,6 +12978,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.seasonBase.set(snow, turn, bare, vigour);
     this.applySeason();
     this.sunDirty = true;
+    this.sceneDirty++;
     if (this.map) this.map.triggerRepaint();
   }
 
@@ -12305,13 +12988,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const transparent = o < 1;
     this.wallMat.transparent = transparent;
     this.roofMat.transparent = transparent;
+    this.sceneDirty++;
     this.map.triggerRepaint();
   }
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
     if (!this.visible) return;
     const renderStart = performance.now();
-    if (this.sunDirty) this.bakeShadows();
+    if (this.sunDirty) { this.bakeShadows(); this.sceneDirty++; }
     // approximate camera position in city meters (for glass reflections):
     // derived from center/zoom/bearing/pitch — MapLibre has no free-camera getter
     {
@@ -12320,7 +13004,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const bearing = (this.map.getBearing() * Math.PI) / 180;
       const pitch = (this.map.getPitch() * Math.PI) / 180;
       const mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z);
-      const h = this.map.getContainer().clientHeight || 900;
+      // cached off the resize event — reading clientHeight here forced a
+      // style/layout flush in the middle of every frame
+      const h = this.viewH;
       const distM = (0.5 * h) / Math.tan(0.32175) * mpp; // default fov ≈ 36.87°
       const [cx0, cy0] = this.project([c.lng, c.lat]);
       const back = distM * Math.sin(pitch);
@@ -12339,7 +13025,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // When a frame is already over budget the animation clock backs off to
     // ~15fps so the next paint has a chance to finish; a hidden tab does not
     // schedule work at all.
-    if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds) {
+    // A selected building sweeps, and a tween moves — both need the clock
+    // running and the next frame asked for, water or no water.
+    const selAnim = this.selActive;
+    if (this.stepTweens(performance.now())) this.map.triggerRepaint();
+    if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
       // A crane's slew is its parked bearing plus two slow incommensurate
@@ -12347,8 +13037,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // a turntable. Deterministic in the clock, no per-frame rng, and one
       // rotation.z write per crane, of which a handful exist at once.
       for (const c of this.cranes) {
-        c.g.rotation.z = c.bear + 1.1 * Math.sin(this.timeUni.value * c.w + c.phase)
-          + 0.45 * Math.sin(this.timeUni.value * c.w * 2.618 + c.phase * 3.1);
+        const t = this.timeUni.value;
+        c.g.rotation.z = c.bear + 1.1 * Math.sin(t * c.w + c.phase)
+          + 0.45 * Math.sin(t * c.w * 2.618 + c.phase * 3.1);
+        // the trolley works in and out on its own, slower rhythm — incommensurate
+        // with the slew, so the hook's path never repeats a figure
+        const run = Math.max(0.16, Math.min(0.94, c.tro + 0.24 * Math.sin(t * c.w * 1.618 + c.phase * 2.3)));
+        c.trolley.position.x = c.jib * run;
       }
       const animGap = this.frameEma > 40 ? 66 : 33;
       if (
@@ -12361,16 +13056,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         this.map.triggerRepaint();
       }
     }
-    const m = new THREE.Matrix4().fromArray(Array.from(options.defaultProjectionData.mainMatrix));
-    const l = new THREE.Matrix4()
+    // NOTHING ALLOCATED PER FRAME. These were four fresh matrices, a vector
+    // and an Array.from copy of MapLibre's matrix on every paint — garbage the
+    // collector then stops a frame to sweep, at thirty frames a second for as
+    // long as the water moves. Scratch objects owned by the layer, reused.
+    const m = this.scratchM1.fromArray(options.defaultProjectionData.mainMatrix as unknown as number[]);
+    const l = this.scratchM2
       .makeTranslation(this.origin.x, this.origin.y, this.origin.z)
-      .scale(new THREE.Vector3(this.origin.s, -this.origin.s, this.origin.s));
-    const base = new THREE.Matrix4().multiplyMatrices(m, l);
+      .scale(this.scratchV3b.set(this.origin.s, -this.origin.s, this.origin.s));
+    const base = this.scratchM3.multiplyMatrices(m, l);
     this.camera.projectionMatrix = base;
     this.renderer.resetState();
 
     if (!this.ensurePostSize() || !this.sceneRT || !this.bloomA || !this.bloomB) {
       this.renderer.render(this.scene, this.camera);
+      this.noteStateUploaded();
       this.noteFrame(renderStart);
       return;
     }
@@ -12435,19 +13135,19 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // Mirrored projection breaks Three's frustum planes; street batches that
       // correctly cull in the forward pass would vanish from the harbour. Park
       // culling for this draw only.
-      const reCull: THREE.Object3D[] = [];
-      this.scene.traverse((o) => {
-        if (o.frustumCulled) { o.frustumCulled = false; reCull.push(o); }
-      });
+      const reCull = this.reCull;
+      reCull.length = 0;
+      this.scene.traverse(this.parkCull);
 
-      this.camera.projectionMatrix = new THREE.Matrix4()
-        .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
+      this.camera.projectionMatrix = this.scratchM4
+        .multiplyMatrices(base, this.flipZ);
       this.renderer.setRenderTarget(this.reflectRT);
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.clear(true, true, false);
       this.renderer.render(this.scene, this.camera);
 
       for (const o of reCull) o.frustumCulled = true;
+      reCull.length = 0;
       this.water!.visible = wasWater;
       if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
       if (this.aoGround) this.aoGround.visible = wasAo;
@@ -12467,6 +13167,43 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
+    this.noteStateUploaded();
+
+    // THE IDLE FRAME. With the water running, MapLibre is asked for a frame
+    // thirty times a second while the player sits and reads a panel — and
+    // every one of them re-solved the occlusion, re-blurred the bounce light
+    // and re-marched the sun shafts for a camera that had not moved over a
+    // city that had not changed. Those three passes are functions of the
+    // depth buffer, the scene colour and the sun; if the projection matrix is
+    // bit-identical to the last solve and nothing has bumped sceneDirty (a
+    // tint, a lens, a demolition, a delivery, the month, the weather), last
+    // frame's answer is this frame's answer and the textures still hold it.
+    //
+    // Conservative on purpose. The water, the walkers and the cranes DO move
+    // without bumping anything, so the cache is also refreshed every sixth
+    // idle frame — a crane jib's contact shade trails it by a fifth of a
+    // second at worst, which is below what the eye resolves on a slow slew.
+    // Bloom is NOT cached: it is where the water's glints live, and a glint
+    // held still reads as a stuck pixel. Any frame where the extras were
+    // skipped (camera moving) poisons the cache, so the first still frame
+    // after a pan always solves fresh.
+    let reusePost = !skipExtras
+      && this.postKeyDirty === this.sceneDirty
+      && this.postKeyW === this.postSize.x && this.postKeyH === this.postSize.y
+      && this.postKeyFrames < 6;
+    if (reusePost) {
+      const e = this.camera.projectionMatrix.elements;
+      for (let i = 0; i < 16; i++) if (e[i] !== this.postKeyProj[i]) { reusePost = false; break; }
+    }
+    if (reusePost) {
+      this.postKeyFrames++;
+    } else {
+      this.postKeyFrames = 0;
+      this.postKeyDirty = this.sceneDirty;
+      this.postKeyW = this.postSize.x; this.postKeyH = this.postSize.y;
+      if (skipExtras) this.postKeyProj[0] = NaN;
+      else this.postKeyProj.set(this.camera.projectionMatrix.elements);
+    }
 
     // 2. what is bright enough to spill, at quarter res
     this.brightMat.uniforms.uTex.value = this.sceneRT.texture;
@@ -12484,7 +13221,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // 4. the occlusion needs to reach the pavement, and the pavement belongs
     //    to MapLibre — so it goes down first, as a multiply on what is already
     //    in the buffer, before anything of ours covers it.
-    const invProj = new THREE.Matrix4().copy(this.camera.projectionMatrix).invert();
+    // m is spent (base holds the product) — reuse it for the inverse
+    const invProj = m.copy(this.camera.projectionMatrix).invert();
     {
       const u = this.aoCalcMat.uniforms;
       u.uDepth.value = this.sceneRT.depthTexture;
@@ -12495,7 +13233,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       (u.uAoSun.value as THREE.Vector3).copy(this.sunDirUni.value).normalize();
     }
     // solve once at half size, then blur the estimator's noise off it
-    if (this.aoA && this.aoB) {
+    if (this.aoA && this.aoB && !reusePost) {
       this.blit(this.aoCalcMat, this.aoA);
       // A NARROWER KERNEL THAN THE BLOOM USES. This is the same separable
       // gaussian, but its taps sit at 1.4 and 3.2 texels — at half resolution
@@ -12573,7 +13311,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // the shader could reason about.
     {
       const sd = this.sunDirUni.value;
-      const p = new THREE.Vector3(
+      const p = this.scratchV3.set(
         this.camUni.value.x + sd.x * 9000,
         this.camUni.value.y + sd.y * 9000,
         this.camUni.value.z + sd.z * 9000,
@@ -12590,7 +13328,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // given pixel it holds the average colour of everything around it, which
     // is exactly what bounced light IS. The first pass doubles as the
     // downsample, so the whole thing costs three quarter-res blits.
-    if (this.irrA && this.irrB && !skipExtras) {
+    if (this.irrA && this.irrB && !skipExtras && !reusePost) {
       const iw = this.irrA.width, ih = this.irrA.height;
       this.blurMat.uniforms.uTex.value = this.sceneRT.texture;
       (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
@@ -12610,7 +13348,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     //     known is a pass not worth dispatching. The composite is told to stop
     //     adding it so the last frame's shafts cannot linger.
     const sunUp = (this.compMat.uniforms.uSunScreen.value as THREE.Vector3).z > 0.5;
-    if (this.shaftRT && sunUp && !skipExtras) {
+    if (this.shaftRT && sunUp && !skipExtras && !reusePost) {
       this.shaftMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
       (this.shaftMat.uniforms.uSunScreen.value as THREE.Vector3)
         .copy(this.compMat.uniforms.uSunScreen.value as THREE.Vector3);
@@ -12634,6 +13372,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // has its own symbol layers and controls to draw after this.
     this.renderer.resetState();
     this.noteFrame(renderStart);
+  }
+
+  /**
+   * The state table's first upload has to be whole (see stateFresh); once
+   * three has actually sent it, later writes can go as update ranges.
+   */
+  private noteStateUploaded() {
+    if (!this.stateFresh || !this.stateTex) return;
+    const props = this.renderer.properties.get(this.stateTex) as { __version?: number };
+    if (props.__version === this.stateTex.version) this.stateFresh = false;
   }
 
   /** Exponential moving average of frame cost — drives the adaptive skips. */

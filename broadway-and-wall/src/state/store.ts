@@ -1926,7 +1926,10 @@ export const useStore = create<AppState>((set, get) => ({
     const r = hire(game, parcels, candidateId);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Offer accepted. They give notice first — the seat is empty until they walk in.");
+    const hiringLeasing = (r.s.pendingHires ?? []).some((x) => x.staff.role === "leasing");
+    toast(hiringLeasing && !r.s.teamLeasing && !r.s.agent && !(r.s.staff ?? []).some((x) => x.role === "leasing")
+      ? "Offer accepted. A leasing hire signs nothing until you hand them the pen — the Leasing desk, once they walk in."
+      : "Offer accepted. They give notice first — the seat is empty until they walk in.");
     void persist(r.s);
   },
 

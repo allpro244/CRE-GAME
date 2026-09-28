@@ -129,6 +129,12 @@ export function SettingsPage() {
       />
       <div className="page-section">Interruptions</div>
       <Toggle
+        on={game.brokerStops !== "never"}
+        set={(v) => flip({ brokerStops: v ? undefined : "never" })}
+        label="Broker first looks stop the clock"
+        detail="On, Yr / Skip / Play stop when a broker's private window on a building is about to lapse — only for buildings you could fund at a typical 65% loan. Off, they wait on the Marketplace, marked FIRST LOOK."
+      />
+      <Toggle
         on={!popupsOff}
         set={(v) => setPopupsOff(!v)}
         label="Pop-up cards"

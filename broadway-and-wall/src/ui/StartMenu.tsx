@@ -9,6 +9,8 @@ import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city
 import { cityList, cityName, sizeList, developmentList, extentList } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
+import { loadRuns } from "./RunRecords";
+import { ordinal } from "@/engine/standing";
 
 /**
  * THE START SCREEN.
@@ -159,6 +161,29 @@ export default function StartMenu() {
                   <span className="start-continue-go">Resume ▸</span>
                 </button>
               )}
+
+              {(() => {
+                const runs = loadRuns().slice(0, 5);
+                if (!runs.length) return null;
+                return (
+                  <div className="start-runs">
+                    <div className="start-or" style={{ marginTop: 0 }}>Your best runs</div>
+                    <table className="start-runs-tbl mono">
+                      <tbody>
+                        {runs.map((r) => (
+                          <tr key={r.seed}>
+                            <td className="start-runs-town">{r.town}</td>
+                            <td>{r.years} yr{r.years === 1 ? "" : "s"}</td>
+                            <td>peak {usd(r.peakNw)}</td>
+                            <td>{r.bestRank !== null ? `best ${ordinal(r.bestRank)} of ${r.of} · ${r.bestYear}` : "—"}</td>
+                            <td className="start-runs-state">{r.over ? "ended" : "in progress"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
 
               <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
 

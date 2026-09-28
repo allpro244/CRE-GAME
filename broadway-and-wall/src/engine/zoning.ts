@@ -357,7 +357,7 @@ export function fileVariance(
     };
   }
   const next: GameState = cloneState(s);
-  fundAndBook(next, parcels, q.cost, "dev");
+  fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.varianceApps = {
     ...pendingVariances(next),
     [bbl]: { bbl, filedM: next.month, decideM: next.month + q.months, cost: q.cost, grant: q.grant, odds: q.odds },

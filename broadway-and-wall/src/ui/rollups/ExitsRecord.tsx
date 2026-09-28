@@ -8,12 +8,17 @@ import "./rollups.css";
  * THE REALIZED RECORD — every building that has left the book, and what
  * leaving it actually returned.
  *
- * WHY THE RETURN COLUMN IS A MULTIPLE AND NOT AN IRR. An exit records four
- * dollars-and-dates facts: what you paid, what you sold for, and when. The
- * years in between — rent collected, capital spent, refinancing proceeds —
- * are not kept per deed, and an IRR computed without them would be a made-up
- * number wearing a precise label. Price over basis is the whole truth the
- * record supports, so that is the whole truth the column claims.
+ * TWO RETURNS, AND THEY ANSWER DIFFERENT QUESTIONS. Price over basis is what
+ * the building did. The EQUITY columns are what the owner's money did: every
+ * dollar that went into the deed (the closing cheque, leasing, capital, debt
+ * service, paydowns) against every dollar it handed back (NOI, refinance
+ * draws, net sale proceeds), read off the deed's own cash ledger — levered and
+ * before tax. The IRR is solved on those dated flows.
+ *
+ * WHEN THE EQUITY COLUMNS ARE BLANK, THAT IS THE ANSWER. A deed bought before
+ * the ledger existed, taken through a note, or financed inside a crossed pool
+ * has no complete record of its own cash, and an IRR computed on part of one
+ * would be a made-up number wearing a precise label. Those rows say nothing.
  */
 export function ExitsRecord() {
   const game = useStore((s) => s.game);
@@ -31,7 +36,11 @@ export function ExitsRecord() {
     const median = mults.length
       ? (mults[(mults.length - 1) >> 1] + mults[mults.length >> 1]) / 2
       : null;
-    return { rows, n: exits.length, totalGain, forced, median };
+    // Equity multiple median over the exits that carry a complete ledger.
+    const eq = exits.filter((e) => (e.equityIn ?? 0) > 0)
+      .map((e) => (e.equityOut ?? 0) / (e.equityIn as number)).sort((a, b) => a - b);
+    const eqMedian = eq.length ? (eq[(eq.length - 1) >> 1] + eq[eq.length >> 1]) / 2 : null;
+    return { rows, n: exits.length, totalGain, forced, median, eqMedian, eqN: eq.length };
   }, [game]);
 
   if (!rec) return null;
@@ -45,7 +54,8 @@ export function ExitsRecord() {
             <th>Property</th>
             <th className="num" title="Cost basis — price paid plus closing costs, net of any 1031 rolled in">Basis</th>
             <th className="num">Price</th>
-            <th className="num" title="Sale price against cost basis — realized, before tax. Multiple is what the record supports; rent and capital of the hold are not kept per deed.">Gain</th>
+            <th className="num" title="Sale price against cost basis — realized, before tax. The multiple under it is price over basis: what the building did.">Gain</th>
+            <th className="num" title="What your equity did: every dollar you put into the deed (closing equity, leasing, capital, development, debt service, paydowns) against every dollar it handed back (NOI, refinance draws, net sale proceeds). Levered, before tax, with the IRR on the dated flows. Blank when the deed has no complete ledger — bought before it existed, taken through a note, or financed in a crossed pool.">Equity</th>
           </tr>
         </thead>
         <tbody>
@@ -64,6 +74,19 @@ export function ExitsRecord() {
                 {e.gain >= 0 ? "+" : ""}{usd(e.gain)}
                 <div className="dim" style={{ fontSize: 11 }}>{e.basis > 0 ? `${(e.price / e.basis).toFixed(2)}x` : "—"}</div>
               </td>
+              {e.equityIn ? (
+                <td
+                  className={"num nowrap" + ((e.equityOut ?? 0) < e.equityIn ? " neg" : "")}
+                  title={`Equity in ${usd(e.equityIn)} · equity back ${usd(e.equityOut ?? 0)} — levered, before tax`}
+                >
+                  {((e.equityOut ?? 0) / e.equityIn).toFixed(2)}x
+                  <div className="dim" style={{ fontSize: 11 }}>
+                    {e.irr != null ? `IRR ${(e.irr * 100).toFixed(1)}%` : "IRR —"}
+                  </div>
+                </td>
+              ) : (
+                <td className="num dim" title="No complete equity ledger for this deed — no number rather than a wrong one">—</td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -75,7 +98,12 @@ export function ExitsRecord() {
             {rec.totalGain >= 0 ? "+" : ""}{usd(rec.totalGain)}
           </span>
         </span>
-        {rec.median !== null && <span>median multiple <span className="mono">{rec.median.toFixed(2)}x</span></span>}
+        {rec.median !== null && <span>median price/basis <span className="mono">{rec.median.toFixed(2)}x</span></span>}
+        {rec.eqMedian !== null && (
+          <span title={`Over the ${rec.eqN} exit${rec.eqN === 1 ? "" : "s"} with a complete equity ledger`}>
+            median equity multiple <span className="mono">{rec.eqMedian.toFixed(2)}x</span>
+          </span>
+        )}
         <span>forced{" "}
           <span className={"mono" + (rec.forced > 0 ? " neg" : "")}>
             {rec.forced} · {((rec.forced / rec.n) * 100).toFixed(0)}%

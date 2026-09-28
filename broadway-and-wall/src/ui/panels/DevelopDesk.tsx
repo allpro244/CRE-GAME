@@ -7,7 +7,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Contract, DevUse } from "@/engine/types";
-import { resolveRec, physicalMaxFloors, REF_PLATE_SF } from "@/engine/value";
+import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead } from "@/engine/value";
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
@@ -160,10 +160,15 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // meant none of them bought you anything at this desk.
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const saved = game.holdings[bbl]?.devDraft;
+  // A FRESH DESK OPENS ON THE SCHEME THE TAPE PRICED. The land chip on the
+  // Marketplace reads the trade's best residual scheme (landRead); this desk
+  // used to open on eight floors of office regardless, so the lot the tape
+  // called PENCILS opened here reading "does not pencil". Same scheme, first.
+  const [seedScheme] = useState(() => (!saved && rec?.class === "land" ? landRead(rec, game.econ).scheme : null));
   const [tab, setTabRaw] = useState<BuildTab>(saved?.tab ?? "programme");
-  const [use, setUseRaw] = useState<DevUse>(saved?.use ?? "office");
+  const [use, setUseRaw] = useState<DevUse>(saved?.use ?? seedScheme?.use ?? "office");
   const [cov, setCovRaw] = useState(saved?.cov ?? 0.6);
-  const [floors, setFloorsRaw] = useState(saved?.floors ?? 8);
+  const [floors, setFloorsRaw] = useState(saved?.floors ?? (seedScheme && seedScheme.floors > 0 ? seedScheme.floors : 8));
   const [contract, setContractRaw] = useState<Contract>(saved?.contract ?? "gmp");
   const [ltcWant, setLtcWantRaw] = useState(saved?.ltcWant ?? 1);   // share of the lender's max you take
   const [bank, setBankRaw] = useState<string>(saved?.bank || CONSTRUCTION_LENDER);   // who writes the construction loan

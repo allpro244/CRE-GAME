@@ -26,8 +26,8 @@
 // The lender's own book decides which of these is even on offer, which is the
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
-import type { GameState, Workout } from "./types";
-import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
+import type { Exit, GameState, Workout } from "./types";
+import { logBooks, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { ownedHoldingValue, resolveRec } from "./value";
@@ -243,7 +243,7 @@ function applyCurePayment(
   s: GameState, w: Workout, paid: number, recAddress: string,
 ): void {
   const h = s.holdings[w.bbl]!;
-  logBooks(s, "debtSvc", paid);
+  logBooks(s, "debtSvc", paid, w.bbl);
   if (w.cause === "balloon") {
     h.loan = null;
   } else if (w.cause === "covenant" && h.loan) {
@@ -437,7 +437,7 @@ export function requestForbearance(
         + `${(mood.paydownPct * 100).toFixed(0)}% paydown, ${money(due)} in total. You do not have it.`,
     };
   }
-  fundAndBook(next, parcels, due, "debtSvc");
+  fundAndBook(next, parcels, due, "debtSvc", { bbl });
   const nh = next.holdings[bbl]!;
   nh.loan!.balance = Math.max(0, nh.loan!.balance - paydown);
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);
@@ -490,10 +490,14 @@ export function deedInLieu(
   if (loss === 0) chargeLenderLoss(next, w.lender, 0);
   bumpLenderRel(next, w.lender, -12);
   if (h.mezz) bumpLenderRel(next, h.mezz.holder ?? "Cordage Debt Partners", -8);
-  next.exits.push({
-    bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
-    price: Math.round(bal), basis: h.costBasis, gain: Math.round(bal - h.costBasis), forced: true,
-  });
+  {
+    const ex: Exit = {
+      bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
+      price: Math.round(bal), basis: h.costBasis, gain: Math.round(bal - h.costBasis), forced: true,
+    };
+    closeDeedLedger(next, ex);
+    next.exits.push(ex);
+  }
   recordPropertyEvent(next, bbl, {
     kind: "default",
     party: w.lender,
@@ -544,7 +548,7 @@ function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, addres
     const l = h.loan;
     const fee = Math.round(l.balance * mood.feePct);
     const paid = fundCashNeed(s, parcels, fee);
-    logBooks(s, "debtSvc", paid);
+    logBooks(s, "debtSvc", paid, w.bbl);
     if (paid < fee) {
       l.balance += fee - paid;
       l.principal = Math.max(l.principal, l.balance);
@@ -637,7 +641,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     if (w.servicing && w.stage !== "foreclosure" && h.loan) {
       if (fundableNow(s, parcels) >= due) {
         const paid = fundCashNeed(s, parcels, due);
-        logBooks(s, "debtSvc", paid);
+        logBooks(s, "debtSvc", paid, w.bbl);
         w.servicedMs = (w.servicedMs ?? 0) + 1;
         w.decideM = s.month + 1;
         h.loan.arrearsMs = 0;

@@ -155,9 +155,12 @@ export function MilestoneFlash() {
  * A SALE, CLOSED. An exit is the other half of every deal — the number the
  * whole hold was for — and it used to end in "Closed. Cash is position." The
  * Exit record already carried the dates, the price and the basis; this reads
- * them back. The per-year figure is the PRICE's growth over the basis, not a
- * return on equity: the game does not yet keep a per-deed cash ledger (see
- * ExitsRecord), so it says which one it is.
+ * them back. The per-year figure is the PRICE's growth over the basis — what
+ * the building did. What the EQUITY did comes from the deed's own cash ledger
+ * (GameState.deedCf): every dollar in and every dollar back over the hold,
+ * levered and before tax, with the IRR on the dated flows. A deed with no
+ * complete ledger (bought before it existed, taken through a note, financed in
+ * a crossed pool) shows no equity rows rather than wrong ones.
  */
 export function ExitCard() {
   const card = useStore((s) => s.exitCard);
@@ -184,6 +187,14 @@ export function ExitCard() {
           <span>Gain on basis</span>
           <span className={e.gain < 0 ? "neg" : "pos"}><strong>{usd(e.gain)}</strong>{mult > 0 ? ` · ${mult.toFixed(2)}×` : ""}</span>
           {perYr !== null && (<><span>Price, per year held</span><span>{perYr >= 0 ? "+" : "−"}{Math.abs(perYr).toFixed(1)}% a year over basis</span></>)}
+          {e.equityIn ? (<>
+            <span>Equity in</span><span title="Closing equity, leasing, capital, development, debt service and paydowns over the hold">{usd(e.equityIn)}</span>
+            <span>Equity back</span><span title="NOI, refinance draws and net sale proceeds over the hold — before tax">{usd(e.equityOut ?? 0)}</span>
+            <span>Equity multiple</span>
+            <span className={(e.equityOut ?? 0) < e.equityIn ? "neg" : "pos"}><strong>{((e.equityOut ?? 0) / e.equityIn).toFixed(2)}×</strong></span>
+            <span>IRR (levered, before tax)</span>
+            <span className={e.irr != null && e.irr < 0 ? "neg" : undefined}>{e.irr != null ? `${(e.irr * 100).toFixed(1)}% a year` : "— (the flows do not solve to one rate)"}</span>
+          </>) : null}
           {card.cash !== undefined && (<><span>Cash in at closing</span><span title="After the loan payoff, closing costs and any partner's share">{usd(card.cash)} net</span></>)}
         </div>
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>

@@ -25,9 +25,15 @@ import EventPops from "./EventPops";
 function mapPaintSig(g: GameState | null | undefined): string {
   if (!g) return "";
   let leased = 0;
+  // what the parapets say (setOwned's status): listed, swept, in a workout.
+  // A sale instruction or a lender's letter lands between month ticks, so it
+  // has to be in the signature or the building catches up a month late.
+  let deedState = "";
   for (const h of Object.values(g.holdings)) {
     for (const t of h.tenants) leased += t.sf;
+    if (h.sale || h.loan?.sweep || h.mezz?.sweep) deedState += h.bbl + (h.sale ? (h.sale.mode === "marketed" ? "m" : "s") : "") + (h.loan?.sweep || h.mezz?.sweep ? "w" : "") + ",";
   }
+  for (const [bbl, w] of Object.entries(g.workouts ?? {})) deedState += bbl + ":" + w.stage + ",";
   return [
     g.month,
     Object.keys(g.holdings).join(","),
@@ -43,6 +49,7 @@ function mapPaintSig(g: GameState | null | undefined): string {
     Object.keys(g.blockD ?? {}).length,
     (g.lines ?? []).map((l) => `${l.id}:${l.annM}:${l.openM}:${l.siteBbl ?? l.bbl ?? ""}`).join(","),
     Object.keys(g.civicLand ?? {}).join(","),
+    deedState,
   ].join("|");
 }
 
@@ -691,10 +698,29 @@ export default function MapView() {
     // ...and on the buildings themselves: the gilt parapet (ThreeBuildings
     // setOwned). Every deed of an assemblage you hold is yours, so the
     // folded children are gilded with their parent.
+    //
+    // THE PARAPET ALSO SAYS WHAT THE DEED IS DOING, off the same records the
+    // desks read: a sale instruction on the holding (listed — the band
+    // breathes), a covenant sweep on its senior or mezz paper (rust: the cash
+    // is trapped), a workout file open with the lender (red: notice,
+    // forbearance or foreclosure). Nothing here is inferred; each is a field
+    // the engine already keeps and the Portfolio page already prints.
     {
       const gilt = new Set(nowOwned);
-      for (const [child, parent] of Object.entries(game.merged ?? {})) if (nowOwned.has(parent)) gilt.add(child);
-      threeRef.current?.setOwned(gilt);
+      const status = new Map<string, { listed?: boolean; distress?: 0 | 1 | 2 }>();
+      for (const h of Object.values(game.holdings)) {
+        const distress: 0 | 1 | 2 = game.workouts?.[h.bbl] ? 2 : (h.loan?.sweep || h.mezz?.sweep) ? 1 : 0;
+        // an unsolicited approach is somebody else's idea — not a listing
+        const listed = !!h.sale && !h.sale.unsolicited;
+        if (listed || distress) status.set(h.bbl, { listed, distress });
+      }
+      for (const [child, parent] of Object.entries(game.merged ?? {})) {
+        if (!nowOwned.has(parent)) continue;
+        gilt.add(child);
+        const st = status.get(parent);
+        if (st) status.set(child, st);
+      }
+      threeRef.current?.setOwned(gilt, status);
     }
 
     const nowListed = new Set(game.listings.map((l) => l.bbl));
@@ -1129,6 +1155,17 @@ export default function MapView() {
       if (mo > 0 && mo <= 18) notices.add(h.bbl);
     }
     layer.setNotices([...notices]);
+    // THE BROKER'S BOARD, only where a real listing would put one up. A
+    // house broker's first look (earlyUntilM) is a phone call, not a sign;
+    // your own quiet listing is a number waiting for someone to ring. A
+    // marketed campaign, and anything on the open tape, is on the street.
+    const onTape = game.listings
+      .filter((l) => !(l.earlyUntilM !== undefined && game.month < l.earlyUntilM))
+      .map((l) => l.bbl);
+    const mine = Object.values(game.holdings)
+      .filter((h) => h.sale && !h.sale.unsolicited && h.sale.mode === "marketed")
+      .map((h) => h.bbl);
+    layer.setForSale(onTape.sort(), mine.sort());
   }, [paintSig, mapReady, parcels, city]);
 
   // player construction and city growth onto the skyline

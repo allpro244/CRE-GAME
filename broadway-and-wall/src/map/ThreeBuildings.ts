@@ -2199,6 +2199,44 @@ void main() {
   gl_FragColor = vec4(vec3(0.50, 0.36, 0.18) * fall * k, 0.0);
 }`;
 
+// OBSTRUCTION LIGHTS. Anything standing more than 200 ft (61 m) above the
+// ground is an obstruction to air navigation and is lit at night — a red
+// beacon at the top, flashing 20-40 times a minute (FAA AC 70/7460-1, L-864).
+// A tower crane carries steady reds on the apex and the jib ends (L-810).
+// So after dark the skyline is punctuated by exactly the buildings that are
+// tall enough to need one, and a new job announces itself by its crane.
+// Screen-sized points: a beacon is a point source at any distance, which is
+// the whole look of one. aPhase < 0 is steady; otherwise it is where in the
+// two-second cycle this structure flashes — each building's own controller,
+// so two towers do not blink in lockstep.
+const BEACON_VERT = /* glsl */ `
+attribute float aPhase;
+uniform float uPx;
+varying float vPhase;
+void main() {
+  vPhase = aPhase;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = uPx;
+}`;
+const BEACON_FRAG = /* glsl */ `
+precision highp float;
+uniform vec4 uWeather;
+uniform float uTime;
+varying float vPhase;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  float night = smoothstep(0.30, 0.85, uWeather.z);
+  // 30 flashes a minute, lit a third of the cycle, with a lamp's quick rise
+  // and a slower fall rather than a square wave
+  float f = fract(uTime * 0.5 + vPhase);
+  float flash = smoothstep(0.0, 0.04, f) * (1.0 - smoothstep(0.26, 0.40, f));
+  float on = vPhase < 0.0 ? 0.85 : flash;
+  float glow = exp(-r2 * 5.0) * 2.4 + exp(-r2 * 1.4) * 0.30;
+  gl_FragColor = vec4(vec3(1.0, 0.10, 0.05) * glow * on * night, 0.0);
+}`;
+
 const SHADOW_GLSL = /* glsl */ `
 uniform sampler2D uShadow;
 uniform mat4 uSunVP;
@@ -2393,6 +2431,21 @@ varying float vCut;
 // burnished rather than yellow: it has to sit on red brick and on blue glass
 // and be the same metal on both
 const vec3 OWN_GOLD = vec3(1.00, 0.72, 0.30);
+// WHAT THE DEED IS DOING, in the owned channel (see setOwned): 1 owned,
+// +2 on the market, +4 per step of lender trouble (1 covenant sweep — the
+// cash is trapped; 2 a workout file — notice, forbearance or foreclosure).
+float stListed() { return mod(floor(vState.x * 0.5 + 0.001), 2.0); }
+float stDistress() { return floor(vState.x * 0.25 + 0.001); }
+// The parapet metal carries the state. Gold is yours and well; rust is a
+// swept loan; red is a lender with a file open. A building you have listed
+// breathes — a slow swell of the band, two and a half seconds, which is a
+// broker's board read from the air rather than a colour it never had.
+vec3 ownMetal() {
+  float d = stDistress();
+  vec3 c = d > 1.5 ? vec3(0.95, 0.24, 0.17) : d > 0.5 ? vec3(0.96, 0.47, 0.18) : OWN_GOLD;
+  float swell = stListed() * (0.5 + 0.5 * sin(uTime * 2.513));
+  return c * (1.0 + 0.55 * swell) + vec3(0.10, 0.09, 0.07) * swell;
+}
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * (uLensN - 1.0);
   vec3 c = uLensRamp[0];
@@ -7711,11 +7764,14 @@ void main() {
     // setback tier carries its own, which is how a gilded tower actually reads.
     float bw = max(1.15, zfw * 1.5);
     float band = smoothstep(vTop - bw - zfw, vTop - bw, vZ);
-    vec3 gilt = OWN_GOLD * (light * 0.80 + 0.26);
+    vec3 gilt = ownMetal() * (light * 0.80 + 0.26);
     col = mix(col, gilt, band * 0.92);
     // and a faint warmth down the whole building, so it stays tellable at the
-    // distance where the band itself has gone sub-pixel
-    col *= mix(vec3(1.0), vec3(1.05, 1.02, 0.95), 1.0 - band);
+    // distance where the band itself has gone sub-pixel — a colder, redder
+    // cast when the lender is in the building, so trouble is tellable there too
+    float dz = stDistress();
+    vec3 warm = dz > 1.5 ? vec3(1.07, 0.95, 0.93) : dz > 0.5 ? vec3(1.06, 0.99, 0.93) : vec3(1.05, 1.02, 0.95);
+    col *= mix(vec3(1.0), warm, 1.0 - band);
   }
   float hi = vState.z;
   if (hi > 0.01) {
@@ -8216,7 +8272,7 @@ void main() {
     // the gilt margin round the deck of a building you own, inside the parapet
     float ew = max(0.7, ufw * 1.5);
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
-    outc = mix(outc, OWN_GOLD * (light * 0.80 + 0.26), edge * 0.88);
+    outc = mix(outc, ownMetal() * (light * 0.80 + 0.26), edge * 0.88);
   }
   if (vState.z > 0.01) {
     float sel = step(0.75, vState.z);
@@ -9180,7 +9236,13 @@ void main() {
   // Monte Carlo over four million samples of the sum as written above. Change
   // the amplitudes and this number changes with them.
   float crest = mix(smoothstep(0.86, 1.02, h), 0.0054, farFlat);
-  col += vec3(0.075) * crest * (0.5 + 0.8 * shoal);
+  // WHITE WATER IS LIT, NOT LUMINOUS. The foam, the wet edge and the rime
+  // below were constant near-whites, so after dark — with the sea body, the
+  // sand and the sky all taken down by the hour — the whole island sat in a
+  // bright ring of surf, the one surface in the frame still at noon. They
+  // take the same multiply the ground does.
+  vec3 whiteK = DUSK > 0.001 ? duskGroundK(DUSK) : vec3(1.0);
+  col += vec3(0.075) * whiteK * crest * (0.5 + 0.8 * shoal);
 
   // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
   //
@@ -9205,7 +9267,7 @@ void main() {
   // shot suffered from. This is a WET EDGE — the darker of the two lines where
   // water meets sand — not a painted surf stroke, so it reads at the dive
   // camera and disappears into the coastline at altitude.
-  col = mix(col, vec3(0.845, 0.882, 0.910),
+  col = mix(col, vec3(0.845, 0.882, 0.910) * whiteK,
             wash * 0.38 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
@@ -9218,7 +9280,7 @@ void main() {
     float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
     float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
                             * sin(p.x * 0.017 - p.y * 0.023);
-    col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
+    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.80, 0.0, 1.0));
   }
 
   // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.
@@ -9568,6 +9630,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private dust: THREE.InstancedMesh | null = null;
   /** warm discs under the street lamps, drawn only after dark */
   private lampPools: THREE.InstancedMesh | null = null;
+  // ---- obstruction lights (see BEACON_VERT) ----
+  private beaconMat: THREE.ShaderMaterial | null = null;
+  private beacons: THREE.Points | null = null;
+  private beaconsDirty = true;
+  /** Generator towers over 61 m: tip position, read off the geometry once. */
+  private staticTops: { bbl: string; x: number; y: number; z: number }[] | null = null;
+  /** The game's finished buildings over 61 m, by deed. */
+  private dynTops = new Map<string, [number, number, number]>();
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private shadowTexelM = 4400 / 3072;
@@ -9622,7 +9692,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private lensRampUni = { value: Array.from({ length: 6 }, () => new THREE.Vector3(1, 1, 1)) };
   private lensNUni = { value: 2 };
   private selHUni = { value: 30 };
-  private ownedNow = new Set<string>();
+  private ownedNow = new Map<string, number>();
+  /** A listed holding's parapet breathes, so the clock has to run for it. */
+  private statusAnim = false;
   private lensNow = new Map<string, number>();
   private hiNow = new Map<string, number>();
   private selActive = false;
@@ -9743,11 +9815,23 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * YOUR BUILDINGS, ON THE BUILDINGS. The gilt parapet band and deck margin in
    * FRAG / ROOF_FRAG. Diffed, so a purchase uploads one texel.
    */
-  setOwned(owned: Set<string>) {
+  setOwned(owned: Set<string>, status?: Map<string, { listed?: boolean; distress?: 0 | 1 | 2 }>) {
+    // The owned channel carries the holding's state as well (STATE_GLSL
+    // stListed / stDistress): 1 + 2·listed + 4·distress. Diffed per deed on
+    // the encoded value, so listing one building uploads one texel.
+    const next = new Map<string, number>();
+    let anim = false;
+    for (const bbl of owned) {
+      const st = status?.get(bbl);
+      const v = 1 + (st?.listed ? 2 : 0) + 4 * Math.max(0, Math.min(2, st?.distress ?? 0));
+      if (st?.listed) anim = true;
+      next.set(bbl, v);
+    }
     let changed = false;
-    for (const bbl of this.ownedNow) if (!owned.has(bbl)) { this.setDeedState(bbl, 0, 0); changed = true; }
-    for (const bbl of owned) if (!this.ownedNow.has(bbl)) { this.setDeedState(bbl, 0, 1); changed = true; }
-    this.ownedNow = new Set(owned);
+    for (const [bbl] of this.ownedNow) if (!next.has(bbl)) { this.setDeedState(bbl, 0, 0); changed = true; }
+    for (const [bbl, v] of next) if (this.ownedNow.get(bbl) !== v) { this.setDeedState(bbl, 0, v); changed = true; }
+    this.ownedNow = next;
+    this.statusAnim = anim;
     if (changed) { this.sceneDirty++; this.map?.triggerRepaint(); }
   }
 
@@ -9857,6 +9941,94 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map?.triggerRepaint();
   }
 
+  /** How many obstruction lights are standing on the skyline (for tests and probes). */
+  beaconCount(): number {
+    if (this.beaconsDirty) this.rebuildBeacons();
+    return this.beacons ? (this.beacons.geometry.getAttribute("position")?.count ?? 0) : 0;
+  }
+
+  /** The one shared beacon material; hidden (not drawn at all) until dusk. */
+  private beaconMaterial(): THREE.ShaderMaterial {
+    if (this.beaconMat) return this.beaconMat;
+    const dpr = this.renderer ? this.renderer.getPixelRatio() : 1;
+    this.beaconMat = new THREE.ShaderMaterial({
+      vertexShader: BEACON_VERT, fragmentShader: BEACON_FRAG,
+      uniforms: { uWeather: this.weatherUni, uTime: this.timeUni, uPx: { value: 7.0 * dpr } },
+      transparent: true, depthWrite: false,
+      // add light, leave alpha alone — as the lamp pools do
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
+    this.beaconMat.visible = this.weatherUni.value.z > 0.3;
+    return this.beaconMat;
+  }
+
+  private beaconPoints(xyzp: number[]): THREE.Points {
+    const n = xyzp.length / 4;
+    const pos = new Float32Array(n * 3), ph = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = xyzp[i * 4]; pos[i * 3 + 1] = xyzp[i * 4 + 1]; pos[i * 3 + 2] = xyzp[i * 4 + 2];
+      ph[i] = xyzp[i * 4 + 3];
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(ph, 1));
+    const pts = new THREE.Points(g, this.beaconMaterial());
+    // vertex-free light: nothing to cast, and the depth bake would draw it as a dot
+    pts.userData.noShadow = true;
+    return pts;
+  }
+
+  /**
+   * Every structure over 200 ft, lit. The generator's towers are found once
+   * off the geometry (the tallest vertex of the deed, averaged over whatever
+   * shares that height, so a spire gets its light at the tip); the game's own
+   * finished buildings come from setPlayerBuildings; anything flattened since
+   * drops out. Rebuilt lazily — only when the skyline changed AND it is dark.
+   */
+  private rebuildBeacons() {
+    this.beaconsDirty = false;
+    const FAA_M = 61; // 200 ft AGL, the obstruction-lighting threshold
+    if (!this.staticTops) {
+      this.staticTops = [];
+      for (const [bbl, list] of this.rangesByBBL) {
+        const h = this.staticHeight(bbl);
+        if (h < FAA_M) continue;
+        let sx = 0, sy = 0, n = 0;
+        for (const { attr, r } of list) {
+          const pa = this.posAttrs[attr];
+          if (!pa || attr > 1) continue;
+          const arr = pa.array as Float32Array;
+          for (let i = r.start; i < r.start + r.count; i++) {
+            if (arr[i * 3 + 2] >= h - 0.3) { sx += arr[i * 3]; sy += arr[i * 3 + 1]; n++; }
+          }
+        }
+        if (n) this.staticTops.push({ bbl, x: sx / n, y: sy / n, z: h });
+      }
+    }
+    const pts: number[] = [];
+    const phase = (bbl: string) => {
+      let k = 2166136261;
+      for (let i = 0; i < bbl.length; i++) k = Math.imul(k ^ bbl.charCodeAt(i), 16777619);
+      return ((k >>> 0) % 1000) / 1000;
+    };
+    for (const t of this.staticTops) {
+      if (this.flattened.has(t.bbl) || this.dynTops.has(t.bbl)) continue;
+      pts.push(t.x, t.y, t.z + 1.2, phase(t.bbl));
+    }
+    for (const [bbl, [x, y, z]] of this.dynTops) pts.push(x, y, z + 1.2, phase(bbl));
+    if (this.beacons) {
+      this.scene.remove(this.beacons);
+      this.beacons.geometry.dispose();
+      this.beacons = null;
+    }
+    if (pts.length) {
+      this.beacons = this.beaconPoints(pts);
+      this.scene.add(this.beacons);
+    }
+  }
+
   /** How many boats are working the harbour (for tests and probes). */
   harbourFleet(): number { return this.boats?.count ?? 0; }
 
@@ -9866,6 +10038,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private applyDusk(d: number) {
     this.weatherUni.value.z = d;
     if (this.lampPools) this.lampPools.visible = d > 0.3;
+    if (this.beaconMat) this.beaconMat.visible = d > 0.3;
     this.sceneDirty++;
     if (!this.postOK || !this.brightMat) return;
     const night = smoothstep(0.35, 1.0, d);
@@ -10192,6 +10365,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildCity() {
+    // the obstruction lights are found off this build's geometry
+    this.staticTops = null;
+    this.beacons = null;
+    this.beaconsDirty = true;
     const blank = geomBuf;
     const W = blank();
     const R = blank();
@@ -12403,7 +12580,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const kit = this.sharedKitGeoms();
     const mats = new Set<THREE.Material>();
     group.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
+      // Points too: a crane's obstruction lights are a Points on its slew
+      if (!(o instanceof THREE.Mesh || o instanceof THREE.Points)) return;
       const g = o.geometry;
       if (g && !kit.has(g)) g.dispose();
       if (!disposeMats) return;
@@ -12976,6 +13154,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(0, 0, hook), grey),
         );
         slew.add(trolley);
+        // steady reds on the apex, the jib tip and the counter-jib (L-810):
+        // they turn with the slew, so a working crane reads at night by its
+        // lights sweeping over the site
+        slew.add(this.beaconPoints([
+          0, 0, mastH + 0.3, -1,
+          jib, 0, mastH - 0.6, -1,
+          -back, 0, mastH - 0.5, -1,
+        ]));
         host.add(slew);
         // One lazy sweep every 22-38 seconds, period and phase hashed off the
         // deed like everything else about this crane, so two sites never move
@@ -13116,6 +13302,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // against a registry the bbl already stood in. Job frames have no
     // occupancy slots, so a crane-only month leaves them alone.
     if (rebuildStock) {
+      // the game's finished buildings tall enough to carry an obstruction light
+      this.dynTops.clear();
+      for (const it of items) {
+        if (it.construction || it.heightM < 61) continue;
+        const ring = this.lotRing(it.bbl);
+        if (!ring || ring.length < 3) continue;
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        this.dynTops.set(it.bbl, [cx / ring.length, cy / ring.length, it.heightM]);
+      }
+      this.beaconsDirty = true;
       for (const [bbl, c] of this.tintNow) this.writeTint(bbl, c, 2);
       for (const [bbl, v] of this.lastOcc) this.writeScalar(this.litAttrs, bbl, Math.max(0, Math.min(1, v)), 2);
       for (const [bbl, v] of this.lastRet) this.writeScalar(this.retAttrs, bbl, v, 2);
@@ -13247,6 +13444,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   private flattenLot(bbl: string) {
     this.flattened.add(bbl);
+    this.beaconsDirty = true;
     // AND IT GOES DOWN RATHER THAN VANISHING. After the first sync (a loaded
     // save does not replay its demolitions) the building sinks into its lot
     // over 1.2 s, accelerating like something falling, and only THEN is the
@@ -13421,40 +13619,109 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * Rebuilt monthly from whatever list the game sends; empty list clears.
    */
   private noticeGroup = new THREE.Group();
+  private noticeSig = "";
   setNotices(bbls: string[]) {
+    const sig = bbls.join(",");
+    if (sig === this.noticeSig && this.noticeGroup.parent) return;
+    this.noticeSig = sig;
     if (!this.noticeGroup.parent) this.scene.add(this.noticeGroup);
     this.disposeGroupContents(this.noticeGroup);
+    // ONE DRAW FOR EVERY BOARD, one for every rule. These were two meshes a
+    // notice; a bad July puts dozens on the street at once.
+    const boards: THREE.BufferGeometry[] = [], rules: THREE.BufferGeometry[] = [];
     for (const bbl of bbls) {
-      const v = this.volumes.find((x) => x.b === bbl && !x.d && x.r.length >= 3);
-      if (!v) continue;
-      const ring = v.r.map((p) => this.project(p));
-      let cx = 0, cy = 0;
-      for (const [x, y] of ring) { cx += x; cy += y; }
-      cx /= ring.length; cy /= ring.length;
-      let bi = 0, bl = -1;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (L > bl) { bl = L; bi = i; }
-      }
-      if (bl < 3) continue;
-      const a = ring[bi], b = ring[(bi + 1) % ring.length];
-      const ex = b[0] - a[0], ey = b[1] - a[1];
-      const L = Math.hypot(ex, ey);
-      let nx = -ey / L, ny = ex / L;
-      if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
-      const px = (a[0] + b[0]) / 2 + nx * 0.7, py = (a[1] + b[1]) / 2 + ny * 0.7;
-      const ang = Math.atan2(ey, ex);
-      const board = mergeGeoms([
-        new THREE.BoxGeometry(1.1, 0.07, 1.4).translate(0, 0, 1.9),
-        new THREE.BoxGeometry(0.10, 0.10, 1.3).translate(0, 0, 0.65),
-      ]).rotateZ(ang).translate(px, py, 0);
-      this.noticeGroup.add(new THREE.Mesh(board, this.propMaterial(0xe9e5da, false)));
-      const stripe = new THREE.BoxGeometry(1.1, 0.075, 0.22).translate(0, 0, 2.48)
-        .rotateZ(ang).translate(px, py, 0);
-      this.noticeGroup.add(new THREE.Mesh(stripe, this.propMaterial(0xa8362a, false)));
+      const f = this.frontage(bbl, 0.5);
+      if (!f) continue;
+      boards.push(new THREE.BoxGeometry(1.1, 0.07, 1.4).translate(0, 0, 1.9), new THREE.BoxGeometry(0.10, 0.10, 1.3).translate(0, 0, 0.65));
+      for (let i = boards.length - 2; i < boards.length; i++) boards[i].rotateZ(f.ang).translate(f.x, f.y, 0);
+      rules.push(new THREE.BoxGeometry(1.1, 0.075, 0.22).translate(0, 0, 2.48).rotateZ(f.ang).translate(f.x, f.y, 0));
     }
+    this.addMerged(this.noticeGroup, boards, 0xe9e5da);
+    this.addMerged(this.noticeGroup, rules, 0xa8362a);
     this.map?.triggerRepaint();
+  }
+
+  /**
+   * THE BROKER'S BOARD. Every building on the market — the brokers' listings
+   * and the player's own sale instructions — gets the 4 ft x 8 ft board a
+   * commercial listing actually puts up at the frontage: white panel on two
+   * posts with a header band, green for the market's listings, gilt for your
+   * own. A quarter of the way along the longest frontage, so it never stands
+   * in the same spot as a courthouse notice (at the midpoint). Rebuilt only
+   * when the list changes; two draws for the whole city.
+   */
+  private saleGroup = new THREE.Group();
+  private saleSig = "";
+  setForSale(market: string[], own: string[]) {
+    const sig = market.join(",") + "|" + own.join(",");
+    if (sig === this.saleSig && this.saleGroup.parent) return;
+    this.saleSig = sig;
+    if (!this.saleGroup.parent) this.scene.add(this.saleGroup);
+    this.disposeGroupContents(this.saleGroup);
+    const panels: THREE.BufferGeometry[] = [], green: THREE.BufferGeometry[] = [], gilt: THREE.BufferGeometry[] = [];
+    const seen = new Set<string>();
+    const put = (bbl: string, header: THREE.BufferGeometry[]) => {
+      if (seen.has(bbl)) return;
+      seen.add(bbl);
+      const f = this.frontage(bbl, 0.25);
+      if (!f) return;
+      const place = (g: THREE.BufferGeometry) => g.rotateZ(f.ang).translate(f.x, f.y, 0);
+      panels.push(
+        place(new THREE.BoxGeometry(2.44, 0.08, 1.22).translate(0, 0, 1.75)),
+        place(new THREE.BoxGeometry(0.10, 0.10, 2.4).translate(-1.0, 0, 1.2)),
+        place(new THREE.BoxGeometry(0.10, 0.10, 2.4).translate(1.0, 0, 1.2)),
+      );
+      // the header band on both faces, proud of the panel so it never z-fights it
+      header.push(place(new THREE.BoxGeometry(2.46, 0.10, 0.34).translate(0, 0, 2.20)));
+    };
+    for (const b of own) put(b, gilt);
+    for (const b of market) put(b, green);
+    this.addMerged(this.saleGroup, panels, 0xefece4);
+    this.addMerged(this.saleGroup, green, 0x2f6a4c);
+    this.addMerged(this.saleGroup, gilt, 0xc2923a);
+    this.map?.triggerRepaint();
+  }
+
+  /** How many broker boards are standing (for tests and probes). */
+  saleBoards(): number { return this.saleSig ? this.saleGroup.children.length : 0; }
+
+  private addMerged(group: THREE.Group, geoms: THREE.BufferGeometry[], color: number) {
+    if (!geoms.length) return;
+    const g = mergeGeoms(geoms);
+    for (const x of geoms) x.dispose();
+    const mesh = new THREE.Mesh(g, this.propMaterial(color, false));
+    // street furniture a metre or two high: the contact pass resolves it, the
+    // shadow bake would only re-bake the city for it
+    mesh.userData.noShadow = true;
+    group.add(mesh);
+  }
+
+  /** A deed's longest street face, as a point stood off it by 0.7 m at `along` (0..1) and its bearing. */
+  private volByBbl: Map<string, BuildingVolume> | null = null;
+  private frontage(bbl: string, along: number): { x: number; y: number; ang: number } | null {
+    if (!this.volByBbl) {
+      this.volByBbl = new Map();
+      for (const v of this.volumes) if (v.b && !v.d && v.r.length >= 3 && !this.volByBbl.has(v.b)) this.volByBbl.set(v.b, v);
+    }
+    const v = this.volByBbl.get(bbl);
+    const ring = v ? v.r.map((p) => this.project(p)) : this.lotRing(bbl);
+    if (!ring || ring.length < 3) return null;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    let bi = 0, bl = -1;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L > bl) { bl = L; bi = i; }
+    }
+    if (bl < 3) return null;
+    const a = ring[bi], b = ring[(bi + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const L = Math.hypot(ex, ey);
+    let nx = -ey / L, ny = ex / L;
+    if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+    return { x: a[0] + ex * along + nx * 0.7, y: a[1] + ey * along + ny * 0.7, ang: Math.atan2(ey, ex) };
   }
 
   /**
@@ -13571,7 +13838,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // schedule work at all.
     // A selected building sweeps, and a tween moves — both need the clock
     // running and the next frame asked for, water or no water.
-    const selAnim = this.selActive;
+    const night = this.weatherUni.value.z > 0.3;
+    if (night && this.beaconsDirty) this.rebuildBeacons();
+    const selAnim = this.selActive || this.statusAnim || (night && !!this.beacons);
     if (this.stepTweens(performance.now())) this.map.triggerRepaint();
     if (this.stepDusk(performance.now())) this.map.triggerRepaint();
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {

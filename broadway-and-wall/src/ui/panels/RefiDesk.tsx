@@ -260,7 +260,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
                   </td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
-                    {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
+                    {px > 0 ? usd(net) : "—"}
                   </td>
                 </tr>
               ))}

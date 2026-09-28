@@ -11,6 +11,12 @@
 /* Under 900px the map HUD moves to the docket's top-left perch (index.css).
    The docket yields the corner and takes the right edge — two rails stacked
    on one anchor buried the HUD's filters and lens key entirely. */
+/* On a short laptop screen (1024x768) the docket's 46vh ran into the map
+   HUD's goal card below it. */
+@media (max-height: 820px) {
+  .docket-list { max-height: min(34vh, 440px); }
+}
+
 @media (max-width: 900px) {
   .year-rail.docket {
     left: auto;

@@ -514,7 +514,7 @@ function IncomeStatementTab() {
                         </div>
                       ) : null}
                     </td>
-                    <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
+                    <td className="num">{b.debtSvc ? usd(-b.debtSvc) : "—"}</td>
                     <td className="num">
                       {usd((b.leasing ?? 0) + (b.capex ?? 0) + (b.ga ?? 0) + (b.dev ?? 0) + (b.taxes ?? 0))}
                       <div className="dim" style={{ fontSize: 11 }}>
@@ -530,7 +530,7 @@ function IncomeStatementTab() {
                     <td className="num">
                       {b.bought || b.sold ? (
                         <>
-                          {b.bought ? "−" + usd(b.bought) : "—"}
+                          {b.bought ? usd(-b.bought) : "—"}
                           {b.sold ? <div className="dim" style={{ fontSize: 11 }}>sold {usd(b.sold)}</div> : null}
                         </>
                       ) : "—"}

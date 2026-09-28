@@ -116,7 +116,7 @@ export function PropertyPage() {
           value={(built || leasedFee) ? usd(noi) : "—"}
           bad={noi < 0}
         />
-        <Big label="Debt service / yr" value={dsYr ? "−" + usd(dsYr) : "—"} />
+        <Big label="Debt service / yr" value={dsYr ? usd(-dsYr) : "—"} />
         <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
         {leasedFee ? (
           <Big label="Your role" value="leased fee" />
@@ -163,7 +163,7 @@ export function PropertyPage() {
             this off the price at closing, so it moves the appraisal directly —
             and there was nowhere to see it. */}
         {built && h && remainingAbatement(h, game.month) > 0 && (
-          <Big label="Free rent owed" value={"−" + usd(remainingAbatement(h, game.month))} bad />
+          <Big label="Free rent owed" value={usd(-remainingAbatement(h, game.month))} bad />
         )}
         {/* THE SANITY CHECK EVERY DEVELOPER RUNS AND THIS GAME COULD NOT.
             Above replacement cost, somebody will build a competitor across the
@@ -203,9 +203,10 @@ export function PropertyPage() {
             {/* THE BUY SIDE GETS A FRONT DOOR TOO. An owner had "Sell this
                 building" up here; a buyer had to find the Acquire tab. */}
             {!h && game.listings.some((l) => l.bbl === bbl) && (
+              // under contract or mid-talks it is no longer an offer to make
               <button className="btn btn-buy" onClick={() => setTab("deal")}
                 title="The asking price, the in-place income, your offer and the money to close it">
-                Make an offer ▸
+                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Back to the talks ▸" : "Make an offer ▸"}
               </button>
             )}
             {!h && (

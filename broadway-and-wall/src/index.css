@@ -848,8 +848,11 @@ body {
    digest has nothing to say in month zero, so the digest yields until the
    offer is answered. */
 .app:has(.primer-offer) .cycle-digest { display: none; }
+/* …and it sat on the map HUD too: the goal card and "On the tape for you"
+   anchor the same corner, so the offer hid the goal the player had just
+   chosen. It takes the bottom centre, which nothing else claims. */
 .primer-offer {
-  position: absolute; left: 18px; bottom: 18px; z-index: 45;
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 45;
   width: min(340px, calc(100vw - 36px));
   background: var(--card);
   border: 1px solid var(--card-line);

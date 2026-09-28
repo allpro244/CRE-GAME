@@ -152,7 +152,11 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
     );
   }
   const li = game.listings.find((l) => l.bbl === bbl);
-  const px = li?.ask ?? game.approaches[bbl]?.ask ?? marketAppraisal(game, rec, bbl, gradeOf(game, rec));
+  // Once a price is agreed the statement is struck at THAT price — it read
+  // the ask, so the going-in cap under the contract and the one in the
+  // statement beside it disagreed on the same screen.
+  const agreedPx = game.talks?.[bbl]?.agreed ? game.talks[bbl].agreedPrice : undefined;
+  const px = agreedPx ?? li?.ask ?? game.approaches[bbl]?.ask ?? marketAppraisal(game, rec, bbl, gradeOf(game, rec));
   const h = asIfOwned(game, bbl, px, d, rec);
   // what the assessor's roll says today, before the sale resets it to the price
   const standingAssessed = assetValue(rec, game.econ, d.cond ?? gradeOf(game, rec), d.condIdx);
@@ -218,12 +222,17 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
         <Row k="Base rent" v={usd(st.baseRent)} />
         {st.recoveredOpex + st.recoveredTax > 0 && <Row k="Recoveries" v={usd(st.recoveredOpex + st.recoveredTax)} />}
         <Row k="Effective gross income" v={usd(st.egi)} />
-        <Row k="Operating expenses" v={"−" + usd(st.opex)} />
-        <Row k="Management" v={"−" + usd(st.mgmt)} />
-        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax) + (Math.abs(px - standingAssessed) > px * 0.05 ? ` (the sale resets the assessment from ${usd(standingAssessed)})` : "")} />
+        <Row k="Operating expenses" v={usd(-st.opex)} />
+        <Row k="Management" v={usd(-st.mgmt)} />
+        <Row k={`Property tax at ${usd(px)}`} v={usd(-st.tax)} />
         <Row k="In-place NOI / yr" v={usd(st.noi)} strong bad={st.noi < 0} />
         <Row k="Going-in cap at that price" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
       </div>
+      {/* a sentence, so it reads as one — in the value column it wrapped
+          into four lines of monospace beside a single figure */}
+      {Math.abs(px - standingAssessed) > px * 0.05 && (
+        <div className="hint dim">The sale resets the tax assessment from {usd(standingAssessed)} to the price paid.</div>
+      )}
     </div>
   );
 }
@@ -869,6 +878,17 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
   // their floor. The price of the instrument: a no ends it, for both sides,
   // and it is only credible while the street still believes your finals.
   const [isFinal, setIsFinal] = useState(false);
+  // THE SLIDER FOLLOWS THE CONVERSATION. It kept the opening default after you
+  // had offered, so paying ask and hearing a counter left a "Counter at" button
+  // BELOW your own last number. Each time a round lands, it starts from what
+  // you last said.
+  const liveTalks = game.talks?.[bbl] ?? null;
+  const talksKey = liveTalks ? `${liveTalks.round}:${liveTalks.yourPrice}` : null;
+  const [syncedTalks, setSyncedTalks] = useState<string | null>(null);
+  if (liveTalks && talksKey !== syncedTalks) {
+    setSyncedTalks(talksKey);
+    setOfferPrice(Math.round(liveTalks.yourPrice));
+  }
   // THE PERSON, NOT THE LISTING. A cold holder still has a number on the tape
   // — the market can buy it — but the offer controls are a lie if they will
   // not sell to you.
@@ -985,7 +1005,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           whether they need this deal. Both halves used to exist only for the
           dozen firms on the street. */}
       <div className="hint" style={{ marginTop: 6 }}>
-        Across the table: <strong>{seller.name}</strong>. {sellerProfile(seller.kind).blurb}
+        Across the table: <strong>{seller.name}</strong>{seller.name.endsWith(".") ? "" : "."} {sellerProfile(seller.kind).blurb}
         {(() => {
           const o = ownerAt(game, parcels, bbl);
           if (!o || o.publicOwner) return null;
@@ -1064,7 +1084,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         {!talks && (
           <button
             className="btn"
-            title="Pay the posted ask — skips negotiation"
+            title="Offer the posted ask. Most sellers take it; one who thinks the tape is light may still counter."
             onClick={() => useStore.getState().offer(bbl, price, false)}
           >
             Pay ask · {usd(price)}

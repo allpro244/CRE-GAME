@@ -765,7 +765,7 @@ export function strikeDeal(
     maxRounds: prev?.maxRounds ?? OPEN_ROUNDS[seller.kind],
     openedM: prev?.openedM ?? next.month,
     agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
-    note: `Agreed at ${fmtM(px)} with ${seller.name}. ${fmtM(dep)} of earnest money is posted and hard. `
+    note: `Agreed at ${fmtM(px)} with ${seller.name}${seller.name.endsWith(".") ? "" : "."} ${fmtM(dep)} of earnest money is posted and hard. `
       + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
   };
   next.news.unshift({

@@ -1670,3 +1670,53 @@ baseline seeds reshuffling: on a 12-seed sweep of ten-year means, office rent
 moved +7% and median land 134.9 → 149.9 against a 2.7× seed-to-seed spread.
 The modest real shift is buildings no longer being marked below what they are
 worth for having been built recently.
+
+# A FIRM WITH NOTHING LEFT WAS STILL ON THE STREET — fixed
+
+When a rival sells its last building, `debtReleasedOnSale` retires a
+leverage-share proxy (`price × debt/aum`), not the actual mortgage, so a crumb
+of debt usually survived the sale. Husk retirement needs `debt <= 0`, and a
+few-thousand to several-hundred-thousand dollar balance amortising on a thirty-year schedule never gets there.
+Measured on seed 22 with no player, year 38: 13 of 25 "live" firms held no
+building and all 13 still owed money ($1k-$501k). `emptyMs` was 0 on every
+one of them, and 11 sat with their cash paid out to the $2M working-reserve
+floor (`Math.max(2_000_000, aum × …)` with aum 0). From year 27 on they were
+the median firm: `streetStanding().medianRival` read $2.00-2.02M for the last
+twelve years of the run. The statistic was measuring the floor. A few carried a
+residual larger than their cash, which left a live firm with no assets and
+negative equity.
+
+**Shipped** (`settleEmptyBook`, rivals.ts). With no deed left there is no
+collateral, so whatever is still on `r.debt` is unsecured. No lender leaves
+an unsecured balance outstanding against a shell, so it is called and repaid
+from the account. This runs at the sale that empties the book (`rivalBuys`,
+`sellToOutsider`) and again every month in `tickRivals`, which catches a deed
+in lieu, a receiver and any other way a last building can leave. A firm with
+a live construction job is exempt, because its debt is a facility secured on
+the site. If the account cannot cover the call, the rest stays owed and the
+existing arrears calendar winds the firm up, charging the loss to the lender.
+The reserve floor itself is right: a firm with buildings keeps $2M of working
+cash. It only turned into a statistic because firms that should have been
+wound up were stuck on it. `test/rival-husks.mjs` (in `pnpm check`) covers
+the call, the insolvent wind-up and a 16-year street. It fails 7 of 8 on the
+old engine (782 firm-months of an empty book carrying debt with cash in the
+bank, 51 at negative equity outside arrears, 399 past the wind-up window).
+
+Seed 22 after the fix: no firm with an empty book owes anything at any
+five-year sample, and medianRival over years 27-38 ranges $2.9-21M instead of
+sitting on the floor. **This does make a
+headline number worse.** Firms that sat as zombies are now wound up, and entry
+(`firmEntryPitch`) does not fully replace them. Operating firms (at least one
+deed) at month 300 across 10 seeds averaged 18.7 before and 15.8 after. On
+seed 11 the street is down to 8 firms by year 38. Under the old code, 4 of 19
+husks on seed 550991 did "redeploy", after a median of 91 months sitting on
+$2M, and that was never a real firm. How thin the street gets now is a
+question for the entry model. It is recorded here and was not tuned.
+
+Baseline (six seeds) moved 19 of 39. Re-rolled on 18 seeds, paired, ten-year
+means: no metric shifts at |t| ≥ 2. The six-seed headline moves are
+reshuffles: office rent +14% on six seeds is +7% on 18 (t 1.6), and the
+retail occupancy gap swinging 1.55 → −0.59 is 0.85 → 0.81 on 18 (t −0.1).
+Removing zombie cash changes which firm wins which draw on the rivals stream,
+and that is enough to re-roll the city. The one borderline mover is
+`dev.affordableLotShare`, −12% on the 18-seed mean (t −1.9).

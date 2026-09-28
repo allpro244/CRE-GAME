@@ -2808,6 +2808,27 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // The maturities are where a file gets closed; this closes the ones no
     // maturity will ever reach, because the building left or the debt did.
     pruneExtensions(r);
+    // A BOOK WITH NO DEEDS HAS NO SECURED DEBT. What is left on `r.debt` once
+    // the last building has gone is the gap between the leverage-share proxy
+    // `debtReleasedOnSale` retires and what the mortgage on that building
+    // actually was, plus whatever was drawn on the corporate line — unsecured
+    // paper with nothing behind it, and no lender leaves an unsecured balance
+    // outstanding against a shell. It is called and repaid out of the account.
+    //
+    // Measured before this (seed 22, no player, 38 years): 13 of 25 "live"
+    // firms held no building and still owed $1k-$501k, mostly under $100k.
+    // Amortising that crumb on a thirty-year schedule kept `debt > 0` forever,
+    // so the husk retirement below (which needs a clear balance) never started
+    // its clock — `emptyMs` was 0 on every one of them — and each sat with its
+    // cash distributed down to the $2M working-reserve floor. By year 27 they
+    // WERE the median firm, and the street's median equity read $2.00-2.02M
+    // for the last twelve years of the run: a statistic measuring a floor.
+    //
+    // A firm still building (a live, un-orphaned job) is exempt: its debt is
+    // a construction facility secured on the site. A firm that cannot cover
+    // the call keeps the remainder and goes onto the ordinary arrears
+    // calendar below, which winds it up and charges the lender its loss.
+    settleEmptyBook(s, r);
     // Leverage as it stands after the maturities, which is what everything
     // below has to read — a firm that just paid down a balloon or handed a
     // building back is not the firm `markRival` marked at the top of the tick.
@@ -3409,6 +3430,7 @@ export function rivalBuys(
     const relief = debtReleasedOnSale(seller, price);
     seller.debt -= relief;
     seller.cash += price - relief - tax;
+    settleEmptyBook(s, seller);
   }
   const fin = drawFor(best);
   // The corporate line funds any equity the operating account cannot cover —
@@ -3459,7 +3481,31 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const relief = debtReleasedOnSale(seller, price);
   seller.debt -= relief;
   seller.cash += price - relief - tax;
+  settleEmptyBook(s, seller);
   return true;
+}
+
+/**
+ * AN EMPTY BOOK HAS NO SECURED DEBT. Once the last deed has gone, whatever is
+ * left on `r.debt` is unsecured — the gap between the leverage-share proxy
+ * `debtReleasedOnSale` retires and what the mortgage on that building really
+ * was, plus anything drawn on the corporate line — and no lender leaves an
+ * unsecured balance outstanding against a shell. It is called and repaid out
+ * of the account. A firm still building (a live, un-orphaned job) is exempt:
+ * its debt is a construction facility secured on the site. What the account
+ * cannot cover stays owed, and the arrears calendar in `tickRivals` winds the
+ * firm up and charges the lender the loss.
+ *
+ * Run at the sale that empties the book and again every month in the tick,
+ * which catches the deed-in-lieu, receiver and every other path a last
+ * building leaves by. See test/rival-husks.mjs for the before and after.
+ */
+function settleEmptyBook(s: GameState, r: Rival) {
+  if (r.bbls.length || !(r.debt > 0) || !(r.cash > 0)) return;
+  if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return;
+  const repay = Math.min(r.debt, r.cash);
+  r.debt -= repay;
+  r.cash -= repay;
 }
 
 /**

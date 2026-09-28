@@ -60,7 +60,7 @@ export interface FirmCapital {
   milestonesTotal: number;
 }
 
-const TIER_LABEL = [
+export const TIER_LABEL = [
   "Startup shop",
   "Known locally",
   "Established firm",

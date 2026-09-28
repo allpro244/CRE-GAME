@@ -2944,6 +2944,10 @@ export interface GameState {
   /** Every level event this city has had, oldest first. See SwanRecord. */
   swanLog?: SwanRecord[];
   gameOver: { cause: string; complete?: boolean } | null;
+  /** Each December close: net worth and your place on the street. See standing.ts. */
+  yearMarks?: import("./standing").YearMark[];
+  /** Each principal's tenure, closed at their death — the career card reads it. */
+  careers?: { name: string; heir: string; fromM: number; toM: number; age: number; gross: number; tax: number }[];
   insolventMs: number;
   /** Months with cash below zero this run — never reset by a seizure. */
   underwaterMs?: number;

@@ -23,7 +23,8 @@ import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
  * way. Written down here because three places on this page print it and one
  * quantity does not get three expressions.
  */
-export const rivalEquity = (m: { aum: number }, r: { debt: number; cash: number }) => m.aum - r.debt + r.cash;
+export { rivalEquity } from "@/engine/standing";
+import { rivalEquity } from "@/engine/standing";
 
 export function TheStreet() {
   const game = useStore((s) => s.game)!;

@@ -150,6 +150,11 @@ export function settlePlayerEstate(s: GameState, parcels: ParcelTable): void {
   };
 
   const age = ageYears(dead, s.month);
+  // THE CAREER, CLOSED. A principal's working life ended in one news line;
+  // this is the record the career card reads, the tenure bracketed by the
+  // death before it.
+  const prevCareer = s.careers?.at(-1);
+  (s.careers ??= []).push({ name: dead.name, heir: heir.name, fromM: prevCareer?.toM ?? 0, toM: s.month, age, gross: Math.round(gross), tax: Math.round(tax) });
   s.news.unshift({
     q: s.month,
     kind: "event",

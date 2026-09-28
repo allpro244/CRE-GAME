@@ -290,6 +290,53 @@ of its own cost-ordered list.
     `gpInterestInFund`, what that waterfall would pay the sponsor today.
     Standing a vehicle up leaves net worth unchanged.
 
+## Fourth round — making the score visible
+
+Played as a new player again, this time asking only "what am I trying to do,
+and how am I doing?". The game kept score all along (net worth monthly, a
+league table of every firm on the street, nineteen milestones, a firm
+reputation tier) and showed almost none of it. The start screen stated no
+aim. A full year passed with a toast that vanished before it could be read.
+Your place among the rival firms was two tabs deep on Research. A milestone
+was one line on the news tape. When your principal died, their whole career
+got one news line and the run went on as the heir. None of it needed new
+economics; it needed telling.
+
+- **The year, told back (`standing.ts`, `YearReview.tsx`).** Every December
+  close leaves a mark: net worth (the same `nwHistory` figure), your place on
+  the street (the same equity the league table always ranked on, now one
+  engine function, `rivalEquity`), the street's median firm, the name of the
+  firm directly above you, and your reputation tier. It draws no random
+  numbers, so no standing number moved. On the first January after, a card
+  comes up with:
+  - a verdict ("Up two places to 26th of 31. You outran the street.");
+  - net worth December to December against the median firm's change;
+  - your place and its movement, and the firm you went past (or that went
+    past you);
+  - your reputation tier and its movement;
+  - cash from the buildings after debt, office and tax, and deals done;
+  - the star building (biggest income gain) and the worry (biggest
+    occupancy drop), each a link to the property;
+  - milestones reached, and the next rung on the ladder.
+  It respects the popups setting. `pnpm standing` checks that it agrees with
+  the ledger and the net-worth history.
+- **Your place is always in sight.** A "Street 28th / 31" chip in the top bar.
+  Its tooltip names the firm above and the gap to it; a click opens the
+  league table.
+- **The ambition is said once, on the start screen.** You open near the bottom
+  of the street; every firm above you started with a bankroll and a hundred
+  years.
+- **A milestone is a moment:** a gold banner for four seconds, as well as the
+  news line.
+- **A career is closed with a card.** When the principal dies, the card
+  reads their tenure back: the book handed over and handed on, their place
+  on the street at the start and end, their best year, deeds bought and
+  sold, milestones reached, the estate bill, and the heir you continue as.
+- **The game-over card** now carries the best place the firm ever held on the
+  street and the years in town.
+- **Fixed on the way:** zoning news printed the district's internal key
+  ("theropewalk has been downzoned") instead of its name.
+
 ## Tests touched, and why
 
 Four harnesses in `check` were pinned to one draw of the world, and the fix

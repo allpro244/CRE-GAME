@@ -1270,7 +1270,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
 
       {stage === "structure" && (
         <div className="deal-stage" role="tabpanel">
-          <div className="btn-row" style={{ marginTop: 4 }}>
+          {/* one desk per line: as wrapping pills the quotes did not line up
+              and All cash landed wherever the last one broke */}
+          <div className="btn-row lender-list" style={{ marginTop: 4 }}>
             {productChoices.map((p) => {
               const pq = quoteOf(p.id);
               return (
@@ -1394,7 +1396,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 else useStore.getState().closeDeal(bbl, prod, l);
               }}
             >
-              {closeLabel ?? `Close at ${usd(offerPrice)}`} · eq {usd(equity)}
+              {closeLabel ?? `Close at ${usd(offerPrice)}`} · {usd(equity)} equity
             </button>
             {!off && (
               <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}

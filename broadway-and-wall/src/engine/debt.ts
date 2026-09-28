@@ -380,7 +380,7 @@ const REFI_FEE = 0.01;
  * crunchEase term at the only call site that passes it.
  */
 function usdM(x: number): string {
-  return x >= 1e6 ? `$${(x / 1e6).toFixed(x >= 1e7 ? 0 : 1)}M` : `$${Math.round(x / 1e3)}k`;
+  return x >= 1e6 ? `$${(x / 1e6).toFixed(x >= 1e7 ? 0 : 1)}M` : `$${Math.round(x / 1e3)}K`;
 }
 
 export function advanceFactor(s: GameState, lender: string, ease = 1): number {

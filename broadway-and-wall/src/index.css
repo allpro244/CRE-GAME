@@ -372,6 +372,8 @@ body {
 .deal-head { font-family: var(--serif); font-size: 14px; color: var(--ink); margin-bottom: 8px; }
 .deal-note { margin-top: 8px; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); font-style: italic; }
 .btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn-row.lender-list { flex-direction: column; align-items: stretch; gap: 5px; }
+.btn-row.lender-list > .btn { text-align: left; }
 .btn {
   font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: var(--r-sm);
   border: 1px solid rgba(96, 76, 34, 0.28);

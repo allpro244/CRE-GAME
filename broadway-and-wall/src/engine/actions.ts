@@ -741,7 +741,7 @@ export function assembleLots(
   // spend, and it comes off the line like every other professional fee. The
   // per-deed price and the contiguity rule above are untouched.
   if (fundableNow(s, parcels) < cost) {
-    return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}k — you're short.` };
+    return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}K — you're short.` };
   }
 
   // Parent = largest site by total dirt (not just the root's original lot),

@@ -85,6 +85,7 @@ export function PropertyPage() {
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
   const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
+  const appealTab: PropTab = built ? "ops" : "summary";
   const timeline = propertyTimeline(game, bbl);
   // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
   // worse than no tab: it teaches the player that the page lies about where
@@ -242,7 +243,25 @@ export function PropertyPage() {
       {/* A default is not a tab. It is the only thing on the page that matters
           while it is running, so it stays above the tab bar on every one. */}
       <WorkoutDesk bbl={bbl} />
-      {h?.taxAppeal ? (
+
+      <div className="prop-tabs">
+        {shown.map((t) => (
+          <button
+            key={t.key}
+            className={"prop-tab" + (active === t.key ? " on" : "")}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "money" && <AssetHistory bbl={bbl} />}
+      {/* THE TAX APPEAL IS AN OPPORTUNITY, NOT AN EMERGENCY. It sat above the
+          tab bar with the default desk, so every tab of a freshly bought
+          building opened on a five-row appeal quote. Taxes are an operating
+          line; it lives on Operations (Overview for a lot with no building). */}
+      {active === appealTab && (h?.taxAppeal ? (
         <div className="page-section">
           <div className="page-section-head">Assessment under appeal</div>
           <div className="grid">
@@ -262,7 +281,7 @@ export function PropertyPage() {
             <Row k="Appraisal + counsel" v={usd(taxAppeal.fee)} />
             <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
-          <button className="btn" disabled={game.cash < taxAppeal.fee}
+          <button className="btn" style={{ marginTop: 8 }} disabled={game.cash < taxAppeal.fee}
             title={game.cash < taxAppeal.fee ? `The filing costs ${usd(taxAppeal.fee)} — you have ${usd(game.cash)}` : undefined}
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
@@ -272,21 +291,7 @@ export function PropertyPage() {
             losing leaves the roll unchanged, and another challenge must wait three years.
           </div>
         </div>
-      ) : null}
-
-      <div className="prop-tabs">
-        {shown.map((t) => (
-          <button
-            key={t.key}
-            className={"prop-tab" + (active === t.key ? " on" : "")}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {active === "money" && <AssetHistory bbl={bbl} />}
+      ) : null)}
       {active === "history" && (
         <div className="page-section">
           <div className="page-section-head">What has happened on this deed</div>

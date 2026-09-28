@@ -220,7 +220,7 @@ function ParcelPanelInner({
                 : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
               + `; ${dirtLine}. Wait for rents, or plan a bigger building on Build.`);
         return (
-          <div className="deal" style={{ marginTop: 0 }}>
+          <div className="deal" style={{ marginTop: 0, marginBottom: 10 }}>
             <div className="deal-head">{head}</div>
             <div className="hint">{hint}</div>
             <button

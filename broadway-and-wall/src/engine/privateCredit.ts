@@ -412,6 +412,13 @@ function playerNeedsPrivateBorrow(
   return { principal, asIs, why };
 }
 
+/**
+ * How long the private market leaves a building alone after a quote on it
+ * lapses or is declined. A shape choice (a year — one budgeting cycle for a
+ * lender's pipeline), not calibrated to a measured outcome.
+ */
+export const PRIVATE_QUOTE_COOL_M = 12;
+
 /** Spawn / expire private borrow quotes to the player. */
 export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
   if (!s.privateBorrowQuotes) s.privateBorrowQuotes = [];
@@ -420,6 +427,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
     const q = s.privateBorrowQuotes[i];
     if (s.month < q.expiresM) continue;
     s.privateBorrowQuotes.splice(i, 1);
+    (s.privateQuoteCool ??= {})[q.bbl] = s.month + PRIVATE_QUOTE_COOL_M;
     if (rng(s) < 0.45) {
       s.news.unshift({
         q: s.month, kind: "rumor",
@@ -438,6 +446,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
 
   for (const h of Object.values(s.holdings)) {
     if (s.privateBorrowQuotes.some((q) => q.bbl === h.bbl)) continue;
+    if ((s.privateQuoteCool?.[h.bbl] ?? -1) > s.month) continue;
     const need = playerNeedsPrivateBorrow(s, parcels, h.bbl);
     if (!need) continue;
     const lenders = (s.rivals ?? []).filter((r) => rivalCanLend(r, need.principal));
@@ -593,6 +602,7 @@ export function declinePrivateBorrowQuote(
   if (!quote) return { s, err: "That quote is gone." };
   const next = clone(s);
   next.privateBorrowQuotes = (next.privateBorrowQuotes ?? []).filter((q) => q.id !== id);
+  (next.privateQuoteCool ??= {})[quote.bbl] = next.month + PRIVATE_QUOTE_COOL_M;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${firmShort(next)} passed on ${quote.lenderName}'s private quote against ${quote.address}. `

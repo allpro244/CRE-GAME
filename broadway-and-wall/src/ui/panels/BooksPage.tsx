@@ -415,6 +415,9 @@ function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
           {sheet.noteCount > 0 && (
             <Row k="Notes receivable" v={sheet.notesVal} note={`${sheet.noteCount} note${sheet.noteCount === 1 ? "" : "s"} · lower of cost and collateral`} />
           )}
+          {(sheet.fundInterest ?? 0) > 0 && (
+            <Row k="Interest in your fund" v={sheet.fundInterest!} note={`co-invest and promote at NAV · ${sheet.fundDeeds ?? 0} vehicle deed${sheet.fundDeeds === 1 ? "" : "s"}, mostly the LPs'`} />
+          )}
           <Row k="Total assets" v={sheet.totalAssets} strong rule />
         </tbody>
       </table>
@@ -424,12 +427,14 @@ function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
         </thead>
         <tbody>
           <Row k="Mortgages" v={sheet.mortgages} note="secured by individual deeds" bad={sheet.mortgages > sheet.propGross * 0.85} />
+          {(sheet.mezz ?? 0) > 0 && <Row k="Mezzanine" v={sheet.mezz!} note="junior to the mortgages" bad />}
           {sheet.cipDebt > 0 && <Row k="Construction loans" v={sheet.cipDebt} sub />}
           {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="one loan, many deeds" bad />}
           <Row k="Line of credit drawn" v={sheet.locBal} note={`limit ${usd(sheet.locLim)} · ${pct(sheet.rate)}`} bad={sheet.locBal > 0} />
           {sheet.deposits > 0 && (
             <Row k="Tenant deposits held" v={sheet.deposits} note="not yours — due when they leave" />
           )}
+          {(sheet.partners ?? 0) !== 0 && <Row k="JV partners' share" v={sheet.partners!} note="their slice of the equity in deeds you hold together" />}
           <Row k="Total liabilities" v={sheet.totalLiab} strong rule />
           <Row k="Equity (assets − liabilities)" v={sheet.equity} strong rule bad={sheet.equity < 0} />
         </tbody>

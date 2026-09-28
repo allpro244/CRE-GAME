@@ -89,6 +89,7 @@ export function firmCapital(s: GameState): FirmCapital {
   const exits = cleanExits(s);
   const staffN = (s.staff ?? []).length;
   const liveFund = !!(s.fund && !s.fund.settled);
+  const fundRealised = !!(s.fund?.settled && !s.fund.failed);
   // Avoid netWorth(parcels) here — firmCapital is called from capacity paths that
   // sometimes lack a parcel table (harnesses). Last stamped NW or cash is enough.
   const nw = s.nwHistory?.length
@@ -135,12 +136,20 @@ export function firmCapital(s: GameState): FirmCapital {
     {
       id: "vehicle",
       label: "Vehicle",
-      score: liveFund ? 1 : (s.fundFailedM !== undefined ? 0.15 : 0),
+      // A FUND RETURNED IS A TRACK RECORD, not the absence of a fund. This
+      // scored a successful wind-down 0 — the same as never having raised one
+      // — so the firm stepped DOWN a tier the month its LPs were paid back.
+      // A realised fund stands below a live one (no LP capital on the second
+      // account today) and well above none: 0.75 is a shape choice, placed
+      // between the two, not calibrated to a measured outcome.
+      score: liveFund ? 1 : (s.fundFailedM !== undefined ? 0.15 : fundRealised ? 0.75 : 0),
       detail: liveFund
         ? "Live fund — LP capital on a second account"
         : s.fundFailedM !== undefined
           ? "A prior vehicle failed — the street remembers"
-          : "No fund raised yet",
+          : fundRealised
+            ? "A fund raised and returned — a track record LPs can underwrite"
+            : "No fund raised yet",
     },
     {
       id: "book",

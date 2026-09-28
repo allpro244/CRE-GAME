@@ -2023,6 +2023,13 @@ export interface BalanceSnapshot {
   locBal: number;
   locLim: number;
   facility: number;
+  /** The sponsor's interest in a live fund (co-invest + promote at NAV); its deeds are not in propGross. */
+  fundInterest?: number;
+  fundDeeds?: number;
+  /** Mezzanine balances — junior paper against the deeds. */
+  mezz?: number;
+  /** JV partners' share of the equity in deeds you hold with a partner. */
+  partners?: number;
   totalAssets: number;
   totalLiab: number;
   equity: number;
@@ -2759,6 +2766,15 @@ export interface GameState {
    * hold-cap a takeout. See engine/privateCredit.ts Phase B.
    */
   privateBorrowQuotes?: PrivateBorrowQuote[];
+  /**
+   * A private lender told no stays told for a while: bbl → the month the street
+   * will quote that building again. Without it a lapsed or declined quote was
+   * eligible the very next month — 24 calls on one building from five lenders
+   * in one measured run.
+   */
+  privateQuoteCool?: Record<string, number>;
+  /** Player preference: whether broker first looks / off-market files may stop the clock. */
+  brokerStops?: "affordable" | "never";
   nextPrivateBorrowId?: number;
   /**
    * PAPER YOU PASSED ON.

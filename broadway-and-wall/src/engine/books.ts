@@ -11,6 +11,7 @@ import { logBooks } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
+import { gpInterestInFund } from "./fund";
 
 /** Re-export so harnesses that load `books` can dual-write without pulling all of types. */
 export { logBooks };
@@ -34,6 +35,10 @@ export interface BalanceSheetView {
   locBal: number;
   locLim: number;
   facility: number;
+  fundInterest?: number;
+  fundDeeds?: number;
+  mezz?: number;
+  partners?: number;
   totalAssets: number;
   totalLiab: number;
   equity: number;
@@ -43,15 +48,30 @@ export interface BalanceSheetView {
   historical: boolean;
 }
 
-/** Live balance sheet from the same marks the TopBar and the lenders use. */
+/**
+ * Live balance sheet from the same marks the TopBar and the lenders use — AND
+ * THE SAME CONSOLIDATION. This summed every deed at 100%: the fund's buildings
+ * (which are mostly the LPs'), a JV partner's share, and no mezzanine. Its
+ * equity line then disagreed with the engine net worth printed above it on the
+ * same page, by +47% on one measured run. It now reads the vehicle as the
+ * sponsor's interest in it, the partner's share as what it is, and the mezz
+ * as debt — portfolioMark's arithmetic, line by line, so the two agree.
+ */
 export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSheetView {
   let propGross = 0, mortgages = 0, landOnly = 0, bldgCount = 0, landCount = 0;
+  let mezz = 0, partners = 0, fundNav = 0, fundDeeds = 0;
+  const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
+  if (liveFund) fundNav = liveFund.cash;
   const byClass: Record<string, { n: number; gross: number; debt: number }> = {};
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     const v = ownedHoldingValue(s, parcels, h);
     const debt = h.loan?.balance ?? 0;
+    const junior = h.mezz?.balance ?? 0;
+    if (liveFund && h.fundOwned) { fundNav += v - debt - junior; fundDeeds++; continue; }
+    mezz += junior;
+    partners += (v - debt - junior) * (h.jv?.share ?? 0);
     propGross += v;
     mortgages += debt;
     // A leased fee resolves as the lessee's tower — it is still coupon paper,
@@ -69,9 +89,10 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
 
   let cip = 0, cipDebt = 0, cipN = 0;
   for (const d of Object.values(s.developments ?? {})) {
-    const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
-    cip += Math.max(0, sunk);
-    cipDebt += d.loanBalance ?? 0;
+    const sunk = Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
+    cip += sunk;
+    // Carried the way net worth carries a job: equity in it floors at zero.
+    cipDebt += Math.min(d.loanBalance ?? 0, sunk);
     cipN++;
   }
 
@@ -89,8 +110,9 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
   const locLim = locLimit(s, parcels);
   const facility = s.facility?.balance ?? 0;
   const cash = s.cash;
-  const totalAssets = cash + propGross + Math.max(0, cip) + notesVal;
-  const totalLiab = mortgages + cipDebt + facility + locBal + deposits;
+  const fundInterest = liveFund ? gpInterestInFund(liveFund, fundNav) : 0;
+  const totalAssets = cash + propGross + Math.max(0, cip) + notesVal + fundInterest;
+  const totalLiab = mortgages + mezz + partners + cipDebt + facility + locBal + deposits;
   const equity = totalAssets - totalLiab;
   const nwEngine = netWorth(s, parcels);
 
@@ -99,7 +121,7 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     label: "today",
     cash, deposits, propGross, mortgages, landOnly, bldgCount, landCount,
     byClass, cip, cipDebt, cipN, notesVal, noteCount: (s.notes ?? []).length,
-    locBal, locLim, facility, totalAssets, totalLiab, equity, nwEngine,
+    locBal, locLim, facility, fundInterest, fundDeeds, mezz, partners, totalAssets, totalLiab, equity, nwEngine,
     rate: locRate(s),
     historical: false,
   };
@@ -128,6 +150,10 @@ export function captureBalanceSnapshot(s: GameState, parcels: ParcelTable): Bala
     locBal: live.locBal,
     locLim: live.locLim,
     facility: live.facility,
+    fundInterest: live.fundInterest,
+    fundDeeds: live.fundDeeds,
+    mezz: live.mezz,
+    partners: live.partners,
     totalAssets: live.totalAssets,
     totalLiab: live.totalLiab,
     equity: live.equity,

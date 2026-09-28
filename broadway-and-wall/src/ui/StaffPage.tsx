@@ -275,6 +275,9 @@ export default function StaffPage() {
       </div>
 
       <div className="hint">
+        {staff.some((x) => x.role === "leasing") && !game.teamLeasing && !game.agent
+          ? "Your leasing hires are on payroll and signing nothing: the pen is still yours until you hand it to them on the Leasing desk. "
+          : ""}
         {staff.length
           ? "Desks own work. Assigned people cover their book; unassigned people cover the rest; uncovered load sits on you. "
           : "Nobody is on the payroll but you — every desk is yours until you hire and, for leasing, hand them the pen. "}

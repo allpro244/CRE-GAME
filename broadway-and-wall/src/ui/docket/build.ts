@@ -262,6 +262,20 @@ export function buildDocket(
     }
   }
 
+  // (f) PAYROLL WITH NOTHING TO DO. A leasing hire covers no building until
+  // the principal hands over the pen (deskCoverage reads teamLeasing) — so a
+  // firm could carry five of them and still answer every letter itself.
+  const leasers = (game.staff ?? []).filter((x) => x.role === "leasing").length;
+  if (leasers > 0 && !game.teamLeasing && !game.agent && !((snooze[`idle-leasing:${leasers}`] ?? -1) > month)) {
+    live.push({
+      key: `idle-leasing:${leasers}`,
+      cat: "assets",
+      title: `${leasers} leasing hire${leasers === 1 ? " is" : "s are"} on payroll and signing nothing — the pen is still yours`,
+      sub: "hand them the book on the Leasing desk",
+      page: "leasing",
+    });
+  }
+
   // Causality order: capital decides deals, deals decide assets, assets are
   // what the city sees. Stable within a category, so the engine's own order
   // (which puts the letters before the gossip) survives.

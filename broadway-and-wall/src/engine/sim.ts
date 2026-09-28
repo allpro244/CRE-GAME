@@ -18,7 +18,7 @@ import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund } from "./fund";
+import { tickFund, settleFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs } from "./rivals";
@@ -519,6 +519,7 @@ function tickMonth(
   tickPeople(s, parcels);
   tickPlayerMortality(s, parcels);
   tickFund(s);
+  windDownFund(s, parcels);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -1332,11 +1333,24 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
   }
+  // A WINDOW YOU COULD NOT USE IS NOT A DECISION. Broker first looks and
+  // off-market files stopped the clock 30-40 times a run — 15 from one broker —
+  // most on buildings the firm could not have closed. They stop it now only
+  // when the equity a typical 65% loan would leave (plus closing) is within
+  // what the firm can fund today, and never when the player has said so. The
+  // Marketplace still shows every one.
+  let purse: number | null = null;
+  const canClose = (ask: number) => {
+    if (s.brokerStops === "never") return false;
+    if (!parcels) return true;
+    purse ??= fundableNow(s, parcels);
+    return purse >= ask * (1 - TYPICAL_LTV) + ask * 0.02;
+  };
   for (const [bbl, a] of Object.entries(s.approaches)) {
     // Marketplace already lists live broker calls. Stopping Skip every month
     // a file sits on the phone is noise — stop only when the conversation is
     // about to lapse and a decision is actually required.
-    if (a.inbound && !a.refused && a.ask) {
+    if (a.inbound && !a.refused && a.ask && canClose(a.ask)) {
       const left = a.q + APPROACH_LIFE_M - s.month;
       if (left <= 2) {
         out.push({
@@ -1355,7 +1369,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const li of s.listings) {
     if (li.earlyUntilM === undefined || s.month >= li.earlyUntilM) continue;
     const left = li.earlyUntilM - s.month;
-    if (left > 2) continue;
+    if (left > 2 || !canClose(li.ask)) continue;
     const shop = s.brokerRel?.[li.via ?? ""]?.name ?? "A house broker";
     out.push({
       key: `early-look:${li.bbl}:${li.listedM}`,
@@ -1693,6 +1707,66 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
  * go). An item with no deadline — arrears, a covenant sweep, a balloon notice,
  * a bid list — still stops the run the month it first appears.
  */
+/**
+ * THE END OF THE EXTENSION. Whatever the vehicle still owns is bought in by
+ * the sponsor at NAV — the building's mark less its debt, the same equity
+ * portfolioMark counts — which is what a GP-led continuation is: the LPs are
+ * cashed out at a value, not handed a building. The price goes into the
+ * vehicle and out through the waterfall, so the sponsor's net worth moves by
+ * exactly the share of the LPs' capital it had not earned, not by the whole of
+ * the LPs' buildings (the fault this closes: settlement used to leave the
+ * vehicle's deeds on the sponsor's books at 100% and pay the LPs from cash
+ * alone — measured $5.00M → $10.72M of sponsor net worth in one month).
+ *
+ * A deed the sponsor cannot pay for, from cash and the line, goes to a
+ * liquidating trust in kind: the LPs take it with its mortgage, it leaves the
+ * book, and the GP's promote on it is waived — which is how a sponsor who
+ * cannot finish closes a fund.
+ */
+function windDownFund(s: GameState, parcels: ParcelTable) {
+  const f = s.fund;
+  if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
+  const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
+  let boughtIn = 0, inKind = 0, paidTotal = 0;
+  for (const h of deeds) {
+    const rec = resolveRec(parcels, s, h.bbl);
+    const value = ownedHoldingValue(s, parcels, h);
+    const eq = value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
+    const price = Math.max(0, Math.round(eq));
+    const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
+    if (paid >= price) {
+      f.cash += paid;
+      paidTotal += paid;
+      delete h.fundOwned;
+      boughtIn++;
+      continue;
+    }
+    // Could not pay in full: the partial cheque goes back, the deed goes in kind.
+    s.cash += paid;
+    f.distributed += price;
+    inKind++;
+    s.exits.push({ bbl: h.bbl, address: rec?.address ?? h.bbl, boughtM: h.boughtM, soldM: s.month, price: Math.round(value), basis: h.costBasis, gain: Math.round(value - h.costBasis), forced: true });
+    if (s.groundLeases?.[h.bbl]) transferGroundLeaseOffBook(s, h.bbl);
+    s.cash -= depositsOn(h);   // the deposits go with the deed
+    s.lastTradeM = s.lastTradeM ?? {};
+    s.lastTradeM[h.bbl] = s.month;
+    delete s.holdings[h.bbl];
+    if (s.workouts?.[h.bbl]) delete s.workouts[h.bbl];
+    s.lois = s.lois.filter((l) => l.bbl !== h.bbl);
+  }
+  if (boughtIn + inKind > 0) {
+    s.news.unshift({
+      q: s.month, kind: inKind ? "warn" : "deal",
+      text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for $${(paidTotal / 1e6).toFixed(2)}M, paid through the waterfall.` : ""}`
+        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — you could not fund the buy-in, and the promote on them is waived.` : ""}`,
+    });
+  }
+  settleFund(s);
+}
+
+/** A typical first-mortgage advance on stabilised product, for "could you close this" screens only. */
+const TYPICAL_LTV = 0.65;
+
 /** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */
 export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
   const start = attentionItems(s, parcels);

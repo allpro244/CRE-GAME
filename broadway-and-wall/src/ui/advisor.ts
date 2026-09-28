@@ -48,17 +48,32 @@ export function loiRead(game: GameState, parcels: ParcelTable, loi: LOI): string
       ? Math.ceil((loi.tiPsf * loi.sf) / spreadMo)
       : 0;
     if (payback > 0 && payback <= loi.termM) {
-      return `This paper runs ${pct.toFixed(0)}% over market net effective — the fit-out earns itself back in ${payback} months of that spread${weakLong ? `, if a C covenant lasts ${years} years to pay it` : ""}.`;
+      return `This paper runs ${pct.toFixed(0)}% over market asking after the package — the fit-out earns itself back in ${payback} months of that spread${weakLong ? `, if a C covenant lasts ${years} years to pay it` : ""}.`;
     }
     return weakLong
-      ? `${pct.toFixed(0)}% over market net effective, and every point of it rests on a C covenant surviving ${years} years of term.`
-      : `This paper runs ${pct.toFixed(0)}% over market net effective, and the spread compounds for ${years} years.`;
+      ? `${pct.toFixed(0)}% over market asking after the package, and every point of it rests on a C covenant surviving ${years} years of term.`
+      : `This paper runs ${pct.toFixed(0)}% over market asking after the package, and the spread compounds for ${years} years.`;
   }
   if (pct <= -5) {
+    // THE YARDSTICK IS ASKING, AND ASKING IS NOT WHAT DEALS SIGN AT. `market`
+    // is the face rent here; the town is signing its ordinary deals at
+    // effective/face of that right now. This used to call any letter 5% under
+    // asking "under market net effective", which in a soft market scolded the
+    // player for a letter that beat the going package — measured on a retail
+    // renewal at -7% to asking with $4 of TI and no free rent, in a market
+    // signing at -10%.
+    const cls = parcels[loi.bbl]?.class;
+    const use = loi.use ?? (cls && cls !== "land" ? cls : "office");
+    const ask = game.econ.rentIdx?.[use] ?? 0;
+    const eff = game.econ.effRentIdx?.[use] ?? ask;
+    const going = ask > 0 ? (eff / ask - 1) * 100 : 0;
+    if (pct >= going - 1) {
+      return `${Math.abs(pct).toFixed(0)}% under asking after their package — but this market is signing ordinary deals ${Math.abs(going).toFixed(0)}% under asking, so the letter is at or better than the going rate.`;
+    }
     const opened = openingNe(loi);
     return ne - opened > 0.05
-      ? `Even after the counter this sits ${Math.abs(pct).toFixed(0)}% under market net effective — they opened at $${opened.toFixed(2)} and the gap is still theirs.`
-      : `Their letter is ${Math.abs(pct).toFixed(0)}% under market net effective — the concessions are coming out of your side of the table.`;
+      ? `Even after the counter this sits ${Math.abs(pct).toFixed(0)}% under asking after the package, and under what the market is signing — they opened at $${opened.toFixed(2)} and the gap is still theirs.`
+      : `Their letter is ${Math.abs(pct).toFixed(0)}% under asking after their package, and under what the market is signing — the concessions are coming out of your side of the table.`;
   }
   if (weakLong) {
     return `The rent is market; the question is the covenant — ${years} years of term from a C credit is paper you collect only while they last.`;

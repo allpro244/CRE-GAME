@@ -3,7 +3,7 @@ import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
+import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow } from "@/engine/leasing";
@@ -66,7 +66,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         </div>
       )}
       <div className="loi-line mono">
-        ${loi.rentPsf.toFixed(2)}/sf {loi.net ? "NNN" : "gross"} · {bump.toFixed(2)}%/yr
+        ${loi.rentPsf.toFixed(2)}/sf {recoveryOf(loi) === "nnn" ? "NNN" : recoveryOf(loi) === "base" ? "base-year" : "gross"} · {bump.toFixed(2)}%/yr
         {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}
         {` · ${loi.freeM > 0 ? `${loi.freeM}mo free` : "no free rent"}`}
       </div>
@@ -96,7 +96,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           click against a face rent the tenant is not even judging. */}
       <div className="loi-line mono">
         NE ${nowNe.toFixed(2)}/sf
-        {" "}({((nowNe / market - 1) * 100).toFixed(0)}% vs market ~${market.toFixed(2)})
+        {" "}({((nowNe / market - 1) * 100).toFixed(0)}% vs market asking ~${market.toFixed(2)})
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">

@@ -6,7 +6,7 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { availability } from "@/engine/space";
 import { netWorth } from "@/engine/value";
-import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
+import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal, portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
@@ -188,7 +188,12 @@ export default function TopBar() {
     }
     const parcels = useStore.getState().parcels;
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
-    const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
+    // THE FIRM'S CASH FLOW INCLUDES THE FIRM. This was deeds less debt, and
+    // the office — ~$66K a year on a one-building book — came out of the
+    // account every month without ever appearing here, so an $81K readout sat
+    // over a firm clearing ~$30K. Same function the tick charges.
+    const firmCf = (g: typeof deferredGame) => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!);
+    const cf = parcels ? firmCf(deferredGame) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
     // Office availability vs twelve months ago — the tell that predicts real
     // rent falls (~93% in century windows). Direct cityVac sits on its
@@ -269,7 +274,7 @@ export default function TopBar() {
     const dNw = nh.length >= 2 ? nh[nh.length - 1] - nh[nh.length - 2] : null;
     const nwSpark = nh.length >= 2 ? nh.slice(-24) : [];
     const prevOk = usablePrev(deferredGame, deferredPrev);
-    const dCf = prevOk && parcels ? cf - portfolioMonthlyCF(prevOk, parcels) : null;
+    const dCf = prevOk && parcels ? cf - firmCf(prevOk) : null;
     const dCfSince = prevOk ? prevOk.month : null;
     const rateThen = hist.length > 12 ? hist[hist.length - 13]?.indexRate : undefined;
     const dRateBp = rateThen === undefined ? null
@@ -547,7 +552,7 @@ export default function TopBar() {
                 bad={cf < 0}
                 keep
                 w={88}
-                title={`After debt service. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility and the revolver. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
+                title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A and payroll. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
               />
               {dCf !== null && (
                 <span className="vital-extra">

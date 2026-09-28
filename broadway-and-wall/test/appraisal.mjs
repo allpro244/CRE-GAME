@@ -49,7 +49,9 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
 // --- 2. the tape, the desk, the lender and the deed read one number ----------
 {
   let n = 0, bad = 0; const gaps = [];
-  for (const seed of [550991, 12007, 11]) {
+  // Four towns: three left the sample hanging on how many non-distressed built
+  // listings each era happened to open with (2, 4 and 4 on one cut).
+  for (const seed of [550991, 12007, 11, 7919]) {
     let g = E.firstListings(E.newGame(seed, parcels, 400_000_000), parcels, bbls);
     const picks = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).filter((x) => x.rec && x.rec.class !== "land" && x.rec.bldgArea > 0 && !x.li.halfBuilt && !x.li.distress && x.li.roll).slice(0, 6);
     for (const { li, rec } of picks) {
@@ -63,7 +65,11 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
       const mark = E.holdingValue(rec, r.s.econ, h, r.s.month);
       // the closing resets the assessment to the price; that tax delta, capitalised, is the whole allowed gap
       const capUsed = (E.capRateFor(rec, r.s.econ, h.condition, h.condIdx) + E.rollQualitySpread(rec, h, r.s.month, r.s.econ)) / 100;
-      const taxDelta = Math.max(0, li.ask - E.assetValue(rec, g.econ, li.cond ?? grade, li.condIdx)) * E.TAX_RATE;
+      // ...in either direction: a building bought under its standing assessment
+      // has its tax bill CUT by the closing, and that saving capitalises into
+      // the mark just as an increase comes out of it (1659 Old Federal St,
+      // seed 7919: assessed $400K, bought at $244K, the cut is worth 9% of it).
+      const taxDelta = Math.abs(li.ask - E.assetValue(rec, g.econ, li.cond ?? grade, li.condIdx)) * E.TAX_RATE;
       const allowed = 0.04 + (appraisal > 0 ? (taxDelta / capUsed) / appraisal : 0);
       const g1 = Math.abs(conveyed / appraisal - 1), g2 = Math.abs(mark / appraisal - 1), g3 = Math.abs(lender / appraisal - 1);
       gaps.push(g1, g2); n++;
@@ -71,7 +77,7 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
       g = r.s;
     }
   }
-  ok(n >= 12 && bad === 0, `${n} listings across three seeds: ask basis, market appraisal, lender's appraisal and the mark after closing agree (worst gap ${pc(Math.max(...gaps))}; ${bad} outside the tax reset)`);
+  ok(n >= 12 && bad === 0, `${n} listings across four seeds: ask basis, market appraisal, lender's appraisal and the mark after closing agree (worst gap ${pc(Math.max(...gaps))}; ${bad} outside the tax reset)`);
 }
 
 // --- 3. the ask sits in a band around the appraisal, by phase ---------------

@@ -9,7 +9,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import { initialCondition, recoveryOf, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
@@ -19,6 +19,7 @@ import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
+import { demandNow } from "@/engine/demand";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
@@ -88,16 +89,12 @@ function ParcelPanelInner({
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
   const appr = game.approaches[selectedBBL];
   const cond = holding?.condition ?? initialCondition(rec);
-  const glLive = holding ? game.groundLeases?.[selectedBBL] : undefined;
-  const simValue = holding
-    ? (holding.groundLeased && glLive
-      ? leasedFeeValue(glLive, bareLandRec(parcels, game, selectedBBL) ?? rec, game.econ, game.month,
-        glLive.sf ?? game.built?.[selectedBBL]?.bldgArea ?? 0)
-      : holdingValue(rec, game.econ, holding, game.month))
-    : marketAppraisal(game, rec, selectedBBL, cond);
-  const value = holding?.groundLeased && glLive
-    ? simValue
-    : displayValue(rec, game.econ, simValue);
+  // ONE APPRAISAL — the one the header, the lender and the net worth read.
+  // This card used to add a "hedonic location premium" on the land slice that
+  // no sale, no lender and no mark ever paid, so it disagreed with the page
+  // header above it by the premium on every corner, waterfront and high street
+  // lot, and the sale desk below priced your listing against it.
+  const value = marketAppraisal(game, rec, selectedBBL, cond);
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -464,7 +461,7 @@ function ParcelPanelInner({
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
         <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
-        <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
+        <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />
       </div>}
 
       {/* the builder's read on vacant dirt, owned or not — see ResidualRead */}
@@ -535,7 +532,7 @@ function ParcelPanelInner({
       )}
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
-          <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0))))} commercial</div>
+          <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(usesOf(rec).filter((u) => u !== "multifamily").reduce((a, u) => a + useRentableSf(rec, u), 0)))} rentable commercial</div>
           <div className="roll">
             {/* Grouped by market, because that is how it is managed. The shops
                 at grade renew against retail comps and the floors above against
@@ -546,7 +543,7 @@ function ParcelPanelInner({
               if (!inUse.length && useSf(rec, u) < 400) return [];
               return [
                 <div key={`h-${u}`} className="roll-row roll-group">
-                  <span className="roll-name">{USE_WORD[u]} · {sf(Math.round(useSf(rec, u)))}</span>
+                  <span className="roll-name">{USE_WORD[u]} · {sf(Math.round(useRentableSf(rec, u)))} rentable</span>
                   {/* The market for THIS corner, not the citywide index — a shop
                       on a prime block does not rent at the city average, and
                       quoting one beside the other made every in-place rent look
@@ -582,7 +579,7 @@ function ParcelPanelInner({
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
-                      {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
                       {" "}· {termLeft(t.endM, game.month)}
                       {outgrown && (noRoom
                         ? <> · <span className="warn">growing — needs {staff.toFixed(1)}× their space · no room here — they will look elsewhere</span></>

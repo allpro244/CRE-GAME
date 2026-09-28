@@ -23,8 +23,12 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 console.log("\nDELIVERED CONDITION — ground-up opens new, a conversion keeps its bones\n");
 
 let g = E.firstListings(E.newGame(12007, parcels, 120_000_000), parcels, bbls);
-for (let m = 0; m < 12; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
-const lots = g.listings.map((l) => ({ l, rec: parcels[l.bbl] })).filter((x) => x.rec?.class === "land" && x.rec.lotArea > 4000).sort((a, b) => b.rec.demandScore - a.rec.demandScore);
+// A year in, then until a lot of size is on the tape: which month one lists is
+// the market's business, not this test's, and pinning month 12 made the fixture
+// hostage to every change upstream of the tape.
+const lotsNow = () => g.listings.map((l) => ({ l, rec: parcels[l.bbl] })).filter((x) => x.rec?.class === "land" && x.rec.lotArea > 4000).sort((a, b) => b.rec.demandScore - a.rec.demandScore);
+for (let m = 0; m < 12 || (m < 48 && lotsNow().length === 0); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
+const lots = lotsNow();
 check(lots.length > 0, `a lot on the tape (${lots.length})`);
 const { l, rec } = lots[0];
 g = E.executePurchase(g, parcels, l.bbl, l.ask, "cash", false, 1).s;

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, initialCondition, ownedHoldingValue, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
-import { farMaxFor, maxFloorsFor, replacementCost } from "@/engine/dev";
+import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
+import { farMaxFor, maxBuildable, replacementCost } from "@/engine/dev";
+import { demandNow } from "@/engine/demand";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
@@ -10,6 +11,21 @@ import { usd, sf } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, band, PropTab, Big, Row } from "@/ui/panels/shared";
+
+/**
+ * WHAT CAN ACTUALLY STAND ON THE LOT. Zoning's envelope is lot x FAR, but a
+ * small lot runs out of height long before it runs out of FAR: a 3,189 sf
+ * corner zoned to 29.5 read "94,076 sf · up to 12 floors" — a 7,800 sf plate on
+ * a 3,200 sf lot. `maxBuildable` is the planner's own arithmetic at the widest
+ * footprint the Build desk allows, so this line is a building you can draw.
+ */
+function buildableLine(rec: Parameters<typeof maxBuildable>[0]): string {
+  const b = maxBuildable(rec);
+  const env = rec.lotArea * farMaxFor(rec);
+  return b.gsf < env * 0.98
+    ? `${sf(b.gsf)} · ${b.floors} floors — the lot tops out before the ${sf(env)} envelope`
+    : `${sf(b.gsf)} · up to ${b.floors} floors`;
+}
 
 export function PropertyPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -43,7 +59,14 @@ export function PropertyPage() {
   if (!rec) return <div className="hint">Unknown parcel.</div>;
   const h = game.holdings[bbl];
   const cond = h?.condition ?? initialCondition(rec);
-  const value = h ? ownedHoldingValue(game, parcels, h) : assetValue(rec, game.econ, cond);
+  // ONE APPRAISAL. The header read `assetValue` — the class model — for a
+  // building you did not own, while the card below read the disclosed roll
+  // and the lender's own appraisal agreed with the card; a listed retail
+  // building showed $4.22-4.76M up here and $3.77-4.25M underneath, and the
+  // lender came back at $3.92M. `marketAppraisal` is the disclosed roll when
+  // there is one, the owned mark when it is yours, the leased fee when it is
+  // ground-leased — the same number every desk and every lender prices.
+  const value = marketAppraisal(game, rec, bbl, cond);
   // A ground-leased fee can resolve as a standing tower (the lessee's). That
   // is not a building YOU operate — Rent roll / Operations stay off, and the
   // headline NOI is the ground coupon, not a vacant shell.
@@ -148,7 +171,7 @@ export function PropertyPage() {
             />
           );
         })()}
-        <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0)) : "—"} />
+        <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) : "—"} />
       </div>
       <div className="prop-head">
         <div>
@@ -179,9 +202,9 @@ export function PropertyPage() {
           {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
           <Row k="Land" v={sf(rec.lotArea)} />
           <Row k="FAR built / envelope" v={`${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`} />
-          <Row k="Buildable at max" v={`${sf(rec.lotArea * farMaxFor(rec))} · up to ${maxFloorsFor(rec, 0.6)} floors`} />
+          <Row k="Buildable at max" v={buildableLine(rec)} />
           {built && <Row k="Built" v={String(rec.yearBuilt)} />}
-          <Row k="Demand" v={rec.demandScore + " / 100"} />
+          <Row k="Demand" v={Math.round(demandNow(game, rec)) + " / 100"} />
         </div>
       </div>
       {/* A default is not a tab. It is the only thing on the page that matters

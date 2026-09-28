@@ -2233,7 +2233,7 @@ void main() {
   float f = fract(uTime * 0.5 + vPhase);
   float flash = smoothstep(0.0, 0.04, f) * (1.0 - smoothstep(0.26, 0.40, f));
   float on = vPhase < 0.0 ? 0.85 : flash;
-  float glow = exp(-r2 * 6.0) * 1.7 + exp(-r2 * 1.6) * 0.22;
+  float glow = exp(-r2 * 5.0) * 2.4 + exp(-r2 * 1.4) * 0.30;
   gl_FragColor = vec4(vec3(1.0, 0.10, 0.05) * glow * on * night, 0.0);
 }`;
 
@@ -9947,7 +9947,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const dpr = this.renderer ? this.renderer.getPixelRatio() : 1;
     this.beaconMat = new THREE.ShaderMaterial({
       vertexShader: BEACON_VERT, fragmentShader: BEACON_FRAG,
-      uniforms: { uWeather: this.weatherUni, uTime: this.timeUni, uPx: { value: 5.5 * dpr } },
+      uniforms: { uWeather: this.weatherUni, uTime: this.timeUni, uPx: { value: 7.0 * dpr } },
       transparent: true, depthWrite: false,
       // add light, leave alpha alone — as the lamp pools do
       blending: THREE.CustomBlending,

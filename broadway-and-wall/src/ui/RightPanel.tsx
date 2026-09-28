@@ -232,7 +232,12 @@ function secLabel(el: HTMLElement): string | null {
   const raw = (el.textContent ?? "").replace(/\s+/g, " ").trim();
   if (!raw || raw.length > 72) return null;
   // "On the market · 7 · 2 of them yours" → "On the market"; "Milestones · 3 of 12" → "Milestones".
-  const label = raw.split(" · ")[0].split(" — ")[0].trim();
+  // A numbered head ("1 · NOI — what the building earns") keeps its number:
+  // cutting at the first " · " left "1", which the length test then dropped,
+  // so the Primer's three lessons had no chips.
+  const parts = raw.split(" · ");
+  const head = /^\d+$/.test(parts[0].trim()) && parts.length > 1 ? `${parts[0].trim()} · ${parts[1]}` : parts[0];
+  const label = head.split(" — ")[0].trim();
   if (!label || label.length < 3) return null;
   return label.length > 30 ? label.slice(0, 29).trimEnd() + "…" : label;
 }

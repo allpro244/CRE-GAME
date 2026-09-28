@@ -16,7 +16,8 @@ import { netWorth } from "./value";
 import { markRival } from "./rivals";
 import { firmName } from "./firm";
 import { firmCapital, TIER_LABEL } from "./firmCapital";
-import { inPlace, resolveRec } from "./value";
+import { inPlace, resolveRec, ownedHoldingValue } from "./value";
+import { deedIrr } from "./types";
 import { buyQuote } from "./actions";
 import { PRODUCTS } from "./debt";
 
@@ -315,4 +316,38 @@ export function starterPicks(s: GameState, parcels: ParcelTable, purse: number, 
 
 export function starterPick(s: GameState, parcels: ParcelTable, purse: number): { bbl: string; cap: number; cash: number; occ: number } | null {
   return starterPicks(s, parcels, purse, 1)[0] ?? null;
+}
+
+/**
+ * RETURNS TO DATE, DEED BY DEED — the exit card's equity multiple and IRR,
+ * read on buildings still held. The ledger is the deed's own (s.deedCf: every
+ * property dollar booked with its bbl); the terminal value is today's equity
+ * at the mark every desk uses (ownedHoldingValue less the mortgage and the
+ * mezz, the partner's share out), BEFORE selling costs — so it is labelled a
+ * mark, not a sale. Deeds whose ledger is not the whole story (pooled in a
+ * facility, bought before the ledger, vehicle deeds that are mostly the LPs')
+ * report nothing rather than a wrong number.
+ */
+export interface DeedReturn { bbl: string; equityIn: number; cashBack: number; equityNow: number; multiple: number; irr: number | null; years: number }
+export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] {
+  const out: DeedReturn[] = [];
+  for (const h of Object.values(s.holdings)) {
+    if (h.fundOwned) continue;
+    const l = s.deedCf?.[h.bbl];
+    if (!l || l.pooled || l.from === undefined || l.from > h.boughtM) continue;
+    let inn = 0, back = 0;
+    for (let i = 1; i < l.cf.length; i += 2) { if (l.cf[i] < 0) inn -= l.cf[i]; else back += l.cf[i]; }
+    if (inn <= 0) continue;
+    const eqNow = (ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0));
+    const cf = [...l.cf];
+    const last = cf.length - 2;
+    if (cf[last] === s.month) cf[last + 1] += eqNow; else cf.push(s.month, eqNow);
+    out.push({
+      bbl: h.bbl, equityIn: inn, cashBack: back, equityNow: eqNow,
+      multiple: (back + eqNow) / inn,
+      irr: s.month - h.boughtM >= 12 ? deedIrr(cf) : null,
+      years: (s.month - h.boughtM) / 12,
+    });
+  }
+  return out.sort((a, b) => (b.irr ?? -9) - (a.irr ?? -9));
 }

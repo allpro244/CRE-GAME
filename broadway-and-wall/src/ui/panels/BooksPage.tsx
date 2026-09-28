@@ -4,7 +4,8 @@ import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { ownedHoldingValue, resolveRec, netWorth } from "@/engine/value";
+import { resolveRec, netWorth } from "@/engine/value";
+import { deedMark } from "@/ui/deedMarks";
 import {
   balanceSnapshotView, buildBalanceSheet, booksMonthAsYear,
   type BalanceSheetView,
@@ -382,7 +383,7 @@ function BalanceSheet() {
                     const rows = g.rows.map((h) => {
                       const rec = resolveRec(parcels, game, h.bbl);
                       if (!rec) return null;
-                      const v = ownedHoldingValue(game, parcels, h);
+                      const v = deedMark(game, parcels, h.bbl).v;
                       const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
                       const eq = v - debt;
                       const ltv = v > 0 ? debt / v : 0;

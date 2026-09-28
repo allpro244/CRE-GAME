@@ -91,4 +91,8 @@ trolley on sites. See the commit messages on `ThreeBuildings.ts` and `MapView.ts
   lot and the market hit 64% of calls but saved nothing — fingerprinting the market each call
   cost what the pro forma did. A cheaper invalidation (a market version counter bumped where the
   tick mutates econ) would be the way to recover the time.
+  **DONE (perf branch):** `landPsfNow` now memoises on exactly landRead's read-set (≈50 market
+  fields compared in place, 9 lot fields), skips the holder residual when the builder's is
+  positive, and the tick got a plain-data clone, a per-scan cornice memo and a per-lot occHash
+  memo. ~2.3x on advanceMonth; state hashes byte-identical over 3 seeds × 40 years.
 - Late game: platform sale / listing using `sellStake` + `listPortfolio` machinery.

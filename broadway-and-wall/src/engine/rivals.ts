@@ -36,7 +36,7 @@ import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -1742,6 +1742,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // city's teardown desk (ECONOMY.md §F #2 / CENTURY OPEN #6).
   type Site = { bbl: string; rec: ParcelRecord; redev: boolean; score: number };
   let best: Site | null = null;
+  // the scan below builds and demolishes nothing, so each block's cornice is asked once
+  const datumMemo: DatumMemo = new Map();
   const yrNow = START_YEAR + Math.floor(s.month / 12);
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
@@ -1766,7 +1768,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const st = s.econ.structTight?.[leadProbe] ?? 0;
     const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
     if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
-    const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe);
+    const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe, datumMemo);
     const targetSf = rec.lotArea * 0.62 * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;
     const densify = targetSf / rec.bldgArea;

@@ -10,6 +10,8 @@ import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
+import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
+import { poss } from "@/engine/takeprivate";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -42,6 +44,7 @@ export function TheStreet() {
   [game, parcels, rivals]);
   if (!rivals.length) return null;
   const appetite = marketAppetite(game);
+  const approach = game.takePrivate?.offer && game.month <= game.takePrivate.offer.expiresM ? game.takePrivate.offer : null;
   return (
     <>
       <div className="page-section">
@@ -90,6 +93,15 @@ export function TheStreet() {
           </>
         );
       })()}
+      {/* A BOARD THAT HAS COME TO YOU — the inbox item lands here. */}
+      {approach && (
+        <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8, cursor: "pointer" }}
+          onClick={() => setOpen(approach.firmId)}>
+          {poss(approach.name)} banker has called: the board will talk about {usd(approach.ask)} for the company, until {monthLabel(approach.expiresM)}.
+          {" "}{approach.why} Open their row for the book and the closing numbers.
+        </div>
+      )}
+      <TakenPrivateRecord />
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
           number is against theirs. */}
@@ -161,7 +173,9 @@ export function TheStreet() {
                 </td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
-                  {dead ? (r.bbls.length
+                  {dead ? (r.takenPrivateM !== undefined
+                    ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
+                    : r.bbls.length
                     ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
                     : `Gone, ${monthLabel(r.failedM!)}`)
                     : m.aum <= 0 && r.debt > 0 ? "Sold everything and still owes money — they are finished"
@@ -209,6 +223,9 @@ export function TheStreet() {
                       }
                       extraLate={
                         <>
+                          {/* BUY THE WHOLE FIRM. The entity desk — see
+                              engine/takeprivate.ts. */}
+                          {!dead && <TakePrivateDesk firmId={r.id} />}
                           {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant
                               it is running against, a book that fills and
                               empties, a capital plan it can be short of the

@@ -499,13 +499,26 @@ export function portfolioOccupancy(
  */
 export function conveyedValue(
   s: GameState, rec: ParcelRecord, bbl: string, distress = false,
+  grade?: Condition,
+): number {
+  return conveyedDeed(s, rec, bbl, distress, grade).value;
+}
+
+/**
+ * `conveyedValue` and the vessel it was struck on — the roll, the grade and
+ * the index the deed will actually carry. The entity desk (takeprivate.ts)
+ * needs the income and the deposits as well as the value, and reading them off
+ * a second vessel would be a second opinion about the same deed.
+ */
+export function conveyedDeed(
+  s: GameState, rec: ParcelRecord, bbl: string, distress = false,
   // A RIVAL'S BUILDING CONVEYS THE RIVAL'S GRADE. `assetGrade(r, rec)` is how
   // hard that firm has been running the plant, and it is not the same as the
   // anonymous default — an institution's tower and a merchant's are different
   // deeds. Callers that know the owner pass it; the tape's own listings do not
   // have one and fall back to the building's age-derived grade.
   grade?: Condition,
-): number {
+): { value: number; vessel: Holding } {
   // holdingValue already answers land and unbuilt lots with landValue.
   const base = grade ?? condGrade(initialCondIdx(rec, s.month));
   const idx = Math.max(0.30, initialCondIdx(rec, s.month, grade) - (distress ? 0.10 : 0));
@@ -519,7 +532,7 @@ export function conveyedValue(
   const vessel = { bbl, boughtM: s.month, costBasis: 0, assessed: assetValue(rec, s.econ, cond), loan: null,
     condition: cond, condIdx: idx, tenants: [], cfHistory: [] } as unknown as Holding;
   if (rec.class !== "land" && rec.bldgArea) genRentRoll(s, rec, vessel, distress, false);  // no closing, no settlement
-  return holdingValue(rec, s.econ, vessel, s.month);
+  return { value: holdingValue(rec, s.econ, vessel, s.month), vessel };
 }
 
 export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): Listing {

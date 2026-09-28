@@ -24,6 +24,27 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
 export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit";
+/**
+ * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
+ *
+ * The contractual bump (a 2% annual step is the standard commercial lease
+ * escalator, and it is why US rents did not fall through 2010-15 at 1.5%
+ * inflation) or expected inflation when that runs higher. It is one number
+ * with two readers: the cap-rate target capitalises against the index less
+ * the expected inflation above the bump (see the cap block in tickEcon), and
+ * a sponsor's pitch adds the same growth to the going-in yield to get the
+ * total return it raises on (rivals.ts, firmEntryPitch). Two answers to what
+ * a buyer expects the rent to do would be fake #3.
+ */
+export const CONTRACT_BUMP_PCT = 2;
+/** Expected inflation above the bump, in points — zero at or under target. */
+export function inflationOverBumpPct(e: { nat?: { inflExp?: number } }): number {
+  return Math.max(0, (e.nat?.inflExp ?? 0.02) - 0.02) * 100;
+}
+export function underwrittenGrowthPct(e: { nat?: { inflExp?: number } }): number {
+  return CONTRACT_BUMP_PCT + inflationOverBumpPct(e);
+}
+
 export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
@@ -3990,7 +4011,7 @@ export function tickEcon(s: GameState) {
   // Measured after: office on the ceiling 17.4% → 4.5% of months, multifamily
   // 7.7% → 0.5%; what still touches it is a Volcker with a 7.6% REAL policy
   // rate, which is the bank's number to answer for. Full table in ECONOMY.md.
-  const inflOver = Math.max(0, (e.nat?.inflExp ?? 0.02) - 0.02) * 100;
+  const inflOver = inflationOverBumpPct(e);
   const capIndex = e.indexRate - inflOver;
   for (const k of BUILT_CLASSES) {
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);

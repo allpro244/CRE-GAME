@@ -33,7 +33,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
+import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
@@ -47,6 +47,7 @@ import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
+import { FUND_INVEST_M } from "./fund";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1335,17 +1336,31 @@ const RAISE_M = 14;
 
 // WHAT A FULL-STRENGTH LEVERAGE STORY LOOKS LIKE IN THIS TOWN.
 //
-// The pitch is "buildings yield more than the money costs", and how good that
+// The pitch is "buildings return more than the money costs", and how good that
 // pitch is has to be expressed as a fraction of as-good-as-it-gets rather than
-// as raw percentage points. Measured over 3,600 months of three unplayed
-// centuries: the cap-rate spread over the coupon is positive in 59.4% of
-// months, and conditional on being positive it runs p50 +1.20, p90 +1.71, p99
-// +2.12, maximum +2.40. So 1.7 points is the ninetieth percentile of the good
-// years — the number above which a sponsor is not pitching harder, he is
-// pitching the same thing to people who already said yes. It is a shape
-// parameter and it is anchored on that distribution, not turned until a firm
-// count looked right.
-const SPREAD_FULL = 1.7;
+// as raw percentage points. It is anchored on the distribution of the spread
+// itself: the ninetieth percentile of the months in which it is positive, the
+// number above which a sponsor is not pitching harder, he is pitching the same
+// thing to people who already said yes. A shape parameter, stated as such.
+//
+// THE SPREAD IS TOTAL RETURN OVER THE COUPON, and the percentile had to be
+// re-read when it became so. It used to be the going-in cap over the coupon,
+// anchored at 1.7 on a measurement that said that spread was positive in
+// 59.4% of months (p50 +1.20). The cap block in market.ts has been re-levelled
+// since (it now capitalises against the index less expected inflation), and
+// nobody came back to this number. Re-measured, 6 seeds x 100 years, no
+// player, before this change: going-in cap over the coupon was positive in
+// 35.8% (PR #164) and 41.3% (PR #165) of months, median -0.48 and -0.33 — the
+// leverage term was ZERO most months and the street could not raise a fund in
+// the median year of the century. That is not what the business does: the
+// biggest raising years on record (2005-07) were raised at going-in yields at
+// or under the mortgage coupon, on the rent growth. A fund is sold on an IRR,
+// and an unlevered IRR is the going-in yield plus the growth underwritten
+// (`underwrittenGrowthPct`, the same growth the cap-rate target already
+// capitalises); it is positive leverage when that beats the coupon. The same
+// six centuries read that spread positive in 95.2% of months, p50 +1.98, and
+// p90 of the positive months +3.53 (+3.39 on #164). 3.5 is that percentile.
+const SPREAD_FULL = 3.5;
 
 // HOW MUCH PRODUCT ONE SHOP NEEDS A YEAR TO BE A SHOP.
 //
@@ -1394,8 +1409,9 @@ const DEPLOY_YR = 2;
  * The three terms below are therefore all fractions of one, they multiply, and
  * the clock is the clock:
  *
- *   LEVERAGE  — is the going-in yield above the coupon, and by how much of as
- *               good as it gets. Against the coupon rather than the mortgage
+ *   LEVERAGE  — is the total return (going-in yield plus underwritten rent
+ *               growth) above the coupon, and by how much of as good as it
+ *               gets. Against the coupon rather than the mortgage
  *               constant because a first fund buys interest-only; see debt.ts.
  *   PRODUCT   — is there anything to deploy into, against what a fund needs to
  *               deploy. This is the term that closes behind the fund that
@@ -1433,7 +1449,9 @@ export function firmEntryPitch(s: GameState): {
 } {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
-  const spread = cap - (s.econ.indexRate + RATE_SPREAD);
+  // Total return — going-in yield plus underwritten growth — over the coupon.
+  // See SPREAD_FULL for why the going-in yield alone was the wrong pitch.
+  const spread = cap + underwrittenGrowthPct(s.econ) - (s.econ.indexRate + RATE_SPREAD);
   const leverage = spread <= 0 ? 0 : Math.min(1, spread / SPREAD_FULL);
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
@@ -2863,7 +2881,20 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // firm went on distributing 35% of its surplus every month it was in
     // forbearance, which is not something a workout desk has ever allowed.
     const swept = sweptNow(r);
-    if (r.cash > reserve && !r.stressMs && !building && !swept) {
+    // A FUND IN ITS INVESTMENT PERIOD RECYCLES; IT DOES NOT HAND THE MONEY
+    // BACK. Same LPA the player's own vehicle runs on (fund.ts,
+    // FUND_INVEST_M and scheduledDistribution): capital called for deals
+    // stays in the vehicle until the investment period closes. This used to
+    // send 35% of a new fund's called capital above the $2M floor back to its
+    // LPs every month from the month it closed — the first close was gone
+    // before the fund had seen a listing, and because a distribution counted
+    // as "deployed", the empty-book clock below wound it up two years later.
+    // Measured, 6 seeds x 100 years: 72 of the 106 entrants wound up as husks
+    // had never held a deed, and 105 of the 106 had "distributed". Only
+    // vehicles raised on this street carry `uncalled`; the opening roster are
+    // established operators whose current fund is already mid-life.
+    const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
+    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;

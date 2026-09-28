@@ -16,8 +16,8 @@ import type { GameState, Loan } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { attentionItems, MILESTONES } from "@/engine/sim";
-import { netWorth } from "@/engine/value";
-import { planIsLive, loiSigningCost } from "@/engine/leasing";
+import { netWorth, resolveRec } from "@/engine/value";
+import { planIsLive, loiSigningCost, vacantSf } from "@/engine/leasing";
 import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { positiveLeverage, starterPick } from "@/engine/standing";
 import { fundableNow } from "@/engine/credit";
@@ -234,7 +234,11 @@ export function buildDocket(
       // the Deals desk, and the first exit, which is sold from your own book.
       const HOW: Record<string, { page: Page; how: string }> = {
         deed1: { page: "market", how: "buy a building off the tape" },
-        lease1: { page: "deals", how: "letters from tenants land on the Deals desk" },
+        // Letters only come for vacant space: a full building's first letter
+        // waits on a lease expiring. Said, rather than promised.
+        lease1: { page: "deals", how: Object.values(game.holdings).some((h) => { const r = parcels ? resolveRec(parcels, game, h.bbl) : null; return !!r && vacantSf(r, h) > 0; })
+          ? "tenants write for your vacant space — letters land on the Deals desk"
+          : "your space is let, so letters come as leases turn over — or buy a building with room in it" },
         tower1: { page: "market", how: "buy a lot and break ground on it" },
         exit1: { page: "portfolio", how: "list a building for more than you paid" },
         nw25: { page: "market", how: "grow the book" },

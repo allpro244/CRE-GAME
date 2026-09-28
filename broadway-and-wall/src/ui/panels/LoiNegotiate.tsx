@@ -12,7 +12,7 @@ import {
   bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf,
   termBandM, termPushBands,
 } from "@/engine/leasing";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, pctSigned } from "@/ui/format";
 import { Row } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
@@ -317,7 +317,7 @@ export function LoiTermsGrid({
       {prevRent !== undefined && (
         <Row
           k="They pay today"
-          v={`$${prevRent.toFixed(2)}/sf → offering $${(loi.openRentPsf ?? loi.rentPsf).toFixed(2)} (${(loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "+" : ""}${((((loi.openRentPsf ?? loi.rentPsf) / prevRent) - 1) * 100).toFixed(1)}%)`}
+          v={`$${prevRent.toFixed(2)}/sf → offering $${(loi.openRentPsf ?? loi.rentPsf).toFixed(2)} (${pctSigned(((loi.openRentPsf ?? loi.rentPsf) / prevRent) - 1)})`}
           strong
           bad={(loi.openRentPsf ?? loi.rentPsf) < prevRent}
         />
@@ -366,14 +366,14 @@ export function LoiTermsGrid({
       />
       <Row
         k={<Gloss term="net effective">Net effective</Gloss>}
-        v={`$${nowNe.toFixed(2)}/sf · ${((nowNe / market - 1) * 100).toFixed(0)}% vs market asking ~$${market.toFixed(2)}`}
+        v={`$${nowNe.toFixed(2)}/sf · ${pctSigned(nowNe / market - 1, 0)} vs market asking ~$${market.toFixed(2)}`}
         strong
         bad={nowNe < market * 0.9}
       />
       {!isFinal && Math.abs(theirNe - nowNe) > 0.01 && (
         <Row k="Opening NE" v={`$${theirNe.toFixed(2)}/sf`} />
       )}
-      <Row k="vs. face market" v={`${((loi.rentPsf / market - 1) * 100).toFixed(1)}% on face rent`} bad={loi.rentPsf < market * 0.9} />
+      <Row k="vs. face market" v={`${pctSigned(loi.rentPsf / market - 1)} on face rent`} bad={loi.rentPsf < market * 0.9} />
       <Row k={<Gloss term="TI">TI allowance</Gloss>} v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
       <Row k="Free rent" v={loi.freeM > 0 ? `${loi.freeM} months` : "none"} />
       <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />

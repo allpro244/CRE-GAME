@@ -1566,9 +1566,16 @@ function serviceMezz(
   }
   m.monthlyPmt = Math.ceil((m.balance * m.ratePct) / 100 / 12);
   const pmt = m.monthlyPmt;
+  // THE COUPON IS PAID ONCE, THROUGH THE SAME DOOR AS THE SENIOR'S. This paid
+  // and booked it here AND returned it into the holding's debt cash, which the
+  // month then paid and booked again — every mezz deed carried its junior
+  // coupon twice (the ledger balanced, because both halves were booked). The
+  // returned figure is now the only payment, so it comes out of the deed's
+  // own month (fund cash for a vehicle deed, split with a JV partner) exactly
+  // as the senior's does.
+  let coupon = 0;
   if (fundableNow(s, parcels) >= pmt) {
-    const paid = fundCashNeed(s, parcels, pmt);
-    logBooks(s, "debtSvc", paid);
+    coupon = pmt;
     m.arrearsMs = 0;
   } else {
     m.arrearsMs = (m.arrearsMs ?? 0) + 1;
@@ -1600,7 +1607,7 @@ function serviceMezz(
       });
     }
   }
-  return pmt;
+  return coupon;
 }
 
 export interface MezzQuote {

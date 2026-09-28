@@ -1928,7 +1928,12 @@ two storeys of shops at 1.23 on an R6 lot the tape prices as flats only).
   were spent, so the rng path is unchanged and BASELINE moved 0 of 39.
 - The harness bots pick a permitted use through the engine's rule
   (`test/permitted-use.mjs`), including `conserve` and `invariants`. The
-  rule was not loosened for them.
+  rule was not loosened for them. `conserve`'s crane had been building
+  illegal uses on 4 of its 7 seeds (sheds on R4 lots, flats on M while
+  sheds were short). All 7 now break ground on legal dirt, and every ledger
+  category still moves. The bot's lifetimes re-roll: 2,699 → 2,434 months
+  reconciled after both fixes, which is still above the 2,242 floor
+  recorded when the crane was added.
 
 **Site coverage: one limit per use, `MAX_COVERAGE` (proforma.ts).** The
 desk let every use cover 90% of the lot. The residual held offices and

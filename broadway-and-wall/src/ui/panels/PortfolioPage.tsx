@@ -25,6 +25,7 @@ import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { Rollover } from "@/ui/rollups/Rollover";
 import { Concentration } from "@/ui/rollups/Concentration";
 import { ExitsRecord } from "@/ui/rollups/ExitsRecord";
+import CareerTimeline from "@/ui/rollups/CareerTimeline";
 
 export function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -71,6 +72,7 @@ export function PortfolioPage() {
             of everything still has its record, and this page is where the
             record lives. */}
         <ExitsRecord />
+        <CareerTimeline />
       </div>
     );
   }
@@ -771,6 +773,7 @@ export function PortfolioPage() {
       {/* History reads under the living book: what left, when, and what
           leaving returned. */}
       <ExitsRecord />
+      <CareerTimeline />
     </div>
   );
 }

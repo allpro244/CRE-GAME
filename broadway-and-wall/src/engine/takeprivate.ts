@@ -175,7 +175,8 @@ function premiumFor(s: GameState, r: Rival, sit: TakePrivateSituation): { premiu
   else if (sit === "succession") { p = Math.min(base, 1.03); why.push("succession: priced against an orderly wind-down"); }
   else {
     p = base;
-    why.push(`control premium for a ${r.style === "reit" ? "REIT" : r.style === "pe" ? "PE shop" : `${r.style} firm`}: ${((base - 1) * 100).toFixed(0)}%`);
+    const kind = r.style === "reit" ? "REIT" : r.style === "pe" ? "PE shop" : `${r.style} firm`;
+    why.push(`control premium for ${/^[aeiou]/i.test(kind) ? "an" : "a"} ${kind}: ${((base - 1) * 100).toFixed(0)}%`);
     if (r.occ !== undefined && r.mktOcc !== undefined) {
       const op = Math.max(-1, Math.min(1, (r.occ - r.mktOcc) / 0.05)) * 0.04;
       if (Math.abs(op) >= 0.005) { p += op; why.push(`${op > 0 ? "leasing ahead of" : "leasing behind"} its market: ${op > 0 ? "+" : ""}${(op * 100).toFixed(0)} pts`); }

@@ -8,6 +8,7 @@ import CycleDigest from "@/ui/CycleDigest";
 import YearReview, { CareerCard, MilestoneFlash, ExitCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
+import Sounds from "@/ui/Sounds";
 import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
@@ -51,6 +52,7 @@ export default function App() {
       {playing && !photoFrame && <ExitCard />}
       {playing && <Shortcuts />}
       {playing && <AutoPlay />}
+      {playing && <Sounds />}
       {playing && !photoFrame && <PrimerOffer />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />

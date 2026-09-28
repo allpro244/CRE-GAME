@@ -474,7 +474,7 @@ export default function TopBar() {
                 ? `${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The calendar counts your years; the era is the decade the money behaves like.`
                 : undefined}
             />
-            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep
+            <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={88} keep
               title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
             {game.fund && !game.fund.settled && (
               <Stat
@@ -518,6 +518,7 @@ export default function TopBar() {
               <Stat
                 label="Net worth"
                 value={usd(nw)}
+                n={nw}
                 w={96}
                 keep
                 title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
@@ -920,17 +921,30 @@ function Badge({ n }: { n: number }) {
  * that reservation in pixels — wide enough for the longest month name, the
  * longest phase word, and a negative nine-figure number with a suffix.
  */
-function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded }: {
+function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded, n }: {
   label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number; keep?: boolean;
+  /** The raw figure behind `value`: when it moves, the readout ticks green or red once. */
+  n?: number;
   /** With onClick the readout renders as a real button — the number is the control. */
   onClick?: () => void; expanded?: boolean;
 }) {
   const className = "tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "") + (keep ? " tstat-keep" : "");
   const style = w ? { minWidth: w, maxWidth: keep ? undefined : w } : undefined;
+  // A MOVE YOU CAN SEE. The figure changed in place and the eye had to notice
+  // the digits; one short tint says which way it went. Remounting the span
+  // (keyed on the tick) replays the animation on every move.
+  const prevN = useRef(n);
+  const [tick, setTick] = useState<{ k: number; dir: "up" | "down" } | null>(null);
+  useEffect(() => {
+    const p = prevN.current;
+    prevN.current = n;
+    if (n === undefined || p === undefined || Math.abs(n - p) < 1) return;
+    setTick((t) => ({ k: (t?.k ?? 0) + 1, dir: n > p ? "up" : "down" }));
+  }, [n]);
   const body = (
     <>
       <span className="tstat-label">{label}</span>
-      {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
+      {value && <span key={tick?.k ?? 0} className={"tstat-value mono" + (bad ? " neg" : "") + (tick ? ` tstat-tick-${tick.dir}` : "")}>{value}</span>}
     </>
   );
   if (onClick) {

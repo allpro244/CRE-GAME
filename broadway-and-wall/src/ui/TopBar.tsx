@@ -49,6 +49,7 @@ const JOBS: {
     pages: [
       { id: "debt", label: "Debt", note: "Loans, line and the maturity wall" },
       { id: "debt", label: "Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
+      { id: "debt", label: "Fund", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
       { id: "books", label: "Books", note: "Cash movement and the ledger" },
     ],
   },

@@ -700,6 +700,10 @@ body {
 /* game-over as a page */
 .setting-row { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 8px; }
 .setting-row > .btn { flex: none; margin-top: 2px; }
+.setting-more { margin-top: 3px; }
+.setting-more > summary { cursor: pointer; font-size: 11.5px; color: var(--chart-dim, #7a6c56); list-style: none; }
+.setting-more > summary::before { content: "▸ "; }
+.setting-more[open] > summary::before { content: "▾ "; }
 .setting-text { flex: 1; min-width: 0; }
 .gameover-page { text-align: center; padding: 30px 10px; }
 /* eight tiles in two even rows, not seven and an orphan */
@@ -1868,6 +1872,14 @@ html, body, #root { overflow-x: hidden; }
   .nav-cluster::before { display: none; }
   .nav-cluster-map .lens-btn { font-size: 0; width: 28px; height: 27px; padding: 0; }
   .nav-cluster-map .lens-btn::first-letter { font-size: 13px; }
+  /* The summary row wrapped "Book" onto a line of its own at 1024 — the
+     readouts' reserved widths (which stop a number jiggling as it ticks) cost
+     more than the row has. Below 1180 the reservations go and the gaps close;
+     the mono digits keep the jiggle to a character. */
+  .topbar-summary .topbar-vital,
+  .topbar-summary .topbar-stats { gap: 9px; }
+  .topbar-summary .topbar-stats { padding-left: 9px; }
+  .topbar-summary .tstat { min-width: 0 !important; }
 }
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }

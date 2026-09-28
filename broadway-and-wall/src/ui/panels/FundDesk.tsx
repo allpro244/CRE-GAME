@@ -18,8 +18,19 @@ export function FundDesk() {
   const live = f && !f.settled;
   const fundDeeds = Object.values(game.holdings).filter((h) => h.fundOwned).length;
   if (!live && !game.fundFailedM && !q.ok && (game.exits ?? []).length < 2) {
-    // Quiet until the player has something to show LPs — empty chrome is noise.
-    return null;
+    // Not raisable yet — say what it takes in one line rather than vanish, so
+    // the Capital menu's "Fund" door lands on something and the Manager goal
+    // has a visible first rung.
+    const clean = (game.exits ?? []).filter((e) => !e.forced && e.gain > 0).length;
+    return (
+      <div className="page-section">
+        <div className="page-section-head">The fund</div>
+        <div className="hint" style={{ marginBottom: 0 }}>
+          {q.reason} {clean < 2 ? `You have ${clean} of 2.` : ""} A fund raises LP money against your record,
+          pays you a promote over an {Math.round(FUND_PREF * 100)}% preferred return, and must hand the capital back.
+        </div>
+      </div>
+    );
   }
   return (
     <div className="page-section">

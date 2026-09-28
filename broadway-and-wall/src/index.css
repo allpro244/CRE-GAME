@@ -240,6 +240,9 @@ body {
 .chip {
   font-size: 11px; padding: 3px 9px; border-radius: 10px; color: #fdfbf4;
   font-weight: 600; letter-spacing: 0.3px;
+  /* A plain chip (VOLUNTARY, ESTATE, YOURS…) had white text and no ground —
+     invisible on paper. Neutral umber; every variant below sets its own. */
+  background: #6f6553;
 }
 .chip-zone, .chip-class { background: rgba(43, 37, 26, 0.08); color: var(--ink-dim); font-weight: 400; }
 

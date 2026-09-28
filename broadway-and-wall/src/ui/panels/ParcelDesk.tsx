@@ -25,7 +25,7 @@ import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engin
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
-import { usd, sf, pct, termLeft } from "@/ui/format";
+import { usd, sf, pct, termLeft, pctSigned } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
@@ -206,6 +206,13 @@ function ParcelPanelInner({
         // city both the builder's and the holder's are zero — a rebuild does
         // not pencil at today's rents or the next peak's, and the land reads
         // on its location alone. Say that, rather than "$0/sf against $0/sf".
+        // WHERE THE BUTTON GOES. The property page shows no Build tab on a
+        // standing apartment building with no deed of yours next door (there
+        // is nothing to convert it to), so "Open the Build desk" landed on
+        // Overview and did nothing. The way to a rebuild there is the
+        // Operations tab: empty it and clear the site.
+        const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
+          || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
         const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
           + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner}'s bid`);
         const hint = dirt
@@ -218,17 +225,17 @@ function ParcelPanelInner({
               + (read.builder > 0
                 ? ` — cleared, the dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder, and the building on it is worth $${standingPsf.toFixed(0)}/sf of lot`
                 : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
-              + `; ${dirtLine}. Wait for rents, or plan a bigger building on Build.`);
+              + `; ${dirtLine}. ${buildReachable ? "Wait for rents, or plan a bigger building on Build." : "Wait for rents, or empty and clear it on Operations to build again."}`);
         return (
-          <div className="deal" style={{ marginTop: 0 }}>
+          <div className="deal" style={{ marginTop: 0, marginBottom: 10 }}>
             <div className="deal-head">{head}</div>
             <div className="hint">{hint}</div>
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => useStore.getState().openProperty(selectedBBL, "build")}
+              onClick={() => useStore.getState().openProperty(selectedBBL, buildReachable ? "build" : "ops")}
             >
-              Open the Build desk →
+              {buildReachable ? "Open the Build desk →" : "Clear the site on Operations →"}
             </button>
           </div>
         );
@@ -452,7 +459,7 @@ function ParcelPanelInner({
                   title={`${usd(os.freeRent)}/yr is free rent still burning — occupancy is up; this NOI has not caught it yet`}
                 />
               )}
-              {abate > 0 && <Row k="Free rent still owed" v={"−" + usd(abate)} bad />}
+              {abate > 0 && <Row k="Free rent still owed" v={usd(-abate)} bad />}
               {omFull && ip.disclosed && stab > ip.noi * 1.02 && (
                 <Row k="Stabilised pro-forma" v={usd(stab)} />
               )}
@@ -664,7 +671,7 @@ function ParcelPanelInner({
               <Row k="Ground rent" v={usd(Math.round(noiMo))} strong />
               <Row k="Property tax / opex" v="$0 · lessee pays" />
               <Row k="NOI / mo" v={usd(Math.round(noiMo))} strong />
-              {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
+              {pmt > 0 && <Row k="Debt service / mo" v={usd(-Math.round(pmt))} />}
               <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
             </div>
           </div>
@@ -697,7 +704,7 @@ function ParcelPanelInner({
               <Row k="Property tax" v={"−" + mo(os.tax)} />
               {(os.groundRent ?? 0) > 0 && <Row k="Ground rent" v={"−" + mo(os.groundRent)} title={`To ${holding.groundRentOut?.holder ?? "the fee owner"} — you sold the land and lease it back.`} />}
               <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
-              {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
+              {pmt > 0 && <Row k="Debt service / mo" v={usd(-Math.round(pmt))} />}
               <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
             </div>
           </div>
@@ -866,7 +873,7 @@ function ParcelPanelInner({
               )}
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
-                <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
+                <Row k="vs. appraisal" v={pctSigned(appr.ask / apMid(selectedBBL, value) - 1)} />
                 <Row k="Good until" v={monthLabel(appr.q + 6)} />
               </div>
               {/* Off-market has always been two acts: they name a number, you
@@ -1142,7 +1149,7 @@ function ParcelPanelInner({
           <div className="deal-head">Your position · since {monthLabel(holding.boughtM)}</div>
           <div className="grid">
             <Row k="Basis" v={usd(holding.costBasis)} />
-            {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={"−" + usd(holding.deprTaken!)} />}
+            {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={usd(-holding.deprTaken!)} />}
             <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
             <Row k={holding.jv ? `Equity · your ${Math.round((1 - holding.jv.share) * 100)}%` : "Equity"} v={usd((value - (holding.loan?.balance ?? 0) - (holding.mezz?.balance ?? 0)) * (1 - (holding.jv?.share ?? 0)))} strong />
           </div>
@@ -1280,9 +1287,9 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="The land sells for" v={usd(q.price)} />
           <Row k="Ground rent" v={`${usd(q.rentYr)} a year · ${q.yieldPct.toFixed(2)}% · +${(LEASEHOLD_STEP * 100).toFixed(0)}% a year`} />
-          <Row k="Costs" v={"−" + usd(q.costs)} />
-          {q.payoff > 0 && <Row k="Mortgage retired" v={"−" + usd(q.payoff)} />}
-          {q.tax > 0 && <Row k="Tax on the land's gain" v={"−" + usd(q.tax)} />}
+          <Row k="Costs" v={usd(-q.costs)} />
+          {q.payoff > 0 && <Row k="Mortgage retired" v={usd(-q.payoff)} />}
+          {q.tax > 0 && <Row k="Tax on the land's gain" v={usd(-q.tax)} />}
           <Row k="To you" v={usd(q.toOwner)} strong bad={q.toOwner < 0} />
           <Row k="The building marks at" v={`${usd(q.valueAfter)} (was ${usd(q.valueBefore)})`} />
         </div>
@@ -1349,7 +1356,7 @@ function StakeSection({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="Equity in the building" v={usd(q.equity)} />
           <Row k={`Their ${Math.round(share * 100)}% pays`} v={usd(q.price)} />
-          {q.tax > 0 && <Row k="Tax on your gain" v={"−" + usd(q.tax)} />}
+          {q.tax > 0 && <Row k="Tax on your gain" v={usd(-q.tax)} />}
           <Row k="To you" v={usd(q.toOwner)} strong />
         </div>
       )}

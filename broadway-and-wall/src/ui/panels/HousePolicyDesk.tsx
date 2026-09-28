@@ -69,7 +69,7 @@ export function HousePolicy() {
       <div className="btn-row">
         <button className="btn btn-buy" disabled={!dirty && off === 0}
           onClick={() => opsPolicy({ service: svc, plan: pln, stance: stn })}>
-          {off > 0 ? `Apply to all ${built.length} buildings` : "Applied"}
+          {off > 0 ? `Apply to all ${built.length} buildings` : "✓ Every building runs this"}
         </button>
       </div>
       {/* WHO WORKS THE PHONES, ALSO ONCE. Same argument as the three above: an

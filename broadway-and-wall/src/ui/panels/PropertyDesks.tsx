@@ -776,7 +776,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
             <Row k="Fees" v={usd(vq.cost)} />
             <Row k="They decide in" v={`${vq.months} months · ${(vq.odds * 100).toFixed(0)}% say yes`} bad={vq.odds < 0.3} />
           </div>
-          <button className="btn" onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
+          <button className="btn" style={{ marginTop: 8 }} onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
           <div className="hint">
             Lawyers, an architect and a year of hearings, spent whether they say yes or not. You can come back after a
             grant — the board will hear it — but each FAR already won makes the next ask costlier and less likely.

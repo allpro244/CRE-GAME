@@ -15,7 +15,7 @@ export function PrimerPage() {
   const noi = 1_000_000;
   const value = Math.round(noi / (cap / 100));
   return (
-    <div>
+    <div className="primer-prose">
       <div className="hint">
         If you have never bought a building, this page is the whole vocabulary. Everything else in the game
         assumes it. It takes about two minutes and the numbers in it are today's, from your own market.
@@ -132,6 +132,27 @@ function PrimerGlossary() {
   );
 }
 
+/**
+ * One setting: the switch on the left, what it does on the right, on every
+ * row. It was declared inside SettingsPage, so each render made a new
+ * component type and React remounted the row — the button lost keyboard focus
+ * the moment you pressed it — and .modal-actions wrapped the long rows so the
+ * switch sat above its label on some rows and beside it on others.
+ */
+function Toggle({ on, set, label, detail }: { on: boolean; set: (v: boolean) => void; label: string; detail: string }) {
+  return (
+    <div className="deal setting-row">
+      <button className={"btn" + (on ? " btn-buy" : "")} style={{ minWidth: 64 }} aria-pressed={on} aria-label={`${label}: ${on ? "on" : "off"}`} onClick={() => set(!on)}>
+        {on ? "On" : "Off"}
+      </button>
+      <div className="setting-text">
+        <div style={{ fontWeight: 600 }}>{label}</div>
+        <div className="hint" style={{ margin: 0 }}>{detail}</div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
@@ -147,19 +168,6 @@ export function SettingsPage() {
     const st = useStore.getState();
     useStore.setState({ game: { ...st.game!, ...patch } });
   };
-  const Toggle = ({ on, set, label, detail }: { on: boolean; set: (v: boolean) => void; label: string; detail: string }) => (
-    <div className="deal" style={{ marginBottom: 8 }}>
-      <div className="modal-actions" style={{ alignItems: "center", gap: 12 }}>
-        <button className={"btn" + (on ? " btn-buy" : "")} style={{ minWidth: 64 }} onClick={() => set(!on)}>
-          {on ? "On" : "Off"}
-        </button>
-        <div>
-          <div style={{ fontWeight: 600 }}>{label}</div>
-          <div className="hint" style={{ margin: 0 }}>{detail}</div>
-        </div>
-      </div>
-    </div>
-  );
   return (
     <div>
       <Toggle
@@ -205,6 +213,14 @@ export function SettingsPage() {
         detail="Off-market deals arrive by phone a few times a year once the street knows your name. Off, the phones stay silent entirely — nothing arrives, on any page."
       />
       <Toggle
+        on={!game.auctionQuiet}
+        set={(v) => flip({ auctionQuiet: !v })}
+        label="The July auction card"
+        detail="The county docket comes up as a card when it is published each July. Off, the auction still runs on the same day with the same lots — you read it on Marketplace instead."
+      />
+      {/* the two renderer switches were filed under Interruptions */}
+      <div className="page-section">Display</div>
+      <Toggle
         on={fpsOn}
         set={setFpsOn}
         label="Frame counter"
@@ -218,12 +234,6 @@ export function SettingsPage() {
           + "sharpness and the full photograph. On, it spends less fill rate on pixel density and "
           + "multisampling so the map stays nearer sixty frames. Facades, occupancy, weather and "
           + "the sim are unchanged either way."}
-      />
-      <Toggle
-        on={!game.auctionQuiet}
-        set={(v) => flip({ auctionQuiet: !v })}
-        label="The July auction card"
-        detail="The county docket comes up as a card when it is published each July. Off, the auction still runs on the same day with the same lots — you read it on Marketplace instead."
       />
       <div className="hint">
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
@@ -262,7 +272,8 @@ export function SavesPage() {
           table so you can try things without playing your way to them first.
         </div>
         <div className="btn-row" style={{ marginTop: 8 }}>
-          <button className="btn btn-buy" onClick={devGrant}>+ $100M testing capital</button>
+          {/* a test lever, not the page's primary action */}
+          <button className="btn btn-sm" onClick={devGrant}>+ $100M testing capital</button>
           {game && <span className="hint" style={{ margin: "auto 0" }}>cash today: {usd(game.cash)}</span>}
         </div>
       </div>
@@ -282,7 +293,7 @@ export function SaveSlots() {
   useEffect(() => { void refreshSlots(); }, [refreshSlots]);
   return (
     <div className="page-section">
-      <div className="page-section-head">Saved games</div>
+      <div className="page-section-head">Named saves</div>
       <div className="hint">
         Your live campaign autosaves after changes and Continue opens the newest state. Name a slot when you want
         a permanent snapshot you can return to without overwriting it.
@@ -294,6 +305,8 @@ export function SaveSlots() {
           placeholder="name this save"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { void saveTo(name.trim()); setName(""); } }}
+          aria-label="Name this save"
         />
         <button className="btn btn-buy" disabled={!name.trim()} onClick={() => { void saveTo(name.trim()); setName(""); }}>
           Save

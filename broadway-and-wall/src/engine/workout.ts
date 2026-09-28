@@ -39,6 +39,7 @@ import { depositsOn } from "./leasing";
 import { fundCashNeed, fundableNow, fundAndBook } from "./credit";
 import { recordPropertyEvent } from "./history";
 import { transferGroundLeaseOffBook } from "./actions";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -758,5 +759,3 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
   }
 }
 
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;

@@ -69,11 +69,11 @@ export function ResearchPage() {
           title="Every loan in town prices off this benchmark: floating coupons reprice to it monthly, and new quotes are struck at this rate plus the lender's spread." />
         <Big label="Phase" value={e.phase + (e.rumoredPhase ? " ⚠" : "")} />
         <Big label="Cap · office" value={pct(e.capRate.office)} />
-        <Big label="Cap · multifam" value={pct(e.capRate.multifamily)} />
-        <Big label="Land index" value={e.landIdx.toFixed(2)} />
-        <Big label="Cost index" value={e.costIdx.toFixed(2)} />
+        <Big label="Cap · multifamily" value={pct(e.capRate.multifamily)} />
+        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index, read the way the Economy page reads it. Its level is the town's own; the moves are what matter." />
+        <Big label="Cost index" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index — the Economy page's Build costs. Salaries and budgets are billed at it." />
         <Big label="Credit" value={creditWord(e.creditIdx ?? 1)} bad={(e.creditIdx ?? 1) < 0.72} />
-        <Big label="Employment" value={((e.employIdx ?? 1) * 100).toFixed(0)} />
+        <Big label="Employment" value={((e.employIdx ?? 1) * 100).toFixed(0)} title="Jobs in town as an index, 100 = normal. It is the demand behind leasing: when it falls, letters stop arriving before rents move." />
         <Big
           label="Value vs replacement"
           value={`${cityValueToReplacement(game).toFixed(2)}×`}

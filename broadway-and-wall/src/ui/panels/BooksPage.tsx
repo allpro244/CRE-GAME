@@ -51,7 +51,7 @@ export function BooksPage() {
       {/* The page opens with the month attributed — where the move came from,
           before the totals that only say how big it was. */}
       <Waterfall />
-      <div className="stat-strip">
+      <div className="stat-strip" style={{ marginTop: 14 }}>
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
         {depositsHeld(game) > 0 && (
@@ -142,6 +142,9 @@ export function BooksPage() {
             <div className="hint">
               Who has been buying, who failed, and where your firm peaked — the campaign read that used to be scattered across Research and the game-over screen.
             </div>
+            {/* Four unlabelled lists in a row read as one list of unrelated
+                rows; each gets the caption the Waterfall above uses. */}
+            {peak > 0 && <div className="wf-kicker">Your firm</div>}
             {peak > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 <div className="mini-row" style={{ cursor: "default" }}>
@@ -154,6 +157,7 @@ export function BooksPage() {
                 </div>
               </div>
             )}
+            {decadePrints.length > 0 && <div className="wf-kicker">The biggest prints on the tape</div>}
             {decadePrints.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {decadePrints.map((c) => (
@@ -164,6 +168,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
+            {flows.length > 0 && <div className="wf-kicker">Who has been buying · ten years</div>}
             {flows.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {flows.map((f) => (
@@ -176,6 +181,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
+            {failed.length > 0 && <div className="wf-kicker">Who failed</div>}
             {failed.length > 0 && (
               <div className="mini-list">
                 {failed.map((r) => (
@@ -443,7 +449,7 @@ function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
           <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn — the line should have covered this" : "operating account"} bad={sheet.cash < 0} />
           <Row k="Real estate — gross value" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
           {Object.entries(sheet.byClass).sort((a, b) => b[1].gross - a[1].gross).map(([cls, x]) => (
-            <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
+            <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls.charAt(0).toUpperCase()}${cls.slice(1)}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
           ))}
           {sheet.cipN > 0 && (
             <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} — money sunk, not the full budget`} />
@@ -514,7 +520,7 @@ function IncomeStatementTab() {
                         </div>
                       ) : null}
                     </td>
-                    <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
+                    <td className="num">{b.debtSvc ? usd(-b.debtSvc) : "—"}</td>
                     <td className="num">
                       {usd((b.leasing ?? 0) + (b.capex ?? 0) + (b.ga ?? 0) + (b.dev ?? 0) + (b.taxes ?? 0))}
                       <div className="dim" style={{ fontSize: 11 }}>
@@ -530,7 +536,7 @@ function IncomeStatementTab() {
                     <td className="num">
                       {b.bought || b.sold ? (
                         <>
-                          {b.bought ? "−" + usd(b.bought) : "—"}
+                          {b.bought ? usd(-b.bought) : "—"}
                           {b.sold ? <div className="dim" style={{ fontSize: 11 }}>sold {usd(b.sold)}</div> : null}
                         </>
                       ) : "—"}

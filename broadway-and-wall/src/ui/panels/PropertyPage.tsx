@@ -8,7 +8,7 @@ import { demandNow } from "@/engine/demand";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, pctSigned } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle } from "@/ui/panels/shared";
@@ -85,6 +85,7 @@ export function PropertyPage() {
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
   const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
+  const appealTab: PropTab = built ? "ops" : "summary";
   const timeline = propertyTimeline(game, bbl);
   // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
   // worse than no tab: it teaches the player that the page lies about where
@@ -116,7 +117,7 @@ export function PropertyPage() {
           value={(built || leasedFee) ? usd(noi) : "—"}
           bad={noi < 0}
         />
-        <Big label="Debt service / yr" value={dsYr ? "−" + usd(dsYr) : "—"} />
+        <Big label="Debt service / yr" value={dsYr ? usd(-dsYr) : "—"} />
         <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
         {leasedFee ? (
           <Big label="Your role" value="leased fee" />
@@ -148,6 +149,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Expense leakage"
+            title="The share of the building's operating and tax bill that no lease reimburses — it comes out of your NOI."
             value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
             bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
           />
@@ -155,6 +157,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Roll quality"
+            title="What the rent roll adds to this building's cap rate: short terms, weak credit or empty space widen it, and a buyer prices that in. Positive is a discount to the price."
             value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
             bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
           />
@@ -163,7 +166,7 @@ export function PropertyPage() {
             this off the price at closing, so it moves the appraisal directly —
             and there was nowhere to see it. */}
         {built && h && remainingAbatement(h, game.month) > 0 && (
-          <Big label="Free rent owed" value={"−" + usd(remainingAbatement(h, game.month))} bad />
+          <Big label="Free rent owed" value={usd(-remainingAbatement(h, game.month))} bad />
         )}
         {/* THE SANITY CHECK EVERY DEVELOPER RUNS AND THIS GAME COULD NOT.
             Above replacement cost, somebody will build a competitor across the
@@ -176,6 +179,7 @@ export function PropertyPage() {
           return (
             <Big
               label="Value vs cost to build"
+              title="Appraisal over what it would cost to put this building up today. Under 1× nobody builds a competitor; well over it, somebody will."
               value={`${x.toFixed(2)}×`}
               bad={x > 1.25}
             />
@@ -186,7 +190,7 @@ export function PropertyPage() {
           // The same ledger read the Portfolio's "Returns to date" prints.
           const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
           if (!r) return null;
-          return <Big label="Your return to date" value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${(r.irr * 100).toFixed(1)}% IRR` : ""}`} bad={r.multiple < 1} />;
+          return <Big label="Your return to date" title="On your equity, before tax: cash back plus today's equity at the mark, over what you put in. Closing costs put a new deed under 1× on day one." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
         })()}
       </div>
       <div className="prop-head">
@@ -203,9 +207,10 @@ export function PropertyPage() {
             {/* THE BUY SIDE GETS A FRONT DOOR TOO. An owner had "Sell this
                 building" up here; a buyer had to find the Acquire tab. */}
             {!h && game.listings.some((l) => l.bbl === bbl) && (
+              // under contract or mid-talks it is no longer an offer to make
               <button className="btn btn-buy" onClick={() => setTab("deal")}
                 title="The asking price, the in-place income, your offer and the money to close it">
-                Make an offer ▸
+                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Back to the talks ▸" : "Make an offer ▸"}
               </button>
             )}
             {!h && (
@@ -220,7 +225,7 @@ export function PropertyPage() {
                 title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
                 {h.sale
                   ? "◆ On the market — open the file"
-                  : (leasedFee ? "Sell this leased fee" : "Sell this building")}
+                  : (leasedFee ? "Sell this leased fee" : built ? "Sell this building" : "Sell this lot")}
               </button>
             )}
             <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
@@ -241,7 +246,25 @@ export function PropertyPage() {
       {/* A default is not a tab. It is the only thing on the page that matters
           while it is running, so it stays above the tab bar on every one. */}
       <WorkoutDesk bbl={bbl} />
-      {h?.taxAppeal ? (
+
+      <div className="prop-tabs">
+        {shown.map((t) => (
+          <button
+            key={t.key}
+            className={"prop-tab" + (active === t.key ? " on" : "")}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "money" && <AssetHistory bbl={bbl} />}
+      {/* THE TAX APPEAL IS AN OPPORTUNITY, NOT AN EMERGENCY. It sat above the
+          tab bar with the default desk, so every tab of a freshly bought
+          building opened on a five-row appeal quote. Taxes are an operating
+          line; it lives on Operations (Overview for a lot with no building). */}
+      {active === appealTab && (h?.taxAppeal ? (
         <div className="page-section">
           <div className="page-section-head">Assessment under appeal</div>
           <div className="grid">
@@ -261,7 +284,7 @@ export function PropertyPage() {
             <Row k="Appraisal + counsel" v={usd(taxAppeal.fee)} />
             <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
-          <button className="btn" disabled={game.cash < taxAppeal.fee}
+          <button className="btn" style={{ marginTop: 8 }} disabled={game.cash < taxAppeal.fee}
             title={game.cash < taxAppeal.fee ? `The filing costs ${usd(taxAppeal.fee)} — you have ${usd(game.cash)}` : undefined}
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
@@ -271,21 +294,7 @@ export function PropertyPage() {
             losing leaves the roll unchanged, and another challenge must wait three years.
           </div>
         </div>
-      ) : null}
-
-      <div className="prop-tabs">
-        {shown.map((t) => (
-          <button
-            key={t.key}
-            className={"prop-tab" + (active === t.key ? " on" : "")}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {active === "money" && <AssetHistory bbl={bbl} />}
+      ) : null)}
       {active === "history" && (
         <div className="page-section">
           <div className="page-section-head">What has happened on this deed</div>

@@ -111,8 +111,8 @@ function ClassRow({ use }: { use: BuiltClass }) {
   useEffect(() => {
     try { localStorage.setItem(FOLD_KEY, JSON.stringify({ ...readFolds(), [use]: open })); } catch { /* */ }
   }, [open, use]);
-  const summary = `${(row.quotePct * 100).toFixed(0)}% of market · floor ${(neFloor * 100).toFixed(0)}% NE · `
-    + `${row.maxFreeM === 0 ? "no free rent" : `${row.maxFreeM} mo free`} · ${row.maxTiPsf === 0 ? "no TI" : `TI $${row.maxTiPsf}`}`;
+  const summary = `${(row.quotePct * 100).toFixed(0)}% of market · floor ${(neFloor * 100).toFixed(0)}% net effective · `
+    + `${row.maxFreeM === 0 ? "no free rent" : `${row.maxFreeM} mo free`} · ${row.maxTiPsf === 0 ? "no TI" : `TI $${row.maxTiPsf}/sf`}`;
   const held = exp.sf > 0
     ? `${exp.bldgs} bldg${exp.bldgs === 1 ? "" : "s"} · ${Math.round(exp.sf / 1000)}k sf${exp.letters ? ` · ${exp.letters} letter${exp.letters === 1 ? "" : "s"} in` : ""}`
     : "nothing held";

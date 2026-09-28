@@ -57,10 +57,9 @@ import { firmShort } from "./firm";
 import { productById, bumpLenderRel } from "./debt";
 import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
 import { spendable, fundAndBook } from "./credit";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 const cl = (lo: number, hi: number, x: number) => Math.max(lo, Math.min(hi, x));
 
 /** Three live at once, and they expire. An inventory is a chore; a shortlist is a decision. */

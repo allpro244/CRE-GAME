@@ -23,7 +23,7 @@ export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
-import { mixOf } from "./mix";
+import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
 import {
@@ -92,6 +92,7 @@ import {
   developmentProForma, landCarryFactor,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
+import { money } from "./money";
 
 
 /**
@@ -700,7 +701,7 @@ export function startAdaptiveReuse(
   if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
   const margin = Math.round(plan.costTotal * 0.06);
   if (fundableNow(s, parcels) < plan.equity + plan.pointsCost + margin) {
-    return { s, err: `The conversion requires $${(plan.equity / 1e6).toFixed(2)}M of equity plus a change-order margin.` };
+    return { s, err: `The conversion requires ${money(plan.equity)} of equity plus a change-order margin.` };
   }
   // THE DAY-ONE CHEQUE COUNTS THE LINE TOO, and this was the odd one out: the
   // whole-job test three lines up has always counted the revolver as committed
@@ -709,7 +710,7 @@ export function startAdaptiveReuse(
   // written from the balance sheet, and the balance sheet includes the line.
   const dayOne = plan.equityAtClose + plan.pointsCost;
   if (fundableNow(s, parcels) < dayOne) {
-    return { s, err: `$${(dayOne / 1e6).toFixed(2)}M is due at closing.` };
+    return { s, err: `${money(dayOne)} is due at closing.` };
   }
   const next = clone(s);
   const nh = next.holdings[bbl];
@@ -1165,9 +1166,9 @@ export function startDevelopment(
     const short = commitCap - fundable;
     return {
       s,
-      err: `Equity short $${(short / 1e6).toFixed(2)}M to finish this job. `
-        + `Needs $${(plan.equity / 1e6).toFixed(2)}M equity all-in ($${(plan.equityAtClose / 1e6).toFixed(2)}M at close) `
-        + `plus change-order margin; you can fund $${(fundable / 1e6).toFixed(2)}M including the line. `
+      err: `Equity short ${money(short)} to finish this job. `
+        + `Needs ${money(plan.equity)} equity all-in (${money(plan.equityAtClose)} at close) `
+        + `plus change-order margin; you can fund ${money(fundable)} including the line. `
         + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
@@ -1184,9 +1185,9 @@ export function startDevelopment(
     const short = dayOne - fundable;
     return {
       s,
-      err: `Equity short $${(short / 1e6).toFixed(2)}M at close. `
-        + `The bank funds nothing until $${(dayOne / 1e6).toFixed(2)}M is in the ground (equity plus origination) `
-        + `of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. Cut the massing or raise cash first.`,
+      err: `Equity short ${money(short)} at close. `
+        + `The bank funds nothing until ${money(dayOne)} is in the ground (equity plus origination) `
+        + `of ${money((plan.equity + plan.pointsCost))} total. Cut the massing or raise cash first.`,
     };
   }
   const next = clone(s);
@@ -1359,8 +1360,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (liq.total < cost) {
     return {
       s,
-      err: `Demolition runs $${(cost / 1e6).toFixed(2)}M and you can raise $${(liq.total / 1e6).toFixed(2)}M — `
-        + `$${(liq.cash / 1e6).toFixed(2)}M of cash and $${(liq.line / 1e6).toFixed(2)}M on the line.`,
+      err: `Demolition runs ${money(cost)} and you can raise ${money(liq.total)} — `
+        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
     };
   }
   const next = clone(s);
@@ -1378,7 +1379,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${rec.address} came down — $${(cost / 1e6).toFixed(2)}M to clear it. The site is dirt again.`,
+    text: `${rec.address} came down — ${money(cost)} to clear it. The site is dirt again.`,
   });
   return { s: next };
 }
@@ -1686,8 +1687,8 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: overrun > 0 ? "warn" : "info",
           text: overrun > 0
-            ? `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, of which $${(overrun / 1e6).toFixed(2)}M is past the contingency and lands on you.${cmNote}`
-            : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.${cmNote}`,
+            ? `Change orders at ${rec.address}: ${money(extra)}, of which ${money(overrun)} is past the contingency and lands on you.${cmNote}`
+            : `Change orders at ${rec.address}: ${money(extra)}, absorbed by the contingency.${cmNote}`,
         });
       } else if (roll < 0.055 * cm) {
         d.deliverM += 1 + Math.round(rng(s, "dev"));
@@ -1708,7 +1709,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         d.events++;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs $${(extra / 1e6).toFixed(2)}M and pushes delivery to ${monthLabel(d.deliverM)}.${cmNote}`,
+          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs ${money(extra)} and pushes delivery to ${monthLabel(d.deliverM)}.${cmNote}`,
         });
       }
     }
@@ -1968,9 +1969,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     s.news.unshift({
       q: s.month, kind: advance < lease ? "warn" : "info",
       text: advance < lease
-        ? `The lease-up reserve at ${rec.address} was $${(lease / 1e6).toFixed(2)}M, and only $${(advance / 1e6).toFixed(2)}M of it `
+        ? `The lease-up reserve at ${rec.address} was ${money(lease)}, and only ${money(advance)} of it `
           + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
-        : `The lease-up reserve at ${rec.address} — $${(lease / 1e6).toFixed(2)}M — is released. That is what fits out the first tenants.`,
+        : `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`,
     });
   }
 
@@ -2044,7 +2045,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}, ${d.events === 0 ? "on programme" : `after ${d.events} problem${d.events > 1 ? "s" : ""}`}, $${(d.costTotal / 1e6).toFixed(1)}M all in`
-      + (saved > 0 ? `, with $${(saved / 1e6).toFixed(2)}M of contingency returned` : "")
+      + (saved > 0 ? `, with ${money(saved)} of contingency returned` : "")
       + `. The mini-perm matures ${monthLabel(s.month + 60)} — stabilise it before then.`,
   });
 }
@@ -2116,15 +2117,15 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   if (liq.total < cost) {
     return {
       s,
-      err: `${p.label} costs $${(cost / 1e6).toFixed(2)}M and you can raise $${(liq.total / 1e6).toFixed(2)}M — `
-        + `$${(liq.cash / 1e6).toFixed(2)}M of cash and $${(liq.line / 1e6).toFixed(2)}M on the line.`,
+      err: `${p.label} costs ${money(cost)} and you can raise ${money(liq.total)} — `
+        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
     };
   }
   const next = clone(s);
   fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.program = { id: programId, untilM: next.month + p.months };
-  next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} ($${(cost / 1e6).toFixed(2)}M).` });
+  next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} (${money(cost)}).` });
   return { s: next };
 }
 
@@ -3640,7 +3641,7 @@ export function tickCityGrowth(
       s.news.unshift({
         q: s.month, kind: "info",
         text: near
-          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${rec.district} — that is space competing with yours.`
+          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${districtLabel(rec)} — that is space competing with yours.`
           : `A ${j.floors}-story ${j.use} building opened at ${rec.address}, the tallest thing to top out in a while.`,
       });
     }

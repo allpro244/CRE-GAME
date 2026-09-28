@@ -58,3 +58,12 @@ export function monthsWord(n: number): string {
   const rem = mo % 12;
   return rem === 0 ? `${sign}${yr} yr` : `${sign}${yr} yr ${rem} mo`;
 }
+
+/** A signed percentage from a fraction (0.042 → "+4.2%", −0.114 → "−11.4%"),
+ *  with a real minus like usd(); the sign rides the rounded figure. */
+export const pctSigned = (frac: number, digits = 1): string => {
+  if (!Number.isFinite(frac)) return "—";
+  const r = Number((frac * 100).toFixed(digits));
+  const sign = r > 0 ? "+" : r < 0 ? "\u2212" : "";
+  return sign + Math.abs(r).toFixed(digits) + "%";
+};

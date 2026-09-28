@@ -147,6 +147,7 @@ const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 
  * imports nothing, so the pro forma (proforma.ts, under value.ts) can name the
  * volume desk without pulling this module into its import cycle. */
 import { CONSTRUCTION_LENDER } from "./types";
+import { money } from "./money";
 export { CONSTRUCTION_LENDER };
 
 export function lenderBlurb(name: string): string {
@@ -444,7 +445,7 @@ function repudiateCommitments(s: GameState, l: Lender) {
 export { raiseAlert } from "./types";
 import { raiseAlert } from "./types";
 
-const usdShort = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
+const usdShort = (n: number) => (n >= 1e6 ? `${money(n)}` : `$${Math.round(n / 1000)}k`);
 
 /**
  * The receiver pays out, eventually. Called once a month from tickLenders.

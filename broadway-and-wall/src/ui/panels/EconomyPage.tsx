@@ -8,7 +8,7 @@ import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from 
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
-import { pct } from "@/ui/format";
+import { pct, pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
 import { creditWord, real, workStage, Big, Row } from "@/ui/panels/shared";
@@ -471,8 +471,8 @@ export function EconomyPage() {
             sheet desk by desk. */}
         <Big label="Underwriting standards" value={standardsWord(underwritingStandards(game))} bad={underwritingStandards(game) < -0.5} />
         <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
-        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} />
-        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} />
+        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index. Salaries and budgets are billed at it." />
+        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index. Its level is the town's own; the moves are what matter." />
       </div>
       <div className="hint">{phaseBlurb}{e.rumoredPhase ? ` Word on the street: ${e.rumoredPhase} is coming.` : ""}</div>
 
@@ -561,7 +561,7 @@ export function EconomyPage() {
               <Gauge value={v} natural={NATURAL_VAC[k]} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
               <div className="mkt-card-state">{b.state}</div>
               <div className={"mkt-card-sub" + (rentYoy < -0.025 ? " neg" : "")}>
-                effective rents {rentWord} · {rentYoy >= 0 ? "+" : ""}{(rentYoy * 100).toFixed(1)}% real / 12m
+                effective rents {rentWord} · {pctSigned(rentYoy)} real / 12m
               </div>
               {/* Each class runs its own cycle now, and which part of it you
                   are standing in is the single most useful thing on this card:
@@ -606,14 +606,14 @@ export function EconomyPage() {
               <button className={"mkt-card" + (sel === "land" ? " mkt-card-on" : "")} onClick={() => setSel("land")}>
                 <div className="mkt-card-head">
                   <span className="mkt-card-name">Land</span>
-                  <span className="mono">{e.landIdx.toFixed(2)}</span>
+                  <span className="mono">{(e.landIdx * 100).toFixed(0)}</span>
                 </div>
                 <div className={"mkt-card-state" + (yoy < -0.02 ? " neg" : "")}>
                   {yoy > 0.06 ? "running hard" : yoy > 0.015 ? "rising" : yoy < -0.06 ? "falling hard"
                     : yoy < -0.015 ? "easing" : "flat"}
                 </div>
                 <div className="mkt-card-sub mono">
-                  {yoy >= 0 ? "+" : ""}{(yoy * 100).toFixed(1)}% over 12m · the slowest cycle here
+                  {pctSigned(yoy)} over 12m · the slowest cycle here
                 </div>
               </button>
               {/* The card exists while there is a lending market to read at

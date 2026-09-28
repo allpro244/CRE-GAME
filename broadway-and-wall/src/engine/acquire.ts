@@ -26,6 +26,7 @@ import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 import { spendable, fundAndBook } from "./credit";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -765,7 +766,7 @@ export function strikeDeal(
     maxRounds: prev?.maxRounds ?? OPEN_ROUNDS[seller.kind],
     openedM: prev?.openedM ?? next.month,
     agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
-    note: `Agreed at ${fmtM(px)} with ${seller.name}. ${fmtM(dep)} of earnest money is posted and hard. `
+    note: `Agreed at ${fmtM(px)} with ${seller.name}${seller.name.endsWith(".") ? "" : "."} ${fmtM(dep)} of earnest money is posted and hard. `
       + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
   };
   next.news.unshift({
@@ -826,7 +827,7 @@ const Cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const fmtM = (n: number) => {
   const a = Math.abs(n);
   if (a >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e6) return `${money(n)}`;
   if (a >= 1e3) return `$${Math.round(n / 1e3)}K`;
   return `$${Math.round(n)}`;
 };

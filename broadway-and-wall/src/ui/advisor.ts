@@ -133,7 +133,7 @@ export function saleOfferRead(
   const vsMark = Math.abs(rel) < 1
     ? "Right on the mark"
     : `${Math.abs(rel).toFixed(0)}% ${rel > 0 ? "over" : "under"} the mark`;
-  const basisBit = mult > 0 ? `, ${mult.toFixed(1)}x your basis` : "";
+  const basisBit = mult > 0 ? `, ${mult.toFixed(1)}× your basis` : "";
   const clockBit = p.tax > 0 && !game.exchange
     ? "; the 1031 clock would start at closing"
     : "";

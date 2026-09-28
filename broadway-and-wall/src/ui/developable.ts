@@ -4,7 +4,7 @@
  */
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
-import { landRead, resolveRec } from "@/engine/value";
+import { landRead, resolveRec, marketAppraisal, initialCondition } from "@/engine/value";
 import { farMaxFor } from "@/engine/dev";
 
 export type DevelopableSite = {
@@ -30,10 +30,18 @@ export function developableSites(game: GameState, parcels: ParcelTable): Develop
     // Vacant or substantial unused envelope.
     if (rec.class !== "land" && room < 0.25) continue;
     const read = landRead(rec, game.econ);
+    // THE PARCEL CARD'S TEST, NOT A LOOSER ONE. On a built lot a rebuild has
+    // to beat the building: the cleared dirt must be worth more to a builder
+    // than the appraisal of what stands, per foot of lot. Without it the HUD
+    // listed a 99%-let apartment block under "Sites ready · pencils" while its
+    // own card said "A rebuild does not pencil here today".
+    const dirt = rec.class === "land" || !rec.bldgArea;
+    const standingPsf = dirt ? 0
+      : marketAppraisal(game, rec, bbl, h.condition ?? initialCondition(rec)) / Math.max(1, rec.lotArea);
     out.push({
       bbl,
       address: rec.address,
-      pencils: read.winner === "builder" && read.builder > 0,
+      pencils: read.winner === "builder" && read.builder > 0 && (dirt || read.builder > standingPsf),
       residualPsf: read.builder,
       winner: read.winner,
       room,

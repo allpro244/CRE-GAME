@@ -139,7 +139,7 @@ export default function GamePanels() {
     : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
     : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
     : page === "property" ? "The complete operating, financing and development record."
-    : page === "saves" ? "Autosave status and named points you can return to."
+    : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
     : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
     : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."

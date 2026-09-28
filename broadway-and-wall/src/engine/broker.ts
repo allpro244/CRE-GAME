@@ -22,6 +22,7 @@
 // all seed-hashed, so the campaign's every seed-pinned number reproduces and
 // a save-scummer cannot reroll whose phone rings.
 import type { GameState, Listing } from "./types";
+import { money } from "./money";
 
 /** Closings through one shop before the first looks start. Aligned with the
  * #33 seller-relationship work, where one closing (relOf.deals > 0) opens the
@@ -96,7 +97,7 @@ export function maybeEarlyLook(s: GameState, li: Listing, address: string) {
   li.via = id;
   s.news.unshift({
     q: s.month, kind: "deal", bbl: li.bbl,
-    text: `${rel.name} rang you before the tape: ${address} is coming to market at $${(li.ask / 1e6).toFixed(2)}M. `
+    text: `${rel.name} rang you before the tape: ${address} is coming to market at ${money(li.ask)}. `
       + `You have ${EARLY_WINDOW_M} months before anybody else hears the address.`,
   });
 }

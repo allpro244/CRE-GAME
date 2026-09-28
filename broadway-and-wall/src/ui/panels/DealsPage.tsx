@@ -8,7 +8,7 @@ import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow } from "@/engine/leasing";
 import { saleTaxQuote } from "@/engine/actions";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
 import { Row, apMid } from "@/ui/panels/shared";
@@ -96,7 +96,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           click against a face rent the tenant is not even judging. */}
       <div className="loi-line mono">
         NE ${nowNe.toFixed(2)}/sf
-        {" "}({((nowNe / market - 1) * 100).toFixed(0)}% vs market asking ~${market.toFixed(2)})
+        {" "}({pctSigned(nowNe / market - 1, 0)} vs market asking ~${market.toFixed(2)})
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">

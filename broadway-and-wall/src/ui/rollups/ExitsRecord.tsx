@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { usd } from "@/ui/format";
+import { usd, pctSigned } from "@/ui/format";
 import "./rollups.css";
 
 /**
@@ -81,7 +81,7 @@ export function ExitsRecord() {
                 >
                   {((e.equityOut ?? 0) / e.equityIn).toFixed(2)}x
                   <div className="dim" style={{ fontSize: 11 }}>
-                    {e.irr != null ? `IRR ${(e.irr * 100).toFixed(1)}%` : "IRR —"}
+                    {e.irr != null ? `IRR ${pctSigned(e.irr)}` : "IRR —"}
                   </div>
                 </td>
               ) : (

@@ -253,14 +253,6 @@ export function MarketPage() {
       {Object.keys(game.holdings).length === 0 && <StarterBlock go={go} />}
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
-        <button
-          className={"btn" + (lens === "listings" ? " btn-on" : "")}
-          style={{ alignSelf: "center" }}
-          title="Highlight every listing on the map — red lots, pins on roofs"
-          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
-        >
-          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
-        </button>
         <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
         <Big label="Books for sale" value={String(streetBooks.length)} bad={streetBooks.length > 0}
           title="Receiver packages and fund wind-downs — one cheque for the whole book" />
@@ -268,9 +260,19 @@ export function MarketPage() {
         <Big label="Money in the room" value={
           marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
             : marketAppetite(game) > 1.15 ? "everywhere" : "normal"} />
+      </div>
+      {/* Controls sat inside the stat strip as two tiles of a different height
+          and face; they are actions, so they get a row of their own. */}
+      <div className="btn-row" style={{ marginTop: 4, marginBottom: 4 }}>
         <button
-          className="btn"
-          style={{ alignSelf: "center" }}
+          className={"btn btn-sm" + (lens === "listings" ? " btn-on" : "")}
+          title="Highlight every listing on the map — red lots, pins on roofs"
+          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
+        >
+          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
+        </button>
+        <button
+          className="btn btn-sm"
           title="Broker calls and the July auction card are firm settings — change them under Settings."
           onClick={() => useStore.getState().setPage("settings")}
         >
@@ -690,9 +692,15 @@ export function MarketPage() {
                           FIRST LOOK
                         </span>
                       )}
-                      {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
+                      {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }} title="A motivated seller — priced under appraisal, and it will not last">HOT</span>}
+                      {/* WHY IT IS FOR SALE — the chip is jargon without its reason */}
                       {li.reason && (
-                        <span className="chip" style={{ marginRight: 6 }}>
+                        <span className="chip" style={{ marginRight: 6 }}
+                          title={li.reason === "merchant" ? "A merchant builder selling what it built — the business plan was always to sell on completion"
+                            : li.reason === "fund-life" ? "A closed-end fund reaching the end of its life: it has to sell to return its investors' capital, whatever the market"
+                              : li.reason === "estate" ? "An owner has died and the estate is selling to settle it"
+                                : li.reason === "receiver" ? "A lender took it back and a receiver is clearing it off the balance sheet"
+                                  : "The owner simply decided to sell"}>
                           {li.reason === "merchant" ? "MERCHANT EXIT"
                             : li.reason === "fund-life" ? "FUND CLOCK"
                               : li.reason === "estate" ? "ESTATE"
@@ -932,7 +940,7 @@ export function LandValueChart() {
         );
       })()}
       <div className="grid">
-        <Row k="Land index" v={e.landIdx.toFixed(2)} strong />
+        <Row k="Land index" v={(e.landIdx * 100).toFixed(0)} strong />
         <Row k="Over the last year" v={`${yrs(12) >= 0 ? "+" : ""}${(yrs(12) * 100).toFixed(1)}%`} bad={yrs(12) < 0} />
         <Row k="Over the last five" v={`${yrs(60) >= 0 ? "+" : ""}${(yrs(60) * 100).toFixed(1)}%`} bad={yrs(60) < 0} />
         <Row k="Over the last twenty" v={`${yrs(240) >= 0 ? "+" : ""}${(yrs(240) * 100).toFixed(1)}%`} bad={yrs(240) < 0} />

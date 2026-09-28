@@ -20,10 +20,9 @@ import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
 import { prepayPenalty, refiQuotes } from "./debt";
+import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 const cl = (lo: number, hi: number, x: number) => Math.max(lo, Math.min(hi, x));
 
 /** Leave this much cash after funding — G&A and a bad month. */

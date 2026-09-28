@@ -11,7 +11,7 @@ import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from 
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
-import { usd } from "@/ui/format";
+import { usd, pctSigned } from "@/ui/format";
 import { PortfolioCap, PortfolioLegList, PortfolioProceeds, PortfolioBidActions } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiTermsGrid, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
@@ -477,6 +477,11 @@ function AlertBody() {
   // An indication on YOUR book belongs on Portfolio / Deals, not the tape.
   const goOwnBook = a.kind === "portfolio" && !bad && !!game.portfolioSale;
   const goNotes = a.kind === "bank" && bad;
+  // YOUR OWN BIDS ARE A DECISION, NOT WEATHER. The good-news footer ("Nobody
+  // rings a bell for one of these…") and a lone "Good." button were written
+  // for a white swan; on a bid list they read as scenery and offered no way
+  // to the list the body says is waiting.
+  const goSale = a.kind === "sale" && !bad;
   return (
     <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
@@ -493,6 +498,8 @@ function AlertBody() {
                 ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
                   + "answers — take it, counter it, tell them no — are on the Portfolio and Deals desks."
                 : "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              : goSale
+                ? "These are bids on your building. Take the top name, go back for best-and-final, or work a lower one — on Deals, under Your sales."
               : bad
                 ? "This is not a decision and there is nothing on this card to accept. It has happened; "
                   + "what it does to your rents, your lenders and your book is the rest of the game."
@@ -515,8 +522,13 @@ function AlertBody() {
               Open Notes
             </button>
           )}
-          <button className={"btn" + (!goBooks && !goOwnBook && !bad ? " btn-buy" : "")} onClick={dismissAlert}>
-            {bad && !goBooks ? "Understood" : goBooks || goOwnBook ? "Later" : "Good."}
+          {goSale && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("deals"); }}>
+              Open the bid list
+            </button>
+          )}
+          <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !bad ? " btn-buy" : "")} onClick={dismissAlert}>
+            {bad && !goBooks ? "Understood" : goBooks || goOwnBook || goSale ? "Later" : "Good."}
           </button>
         </div>
         {queued > 0 && (
@@ -640,7 +652,7 @@ function DecisionBody({
           </div>
           <div className="grid">
             <Row k="Their number" v={usd(pb.price)} strong />
-            {!inbound && <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />}
+            {!inbound && <Row k="vs. your ask" v={pctSigned(pb.price / Math.max(1, live.ask) - 1)} />}
             <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
             <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
             <PortfolioProceeds book={book} />
@@ -690,7 +702,7 @@ function DecisionBody({
           </div>
           <div className="grid">
             <Row k="Best bid" v={usd(top.b.price)} strong />
-            <Row k="vs. whisper" v={`${((top.b.price / Math.max(1, sale.ask) - 1) * 100).toFixed(1)}%`}
+            <Row k="vs. whisper" v={pctSigned(top.b.price / Math.max(1, sale.ask) - 1)}
               bad={top.b.price < sale.ask} />
             <Row k="On the list" v={`${live.length} bidder${live.length === 1 ? "" : "s"}`} />
             {top.b.note && <Row k="Their paper" v={top.b.note} />}
@@ -701,7 +713,7 @@ function DecisionBody({
           </div>
           <div className="modal-actions">
             <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, top.i); setDeferred((d) => new Set(d).add(-3)); }}>
-              Take {top.b.name} · {usd(top.b.price)}
+              Sell to {top.b.name} · {usd(top.b.price)}
             </button>
             <button className="btn" onClick={() => {
               setDeferred((d) => new Set(d).add(-3));
@@ -759,7 +771,11 @@ function DecisionBody({
     // action came back with an error instead of a new state.
     const act = (a: "accept" | "decline") => {
       const r = respondLoi(loi.id, a, short > 0);
-      if (r.msg) setOutcome({ text: r.msg, ok: r.ok });
+      // Turning a letter away is your answer, not theirs: it already toasts
+      // "Passed.", and a blocking card titled "Their answer" over the word
+      // "Passed." read as the tenant walking. Only acceptances (and errors)
+      // earn the answer card.
+      if (r.msg && !(a === "decline" && r.ok)) setOutcome({ text: r.msg, ok: r.ok });
     };
     const isFinal = loi.stage === "countered";
     return (
@@ -891,8 +907,8 @@ function DecisionBody({
         </div>
         <div className="grid">
           <Row k="Offer" v={usd(offer.price)} strong />
-          {!h.sale!.unsolicited && <Row k="vs. your ask" v={`${((offer.price / h.sale!.ask - 1) * 100).toFixed(1)}%`} />}
-          <Row k="vs. appraisal" v={`${((offer.price / apMid(offerBbl!, value) - 1) * 100).toFixed(1)}%`} />
+          {!h.sale!.unsolicited && <Row k="vs. your ask" v={pctSigned(offer.price / h.sale!.ask - 1)} />}
+          <Row k="vs. appraisal" v={pctSigned(offer.price / apMid(offerBbl!, value) - 1)} />
           <Row k="Loan payoff" v={usd(proceeds.loanPayoff)} />
           {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
@@ -993,7 +1009,7 @@ export function GameOverPage() {
         <div className="page-title">The run is over.</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
-        <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>
+        <div className="stat-strip gameover-stats" style={{ justifyContent: "center", marginTop: 14 }}>
           <Big label="Final net worth" value={usd(finalNw)} bad={finalNw < 0} />
           <Big label="Peak" value={usd(peak)} />
           <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
@@ -1050,7 +1066,7 @@ function PostMortem() {
   };
   const [bigName, bigAmt] = big(worst);
   return (
-    <div className="page-section" style={{ marginTop: 16, maxWidth: 760, marginLeft: "auto", marginRight: "auto" }}>
+    <div className="page-section gameover-postmortem" style={{ marginTop: 16, maxWidth: 980, marginLeft: "auto", marginRight: "auto" }}>
       <div className="page-section-head">What happened — the last {yrs.length} year{yrs.length === 1 ? "" : "s"} of operating cash</div>
       <table className="tbl tbl-static">
         <thead>
@@ -1080,11 +1096,18 @@ function PostMortem() {
         any purchase, sale or new borrowing. The worst year was {START_YEAR + worst.yr}, and its largest
         outflow was {bigName} at {usd(bigAmt)}.
       </div>
+      {/* One list in date order: the forced sales and the lender's actions
+          were two runs of Jan–Mar one after the other, so the story read
+          backwards halfway down. */}
       {(forced.length > 0 || events.length > 0) && (
-        <div className="hint" style={{ marginTop: 6 }}>
-          {forced.map((e) => <div key={`f${e.bbl}${e.soldM}`}>✕ {monthLabel(e.soldM)} — {e.address} sold under duress for {usd(e.price)} against {usd(e.basis)} basis.</div>)}
-          {events.map((e, i) => <div key={`s${i}`}>✕ {monthLabel(e.m)} — {e.address}: {e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}{e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.</div>)}
-        </div>
+        <ul className="gameover-events">
+          {[
+            ...forced.map((e) => ({ m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis.` })),
+            ...events.map((e, i) => ({ m: e.m, k: `s${i}`, text: `${e.address}: ${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.` })),
+          ].sort((a, b) => a.m - b.m).map((r) => (
+            <li key={r.k}><span className="mono dim">{monthLabel(r.m)}</span> {r.text}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -30,6 +30,7 @@ import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
 import { districtLabelOf } from "./mix";
+import { money } from "./money";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -351,9 +352,9 @@ export function fileVariance(
   if (room.total < q.cost) {
     return {
       s,
-      err: `The application runs $${(q.cost / 1e6).toFixed(2)}M in fees and you can raise `
-        + `$${(room.total / 1e6).toFixed(2)}M — $${(room.cash / 1e6).toFixed(2)}M of cash and `
-        + `$${(room.line / 1e6).toFixed(2)}M on the line.`,
+      err: `The application runs ${money(q.cost)} in fees and you can raise `
+        + `${money(room.total)} — ${money(room.cash)} of cash and `
+        + `${money(room.line)} on the line.`,
     };
   }
   const next: GameState = cloneState(s);

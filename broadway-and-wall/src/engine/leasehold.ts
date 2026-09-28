@@ -90,7 +90,7 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const after = { ...h, groundRentOut: { holder: "", rentYr, stepPct: LEASEHOLD_STEP, startM: s.month, endM: s.month + LEASEHOLD_TERM_M, lastStepM: s.month, price } } as Holding;
   const valueAfter = ownedHoldingValueFromRec(s, rec, after);
   if (toOwner < 0) {
-    return { ok: false, why: `The land sells for less than the mortgage, its break fee and the tax — ${Math.round(-toOwner).toLocaleString()} short. A fee buyer will not take it subject to your lender.`, price, rentYr, yieldPct, costs, payoff, tax, toOwner, valueBefore, valueAfter };
+    return { ok: false, why: `The land sells for less than the mortgage, its break fee and the tax — $${Math.round(-toOwner).toLocaleString()} short. A fee buyer will not take it subject to your lender.`, price, rentYr, yieldPct, costs, payoff, tax, toOwner, valueBefore, valueAfter };
   }
   return { ok: true, price, rentYr, yieldPct, costs, payoff, tax, toOwner, valueBefore, valueAfter };
 }

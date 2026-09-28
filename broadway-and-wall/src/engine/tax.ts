@@ -19,11 +19,10 @@ import { rng } from "./market";
 import { landValue, ownedHoldingValue, TAX_RATE } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
+import { money } from "./money";
 
 const COOLDOWN_M = 36;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const money = (n: number) =>
-  Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 
 export function taxAppealQuote(s: GameState, parcels: ParcelTable, bbl: string): {
   assessed: number;

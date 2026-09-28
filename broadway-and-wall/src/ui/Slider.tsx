@@ -95,7 +95,7 @@ export default function Slider({
       />
       {marks && (
         <div className="slider-marks">
-          {marks.filter((m) => m.at >= min && m.at <= max && m.label).map((m) => {
+          {spaced(marks.filter((m) => m.at >= min && m.at <= max && m.label), min, max).map((m) => {
             // Each mark sits under its own place on the track; the end marks
             // hug the edges so "max" does not hang half off the dial.
             const at = max > min ? ((m.at - min) / (max - min)) * 100 : 0;
@@ -119,4 +119,26 @@ export default function Slider({
       {hint && <div className="slider-hint">{hint}</div>}
     </div>
   );
+}
+
+/**
+ * MARKS THAT WOULD PRINT ON TOP OF EACH OTHER. On a short dial (a two-floor
+ * retail site: min 1, max 2) "low" and "mid" both resolved to 1 — the labels
+ * overprinted as one smudge and shared a React key. Keep the first mark in
+ * any 8%-of-the-track neighbourhood, except that an end mark wins its edge.
+ */
+function spaced(marks: { at: number; label: string }[], min: number, max: number) {
+  const span = max - min;
+  if (span <= 0) return marks.slice(0, 1);
+  const pos = (m: { at: number }) => ((m.at - min) / span) * 100;
+  const out: { at: number; label: string }[] = [];
+  for (const m of [...marks].sort((a, b) => a.at - b.at)) {
+    const prev = out[out.length - 1];
+    if (prev && pos(m) - pos(prev) < 8) {
+      if (pos(m) >= 98) out[out.length - 1] = m;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
 }

@@ -136,11 +136,15 @@ export function FundDesk() {
       ) : (
         <>
           <div className="hint">{q.reason}</div>
-          <div className="btn-row">
-            <button className="btn btn-buy" disabled={!q.ok} onClick={() => raiseFund()}>
-              {q.ok ? `Raise $${(q.size / 1e6).toFixed(0)}M` : "Cannot raise"}
-            </button>
-          </div>
+          {/* A greyed "Cannot raise" said nothing the line above did not;
+              the button appears when there is a raise to press. */}
+          {q.ok && (
+            <div className="btn-row">
+              <button className="btn btn-buy" onClick={() => raiseFund()}>
+                Raise ${(q.size / 1e6).toFixed(0)}M
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

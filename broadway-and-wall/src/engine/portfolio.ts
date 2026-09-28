@@ -29,9 +29,8 @@ import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
-import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf } from "./value";
 import { depositsOn } from "./leasing";
-import { useSf } from "./mix";
 import { recordComp } from "./comps";
 import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } from "./actions";
 import { FACILITY_MIN_ASSETS } from "./facility";
@@ -40,11 +39,11 @@ import { sponsorStanding } from "./sponsor";
 const clone = (s: GameState): GameState => cloneState(s);
 
 /** How full a building physically is, counting flats and commercial together. */
-function occOf(rec: { bldgArea: number }, h: Holding): number {
+function occOf(rec: { bldgArea: number; floors: number }, h: Holding): number {
   if (!rec.bldgArea) return 0;
   const comm = h.tenants.reduce((a, t) => a + t.sf, 0);
-  const res = useSf(rec as never, "multifamily") * (h.occ ?? 0);
-  return Math.min(1, (comm + res) / rec.bldgArea);
+  const res = useRentableSf(rec as never, "multifamily") * (h.occ ?? 0);
+  return Math.min(1, (comm + res) / Math.max(1, rentableSf(rec)));
 }
 const money = (n: number) =>
   Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;

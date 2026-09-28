@@ -1,7 +1,7 @@
 // Floorplate occupancy — a building is plates, not a pre-cut of N suites.
 // Construction used to pre-let a 2,000 ft bite of a 26,000 ft one-space
 // tenancy and then print 1/1 spaces at 8% occupancy. The cut is gone;
-// identity is tenants + vacant blocks == useSf.
+// identity is tenants + vacant blocks == useRentableSf (the plate a tenant signs for).
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertFreshBundle } from "./fresh.mjs";
@@ -128,11 +128,13 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
     floors: 1,
     mix: { industrial: 1 },
   };
+  // The plate a tenant signs for is the RENTABLE shed, not the gross one.
+  const shedRentable = E.useRentableSf(ware, "industrial");
   const sfPer = E.typicalSuiteSf(ware, "industrial");
-  if (sfPer > shed) fail(`industrial suite ${sfPer} exceeds the ${shed} ft shed`);
-  else if (sfPer !== shed) fail(`9,371 ft shed should be one ${shed} ft plate (got ${sfPer})`);
-  else console.log(`ok  ${shed} ft warehouse is one ${sfPer} ft plate, not 12,000`);
-  const full = { tenants: [{ sf: shed, use: "industrial" }], occ: 0 };
+  if (sfPer > shedRentable + 0.01) fail(`industrial suite ${sfPer} exceeds the ${shedRentable} rentable ft shed`);
+  else if (Math.abs(sfPer - shedRentable) > 0.01) fail(`9,371 ft shed should be one ${shedRentable} rentable ft plate (got ${sfPer})`);
+  else console.log(`ok  ${shed} ft warehouse is one ${Math.round(sfPer)} rentable ft plate, not 12,000`);
+  const full = { tenants: [{ sf: shedRentable, use: "industrial" }], occ: 0 };
   const ident = E.blockIdentity(ware, full);
   if (!ident.every((r) => r.ok)) fail(`full shed identity ${JSON.stringify(ident)}`);
   const u = E.unitStatus(ware, full, 0);
@@ -148,7 +150,7 @@ const fail = (msg) => { console.error("FAIL", msg); failed++; };
     if (!p || p.class !== "industrial" || !p.bldgArea) continue;
     nInd++;
     const per = E.typicalSuiteSf(p, "industrial");
-    const leg = E.useSf(p, "industrial") || p.bldgArea;
+    const leg = E.useRentableSf(p, "industrial") || E.rentableSf(p);
     if (per > leg + 1) over++;
   }
   if (over) fail(`${over}/${nInd} industrial buildings have a suite larger than the leg`);

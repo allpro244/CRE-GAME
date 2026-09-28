@@ -95,17 +95,25 @@ export default function Slider({
       />
       {marks && (
         <div className="slider-marks">
-          {marks.filter((m) => m.at >= min && m.at <= max).map((m) => (
-            <button
-              key={m.at}
-              className={"slider-mark" + (Math.abs(m.at - value) < step / 2 ? " on" : "")}
-              onClick={() => onChange(m.at)}
-              disabled={disabled}
-              aria-label={`Set ${label} to ${m.label}`}
-            >
-              {m.label}
-            </button>
-          ))}
+          {marks.filter((m) => m.at >= min && m.at <= max && m.label).map((m) => {
+            // Each mark sits under its own place on the track; the end marks
+            // hug the edges so "max" does not hang half off the dial.
+            const at = max > min ? ((m.at - min) / (max - min)) * 100 : 0;
+            const edge = at <= 2 ? " at-min" : at >= 98 ? " at-max" : "";
+            return (
+              <button
+                key={m.at}
+                type="button"
+                className={"slider-mark" + edge + (Math.abs(m.at - value) < step / 2 ? " on" : "")}
+                style={{ left: edge === " at-min" ? 0 : edge === " at-max" ? "100%" : `${at}%` }}
+                onClick={() => onChange(m.at)}
+                disabled={disabled}
+                aria-label={`Set ${label} to ${m.label}`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
         </div>
       )}
       {hint && <div className="slider-hint">{hint}</div>}

@@ -18,7 +18,7 @@ import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { spendable } from "@/engine/credit";
 import { USE_WORD } from "@/engine/mix";
 import { usd, sf, pct } from "@/ui/format";
-import { useLabel, devUseLabel, Row, LocSplitHint } from "@/ui/panels/shared";
+import { useLabel, devUseLabel, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 
 /**
  * WHAT THE STACK BECOMES when the shops run into the two-storey cap.
@@ -175,13 +175,16 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [split, setSplitRaw] = useState<{ retail: number; office: number; multifamily: number }>(
     saved?.split ?? { retail: 15, office: 45, multifamily: 40 },
   );
+  // SHOPS AT GRADE ON YOUR OWN OFFICE OR APARTMENT BUILDING — your call, not
+  // only the street's. See DevDraft.groundRetail and withStreetRetail.
+  const [groundRetail, setGroundRetailRaw] = useState<"auto" | "on" | "off">(saved?.groundRetail ?? "auto");
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split });
-  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail });
+  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -195,6 +198,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const setBank = touch(setBankRaw);
   const setSpec = touch(setSpecRaw);
   const setSplit = touch(setSplitRaw);
+  const setGroundRetail = touch(setGroundRetailRaw);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -211,9 +215,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
   const btsOffer = game.holdings[bbl]?.btsOffer;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank, spec);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts }, bank, spec);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const nb = blockReport(game, parcels, rec.block);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
@@ -236,6 +240,19 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · anything may be built here.
       </div>
 
+      {/* THE ANSWER FIRST. Yield on cost against the hurdle is the number a
+          developer reads before any dial, and it sat in a row that looked
+          like the row above it. */}
+      {plan && (
+        <Verdict
+          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          value={`${plan.yieldOnCost.toFixed(2)}%`}
+          tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
+          note={plan.hurdleRatio >= 1
+            ? `Pencils — ${plan.requiredYield.toFixed(2)}% required on cost, ${((plan.hurdleRatio - 1) * 100).toFixed(0)}% of margin over it. ${usd(closeCheque)} of your money the day you break ground.`
+            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost and the scheme earns ${plan.yieldOnCost.toFixed(2)}%. Change the programme, the height or the footprint, or wait for rents.`}
+        />
+      )}
       {/* ALWAYS-VISIBLE SUMMARY — the cheque never lives under a tab. */}
       {plan && (
         <div className="grid" style={{ margin: "6px 0 8px" }}>
@@ -256,12 +273,6 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           <Row
             k="Programme"
             v={`${sf(plan.sf)} · ${fl} fl · ${devUseLabel(use)} · ${plan.months} mo`}
-          />
-          <Row
-            k="Yield on cost"
-            v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.requiredYield.toFixed(2)}% req`}
-            strong
-            bad={plan.hurdleRatio < 1}
           />
           {nb && Math.abs(nb.drift) >= 0.5 && (
             <Row k="Neighbourhood" v={`${nb.drift > 0 ? "+" : ""}${nb.drift.toFixed(0)} demand since 2000 on this block`} />
@@ -292,6 +303,23 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
             ))}
           </div>
+          {(use === "office" || use === "multifamily") && fl >= 2 && (
+            <div className="page-section" style={{ marginTop: 8 }}>
+              <div className="page-section-head">Shops at grade</div>
+              <div className="btn-row">
+                {([["auto", "As the street allows"], ["on", "Always"], ["off", "Never — a lobby"]] as const).map(([v, label]) => (
+                  <button key={v} className={"btn" + (groundRetail === v ? " btn-on" : "")} onClick={() => setGroundRetail(v)}>{label}</button>
+                ))}
+              </div>
+              <div className="hint">
+                {groundRetail === "auto"
+                  ? "The planner programmes a shop floor where the footfall and the retail market will carry one, and a lobby where they will not."
+                  : groundRetail === "on"
+                    ? `A shop floor whatever the street says — ${plan?.mix?.retail ? `${(plan.mix.retail * 100).toFixed(0)}% of the building` : "the ground floor"}, let by the retail market on its own terms; on a quiet block it may sit empty.`
+                    : "No shops: a lobby and a bigger ground floor for the main use. Nothing at grade to let, nothing at grade to sit empty."}
+              </div>
+            </div>
+          )}
           {(use === "office" || use === "retail" || use === "industrial") && (
             <div className="page-section" style={{ marginTop: 8 }}>
               <div className="page-section-head">Delivery strategy</div>
@@ -701,7 +729,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail }, plan.lender, spec)}
                   title={!canFund
                     ? `Equity short — needs ${usd(equityRequired)} all-in`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}
@@ -717,6 +745,66 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE BUILD DESK, FROM THE MAP CARD: the answer and a door.
+ *
+ * The full desk — programme, dials, the site verdict, the stack, the lenders
+ * — is a room's worth of controls and it used to render inside a card a third
+ * of the screen wide, with the yield on cost buried above two rows of
+ * identical buttons. The card now prices the scheme on the dials (the one
+ * the player holds, or the desk's opening default) and says whether it
+ * pencils; the desk opens as a full page. Same `planDevelopment` call, same
+ * draft, so the number here is the number the desk will show.
+ */
+export function DevelopGlance({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  const saved = game.holdings[bbl]?.devDraft;
+  const use: DevUse = saved?.use ?? "office";
+  const cov = saved?.cov ?? 0.6;
+  const maxFl = maxFloorsFor(rec, cov, use);
+  const fl = Math.min(saved?.floors ?? 8, maxFl);
+  const contract: Contract = saved?.contract ?? "gmp";
+  const bank = saved?.bank || CONSTRUCTION_LENDER;
+  const spec = saved?.spec ?? 0.5;
+  const groundRetail = saved?.groundRetail ?? "auto";
+  const stack = capStack(saved?.split ?? { retail: 15, office: 45, multifamily: 40 }, Math.max(0, Math.floor(maxRetailShare(fl) * 100)));
+  const customMix = use === "mixed"
+    ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
+    : undefined;
+  const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
+  const plan = planMax
+    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail }, bank, spec)
+    : null;
+  const open = () => useStore.getState().openProperty(bbl, "build");
+  const closeCheque = plan ? plan.equityAtClose + plan.pointsCost : 0;
+  return (
+    <div className="deal">
+      <div className="deal-head">
+        Develop this lot
+        {saved && <span className="dim"> · scheme held</span>}
+      </div>
+      {plan ? (
+        <Verdict
+          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          value={`${plan.yieldOnCost.toFixed(2)}%`}
+          tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
+          note={plan.hurdleRatio >= 1
+            ? `Pencils against ${plan.requiredYield.toFixed(2)}% required. ${usd(closeCheque)} of your money at groundbreak, ${usd(plan.equity + plan.pointsCost)} all in, ${plan.months} months to deliver.`
+            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost. The desk has the height, footprint and programme to move it.`}
+        />
+      ) : (
+        <div className="hint">No scheme prices on this lot at these dials — {sf(rec.lotArea)} of land, envelope {farMaxFor(rec).toFixed(1)} FAR.</div>
+      )}
+      <div className="btn-row">
+        <button className="btn btn-sm" onClick={open}>Open the Build desk →</button>
+      </div>
     </div>
   );
 }

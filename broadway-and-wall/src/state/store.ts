@@ -43,6 +43,9 @@ import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
+/** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
+export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
+
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm";
 
 /**
@@ -151,7 +154,23 @@ interface AppState {
   dismissDeliveryCeremony: () => void;
   setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
-  setPage: (p: Page) => void;
+  /**
+   * Open a desk. `jump` names a section on that page ("Loan by loan") — the
+   * page's section rail scrolls to it once the room has painted, then clears
+   * it. View state only, like `page` itself.
+   */
+  setPage: (p: Page, jump?: string) => void;
+  /** The section a desk should scroll to on open, or null. Consumed by the page rail. */
+  pageJump: string | null;
+  /**
+   * WHICH TAB THE PROPERTY PAGE SHOULD OPEN ON. The map card asks for the
+   * build desk or the money desk by name; the page reads this once, lands on
+   * that tab and clears it, so the next open of a different deed starts at
+   * the overview as before.
+   */
+  propertyTab: PropertyTab | null;
+  /** Select a deed and open its full page on the named desk. */
+  openProperty: (bbl: string, tab: PropertyTab) => void;
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
   advance: () => void;
@@ -246,7 +265,7 @@ interface AppState {
   placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" }, lender?: string, spec?: number) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
@@ -518,6 +537,8 @@ export const useStore = create<AppState>((set, get) => ({
   mapFilter: "all",
   lens: "none",
   page: "none",
+  pageJump: null,
+  propertyTab: null,
   navBack: [],
   paletteOpen: false,
   docketSnooze: {},
@@ -595,17 +616,28 @@ export const useStore = create<AppState>((set, get) => ({
   },
   dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   setLens: (lens) => set({ lens }),
-  setPage: (page) => {
+  setPage: (page, jump) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
     // highlight paints before the page body. Opening a desk leaves map-only.
     const st = get();
     const nav = pushNav(st, page, st.selectedBBL);
+    const pageJump = page !== "none" && jump ? jump : null;
     if (page !== "none" && st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
-      startTransition(() => set({ page, mapOnly: false, ...(nav ?? {}) }));
+      startTransition(() => set({ page, pageJump, mapOnly: false, ...(nav ?? {}) }));
       return;
     }
-    startTransition(() => set({ page, ...(nav ?? {}) }));
+    startTransition(() => set({ page, pageJump, ...(nav ?? {}) }));
+  },
+  openProperty: (bbl, tab) => {
+    const st = get();
+    const nav = pushNav(st, "property", bbl);
+    if (st.mapOnly) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+    }
+    startTransition(() => set({
+      selectedBBL: bbl, propertyTab: tab, page: "property", pageJump: null, mapOnly: false, ...(nav ?? {}),
+    }));
   },
   // Going to the Debt desk to draw on the line should not cost you the deal you
   // were reading. Back restores the room AND the deed together; the camera is

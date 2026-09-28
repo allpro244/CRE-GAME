@@ -129,6 +129,23 @@ export function gameLayers(): LayerSpecification[] {
         ] as never,
       },
     },
+    // THE SELECTED LOT, FROM ALTITUDE. The gold outline above is right at
+    // street zoom and invisible from the opening camera, where the click
+    // read as one slightly warmer roof among four hundred. A soft halo on the
+    // ground around the site, wide enough to read at any zoom and drawn only
+    // while something is selected.
+    {
+      id: "bw-select-halo",
+      type: "line",
+      source: "bw-parcels",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#f2c353",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 6, 14, 9, 16.5, 16] as never,
+        "line-opacity": ["case", selected, 0.5, 0] as never,
+        "line-blur": 2.5,
+      },
+    },
     {
       // flat extrusions — hidden by default (the Three.js mesh renderer draws
       // the city); shown ghosted while a lens is active

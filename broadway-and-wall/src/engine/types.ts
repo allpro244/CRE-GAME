@@ -346,6 +346,8 @@ export interface Loan {
   prepay?: "open" | "stepdown" | "yieldmaint";
   prepayUntilM?: number;
   kicker?: number;            // participating paper: the lender's cut of the gain
+  /** Extensions documented on this note at or past maturity. Nobody extends twice — see workout.ts holdoverDecision. */
+  extensions?: number;
   principal: number;
   balance: number;
   ratePct: number;       // current coupon (floating reprices each quarter)
@@ -528,6 +530,16 @@ export interface Holding {
   // allowance. It costs the fit-out up front on space that may sit.
   specSuites?: { sf: number; readyM: number; use: BuiltClass; blockId?: number };
   occ?: number;        // multifamily aggregate occupancy
+  /**
+   * THE FLATS' IN-PLACE RENT, $/sf/yr on rentable feet. Apartment income
+   * read the SPOT market every month, so a 9% move in the index was a 27%
+   * move in NOI the same month on the same tenants — measured on 2856 Old
+   * State St, 99% let. A block of flats is a hundred twelve-month leases;
+   * its rent roll reaches the market as they turn, about a twelfth a month.
+   * This is that roll, walking toward the market. Undefined reads as at
+   * market (a vessel written today, an old save).
+   */
+  resRentPsf?: number;
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
    * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
@@ -640,6 +652,14 @@ export interface DevDraft {
   spec: number;
   split: { retail: number; office: number; multifamily: number };
   reuseTarget?: "multifamily" | "mixed";
+  /**
+   * SHOPS AT GRADE ON AN OFFICE OR APARTMENT BUILDING. "auto" is the
+   * street's call (footfall and the retail market — see withStreetRetail);
+   * "on" programmes the ground floor as shops whatever the street says,
+   * and the market decides whether they let; "off" is a lobby and a bigger
+   * ground floor for the main use.
+   */
+  groundRetail?: "auto" | "on" | "off";
 }
 
 export interface BtsCommitment {
@@ -837,6 +857,10 @@ export interface Listing {
    * 40 measured purchases, by as much as 62%. One quantity, one answer.
    */
   cond?: Condition;
+  /** The condition index the deed conveys — `cond` is a reading of it. */
+  condIdx?: number;
+  /** The flats' in-place rent the deed conveys — see Holding.resRentPsf. */
+  resRentPsf?: number;
   /**
    * WHOSE BUILDING THIS IS, while it is on the market.
    *
@@ -1074,6 +1098,10 @@ export interface Approach {
   roll?: Tenant[];
   occ?: number;
   cond?: Condition;
+  /** The condition index the deed conveys — the grade above is a reading of it. */
+  condIdx?: number;
+  /** The flats' in-place rent the deed conveys — see Holding.resRentPsf. */
+  resRentPsf?: number;
   /**
    * WHAT THEY WILL ACTUALLY TAKE, AND THE PLAYER MUST NEVER SEE IT.
    *
@@ -2221,6 +2249,18 @@ export interface PlanRow {
   holdM: number;
   stepPct: number;
   floorPct: number;
+  /**
+   * THE LEAST THE DESK MAY SIGN, net effective, as a share of the letter's
+   * market: face after free rent, less the allowance amortised over the
+   * term, plus what the bump is worth. `quotePct`/`floorPct` govern what the
+   * desk ASKS; this governs what it may accept. Free months and fit-out come
+   * out of the counter before rent does; a letter that cannot reach it is
+   * docketed with the reason. Absent on rows written before it existed —
+   * `neFloorOf` reads `floorPct` then, which is what the old "walk-away
+   * floor" label promised and the old code enforced only on a tenant's
+   * final.
+   */
+  minNePct?: number;
   /** Floors kept whole for a block user. A letter that breaks one dockets. */
   holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
 }
@@ -2455,6 +2495,14 @@ export interface GameState {
    */
   lastTradeM?: Record<string, number>;
   /**
+   * Deeds the player sold to an anonymous buyer, keyed to the month they
+   * changed hands. `holderOf` salts its draw with it so the register names a
+   * different holder from then on, instead of the one the player bought from.
+   */
+  deedSalt?: Record<string, number>;
+  /** The opening construction pipeline has been seeded (seedOpeningPipeline); once per game. */
+  openingPipelineSeeded?: boolean;
+  /**
    * The largest building PLANNED in each class so far this campaign — seeded
    * from the standing stock, so the first two-storey shop of the run does not
    * make the tape. When a groundbreaking beats it, that is a record and the
@@ -2652,6 +2700,14 @@ export interface GameState {
   cityLoans?: Record<string, CityLoan>;
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
+  /**
+   * THE SIZE OF A LOAN IN THIS TOWN. Every desk's minimum cheque was a number
+   * written for a city of $4M buildings; in a city whose median building is
+   * worth $1M the regional's $2.5M minimum quoted 9% of the tape and the
+   * conduit's $10M none of it. Median built value over the reference,
+   * clamped 0.25-4, recomputed yearly — see cityLoanScale.
+   */
+  loanScale?: number;
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
   /**

@@ -18,14 +18,15 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING } from "./value";
+import { START_YEAR } from "./types";
+import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING, useRentableSf } from "./value";
 // ONE FUNCTION, ONE MEANING. Every price in the game now appraises at the grade
 // the building is actually IN — its year, moved by whoever has been running it —
 // so an invariant that appraises at its BIRTH grade is measuring a different
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
 import { conveyedValue, leasableUses, minLettableSf, useVacantSf, notReadySf, unitStatusByUse, isCommercial } from "./leasing";
-import { mixOf, useSf } from "./mix";
+import { mixOf } from "./mix";
 import { blockIdentity } from "./plates";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { FAR_FLOOR, FAR_CEIL } from "./zoning";
@@ -213,7 +214,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (!parcels[bbl]) bad("history", `property ${bbl}`, "history attached to a parcel that does not exist");
     if (events.length > PROPERTY_HISTORY_CAP) bad("history", `property ${bbl}`, `${events.length} events exceed cap`);
     for (const e of events) {
-      if (!fin(e.m) || e.m < 0 || e.m > s.month) bad("history", `property ${bbl}`, `event month ${e.m}`);
+      // A groundbreak can predate the game: the opening pipeline
+      // (seedOpeningPipeline) stamps a frame that was already standing at
+      // its real start month, and "Aug 1999" is the honest date for it. No
+      // other event kind is written into the past, and no build runs five
+      // years, so that is the whole allowance.
+      const floor = e.kind === "build-start" ? -60 : 0;
+      if (!fin(e.m) || e.m < floor || e.m > s.month) bad("history", `property ${bbl}`, `event month ${e.m}`);
     }
   }
 
@@ -281,10 +288,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       }
       // each component holds only what fits in it
       for (const u of Object.keys(m) as BuiltClass[]) {
-        const cap = useSf(rec, u);
+        // RENTABLE feet: a roll larger than the demiseable area is the fault
+        // this used to miss, because it measured against the gross figure.
+        const cap = useRentableSf(rec, u);
         const inUse = h.tenants.filter((tn) => (tn.use ?? rec.class) === u).reduce((n, tn) => n + tn.sf, 0);
         if (inUse > cap + 1) {
-          bad("overleased", at, `${Math.round(inUse).toLocaleString()} sf let in the ${u} part, which is ${Math.round(cap).toLocaleString()} sf`);
+          bad("overleased", at, `${Math.round(inUse).toLocaleString()} sf let in the ${u} part, which is ${Math.round(cap).toLocaleString()} rentable sf`);
         }
       }
       for (const tn of h.tenants) {
@@ -303,6 +312,17 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       bad("overleased", at, `${Math.round(leased + turning).toLocaleString()} sf leased-or-turning in a ${rec.bldgArea.toLocaleString()} sf building`);
     }
     if (h.occ !== undefined && (!fin(h.occ) || h.occ < 0 || h.occ > 1)) bad("occ", at, `occupancy ${h.occ}`);
+    // NEW BONES READ AS NEW. A ground-up delivery inside the last year carries
+    // the top of the condition scale (dev.ts deliver); a conversion keeps its
+    // old bones and is exempt. Every delivery used to read 0.58 — the static
+    // land record's year is zero — while the word beside it said "good".
+    {
+      const b = s.built?.[bbl];
+      const dm = h.deliveredM;
+      const groundUp = dm !== undefined && b && b.bldgArea > 0
+        && b.yearBuilt >= START_YEAR + Math.floor(dm / 12) && s.month - dm <= 12;
+      if (groundUp && (h.condIdx ?? 0) < 0.85) bad("delivered", at, `delivered ${s.month - (dm as number)} months ago and reads condIdx ${(h.condIdx ?? 0).toFixed(2)} (${h.condition})`);
+    }
 
     // the loan
     const l = h.loan;
@@ -313,6 +333,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!fin(l.ratePct) || l.ratePct < 0 || l.ratePct > 60) bad("loan", at, `coupon ${l.ratePct}%`);
       if (!fin(l.monthlyPmt) || l.monthlyPmt < 0) bad("loan", at, `payment ${l.monthlyPmt}`);
       if (l.maturityM <= l.originM) bad("loan", at, "matures on or before it was written");
+      // A matured note is a takeout or a file, never furniture: the ladder
+      // in tickLoan renews it or opens a workout the month it matures, and a
+      // serviced balloon file extends or forecloses inside a year (workout.ts
+      // holdoverDecision). Three campaigns carried 61 building-months of paper
+      // past maturity with nothing happening before that decision existed.
+      if (l.maturityM < s.month - 1 && !s.workouts?.[bbl]) bad("balloon", at, `matured in month ${l.maturityM}, it is month ${s.month}, and no file is open`);
+      if (l.maturityM < s.month - 14 && s.workouts?.[bbl]?.stage !== "foreclosure") bad("balloon", at, `${s.month - l.maturityM} months past maturity without an extension or a filing`);
       if (l.originM > s.month) bad("loan", at, `originated in month ${l.originM}, it is month ${s.month}`);
       // an interest-only loan pays interest; an amortising one pays more
       const interest = (l.balance * l.ratePct) / 100 / 12;
@@ -405,7 +432,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!row.ok) {
         bad("blocks", `${h.bbl} ${row.use}`,
           `tenants ${Math.round(row.tenantSf)} + blocks ${Math.round(row.blockSf)} `
-          + `!= useSf ${Math.round(row.useSf)}`);
+          + `!= rentable ${Math.round(row.useSf)}`);
       }
     }
   }

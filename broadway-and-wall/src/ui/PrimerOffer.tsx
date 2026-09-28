@@ -18,6 +18,7 @@ function rememberOffered() {
 export default function PrimerOffer() {
   const phase = useStore((s) => s.phase);
   const month = useStore((s) => s.game?.month ?? 0);
+  const owns = useStore((s) => Object.keys(s.game?.holdings ?? {}).length > 0);
   const setPage = useStore((s) => s.setPage);
   const [show, setShow] = useState(false);
 
@@ -28,6 +29,14 @@ export default function PrimerOffer() {
     } catch { /* */ }
     setShow(true);
   }, [phase, month]);
+
+  // THE OFFER RETIRES ITSELF. It sat in the corner six months and two closed
+  // purchases into a playthrough, still asking whether the player was new to
+  // the business. Advancing the clock or signing a deed is the answer; the
+  // Primer stays one click away in the header for anyone who wants it later.
+  useEffect(() => {
+    if (show && (month > 0 || owns)) setShow(false);
+  }, [show, month, owns]);
 
   useEffect(() => {
     if (!show) return;

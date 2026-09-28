@@ -65,14 +65,18 @@ export function CreditLine() {
               { at: Math.round(room * 0.5), label: "½" },
               { at: room, label: "all" },
             ]}
-            hint={`Costs ${usd((Math.min(amt, room) * rate) / 100 / 12)} a month in interest while it's out.`}
+            hint={amt > 0
+              ? `Costs ${usd((Math.min(amt, room) * rate) / 100 / 12)} a month in interest while it's out.`
+              : `Set an amount. Interest at ${rate.toFixed(2)}% runs only while money is out.`}
           />
           <div className="btn-row">
+            {/* "Draw $0" read as a bug. With nothing set the buttons name the
+                action and wait; the amount joins the label once there is one. */}
             <button className="btn btn-buy" disabled={amt <= 0 || amt > avail} onClick={() => drawCredit(amt)}>
-              Draw {usd(Math.min(amt, avail))}
+              {amt > 0 ? `Draw ${usd(Math.min(amt, avail))}` : "Draw"}
             </button>
             <button className="btn" disabled={balance <= 0 || amt <= 0} onClick={() => repayCredit(amt)}>
-              Repay {usd(Math.min(amt, balance))}
+              {amt > 0 && balance > 0 ? `Repay ${usd(Math.min(amt, balance))}` : "Repay"}
             </button>
           </div>
         </>

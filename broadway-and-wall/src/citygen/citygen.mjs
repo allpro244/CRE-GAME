@@ -3114,7 +3114,11 @@ export function generateCity(cfg) {
     ],
   };
 
-  const manifest = { source: "fictional", city: cfg.name, district: cfg.district, seed: cfg.seed, lodes: true };
+  const manifest = {
+    source: "fictional", city: cfg.name, district: cfg.district, seed: cfg.seed, lodes: true,
+    // leaf key -> display name, so a parcel's district can be printed
+    districts: cfg.districtNames ?? {},
+  };
 
   // --- coverage -------------------------------------------------------------
   // The whole point of the file, measured. Sample the buildable land on a 10 m

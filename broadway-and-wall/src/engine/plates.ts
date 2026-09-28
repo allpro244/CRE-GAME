@@ -9,8 +9,22 @@
  */
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, Holding, Tenant, GameState } from "./types";
-import { useSf, uses } from "./mix";
+import { uses } from "./mix";
+import { rentableSf, useRentableSf } from "./value";
 import { rng } from "./market";
+
+// THE PLATE A TENANT LEASES IS RENTABLE, NOT GROSS.
+//
+// Every stack, suite, block and rent-roll target in this layer was sized on
+// `useSf` — the GROSS use area — while occupancy, vacancy, rent and value
+// read `useRentableSf` (gross less the core, stairs, risers and corridor:
+// 0.72-0.92 of it, BOMA). The two were reconciled once for the READERS
+// (HANDOFF §7 1b: "income quoted on gross — closed") and never for the
+// WRITER, so a roll could be let up to the gross figure and the owner's own
+// Leasing page then printed "Leased 7,504 sf of 5,986 sf" on a five-storey
+// office at 72% efficiency: occupancy pinned at 100% with a suite still
+// empty, and the rent on those 1,518 phantom feet arriving every month. One
+// basis for the physical layer now, and it is the one the tenant signs for.
 
 export type CommercialUse = Exclude<BuiltClass, "multifamily" | "land">;
 
@@ -85,13 +99,13 @@ export function stacksOf(rec: ParcelRecord): PlateStack[] {
   const totalFloors = Math.max(1, rec.floors || 1);
   const commUses = commercialUsesOf(rec);
   const weights = commUses
-    .map((use) => ({ use, sf: useSf(rec, use) }))
+    .map((use) => ({ use, sf: useRentableSf(rec, use) }))
     .filter((w) => w.sf > 0);
   const commSf = weights.reduce((a, w) => a + w.sf, 0);
   if (commSf <= 0) return [];
 
-  const mfSf = useSf(rec, "multifamily");
-  const bldg = rec.bldgArea || commSf + mfSf;
+  const mfSf = useRentableSf(rec, "multifamily");
+  const bldg = rentableSf(rec) || commSf + mfSf;
   let commFloors = totalFloors;
   if (mfSf > 0 && bldg > 0) {
     commFloors = Math.max(1, Math.min(totalFloors, Math.round((commSf / bldg) * totalFloors)));
@@ -163,7 +177,7 @@ export function marketNormSuiteSf(use: BuiltClass, plateSf: number): number {
  * A whole plate smaller than the class norm is the plate (the shop, the shed).
  */
 export function typicalSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
-  const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
+  const a = Math.max(1, useRentableSf(rec, use) || rentableSf(rec));
   if (use === "multifamily") return Math.min(a, 900);
   const plate = stackForUse(rec, use)?.plateSf ?? a;
   return marketNormSuiteSf(use, plate);
@@ -248,9 +262,9 @@ function tenantUse(t: Tenant, rec: ParcelRecord): BuiltClass {
 /**
  * Vacant inventory as contiguous blocks. Source of truth for the physical
  * layer. Assigns missing tenant floors first (deterministic, no RNG).
- * Vacant sf is useSf minus sitting tenants, laid on from the top of the
- * stack — largest tenant already took the bottom — so the identity
- * Σ blocks.sf + Σ tenants.sf == useSf holds to the foot by construction.
+ * Vacant sf is the RENTABLE use area minus sitting tenants, laid on from the
+ * top of the stack — largest tenant already took the bottom — so the identity
+ * Σ blocks.sf + Σ tenants.sf == useRentableSf holds to the foot by construction.
  */
 export function blocksOf(rec: ParcelRecord, h: Holding): SpaceBlock[] {
   assignTenantFloors(rec, h.tenants);
@@ -261,7 +275,7 @@ export function blocksOf(rec: ParcelRecord, h: Holding): SpaceBlock[] {
     const tenantSf = h.tenants
       .filter((t) => tenantUse(t, rec) === stack.use)
       .reduce((a, t) => a + t.sf, 0);
-    let vacant = Math.max(0, useSf(rec, stack.use) - tenantSf);
+    let vacant = Math.max(0, useRentableSf(rec, stack.use) - tenantSf);
     if (vacant <= 0.5) continue;
     // Vacant from the top. Full empty floors merge; a leftover partial or
     // remnant is its own block at the cut.
@@ -299,13 +313,13 @@ export function blocksOf(rec: ParcelRecord, h: Holding): SpaceBlock[] {
   return blocks;
 }
 
-/** Per-use identity the invariant checks. */
+/** Per-use identity the invariant checks. `useSf` here is the RENTABLE use area. */
 export function blockIdentity(rec: ParcelRecord, h: Holding): { use: BuiltClass; tenantSf: number; blockSf: number; useSf: number; ok: boolean }[] {
   const blocks = blocksOf(rec, h);
   return commercialUsesOf(rec).map((use) => {
     const tenantSf = h.tenants.filter((t) => tenantUse(t, rec) === use).reduce((a, t) => a + t.sf, 0);
     const blockSf = blocks.filter((b) => b.use === use).reduce((a, b) => a + b.sf, 0);
-    const area = useSf(rec, use);
+    const area = useRentableSf(rec, use);
     return { use, tenantSf, blockSf, useSf: area, ok: Math.abs(tenantSf + blockSf - area) < 1 };
   });
 }

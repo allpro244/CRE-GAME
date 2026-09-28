@@ -55,8 +55,17 @@ for (let seed = 0; seed < SEEDS; seed++) {
       if (hit[b] !== undefined) continue;
       const rec = E.resolveRec(parcels, g, b), h = g.holdings[b];
       if (!rec || !h) { hit[b] = null; continue; }
-      const u = E.unitStatus(rec, h, g.month);
-      if (u.total > 0 && u.leased / u.total >= 0.85) hit[b] = g.month - startM;
+      // FEET, NOT UNITS. This read `unitStatus` — leased units over a total
+      // that is the leg divided by the class's norm suite — so a building
+      // demised into five real tenancies against a six-unit norm read 5 of 6
+      // = 83% and "still empty after 20 years" at 100% of its feet let.
+      // Measured on the previous bar, 10 of 16 "empties" were 63-100% let by
+      // area, four of them at or above 95%. Stabilisation is a share of the
+      // rentable feet, which is what the rent arrives on.
+      const use = E.dominantUse(rec);
+      const legSf = E.useRentableSf(rec, use);
+      const taken = h.tenants.reduce((a, t) => a + (((t.use ?? rec.class) === use) ? t.sf : 0), 0);
+      if (legSf > 0 && taken / legSf >= 0.85) hit[b] = g.month - startM;
     }
   }
   for (const b of owned) rows.push({ m: hit[b] ?? null, use: E.dominantUse(E.resolveRec(parcels, g, b)) });

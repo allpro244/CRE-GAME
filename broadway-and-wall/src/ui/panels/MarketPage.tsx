@@ -1,7 +1,8 @@
+import { marketAppraisal } from "@/engine/value";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
+import { marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
@@ -39,7 +40,8 @@ export function BuildingDatabase() {
       // Your own buildings price on the condition you have actually let them
       // drift to; everyone else's on the street's grade, as before.
       const cond = h?.condition ?? gradeOf(game, rec);
-      const val = assetValue(rec, game.econ, cond);
+      // the same appraiser the desk and the lender read: the disclosed roll where there is one
+      const val = marketAppraisal(game, rec, bbl, cond);
       // In-place rent where a roll exists — your own commercial leases,
       // weighted by the square feet each one covers — and the market's
       // estimate for the rest of town, which is the same model the engine
@@ -283,16 +285,23 @@ export function MarketPage() {
       {/* BOOKS FOR SALE — the desk the seizure alert always pointed at and never reached.
           Packages live on game.portfolios (REO / fund wind-down). They are pulled off the
           single-asset tape on purpose; the close is one cash cheque. A receiver will talk. */}
-      <div className="page-section" style={{ marginTop: 10 }}>
-        Books for sale · {streetBooks.length}
-      </div>
+      {/* AN EMPTY DESK IS ONE LINE. A playtest screenshot had the four live
+          listings — the only thing a new player can act on — below three
+          empty sections and two paragraphs explaining what would be in them.
+          The explanation is still here, on hover; the space is not. */}
       {streetBooks.length === 0 ? (
-        <div className="hint dim" style={{ marginBottom: 10 }}>
-          No receiver books on the market. When a firm fails with four or more deeds, the lead lender puts the
-          whole relationship out as one package here — priced to clear the balance sheet, walking down every quarter
-          until somebody writes the cheque. Distressed paper (claims on a building, not the deed) is on Notes.
+        <div
+          className="hint dim"
+          style={{ marginTop: 10, marginBottom: 6 }}
+          title="When a firm fails with four or more deeds, the lead lender puts the whole relationship out as one package here — priced to clear the balance sheet, walking down every quarter until somebody writes the cheque. Distressed paper (claims on a building, not the deed) is on Notes."
+        >
+          Books for sale · 0 — no receiver books on the market today.
         </div>
       ) : (
+        <>
+          <div className="page-section" style={{ marginTop: 10 }}>
+            Books for sale · {streetBooks.length}
+          </div>
         <div style={{ marginBottom: 12 }}>
           <div className="hint" style={{ marginBottom: 8 }}>
             One cheque, all cash, no financing at the table — that is why a package trades back from the sum of its
@@ -471,6 +480,7 @@ export function MarketPage() {
             );
           })}
         </div>
+        </>
       )}
       {/* THE DOCKET, WHEREVER THE CARD SETTING STANDS. Foreclosure lots are the
           one thing on the tape nobody chose to sell, and they are gone in a
@@ -574,62 +584,6 @@ export function MarketPage() {
           page that nobody else can bid on and the one thing that disappears on
           a schedule; the listings will still be there next month. */}
       <BrokerCalls />
-      {/* THE SHOPS. Three house brokerages carry every mandate in this town,
-          and each one keeps a ledger on you: fees earned, first looks you let
-          lapse, how long since your last closing. That ledger decides whose
-          phone rings before the tape — it was driving the FIRST LOOK chips
-          below and was itself visible nowhere, so the loop read as luck.
-          brokerScore is the engine's own gate (broker.ts), called pure in
-          render the way varianceQuote is on the property card — the number
-          here is the number the mandate desk reads. */}
-      {(() => {
-        const shops = ["b0", "b1", "b2"].map((id, i) => {
-          const rel = game.brokerRel?.[id];
-          const score = brokerScore(game, id);
-          const raw = rel ? rel.fees - rel.ignores : 0;
-          // The score halves once you have been quiet long enough to be a
-          // story about the past. Read the fade off the engine's own
-          // arithmetic — score disagreeing with the raw ledger — rather than
-          // keeping a second copy of its window.
-          const faded = !!rel && raw !== 0 && score !== raw;
-          return { id, name: rel?.name ?? houseBrokerName(game, i), rel, score, faded };
-        });
-        const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
-        return (
-          <div className="deal" style={{ marginTop: 14 }}>
-            <div className="deal-head">The shops · whose phone rings first</div>
-            <div className="grid">
-              {shops.map((sh) => (
-                <Row
-                  key={sh.id}
-                  k={sh.name}
-                  v={(() => {
-                    if (!sh.rel || (sh.rel.fees === 0 && sh.rel.ignores === 0)) {
-                      return `no fees yet · ${EARLY_FEES} closings buy the first call`;
-                    }
-                    const bits = [`${sh.rel.fees} fee${sh.rel.fees === 1 ? "" : "s"} banked`];
-                    if (sh.rel.ignores > 0) bits.push(`${sh.rel.ignores} look${sh.rel.ignores === 1 ? "" : "s"} wasted`);
-                    bits.push(sh.score >= EARLY_FEES
-                      ? "they ring you before the tape"
-                      : `${fmt(Math.max(0, sh.score))} of ${EARLY_FEES} toward the first call`);
-                    if (sh.faded) bits.push("gone quiet — years without a fee and the shop half-forgets you");
-                    return bits.join(" · ");
-                  })()}
-                  strong={sh.score >= EARLY_FEES}
-                  bad={!!sh.rel && sh.rel.ignores > sh.rel.fees}
-                />
-              ))}
-            </div>
-            <div className="hint">
-              Every closing pays its fee to one of these three, and the shop remembers. {EARLY_FEES} fees through
-              the same house and about half its new mandates reach you {EARLY_WINDOW_M} months before anybody
-              else hears the address; a first look you let lapse — no talks opened, no deed — is a wasted
-              afternoon they also remember. Close inside the window, or at least get a conversation going, and
-              the next mandate rings you first.
-            </div>
-          </div>
-        );
-      })()}
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -774,7 +728,12 @@ export function MarketPage() {
                     <td className="num">{usd(li.ask)}</td>
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
                     <td className="num">{built ? usd(noi) : "—"}</td>
-                    <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
+                    {/* A YIELD NEEDS INCOME. An empty building with a tax bill
+                        printed "-14.80%" on the tape, which is not a cap rate
+                        anybody quotes: there is nothing to capitalise. */}
+                    <td className="num" title={built && noi <= 0 ? "No income to capitalise — the building is empty or its costs exceed its rent; the ask is a price for the shell" : undefined}>
+                      {built ? (noi > 0 ? goingIn.toFixed(2) + "%" : "— vacant") : "—"}
+                    </td>
                     {/* THE BUILDING'S OCCUPANCY, AND IT IS A FACT.
                         This column used to be the CITY'S — occupancy(rec, econ),
                         the class model — because "you have not seen inside a
@@ -809,6 +768,62 @@ export function MarketPage() {
           </table>
         </section>
       </div>
+      {/* THE SHOPS. Three house brokerages carry every mandate in this town,
+          and each one keeps a ledger on you: fees earned, first looks you let
+          lapse, how long since your last closing. That ledger decides whose
+          phone rings before the tape — it was driving the FIRST LOOK chips
+          below and was itself visible nowhere, so the loop read as luck.
+          brokerScore is the engine's own gate (broker.ts), called pure in
+          render the way varianceQuote is on the property card — the number
+          here is the number the mandate desk reads. */}
+      {(() => {
+        const shops = ["b0", "b1", "b2"].map((id, i) => {
+          const rel = game.brokerRel?.[id];
+          const score = brokerScore(game, id);
+          const raw = rel ? rel.fees - rel.ignores : 0;
+          // The score halves once you have been quiet long enough to be a
+          // story about the past. Read the fade off the engine's own
+          // arithmetic — score disagreeing with the raw ledger — rather than
+          // keeping a second copy of its window.
+          const faded = !!rel && raw !== 0 && score !== raw;
+          return { id, name: rel?.name ?? houseBrokerName(game, i), rel, score, faded };
+        });
+        const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+        return (
+          <div className="deal" style={{ marginTop: 14 }}>
+            <div className="deal-head">The shops · whose phone rings first</div>
+            <div className="grid">
+              {shops.map((sh) => (
+                <Row
+                  key={sh.id}
+                  k={sh.name}
+                  v={(() => {
+                    if (!sh.rel || (sh.rel.fees === 0 && sh.rel.ignores === 0)) {
+                      return `no fees yet · ${EARLY_FEES} closings buy the first call`;
+                    }
+                    const bits = [`${sh.rel.fees} fee${sh.rel.fees === 1 ? "" : "s"} banked`];
+                    if (sh.rel.ignores > 0) bits.push(`${sh.rel.ignores} look${sh.rel.ignores === 1 ? "" : "s"} wasted`);
+                    bits.push(sh.score >= EARLY_FEES
+                      ? "they ring you before the tape"
+                      : `${fmt(Math.max(0, sh.score))} of ${EARLY_FEES} toward the first call`);
+                    if (sh.faded) bits.push("gone quiet — years without a fee and the shop half-forgets you");
+                    return bits.join(" · ");
+                  })()}
+                  strong={sh.score >= EARLY_FEES}
+                  bad={!!sh.rel && sh.rel.ignores > sh.rel.fees}
+                />
+              ))}
+            </div>
+            <div className="hint">
+              Every closing pays its fee to one of these three, and the shop remembers. {EARLY_FEES} fees through
+              the same house and about half its new mandates reach you {EARLY_WINDOW_M} months before anybody
+              else hears the address; a first look you let lapse — no talks opened, no deed — is a wasted
+              afternoon they also remember. Close inside the window, or at least get a conversation going, and
+              the next mandate rings you first.
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

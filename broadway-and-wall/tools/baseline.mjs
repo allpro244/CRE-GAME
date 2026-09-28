@@ -110,7 +110,9 @@ function rolls(g, base) {
     E.genRentRoll(g, r, h);
     for (const u of Object.keys(E.mixOf(r))) {
       if (u === "multifamily") continue;
-      const leg = E.useSf(r, u);
+      // RENTABLE feet, the same basis the roll is now let on. Dividing a
+      // rentable roll by gross feet read 0.65 for a stock that was 80% let.
+      const leg = E.useRentableSf(r, u);
       if (leg < 400) continue;
       tot++;
       const leased = h.tenants.filter((t) => (t.use ?? u) === u).reduce((a, t) => a + t.sf, 0);

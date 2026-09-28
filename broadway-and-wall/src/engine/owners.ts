@@ -378,7 +378,11 @@ export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holde
   const reg = register(s, parcels);
   if (!reg.length) return null;
   const dirt = rec.class === "land" || !(rec.bldgArea > 0);
-  const r = hash01(bbl + ":t");
+  // A deed the player sold to an anonymous buyer re-draws its holder: the
+  // salt is the month it changed hands, so the same building keeps the same
+  // new name from then on.
+  const key = s.deedSalt?.[bbl] !== undefined ? `${bbl}:sold${s.deedSalt[bbl]}` : bbl;
+  const r = hash01(key + ":t");
   const tier = dirt ? landTierOf(rec, r) : tierOf(rec, r);
   let pools = TIER_POOLS.get(reg);
   if (!pools) {
@@ -393,14 +397,14 @@ export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holde
     TIER_POOLS.set(reg, pools);
   }
   const pool = (dirt ? pools.dirt : pools.all)[tier];
-  if (!pool.length) return reg[Math.floor(hash01(bbl) * reg.length)];
+  if (!pool.length) return reg[Math.floor(hash01(key) * reg.length)];
   // AND CONCENTRATED WITHIN THE TIER TOO. A uniform pick makes every holder in
   // a band the same size, which is the one shape ownership never has: inside
   // the small stock there is still a man with nine shops and four hundred with
   // one. Squaring the draw biases toward the front of the pool, so a few names
   // in every band hold a great deal and the rest hold one thing each — which
   // is the power law the whole register is trying to be.
-  const u = hash01(bbl + ":h");
+  const u = hash01(key + ":h");
   return pool[Math.min(pool.length - 1, Math.floor(pool.length * u * u))];
 }
 

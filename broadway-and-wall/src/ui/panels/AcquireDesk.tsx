@@ -7,25 +7,24 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
 import {
-  assetValue, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
-  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, ownedHoldingNoiYr, isLeasedFee,
-} from "@/engine/value";
+  assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
+  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
   buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
-import { sellerOf, sellerProfile, closingBand, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
+import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS } from "@/engine/debt";
+import { PRODUCTS, deskAdvice } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { mixOf, uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
-import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint } from "@/ui/panels/shared";
+import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -45,7 +44,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
   const bq = buyoutQuote(game, bbl);
   const occupied = (bq?.tenants ?? 0) > 0 || (h.occ ?? 0) > 0.02;
   const resSf = useSf(rec as never, "multifamily") * (h.occ ?? 0);
-  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * BUYOUT_PREMIUM);
+  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * BUYOUT_PREMIUM);
   const clearCost = (bq?.cost ?? 0) + resCost;
   const demoCost = demolitionCost(rec, game);
   // The engine's own bar for a wrecking permit. Named on the button rather
@@ -151,8 +150,10 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
     );
   }
   const li = game.listings.find((l) => l.bbl === bbl);
-  const px = li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
+  const px = li?.ask ?? game.approaches[bbl]?.ask ?? marketAppraisal(game, rec, bbl, gradeOf(game, rec));
   const h = asIfOwned(game, bbl, px, d, rec);
+  // what the assessor's roll says today, before the sale resets it to the price
+  const standingAssessed = assetValue(rec, game.econ, d.cond ?? gradeOf(game, rec), d.condIdx);
   const st = operatingStatement(rec, game.econ, h, game.month);
   const roll = [...(d.roll ?? [])].sort((a, b) => b.sf - a.sf);
   const commSf = Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0)));
@@ -214,7 +215,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
         <Row k="Effective gross income" v={usd(st.egi)} />
         <Row k="Operating expenses" v={"−" + usd(st.opex)} />
         <Row k="Management" v={"−" + usd(st.mgmt)} />
-        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax)} />
+        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax) + (Math.abs(px - standingAssessed) > px * 0.05 ? ` (the sale resets the assessment from ${usd(standingAssessed)})` : "")} />
         <Row k="In-place NOI / yr" v={usd(st.noi)} strong bad={st.noi < 0} />
         <Row k="Going-in cap at that price" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
       </div>
@@ -512,7 +513,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   // number a seller needs is what a buyer will compute: in-place income off
   // the leases actually in place, against a tax bill struck at the new price.
   const saleNoi = fee && saleH
-    ? ownedHoldingNoiYr(game, parcels, saleH)
+    ? ownedContractNoiYr(game, parcels, saleH)
     : saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
       ? holdingNOIYr(saleRec, game.econ,
           asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
@@ -603,6 +604,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
 // quote by the principal component.
 
 export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
   const [frac, setFrac] = useState(0.88);
   const px = Math.round(ask * frac);
   return (
@@ -616,7 +619,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
         onChange={setFrac}
         format={() => `${usd(px)} · ${((frac - 1) * 100).toFixed(0)}%`}
         marks={[{ at: 0.88, label: "−12%" }, { at: 0.95, label: "−5%" }]}
-        hint="One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up."
+        hint={`One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up. ${(() => { const sk = sellerOf(game, parcels, bbl); const b = closingBand(sk.kind, {}); const lbl = sellerProfile(sk.kind).label; return `${lbl[0].toUpperCase()}${lbl.slice(1)} typically closes at ${(b.lo * 100).toFixed(0)}–${(b.hi * 100).toFixed(0)}% of the ask${phaseShift(game) ? ` (${phaseShift(game) > 0 ? "firmer" : "softer"} in this phase)` : ""}.`; })()}`}
       />
       <div className="btn-row">
         <button className="btn" onClick={() => useStore.getState().counterOff(bbl, px)}>
@@ -987,7 +990,17 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // Same pattern as RefiSection: default "savings" often won't quote, while
   // another desk will — fall through to a desk that actually writes so Commit
   // does not silently close all-cash against a card full of loan terms.
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"));
+  // ORDERED BY WHAT THE MONEY COSTS, desks that will write first. The sheet's
+  // own order put the debt fund beside the banks as if they were peers.
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
+    .map((p) => ({ p, q: buyQuote(game, parcels, bbl, offerPrice, p.id, 1) }))
+    .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
+    .map((x) => x.p);
+  const advice = (() => {
+    const rec0 = resolveRec(parcels, game, bbl);
+    const occ = rec0 ? inPlace(rec0, game, bbl, offerPrice).occ : 0;
+    return deskAdvice(productChoices.map((p) => { const q = buyQuote(game, parcels, bbl, offerPrice, p.id, 1); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
+  })();
   const picked = (() => {
     const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
     if (product === "cash" || direct.principal > 0) return product;
@@ -1096,7 +1109,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                     : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
                   onClick={() => setProduct(p.id)}
                 >
-                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · ${(pq.ltvCap * 100).toFixed(0)}% sheet` : " · won't quote"}
                 </button>
               );
             })}
@@ -1104,6 +1117,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               All cash
             </button>
           </div>
+          {advice && <div className="hint" style={{ marginTop: 6 }}>{advice}</div>}
           {max.principal > 0 ? (
             <Slider
               label="Leverage"
@@ -1119,23 +1133,41 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           ) : null}
           {max.principal > 0 && (
             <div className="hint">
-              {max.bind === "appraisal"
+              {max.bind === "guarantor"
+                ? `${max.guarantorWhy ?? "The desk has capped the loan at what your balance sheet will carry."} Bank paper is recourse: they have your signature as well as the deed, and the signature has to be worth half the loan. Non-recourse desks size on the building alone.`
+                : max.bind === "appraisal"
                 ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
                   + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
                   + `Their collateral is the building, not your enthusiasm for it.`
                 : max.bind === "ltv"
-                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
+                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate today (${max.sheetWhy ?? "their sheet"}) — the ceiling, and the income clears it comfortably.`
                 : max.bind === "dscr"
                   ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
                     + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
                     + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
                   : max.bind === "dy"
                     ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
-                    : `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, cut back by the credit window and your own record. Leverage comes back when money does.`}
+                    : `Their sheet says ${(max.ltvCap * 100).toFixed(0)}% today (${max.sheetWhy ?? "their sheet"}), and you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — ${max.advanceWhy ?? "cut back by the credit window and your own record"}. Leverage comes back when money does.`}
             </div>
           )}
           {max.principal <= 0 && (
             <div className="hint">{picked === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+          )}
+          {/* THE ANSWER FOR THE STACK ON THE DIAL: what the money costs all
+              in against what the building earns going in. Positive leverage
+              or negative, in one line, before the commit stage asks you to
+              sign. */}
+          {principal > 0 && rec && rec.class !== "land" && rec.bldgArea > 0 && (
+            <Verdict
+              label={`${productChoices.find((p) => p.id === picked)?.label ?? "Debt"} · ${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV`}
+              value={`${max.allInPct.toFixed(2)}% all-in`}
+              tone={negLev || cf < 0 ? "bad" : dscrNow !== null && dscrNow < 1.25 ? "warn" : "good"}
+              note={(negLev
+                ? `Negative leverage: the money costs more than the ${goingInPct.toFixed(2)}% the building earns going in — every dollar borrowed lowers your return.`
+                : `Positive leverage over a ${goingInPct.toFixed(2)}% going-in cap.`)
+                + (dscrNow !== null ? ` DSCR ${dscrNow.toFixed(2)}x` : "")
+                + ` · year-one cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} of equity.`}
+            />
           )}
           <div className="btn-row" style={{ marginTop: 10 }}>
             <button type="button" className="btn" onClick={() => setStage("thesis")}>◂ Thesis</button>

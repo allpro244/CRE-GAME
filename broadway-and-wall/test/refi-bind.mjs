@@ -54,6 +54,7 @@ function buySome(seed, n = 6, cash = 250_000_000) {
   return { g, bbls: out };
 }
 
+const bad = [];
 function quoteBook(g, owned, label) {
   console.log(`\n${label}`);
   console.log(`index ${g.econ.indexRate.toFixed(2)}%  creditIdx ${(g.econ.creditIdx ?? 1).toFixed(2)}  month ${g.month}\n`);
@@ -68,8 +69,13 @@ function quoteBook(g, owned, label) {
     const { quotes } = E.refiQuotes(g, parcels, bbl);
     const open = quotes.filter((q) => q.available && q.maxProceeds > 0);
     console.log(`${rec?.address ?? bbl}  ${rec?.class}  value $${(v / 1e6).toFixed(2)}M  NOI $${(noi / 1e6).toFixed(2)}M  implied cap ${cap.toFixed(2)}%`);
+    // THE SAME QUOTE THE DESK MADE: the collateral view's class, the
+    // stabilised leg and the building's condition — the sheet moves with the
+    // engineer's report now, so a legs call without it is a different loan.
+    const coll = E.debtCollateral(g, parcels, h, rec);
     for (const q of open.slice(0, 5)) {
-      const raw = E.quote(g, E.productById(q.id), v, noi, rec?.class);
+      // ...and the guarantor the desk read, since recourse paper prices the name
+      const raw = E.quote(g, E.productById(q.id), v, noi, coll.quoteClass, false, coll.stab, h.condition, { nw: E.netWorth(g, parcels) });
       const ltvPct = v > 0 ? (q.maxProceeds / v) * 100 : 0;
       console.log(
         `  ${q.label.padEnd(22)} ${q.ratePct.toFixed(2)}%  proceeds $${(q.maxProceeds / 1e6).toFixed(2)}M  `
@@ -77,8 +83,28 @@ function quoteBook(g, owned, label) {
         + `binds ${q.binding}`
         + (raw.byLtv != null
           ? `  legs LTV $${(raw.byLtv / 1e6).toFixed(2)}M / DSCR $${(raw.byDscr / 1e6).toFixed(2)}M / DY $${(raw.byDebtYield / 1e6).toFixed(2)}M`
-          : ""),
+          : "")
+        + (q.haircut < 0.995 ? `  roll haircut ×${q.haircut.toFixed(2)}` : "")
+        + (q.bindingWhy ? `\n      ${q.bindingWhy}` : ""),
       );
+      // THE PRINTED PROCEEDS ARE THE PRINTED LEGS. The card once said "binds
+      // debt yield" beside a cheque half the debt-yield leg — the rent-roll
+      // haircut had been taken after the test and nothing said so. The
+      // identity is: proceeds = min(legs, hold size) × haircut, and the
+      // reason line must mention the haircut whenever it bit.
+      if (raw.byLtv != null && !q.binding.startsWith("stab")) {
+        const legMin = Math.min(raw.byLtv, raw.byDscr ?? Infinity, raw.byDebtYield ?? Infinity);
+        const expect = Math.round(legMin * q.haircut);
+        if (q.maxProceeds > 0 && !raw.holdCapped && Math.abs(expect - q.maxProceeds) > Math.max(2, expect * 0.001)) {
+          bad.push(`${q.label} on ${rec?.address ?? bbl}: proceeds $${q.maxProceeds} ≠ min(legs) $${legMin} × haircut ${q.haircut.toFixed(3)} = $${expect}`);
+        }
+        if (q.haircut < 0.995 && q.maxProceeds > 0 && !/off for the roll/.test(q.bindingWhy ?? "")) {
+          bad.push(`${q.label} on ${rec?.address ?? bbl}: haircut ×${q.haircut.toFixed(2)} taken and the reason line does not say so`);
+        }
+        if (q.binding === "advance rate" && q.maxProceeds > 0 && q.advanceToday < q.advanceLtv * 0.9 && !q.bindingWhy) {
+          bad.push(`${q.label} on ${rec?.address ?? bbl}: sized at ${(q.advanceToday * 100).toFixed(0)}% against a ${(q.advanceLtv * 100).toFixed(0)}% stated advance with no reason given`);
+        }
+      }
       counts[q.binding] = (counts[q.binding] ?? 0) + 1;
       n++;
     }
@@ -107,3 +133,9 @@ console.log("\nIf LTV at max is far below the desk's advance rate and the DY/DSC
 console.log("legs are the small ones, the sizing rules bound — not a small appraisal.");
 console.log("If proceeds/value is small AND the LTV leg is the smallest, the mark is small.");
 console.log("A 23% advance at 5.0x / 2% on a later, looser window would be a sizing bug.\n");
+if (bad.length) {
+  console.log(`${bad.length} quote(s) whose printed reason does not explain the printed cheque:`);
+  for (const b of bad) console.log(`  ✗ ${b}`);
+  process.exit(1);
+}
+console.log("Every cheque is min(legs) × haircut, and the reason line says so.");

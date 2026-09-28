@@ -2,20 +2,21 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
+import { districtLabel } from "./mix";
+import type { Bid, BuiltClass, DevUse, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
-import { recentLowballs, sellerOf, reserveMidOf, strikeDeal } from "./acquire";
+import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
-import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
-import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
+import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct } from "./debt";
+import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
@@ -85,13 +86,13 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const closing = Math.round(price * CLOSING_PCT);
   const deposits = incomingDeposits(s, bbl);
   if (product === "cash" || !rec) {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
   }
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0 };
+  if (!conditionOk(prod, gradeOf(s, rec))) {
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
   }
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
@@ -110,7 +111,10 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // test. And it cuts only one way — pay UNDER the appraisal and the lender
   // still only lends against what you paid, because the deal is the best
   // evidence of value there is. That asymmetry is the rule, not a penalty.
-  const appraised = assetValue(rec, s.econ, gradeOf(s, rec));
+  // THE LENDER'S APPRAISER READS THE ROLL — see marketAppraisal. The class
+  // model's opinion of a building like this one is not an appraisal of this
+  // one, and the desk sizing the loan is the desk that will hold the roll.
+  const appraised = marketAppraisal(s, rec, bbl, gradeOf(s, rec));
   const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
   const overpay = Math.max(0, price - uwBasis);
   // A LENDER UNDERWRITES THE INCOME THE BUILDING ACTUALLY EARNS.
@@ -136,13 +140,18 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
   const stab = stabViewFor(rec, s.econ, gradeOf(s, rec), uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab);
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, gradeOf(s, rec), { nw: netWorth(s, parcels) });
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
   // The engine has always known which one bound and never told anybody, which
   // is why a 72% lender quoting 47% looked arbitrary rather than arithmetical.
-  const capped = prod.ltv * uwBasis;
+  // TODAY'S SHEET, not the brochure's — standards, class, condition and your
+  // file with the desk have already moved it (statedLtv). "ltv" below means
+  // the loan sits at that number; "credit" means the window, the desk's
+  // appetite or your standing cut it further.
+  const ltvCap = q.statedLtv ?? prod.ltv;
+  const capped = ltvCap * uwBasis;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
@@ -158,13 +167,19 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     // because it is not a fact about the building — it is a fact about what
     // you agreed to pay. Telling somebody "advance rate" when the truth is
     // "you are over the appraisal" sends them off to fix the wrong thing.
-    bind: overpay > price * 0.005 ? "appraisal"
+    bind: q.guarantorConstrained ? "guarantor"
+      : overpay > price * 0.005 ? "appraisal"
       : q.stabConstrained ? "stab"
       : q.dscrConstrained ? "dscr"
       : q.dyConstrained ? "dy"
       : q.principal < capped * 0.995 ? "credit"
       : "ltv",
-    ltvCap: prod.ltv, uwDscr: prod.uwDscr,
+    ltvCap, uwDscr: prod.uwDscr,
+    /** How today's sheet was built, and why the loan is under it when it is. */
+    sheetWhy: q.sheetWhy, advanceWhy: q.advanceWhy,
+    /** What the money costs a year, all in — see allInCostPct. */
+    allInPct: allInCostPct(prod, q.ratePct),
+    guarantorWhy: q.guarantorWhy,
     /** What the lender underwrote, and how far over it you are going. */
     appraised, uwBasis, overpay,
   };
@@ -182,6 +197,10 @@ export function executePurchase(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
+  // see refreshListings: a live city job is somebody else's construction site
+  if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) {
+    return { s, err: "There is a crane on that lot — somebody else's job is under way. It is not for sale until it tops out or the receiver takes it." };
+  }
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
   // Vehicle path: fundPay + live investment period draws `fund.cash`.
   // Otherwise GP cash — the balance-sheet default.
@@ -342,10 +361,14 @@ export function executePurchase(
   if (paper) {
     holding.tenants = paper.roll ?? [];
     if (paper.occ !== undefined) holding.occ = paper.occ;
+    if (paper.resRentPsf !== undefined) holding.resRentPsf = paper.resRentPsf;
     // ...and the grade the memorandum was priced at. The distress knock above
     // has already been applied to this value at listing time, so taking it
     // verbatim is what makes the NOI on the tape the NOI on the deed.
-    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = initialCondIdx(rec); }
+    // THE INDEX THE PAPER CARRIED, not month zero's. `initialCondIdx(rec)`
+    // read the building's age at the START of the game whatever the closing
+    // month, so a deed bought in year twenty closed newer than it was listed.
+    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = paper.condIdx ?? initialCondIdx(rec, next.month, paper.cond); }
     // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the
@@ -432,7 +455,7 @@ export function bidOdds(
   // seller's NUMBER, which is where they act. A recession does not make a
   // seller likelier to accept a given discount by some fixed amount of luck —
   // it lowers what they will settle for.
-  const phase = s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
+  const phase = phaseShift(s);
   const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
   const seller = sellerOf(s, parcels, bbl);
   // Kind + distress share the desk's floors. Phase / street / relationship
@@ -984,8 +1007,12 @@ export function groundLesseeBuildableSf(
   if (!bare || !bare.lotArea) return null;
   const far = farMaxFor(bare);
   const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
-  const floors = Math.max(1, Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
-    Math.ceil(far / Math.max(0.08, cov))));
+  // THE SAME CAP THE PLANNER AND THE CITY OBEY. This desk carried its own
+  // table — four storeys of industrial — while dev.ts caps sheds at two, and
+  // the invariant that polices massing caught a lessee putting up a
+  // four-storey warehouse the city itself is not allowed to build.
+  const useCap = MAX_FLOORS_BY_USE[use as DevUse] ?? 18;
+  const floors = Math.max(1, Math.min(useCap, Math.ceil(far / Math.max(0.08, cov))));
   // SAME ENVELOPE CAP AS PLAYER DEVELOPMENT. Coverage × floors used to overrun
   // legal FAR whenever the top storey was a partial plate — the lessee planted
   // a bigger building than zoning allowed. Cap gross area at lot × FAR.
@@ -2375,7 +2402,17 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     // percentile of the exploit beat the disciplined reference median by 40%.
     // Now [0.86, 1.09] at peak: E[max of 3] ~1.03, E[max of 6] ~1.06, which is
     // what the calibration always claimed.
-    const price = Math.round(value * (0.86 + 0.20 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
+    // BIDS CENTRE ON THE MARK. The mark already carries the cycle — the cap
+    // rate compressed in the boom is what `value` is made of — so a bid list
+    // drawn from 86% to 109% of it was paying the boom twice: over 36
+    // marketed sales in three campaigns the accepted bid ran 108% of the
+    // appraisal at the median and 113% at the ninetieth, against a tape where
+    // the same player bought at or under the mark. Real marketed processes in
+    // rising markets clear a few per cent over a current appraisal, not a
+    // tenth; the max of a handful of draws around the mark, plus best and
+    // final, is where that few per cent comes from. In a crunch the draw sits
+    // under the mark, which is what "the whisper was a work of fiction" means.
+    const price = Math.round(value * (0.88 + 0.16 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
     // A buyer stretching past the pack is the one most likely to find a reason
     // to come back to you about it later.
     const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s, "sales") - 0.5) * 0.3));
@@ -2436,7 +2473,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
     // The ones who can afford to be patient are the ones who walk.
     const pWalk = 0.30 * (1 - b.credibility) + (next.econ.phase === "recession" ? 0.18 : 0);
     if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
-    const bump = 1 + rrange(next, 0.005, 0.055) * b.credibility;
+    const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
     b.price = Math.round(b.price * bump);
     if (b.price > before) lifted++;
@@ -2686,7 +2723,6 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   }
   next.exits = next.exits ?? [];
   next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
-  recordComp(next, rec, offer.price, "a buyer", firmShort(next), undefined, h.condition);
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was
@@ -2724,6 +2760,23 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.lastTradeM = next.lastTradeM ?? {};
   next.lastTradeM[bbl] = next.month;
   delete next.holdings[bbl];
+  // WHOEVER BOUGHT IT OWNS IT. The deed left the player's book and landed
+  // nowhere: `holderOf` hashes an unowned parcel to a registered holder, and
+  // the hash is the parcel's, so the desk showed the building back with the
+  // firm the player had bought it FROM — "Owned by Abernathy Construction",
+  // a month after selling it to a family office. A named firm's bid now
+  // puts the deed in that firm's book, on that firm's balance sheet (the
+  // same close it does off the tape); an anonymous buyer re-draws the holder
+  // with a salt, so the register's memory of the deed starts over with a
+  // different name. A package sale books its own buyer — see portfoliosale.
+  let took: ReturnType<typeof rivalBuys> = null;
+  if (!next.portfolioSale?.bbls.includes(bbl)) {
+    const named = offer.from ? livingRivals(next).find((r) => r.name === offer.from) : undefined;
+    took = named ? rivalBuys(next, parcels, rec, offer.price, named, firmShort(next)) : null;
+    if (!took) (next.deedSalt ??= {})[bbl] = next.month;
+  }
+  // The comp: `rivalBuys` files its own when a firm takes the deed.
+  if (!took) recordComp(next, rec, offer.price, offer.from ?? "a buyer", firmShort(next), undefined, h.condition);
   // A SALE OUT OF DEFAULT CLOSES THE FILE. It is the best outcome available in
   // a workout — the lender is repaid at closing and nobody takes a loss — and
   // the file has to die with the deed, not linger and foreclose on a building
@@ -2732,7 +2785,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
+    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M${offer.from ? ` to ${offer.from}` : ""} — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
       + (kick > 0 ? `. Your lender took $${(kick / 1e6).toFixed(2)}M of the gain` : "")
       + (breakFee > 0 ? `, and $${(breakFee / 1e6).toFixed(2)}M to break the loan early` : "")
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
@@ -3390,7 +3443,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
             q: s.month, kind: "info",
             text: record && !mine
               ? `A record: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M, the largest trade on the tape.`
-              : `Sold in ${rec.district}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
+              : `Sold in ${districtLabel(rec)}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
           });
         }
       }

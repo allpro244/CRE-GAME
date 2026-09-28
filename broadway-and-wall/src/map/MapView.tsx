@@ -526,6 +526,15 @@ export default function MapView() {
     }
   }, [selectedBBL, adjacency, parcels, mergedN]);
 
+  // A DESK OVER THE MAP STOPS THE CLOCK ON THE WATER. The city keeps drawing
+  // on demand; only the animation's own repaint requests pause, so a page's
+  // tables and an Advance under it are not sharing the GPU with walkers
+  // nobody can see through the backdrop.
+  const pageOpen = useStore((s) => s.page !== "none");
+  useEffect(() => {
+    threeRef.current?.setPaused(pageOpen);
+  }, [pageOpen, mapReady]);
+
   // GO TO PROPERTY. An explicit request from a list somewhere in the panel —
   // unlike the gentle ease above, this one always moves and always zooms in
   // far enough to actually see the building.

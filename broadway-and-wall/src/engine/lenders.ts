@@ -132,6 +132,17 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
   },
 };
 
+/**
+ * What each kind's standing book is written at, over the index, and the
+ * margin it ordinarily earns over its own funding (`baseFund` in
+ * `tickLenders`: deposits at index − 2.2, float at index − 1.4, the bond
+ * market at index + 0.3, committed capital at index + 1.1). The banks and the
+ * insurer keep the number every desk used to carry; the conduit's book is a
+ * warehouse of the same paper; the fund's is bridge and mezz.
+ */
+const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.9, conduit: 1.9, fund: 4.5 };
+const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 1.6, fund: 3.4 };
+
 /** Who writes construction paper in this town. */
 export const CONSTRUCTION_LENDER = "Alden Savings & Trust";
 
@@ -602,7 +613,18 @@ export function tickLenders(s: GameState) {
       continue;
     }
     const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5 };
-    const spread = 1.9;
+    // A DESK'S BOOK EARNS THAT DESK'S SPREAD. Every lender in town earned
+    // index + 1.9 on its book, which is a bank's number — and the debt fund
+    // was FUNDED at index + 1.1, so its margin was eight tenths of a point
+    // and the margin factor below sat on its floor in every month of every
+    // run. Measured over six seeds and thirty years: Cordage's appetite ran
+    // 0.24-0.66, median 0.31, with its capital at 23-26% against a 22%
+    // target — flush, and rationing forever, because a bank's margin formula
+    // had been applied to a fund whose paper is written at index + 4.1
+    // floating and index + 8 on the mezz. The 80% bridge desk was writing
+    // 53%, under the hometown bank, which is the opposite of what a bridge
+    // desk is for. The book yields the desk's own spread now.
+    const spread = BOOK_SPREAD[l.kind] ?? 1.9;
 
     // --- the book earns WHAT IT WAS WRITTEN AT -------------------------------
     // The margin used to be arithmetic: the book earned index+1.9 and the
@@ -693,7 +715,13 @@ export function tickLenders(s: GameState) {
     // what it actually costs to hold the book this month, and that is the
     // number a credit committee rations on.
     const nim = (l.bookYield ?? e.indexRate + spread) - Math.max(0, (l.fundCost ?? 0) + (l.panicBps ?? 0));
-    const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nim - 0.8) / 2.8));
+    // ...AND RATIONS AGAINST ITS OWN NORMAL MARGIN, not a bank's. The curve
+    // is the bank's original one expressed as a share of the kind's ordinary
+    // margin (a bank's 4.1 points: index + 1.9 on the book against deposits
+    // at index − 2.2), so a bank is numerically unchanged, and a conduit
+    // earning its whole 1.6-point gain-on-sale margin is at 1, not at half.
+    const nimRel = nim / (NORMAL_NIM[l.kind] ?? 4.1);
+    const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nimRel - 0.195) / 0.683));
     l.appetite = Math.max(0, Math.min(1.15,
       (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, e.creditIdx ?? 1) : 1)));
     // Growth at 0.35%/mo compounded to an 8x book over fifty years while the

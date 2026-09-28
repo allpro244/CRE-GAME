@@ -5,10 +5,10 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
-import { resolveRec, isVacantLandLoanCollateral } from "@/engine/value";
-import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost } from "@/engine/debt";
+import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
+import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
-import { annualPayment, Row } from "@/ui/panels/shared";
+import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
 
 export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
@@ -97,7 +97,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const toYou = proceeds - payoff - fee;
   // real annuity, not "coupon times 1.28" — the old shortcut overstated a
   // 30-yr amort by a full point of proceeds at today's rates
-  const annualDs = q.ioM > 0 ? (proceeds * q.ratePct) / 100 : annualPayment(proceeds, q.ratePct, q.amortYears);
+  // The desk sizes on the amortising payment wherever the paper amortises
+  // inside its term; the IO year is a holiday and is shown as one below.
+  const amortises = q.amortYears > 0 && q.ioM < q.termM;
+  const annualDsIo = (proceeds * q.ratePct) / 100;
+  const annualDs = amortises ? annualPayment(proceeds, q.ratePct, q.amortYears) : annualDsIo;
   return (
     <div className="refi">
       <div className="deal-head">Refinance</div>
@@ -201,7 +205,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="page-section" style={{ marginTop: 8 }}>The market for this building</div>
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num" title="Coupon plus points and the cap premium, spread over the hold the paper runs">All-in</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
           </thead>
           <tbody>
             {[...deskQuotes]
@@ -231,11 +235,29 @@ export function RefiSection({ bbl }: { bbl: string }) {
                   <td>
                     {x.id === picked ? "▸ " : ""}{x.label}
                     <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>
-                      {x.why ?? (px > 0 ? x.binding : "nothing to lend against")}
+                      {x.why ?? (px > 0 ? x.binding + (x.bindingWhy ? ` — ${x.bindingWhy}` : "") : "nothing to lend against")}
                     </div>
+                    {/* A desk whose `why` already names the rent-roll haircut
+                        was dropping the other half of the story — the credit
+                        window or its own appetite cutting the stated advance.
+                        Both reasons, or the player fixes the wrong one. */}
+                    {x.why && px > 0 && x.advanceWhy && (
+                      <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>…and {x.advanceWhy}</div>
+                    )}
                   </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
-                  <td className="num">{((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%</td>
+                  <td className="num">{x.available && px > 0 ? pct(x.allInPct) : "—"}</td>
+                  <td
+                    className="num"
+                    // The advance the desk SIZED AT today, not the one on the
+                    // term sheet. A 65% column beside a 25%-of-value cheque is
+                    // the screen contradicting itself.
+                    title={px > 0 && Math.abs(x.advanceToday - x.advanceLtv) > 0.02
+                      ? `Sheet today ${(x.advanceLtv * 100).toFixed(0)}% (${x.sheetWhy ?? "their sheet"}); sized at ${(x.advanceToday * 100).toFixed(0)}% of value`
+                      : x.sheetWhy ? `Sheet today: ${x.sheetWhy}` : undefined}
+                  >
+                    {px > 0 ? `${(x.advanceToday * 100).toFixed(0)}%` : `${((x.advanceLtv ?? x.maxLTV) * 100).toFixed(0)}%`}
+                  </td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
                     {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
@@ -244,6 +266,15 @@ export function RefiSection({ bbl }: { bbl: string }) {
               ))}
           </tbody>
         </table>
+        {(() => {
+          // THE DESK'S OWN ADVICE. The table sorts by what reaches your
+          // account, which puts the desk that advances most — and costs most
+          // — on top of every list. This line names the cheapest money that
+          // clears the payoff, and says what taking the most money costs.
+          const stabilised = !!refiRec && !!holding && physicalOcc(refiRec, holding) >= 0.85;
+          const adv = deskAdvice(quotes, payoff, stabilised);
+          return adv ? <div className="hint" style={{ marginTop: 6 }}>{adv}</div> : null;
+        })()}
       <div className="grid">
         <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />
@@ -263,17 +294,27 @@ export function RefiSection({ bbl }: { bbl: string }) {
         />
         <Row
           k="Debt service"
-          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}` : "—"}
+          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}${amortises && q.ioM > 0 ? ` once it amortises (${usd(Math.round(annualDsIo))} in the ${Math.round(q.ioM / 12)}-yr interest-only period)` : ""}` : "—"}
         />
         <Row
           k="Coverage / debt yield"
           v={proceeds > 0 && annualDs > 0 && q.noiUw > 0
-            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
+            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)}${amortises && q.ioM > 0 ? ` on the amortising payment (${(q.noiUw / annualDsIo).toFixed(2)} interest-only)` : ""} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
             : "— no income to cover it"}
           bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
-        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`} />
+        {q.maxProceeds > 0 && q.bindingWhy && (
+          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px" }}>{q.bindingWhy}</div>
+        )}
+        <Row
+          k="Structure"
+          v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
+            + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% today (sheet ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
+            + ` / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`}
+        />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         {capPremium > 0 && <Row k="Rate cap at close" v={usd(capPremium)} />}
         <Row
@@ -299,6 +340,33 @@ export function RefiSection({ bbl }: { bbl: string }) {
         hint={`${usd(annualDs)} a year of debt service against ${usd(Math.round(q.noiUw))} of NOI. `
           + `${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
       />
+      {/* THE ANSWER, AT THE AMOUNT ON THE DIAL. Coverage after the refinance
+          is what a lender tests and what a borrower loses sleep over; the
+          all-in cost is what the money costs. Both were rows in a grid of
+          twelve. */}
+      {(() => {
+        if (proceeds <= 0) return null;
+        const dscrAfter = annualDs > 0 && q.noiUw > 0 ? q.noiUw / annualDs : null;
+        const cfAfter = q.noiUw - annualDs;
+        const tone = cfAfter < 0 || (dscrAfter !== null && dscrAfter < q.minDSCR) ? "bad"
+          : dscrAfter !== null && dscrAfter < q.minDSCR * 1.15 ? "warn" : "good";
+        const room = dscrAfter !== null ? ` · covenant ${q.minDSCR.toFixed(2)}x` : "";
+        return (
+          <Verdict
+            label={`${q.label} · ${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`}
+            value={dscrAfter !== null ? `${dscrAfter.toFixed(2)}x · ${pct(q.allInPct)} all-in` : `${pct(q.allInPct)} all-in`}
+            tone={tone}
+            note={(cfAfter < 0
+              ? `The building does not cover this debt service — ${usd(Math.abs(Math.round(cfAfter / 12)))} a month from elsewhere.`
+              : dscrAfter !== null && dscrAfter < q.minDSCR
+                ? `In breach the day it funds${room}.`
+                : dscrAfter !== null && dscrAfter < q.minDSCR * 1.15
+                  ? `Thin: one tenant leaving takes you through the covenant${room}.`
+                  : `Coverage with room to lose a tenant${room}.`)
+              + ` ${toYou >= 0 ? `${usd(toYou)} to you at closing.` : `${usd(-toYou)} to pay in at closing.`}`}
+          />
+        );
+      })()}
       {/* THE WHOLE DEAL AT WHATEVER THE DIAL SAYS, SIDE BY SIDE WITH THE ONE
           YOU HAVE.
           A refinance is not a question about proceeds, it is a question about
@@ -389,6 +457,67 @@ export function RefiSection({ bbl }: { bbl: string }) {
         >
           {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * THE REFINANCE DESK, FROM THE MAP CARD: the answer and a door.
+ *
+ * The full desk is four lenders, a dial and a before/after sheet — a room's
+ * worth of reading that used to render inside a card a third of the screen
+ * wide. The card now says what the best desk would write today and opens the
+ * room. "Best" is the desk's own advice line where it has one; failing that
+ * the cheapest money that clears the payoff, and failing that the desk that
+ * advances most.
+ */
+export function RefiGlance({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const holding = game.holdings[bbl];
+  const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
+  const privateN = (game.privateBorrowQuotes ?? []).filter((q) => q.bbl === bbl).length;
+  const open = () => useStore.getState().openProperty(bbl, "money");
+  const live = quotes.filter((x) => x.available && x.maxProceeds > 0);
+  if (!live.length) {
+    return (
+      <div className="refi">
+        <div className="deal-head">Refinance</div>
+        <div className="hint">
+          No desk will quote against this today
+          {privateN ? ` — ${privateN} private bridge${privateN === 1 ? "" : "s"} on offer` : ""}. Appraised at {usd(value)}
+          {payoff > 0 ? `, ${usd(payoff)} outstanding` : ""}.
+        </div>
+        <div className="btn-row"><button className="btn btn-sm" onClick={open}>Open the refinance desk →</button></div>
+      </div>
+    );
+  }
+  const net = (x: (typeof live)[number]) => {
+    const px = Math.round(x.maxProceeds);
+    const cap = x.floating ? Math.round(px * 0.0125) : 0;
+    const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + cap;
+    return px - payoff - f;
+  };
+  const clears = live.filter((x) => net(x) >= 0).sort((a, b) => a.allInPct - b.allInPct);
+  const best = clears[0] ?? [...live].sort((a, b) => b.maxProceeds - a.maxProceeds)[0];
+  const toYou = net(best);
+  const refiRec = resolveRec(parcels, game, bbl);
+  const stabilised = !!refiRec && !!holding && physicalOcc(refiRec, holding) >= 0.85;
+  const advice = deskAdvice(quotes, payoff, stabilised);
+  const tone = best.dscrAtMax < best.minDSCR ? "bad" : best.dscrAtMax < best.minDSCR * 1.15 ? "warn" : "good";
+  return (
+    <div className="refi">
+      <div className="deal-head">Refinance</div>
+      <Verdict
+        label={`Best money today · ${best.label}`}
+        value={`${usd(Math.round(best.maxProceeds))} at ${pct(best.allInPct)}`}
+        tone={tone}
+        note={`${best.dscrAtMax.toFixed(2)}x coverage at the maximum · ${(best.ltvAtMax * 100).toFixed(0)}% LTV · ${toYou >= 0 ? `${usd(toYou)} to you` : `${usd(-toYou)} to pay in`} after the payoff and fees. ${live.length} of ${quotes.length} desks will quote.`}
+      />
+      {advice && <div className="hint">{advice}</div>}
+      <div className="btn-row">
+        <button className="btn btn-sm" onClick={open}>Open the refinance desk →</button>
       </div>
     </div>
   );

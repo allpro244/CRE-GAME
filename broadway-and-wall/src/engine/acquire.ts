@@ -19,7 +19,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, SellerKind, Talks } from "./types";
 import { logBooks, monthLabel, START_YEAR, cloneState} from "./types";
-import { assetValue, resolveRec } from "./value";
+import { resolveRec, marketAppraisal } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
 import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
@@ -114,6 +114,11 @@ export function reserveMidOf(
 ): number {
   const motivated = opts?.distress ? (opts.lenderSale ? -0.10 : -0.075) : 0;
   return Math.max(0.70, Math.min(1.06, SELLERS[kind].floor + RESERVE_KIND_LIFT + motivated));
+}
+
+/** The cycle's shift on every seller's reservation — one number for the tape and the negotiation. */
+export function phaseShift(s: GameState): number {
+  return s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
 }
 
 /** Typical close as a share of ask — kind + distress, not this month's cycle. */
@@ -308,20 +313,23 @@ function reservationOf(
   const prof = SELLERS[sellerKind];
   const rec = resolveRec(parcels, s, bbl);
   const li = s.listings.find((l) => l.bbl === bbl);
-  const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, gradeOf(s, rec)) : 0);
-  // A soft market drags the floor down; a hot one lets them hold out. Distress
-  // is the seller's problem and your opportunity.
-  const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
+  const ask = li?.ask ?? (rec ? marketAppraisal(s, rec, bbl, gradeOf(s, rec)) : 0);
   // THE MOTIVATION IS ALREADY IN THE ASK for voluntary sellers — the tape price
   // carries their urgency. Lender/receiver sales are different: the ask is loan
   // basis, and servicers still negotiate below it to clear the book.
   const lenderSale = !!li?.distress && (sellerKind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
   const soured = s.approaches[bbl]?.soured ?? 0;
-  let floor = Math.max(0.6, prof.floor + phase + soured);
-  if (li?.distress) {
-    if (lenderSale) floor = Math.min(floor, 0.68 + phase);
-    else floor = Math.min(floor, prof.floor - 0.04 + phase);
-  }
+  // ONE RESERVATION. The tape (`bidOdds`) centres its acceptance curve on
+  // `reserveMidOf` — the kind's floor, the lift, the motivated discount —
+  // shifted by the cycle; this path carried its own floor, its own phase
+  // shifts (−0.055 / +0.03 against the tape's −0.035 / +0.025) and its own
+  // distress notches, so the same seller wanted two different numbers
+  // depending on which door you knocked on, and the closing band the desk
+  // prints (`closingBand`, from the tape's centre) was wrong for a
+  // negotiation. Both paths read the same centre and the same phase now
+  // (`phaseShift`); a soft market drags it down, a hot one lets them hold out.
+  const phase = phaseShift(s);
+  const floor = Math.max(0.6, reserveMidOf(sellerKind, { distress: !!li?.distress, lenderSale }) + phase + soured);
   // A clean, unconditional close is worth real money to somebody who has been
   // retraded before, and every seller has been. With no diligence to offer,
   // every deal here IS that close — so the discount they will take for it is
@@ -337,7 +345,7 @@ function reservationOf(
   // grinding to 0.5-0.65x appraisal. Distress is exempt: a receiver's building
   // is impaired now, and the impairment is the discount.
   if (!li?.distress && rec && rec.class !== "land") {
-    const value = assetValue(rec, s.econ, gradeOf(s, rec));
+    const value = marketAppraisal(s, rec, bbl, gradeOf(s, rec));
     reservation = Math.max(reservation, Math.min(Math.round(ask * 0.96), Math.round(value * 0.84)));
   }
   // Lenders price at loan basis but will take a haircut below the ask to move REO.

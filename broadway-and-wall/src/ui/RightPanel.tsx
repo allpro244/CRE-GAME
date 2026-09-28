@@ -1,8 +1,9 @@
 // The game's chrome: a glance card on the map, and firm desks as big rooms.
 // Detail pages are parchment sheets sized for underwriting — not a narrow
 // right-hand column that crams a rent roll into six hundred pixels.
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
+import type { Page } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
 import Docket from "@/ui/docket/Docket";
 import Palette from "@/ui/Palette";
@@ -34,6 +35,7 @@ export default function GamePanels() {
   const page = useStore((s) => s.page);
   const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
+  const pageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // The palette toggle fires even from inside an input — that is how every
@@ -145,7 +147,7 @@ export default function GamePanels() {
             if (e.target === e.currentTarget) setPage("none");
           }}
         >
-          <div className={`page page-${page}`}>
+          <div className={`page page-${page}`} ref={pageRef}>
             <div className="page-head">
               <div className="page-heading">
                 <div className="page-kicker">{kicker}</div>
@@ -154,6 +156,7 @@ export default function GamePanels() {
               </div>
               <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
+            <SectionNav page={page} pageRef={pageRef} />
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
@@ -186,5 +189,137 @@ export default function GamePanels() {
           z-index, leaving every control on it visible and dead */}
       {gameOver && page !== "saves" && <GameOverPage />}
     </>
+  );
+}
+
+/**
+ * THE SECTION RAIL.
+ *
+ * Market, Debt, Portfolio, Books and Economy are long rooms — a maturity
+ * ladder at the bottom of Debt is a full screen below the tiles, and the only
+ * way there was the wheel. The rail is one chip per heading on the page,
+ * sticky under the top bar, the one in view lit. It reads the page's own
+ * headings rather than a list each desk would have to keep in step: a section
+ * head, a deal head, or one of the bare `.page-section` labels the Debt desk
+ * uses. Three sections or fewer and it stays out of the way.
+ *
+ * `pageJump` (store) is a section asked for by name — the Capital menu's
+ * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
+ * here, once, after the first scan finds it.
+ */
+const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
+type Sec = { el: HTMLElement; label: string };
+
+function secLabel(el: HTMLElement): string | null {
+  // A `.page-section` is usually a container; only the bare-text ones are heads.
+  if (el.classList.contains("page-section") && !el.classList.contains("page-section-head") && el.children.length > 0) return null;
+  const raw = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (!raw || raw.length > 72) return null;
+  // "On the market · 7 · 2 of them yours" → "On the market"; "Milestones · 3 of 12" → "Milestones".
+  const label = raw.split(" · ")[0].split(" — ")[0].trim();
+  if (!label || label.length < 3) return null;
+  return label.length > 30 ? label.slice(0, 29).trimEnd() + "…" : label;
+}
+
+function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HTMLDivElement | null> }) {
+  const [secs, setSecs] = useState<Sec[]>([]);
+  const [active, setActive] = useState(0);
+  const jumpDone = useRef<string | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  // A passive effect, deliberately: the ref on `.page` is the PARENT's, and
+  // React attaches a parent's ref after its children's layout effects have
+  // run — a layout-effect scan here saw a null ref on every fresh open and
+  // never observed anything after.
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return;
+    let raf = 0;
+    const scan = () => {
+      raf = 0;
+      const seen = new Set<string>();
+      const out: Sec[] = [];
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>(HEAD_SEL))) {
+        // Nothing nested inside an expanded row (a refinance desk opened under
+        // a loan) and nothing hidden earns a chip.
+        if (el.closest(".panel-embed, .refi, .modal, .page-nav")) continue;
+        if (!el.offsetParent) continue;
+        const label = secLabel(el);
+        if (!label || seen.has(label)) continue;
+        seen.add(label);
+        out.push({ el, label });
+        if (out.length >= 12) break;
+      }
+      setSecs((prev) => (prev.length === out.length && prev.every((p, i) => p.el === out[i].el && p.label === out[i].label) ? prev : out));
+    };
+    scan();
+    const mo = new MutationObserver(() => { if (!raf) raf = requestAnimationFrame(scan); });
+    mo.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, [page, pageRef]);
+
+  // Which chip is lit: the last heading above the rail's own line.
+  useEffect(() => {
+    const root = pageRef.current;
+    const scroller = root?.parentElement;
+    if (!root || !scroller || secs.length < 3) return;
+    let raf = 0;
+    const mark = () => {
+      raf = 0;
+      const line = scroller.getBoundingClientRect().top + railOffset();
+      let idx = 0;
+      for (let i = 0; i < secs.length; i++) {
+        if (secs[i].el.getBoundingClientRect().top <= line + 8) idx = i;
+      }
+      setActive(idx);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(mark); };
+    mark();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => { scroller.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [secs, pageRef]);
+
+  // Where the rail's lower edge sits once it is stuck: the top bar, the
+  // backdrop's 12px, the rail itself, and a breath.
+  const railOffset = () => {
+    const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--topbar-h")) || 91;
+    return h + 12 + (navRef.current?.offsetHeight ?? 40) + 8;
+  };
+  const go = (sec: Sec, smooth = true) => {
+    const root = pageRef.current;
+    const scroller = root?.parentElement;
+    if (!root || !scroller) return;
+    const top = sec.el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - railOffset();
+    scroller.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });
+  };
+
+  // A section asked for by name, honoured once the page has painted it.
+  const pageJump = useStore((s) => s.pageJump);
+  useEffect(() => {
+    if (!pageJump) { jumpDone.current = null; return; }
+    if (jumpDone.current === pageJump) return;
+    const want = pageJump.toLowerCase();
+    const hit = secs.find((x) => x.label.toLowerCase().startsWith(want));
+    if (!hit) return;
+    jumpDone.current = pageJump;
+    go(hit, false);
+    useStore.setState({ pageJump: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageJump, secs]);
+
+  if (secs.length < 3) return null;
+  return (
+    <nav className="page-nav" aria-label="Sections on this page" ref={navRef}>
+      {secs.map((sec, i) => (
+        <button
+          key={sec.label}
+          type="button"
+          className={"page-nav-chip" + (i === active ? " on" : "")}
+          onClick={() => go(sec)}
+        >
+          {sec.label}
+        </button>
+      ))}
+    </nav>
   );
 }

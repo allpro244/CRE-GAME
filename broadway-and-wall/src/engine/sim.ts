@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
@@ -19,7 +19,7 @@ import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow } from 
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
-import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
+import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
@@ -244,6 +244,19 @@ export function newGame(
           ? "Same cheque, deeper pond — rivals and bank holds are sized to the map."
           : "The standard island: banks and rivals sized to what stands here."),
   });
+  // WHICH DECADE YOU WALKED INTO, SAID OUT LOUD. The era draw (regime.ts) can
+  // open the game at a 17% base rate under a calendar that says January 2000,
+  // and nothing on screen said why — the owner read it as the rate being
+  // wrong. It is not wrong; it is a different decade wearing this year's
+  // date, and the player is owed the sentence.
+  if (s.econ.eraLabel) {
+    s.news.push({
+      q: 0,
+      kind: "info",
+      text: `${s.econ.eraLabel}. ${s.econ.eraBlurb ?? ""} Money opens at ${s.econ.indexRate.toFixed(2)}% `
+        + `with the credit window ${Math.round((s.econ.creditIdx ?? 1) * 100)}% open; the calendar says ${monthLabel(0)}, the market says which decade it is.`,
+    });
+  }
   return s;
 }
 
@@ -377,6 +390,14 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
+    // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT. A merchant builder's
+    // live job stayed in `cityJobs` while the tape sold the lot underneath it;
+    // the buyer's own development then queued a second delivery on the same
+    // parcel and the supply ledger held two dates for one site (`pnpm test`,
+    // builder bot, "live city job missing from deliveryQueue"). Half-built
+    // receiver sales are the exception and carry their own path: an orphaned
+    // job is what `halfBuilt` listings convey.
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) { rejects++; continue; }
     // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
     //
     // This picked a parcel at random with no memory of what had just traded,
@@ -754,6 +775,8 @@ function tickMonth(
 
   // January: the assessor and the taxman make their rounds
   if (s.month % 12 === 0 && s.month > 0) {
+    // ...and the desks re-read what a building in this town is worth
+    s.loanScale = cityLoanScale(s, parcels);
     let taxable = 0;
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
@@ -879,9 +902,22 @@ function tickMonth(
       // queue behind both. A note whose monthly coupon the firm can still
       // fund (cash or line) is also off-limits — that is a performing debt,
       // not salvage for the general creditors.
-      const owned = Object.values(s.holdings)
-        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]
+      const seizable = (filedToo: boolean) => Object.values(s.holdings)
+        .filter((h) => !s.developments[h.bbl] && (filedToo || !s.workouts?.[h.bbl])
           && !(h.loan && couponFundable(s, parcels, h)));
+      let owned = seizable(false);
+      // THE RUN DOES NOT END WITH EQUITY ON THE BOOK. A twelve-year campaign
+      // in the playable ended on "the creditors took everything, and it
+      // wasn't enough" with one building still owned — $3.14M of appraisal
+      // against the paper, $887K of net worth printed on the same card —
+      // because that building had a covenant file open and the file kept it
+      // off this list while the line sat over-advanced. A file outranks the
+      // bailiff for as long as there is anything else to take or any line to
+      // draw. When there is neither, the bankruptcy sale runs the filed
+      // building through the same waterfall — the mortgagee's lien is paid off
+      // the top and its file closes with the deed — and the surplus clears
+      // the hole. Only a book with nothing saleable at all ends the run.
+      if (!owned.length && locAvailable(s, parcels) <= 0 && fundableNow(s, parcels) <= 0) owned = seizable(true);
       if (owned.length) {
         // creditors take the most valuable thing you own
         let pick = owned[0], pickV = -Infinity;
@@ -1718,6 +1754,10 @@ export const advanceQuarter = advanceMonth;
 
 export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]): GameState {
   const next = cloneState(s);
+  // The desks' minimum cheques are written for the buildings in THIS town.
+  next.loanScale = cityLoanScale(next, parcels);
+  // The cranes first, so the tape does not offer a lot with a frame on it.
+  seedOpeningPipeline(next, parcels, bbls);
   refreshListings(next, parcels, bbls);
   return next;
 }

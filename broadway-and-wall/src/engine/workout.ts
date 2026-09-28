@@ -404,7 +404,7 @@ export function requestForbearance(
   const h = s.holdings[bbl];
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
   if (w.stage === "foreclosure") return { s, err: "They have filed. That conversation is over." };
-  if (w.asks >= 1) return { s, err: "You have already been to them once on this building. Nobody extends twice." };
+  if (w.asks >= 1 || (h.loan.extensions ?? 0) >= 1) return { s, err: "You have already been to them once on this building. Nobody extends twice." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const mood = workoutMood(s, w.lender);
@@ -443,6 +443,11 @@ export function requestForbearance(
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);
   nh.loan!.maturityM = next.month + extensionMonths(next);
   nh.loan!.sweep = true;                    // extended paper is swept paper
+  nh.loan!.extensions = (nh.loan!.extensions ?? 0) + 1;
+  // The coupon moved; the cheque has to cover it (the invariants test exactly that).
+  nh.loan!.monthlyPmt = Math.round(next.month < nh.loan!.ioUntilM
+    ? (nh.loan!.balance * nh.loan!.ratePct) / 100 / 12
+    : monthlyPayment(nh.loan!.balance, nh.loan!.ratePct, nh.loan!.amortYears));
   nw.stage = "forbearance";
   nw.decideM = nh.loan!.maturityM;
   next.news.unshift({
@@ -513,6 +518,69 @@ export function deedInLieu(
 }
 
 /** One month of every file that is open. */
+/**
+ * A YEAR OF HOLDOVER IS ALL A DESK GIVES.
+ *
+ * A balloon that could not be taken out used to sit past its maturity for as
+ * long as the coupon kept clearing: the file said "still waiting on a takeout"
+ * every six months, the Debt page printed a maturity years in the past, and
+ * the loan was never extended, never called, never re-priced. Measured over
+ * three thirty-year campaigns: 61 building-months of matured paper carried
+ * that way, one note for years. No lender does that. After twelve serviced
+ * months of holdover the desk does one of the two ordinary things. A desk
+ * with capital DOCUMENTS the extension — the same fee, coupon bump and cash
+ * sweep `requestForbearance` charges when the borrower asks, with the fee
+ * capitalised onto the note if the account cannot write it. A desk without
+ * capital, a receiver, or a fund that bought the paper files. Once: a note
+ * that has been extended is not extended twice, which is the standing rule
+ * the forbearance desk already applies to the borrower.
+ */
+function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, address: string): void {
+  const h = s.holdings[w.bbl];
+  if (!h?.loan) return;
+  const mood = workoutMood(s, w.lender);
+  const already = (h.loan.extensions ?? 0) >= 1;
+  if (mood.willExtend && !already) {
+    const l = h.loan;
+    const fee = Math.round(l.balance * mood.feePct);
+    const paid = fundCashNeed(s, parcels, fee);
+    logBooks(s, "debtSvc", paid);
+    if (paid < fee) {
+      l.balance += fee - paid;
+      l.principal = Math.max(l.principal, l.balance);
+    }
+    l.ratePct = +(l.ratePct + mood.bumpPct).toFixed(2);
+    l.maturityM = s.month + extensionMonths(s);
+    l.sweep = true;
+    l.extensions = (l.extensions ?? 0) + 1;
+    l.monthlyPmt = Math.round(s.month < l.ioUntilM
+      ? (l.balance * l.ratePct) / 100 / 12
+      : monthlyPayment(l.balance, l.ratePct, l.amortYears));
+    w.stage = "forbearance";
+    w.decideM = l.maturityM;
+    w.asks = Math.max(w.asks, 1);
+    w.servicedMs = 0;
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${w.lender} documented an extension at ${address} to ${monthLabel(l.maturityM)}: a year of holdover on a `
+        + `matured note and no takeout in sight, so they re-papered it themselves — ${money(fee)} of fee`
+        + `${paid < fee ? " added to the note" : ""}, the coupon to ${l.ratePct.toFixed(2)}%, cash flow swept. `
+        + `That is the one extension this paper gets.`,
+    });
+    return;
+  }
+  w.stage = "foreclosure";
+  w.saleM = nextJulyAfter(s.month, FORECLOSE_M);
+  w.decideM = w.saleM;
+  bumpLenderRel(s, w.lender, -10);
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `${w.lender} has filed to foreclose on ${address}: a year of holdover on a matured note and no takeout. `
+      + `${already ? "They extended once already, and nobody extends twice." : mood.why} `
+      + `It is down for the ${monthLabel(w.saleM)} auction — cure it, refinance it, or hand back the keys before the hammer.`,
+  });
+}
+
 export function tickWorkouts(s: GameState, parcels: ParcelTable) {
   if (!s.workouts) return;
   for (const w of Object.values(s.workouts)) {
@@ -521,6 +589,25 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     if (!h?.loan || !rec) { delete s.workouts[w.bbl]; continue; }
 
     // A file where the loan has quietly started performing again closes itself.
+    // A MATURED NOTE IS A BALLOON FILE, WHATEVER THE FILE STARTED AS. A
+    // covenant file open across the maturity date used to keep the takeout
+    // ladder from running (tickLoan only quotes an unfiled note), then close
+    // itself the month the sweep cleared — leaving a matured loan on the book
+    // with no file at all until the ladder noticed it a month later. Once the
+    // date has passed, the file is about the balloon: it stays open, the
+    // holdover clock runs, and the desk extends or files inside a year.
+    if (w.cause !== "balloon" && s.month >= h.loan.maturityM) {
+      w.cause = "balloon";
+      w.servicing = true;
+      w.servicedMs = 0;
+      refreshCureAmount(s, parcels, w);
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The note at ${rec.address} has matured with ${w.lender}'s file still open. `
+          + `The file is now about the balloon: ${money(w.cure)} takes it out, and the coupon buys a year of patience, not more.`,
+      });
+    }
+
     if (w.cause === "covenant" && !h.loan.sweep) {
       delete s.workouts[w.bbl];
       s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} is performing again — ${w.lender} has closed the file.` });
@@ -531,6 +618,17 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // line. Runs before the clock can file, and again while foreclosure is
     // pending, because a cheque that clears ends the conversation.
     if (autoCureIfFunded(s, parcels, w)) continue;
+
+    // THE EXTENSION RAN OUT. Extended paper that matures again is an ordinary
+    // balloon: close the file so tickLoan quotes the takeout ladder fresh next
+    // month, and if nobody will write it a new file opens — with the one
+    // extension this note gets already spent (holdoverDecision reads it).
+    // Ahead of the servicing branch on purpose: the month it matures is the
+    // ladder's, not the holdover clock's.
+    if (w.stage === "forbearance" && (h.loan.extensions ?? 0) >= 1 && s.month >= h.loan.maturityM) {
+      delete s.workouts[w.bbl];
+      continue;
+    }
 
     // KEEPING IT CURRENT (opt-in). Charged here at the default rate; monthCF
     // still books the note coupon while the file is in notice — that premium
@@ -551,6 +649,10 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
             text: `${w.lender} has closed the file on ${rec.address}. A year of payments arriving on time is `
               + `the only argument that ever worked on a credit committee.`,
           });
+        } else if (w.cause === "balloon" && s.month - h.loan.maturityM >= 12) {
+          // Holdover is months PAST MATURITY, not months serviced: an
+          // extended note is current again until its new date.
+          holdoverDecision(s, parcels, w, rec.address);
         }
         continue;
       }

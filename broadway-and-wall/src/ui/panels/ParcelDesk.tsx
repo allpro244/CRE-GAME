@@ -3,12 +3,13 @@
 //   AcquireDesk   buy / sell / list / ground lease / disclosed roll / vacant possession
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
+import { marketAppraisal } from "@/engine/value";
 import { memo, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { assetValue, displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import { displayValue, initialCondition, holdingValue, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, bareLandRec, leasedFeeValue, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
@@ -24,8 +25,8 @@ import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
-import { RefiSection } from "@/ui/panels/RefiDesk";
-import { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
+import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
+import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
@@ -93,7 +94,7 @@ function ParcelPanelInner({
       ? leasedFeeValue(glLive, bareLandRec(parcels, game, selectedBBL) ?? rec, game.econ, game.month,
         glLive.sf ?? game.built?.[selectedBBL]?.bldgArea ?? 0)
       : holdingValue(rec, game.econ, holding, game.month))
-    : assetValue(rec, game.econ, cond);
+    : marketAppraisal(game, rec, selectedBBL, cond);
   const value = holding?.groundLeased && glLive
     ? simValue
     : displayValue(rec, game.econ, simValue);
@@ -177,23 +178,58 @@ function ParcelPanelInner({
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
-        const vacant = rec.class === "land" || room >= 0.25;
+        const dirt = rec.class === "land" || !rec.bldgArea;
+        const vacant = dirt || room >= 0.25;
         if (!vacant || game.landmarks?.[selectedBBL] !== undefined) return null;
-        const pencils = read.winner === "builder" && read.builder > 0;
+        // ON DIRT the builder's residual only has to exist. ON A BUILT LOT it
+        // has to beat the building: a rebuild pencils when the dirt, cleared,
+        // is worth more to a builder than what stands on it is worth today —
+        // the appraisal per foot of lot. The first cut of this card compared
+        // the builder's bid to the HOLDER's bid (a bid for the same dirt) and
+        // called a 99%-let corner "Redevelopment pencils" on the strength of
+        // $238 against $464, neither of which was the building.
+        const standingPsf = dirt ? 0 : value / Math.max(1, rec.lotArea);
+        const pencils = read.winner === "builder" && read.builder > 0 && (dirt || read.builder > standingPsf);
+        // A STANDING BUILDING IS NOT DIRT. This card headed every owned
+        // building that used under three quarters of its envelope "Dirt —
+        // nothing pencils today · Holder bid $0/sf wins the auction — wait for
+        // rents, or clear the site" — and with tower-legal envelopes on the
+        // core that is most of the buildings in town, fully let ones included.
+        // The owner saw it on a five-storey office with two tenants. The
+        // question on a built lot is a different one: would a rebuild out-earn
+        // what stands, and the answer names both bids so the player can read
+        // which side is winning and by how much.
+        const head = dirt
+          ? (pencils ? "Developable" : "Dirt — nothing pencils today")
+          : (pencils ? `Redevelopment pencils · ${(room * 100).toFixed(0)}% of the envelope unused`
+            : `Underbuilt · ${(room * 100).toFixed(0)}% of the envelope unused`);
+        // On a built lot the three bids are for the DIRT, and on most of the
+        // city both the builder's and the holder's are zero — a rebuild does
+        // not pencil at today's rents or the next peak's, and the land reads
+        // on its location alone. Say that, rather than "$0/sf against $0/sf".
+        const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
+          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner}'s bid`);
+        const hint = dirt
+          ? (pencils
+            ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
+            : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`)
+          : (pencils
+            ? `Cleared, this dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder; the building standing on it is worth $${standingPsf.toFixed(0)}/sf of lot today. Build prices the scheme.`
+            : `A rebuild does not pencil here today`
+              + (read.builder > 0
+                ? ` — cleared, the dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder, and the building on it is worth $${standingPsf.toFixed(0)}/sf of lot`
+                : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
+              + `; ${dirtLine}. Wait for rents, or plan a bigger building on Build.`);
         return (
           <div className="deal" style={{ marginTop: 0 }}>
-            <div className="deal-head">{pencils ? "Developable" : "Dirt — nothing pencils today"}</div>
-            <div className="hint">
-              {pencils
-                ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
-                : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`}
-            </div>
+            <div className="deal-head">{head}</div>
+            <div className="hint">{hint}</div>
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => useStore.getState().setPage("property")}
+              onClick={() => useStore.getState().openProperty(selectedBBL, "build")}
             >
-              Open Build desk →
+              Open the Build desk →
             </button>
           </div>
         );
@@ -515,7 +551,7 @@ function ParcelPanelInner({
                       on a prime block does not rent at the city average, and
                       quoting one beside the other made every in-place rent look
                       like a windfall. */}
-                  <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u).toFixed(0)}/sf market here</span>
+                  <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u, holding.condIdx).toFixed(0)}/sf market here</span>
                 </div>,
                 ...inUse.map(({ t, i }) => {
                   const near = t.endM - game.month <= 24;
@@ -564,7 +600,7 @@ function ParcelPanelInner({
               <div className="roll-row roll-group">
                 <span className="roll-name">apartments · {sf(Math.round(useSf(rec, "multifamily")))}</span>
                 <span className="roll-meta mono">
-                  {((holding.occ ?? 0) * 100).toFixed(0)}% let · ${useRentPsfYr(rec, game.econ, holding.condition, "multifamily").toFixed(0)}/sf market here
+                  {((holding.occ ?? 0) * 100).toFixed(0)}% let · ${useRentPsfYr(rec, game.econ, holding.condition, "multifamily", holding.condIdx).toFixed(0)}/sf market here
                 </span>
               </div>
             )}
@@ -721,7 +757,10 @@ function ParcelPanelInner({
               </button>
             )}
           </div>
-          <RefiSection bbl={selectedBBL} />
+          {/* The docked card gets the answer and a door; the desk itself —
+              four lenders, a dial and a before/after sheet — is a room's
+              worth of reading and opens as one. */}
+          {tab === undefined ? <RefiGlance bbl={selectedBBL} /> : <RefiSection bbl={selectedBBL} />}
         </div>
       )}
 
@@ -753,7 +792,12 @@ function ParcelPanelInner({
                 return (
                   <>
                     <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
-                    <Row k="Going-in cap" v={((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    <Row
+                      k="Going-in cap"
+                      v={ip.noi > 0 ? ((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%" : "— no income to capitalise"}
+                      strong={ip.noi > 0}
+                      bad={ip.noi <= 0}
+                    />
                     {/* The seller's other number, and it is labelled as the
                         forecast it is. What you buy is the line above. */}
                     <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />
@@ -922,7 +966,7 @@ function ParcelPanelInner({
       {/* Lessee builds on a live ground lease — do not offer Break ground beside the coupon desk. */}
       {on("build") && holding && !dev && rec.class === "land"
         && !holding.groundLeased && !game.groundLeases?.[selectedBBL]
-        && <DevelopSection bbl={selectedBBL} />}
+        && (tab === undefined ? <DevelopGlance bbl={selectedBBL} /> : <DevelopSection bbl={selectedBBL} />)}
       {on("build") && holding && !dev && isBuilt && <ReuseSection bbl={selectedBBL} />}
 
       {/* THE LAND DESK — assemble contiguous owned lots into one site.

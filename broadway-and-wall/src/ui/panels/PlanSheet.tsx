@@ -1,13 +1,26 @@
 // POSTED LEASING PLAN — the sheet the desk clears against. Phase 4.
+import { useEffect, useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import type { BuiltClass, DeskDigest, PlanRow } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
-import { agentCashReserve, deskHoldsPen, planIsLive, planRowFor, PLAYER_EQUIVALENT_ROW } from "@/engine/leasing";
+import { agentCashReserve, COMMERCIAL_PLAN_USES, deskHoldsPen, neFloorOf, planIsLive, planRowFor, PLAYER_EQUIVALENT_ROW } from "@/engine/leasing";
+import { mixOf } from "@/engine/mix";
+import { resolveRec, useRentableSf } from "@/engine/value";
 import { usd } from "@/ui/format";
 import { Big } from "@/ui/panels/shared";
 
-const CLASSES: BuiltClass[] = ["office", "retail", "industrial"];
+// The mandate is written per asset type — the same three classes the engine
+// posts rows for. Apartments have no row: flats let unit by unit off the
+// rent roll, and no letter of intent ever reaches a desk.
+const CLASSES: BuiltClass[] = COMMERCIAL_PLAN_USES;
+const LABEL: Record<string, string> = { office: "Office", retail: "Retail", industrial: "Industrial" };
+const FOLD_KEY = "bw-plan-fold";
+
+/** Which asset-type sheets are open, remembered across sessions. */
+function readFolds(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(FOLD_KEY) ?? "{}") ?? {}; } catch { return {}; }
+}
 
 function rowOf(game: ReturnType<typeof useStore.getState>["game"], use: BuiltClass): PlanRow {
   return game!.leasingPlan?.sheet[use]
@@ -57,14 +70,100 @@ export function PlanDigest() {
   );
 }
 
+/**
+ * What you hold in this asset type, so the header says which sheets matter:
+ * rentable feet across your buildings that carry the use, and the letters on
+ * that use waiting in the tray. A sheet for a class you own nothing in is
+ * still posted (the desk reads it the day you buy one) — it just starts folded.
+ */
+function classExposure(game: ReturnType<typeof useStore.getState>["game"], parcels: ReturnType<typeof useStore.getState>["parcels"], use: BuiltClass) {
+  let sf = 0, bldgs = 0;
+  if (game && parcels) {
+    for (const bbl of Object.keys(game.holdings)) {
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || !(mixOf(rec)[use] ?? 0)) continue;
+      const leg = useRentableSf(rec, use);
+      if (leg <= 0) continue;
+      sf += leg; bldgs++;
+    }
+  }
+  const letters = (game?.lois ?? []).filter((l) => (l.use ?? "office") === use).length;
+  return { sf, bldgs, letters };
+}
+
 function ClassRow({ use }: { use: BuiltClass }) {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
   const setPlanRow = useStore((s) => s.setPlanRow);
   const row = rowOf(game, use);
-  const label = use === "office" ? "Office" : use === "retail" ? "Retail" : "Industrial";
+  const label = LABEL[use] ?? use;
+  const idx = game.econ.effRentIdx?.[use] ?? game.econ.rentIdx?.[use] ?? 0;
+  const neFloor = neFloorOf(row);
+  const exp = classExposure(game, parcels, use);
+  // ONE DROP-DOWN PER ASSET TYPE. Three sheets of seven sliders stacked was a
+  // wall; an owner writes one mandate at a time. Each folds to a header that
+  // says what is posted and what you hold in it, opens on click, and
+  // remembers — a class you hold nothing in starts folded.
+  const [open, setOpen] = useState<boolean>(() => {
+    const saved = readFolds()[use];
+    return saved !== undefined ? saved : exp.sf > 0;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify({ ...readFolds(), [use]: open })); } catch { /* */ }
+  }, [open, use]);
+  const summary = `${(row.quotePct * 100).toFixed(0)}% of market · floor ${(neFloor * 100).toFixed(0)}% NE · `
+    + `${row.maxFreeM === 0 ? "no free rent" : `${row.maxFreeM} mo free`} · ${row.maxTiPsf === 0 ? "no TI" : `TI $${row.maxTiPsf}`}`;
+  const held = exp.sf > 0
+    ? `${exp.bldgs} bldg${exp.bldgs === 1 ? "" : "s"} · ${Math.round(exp.sf / 1000)}k sf${exp.letters ? ` · ${exp.letters} letter${exp.letters === 1 ? "" : "s"} in` : ""}`
+    : "nothing held";
   return (
-    <div style={{ marginTop: 12 }}>
-      <div className="slider-label" style={{ marginBottom: 4 }}>{label}</div>
+    <div className={"plan-fold" + (open ? " plan-fold-open" : "")}>
+      <button
+        type="button"
+        className="plan-fold-head"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={open ? `Fold the ${label.toLowerCase()} sheet` : `Open the ${label.toLowerCase()} sheet`}
+      >
+        <span className="plan-fold-chev">{open ? "▾" : "▸"}</span>
+        <span className="plan-fold-name">{label}</span>
+        <span className="plan-fold-summary">{summary}</span>
+        <span className={"plan-fold-held" + (exp.sf > 0 ? "" : " dim")}>{held}</span>
+      </button>
+      {open && (
+      <div className="plan-fold-body">
+      {/* THE MANDATE, in the order an owner writes one: the least you will
+          take net effective, what the desk may give away to get there, then
+          how it asks. */}
+      <Slider
+        label="Lowest net effective"
+        value={Math.round(neFloor * 100)}
+        min={60}
+        max={100}
+        step={1}
+        onChange={(v) => setPlanRow(use, { minNePct: v / 100 })}
+        marks={[{ at: 70, label: "70" }, { at: 85, label: "85" }, { at: 100, label: "par" }]}
+        format={(v) => `${v}% of market net effective — about $${(idx * v / 100).toFixed(2)}/sf/yr on today's ${label.toLowerCase()} index`}
+        hint="Face after free rent, less the allowance spread over the term, plus what the bump is worth. The desk signs nothing that nets less: free months come off the counter first, then fit-out; a letter that still cannot reach it comes to you with the reason."
+      />
+      <Slider
+        label="Max free rent"
+        value={row.maxFreeM}
+        min={0}
+        max={12}
+        step={1}
+        onChange={(v) => setPlanRow(use, { maxFreeM: v })}
+        format={(v) => v === 0 ? "no free months" : `${v} months`}
+      />
+      <Slider
+        label="Max TI"
+        value={row.maxTiPsf}
+        min={0}
+        max={120}
+        step={5}
+        onChange={(v) => setPlanRow(use, { maxTiPsf: v })}
+        format={(v) => v === 0 ? "no TI without you" : `$${v}/sf`}
+      />
       <Slider
         label="Asking vs market"
         value={Math.round(row.quotePct * 100)}
@@ -98,32 +197,16 @@ function ClassRow({ use }: { use: BuiltClass }) {
         format={(v) => `${v} pp per quarter`}
       />
       <Slider
-        label="Walk-away floor"
+        label="Lowest ask"
         value={Math.round(row.floorPct * 100)}
         min={70}
         max={Math.round(row.quotePct * 100)}
         step={1}
         onChange={(v) => setPlanRow(use, { floorPct: v / 100 })}
-        format={(v) => `${v}% of market — never quote below`}
+        format={(v) => `${v}% of market face — the step-down never quotes below this`}
       />
-      <Slider
-        label="Max TI"
-        value={row.maxTiPsf}
-        min={0}
-        max={120}
-        step={5}
-        onChange={(v) => setPlanRow(use, { maxTiPsf: v })}
-        format={(v) => v === 0 ? "no TI without you" : `$${v}/sf`}
-      />
-      <Slider
-        label="Max free rent"
-        value={row.maxFreeM}
-        min={0}
-        max={12}
-        step={1}
-        onChange={(v) => setPlanRow(use, { maxFreeM: v })}
-        format={(v) => v === 0 ? "no free months" : `${v} months`}
-      />
+      </div>
+      )}
     </div>
   );
 }
@@ -131,7 +214,10 @@ function ClassRow({ use }: { use: BuiltClass }) {
 export function PlanEditor() {
   const game = useStore((s) => s.game)!;
   const { setPlanAuthority, setDeskMaxSf, setSignOwnAll } = useStore.getState();
-  if (!deskHoldsPen(game)) return null;
+  // Visible whether or not a desk holds the pen: the owner writes the
+  // mandate first and hands the pen second. Posted now, it takes effect the
+  // month a desk holds the pen.
+  const live = deskHoldsPen(game);
   const plan = game.leasingPlan;
   const auth = plan?.authority ?? 1e15;
   const authSf = game.deskMaxSf ?? 0;
@@ -139,14 +225,17 @@ export function PlanEditor() {
   const preview = plan ? planRowFor(plan, { bbl: "", use: "office", kind: "new" } as never) : null;
   return (
     <div className="agent-bar" style={{ display: "block" }}>
-      <div className="agent-title">The leasing plan</div>
+      <div className="agent-title">{live ? "The leasing mandate · your desk works it" : "The leasing mandate · posted, waiting for a desk"}</div>
       <div className="hint" style={{ marginBottom: 8 }}>
-        A posted sheet, not four mandate bands. The desk counters every workable
-        letter to this ask through the same tenant model you use. Exceptions —
-        authority, expansions, tours, off-package, treasury — land on the docket.
-        {preview ? ` Office is posting ${(preview.quotePct * 100).toFixed(0)}% of market.` : ""}
+        {live
+          ? "Whoever holds the pen signs inside this sheet without asking you: at or over the ask and netting your floor, it signs; under the ask, it counters to the ask through the same tenant model you use, giving away free months and fit-out only inside the caps and only as far as your floor allows. What it cannot reach — the floor, the authority, a tour, an expansion, the treasury reserve — comes to you with the reason."
+          : "Nobody signs but you until a desk holds the pen — hand it to your leasing hire or take outside coverage above. Set the sheet now anyway: the moment a desk holds the pen, it signs inside these lines and refers the rest to you with the reason."}
+        {preview ? ` Office is posting ${(preview.quotePct * 100).toFixed(0)}% of market and signing nothing under ${(neFloorOf(preview) * 100).toFixed(0)}% net effective.` : ""}
       </div>
       {CLASSES.map((u) => <ClassRow key={u} use={u} />)}
+      <div className="hint" style={{ marginTop: 6 }}>
+        Apartments have no sheet: flats let unit by unit off the rent roll at the market, and no letter reaches a desk.
+      </div>
       <div style={{ marginTop: 14 }}>
         <Slider
           label="Dollar authority"

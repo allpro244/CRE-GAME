@@ -858,3 +858,737 @@ from one-way rent catch-up. Measured: median rail-bound real ~+0.3%/yr (was
 firm-near +4–5%); century real office ~0.85%/yr; real construction cost
 ~+0.5%/yr (was ~+0.8–1.1%). Harness: `test/rent-anchor.mjs` rail-real +
 cost-real clauses.
+
+# AN 8% CAP ON 2% MONEY — half the wire was right, and the other half was the glut
+
+The owner's report, verbatim: *"There are times when the base rate is 2% but
+the lowest cap rate I can sell my building is 8%. Isn't this a problem?"* Two
+questions in that: is the cap-rate-to-rate wire realistic, and if it is, where
+does the 8 come from. Both measured, eight procedural cities × 100 years each,
+monthly (`pnpm capvsrate`, Sep 2026, before any change):
+
+```
+index bin      n     office p10/p50/p90   multifam p50   office − index p50
+ 0-2         503     4.94  7.07  9.00        5.08           5.40
+ 2-2.5      1202     5.79  8.49  9.49        5.99           6.22
+ 2.5-3      1336     6.42  8.83  9.64        6.60           6.09
+ 3-4        1321     6.23  8.77 10.07        6.45           5.35
+ 4-5         953     6.56  8.44 10.84        6.17           3.82
+ 5-6        1171     6.82  8.54 10.93        6.41           3.02
+ 6-8        1350     7.25  9.34 11.00        7.06           2.62
+ 8-10        643     8.20 10.59 11.00        8.69           1.34
+ 10+        1121    10.90 11.00 11.00       11.00          −5.06
+```
+
+Cheap money is 17.8% of the century (index ≤ 2.5%), and in those months the
+office cap is **8.17% in the median month, 8% or over in 54.5% of them** — a
+620bp spread over the index, against a real 2010-20 record of 280-500bp
+(CBRE: multifamily 230, office 280, retail 320, industrial 340 over the
+ten-year; the GFC peak ran the all-property spread to ~440). The owner is
+right that the number is wrong. The decomposition says which term:
+
+```
+office cap target, index ≤ 2.5%      p10     p50     p90
+  CAP_BASE                           8.50    8.50    8.50
+  0.55 × (index − 5.4)              −2.00   −1.78   −1.63
+  −0.25 × cycleDev                  −0.11    0.07    0.15
+  crunch  1.6 × (1 − creditIdx)      0.00    0.49    0.63
+  sector  −30 × sectorMom           −0.23    0.04    0.23
+  vacRisk (clamped −0.6 … +2.0)     −0.60    1.42    2.00
+  flows                             −1.30   −0.63    0.18
+  TARGET                             5.20    8.01    9.16
+```
+
+**The rate wire does what it says** — it takes 178bp off. What puts the cap at
+8 is the vacancy term (+1.42 median, pinned at its +2.0 guard at p90) and the
+credit crunch (+0.49). And those are not independent of the rate: **62% of
+all cheap-money months are the city's recession or depression phase**, because
+the policy rate is at its 0.25% floor precisely when the country is in a deep
+recession, and the city is in a glut at the same time. Split by phase:
+
+```
+index ≤ 2.5%                     n     office cap p50   office vacancy p50
+  recession / depression      1050        8.75              33.2%
+  recovery / expansion / peak  655        6.67               9.8%
+```
+
+**At a 2% index in a functioning market the engine prices office at 6.67%.**
+That is the 2013-19 record (national office 6.5-7.0 on a ~2% ten-year, trophy
+CBD at 4.5-5, suburban Class B at 7.5-8.5 — and `capRateFor` spreads the
+city's buildings 4.9 / 7.5 / 9.7 at p10/p50/p90 around it, good condition 6.7,
+worn 8.05, which is that distribution). The 8.75 is a market with a third of
+its offices empty. In 2009-11 the real thing produced exactly that — office
+caps of 8-8.4 on a 3% ten-year — and then healed in three years as vacancy
+came off 17.5% and credit reopened. The engine's glut does not heal: office
+vacancy sits at **23.4% in the median cheap-money month** and 33% in the
+depression ones, against a US national peak of ~19.5% (1991, 2024). That is
+`REALISM_AUDIT_2026-08.md` §1 — standing stock has no exit, so a glut cannot
+clear — read through the cap rate. The cap is pricing the vacancy honestly;
+the vacancy is the fake number.
+
+## What was fixed: the top of the wire
+
+The same table has a second fault, and it IS the wire. Above a 10% index the
+office cap is **on the 11% ceiling in the median month**, and the ceiling
+binds in **17.4% of all months** (multifamily 7.7%) — a load-bearing rail,
+fake number five. The term read the NOMINAL index at 0.55 per point, so a
+Great Inflation at a 14% index asked for a 13% cap. The record refused that
+every time: 1981, ten-year 14%, office 9-10; 1978, 8.4% against caps of 8.5;
+property yields spent 1979-84 BELOW the ten-year by up to four points. The
+inflation inside a nominal rate is also inside next year's rent, so a buyer
+capitalises against the index less the inflation the public expects.
+
+And the pass-through is one-sided, because rents are sticky downward: a lease
+carries a fixed 2-3% bump whatever the CPI does, which is why US rent growth
+never turned negative through 2010-15 at 1.5% inflation. This matters here
+because the engine's `inflExp` sits at **zero in the median cheap-money month**
+(p10 −0.5%) — a symmetric real-rate term was tried first and lifted every
+cheap-money cap by about a point, the opposite of the record. So expected
+inflation enters the cap target only above the 2% target it is anchored to
+(`inflOver` in `market.ts`); at or under it the expression is exactly the
+nominal one it replaces, and the modern-era calibration does not move.
+
+After, same eight seeds and eras (`pnpm capvsrate`):
+
+```
+                                          before      after
+office cap ON the 11% ceiling, all months  17.4%       4.5%
+multifamily on the ceiling                  7.7%       0.5%
+index ≥ 10: office cap p50                 11.00      10.44   (inflExp p50 7.1% → 5.2%)
+index 6-8:  office cap p50                  9.34       8.19
+index ≤ 2.5: office cap p50                 8.17       6.35
+index ≤ 2.5, recession/depression           8.75       7.87   (office vacancy 33% → 21%)
+index ≤ 2.5, functioning market             6.67       6.08   (vacancy 9.8% → 6.0%)
+whole run: office cap p50 / spread p50   8.93 / 3.69  7.74 / 2.58
+```
+
+Read the bottom half of that table with `HANDOFF.md` §4 in mind: a change
+that moves values moves every state-dependent branch after it, so the after
+run is a different century on the same seeds, and this one drew far less
+office vacancy (17.6% → 8.9% at the whole-run median). The term is identical
+by construction wherever expected inflation is at or under target, so the
+cheap-money moves are mostly the world, not the wire; the depression months
+still print 7.9 on 21% vacancy, which is the diagnosis above holding. The
+top half is the wire: the ceiling has gone from the number to a guard, and
+what still touches it is the engine's Volcker — a real policy rate of 7.6%
+in the median high-rate month, twice the real 1981-82 peak, which is the
+central bank's aggressiveness and not the cap's to fix.
+
+## What is not fixed, and what would fix it
+
+Two upstream faults, both named before, both larger than a cap-rate change:
+
+1. **The glut has no exit** (`REALISM_AUDIT_2026-08.md` §1). Office vacancy
+   runs 17.6% at the century median and 33% in a depression, because no class
+   but industrial can mothball, demolish or convert. Until standing stock can
+   leave, `vacRisk` will price a vacancy no real market has had, and the +2.0
+   guard on it will keep binding. The realistic mechanism is written down
+   there: a carrying-cost comparison per building, not a development pro
+   forma. Do not weaken `CAP_VAC_BETA` (0.12/pp is inside the 2024
+   cross-metro evidence — SF at 30%+ vacancy traded office at 8-10 caps on a
+   4.2% ten-year) and do not raise the guard first.
+
+2. **Credit stays shut for as long as the glut lasts.** `creditIdx` targets
+   0.62 through a depression, and the depression is stretched while slack is
+   load-bearing, so `crunch` sits at +0.5-0.6 for a decade. The real CRE
+   credit crunches lasted about three years (1990-93, 2008-11): bank losses
+   were recognised and capital rebuilt on the lender's clock while the space
+   market was still empty. The mechanism is capital availability derived
+   from the lenders' own balance sheets (`lenders.ts` already carries capital
+   ratios and panic spreads) rather than from the property phase table — a
+   change that touches every borrowing quote and every rival, and should be
+   its own decision.
+
+Neither should be reached for through the cap formula. Severing the vacancy
+or credit pricing to make cheap money read cheap would be a fake number
+wearing the owner's request.
+
+
+# THE RENT ROLL WAS BIGGER THAN THE BUILDING — fixed
+
+Found on the owner's own screen: "Leased 7,504 sf of 5,986 sf". A five-storey
+office of 8,314 gross feet at 72% efficiency has 5,986 rentable feet, and its
+roll carried 7,504 — two tenants sized off the GROSS plate. Occupancy printed
+100% with a suite still empty, and the rent on 1,518 feet that do not exist
+arrived every month.
+
+The seam: HANDOFF §7 1b moved every READER of area — `occupancyRead`,
+`useVacantSf`, rent, NOI, cap, stock — onto `rentableSf`, and left the
+WRITER on gross. `stacksOf` built plates from `useSf`, `typicalSuiteSf` and
+`drawTenantSf` drew suites from those plates, `buildRentRoll` filled toward
+`useSf × targetOcc`, `blocksOf` laid vacant blocks from `useSf − tenants`,
+and the `overleased` invariant measured tenants against `useSf` — so the
+identity "tenants + vacant blocks == useSf" held to the foot while the
+building it described was 8-28% smaller than the roll. One quantity, two
+answers, with the invariant written on the wrong one.
+
+Everything in the physical layer reads rentable now. Measured on three
+procedural cities × five years: 0 of 1,945 listing legs let past rentable
+(before: any leg could run to gross). `pnpm suite-occ` and `pnpm
+plates-blocks` assert the identity on rentable feet; the 9,371 ft shed is one
+8,295 ft plate. This changes how many tenants a roll draws, which re-rolls
+every century (§4 of HANDOFF) — the baseline moves, and the direction is the
+correction: smaller rolls, lower in-place income on the same buildings, and
+an occupancy figure that can no longer be pinned at 100% by arithmetic.
+
+# STANDING ROLLS LEFT SLIVERS — fixed
+
+`buildRentRoll` filled a leg toward its target with log-normal draws and
+stopped when what was left could not take a tenancy, so a 3,000 ft shop was
+generated as a 2,500 ft tenant and a 500 ft remnant, and a five-floor office
+as four floors let and one unlettable strip. Each sliver was honest in itself
+(`occupancyRead` names it) but the market model that prices the building
+counts those feet as occupiable, and `pnpm playtest` §B put the seam at 17pp
+for retail, 10pp industrial, 3pp office once the rolls were on rentable feet.
+
+A landlord generating a standing roll demised to fit: when the space a draw
+would leave cannot be let on its own, the tenant took it. Measured, same
+harness, re-rolled world: retail 17pp → 8pp, industrial 10 → 9, office 3 → 8
+(rolls 82 → 85% let; the market side moved the other way on the re-roll).
+What remains is the for-sale skew the harness names and the −14/+5pp opening
+draw, both deliberate. Prospects arriving later still leave remnants through
+`matchBlock`, on purpose — that is the demise trade the leasing overhaul
+built, and `pnpm demise` keeps it a minority of vacant feet.
+
+# A STANDING ROLL LETS A SUITE, NOT THE VACANCY FRACTION — fixed
+
+On a multi-plate leg `buildRentRoll` fills toward `legSf × targetOcc`, and
+the "whole leg under the norm is the shop" branch took `free` — the target's
+remainder — as the tenancy when it was under the demise floor. That is right
+on a one-plate shop (the target IS the leg) and wrong on two plates at a 47%
+target: a 1,953 ft tenant on a 4,110 ft shop leg, under the 2,000 ft floor.
+Nobody demises to the market's vacancy fraction; they let a suite. The branch
+now writes `min(legSf, floorSf)` and the roll runs a shade over target. The
+floor never exceeds the plate (`typicalSuiteSf`), so it is the whole leg only
+when the leg is the suite. No draw order changed.
+
+# A REFINANCE QUOTE WITH NO REASON IS A DEAD BUTTON — fixed
+
+`refiQuotes` sized on three tests and then multiplied by `collateralHaircut`
+(concentration, rollover inside two years, one trade), and the card printed
+the name of the test beside a cheque the haircut had halved. Separately the
+"advance rate" leg is the desk's stated rate after `advanceFactor` (credit
+window × lender appetite), your standing and the desk's book, and the card
+printed the stated rate. Both reasons are now on the quote and the desk, and
+`pnpm refi-bind` asserts proceeds = min(legs) × haircut with the haircut named
+whenever it bit.
+
+# THE CRANES WERE ALREADY UP — fixed
+
+Every city opened with an empty construction pipeline. Real cities carry one
+to three per cent of their floor area in the air at any moment — more at the
+top of a cycle, less at the bottom — and some of it is half built on the day
+a newcomer arrives. The opening pipeline is not a new number: the crew count
+is the town's contractor capacity (`crewCapacity`, stock turnover × build
+duration), how busy they were is the growth loop's own appetite read off
+vacancy slack, and every start goes through `startCityJob` — the same site
+contest and pro forma the city runs every month — backdated a random way into
+its build with the ledger and the delivery queue stamped as of that month.
+Measured: 0-3.5% of stock at the bell; on half the seeds the pro forma clears
+nothing, which is the development-pencils fault the pipeline now shows at
+month zero instead of hiding behind an empty sky.
+
+# A LEANED-ON BANK LEANS BACK — the fiscal-pressure freeze, and the pace of a frightened bank
+
+Forty centuries, no player, the nation model alone: the median seed peaked at
+12.6% money, one century in ten pinned the 23% index ceiling, and one policy
+rate reached 31.9%. The trajectories all had the same shape. A fiscal-pressure
+episode (`pressureM`, 30-96 months) froze the policy rate outright — 0.3% or
+4.9% for five to eight years — while `easeEma` compounded the ease into 20%
+inflation, credibility hit its 0.10 floor, expectations pinned their 16% clamp
+and the target drifted to its 6% ceiling; when the pressure lifted, the rule
+asked for 30% and the bank climbed toward it at three-quarters a meeting for
+five years, reading trend inflation through a twelve-month smoothing, so it
+peaked two years after inflation did.
+
+Neither half is history. The Martin Fed under the Vietnam build-out took the
+funds rate from 4% to 9% between 1965 and 1969 — leaned on, it still leaned
+back, at about a third of the rule's pace. And Volcker, once he had the
+argument to win, moved in points: 11% to 17.6% in eight months, 9% inside the
+next quarter, 19% six months after that.
+
+So: under pressure the bank moves a quarter point, only on a visible miss,
+never the frightened three-quarters (two points a year at most); and in the
+restore regime — credibility under 0.55 with inflation seen above 4.5% — it
+moves a point and a half a meeting, both ways. Measured, the freeze alone:
+
+    peak policy      p50 10.2 → 9.9    p90 22.8 → 17.6    max 31.9 → 27.3
+    50-yr max index  p90 23.0 → 19.5   (the ceiling no longer binds at p90)
+    months above 10% p50 5% → 4%       peak inflation p90 15% → 13%
+
+...and with the Volcker step on top (same 40 seeds × 50 years):
+
+    peak policy      p50 10.2 → 9.8    p90 22.8 → 19.6    max 31.9 → 24.5
+    peak inflation   p90 15% → 14%     max 22% → 18%      (the 0.22 clamp no longer binds)
+    50-yr max index  p50 12.6 → 12.1   p90 23.0 → 21.3    max 23.0 (one seed still touches it)
+    months above 10% p50 5% → 4%       p90 21% → 23%
+
+The step trades a little at p90 for the whole of the extreme tail: a bank
+that reaches the breaking rate while inflation is still rising peaks lower
+and breaks it earlier, so the worst century now looks like 1981 (24.5% money
+against 18% inflation) rather than something no developed economy has seen.
+The opening draw (regime.ts) is untouched: 12 of 40 games still open above
+10%, which is the era table and the owner's call. What remains of the tail —
+one seed in forty at the 23% ceiling, p90 months-above-10% unchanged — sits
+in the expectations channel (`inflExp` still reaches its 16% clamp in the
+worst seed) and is the next thing to trace.
+
+# A CHEAP BUILDING IS CHEAPER TO RUN — fixed
+
+The playtest that found it: a 5,004 sf apartment block on the waterfront at a
+demand score of 24, bought at 96% let for $363K on its roll, appraised at
+$53-60K three years later at 95% let — because the market rent for that
+address is $10 a foot, opex was a flat $8.23 a foot for every apartment in
+town, and the estimate of its income was $3,010 a year.
+
+Measured at the opening bell, six seeds, every standing building:
+
+    apartments   demand 0-19: rent $13.5/rsf  NOI $3.8  margin 28%  value $36/gsf
+                 demand 80-99: rent $48.2/rsf  NOI $40.9  margin 85%  value $502/gsf
+                 prime/fringe value 13.9x     (rent 3.6x, NOI 10.8x)
+    office       prime/fringe value 6.3x      retail 26.4x
+
+Real secondary metros run three to four times fringe to prime for apartments
+and office. The rent gradient is already at the top of what `locationRentMult`
+is meant to produce; what multiplied it was a cost that did not move with the
+address. The NAA and IREM income-expense surveys put class-A garden apartments
+at about 1.3x class-C operating cost per foot against rents about 1.7x apart:
+an elasticity of about one half. `locOpexMult` applies that through the same
+location multiplier the rent reads, pivoted on the city's mean address, at
+every site that prices a parcel (NOI, the operating statement, base-year
+stops, tax recovery, the site pro forma). The class-level pro formas read the
+mean or the P90 site as before. Same six seeds after:
+
+    apartments   demand 0-19: NOI $6.0  margin 44%  value $56/gsf
+                 demand 80-99: NOI $38.9  margin 81%  value $407/gsf
+                 prime/fringe value 7.3x
+    office       4.9x          retail 16.7x
+
+What remains of the apartment spread is the rent gradient itself (3.6x
+between the extreme fifths against the 2-2.5x the `LOC_SPREAD` comment cites
+for the business) and a small cap-rate location term; retail's is its own
+footfall gradient, by design. Both are calibration questions for
+`locationRentMult`, not for the expense line.
+
+# YOU ALWAYS GOT TO BORROW THE SAME LTV — fixed
+
+The owner's complaint, verbatim, and measured exact. `pnpm ltvdist` over six
+seeds and thirty years of live listings, every income desk quoted on every
+built listing, the best senior advance any desk would write, cut every way:
+
+    credit window open ≥0.95   p50 58%      phase expansion   p50 59%
+    credit window 0.40-0.60    p50 60%      phase recession   p50 56%
+    era disinflation           p50 59%      class multifamily p50 58%
+    era zirp                   p50 57%      class office      p50 58%
+    occupancy ≥90%             p50 59%      index rate <2%    p50 62%
+    occupancy <50%             p50 53%      index rate 6-9%   p50 55%
+    overall  p5 46%  p25 53%  p50 58%  p75 62%  p95 69%
+
+Three things made the sheet a constant. Each product's `ltv` was a number on
+a brochure that nothing moved. `advanceFactor` could only cut — a credit index
+above one did nothing, so the top of the cycle looked like the middle. And the
+debt fund, the one desk whose sheet says 80%, was funded at index + 1.1 and
+earned index + 1.9 on its book like a bank, so a bank's margin formula sat on
+its floor in every month of every run (appetite median 0.31 with capital at
+23-26% against a 22% target — flush and rationing forever) and the 80% desk
+wrote 53%, under the hometown bank.
+
+What moves a sheet in life is the loan-officer survey: standards ease at the
+top of a cycle because every desk is competing for the same paper, and
+tighten in a quarter when either the capital markets or the desks' own
+capital go. Both are already state here. `underwritingStandards` is
+0.65 × the credit window (`creditIdx`, centred at 0.90, ±0.22 to the rails)
++ 0.35 × the street's book-weighted appetite (`bankApp`, centred at 0.90,
+±0.25), clamped to −1…+1. Each desk's sheet moves within its own band around
+the mid-cycle rate — up less than down, because standards loosen over years
+and tighten in a quarter:
+
+    harbor    68%   +5 / −10        conduit   75%   +5 / −12
+    savings   72%   +6 / −12        cordage   80%   +5 / −10
+    pelican   58%   +3 / −6         mezz      85%   +5 / −10
+    land      50%  +10 / −15  (first to go, last back)
+
+then property type (apartments +5, warehouses +2, shops −2, offices the
+sheet), the engineer's report (a worn or obsolete building has 3 points held
+back for the repairs), and your file with the desk (up to +4 on the same
+relationship curve as the coupon discount; not the conduit, which sells the
+loan, nor the debt fund, which prices you). The coverage tests move with
+standards too, and only at the top — the `tight` terms already did the
+bottom: at +1 the underwritten DSCR drops 0.07 (1.25x → 1.18x) and the
+debt-yield floor 12% (9% → 7.9%), which is the 2006 conduit sheet and the
+reason a boom's loans are the ones that go wrong. `advanceFactor`, the
+concentration tests and your standing come off the sheet after, as before.
+
+The fund's book yields index + 4.5 now (bridge at +4.1 floating, mezz at +8),
+and every kind rations against its OWN normal margin (`NORMAL_NIM`: a bank's
+4.1 points, the insurer's 3.3, the conduit's 1.6 gain-on-sale, the fund's
+3.4) — the bank's original curve expressed as a share of it, so a bank is
+numerically unchanged and a conduit earning its whole margin is at 1 rather
+than at half.
+
+After, same six seeds, same cuts (`pnpm ltvdist`, `pnpm advance` gates the
+mechanism):
+
+    best senior advance, by credit window   open ≥0.95 p50 75%  ·  0.60-0.80 p50 62%  ·  <0.60 p50 54%
+    best PERMANENT desk (banks, life, conduit)   open 60%  ·  0.80-0.95 55%  ·  0.60-0.80 48%  ·  shut 42%
+    hometown bank, sheet today   open 71% → shut 59%;  written p50 60% → 42%
+    index rate <2% p50 78%  ·  6-9% p50 61%          overall p5 48%  p25 60%  p50 69%  p75 76%  p95 84%
+    Cordage appetite p50 0.31 → 0.97;  conduit 0.33 → 0.47 (shut 31% of months, as before)
+
+The banks' written advance moves less than their sheets because coverage and
+debt yield still size a low-cap building in a cheap-money era (harbor: DSCR
+binds 44% of the time with the window open) — which is the 2021 market, not a
+defect.
+
+What it did to the city. `pnpm baseline:check` on the six standing seeds
+read population −6%, land median −29% and retail vacancy doubled, which is
+the signature the file's own header warns about: a change that moves money
+changes the number of draws and re-rolls the century. Twelve seeds, both
+engines, same city, 300 months (`scratchpad/abdist.mjs`, means):
+
+                       before    after
+    population         40,384   41,101      land median $/sf   108    111
+    jobs               22,296   22,499      office rent idx   46.5   47.5
+    buildings           900.3    900.3      retail rent idx   26.4   30.5
+    floor area (M sf)   10.71    10.57      retail vacancy    7.7%   6.9%
+    street debt/basis     84%      89%      rival failures /25y  8.3   10.3
+    bankApp (mean)       0.83     0.89      city starts (sf)  17.8k  21.0k
+
+Per seed the city metrics move both ways (550991 land 69 → 183, 12007
+120 → 74); the distributions are the same. What moves one way is the credit
+market: the street carries five points more debt, starts more, and loses a
+quarter more firms over a quarter-century — a boom's loans are the ones that
+go wrong, and that is now true of the street's as well as yours. BASELINE.json
+was regenerated on this commit for that reason. The acquisition card prints the sheet and how it was built ("their
+68% sheet, +5 for multifamily, −3 held back for the repairs on the engineer's
+report"), the refinance desk carries the same, and The Banks page has a
+"Sheet today" column and the standards word at the top.
+
+# A WONDERFUL CASH-FLOWING ASSET BORROWED LIKE A PROJECT — fixed
+
+The owner: "I have a wonderful cashflowing asset yet the best loan I can get
+is a 2.2 DSCR." Reproduced from the owner's chair (`scratchpad/refi-repro`,
+four seeds, the best cash-flowers on the opening tape, bought for cash and
+refinanced a year later):
+
+    2856 Old State St  flats   99% let   mark $1.95M   harbor $0.95M  49% of mark  2.10x
+    1940 Old State St  flats   94% let   mark $2.12M   harbor $1.11M  52%          2.30x
+    354 Old Union St   flats   97% let   mark $1.51M   harbor $0.57M  38%          2.78x
+    1448 Old State St  office  87% let   mark $3.80M   harbor $0.93M  24%          7.55x
+
+Four cuts, stacked multiplicatively, none of them what a credit committee
+does:
+
+1. **The credit window counted twice.** `advanceFactor` carried
+   `(1 − 0.30 × tight)` from before the standards band existed, and the band
+   (previous section) moved the sheet on the same credit index. A shut window
+   took the hometown bank to 68 − 10 = 58 on the sheet and then × 0.86 on the
+   factor: 50%, against the 58% the band was written to produce. My error,
+   one commit old. `advanceFactor` is now the desk's own appetite alone; the
+   window lives in `statedLtv`, once, with the hometown bank's `ease` for its
+   friends on the down band.
+
+2. **A collateral haircut that took half the loan.** `collateralHaircut`
+   stacked a single-name test (to 32 points), a rollover test (18) and a
+   trade test (16 + 26 if the trade is contracting) to a floor of 0.50, AFTER
+   the three sizing tests. So "100% of the income is the law firms" halved
+   the loan on a full office building — every small office building in town
+   is let to a few professional firms — and a block of flats read "the
+   biggest tenant is 71% of the roll" because its two shops at grade were
+   graded as if they were the building; the flats are `h.occ`, not tenants,
+   and were never in the roll the test read. A single tenant with credit on a
+   long lease is the MOST financeable income there is. Now: the flats are
+   never graded, the commercial tests are weighted by the commercial share of
+   the income (`commercialShare`), single-name is 10 points for weak short
+   paper, 5 with credit OR term, 0 with both (a credit-tenant lease),
+   rollover is 10 points once more than half the roll expires inside two
+   years (the re-leasing reserve, in proceeds), the trade test needs four
+   names or a contracting trade (6 + 15), and the floor is 0.75.
+
+3. **A bank "full" of the class its town is made of.** `concentrationRoom`
+   capped a bank's book at 45% in one class; in a city whose stock is half
+   flats every bank sat over it from the first month ("First Harbor is
+   already 48% multifamily against a 45% limit", on a town that is 48%
+   multifamily) and took a slice off every apartment loan for ever. The cap
+   is now the kind's floor or a quarter over the town's own mix, whichever is
+   higher.
+
+4. **One debt-yield floor for every class.** The agencies write flats at a
+   seven-to-eight per cent debt yield where an office desk wants nine, because
+   a hundred households do not go dark on one date. The floor on apartments
+   is 85% of the product's.
+
+And the coverage tests now move on standards in both directions (they read
+`tight` on the way down and standards on the way up — two variables for one
+cycle): 1.25x becomes 1.40x and the floor 11.25% with the window shut, 1.18x
+and 7.9% at the top.
+
+The card was also contradicting itself: it printed coverage on the
+interest-only year's payment (1.71x) beside "binds coverage" from a desk that
+had sized to 1.40x on the amortising payment. `dscrAtMax` is on the payment
+the desk sized to now, with the IO year reported as the holiday it is
+(`dscrIoAtMax`, and the refinance desk prints both).
+
+Same four buildings after, same window (shut, standards −0.9):
+
+    2856 Old State St  flats   harbor $1.09M  57% of mark  1.40x on the amortising payment  binds coverage
+    1940 Old State St  flats   harbor $1.27M  59%          advance rate
+    354 Old Union St   flats   harbor $0.79M  52%          coverage
+    1448 Old State St  office  savings $2.01M 53%          advance rate — the one lease rolls inside two years, 20 points off
+
+`pnpm refi-strong` gates the shape (the haircut cases above; the window
+counted once; coverage on standards; the flats' floor; and, from the owner's
+chair in an ordinary window, every stabilised building's best permanent
+quote sized to the sheet or to coverage) and is in `pnpm check`.
+
+What it did to the city. The street is sized by the same desks, so the
+street borrows to the sheet once as well: its opening debt is up ~5% (the
+roster's equity goes one building further) and it loses a firm or so more
+per quarter-century. Thirty-six seeds on both engines, same city, 300
+months (`scratchpad/abdist.mjs`, means):
+
+                          before    after
+    population            40,309   38,061   (−5.6%)
+    jobs                  22,201   20,828   (−6.2%)
+    buildings              894.9    895.5
+    land median $/sf        96.4     79.1
+    rival failures /25y     10.2     11.1
+    city starts (sf)       19.5k    16.1k
+
+Per seed the swing is ±20-75% (a recession that lands in year two instead
+of year six is a different century), so this is a few per cent of drift
+under heavy re-roll noise, in the direction a more levered street would
+produce, and it is recorded here rather than tuned away. BASELINE.json was
+regenerated on this commit.
+
+# ONE BUILDING, THREE APPRAISALS IN SIX MONTHS — fixed
+
+HANDOFF 0f, reproduced on 2856 Old State St (11,129 sf of flats, 99% let,
+`scratchpad/threeappr.mjs`) and taken apart:
+
+    parcel desk (assetValue, class model, no roll)          $2.52M
+    ask basis   (conveyedValue: the roll, taxed at nothing)  $2.76M  → ask $3.11M
+    deed        (holdingValue: the roll, taxed at the price) $2.43M
+    month 4                                                 $1.93M
+    month 5                                                 $2.95M   (+53%, same tenants, same rent)
+
+Four faults, none of them the market:
+
+1. **Rent and the cap rate read the grade as a step.** `condIdx` drifts a
+   thousandth a month; `condGrade` reads a word off it; `CONDITION_RENT_MULT`
+   and `capRateFor`'s quality spread read the WORD. At 0.5195 → 0.5200 the
+   building crossed into "standard": rent ×1.19, cap −70bp, mark +53%, in one
+   month. Both readers now interpolate between the grades' centres
+   (`condMultAt`, `qualSpreadAt`; `COND_CENTRE` 0.17 / 0.43 / 0.65 / 0.865),
+   every owned reader passes `h.condIdx`, and a reader that only has the word
+   prices at that grade's centre — the table value, so nothing that only knew
+   the word moved. The grade keeps its jobs as a label and a gate.
+2. **The seller paid no property tax.** The vessel `conveyedValue` and
+   `stampListing` built to strike the ask had no basis, `grossTaxYr` read
+   zero, and the ask was struck on a third more income than the building
+   earns. Every vessel now carries `assessed` at the standing assessment
+   (`assetValue`, the class model — what the assessor's roll says before
+   anyone pays a new price) and the index and the flats' in-place rent the
+   deed will convey (`Listing.condIdx`, `resRentPsf`; the purchase takes
+   them over verbatim, at the closing month, not month zero's age).
+3. **Three readers.** The parcel desk, the tape and `buyQuote` appraised
+   with the class model; the ask and the deed with the roll. `marketAppraisal`
+   is the one reader now — the disclosed roll capitalised at the cap the
+   roll's quality earns, taxed at the standing assessment; `holdingValue` on
+   the same vessel the deed will be marked with — used by the parcel desk,
+   the tape, the broker's calls, the acquisition card's default price and the
+   lender's appraisal. The only thing that changes at the closing is the
+   reassessment at the price, and the card says so on the tax line.
+4. **Apartment income read the spot market.** `holdingNOIYr` priced the
+   flats at this month's index × occupancy, so a 9% index move was a 27% NOI
+   move the same month on the same tenants. `Holding.resRentPsf` is the roll
+   in place: it opens at the market when the roll is written and closes a
+   twelfth of its gap to the market each month (`tickLeasing`) — loss-to-lease
+   on the way up, the lag that keeps a full building from tracking the index
+   on the way down.
+
+After, same building: $2.95M appraised, $3.00M ask basis, $2.91M marked the
+day it closed (the tax reset), then $2.74M, $2.66M, $2.53M … as the flats'
+market fell 9% over the year and the roll followed it a twelfth at a time.
+The tape against the appraiser, 1,015 listings over six seeds
+(`scratchpad/askmark.mjs`): ask / market appraisal p10 0.93, p50 1.02, p90
+1.12 (was p5 0.48 … p95 1.50 against the class model); motivated sellers
+p50 0.88; asks capitalise in-place NOI at 5.71% against a 5.82% market cap
+(was 5.12% against 6.18%). `pnpm appraisal` gates all four and is in
+`pnpm check`.
+
+# THREE OF FIVE DESKS WERE FURNITURE — fixed
+
+Measured on the opening tape of three seeds (357 built listings, median ask
+$1.05M, p90 $3.5M): the regional quoted 9% of them ($2.5M minimum loan), the
+life company 0% ("good" buildings only — 5% of a generated city's stock —
+and a $4M minimum), the conduit 0% ($10M minimum). The hometown bank and the
+debt fund were the market.
+
+A desk's minimum cheque is a fact about its cost of underwriting against the
+yield on the loan, written for the buildings it actually sees. So it scales
+with the town: `loanScale` is the median built value over a $4M reference
+(clamped 0.25-4, read at the opening bell and every January), `loanMin`
+applies it to every product's minimum with a floor ($500K, the life
+company $750K, the conduit $1M), and the refinance desk's "below their
+minimum" line prints this town's number. The life company takes a standard
+building at a quarter point over its good-building sheet (`conditionOk`,
+`minCondition: "standard"`); worn and obsolete still go to the banks and the
+fund. After, same tape: regional 47%, life company 18%, conduit 7% (36% of
+listings over $2.5M). `pnpm advance` gates it.
+
+# WHAT THE MONEY COSTS, AND WHO IS SIGNING FOR IT
+
+Two things the debt desks never said.
+
+**All-in cost.** The refinance table sorted by what reaches your account,
+which put the debt fund — most proceeds, most expensive — on top of every
+list, and the acquisition chooser listed the desks in sheet order as if
+they were peers. `allInCostPct` is the coupon plus points and the cap
+premium spread over the hold the paper runs (its term, or seven years):
+two points and a cap on three-year bridge paper is 1.08 points a year on
+top of the coupon; eight tenths of a point on seven-year regional paper is
+0.11. Both desks print it; the acquisition chooser orders by it (desks that
+will write first); and `deskAdvice` names the cheapest permanent desk that
+clears the payoff and, when the most money on the table is bridge money on
+a building that is already let, what taking it costs a year and when the
+balloon lands.
+
+**The guarantor.** Bank paper is recourse — the desk has your signature as
+well as the deed — and every community and regional CRE loan carries a
+guarantor covenant: net worth at some multiple of the loan. Nothing tested
+it, so a $2M sponsor could sign for $20M at the hometown bank. Recourse
+desks now cap the loan at twice the guarantor's net worth (`guarantorCap`,
+the middle of practice for a small sponsor), the card says so ("wants a
+guarantor worth half the loan — your balance sheet carries $X, so they will
+sign $2X"), and a guarantor worth three times the paper is worth a tenth
+of a point on the coupon. Non-recourse desks — the life company, the
+conduit, the debt fund — size on the building alone, which is what
+non-recourse means and the reason a thin sponsor's first big building is a
+bridge deal or a life-company deal. The cap grows as you do: this is the
+positive side the sponsor record never had.
+
+# A GLUT IS A PROPERTY EVENT, NOT A DEPRESSION — fixed
+
+Twenty-four seeds of the baseline city, 300 months (`scratchpad/phasedist`):
+the phase machine spends 22% of months in recovery, 48% in expansion, 12%
+at the peak, 17% in recession and 1% in depression; recession spells run a
+median 11 months (max 31). Jobs' worst peak-to-trough was a median 8%, p90
+16%, max 22%, and two cities in twenty-four ended more than a tenth below
+their own peak. Most of that is the shape of a business cycle. One city was
+not: harness seed 20603 sat in "depression" for twelve years with office
+vacancy at 30% and flats at 22%, lost 28% of its jobs and 22% of its people
+while the nation expanded, and took delivery of 78 buildings while it did.
+
+Two mechanisms, both wrong in the same direction:
+
+1. **The local phase bled jobs on its own.** `jobDrift` ran −3.7% a year in
+   "recession" and −1.2% in "depression" whether or not the nation was in
+   one, and a glut keeps the phase machine in depression until the slack
+   clears (`slackEma > 0.09`) — so the glut cost jobs, the jobs cost tenants,
+   the tenants cost the glut. Houston in 1986 and Dallas in 1988 lost jobs to
+   the oil bust and the S&L failures and recovered on the national cycle
+   inside six years with vacancy still in the twenties; nowhere has a
+   property glut alone taken a city down a quarter. The local phase's drift
+   runs at less than half its rate outside a national recession now
+   (recession −1.4%/yr, depression −0.4%/yr); `natPull` is what costs a city
+   jobs.
+2. **The pro forma ignored the market's vacancy.** `devPencils` underwrote
+   90% occupancy (95% for flats) whatever the market was doing, so the
+   pipeline kept starting into the glut. The lease-up assumption is the
+   market's now, with a margin: untouched to 1.5× natural vacancy, down to
+   half at 3× — at which point nothing pencils, which is what a glut is for.
+
+After, same 24 seeds: worst drawdown median 5%, p90 14%, max 23%; one city
+in twenty-four ends more than a tenth off its peak; depression 1.2% of
+months (a property depression still happens — it just stops being a
+demographic one). Seed 20603: jobs −7% at the worst against −28%, people
+−4% against −22%, office vacancy peaking at 21% against 30%. `pnpm glut`
+gates the pencil, the drift and the seed, and is in `pnpm check`.
+
+# ONE RESERVATION, TWO DOORS — fixed
+
+The tape (`bidOdds`) centred a seller's acceptance curve on `reserveMidOf`
+— the kind's floor plus a lift, less a motivated discount — shifted by the
+cycle (−0.035 in a recession, +0.025 in an expansion), and `closingBand`
+printed that centre on the offer desk as "typically closes at X–Y% of the
+ask". The negotiation path (`reservationOf`) carried its own floor, its own
+phase shifts (−0.055 / +0.03) and its own distress notches, so the same
+estate wanted two different numbers depending on whether you bid on the
+tape or rang them, and the band the desk printed was wrong for the door
+you were knocking on. Both paths read `reserveMidOf` and one `phaseShift`
+now; the certainty discount, the reputation multiplier, the tape-as-outside-
+option floor and the lender's basis rules are unchanged; the off-market
+counter prints the same band the tape does, with the phase named.
+
+---
+
+# THE PLAYTHROUGH'S FOUR MARKS (Sep 2026)
+
+Four places where a desk printed one number and the world ran on another,
+found by playing thirty years three times through the engine's own actions
+(`PLAYTHROUGH_2026-09.md`). None of them is a coefficient; each is a reader
+that had two answers.
+
+## A delivered building's condition
+
+`deliver()` wrote the word "good" and computed the index off the static
+land record, whose year built is zero, so every ground-up delivery carried
+condIdx 0.58 — the floor of `condCeiling` — while the plan had priced the
+scheme at "good". The index is what every reader takes. Measured, one
+79K sf apartment tower that cleared its hurdle at 6.69% against 6.64%:
+
+    at delivery        before 23.9M (55% of basis)   after 34.3M (80%)
+    at 91% let         before 26.6M (62%)            after 39.8M (92%)
+    NOI at 91% let     before 1.12M                  after 1.53M  (plan 2.63M pre-tax)
+    rent at delivery   before $34.5 (standard)       after $44.4 (good, 0.93)
+
+The remaining gap to the plan is the assessment at cost (the appeal desk
+exists for it) and three years of rent movement during the build. The
+ceiling is now read off the record `deliver()` had just written; a
+conversion keeps the old bones' year because no capital makes 1930 new.
+
+## A matured note
+
+A balloon nobody would take out sat past maturity for as long as the coupon
+cleared: 61 building-months in three campaigns, one for years. Now, after
+twelve serviced months, a desk with capital documents an extension (the
+forbearance desk's own fee, bump and sweep, once per note) and anyone else
+files; a covenant file open at maturity becomes a balloon file; the extended
+maturity closes the file so the takeout ladder quotes fresh. Two invariants
+hold it (`balloon`), and `test/balloon-holdover.mjs` walks the extension, the
+refusal of a second one, and a receiver's filing.
+
+## A marketed bid list
+
+Bids were drawn from 86% to 109% of the owner's mark in an expansion. The
+mark is made of the compressed cap rate, so the process paid the boom twice:
+
+    accepted bid / appraisal, marketed sales    before (n=36)   after (n=56)
+    p25                                         105%            102%
+    p50                                         108%            105%
+    p90                                         113%            111%
+
+Bids now centre on the mark (88–106% in an expansion, 88–97% in a crunch),
+and best and final sharpens by 0.5–3.5% instead of 0.5–5.5%. The residual
+few per cent is the max of a handful of draws, which is what a competitive
+process is for. The outliers above 130% in the after-run were the rollover
+reserve (below) lifting off a listing mark when the tenant renewed during
+marketing — the reserve is capped at a quarter of the mark for that reason.
+
+## In-place NOI, and the roll about to roll
+
+`holdingNOIYr(…, month)` is cash; a tenant in free rent is zero in it. The
+desks printed that as in-place NOI, the lender underwrote it, Portfolio and
+Debt summed it, and the appraisal (which had always capitalised the
+contract) disagreed with all of them. `contractNoiYr` is the desk reading
+now; cash stays cash where cash is meant.
+
+The mark also carries `rolloverReserve`: for every commercial lease inside
+twelve months, `(1 − p) × (downtime + TI + commission)` with `p` the leasing
+desk's own renewal read, fading in over the final year, capped at 25% of the
+mark. It is the reserve an appraiser carries and it turns the expiry cliff
+into a slope on the way down. It does not change the cliff's depth — the
+55/45 in-place/stabilised blend does that, and the appraiser's fix (a partly
+vacant standing building at stabilised value less lease-up cost, the
+`leaseUpMarkAt` arithmetic beyond a first lease-up) is the next measured cut.

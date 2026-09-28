@@ -197,7 +197,9 @@ for (const SEED of SEEDS) {
     E.genRentRoll(g, r, h);
     for (const u of Object.keys(E.mixOf(r))) {
       if (u === "multifamily") continue;                 // MF occupancy is h.occ, not a tenant list
-      const leg = E.useSf(r, u); if (leg < 400) continue;
+      // RENTABLE feet — the basis every roll is now let on. Gross here read a
+      // rentable roll as 19-32pp emptier than the market it matched.
+      const leg = E.useRentableSf(r, u); if (leg < 400) continue;
       tot[u]++;
       const leased = h.tenants.filter((t) => (t.use ?? u) === u).reduce((a, t) => a + t.sf, 0);
       if (leased === 0) dead[u]++;

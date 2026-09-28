@@ -3296,7 +3296,13 @@ export function rivalTemperamentWeight(s: GameState, r: Rival): number {
   return band * access;
 }
 
-export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number): Rival | null {
+export function rivalBuys(
+  s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number,
+  // THE FIRM THAT BID IS THE FIRM THAT BUYS. When the player takes a named
+  // firm's bid, that firm takes the deed — if it can still close. The
+  // appetite draw below is for the tape, where nobody has bid yet.
+  prefer?: Rival, sellerName?: string,
+): Rival | null {
   // A listing may already belong to somebody — a firm selling out of a
   // position, or a receiver clearing a failed one. Whoever holds the deed is
   // the seller, and they are obviously not also the buyer.
@@ -3332,7 +3338,18 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
     const need = equity + reserve + closing;
     return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum };
   };
-  const candidates = livingRivals(s).filter((r) => {
+  // A firm that bid closes on its own cheque: the yield hurdle and the
+  // committee's appetite were passed when it bid. What it cannot skip is the
+  // money — a bidder who cannot fund the close does not close, and the deed
+  // goes to the anonymous market rather than to some other firm that never
+  // bid (the first cut fell through to the appetite draw and handed Anwar
+  // Estates' winning bid to Pell Street Holdings).
+  if (prefer) {
+    if (prefer === seller || prefer.stressMs) return null;
+    const fin0 = drawFor(prefer);
+    if (prefer.cash + fin0.draw < fin0.need) return null;
+  }
+  const candidates = prefer ? [prefer] : livingRivals(s).filter((r) => {
     if (r === seller) return false;
     const st = STYLE[r.style];
     if (st.classes && !st.classes.includes(rec.class)) return false;
@@ -3356,7 +3373,8 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
   const spreadPp = (goingInYld - coupon) * 100;
   const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
   let best = candidates[0], bestW = -Infinity;
-  for (const r of candidates) {
+  if (prefer) bestW = 1;
+  for (const r of prefer ? [] : candidates) {
     const st = STYLE[r.style];
     const need = YIELD_OVER_COUPON[r.style] ?? 0.8;
     // Soft refuse: ordinary stock below the style's hurdle is not a deal for
@@ -3404,7 +3422,7 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
   best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
-  recordComp(s, rec, price, best.name, seller?.name ?? "a private owner",
+  recordComp(s, rec, price, best.name, seller?.name ?? sellerName ?? "a private owner",
     s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined);
   return best;
 }

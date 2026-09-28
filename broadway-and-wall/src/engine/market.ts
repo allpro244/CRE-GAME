@@ -4,7 +4,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
-import { applyEra, driftInflTarget } from "./regime";
+import { applyEra, driftInflTarget, CAP_RAIL } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
 
@@ -1690,12 +1690,39 @@ export function tickEcon(s: GameState) {
       const abs = Math.abs(gap);
       let step = 0;
       if (abs >= 0.15) {
+        // A BANK THAT HAS LOST THE ARGUMENT DOES NOT MOVE IN QUARTER POINTS.
+        // At three-quarters a meeting it took five years to climb from 5% to
+        // 30%, reading trend inflation through a twelve-month smoothing, so
+        // it peaked two years after inflation did and hiked six points a
+        // year into a disinflation already under way (measured across forty
+        // centuries: peak policy 27-32% against 17% inflation and falling).
+        // Volcker took the funds rate from 11% to 17.6% in eight months, cut
+        // it to 9% inside a quarter, and had it at 19% six months later —
+        // a point and a half a meeting, both ways. That pace is the
+        // restore regime's: it reaches the rate that breaks the inflation
+        // while the inflation is still rising, which is the only reason
+        // the peak is lower.
         const frightened = abs > 7 || restore > 0;
-        const unit = frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+        const unit = restore > 0 ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
         step = Math.sign(gap) * unit;
         if (Math.abs(step) > abs) step = gap;
       }
-      if (n.pressureM > 0 && step > 0) step = 0;
+      // A LEANED-ON BANK LEANS BACK, SLOWLY. This froze the rate outright for
+      // the whole episode (30-96 months), and measured across forty
+      // centuries that freeze was the entire run-away: policy pinned at 0.3%
+      // or 4.9% for five to eight years while inflation compounded through
+      // easeEma to 20%, credibility hit its floor, expectations pinned their
+      // 16% clamp, and the rule then asked for 30% money into a disinflation
+      // already under way (peak policy 31.9%; one century in ten pinned the
+      // 23% index ceiling). No modern central bank was ever held at zero
+      // against 10% inflation for eight years. The Martin Fed under the
+      // Vietnam build-out took the funds rate from 4% to 9% between 1965 and
+      // 1969 — about a point and a quarter a year, a third of what the rule
+      // wanted — and that is the shape here: under pressure the bank moves a
+      // quarter point, only on a visible miss, never the frightened
+      // three-quarters. Two points a year at most. The mistake still
+      // compounds; it no longer compounds unopposed.
+      if (n.pressureM > 0 && step > 0) step = gap > 1.0 ? 0.25 : 0;
       n.policy = Math.max(0.25, n.policy + step);
     }
 
@@ -1763,8 +1790,22 @@ export function tickEcon(s: GameState) {
   }
 
   // --- employment: the demand behind every lease -----------------------------
+  // A LOCAL PROPERTY SLUMP IS NOT A LOCAL DEPRESSION. The phase machine is a
+  // property cycle — vacancy, rents, capital — and its "recession" and
+  // "depression" phases bled jobs at 3.7% and 1.2% a year whether or not the
+  // nation was in one. A city whose glut kept the phase machine in
+  // "depression" for twelve years (harness seed 20603: office vacancy 30%,
+  // national recession in two of those years) lost 28% of its jobs and 22%
+  // of its people while the country expanded, and that is not what a glut
+  // does — Houston in 1986 and Dallas in 1988 lost jobs with the oil bust
+  // and the S&L failures, and recovered on the national cycle inside six
+  // years with their vacancy still in the twenties. The local phase's job
+  // drift now runs at less than half its rate when the nation is expanding;
+  // the national recession (`natPull`, below) is what costs a city jobs.
+  const natRec = (e.nat?.recM ?? 0) > 0;
   const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
-    : e.phase === "recession" ? -0.0031 : e.phase === "depression" ? -0.0010 : 0.0015;
+    : e.phase === "recession" ? (natRec ? -0.0031 : -0.0014)
+    : e.phase === "depression" ? (natRec ? -0.0010 : -0.0003) : 0.0015;
   // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
   // causal graph had a dead end where its most important feedback belongs: a
   // city that becomes ruinously expensive relative to what it pays its
@@ -3884,6 +3925,43 @@ export function tickEcon(s: GameState) {
     }
   }
   const retMean = BUILT_CLASSES.reduce((a, k) => a + e.retExp![k], 0) / BUILT_CLASSES.length;
+  // THE INFLATION INSIDE A NOMINAL RATE IS ALSO INSIDE NEXT YEAR'S RENT.
+  //
+  // This term read the NOMINAL loan index, at 0.55 of cap per point. Measured
+  // over eight procedural cities x 100 years (`pnpm capvsrate`, Sep 2026):
+  // with the index above 10% the office cap sat ON the 11% ceiling in the
+  // median month, and the ceiling bound in 17.4% of ALL months (multifamily
+  // 7.7%) — because a Great Inflation puts the index at 12-16 and
+  // 0.55 x (14 - 5.4) asks for a 13% cap. The real record refused that every
+  // time it was asked: in 1981 the ten-year was 14% and office traded at
+  // 9-10; in 1978 it was 8.4% against caps of 8.5; through the whole of
+  // 1979-84 the spread of property yields over the ten-year was NEGATIVE, by
+  // as much as four points. A building is a real asset: its yield is a real
+  // rate plus a risk premium less growth, and when the public expects 8%
+  // inflation it expects 8% on the rent too, so the buyer capitalises against
+  // the index LESS that expectation.
+  //
+  // AND THE PASS-THROUGH IS ONE-SIDED, because rents are sticky downward. A
+  // lease carries a fixed 2-3% annual bump whatever the CPI does — which is
+  // why US rent growth never turned negative through 2010-15 at 1.5%
+  // inflation, and why office traded at 6.5-7% on a 2% ten-year then, not
+  // the 7.5-8% a symmetric real-rate model would ask for. The growth a buyer
+  // underwrites is floored at the contractual bump, so expected inflation
+  // enters only ABOVE the 2% target it is anchored to; at or under it this is
+  // exactly the nominal expression it replaces, and the modern-era
+  // calibration (office ~6.7 at a 2% index in a functioning market, 8.5 at
+  // 5.4) does not move by a basis point. Only the inflation eras move, and
+  // they move to where they were. Measured in cheap money the engine's own
+  // `inflExp` sits at ZERO in the median month, so the symmetric form was
+  // tried and rejected: it lifted every cheap-money cap by about a point,
+  // against the record. `inflExp` rather than realised inflation because a
+  // bond yield embeds what people EXPECT, and the engine already models
+  // expectations coming unanchored — which is exactly when this matters.
+  // Measured after: office on the ceiling 17.4% → 4.5% of months, multifamily
+  // 7.7% → 0.5%; what still touches it is a Volcker with a 7.6% REAL policy
+  // rate, which is the bank's number to answer for. Full table in ECONOMY.md.
+  const inflOver = Math.max(0, (e.nat?.inflExp ?? 0.02) - 0.02) * 100;
+  const capIndex = e.indexRate - inflOver;
   for (const k of BUILT_CLASSES) {
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
     // A sector in favour reprices harder than it used to: capital rotating
@@ -3897,20 +3975,21 @@ export function tickEcon(s: GameState) {
     const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
     const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
     // ...and they TRACK the cost of debt, at about half a point of cap for a
-    // point of rate, which is what the real relationship looks like. At 0.38
-    // the spread between yield and borrowing cost barely moved across a
-    // century of rates, so the fix-or-float decision and the timing of a
-    // levered purchase were both weather rather than judgement. At 0.55 a rate
-    // spike genuinely flips leverage negative and a rate collapse genuinely
-    // makes it free — which is the trade the player is supposed to be reading.
+    // point of rate net of above-target inflation (see above), which is what
+    // the real relationship looks like. At 0.38 the spread between yield and
+    // borrowing cost barely moved across a century of rates, so the
+    // fix-or-float decision and the timing of a levered purchase were both
+    // weather rather than judgement. At 0.55 a rate spike genuinely flips
+    // leverage negative and a rate collapse genuinely makes it free — which
+    // is the trade the player is supposed to be reading.
     // Half a point of cap per point of trailing excess return, bracketed at
     // +/-1.1 as a guard: the historical spread between the most- and
     // least-favoured class's cap moved about two points across an allocation
     // cycle (office vs industrial, 2007 to 2021), and this term's full swing
     // matches that without ever being the largest term in the sum.
     const flows = clamp(-0.65 * (e.retExp![k] - retMean), -1.3, 1.3);
-    const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
-    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
+    const target = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk + flows;
+    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), CAP_RAIL.lo, CAP_RAIL.hi);
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that

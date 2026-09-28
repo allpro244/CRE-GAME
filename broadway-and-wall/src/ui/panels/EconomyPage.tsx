@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
+import { standardsWord, underwritingStandards } from "@/engine/debt";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
@@ -454,12 +455,20 @@ export function EconomyPage() {
             two either way; the era decides whether that is 3% or 13%, and it
             changes on a scale of decades — which is what makes a loan you
             struck twenty years ago a different animal at maturity. */}
+        {e.eraLabel && (
+          <Big label="Era" value={e.eraLabel}
+            title={`${e.eraBlurb ?? ""} Drawn once when the city was founded; the calendar counts your years, the era is the decade the money behaves like.`} />
+        )}
         {e.rateRegime !== undefined && (
           <Big label="Long-run rate" value={pct(e.rateRegime)}
             title="The level the base rate is being pulled toward — the cheap-money or dear-money era the cycle rides on top of. It re-aims every 12–25 years, which is why a loan struck today can mature in a very different rate world."
             bad={e.rateRegime > 9} />
         )}
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
+        {/* THE SHEET MOVES. The window and the desks' own appetite set the
+            standards every lender in town writes to — see The Banks for the
+            sheet desk by desk. */}
+        <Big label="Underwriting standards" value={standardsWord(underwritingStandards(game))} bad={underwritingStandards(game) < -0.5} />
         <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
         <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} />
         <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} />
@@ -947,7 +956,7 @@ export function EconomyPage() {
             const d = v - vacNow;
             return (
               <tr key={m.district} style={{ cursor: "default" }}>
-                <td>{m.district}</td>
+                <td>{m.name}</td>
                 <td className="num">{(leg.sf / 1e6).toFixed(2)}M sf</td>
                 <td className={"num" + (v > NATURAL_VAC[focus] + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
                 <td className="num dim">{d >= 0 ? "+" : ""}{(d * 100).toFixed(1)} pts</td>

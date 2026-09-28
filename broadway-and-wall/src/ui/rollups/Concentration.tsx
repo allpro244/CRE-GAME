@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { districtLabel } from "@/engine/mix";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import type { AssetClass } from "@/data/types";
@@ -88,7 +89,7 @@ export function Concentration() {
       const cls = CLASS_LABEL[rec.class];
       byClass.set(cls, (byClass.get(cls) ?? 0) + v);
       classOf.set(cls, rec.class);
-      byDistrict.set(rec.district, (byDistrict.get(rec.district) ?? 0) + v);
+      byDistrict.set(districtLabel(rec), (byDistrict.get(districtLabel(rec)) ?? 0) + v);
       for (const t of h.tenants) {
         const rent = t.rentPsf * t.sf;
         totRent += rent;

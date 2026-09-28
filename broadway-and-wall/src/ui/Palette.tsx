@@ -8,6 +8,7 @@
 // opens and thrown away when it closes, never kept warm behind a surface
 // that is almost always shut.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
 import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
@@ -50,7 +51,7 @@ const KIND_KICKER: Record<Kind, string> = {
 // The same words the top bar's nav uses for the same rooms. Kept by hand:
 // the palette must read like the nav it stands in for, and importing the bar
 // to borrow its copy would drag the whole vitals machine along.
-const DESKS: readonly { id: Page; label: string; note: string }[] = [
+const DESKS: readonly { id: Page; label: string; note: string; jump?: string }[] = [
   { id: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
   { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
   { id: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
@@ -59,6 +60,7 @@ const DESKS: readonly { id: Page; label: string; note: string }[] = [
   { id: "staff", label: "Staff", note: "People, capacity and judgment" },
   { id: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
   { id: "debt", label: "Debt", note: "Loans, line and the maturity wall" },
+  { id: "debt", label: "Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
   { id: "books", label: "Books", note: "Cash movement and the ledger" },
   { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
   { id: "news", label: "News", note: "What the city wrote this month" },
@@ -151,8 +153,8 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
 
   for (const d of DESKS) {
     out.push(mk({
-      id: `desk:${d.id}`, kind: "desk", label: d.label, sub: d.note, tag: "desk",
-      run: () => st().setPage(d.id),
+      id: d.jump ? `desk:${d.id}:${d.jump}` : `desk:${d.id}`, kind: "desk", label: d.label, sub: d.note, tag: "desk",
+      run: () => st().setPage(d.id, d.jump),
     }));
   }
 
@@ -171,7 +173,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     const address = rec?.address ?? bbl;
     out.push(mk({
       id: `d:${bbl}`, kind: "deed", label: address, tag: "yours",
-      sub: rec ? `${rec.district} · ${CLASS_LABEL[rec.class]}` : undefined,
+      sub: rec ? `${districtLabel(rec)} · ${CLASS_LABEL[rec.class]}` : undefined,
       run: () => st().focus(bbl, true),
     }));
     h.tenants.forEach((t, ti) => {
@@ -208,7 +210,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     if (game.holdings[bbl]) continue;
     const rec = parcels[bbl];
     out.push(mk({
-      id: `p:${bbl}`, kind: "lot", label: rec.address, sub: rec.district, tag: "lot",
+      id: `p:${bbl}`, kind: "lot", label: rec.address, sub: districtLabel(rec), tag: "lot",
       run: () => st().focus(bbl, true),
     }));
   }

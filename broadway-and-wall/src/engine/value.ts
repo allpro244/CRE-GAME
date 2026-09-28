@@ -596,7 +596,7 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     const rent = useRentPsfYr(rec, econ, "good", use) * rentMult * belief;
     if (!(rent > 0)) continue;
     const occ = use === "multifamily" ? 0.95 : 0.90;
-    const opex = opexPsf(use, econ, false);
+    const opex = opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
     const recov = RECOVERY_RATE[use] ?? 0;
     // SOMEBODY HAS TO MANAGE THE BUILDING, AND THIS PRO FORMA WAS NOT PAYING
     // THEM. `noiYr` — what the tape, the lender, `assetValue` and the player's
@@ -734,8 +734,20 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // underwrites above today's rent, which is how a pipeline overshoots.
   const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
-  const occ = k === "multifamily" ? 0.95 : 0.90;
-  const opex = opexPsf(k, e, false);
+  // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for
+  // flats) whatever the market was doing, so the pipeline kept starting into
+  // a glut: seed 20603 delivered 78 buildings while office vacancy sat at 30%
+  // and the city lost a fifth of its people. A developer's lease-up
+  // assumption is the market's, with a margin: untouched up to one and a
+  // half times the natural vacancy, then down to half at three times it —
+  // at which point nothing pencils, which is what a glut is for.
+  const nat = NATURAL_VAC[k];
+  const vac = e.cityVac?.[k] ?? nat;
+  const excess = Math.max(0, vac - 1.5 * nat);
+  const leaseUp = Math.max(0.5, 1 - excess / (1.5 * nat));
+  const occ = (k === "multifamily" ? 0.95 : 0.90) * leaseUp;
+  // the P90 site's opex, not the mean's — same station as its rent
+  const opex = opexPsf(k, e, false) * Math.pow(locMult, OPEX_LOC_ELASTICITY);
   const recov = RECOVERY_RATE[k] ?? 0;
   const egi = rent * occ + opex * recov * occ;
   const noiPsf = egi - opex - egi * MGMT_FEE;
@@ -1042,6 +1054,48 @@ function condMult(c: Condition): number {
   return CONDITION_RENT_MULT[c] ?? 1.0;
 }
 
+/**
+ * CONDITION IS A NUMBER; THE GRADE IS A WORD FOR IT.
+ *
+ * `condIdx` drifts a thousandth a month and the grade is a reading of it
+ * (`condGrade`). But rent and the cap rate read the WORD: a building whose
+ * index crept from 0.5195 to 0.5200 crossed into "standard" and its market
+ * rent rose 19% (`CONDITION_RENT_MULT`), its cap fell 70bp (`qualSpread`)
+ * and its mark rose 53% — in one month, with the same tenants paying the
+ * same rent. That was the owner's "one building, three appraisals in six
+ * months" (HANDOFF 0f), measured on 2856 Old State St: $1.93M in month four,
+ * $2.95M in month five. A building does not become a different building
+ * because a thousandth ticked over; the market prices what it sees, which is
+ * continuous. So every price reader takes the index and interpolates between
+ * the grades' centres; the grade keeps its jobs as a label and a gate (the
+ * life company's "good", the desk's repairs holdback).
+ */
+const COND_CENTRE: Record<Condition, number> = { obsolete: 0.17, worn: 0.43, standard: 0.65, good: 0.865 };
+function condLerp(idx: number, table: Record<Condition, number>): number {
+  const pts: [number, number][] = (["obsolete", "worn", "standard", "good"] as Condition[]).map((g) => [COND_CENTRE[g], table[g]]);
+  if (idx <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    if (idx <= pts[i][0]) { const t = (idx - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]); return pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]); }
+  }
+  return pts[pts.length - 1][1];
+}
+/** The rent multiplier at a condition index — the grade table, read continuously. */
+export function condMultAt(idx: number): number { return condLerp(idx, CONDITION_RENT_MULT); }
+const QUAL_SPREAD: Record<Condition, number> = { obsolete: 1.85, worn: 0.70, standard: 0, good: -0.40 };
+/** The cap-rate spread for the state of the building, read continuously. */
+export function qualSpreadAt(idx: number): number { return condLerp(idx, QUAL_SPREAD); }
+/**
+ * The index a reader should price at: the holding's own where there is one,
+ * else the age-derived index the grade would have been read from. A grade
+ * with no index prices at that grade's centre, which is the table value —
+ * so every reader that only knows the word gets exactly what it got before.
+ */
+export function condIdxOf(rec: ParcelRecord, month: number, condition?: Condition, h?: { condIdx?: number } | null): number {
+  if (h?.condIdx !== undefined) return h.condIdx;
+  if (condition) return COND_CENTRE[condition] ?? 0.65;
+  return initialCondIdx(rec, month);
+}
+
 export function initialCondition(rec: ParcelRecord): Condition {
   if (rec.yearBuilt >= 2000) return "good";
   if (rec.yearBuilt >= 1965) return "standard";
@@ -1126,7 +1180,7 @@ const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> 
   industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
 };
 
-export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
+export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   if (rec.class === "land") return 0;
   // The blended rent of a building that is shops below and flats above is the
   // area-weighted average of the shop market and the flat market. There is no
@@ -1135,15 +1189,15 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
   return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u))
-    * condMult(condition) * specRentMult(rec.buildSpec);
+    * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
 }
 
 /** What one component of a building rents for, in its own market. */
-export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
+export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass, condIdx?: number): number {
   // EFFECTIVE, not asking: everything that prices a deal or values an asset
   // reads what deals actually sign at. The Economy page shows both lines.
   return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use)
-    * condMult(condition) * specRentMult(rec.buildSpec);
+    * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
 }
 
 // A delivered development overrides the static record — resolve before use.
@@ -1287,8 +1341,8 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   // blended number the whole building is worth — which is the right answer for
   // an appraisal and the wrong one for a lease.
   let m = use
-    ? useRentPsfYr(rec, econ, h.condition, use) * faceGrossUp(econ, use)
-    : blendBy(rec, (u) => useRentPsfYr(rec, econ, h.condition, u) * faceGrossUp(econ, u));
+    ? useRentPsfYr(rec, econ, h.condition, use, h.condIdx) * faceGrossUp(econ, use)
+    : blendBy(rec, (u) => useRentPsfYr(rec, econ, h.condition, u, h.condIdx) * faceGrossUp(econ, u));
   // Programmes used to multiply here AND lift condIdx (PROGRAM_LIFT →
   // CONDITION_RENT_MULT). Measured on a 1940 office: condition lift 1.20×,
   // explicit lobby×1.04×facade×1.08 = 1.12×, both together 1.35× — the same
@@ -1546,6 +1600,40 @@ function managedOpexPsf(
   return controllableOpexPsf(cls, econ, systemsDone, service, pmMult) + OPEX_FIXED[cls] * econ.costIdx;
 }
 
+/**
+ * A CHEAP BUILDING IS CHEAPER TO RUN.
+ *
+ * `opexPsf` is one number per class, city-wide, and it was charged to every
+ * address alike. Measured at the opening bell across six seeds: apartment
+ * rent runs $13.5 a rentable foot on the fringe fifth of the city and $48
+ * on the prime fifth — a 3.6x spread, which is already the top of what the
+ * location gradient means to produce — but a flat $8.23 of opex against both
+ * turned that into a 10.8x spread in NOI (28% margin against 85%) and a
+ * 13.9x spread in value per foot ($36 against $502). Half the city's flats
+ * sat in a bin whose median value was $77 a foot, a standing 1986 waterfront
+ * block appraised at $11, and a fringe building at 73% let earned less than
+ * nothing. Real secondary metros run three to four times fringe to prime.
+ *
+ * The missing fact is that operating cost follows the building's station.
+ * Payroll, turns, utilities the owner carries, the standard of the finishes
+ * that get repaired: the NAA and IREM income-expense surveys put class-A
+ * garden apartments at roughly 1.3x class-C opex per foot against rents
+ * about 1.7x apart, which is an elasticity of about one half on the rent
+ * level. Property tax is separate and already ad valorem; the management fee
+ * is already a share of collections. This is applied through the SAME
+ * location multiplier the rent reads, pivoted on the city's mean address, so
+ * the average building's expense line does not move — the fringe gets
+ * cheaper to run and the prime dearer, which is what the surveys say.
+ *
+ * Applied at every site that prices a PARCEL. The class-level pro formas
+ * (`devPencils` at the P90 site, the order book's class check) read the mean
+ * or their own location, as noted at each.
+ */
+export const OPEX_LOC_ELASTICITY = 0.5;
+export function locOpexMult(rec: ParcelRecord, econ: Econ | undefined, cls: BuiltClass): number {
+  return Math.pow(locationRentMult(rec, econ, cls), OPEX_LOC_ELASTICITY);
+}
+
 // THE LEGACY FLAT TABLE IS GONE. It was "kept for compatibility with anything
 // still asking the old question", and the thing still asking was multifamily —
 // which billed $10.00/sf while planDevelopment, the land residual and every
@@ -1639,7 +1727,7 @@ export const TAX_RATE = 0.011;
 // Cap rates aren't one number per class: a trophy on the square trades tighter
 // than a tired walk-up on the edge of town. Demand is location; condition is
 // quality. Spread runs roughly ±0.6 points around the citywide class cap.
-export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition): number {
+export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   // A buyer underwrites each part against its own comps and adds them up; the
   // blended cap rate is what falls out, not something quoted anywhere.
   const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
@@ -1660,7 +1748,7 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition):
   // and so is the state of the building — a tired asset needs a discount to
   // move, because the buyer is pricing the capital they are about to spend, and
   // an obsolete one is priced as the capital plus a demolition risk
-  const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : condition === "obsolete" ? 1.85 : 0;
+  const qualSpread = condIdx !== undefined ? qualSpreadAt(condIdx) : qualSpreadAt(COND_CENTRE[condition] ?? 0.65);
   // Permanent bones, not today's paint. Class A trades 15–30 bp tighter than
   // Class B on the same street; spec 0..1 is that band around mid-spec (±15 bp).
   const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.30;
@@ -1680,7 +1768,7 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
-export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false): number {
+export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number): number {
   if (rec.class === "land" || !rec.bldgArea) {
     // carry: taxes and insurance bleed on idle land
     return -landValue(rec, econ) * 0.012;
@@ -1709,8 +1797,8 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
     const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
     const occ = useOccupancy(rec, econ, use, stabilised);
-    const op = sf * opexPsf(use, econ, false);
-    rent += sf * useRentPsfYr(rec, econ, condition, use) * occ;
+    const op = sf * opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
+    rent += sf * useRentPsfYr(rec, econ, condition, use, condIdx) * occ;
     opex += op;
     // ...and what a typical roll of that class bills back. Recovery is
     // pro-rata on LET space, so an empty building eats its own expenses.
@@ -1768,16 +1856,73 @@ export interface Disclosure {
   roll?: Tenant[];
   occ?: number;
   cond?: Condition;
+  condIdx?: number;
+  resRentPsf?: number;
+}
+
+/**
+ * ONE APPRAISAL FOR A BUILDING YOU DO NOT OWN YET.
+ *
+ * The parcel desk appraised a listed building with `assetValue` — the class
+ * model's opinion of a building like this one, at market occupancy, with no
+ * roll and no roll-quality spread — while the ask was struck on
+ * `conveyedValue` (the roll, taxed at nothing) and the deed, the day it
+ * closed, marked at `holdingValue` (the roll, taxed at the price). Three
+ * readers, three numbers, and "vs appraisal −7%" on a card whose appraisal
+ * was not an appraisal of this building. Measured on the tape (six seeds,
+ * `askmark`): the class model ran 35% over the roll-based value on a 96%-let
+ * shop with one short tenant, and under it on a full block of flats.
+ *
+ * A lender's appraiser, a buyer's underwriter and the seller's broker all
+ * read the same thing: the rent roll in hand, capitalised at the cap rate
+ * the roll's quality earns, taxed at the standing assessment. That is
+ * `holdingValue` on the disclosed roll, which is the same function the deed
+ * will be marked with after the closing — so the only thing that changes at
+ * the closing table is the tax reassessment at the price, and the card says
+ * so. A building with no disclosure (nobody has listed it, nobody has rung)
+ * still gets the class model, because there is nothing else to read.
+ */
+export function marketAppraisal(s: GameState, rec: ParcelRecord, bbl: string, grade?: Condition): number {
+  const own = s.holdings?.[bbl];
+  if (own) return ownedHoldingValueFromRec(s, rec, own);
+  const d = rec.class !== "land" && rec.bldgArea > 0 ? disclosureFor(s, bbl) : null;
+  const cond = d?.cond ?? grade ?? initialCondition(rec);
+  const idx = d?.condIdx ?? initialCondIdx(rec, s.month, grade);
+  if (!d) return assetValue(rec, s.econ, cond, idx);
+  const vessel = { ...asIfOwned(s, bbl, 0, d, rec), costBasis: 0, assessed: assetValue(rec, s.econ, cond, idx) } as Holding;
+  return holdingValue(rec, s.econ, vessel, s.month);
+}
+
+/**
+ * THE SIZE OF A BUILDING IN THIS TOWN, for the desks' minimum cheques. The
+ * median value of the built stock over a $4M reference — the city the
+ * product sheet's minimums were written against — clamped 0.25 to 4. Every
+ * third parcel is enough for a median and keeps a yearly pass cheap.
+ */
+export function cityLoanScale(s: GameState, parcels: Record<string, ParcelRecord>): number {
+  const vals: number[] = [];
+  let i = 0;
+  for (const bbl of Object.keys(parcels)) {
+    if (i++ % 3 !== 0) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+    const v = assetValue(rec, s.econ, initialCondition(rec), initialCondIdx(rec, s.month));
+    if (v > 0) vals.push(v);
+  }
+  if (vals.length < 20) return 1;
+  vals.sort((a, b) => a - b);
+  const med = vals[Math.floor(vals.length / 2)];
+  return +Math.max(0.25, Math.min(4, med / 4_000_000)).toFixed(3);
 }
 
 /** The disclosure on a building the player could buy today, or null. */
 export function disclosureFor(s: GameState, bbl: string): Disclosure | null {
   const li = s.listings?.find((l) => l.bbl === bbl);
-  if (li && (li.roll !== undefined || li.occ !== undefined)) return { roll: li.roll, occ: li.occ, cond: li.cond };
+  if (li && (li.roll !== undefined || li.occ !== undefined)) return { roll: li.roll, occ: li.occ, cond: li.cond, condIdx: li.condIdx, resRentPsf: li.resRentPsf };
   // A conversation that was refused is not a disclosure — there is no
   // conversation. Everything else that is open has had the paper sent over.
   const a = s.approaches?.[bbl];
-  if (a && !a.refused && (a.roll !== undefined || a.occ !== undefined)) return { roll: a.roll, occ: a.occ, cond: a.cond };
+  if (a && !a.refused && (a.roll !== undefined || a.occ !== undefined)) return { roll: a.roll, occ: a.occ, cond: a.cond, condIdx: a.condIdx, resRentPsf: a.resRentPsf };
   return null;
 }
 
@@ -1805,6 +1950,7 @@ export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosur
     assessed: price,
     loan: null,
     condition: d.cond ?? (rec ? initialCondition(rec) : "standard"),
+    condIdx: d.condIdx ?? (rec ? initialCondIdx(rec, s.month, d.cond) : undefined),
     tenants: (d.roll ?? []) as Tenant[],
     cfHistory: [],
     // IT CLOSES ON THE HOUSE POLICY — the same two lines executePurchase
@@ -1819,6 +1965,7 @@ export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosur
     stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
     ...(d.occ !== undefined ? { occ: d.occ } : {}),
+    ...(d.resRentPsf !== undefined ? { resRentPsf: d.resRentPsf } : {}),
     ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),
   } as unknown as Holding;
 }
@@ -1910,7 +2057,7 @@ export function inPlace(
     if (own.groundLeased) {
       return { noi: ownedHoldingNoiYrFromRec(s, rec, own), occ: 1, disclosed: true, h: own };
     }
-    return { noi: holdingNOIYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
+    return { noi: contractNoiYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
   }
   if (rec.class === "land" || !rec.bldgArea) {
     return { noi: noiAfterTaxYr(rec, s.econ, "standard", price), occ: 0, disclosed: true, h: null };
@@ -1921,7 +2068,38 @@ export function inPlace(
     return { noi: noiAfterTaxYr(rec, s.econ, cond, price), occ: occupancy(rec, s.econ), disclosed: false, h: null };
   }
   const h = asIfOwned(s, bbl, price, d, rec);
-  return { noi: holdingNOIYr(rec, s.econ, h, s.month), occ: physicalOcc(rec, h), disclosed: true, h };
+  return { noi: contractNoiYr(rec, s.econ, h, s.month), occ: physicalOcc(rec, h), disclosed: true, h };
+}
+
+/**
+ * IN-PLACE NOI IS THE CONTRACT, NOT THIS MONTH'S CHEQUE.
+ *
+ * `holdingNOIYr(…, month)` is the cash statement: a tenant inside a free-rent
+ * period contributes nothing to it, which is right for the bank balance and
+ * wrong for every desk that printed it as "In-place NOI / yr". Measured over
+ * three campaigns: 56 one-month NOI moves of more than 50% on buildings over
+ * half let — an anchor's two abated months read as the income falling by
+ * two thirds and coming back, with the appraisal and the lender's coverage
+ * moving with it. An appraiser and a lender both underwrite the contract
+ * rent and carry the abatement as a reserve — which is exactly what
+ * `holdingValue` already did with its `contractNoi` and `remainingAbatement`.
+ * This is that reading, for the desks: every lease counts at its contract
+ * rent; a gut renovation still reads as one (nothing is earned while the
+ * crews are in). The cash tick keeps `holdingNOIYr(…, month)`.
+ */
+export function contractNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, month: number): number {
+  const inGut = h.renovatingUntilM !== undefined && month < h.renovatingUntilM;
+  return holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY);
+}
+
+/** The canonical deed NOI on the contract basis — ground coupon on a leased fee, contract rent on a building. */
+export function ownedContractNoiYr(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  const rec = resolveRec(parcels, s, h.bbl);
+  if (!rec) return 0;
+  if (h.groundLeased) return ownedHoldingNoiYrFromRec(s, rec, h);
+  return contractNoiYr(rec, s.econ, h, s.month);
 }
 
 // The landlord's share of the property-tax bill: net leases reimburse it,
@@ -1943,7 +2121,7 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
   const taxPsf = bill / Math.max(1, rec.bldgArea);
-  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) : taxPsf;
+  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) * locOpexMult(rec, econ, rec.class as BuiltClass) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
   return Math.max(0, bill - recovered);
@@ -1970,7 +2148,8 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // units turn over and things break: a 7% reserve off collections for
     // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
-    const egi = rentableSf(rec) * marketRentPsfYr(rec, econ, h.condition) * occ;
+    // the roll in place, not the spot market — see Holding.resRentPsf
+    const egi = rentableSf(rec) * (h.resRentPsf ?? marketRentPsfYr(rec, econ, h.condition, h.condIdx)) * occ;
     // ONE OPERATING-COST MODEL, AND APARTMENTS ARE NOT AN EXCEPTION. This read
     // the legacy flat table at $10.00/sf while planDevelopment, the land
     // residual and every other class read opexPsf() at $8.22 — so a block of
@@ -1979,7 +2158,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
@@ -1988,8 +2167,8 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   const systemsDone = h.programsDone?.systems !== undefined;
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -2056,11 +2235,11 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   if (rec.class === "multifamily") {
     const occ = h.occ ?? occupancy(rec, econ);
     const letSf = rentableSf(rec);
-    const egi = letSf * marketRentPsfYr(rec, econ, h.condition) * occ;
+    const egi = letSf * (h.resRentPsf ?? marketRentPsfYr(rec, econ, h.condition, h.condIdx)) * occ;
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1);
+    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, "multifamily");
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
@@ -2076,8 +2255,8 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   const systemsDone = h.programsDone?.systems !== undefined;
   // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
   // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
@@ -2103,13 +2282,13 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   };
 }
 
-export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition): number {
+export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   const land = landValue(rec, econ);
   if (rec.class === "land" || !rec.bldgArea) return land;
   // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
   // triple-net building bills its tax bill to its tenants, so loading the full
   // rate onto every class priced net-leased retail as if it paid its own taxes.
-  const income = noiYr(rec, econ, condition) / (capRateFor(rec, econ, condition) / 100 + TAX_RATE * taxBorneShare(rec));
+  const income = noiYr(rec, econ, condition, false, condIdx) / (capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec));
   // A BUILDING STILL FILLING IS NOT PRICED OFF THE MONTH IT IS HAVING.
   //
   // Capitalising a lease-up roll at a stabilised cap rate counts the same risk
@@ -2123,7 +2302,7 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
     ? Math.round((START_YEAR + econ.m / 12 - rec.yearBuilt) * 12) : 999;
   const asIs = leaseUpMarkAt(
     rec, econ, condition, sinceM, occupancy(rec, econ),
-    clamp(capRateFor(rec, econ, condition), 2.8, 13) / 100,
+    clamp(capRateFor(rec, econ, condition, condIdx), 2.8, 13) / 100,
   );
   // an underbuilt lot is worth the greater of its income or its dirt.
   // A building still in lease-up is never worth less than the lot.
@@ -2542,7 +2721,29 @@ export function ownedHoldingValueFromRec(
     };
     return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
   }
-  return holdingValue(rec, s.econ, h, s.month);
+  const v = holdingValue(rec, s.econ, h, s.month);
+  // The roll that is about to roll — see leasing.ts rolloverReserve. Registered
+  // rather than imported because leasing.ts imports this file.
+  // Capped at a quarter of the mark: a re-tenanting bill bigger than that is
+  // a project, and projects are priced by the lease-up mark, not by a reserve.
+  // (Measured without the cap: a one-tenant shop worth $110 a foot carried a
+  // third of its value in reserve and sold at 148% of its own listing mark
+  // three months later when the tenant renewed.)
+  const roll = rolloverReader && rec.class !== "land" && rec.bldgArea > 0 ? Math.min(rolloverReader(s, rec, h), v * 0.25) : 0;
+  return roll > 0 ? Math.max(landAppraisalFloor(rec, s.econ, true), v - roll) : v;
+}
+
+/**
+ * THE ROLLOVER READER, supplied by leasing.ts at module load. The reserve a
+ * buyer takes off the price for commercial leases inside twelve months that
+ * the renewal read says are leaving needs `renewalIntent`, which lives in the
+ * leasing engine; that module imports this one, so the reader is registered
+ * rather than imported. Absent (a bundle that never loaded leasing.ts) the
+ * mark is the plain capitalised contract, as before.
+ */
+let rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | null = null;
+export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: Holding) => number): void {
+  rolloverReader = fn;
 }
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
@@ -2554,8 +2755,8 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   }
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
-  const capNoRoll = clamp(capRateFor(rec, econ, h.condition), 2.8, 13) / 100;
-  const cap = clamp(capRateFor(rec, econ, h.condition) + quality, 2.8, 13) / 100;
+  const capNoRoll = clamp(capRateFor(rec, econ, h.condition, h.condIdx), 2.8, 13) / 100;
+  const cap = clamp(capRateFor(rec, econ, h.condition, h.condIdx) + quality, 2.8, 13) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //
   // This line used to read `h.renovatingUntilM ?? -1`, and month −1 is inside
@@ -2597,7 +2798,7 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // read the FULL rate while the street's answer read the pass-through share,
   // so an identical stabilised net-leased building had two values ~14% apart
   // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
-  const stabilized = noiYr(rec, econ, h.condition, true) / (cap + TAX_RATE * taxBorneShare(rec));
+  const stabilized = noiYr(rec, econ, h.condition, true, h.condIdx) / (cap + TAX_RATE * taxBorneShare(rec));
   const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.

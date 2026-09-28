@@ -67,7 +67,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
       <div className="chart-grid">
         <div className="chart-cell">
           <div className="chart-title">Population</div>
-          <LineChart height={108} series={[{ label: "population", color: "#7a5c1e", pts: tail.map((h) => (h.population ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} />
+          <LineChart height={108} series={[{ label: "population", color: "#7a5c1e", pts: tail.map((h) => (h.population ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Souls in the city. It follows jobs slowly, because people move for work and move back reluctantly —
             a downturn shows here a year after it shows in the chart to the right.
@@ -75,7 +75,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Jobs</div>
-          <LineChart height={108} series={[{ label: "jobs", color: "#2f6f7a", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} />
+          <LineChart height={108} series={[{ label: "jobs", color: "#2f6f7a", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Filled positions — the line every lease is downstream of. Occupancy chases the space these jobs
             want, with a lag, which is why rents turn before employment does.
@@ -83,7 +83,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Unemployment</div>
-          <LineChart height={108} series={[{ label: "unemployment", color: "#a8402e", pts: tail.map((h) => (h.unemployment ?? 0) * 100) }]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} />
+          <LineChart height={108} series={[{ label: "unemployment", color: "#a8402e", pts: tail.map((h) => (h.unemployment ?? 0) * 100) }]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Of the labour force. The LAST thing to turn in a downturn — by the time this reads badly the rents
             already have, and by the time it recovers the cheap buildings are gone.
@@ -102,7 +102,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
               did not exist anywhere in the game — the line was dropped for a
               good reason and the number that was meant to replace it was never
               written — and it is true now. */}
-          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real(h.wageIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} />
+          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real(h.wageIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             What a paycheque buys, with inflation actually taken out. It gives ground about one year in six —
             firms freeze pay rather than cut it, so the cutting is done by the price-level chart below instead.
@@ -112,7 +112,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Real output — index, 1.00 = year 2000</div>
-          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real(h.outputIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} />
+          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real(h.outputIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Jobs times productivity, in real terms — the city's whole product on one line. When it grows faster
             than the standing stock of space, somebody has to build; when it does not, somebody already did.
@@ -120,7 +120,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Price level — nominal, 1.00 = year 2000</div>
-          <LineChart height={108} series={[{ label: "price level", color: "#8a5620", pts: tail.map((h) => h.cpi ?? 1) }]} yFmt={idxFmt} xLabels={x} />
+          <LineChart height={108} series={[{ label: "price level", color: "#8a5620", pts: tail.map((h) => h.cpi ?? 1) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Cumulative inflation — the one NOMINAL series here, and the deflator behind the two real ones.
             Every dollar elsewhere on this page is quoted in the money this chart is quietly shrinking.
@@ -277,6 +277,7 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
                 yFmt={sfShort}
                 zeroBase
                 xLabels={xl}
+                xAt={(i) => monthLabel(tail[i]?.q ?? 0)}
               />
               <div className="chart-note">
                 {sfShort(stock[stock.length - 1] ?? 0)} standing · {sfShort(leased[leased.length - 1] ?? 0)} leased
@@ -498,6 +499,7 @@ export function EconomyPage() {
             ]}
             yFmt={(v) => v.toFixed(1) + "%"}
             xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
+            xAt={(i) => monthLabel(hist[i]?.q ?? 0)}
           />
           <div className="hint">
             Every loan in town prices off the solid line. Where it sits against the dashed one is
@@ -843,9 +845,9 @@ export function EconomyPage() {
             { label: "asking", color: COLOR[focus], pts: rentSeries },
             { label: "effective", color: "#7d8a96", pts: effSeries, dashed: true },
           ]} yFmt={(v) => `$${v.toFixed(0)}`} height={92}
-            xLabels={[xFrom, xTo]} />
+            xLabels={[xFrom, xTo]} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92}
-            xLabels={[xFrom, xTo]} />
+            xLabels={[xFrom, xTo]} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Asking is the face rate landlords quote; effective is what deals actually strike after free rent and
             work — the gap between the two lines is the concessions market saying what asking will not admit.
@@ -887,7 +889,7 @@ export function EconomyPage() {
               <LineChart height={92} series={[
                 { label: "absorbed", color: "#4a7d5a", pts: absCum },
                 { label: "delivered", color: "#a8562e", pts: compCum, dashed: true },
-              ]} yFmt={sfFmt} zeroBase xLabels={xl} />
+              ]} yFmt={sfFmt} zeroBase xLabels={xl} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
               <div className="chart-note">
                 Both lines start at zero at the left edge: every square foot tenants have taken since then
                 (solid) against every square foot finished and handed over (dashed). The dashed one only
@@ -900,7 +902,7 @@ export function EconomyPage() {
               </div>
               <div className="chart-title" style={{ marginTop: 12 }}>The concession gap</div>
               <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
-                yFmt={pctFmt} zeroBase xLabels={xl} />
+                yFmt={pctFmt} zeroBase xLabels={xl} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
               {/* WHAT THE OWNER WAS LOOKING AT. This is the line that opens to
                   about a third, falls to nothing, and climbs back — and until
                   now the page assumed the reader already knew what a concession

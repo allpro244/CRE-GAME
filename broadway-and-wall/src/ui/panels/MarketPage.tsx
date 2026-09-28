@@ -452,6 +452,7 @@ export function MarketPage() {
                     <button
                       className="btn btn-buy"
                       disabled={game.cash < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02)}
+                      title={game.cash < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02) ? `Need ${usd(p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02))} including 2% closing — you have ${usd(game.cash)}` : undefined}
                       onClick={() => acceptStreetBook(p.id)}
                     >
                       Take {usd(p.talks.theirPrice)}
@@ -888,6 +889,7 @@ export function LandValueChart() {
         ]}
         yFmt={(v) => v.toFixed(2)}
         xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
+        xAt={(i) => monthLabel(h[i]?.q ?? 0)}
       />
       {(() => {
         // The one number that says whether holding dirt was worth doing.

@@ -6,6 +6,7 @@ import StartMenu from "@/ui/StartMenu";
 import MapHud from "@/ui/MapHud";
 import CycleDigest from "@/ui/CycleDigest";
 import YearReview, { CareerCard, MilestoneFlash } from "@/ui/YearReview";
+import Shortcuts from "@/ui/Shortcuts";
 import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
@@ -46,6 +47,7 @@ export default function App() {
       {playing && !photoFrame && <YearReview />}
       {playing && !photoFrame && <CareerCard />}
       {playing && !photoFrame && <MilestoneFlash />}
+      {playing && <Shortcuts />}
       {playing && !photoFrame && <PrimerOffer />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />

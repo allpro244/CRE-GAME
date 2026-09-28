@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useMemo, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, netWorth } from "@/engine/value";
@@ -32,13 +32,16 @@ export function TheStreet() {
   const focus = useStore((s) => s.focus);
   const [open, setOpen] = useState<string | null>(null);
   const rivals = game.rivals ?? [];
-  if (!rivals.length) return null;
-  const appetite = marketAppetite(game);
+  // Marked once per month, not once per click: opening a firm's card used to
+  // re-mark every rival's whole book and the player's own.
   // Same number as TopBar / Books — a street rank that re-derives equity is
   // one quantity with two answers (facility, loc, deposits, CIP, notes).
-  const playerEquity = netWorth(game, parcels);
-  const marked = rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
-    .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum);
+  const playerEquity = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  const marked = useMemo(() => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
+    .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum),
+  [game, parcels, rivals]);
+  if (!rivals.length) return null;
+  const appetite = marketAppetite(game);
   return (
     <>
       <div className="page-section">

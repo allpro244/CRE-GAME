@@ -29,7 +29,7 @@ export function BooksPage() {
   // bought or sold, the tile disagreed with the bar above it ($2.54M against
   // $2.15M on the owner's screen, after a levered purchase). Live, one
   // function, one answer.
-  const nw = netWorth(game, parcels);
+  const nw = useMemo(() => netWorth(game, parcels), [game, parcels]);
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);

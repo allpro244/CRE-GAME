@@ -392,11 +392,3 @@ export function LoiTermsGrid({
     </div>
   );
 }
-
-export function LoiHeaderSub({ loi, address }: { loi: LOI; address: string }) {
-  return (
-    <>
-      {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · {address}
-    </>
-  );
-}

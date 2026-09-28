@@ -99,4 +99,3 @@ export function Gloss({
   );
 }
 
-export const GLOSSARY_TERMS = TERMS;

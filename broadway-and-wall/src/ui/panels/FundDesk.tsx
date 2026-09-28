@@ -46,19 +46,19 @@ export function FundDesk() {
             <Row k="Vehicle deeds" v={`${fundDeeds}`} />
           </div>
           <div className="btn-row">
-            <button className="btn" disabled={f.uncalled <= 0}
+            <button className="btn" disabled={f.uncalled <= 0} title={f.uncalled <= 0 ? "Every committed dollar is already called" : undefined}
               onClick={() => callFundCapital(Math.round(f.uncalled * 0.5))}>
               Call half uncalled
             </button>
-            <button className="btn" disabled={f.uncalled <= 0}
+            <button className="btn" disabled={f.uncalled <= 0} title={f.uncalled <= 0 ? "Every committed dollar is already called" : undefined}
               onClick={() => callFundCapital(f.uncalled)}>
               Call remainder
             </button>
-            <button className="btn" disabled={f.cash < 100_000}
+            <button className="btn" disabled={f.cash < 100_000} title={f.cash < 100_000 ? `The fund holds ${usd(f.cash)} — too little to be worth a distribution` : undefined}
               onClick={() => distributeFund(Math.round(f.cash * 0.5))}>
               Distribute half cash
             </button>
-            <button className="btn" disabled={f.cash <= 0}
+            <button className="btn" disabled={f.cash <= 0} title={f.cash <= 0 ? "The fund holds no cash" : undefined}
               onClick={() => distributeFund(f.cash)}>
               Distribute all cash
             </button>

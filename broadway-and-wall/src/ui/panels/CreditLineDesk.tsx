@@ -72,10 +72,10 @@ export function CreditLine() {
           <div className="btn-row">
             {/* "Draw $0" read as a bug. With nothing set the buttons name the
                 action and wait; the amount joins the label once there is one. */}
-            <button className="btn btn-buy" disabled={amt <= 0 || amt > avail} onClick={() => drawCredit(amt)}>
+            <button className="btn btn-buy" disabled={amt <= 0 || amt > avail} title={amt > avail ? `The line has ${usd(avail)} undrawn` : amt <= 0 ? "Enter an amount" : undefined} onClick={() => drawCredit(amt)}>
               {amt > 0 ? `Draw ${usd(Math.min(amt, avail))}` : "Draw"}
             </button>
-            <button className="btn" disabled={balance <= 0 || amt <= 0} onClick={() => repayCredit(amt)}>
+            <button className="btn" disabled={balance <= 0 || amt <= 0} title={balance <= 0 ? "Nothing drawn on the line" : amt <= 0 ? "Enter an amount" : undefined} onClick={() => repayCredit(amt)}>
               {amt > 0 && balance > 0 ? `Repay ${usd(Math.min(amt, balance))}` : "Repay"}
             </button>
           </div>

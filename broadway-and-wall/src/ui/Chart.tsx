@@ -7,7 +7,29 @@
 // chart with optional reference bands, a grouped bar chart for flows, and a
 // horizontal gauge for "where is this relative to normal".
 
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+
+/**
+ * THE CHART'S REAL WIDTH. Charts used to draw into a fixed 480-unit viewBox
+ * and stretch to the page, so on a 1,050px Economy page every label rendered
+ * at 2.2x — axis figures bigger than the body text. Measuring the container
+ * and drawing at 1:1 keeps type the size it was asked to be at any width.
+ */
+function useWidth(fallback = 480): [React.RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((es) => {
+      const cw = Math.round(es[0]?.contentRect.width ?? 0);
+      if (cw > 0) setW((prev) => (Math.abs(prev - cw) > 1 ? cw : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w > 0 ? w : fallback];
+}
 
 export interface Series { label: string; color: string; pts: number[]; dashed?: boolean }
 export interface RefBand { at: number; label?: string; color?: string }
@@ -29,7 +51,7 @@ function ticks(lo: number, hi: number, want = 4): number[] {
 }
 
 export function LineChart({
-  series, height = 132, yFmt = fmtNum, bands = [], xLabels, zeroBase = false, split,
+  series, height = 132, yFmt = fmtNum, bands = [], xLabels, zeroBase = false, split, xAt,
 }: {
   series: Series[];
   height?: number;
@@ -39,14 +61,17 @@ export function LineChart({
   zeroBase?: boolean;
   /** index at which history ends and projection begins */
   split?: number;
+  /** What to call point i on the hover readout (a month, a year). */
+  xAt?: (i: number) => string;
 }) {
   // Gradient ids have to be unique per mounted chart or the economy page's
   // second chart paints itself with the first one's fill.
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const [wrapRef, W] = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
   const n = Math.max(...series.map((s) => s.pts.length), 0);
   if (n < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
   const PAD_L = 52, PAD_R = 10, PAD_T = 10, PAD_B = xLabels ? 20 : 8;
-  const W = 480; // real pixels across; uniform scaling keeps text undistorted
   let lo = Infinity, hi = -Infinity;
   for (const s of series) for (const v of s.pts) {
     if (!Number.isFinite(v)) continue;
@@ -70,9 +95,20 @@ export function LineChart({
     return PAD_T + (height - PAD_T - PAD_B) * (1 - (y - lo) / (hi - lo));
   };
 
+  // HOVER TO READ. A chart you cannot read a value off is a picture; the
+  // crosshair snaps to the nearest point and names every series there.
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / Math.max(1, r.width)) * W;
+    const i = Math.round(((x - PAD_L) / Math.max(1, W - PAD_L - PAD_R)) * (n - 1));
+    setHover(i < 0 || i > n - 1 ? null : i);
+  };
+  const hx = hover !== null ? px(hover, n) : 0;
+
   return (
-    <>
-    <svg viewBox={`0 0 ${W} ${height}`} style={{ width: "100%", display: "block", overflow: "visible" }}>
+    <div ref={wrapRef} className="chart-wrap" style={{ position: "relative" }}>
+    <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} style={{ width: "100%", display: "block", overflow: "visible" }}
+      onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
       {/* A LINE ON A GRID IS A READING; A LINE OVER ITS OWN AREA IS A QUANTITY.
           The fill costs nothing, cannot mislead — it is bounded by the same
           points the stroke already draws — and it is most of the difference
@@ -155,7 +191,25 @@ export function LineChart({
           <text x={W - PAD_R} y={height - 4} fontSize={10} fill="#8b8370" textAnchor="end">{xLabels[1]}</text>
         </>
       )}
+      {hover !== null && (
+        <g pointerEvents="none">
+          <line x1={hx} x2={hx} y1={PAD_T} y2={height - PAD_B} stroke="#6b634f" strokeWidth={1} opacity={0.55} />
+          {series.map((s) => (hover < s.pts.length && Number.isFinite(s.pts[hover])
+            ? <circle key={"h" + s.label} cx={px(hover, s.pts.length)} cy={py(s.pts[hover])} r={3.4} fill={s.color} stroke="#f7f2e4" strokeWidth={1.5} />
+            : null))}
+        </g>
+      )}
+      {/* the whole plot answers the mouse, not just the lines */}
+      <rect x={PAD_L} y={PAD_T} width={Math.max(0, W - PAD_L - PAD_R)} height={Math.max(0, height - PAD_T - PAD_B)} fill="transparent" />
     </svg>
+    {hover !== null && (
+      <div className="chart-tip" style={{ left: `${(hx / W) * 100}%`, transform: hx > W * 0.66 ? "translateX(calc(-100% - 10px))" : "translateX(10px)" }}>
+        {xAt && <div className="chart-tip-x">{xAt(hover)}</div>}
+        {series.map((s) => (hover < s.pts.length && Number.isFinite(s.pts[hover])
+          ? <div key={s.label} className="chart-tip-row"><span className="chart-legend-swatch" style={{ background: s.color }} />{series.length > 1 ? `${s.label} ` : ""}<strong>{yFmt(s.pts[hover])}</strong></div>
+          : null))}
+      </div>
+    )}
     {/* THE LEGEND THIS FILE'S OWN HEADER PROMISED.
         "A CHART has a scale, a zero, gridlines you can read values off, and a
         legend" — it had the first three. Every Series has carried a `label`
@@ -182,7 +236,7 @@ export function LineChart({
         ))}
       </div>
     )}
-    </>
+    </div>
   );
 }
 
@@ -190,9 +244,9 @@ export interface BarGroup { label: string; bars: { v: number; color: string }[] 
 
 /** Grouped bars around a real zero line — for flows, which can go negative. */
 export function BarChart({ groups, height = 120, yFmt = fmtNum }: { groups: BarGroup[]; height?: number; yFmt?: (v: number) => string }) {
+  const [wrapRef, W] = useWidth();
   if (!groups.length) return <div className="hint">Nothing to show yet.</div>;
   const PAD_L = 52, PAD_R = 8, PAD_T = 8, PAD_B = 20;
-  const W = 480;
   let lo = 0, hi = 0;
   let any = false;
   for (const g of groups) for (const b of g.bars) {
@@ -214,7 +268,8 @@ export function BarChart({ groups, height = 120, yFmt = fmtNum }: { groups: BarG
   const bw = (gw * 0.72) / nb;
 
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} style={{ width: "100%", display: "block", overflow: "visible" }}>
+    <div ref={wrapRef}>
+    <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} style={{ width: "100%", display: "block", overflow: "visible" }}>
       {ys.map((v) => (
         <g key={v}>
           <line
@@ -247,6 +302,7 @@ export function BarChart({ groups, height = 120, yFmt = fmtNum }: { groups: BarG
         </g>
       ))}
     </svg>
+    </div>
   );
 }
 

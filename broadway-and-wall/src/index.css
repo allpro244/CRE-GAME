@@ -1550,6 +1550,7 @@ html, body, #root { overflow-x: hidden; }
   pointer-events: none;
 }
 .nav-job > .nav-btn { position: relative; }
+.nav-badge-warn { background: #a8402e; }
 
 /* ---- 2026 interface hierarchy --------------------------------------------
    The map is the product; the chrome is the instrument panel around it.

@@ -719,7 +719,10 @@ export default function TopBar() {
                   {job.label}
                   {job.pages.length > 1 ? <span className="nav-caret" aria-hidden="true">▾</span> : null}
                   {job.id === "acquire" ? <Badge n={badge} /> : null}
-                  {job.id === "capital" && debtSwept ? " · ⚠" : job.id === "capital" && debtHot ? " · !" : ""}
+                  {/* the debt flag is a pip like the counts, not " · !" trailing the caret */}
+                  {job.id === "capital" && (debtSwept || debtHot) ? (
+                    <span className="nav-badge nav-badge-warn" aria-label={debtSwept ? "cash sweep on" : "maturity wall"}>{debtSwept ? "⚠" : "!"}</span>
+                  ) : null}
                   {job.id === "world" ? <Badge n={unread} /> : null}
                 </button>
                 {jobOpen === job.id && (

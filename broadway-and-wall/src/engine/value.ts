@@ -9,6 +9,7 @@ import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
 import { gpInterestInFund } from "./fund";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon } from "./proforma";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -325,14 +326,14 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
   const hurdleRatio = yieldOnCost / Math.max(1e-6, requiredYield);
   return { requiredYield, hurdleRatio, clears: hurdleRatio >= 1 };
 }
-/**
- * A RESIDUAL IS A FUTURE NUMBER AND LAND IS BOUGHT TODAY. Two to three years
- * of entitlement and construction at a land discount rate of about 12% — the
- * rate the trade actually applies to a site, well above the rate applied to a
- * finished building, because a site earns nothing while it waits.
- *   1 / 1.12^2.5 = 0.752
+/*
+ * A RESIDUAL IS A FUTURE NUMBER AND LAND IS BOUGHT TODAY. This was a fixed
+ * BUILD_DISCOUNT of 1/1.12^2.5 = 0.752 on every scheme, and the desk charged
+ * the same wait nothing — so a lot bought at exactly its residual read a
+ * hurdle well above 1.0 at the desk. It is `landCarryFactor` (proforma.ts)
+ * now, at the same 12% land rate, for the scheme's own construction schedule,
+ * and the desk carries the identical charge in its basis.
  */
-const BUILD_DISCOUNT = 0.752;
 /**
  * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING.
  *
@@ -370,7 +371,16 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
   industrial: INDUSTRIAL_FLOORS_MAX,
 };
 
-function residualFloorChoices(use: BuiltClass, far: number): { floors: number; usable: number }[] {
+/**
+ * THE SCHEMES A BUILDER WOULD DRAW HERE, as the desk's own dials: floors and
+ * site coverage. The coverage is chosen so the scheme sits inside the envelope
+ * the city will permit (`far`), which means the desk — planning against the
+ * legal envelope — draws exactly the same building from the same two numbers.
+ * Offices and flats at 70% of the lot; shops and sheds, which are flat, at up
+ * to 85%. `developmentProForma` then applies the structure clamp the desk
+ * applies, and the scheme reports what it actually drew.
+ */
+function residualFloorChoices(use: BuiltClass, far: number): { floors: number; coverage: number }[] {
   const cap = USE_FLOORS_MAX[use];
   const envelopeFl = Math.max(1, Math.round(far / 0.7));
   const maxFl = cap !== undefined ? Math.min(cap, envelopeFl) : envelopeFl;
@@ -383,10 +393,10 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; u
     // premium), mid-rise, and the envelope are the three rungs the cost
     // ladder actually has.
     : [...new Set([Math.min(8, maxFl), Math.min(14, maxFl), maxFl])];
-  return floors.map((fl) => ({
-    floors: fl,
-    usable: cap !== undefined ? Math.min(far, cap * 0.85) : Math.min(far, fl * 0.7),
-  })).filter((c) => c.usable > 0);
+  return floors.map((fl) => {
+    const usable = cap !== undefined ? Math.min(far, cap * 0.85) : Math.min(far, fl * 0.7);
+    return { floors: fl, coverage: usable / fl };
+  }).filter((c) => c.coverage > 0);
 }
 
 /**
@@ -424,67 +434,6 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; u
  * times a 2-FAR lot beside it instead of slightly less.
  */
 /**
- * FIT-OUT AND COMMISSIONS, per rentable foot. The same numbers planDevelopment
- * carries in its lease-up reserve — the single biggest reason a marginal deal
- * does not pencil, which makes leaving them out of the residual the single
- * biggest way to overpay for dirt.
- */
-const TI_PSF: Record<BuiltClass, number> = { office: 32, retail: 22, industrial: 5, multifamily: 7 };
-
-/** Same absorption mean planDevelopment uses: 0.2 + 0.8·t^0.75 over the span. */
-const LEASEUP_FILL = 0.657;
-const CONSTRUCTION_LTC = 0.65;
-
-/**
- * Opex carry during lease-up, $/sf of RENTABLE. Mirrors planDevelopment's
- * `openSf * opex * (1-fillOcc) * (carryMonths/12)` so the residual and the
- * desk subtract the same empty-building cost. Vacancy scales the duration
- * through the same logistic; a glut makes dirt cheaper because fill takes
- * longer, which is the cycle reaching land through a cost rather than a
- * coefficient.
- */
-function residualLeaseUpCarryPsf(
-  use: BuiltClass, econ: Econ, opex: number, occ: number, schemeSf = 0,
-): number {
-  const baseCarryMonths = use === "multifamily" ? 19 : 38;
-  const stock = Math.max(1, econ.stock?.[use] ?? 1);
-  const availability = (econ.cityVac?.[use] ?? NATURAL_VAC[use])
-    + (econ.sublet?.[use] ?? 0) / stock;
-  const leaseRaw = availability / Math.max(0.001, NATURAL_VAC[use])
-    - (econ.structTight?.[use] ?? 0) * 2.2;
-  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
-  // A BIG SCHEME FILLS AT THE MARKET'S PACE, NOT AT ITS OWN. The carry was
-  // per-square-foot and size-blind, so a 500k sf envelope carried the same
-  // MONTHS as a 30k sf infill — and with the residual choosing the scheme
-  // that maximises surplus, the maximum envelope priced as if the market
-  // would swallow it in one gulp. Tenants arrive at the market's absorption
-  // rate; a floor of them a quarter is a strong programme for a big building
-  // (which is why Manhattan towers pre-lease for years), so lease-up TIME
-  // grows with the scheme, sub-linearly because bigger jobs run bigger
-  // leasing programmes. One-sided above the city's typical ~45k sf scheme:
-  // today's stock keeps today's carry to the digit, and the term begins to
-  // bite exactly where a doubled envelope starts writing schemes the demand
-  // has to be asked about. The 3x bracket is a guard.
-  const sizeFactor = schemeSf > 45_000
-    ? Math.min(3, Math.pow(schemeSf / 45_000, 0.7)) : 1;
-  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket * sizeFactor);
-  const fillOcc = occ * LEASEUP_FILL;
-  return opex * (1 - fillOcc) * (carryMonths / 12);
-}
-
-/**
- * Capitalised construction interest, $/sf of GROSS. Typical 65% LTC at the
- * construction coupon (index + 2.1), half the job outstanding — the same pot
- * planDevelopment sizes as `interestReserve`. Not a second discount on the
- * land; BUILD_DISCOUNT is that.
- */
-function residualConstructionInterestPsf(costPsf: number, econ: Econ): number {
-  const rate = ((econ.indexRate ?? 5.4) + 2.1) / 100;
-  const buildYears = 2.5;
-  return costPsf * CONSTRUCTION_LTC * rate * (buildYears * 0.5);
-}
-
-/**
  * THE WINNING SCHEME AND THE NUMBER IT PRODUCES, WHICH ARE THE SAME CALCULATION.
  *
  * The parcel card used to work this out again in the UI — its own envelope, its
@@ -516,6 +465,8 @@ export type ResidualScheme = {
   /** The envelope this use can actually reach here, as FAR, and the floors it implies. */
   usable: number;
   floors: number;
+  /** Site coverage — with floors, the desk's two dials; the Develop desk opens on both. */
+  coverage: number;
   /**
    * EVERY USE THAT WAS CONSIDERED, AND WHAT IT BID — including the ones that
    * could not cover their own construction, which are reported as a negative
@@ -556,113 +507,68 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
   // This function is handed only (rec, econ) and cannot call cityInfillCap
   // itself, which is why the share travels on econ rather than being computed
   // here. Absent on old saves and read as 1, which is the old behaviour.
-  const far = farMaxForLocal(rec) * envelopeRealisation(rec) * clamp(econ.infillShare ?? 1, 0.15, 1);
+  const far = farMaxFor(rec) * envelopeRealisation(rec) * clamp(econ.infillShare ?? 1, 0.15, 1);
   if (!(far > 0)) return null;
 
   let best: ResidualScheme | null = null;
   const all: { use: BuiltClass; psf: number }[] = [];
+  const uw = underwritingEcon(econ, rentMult);
   for (const use of RESIDUAL_USES) {
     if (!zonePermits(rec.zoneDist, use, rec.demandScore, econ)) continue;
     const choices = residualFloorChoices(use, far);
     if (!choices.length) continue;
 
-    // Stabilised income per square foot of BUILDING, at the same occupancies
-    // planDevelopment underwrites to, so the desk and the dirt agree.
-    // ...AND STABILISED MEANS STABILISED, NOT THIS MONTH.
-    //
-    // This read spot rent, capitalised it at the spot cap rate, and subtracted
-    // spot cost — three cyclical numbers in a DIFFERENCE, which is the most
-    // geared expression in the engine. `landPsfNow` then multiplied the answer
-    // by (1 + 0.22 * demandBeta * cycleDev), counting the cycle a fourth time.
-    // Measured over 8 seeds x 50 years the result was not a land market: every
-    // seed drew down 83-93%, peak-to-trough ran 11x to 37x, and real land
-    // compounded at 4.9-7.5%/yr for half a century. Manhattan development sites
-    // fell 50-60% in 1989-93; Japan needed an actual asset bubble to lose 80%.
-    //
-    // Nobody underwrites dirt on a spot rent, and this codebase already knows
-    // it. `market.ts` made exactly this correction to the START decision and
-    // wrote down why: "DEVELOPERS UNDERWRITE THE RENT THEY EXPECT, NOT THE RENT
-    // THAT EXISTS. This read today's rent, so supply responded to the present."
-    // The land price never got the same treatment, which is the whole of this
-    // fault. Dirt bought today is let three or four years from now, so what it
-    // is worth is what it will earn then — and `rentExp`, the adaptive belief
-    // that already exists for the start decision, is that number. It sits below
-    // spot at a peak and above it in a slump, which is the damping a real land
-    // market has and this one did not.
-    //
-    // The bound is a guard on a ratio of two indices that track each other. It
-    // is not meant to bind; `pnpm land` reports it if it does.
-    const belief = econ.rentExp?.[use] && econ.rentIdx?.[use]
-      ? clamp(econ.rentExp[use] / econ.rentIdx[use], 0.55, 1.75) : 1;
-    const rent = useRentPsfYr(rec, econ, "good", use) * rentMult * belief;
-    if (!(rent > 0)) continue;
-    const occ = use === "multifamily" ? 0.95 : 0.90;
-    const opex = opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
-    const recov = RECOVERY_RATE[use] ?? 0;
-    // SOMEBODY HAS TO MANAGE THE BUILDING, AND THIS PRO FORMA WAS NOT PAYING
-    // THEM. `noiYr` — what the tape, the lender, `assetValue` and the player's
-    // own income statement all read — charges MGMT_FEE on effective gross
-    // income. The land residual computed EGI minus opex and stopped, so the
-    // same building earned 4% of EGI more while it was being underwritten than
-    // it did the day it opened, which flattered the price of every lot in the
-    // city by the capitalised value of a fee that gets charged anyway.
-    const egi = rent * occ + opex * recov * occ;
-    const noiPsf = egi - opex - egi * MGMT_FEE;
-    if (!(noiPsf > 0)) continue;
-
-    // Property tax is charged on the finished value, so value and tax define
-    // each other. Solved rather than iterated:
-    //     V = (NOI - V·t·(1-r)) / c   =>   V = NOI / (c + t·(1-r))
-    // Priced as a building of THIS use on THIS corner. `mix` has to go with
-    // the class or mixOf hands back the parcel's existing stack and every use
-    // gets the same cap rate — which would make the choice between them a
-    // rent comparison with no yield in it.
-    // AND THE EXIT CAP IS NOT THE GOING-IN CAP EITHER, for the same reason.
-    // A land buyer is underwriting a sale three or four years out; taking the
-    // spot cap means capitalising a peak rent at a peak-compressed yield and
-    // calling the product a land value. `capExp` is the through-cycle cap the
-    // desk would actually use, carried as a slow memory of the spot one, and
-    // applied here as a ratio so every per-parcel adjustment `capRateFor`
-    // makes — class, condition, corner — survives untouched.
-    const capBelief = econ.capExp?.[use] && econ.capRate?.[use]
-      ? clamp(econ.capExp[use] / econ.capRate[use], 0.6, 1.7) : 1;
-    const cap = (capRateFor({ ...rec, class: use, mix: undefined } as ParcelRecord, econ, "good") / 100) * capBelief;
-    const denom = cap + TAX_RATE * (1 - recov);
-    if (!(denom > 0)) continue;
-    const valuePsf = noiPsf / denom;
-
-    // ZONING COUNTS GROSS AND THE CONTRACTOR BILLS GROSS; YOU LET RENTABLE.
-    // The core, the stairs, the risers and the corridor come out of every
-    // floor. This used to multiply by `plateEfficiency` — an index that reads
-    // 1.0 on the median plate — so the median lot's residual was still struck
-    // on gross. `rentableRatio` is the actual 0.72–0.92 the business uses.
-    const eff = rentableRatio(rec.lotArea * 0.7);
-    const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
-    const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
-
     let bestForUse = -Infinity;
-    for (const { floors: fl, usable } of choices) {
-      // the carry knows the scheme's size now — see residualLeaseUpCarryPsf
-      const carryPsf = residualLeaseUpCarryPsf(use, econ, opex, occ, usable * rec.lotArea);
-      const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
-      const interestPsf = residualConstructionInterestPsf(costPsf, econ);
-      const allInCost = costPsf + (fitPsf + carryPsf) * eff + interestPsf;
-      const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - allInCost;
-      const psf = surplus * usable * BUILD_DISCOUNT;
+    for (const { floors, coverage } of choices) {
+      // THE DESK'S OWN PRO FORMA, SOLVED FOR THE DIRT.
+      //
+      // This used to be a second pro forma written out by hand — its own
+      // occupancy, its own rent, its own lease-up, its own interest, its own
+      // wait — and it disagreed with the desk by -30% to +45% on the same lot
+      // and the same scheme (see proforma.ts for the term-by-term account).
+      // Now it is `developmentProForma`, the function `planDevelopment` calls,
+      // with the two inputs only the desk knows filled the way the market
+      // fills them: the construction loan comes from the volume desk on
+      // market terms, and the lot is priced as if vacant (demolition is the
+      // seller's problem in an appraisal, and a vacant lot has none).
+      //
+      // Stabilised NOI and the tax-loaded exit yield are the street's own
+      // (`noiYr`, `capRateFor` + `taxBorneShare`), read at the underwritten
+      // market (`rentExp`, `capExp` — see underwritingEcon). What is left is
+      // the algebra of the hurdle, run backwards:
+      //
+      //   the desk clears exactly when  NOI / basis = exitYield × (1 + margin)
+      //   with                          basis = build + reserves + points + land × (1 + carry)
+      //   so the dirt can cost          land = (value / (1 + margin) − build − reserves − points) / (1 + carry)
+      //
+      // which is the residual method with the margin taken on value and the
+      // wait charged at the land rate for the scheme's own schedule.
+      const pf = developmentProForma(rec, econ, {
+        use, floors, coverage, contract: "gmp", spec: 0.5,
+        envelopeFar: far, asIfVacant: true, rentMult, uw,
+        quote: (mix, preReserve) => marketConstructionQuote(econ, mix, preReserve),
+      });
+      if (!pf || !(pf.exitYieldPct > 0)) continue;
+      const value = pf.stabNoi / (pf.exitYieldPct / 100);
+      const landTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      const psf = landTotal / rec.lotArea;
       if (psf > bestForUse) bestForUse = psf;
-      if (surplus <= 0) continue;
+      if (!(landTotal > 0)) continue;
       if (!best || psf > best.psf) {
-        best = { psf, use, valuePsf: valuePsf * eff, costPsf: allInCost, usable, floors: fl, all };
+        best = {
+          psf, use,
+          valuePsf: value / pf.gsf,
+          costPsf: pf.nonLandBasis / pf.gsf,
+          usable: pf.gsf / rec.lotArea,
+          floors: pf.floors,
+          coverage: pf.coverage,
+          all,
+        };
       }
     }
     all.push({ use, psf: Number.isFinite(bestForUse) ? bestForUse : 0 });
   }
   return best && { ...best, all };
-}
-
-/** farMaxFor lives in dev.ts, which cannot be imported here. Same expression. */
-function farMaxForLocal(rec: { farMaxComm: number; farMaxRes: number }): number {
-  return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
 
 /**

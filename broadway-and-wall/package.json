@@ -114,7 +114,7 @@
     "rails": "node tools/rails.mjs",
     "capvsrate": "node tools/capvsrate.mjs",
     "engine": "node test/mkengine.mjs",
-    "check": "node test/fresh.mjs && node test/playable-fresh.mjs && node test/conserve.mjs && node test/advance.mjs && node test/refi-strong.mjs && node test/appraisal.mjs && node test/glut.mjs && node test/ground-retail.mjs && node test/delivered-condition.mjs && node test/balloon-holdover.mjs && node test/insolvency-sale.mjs && node test/paydown.mjs && node test/leasehold.mjs && node test/jv.mjs && node test/standing.mjs && node test/fundsheet.mjs && node test/mezz-coupon.mjs && node test/fund.mjs && node test/buybox.mjs && node test/goals.mjs && node test/deedledger.mjs && node test/sale-instructions.mjs && node tools/baseline.mjs --check",
+    "check": "node test/fresh.mjs && node test/playable-fresh.mjs && node test/conserve.mjs && node test/advance.mjs && node test/refi-strong.mjs && node test/appraisal.mjs && node test/glut.mjs && node test/ground-retail.mjs && node test/delivered-condition.mjs && node test/balloon-holdover.mjs && node test/insolvency-sale.mjs && node test/paydown.mjs && node test/leasehold.mjs && node test/jv.mjs && node test/standing.mjs && node test/fundsheet.mjs && node test/mezz-coupon.mjs && node test/fund.mjs && node test/buybox.mjs && node test/goals.mjs && node test/deedledger.mjs && node test/sale-instructions.mjs && node test/residual-recon.mjs && node tools/baseline.mjs --check",
     "plate": "node test/plate.mjs",
     "plates-blocks": "node test/plates-blocks.mjs",
     "gut-reno": "node test/gut-reno.mjs",

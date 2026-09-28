@@ -167,7 +167,10 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [seedScheme] = useState(() => (!saved && rec?.class === "land" ? landRead(rec, game.econ).scheme : null));
   const [tab, setTabRaw] = useState<BuildTab>(saved?.tab ?? "programme");
   const [use, setUseRaw] = useState<DevUse>(saved?.use ?? seedScheme?.use ?? "office");
-  const [cov, setCovRaw] = useState(saved?.cov ?? 0.6);
+  // ...AND ON ITS FOOTPRINT. Floors without the coverage they were priced at
+  // is a different building: the residual's scheme is (use, floors, coverage),
+  // and only all three together reproduce the pro forma the tape solved.
+  const [cov, setCovRaw] = useState(saved?.cov ?? seedScheme?.coverage ?? 0.6);
   const [floors, setFloorsRaw] = useState(saved?.floors ?? (seedScheme && seedScheme.floors > 0 ? seedScheme.floors : 8));
   const [contract, setContractRaw] = useState<Contract>(saved?.contract ?? "gmp");
   const [ltcWant, setLtcWantRaw] = useState(saved?.ltcWant ?? 1);   // share of the lender's max you take

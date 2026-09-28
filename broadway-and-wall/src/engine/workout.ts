@@ -675,6 +675,20 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // arrears, balloons (maturity default while the coupon still clears), and
     // every other cause — a maturity default where the borrower keeps paying
     // is the commonest CRE workout and almost never goes to the steps.
+    //
+    // ...BUT A MATURED NOTE STILL GETS ONE YEAR, NOT FOREVER. The holdover
+    // clock below this ran only on files the borrower had opted into
+    // servicing, so a balloon file whose coupon simply kept clearing out of
+    // the firm's cash rolled month after month past its maturity with no
+    // extension and no filing — the exact state `test/balloon-holdover.mjs`
+    // and the balloon invariant exist to forbid (found when a different
+    // purchase in that harness's receivership scenario reached maturity). A
+    // year past the date, the desk extends once or files, whoever is paying.
+    if (w.cause === "balloon" && w.stage !== "foreclosure" && !w.servicing
+      && s.month - h.loan.maturityM >= 12 && couponFundable(s, parcels, h)) {
+      holdoverDecision(s, parcels, w, rec.address);
+      continue;
+    }
     if (w.stage !== "foreclosure" && couponFundable(s, parcels, h)) {
       w.decideM = Math.max(w.decideM, s.month + 1);
       if (h.loan) h.loan.arrearsMs = 0;

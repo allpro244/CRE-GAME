@@ -3,6 +3,9 @@
 import type { AssetClass } from "@/data/types";
 import type { Lender } from "./lenders";
 
+/** Who writes construction paper in this town — the volume desk (lenders.ts re-exports it). */
+export const CONSTRUCTION_LENDER = "Alden Savings & Trust";
+
 /**
  * THE CYCLE THE PLAYER READS ON THE HUD.
  *
@@ -1465,6 +1468,12 @@ export interface Econ {
    * zoning text allows. Absent on old saves and read as 1.
    */
   infillShare?: number;
+  /**
+   * The volume construction desk's appetite (lenders.ts, tickLenders), so the
+   * land residual borrows on the terms the town's builders actually get.
+   * Absent on old saves and read as 1.
+   */
+  constructionAppetite?: number;
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;

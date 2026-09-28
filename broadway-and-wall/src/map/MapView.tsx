@@ -31,7 +31,7 @@ function mapPaintSig(g: GameState | null | undefined): string {
   let deedState = "";
   for (const h of Object.values(g.holdings)) {
     for (const t of h.tenants) leased += t.sf;
-    if (h.sale || h.loan?.sweep || h.mezz?.sweep) deedState += h.bbl + (h.sale ? "s" : "") + (h.loan?.sweep || h.mezz?.sweep ? "w" : "") + ",";
+    if (h.sale || h.loan?.sweep || h.mezz?.sweep) deedState += h.bbl + (h.sale ? (h.sale.mode === "marketed" ? "m" : "s") : "") + (h.loan?.sweep || h.mezz?.sweep ? "w" : "") + ",";
   }
   for (const [bbl, w] of Object.entries(g.workouts ?? {})) deedState += bbl + ":" + w.stage + ",";
   return [
@@ -1155,6 +1155,17 @@ export default function MapView() {
       if (mo > 0 && mo <= 18) notices.add(h.bbl);
     }
     layer.setNotices([...notices]);
+    // THE BROKER'S BOARD, only where a real listing would put one up. A
+    // house broker's first look (earlyUntilM) is a phone call, not a sign;
+    // your own quiet listing is a number waiting for someone to ring. A
+    // marketed campaign, and anything on the open tape, is on the street.
+    const onTape = game.listings
+      .filter((l) => !(l.earlyUntilM !== undefined && game.month < l.earlyUntilM))
+      .map((l) => l.bbl);
+    const mine = Object.values(game.holdings)
+      .filter((h) => h.sale && !h.sale.unsolicited && h.sale.mode === "marketed")
+      .map((h) => h.bbl);
+    layer.setForSale(onTape.sort(), mine.sort());
   }, [paintSig, mapReady, parcels, city]);
 
   // player construction and city growth onto the skyline

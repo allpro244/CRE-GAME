@@ -13453,40 +13453,109 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * Rebuilt monthly from whatever list the game sends; empty list clears.
    */
   private noticeGroup = new THREE.Group();
+  private noticeSig = "";
   setNotices(bbls: string[]) {
+    const sig = bbls.join(",");
+    if (sig === this.noticeSig && this.noticeGroup.parent) return;
+    this.noticeSig = sig;
     if (!this.noticeGroup.parent) this.scene.add(this.noticeGroup);
     this.disposeGroupContents(this.noticeGroup);
+    // ONE DRAW FOR EVERY BOARD, one for every rule. These were two meshes a
+    // notice; a bad July puts dozens on the street at once.
+    const boards: THREE.BufferGeometry[] = [], rules: THREE.BufferGeometry[] = [];
     for (const bbl of bbls) {
-      const v = this.volumes.find((x) => x.b === bbl && !x.d && x.r.length >= 3);
-      if (!v) continue;
-      const ring = v.r.map((p) => this.project(p));
-      let cx = 0, cy = 0;
-      for (const [x, y] of ring) { cx += x; cy += y; }
-      cx /= ring.length; cy /= ring.length;
-      let bi = 0, bl = -1;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (L > bl) { bl = L; bi = i; }
-      }
-      if (bl < 3) continue;
-      const a = ring[bi], b = ring[(bi + 1) % ring.length];
-      const ex = b[0] - a[0], ey = b[1] - a[1];
-      const L = Math.hypot(ex, ey);
-      let nx = -ey / L, ny = ex / L;
-      if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
-      const px = (a[0] + b[0]) / 2 + nx * 0.7, py = (a[1] + b[1]) / 2 + ny * 0.7;
-      const ang = Math.atan2(ey, ex);
-      const board = mergeGeoms([
-        new THREE.BoxGeometry(1.1, 0.07, 1.4).translate(0, 0, 1.9),
-        new THREE.BoxGeometry(0.10, 0.10, 1.3).translate(0, 0, 0.65),
-      ]).rotateZ(ang).translate(px, py, 0);
-      this.noticeGroup.add(new THREE.Mesh(board, this.propMaterial(0xe9e5da, false)));
-      const stripe = new THREE.BoxGeometry(1.1, 0.075, 0.22).translate(0, 0, 2.48)
-        .rotateZ(ang).translate(px, py, 0);
-      this.noticeGroup.add(new THREE.Mesh(stripe, this.propMaterial(0xa8362a, false)));
+      const f = this.frontage(bbl, 0.5);
+      if (!f) continue;
+      boards.push(new THREE.BoxGeometry(1.1, 0.07, 1.4).translate(0, 0, 1.9), new THREE.BoxGeometry(0.10, 0.10, 1.3).translate(0, 0, 0.65));
+      for (let i = boards.length - 2; i < boards.length; i++) boards[i].rotateZ(f.ang).translate(f.x, f.y, 0);
+      rules.push(new THREE.BoxGeometry(1.1, 0.075, 0.22).translate(0, 0, 2.48).rotateZ(f.ang).translate(f.x, f.y, 0));
     }
+    this.addMerged(this.noticeGroup, boards, 0xe9e5da);
+    this.addMerged(this.noticeGroup, rules, 0xa8362a);
     this.map?.triggerRepaint();
+  }
+
+  /**
+   * THE BROKER'S BOARD. Every building on the market — the brokers' listings
+   * and the player's own sale instructions — gets the 4 ft x 8 ft board a
+   * commercial listing actually puts up at the frontage: white panel on two
+   * posts with a header band, green for the market's listings, gilt for your
+   * own. A quarter of the way along the longest frontage, so it never stands
+   * in the same spot as a courthouse notice (at the midpoint). Rebuilt only
+   * when the list changes; two draws for the whole city.
+   */
+  private saleGroup = new THREE.Group();
+  private saleSig = "";
+  setForSale(market: string[], own: string[]) {
+    const sig = market.join(",") + "|" + own.join(",");
+    if (sig === this.saleSig && this.saleGroup.parent) return;
+    this.saleSig = sig;
+    if (!this.saleGroup.parent) this.scene.add(this.saleGroup);
+    this.disposeGroupContents(this.saleGroup);
+    const panels: THREE.BufferGeometry[] = [], green: THREE.BufferGeometry[] = [], gilt: THREE.BufferGeometry[] = [];
+    const seen = new Set<string>();
+    const put = (bbl: string, header: THREE.BufferGeometry[]) => {
+      if (seen.has(bbl)) return;
+      seen.add(bbl);
+      const f = this.frontage(bbl, 0.25);
+      if (!f) return;
+      const place = (g: THREE.BufferGeometry) => g.rotateZ(f.ang).translate(f.x, f.y, 0);
+      panels.push(
+        place(new THREE.BoxGeometry(2.44, 0.08, 1.22).translate(0, 0, 1.75)),
+        place(new THREE.BoxGeometry(0.10, 0.10, 2.4).translate(-1.0, 0, 1.2)),
+        place(new THREE.BoxGeometry(0.10, 0.10, 2.4).translate(1.0, 0, 1.2)),
+      );
+      // the header band on both faces, proud of the panel so it never z-fights it
+      header.push(place(new THREE.BoxGeometry(2.46, 0.10, 0.34).translate(0, 0, 2.20)));
+    };
+    for (const b of own) put(b, gilt);
+    for (const b of market) put(b, green);
+    this.addMerged(this.saleGroup, panels, 0xefece4);
+    this.addMerged(this.saleGroup, green, 0x2f6a4c);
+    this.addMerged(this.saleGroup, gilt, 0xc2923a);
+    this.map?.triggerRepaint();
+  }
+
+  /** How many broker boards are standing (for tests and probes). */
+  saleBoards(): number { return this.saleSig ? this.saleGroup.children.length : 0; }
+
+  private addMerged(group: THREE.Group, geoms: THREE.BufferGeometry[], color: number) {
+    if (!geoms.length) return;
+    const g = mergeGeoms(geoms);
+    for (const x of geoms) x.dispose();
+    const mesh = new THREE.Mesh(g, this.propMaterial(color, false));
+    // street furniture a metre or two high: the contact pass resolves it, the
+    // shadow bake would only re-bake the city for it
+    mesh.userData.noShadow = true;
+    group.add(mesh);
+  }
+
+  /** A deed's longest street face, as a point stood off it by 0.7 m at `along` (0..1) and its bearing. */
+  private volByBbl: Map<string, BuildingVolume> | null = null;
+  private frontage(bbl: string, along: number): { x: number; y: number; ang: number } | null {
+    if (!this.volByBbl) {
+      this.volByBbl = new Map();
+      for (const v of this.volumes) if (v.b && !v.d && v.r.length >= 3 && !this.volByBbl.has(v.b)) this.volByBbl.set(v.b, v);
+    }
+    const v = this.volByBbl.get(bbl);
+    const ring = v ? v.r.map((p) => this.project(p)) : this.lotRing(bbl);
+    if (!ring || ring.length < 3) return null;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    let bi = 0, bl = -1;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L > bl) { bl = L; bi = i; }
+    }
+    if (bl < 3) return null;
+    const a = ring[bi], b = ring[(bi + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const L = Math.hypot(ex, ey);
+    let nx = -ey / L, ny = ex / L;
+    if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+    return { x: a[0] + ex * along + nx * 0.7, y: a[1] + ey * along + ny * 0.7, ang: Math.atan2(ey, ex) };
   }
 
   /**

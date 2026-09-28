@@ -2815,6 +2815,8 @@ export interface GameState {
   privateQuoteCool?: Record<string, number>;
   /** Player preference: whether broker first looks / off-market files may stop the clock. */
   brokerStops?: "affordable" | "never";
+  /** How many funds this firm has raised — Fund I, II, III. */
+  fundsRaised?: number;
   nextPrivateBorrowId?: number;
   /**
    * PAPER YOU PASSED ON.

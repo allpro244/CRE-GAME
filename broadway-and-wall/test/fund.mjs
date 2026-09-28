@@ -53,7 +53,10 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   const cash0 = g.cash;
   const d = E.distributeFund(g, 500_000);
   g = d.s;
-  ok("pref-first: no promote while pref unpaid", g.cash === cash0 && g.fund.promotePaid === 0);
+  // The GP's co-invest is capital like the LPs' and takes its pro-rata share
+  // of the pref tier; what it never takes while pref is owed is the promote.
+  const gpPref = Math.round(500_000 * 300_000 / 5_000_000);
+  ok("pref-first: no promote while pref unpaid", g.fund.promotePaid === 0 && Math.abs(g.cash - cash0 - gpPref) <= 1, `GP cash +${g.cash - cash0} vs its co-invest share ${gpPref}`);
   ok("pref-first: LP got the whole cheque", g.fund.distributed === 500_000);
   ok("pref-first: pref accrued reduced", g.fund.prefAccrued === 300_000);
 }
@@ -63,16 +66,20 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   let g = E.newGame(4244, parcels);
   g.fund = {
     raisedM: 0, size: 10_000_000, uncalled: 0, cash: 1_000_000,
-    called: 5_000_000, distributed: 5_000_000, promotePaid: 0, prefAccrued: 0,
+    called: 5_000_000, distributed: 5_000_000, capReturned: 5_000_000, promotePaid: 0, prefAccrued: 0,
     investEndM: 60, lifeEndM: 120, pref: 0.08, promote: 0.20, gpCommit: 300_000,
   };
+  // Pref current AND capital back (the LPA order: pref, capital, then split),
+  // so the whole cheque is in the split: 20% promote, 80% to the capital
+  // accounts pro rata — the GP's co-invest included.
+  const w = E.waterfall(g.fund, 1_000_000);
   const cash0 = g.cash;
   const liq0 = E.totalLiquidity(g);
   const d = E.distributeFund(g, 1_000_000);
   g = d.s;
-  ok("promote after pref: GP received 20%", g.cash === cash0 + 200_000, `cash ${g.cash} vs ${cash0 + 200_000}`);
-  ok("promote after pref: LP received 80%", g.fund.distributed === 5_800_000);
-  ok("promote after pref: Δliq = −LP share", Math.abs((liq0 - E.totalLiquidity(g)) - 800_000) < 1);
+  ok("promote after pref: GP received the 20% promote plus its co-invest share", w.promote === 200_000 && g.cash === cash0 + w.promote + w.toGpCoinvest, `cash +${g.cash - cash0} vs ${w.promote + w.toGpCoinvest}`);
+  ok("promote after pref: 80% to the capital accounts", g.fund.distributed === 5_800_000);
+  ok("promote after pref: Δliq = −LP share", Math.abs((liq0 - E.totalLiquidity(g)) - w.toLp) < 1, `${liq0 - E.totalLiquidity(g)} vs ${w.toLp}`);
 }
 
 // Raise is gated — no menu.
@@ -149,6 +156,30 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
     ok("GP cash untouched on fund buy", g.cash === cash0);
     ok("vehicle cash fell", g.fund.cash < fund0);
   }
+}
+
+// Capital is called as deals close: a vehicle holding less cash than a deal's
+// equity calls the rest from uncalled commitments, on the ledger as lpCalled.
+{
+  let g = E.firstListings(E.newGame(78, parcels, 50_000_000), parcels, bbls);
+  g.fund = {
+    raisedM: 0, size: 20_000_000, uncalled: 15_000_000, cash: 500_000,
+    called: 5_000_000, distributed: 0, promotePaid: 0, prefAccrued: 0,
+    investEndM: 60, lifeEndM: 120, pref: 0.08, promote: 0.20, gpCommit: 600_000,
+  };
+  g.fundPay = true;
+  const lp0 = (g.books ?? []).reduce((a, e) => a + (e.lpCalled ?? 0), 0);
+  let bought = null;
+  for (const L of g.listings ?? []) {
+    const rec = E.resolveRec(parcels, g, L.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || L.ask < 1_000_000 || L.ask > 8_000_000) continue;
+    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+    if (!r.err && r.s.holdings[L.bbl]) { g = r.s; bought = L.bbl; break; }
+  }
+  const called = g.fund.called - 5_000_000;
+  const lp1 = (g.books ?? []).reduce((a, e) => a + (e.lpCalled ?? 0), 0);
+  ok("a deal bigger than vehicle cash calls the shortfall", !!bought && called > 0 && g.fund.uncalled === 15_000_000 - called && g.fund.cash >= 0, `called ${called}, cash ${g.fund.cash}`);
+  ok("the call is on the ledger as LP equity in", Math.abs((lp1 - lp0) - called) < 1);
 }
 
 console.log(`\n${fails === 0 ? "fund pass" : `${fails} fund failure(s)`}`);

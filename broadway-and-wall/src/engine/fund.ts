@@ -78,7 +78,8 @@ export function fundIsLive(s: GameState): boolean {
 
 /** Purchases may draw vehicle cash during the investment period. */
 export function fundCanBuy(s: GameState): boolean {
-  return !!s.fund && !s.fund.settled && s.month <= s.fund.investEndM && s.fund.cash > 0;
+  // Cash in the vehicle or commitments still to call — deals call capital as they close.
+  return !!s.fund && !s.fund.settled && s.month <= s.fund.investEndM && s.fund.cash + s.fund.uncalled > 0;
 }
 
 /**
@@ -96,8 +97,10 @@ export function fundRaiseQuote(s: GameState): {
       reason: "Nobody will back you again. The last vehicle did not return capital.",
     };
   }
-  if (s.fund && !s.fund.settled && s.month < s.fund.lifeEndM) {
-    return { ok: false, size: 0, reason: "You already have a live fund." };
+  // Unsettled includes a fund in its extension: it still holds the LPs'
+  // buildings, and a second raise would have written over it.
+  if (s.fund && !s.fund.settled) {
+    return { ok: false, size: 0, reason: s.month < s.fund.lifeEndM ? "You already have a live fund." : "Finish winding down the last fund first — its LPs still own buildings in it." };
   }
   const st = sponsorStanding(s);
   if (!st.institutional) {
@@ -115,8 +118,24 @@ export function fundRaiseQuote(s: GameState): {
   const clean = Math.max(0, 1.6 - st.mark);
   const base = 8_000_000 + clean * 25_000_000;
   const phaseMult = phase === "expansion" ? 1.15 : phase === "peak" ? 0.85 : 1;
-  const size = Math.round(base * phaseMult / 100_000) * 100_000;
-  return { ok: true, size, reason: `A ${monthLabel(s.month)} vintage of $${(size / 1e6).toFixed(0)}M will clear.` };
+  // A SUCCESSOR FUND IS SIZED OFF THE LAST ONE. LPs re-up in proportion to
+  // what the prior vehicle returned, and a manager's second fund raising a
+  // multiple of its first is the ordinary shape of the business; a firm with a
+  // returned fund raised exactly what a first-timer did, capped at ~$55M
+  // however large it had grown. The multiples below are shape choices keyed
+  // to the prior fund's DPI (1.0x back, 1.2x solid, 1.5x strong), not
+  // calibrated to a measured outcome.
+  const prev = s.fund?.settled && !s.fund.failed ? s.fund : undefined;
+  const prevDpi = prev && prev.called > 0 ? prev.distributed / prev.called : 0;
+  const reup = !prev ? 0 : prevDpi >= 1.5 ? 2 : prevDpi >= 1.2 ? 1.5 : prevDpi >= 1 ? 1.15 : 0;
+  const size = Math.round(Math.max(base * phaseMult, (prev?.size ?? 0) * reup * phaseMult) / 100_000) * 100_000;
+  const nth = (s.fundsRaised ?? (prev ? 1 : 0)) + 1;
+  return {
+    ok: true, size,
+    reason: prev
+      ? `Fund ${nth}: your last vehicle returned ${prevDpi.toFixed(2)}x, and a ${monthLabel(s.month)} vintage of $${(size / 1e6).toFixed(0)}M will clear.`
+      : `A ${monthLabel(s.month)} vintage of $${(size / 1e6).toFixed(0)}M will clear.`,
+  };
 }
 
 /** Close a fund — commitments, GP co-invest cheque, uncalled reserve. */
@@ -142,7 +161,14 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
   // First close: call GP co-invest + ~40% of LP immediately into the vehicle;
   // rest sits uncalled. Shape: 30–50% reserve practice (rivals.ts).
   const lpCommit = q.size - gpCommit;
-  const uncalledShare = 0.40;
+  // CAPITAL IS CALLED AS DEALS CLOSE, NOT PARKED. This called 60% of LP
+  // commitments on day one; the vehicle then sat on $30-35M for years while
+  // the pref accrued on money that was doing nothing — measured $25.0M of pref
+  // owed on one run, and a "success" that returned 1.04x over ten years. A
+  // quarter at first close covers fees and the first deal's deposit; every
+  // vehicle purchase calls what it needs from the rest (executePurchase). The
+  // quarter is a shape choice, not calibrated.
+  const uncalledShare = 0.75;
   const lpCalled0 = Math.round(lpCommit * (1 - uncalledShare));
   const gpCalled0 = gpCommit; // GP funds at close
   next.cash -= gpCalled0;
@@ -166,6 +192,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
     promote: FUND_PROMOTE,
     gpCommit,
   };
+  next.fundsRaised = (s.fundsRaised ?? (s.fund?.settled ? 1 : 0)) + 1;
   next.fundPay = true; // new vintage buys from the vehicle by default
   next.news.unshift({
     q: next.month, kind: "event",

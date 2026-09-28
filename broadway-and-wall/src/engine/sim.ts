@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, vehicleReimburse, moveDeposit } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund, settleFund } from "./fund";
+import { tickFund, settleFund, gpCapitalShare } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -783,11 +783,14 @@ function tickMonth(
     // ...and the desks re-read what a building in this town is worth
     s.loanScale = cityLoanScale(s, parcels);
     let taxable = 0;
-    // THE VEHICLE'S INCOME IS NOT THE SPONSOR'S. A fund deed's NOI, interest
-    // and depreciation used to run through the sponsor's return at 100% — the
-    // GP paid the LPs' income tax out of its own account. It is struck on its
-    // own line and the vehicle pays it, the same convention the vehicle's sale
-    // tax has always followed (acceptSaleOffer takes it off fund.cash).
+    // THE VEHICLE'S INCOME IS NOT THE SPONSOR'S — AND NOT THE VEHICLE'S TO
+    // PAY TAX ON. A real estate fund is a partnership: it files a return and
+    // pays nothing, and each partner is taxed on its allocated share. A fund
+    // deed's NOI, interest and depreciation are struck on their own line and
+    // the sponsor carries its co-invest share of the result into its own
+    // return (a loss nets against its other income, as a K-1 loss does). The
+    // LPs' shares are taxed on the LPs' returns, off this book. The promote is
+    // taxed when it is paid (fund.ts applyDistribute).
     const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
     let fundTaxable = 0;
     for (const h of Object.values(s.holdings)) {
@@ -832,18 +835,10 @@ function tickMonth(
       if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
       taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
     }
-    if (liveFund) {
-      const fy = settleIncomeTax(fundTaxable, liveFund.taxLossCarry ?? 0);
-      liveFund.taxLossCarry = fy.carry;
-      if (fy.tax > 0) {
-        // Written from the operating account and reimbursed by the vehicle at
-        // once — its cash, a capital call, or a GP advance (vehicleReimburse).
-        s.cash -= fy.tax;
-        s.taxesPaid = (s.taxesPaid ?? 0) + fy.tax;
-        logBooks(s, "taxes", fy.tax);
-        vehicleReimburse(s, fy.tax);
-      }
-    }
+    if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
+    // Carried interest received this year — the sponsor's own income.
+    taxable += s.promoteIncomeYr ?? 0;
+    s.promoteIncomeYr = 0;
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
     // the sweep reads the policy rate, the after-tax yield is the honest one:
@@ -1001,12 +996,13 @@ function tickMonth(
         // A forced disposition is a taxable one. The bill on a gain you never
         // saw in cash is the thing that finishes a distressed sponsor, and it
         // is the reason handing back the keys beats being levied.
-        if (tax > 0) {
-          s.cash -= tax;
-          s.taxesPaid = (s.taxesPaid ?? 0) + tax;
-          logBooks(s, "taxes", tax);
-          // A vehicle deed's gain is the vehicle's, as on a voluntary sale.
-          if (pick.fundOwned && s.fund && !s.fund.settled) vehicleReimburse(s, tax);
+        // A vehicle deed's gain passes through: the sponsor pays its
+        // co-invest share, the vehicle pays nothing (sponsorsSaleTax).
+        const owed = pick.fundOwned && s.fund && !s.fund.settled ? Math.round(tax * gpCapitalShare(s.fund)) : tax;
+        if (owed > 0) {
+          s.cash -= owed;
+          s.taxesPaid = (s.taxesPaid ?? 0) + owed;
+          logBooks(s, "taxes", owed);
         }
         if (shortfall > 0 && (pick.loan || pick.mezz)) {
           if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, pick.bbl); }
@@ -1052,7 +1048,7 @@ function tickMonth(
               ? shortfall > 0
                 ? `It did not cover the $${(lien / 1e6).toFixed(2)}M mortgage${pick.loan?.recourse ? `, and you signed for the $${(shortfall / 1e6).toFixed(2)}M shortfall` : `, and the paper was non-recourse`}. `
                 : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and $${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M of surplus reached you. `
-              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
+              : `$${(Math.max(0, toBorrower) / 1e6).toFixed(2)}M reached you after the costs of the sale${owed > 0 ? ` and $${(owed / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = s.cash < 0 ? 12 : 0;

@@ -75,8 +75,6 @@ export interface PlayerFund {
    * settleVehicleDeedFlow in types.ts.
    */
   gpAdvance?: number;
-  /** The vehicle's own loss carryforward — its income is struck apart from the sponsor's (sim.ts, January). */
-  taxLossCarry?: number;
   /** Last month the vehicle made a scheduled distribution. */
   lastDistM?: number;
 }
@@ -257,9 +255,21 @@ export function waterfall(f: PlayerFund, amount: number): { pref: number; capita
   rest -= capital;
   const promote = Math.round(rest * f.promote);
   const split = rest - promote;
-  const gpFrac = f.called > 0 ? Math.min(1, f.gpCommit / f.called) : 0;
+  const gpFrac = gpCapitalShare(f);
   const toGpCoinvest = Math.round((pref + capital + split) * gpFrac);
   return { pref, capital, split, promote, toGpCoinvest, toLp: pref + capital + split - toGpCoinvest };
+}
+
+/**
+ * THE SPONSOR'S SHARE OF THE VEHICLE'S CAPITAL — its co-invest over all the
+ * capital called. The waterfall pays the co-invest pro rata on every tier
+ * below the promote at this fraction, and a pass-through vehicle allocates
+ * its taxable income and gains to the sponsor at the same fraction (the
+ * LPs' shares are taxed on their own returns, off this book).
+ */
+export function gpCapitalShare(f: PlayerFund | undefined): number {
+  if (!f || !(f.called > 0)) return 0;
+  return Math.min(1, f.gpCommit / f.called);
 }
 
 /**
@@ -291,6 +301,12 @@ export function applyDistribute(s: GameState, amount: number): number {
   f.distributed += w.pref + w.capital + w.split;
   f.promotePaid += w.promote;
   s.cash += w.promote + w.toGpCoinvest;
+  // CARRIED INTEREST IS THE SPONSOR'S INCOME WHEN IT IS PAID. The co-invest
+  // leg is capital coming home (its share of the income was taxed as the
+  // vehicle earned it — sim.ts, January); the promote is new money to the GP
+  // and goes on its return for the year. Taxed with the rest of the sponsor's
+  // income, where a banked loss can reach it as it would on a real return.
+  if (w.promote > 0) s.promoteIncomeYr = (s.promoteIncomeYr ?? 0) + w.promote;
   if (w.toLp > 0) logBooks(s, "lpDistributed", w.toLp);
   return w.toLp;
 }

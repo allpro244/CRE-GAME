@@ -629,9 +629,10 @@ export function acceptPortfolioBid(
   if (mixesVehicles(next, live)) {
     return { s, err: "That book now mixes the fund's buildings with your own — one price across both is a conflict the LPs would refuse. Pull it and sell each book on its own." };
   }
-  // THE FUND'S BOOK SETTLES INTO THE FUND. Each fund deed's leg — proceeds,
-  // tax, deposits — runs through `fund.cash` exactly as acceptSaleOffer runs a
-  // single fund sale. This paid every leg to the sponsor: measured, a bundle
+  // THE FUND'S BOOK SETTLES INTO THE FUND. Each fund deed's leg — proceeds
+  // and deposits — runs through `fund.cash` exactly as acceptSaleOffer runs a
+  // single fund sale; the tax is the sponsor's co-invest share, from its own
+  // account. This paid every leg to the sponsor: measured, a bundle
   // of four fund deeds lifted sponsor cash +$4.29M and net worth +36% in one
   // click, with the LPs' buildings gone and their vehicle not a dollar richer.
   const intoFund = live.length > 0 && onFundBook(next, live[0]);
@@ -715,8 +716,10 @@ export function acceptPortfolioBid(
       deadlineM: next.month + EXCHANGE_WINDOW_M,
     };
   } else if (taxTotal > 0) {
-    if (intoFund && next.fund) next.fund.cash -= taxTotal;
-    else next.cash -= taxTotal;
+    // The sponsor's own tax: on the fund's deeds, its co-invest share of the
+    // vehicle's gain (sponsorsSaleTax, via saleProceedsToSeller) — the
+    // vehicle is a partnership and pays none.
+    next.cash -= taxTotal;
     next.taxesPaid = (next.taxesPaid ?? 0) + taxTotal;
     logBooks(next, "taxes", taxTotal);
   }

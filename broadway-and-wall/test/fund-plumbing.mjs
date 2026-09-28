@@ -89,10 +89,16 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
       const dCash = g1.cash - g.cash;
       const dFund = g1.fund.cash - g.fund.cash;
       const nw1 = E.netWorth(g1, parcels);
-      ok("sponsor cash does not take the fund's proceeds", Math.abs(dCash) < 1, `Δcash ${M(dCash)}`);
-      ok("the vehicle receives the proceeds net of tax and deposits",
-        dFund > 0 && Math.abs(dFund - (book.toSeller - book.tax - fund.reduce((a2, b) => a2 + E.depositsOn(g.holdings[b]), 0))) < 2,
-        `Δfund ${M(dFund)} vs settlement ${M(book.toSeller - book.tax)}`);
+      // PASS-THROUGH: the vehicle pays no tax; the sponsor pays its co-invest
+      // share of the gain, and nothing else, from its own account.
+      const share = E.gpCapitalShare(g.fund);
+      const fullTax = book.legs.reduce((a2, leg) => a2 + E.saleTaxQuote(g.holdings[leg.bbl], leg.price, g).tax, 0);
+      ok("the sponsor's tax is its co-invest share of the vehicle's gain", share > 0 && share < 0.1 && Math.abs(book.tax - fullTax * share) <= book.legs.length,
+        `${M(book.tax)} = ${(share * 100).toFixed(1)}% of ${M(fullTax)}`);
+      ok("sponsor cash does not take the fund's proceeds — only its own tax leaves it", Math.abs(dCash + book.tax) < 1, `Δcash ${M(dCash)} vs tax ${M(-book.tax)}`);
+      ok("the vehicle receives the proceeds net of deposits, and pays no entity tax",
+        dFund > 0 && Math.abs(dFund - (book.toSeller - fund.reduce((a2, b) => a2 + E.depositsOn(g.holdings[b]), 0))) < 2,
+        `Δfund ${M(dFund)} vs settlement ${M(book.toSeller)}`);
       // The sponsor's share moves only by what the waterfall says it owns of
       // the vehicle — the bundle discount, costs and tax are shared.
       ok("net worth does not jump on the LPs' sale", Math.abs(nw1 - nw0) / Math.max(1, Math.abs(nw0)) < 0.01,
@@ -146,21 +152,21 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
 
   // Month by month: what the vehicle nets equals what its deeds' own ledger
   // says they netted — every lease commission, TI cheque and capex bill on a
-  // fund deed runs through fund.cash. January also carries the vehicle's own
-  // income tax (the deed ledger is pre-tax), so January is checked apart.
+  // fund deed runs through fund.cash. January included: the vehicle is a
+  // partnership and pays no income tax of its own (the deed ledger is pre-tax).
   let g = g0;
   // Tenant deposits on fund deeds are the vehicle's to hold (moveDeposit):
   // they arrive in and leave from fund.cash with no books entry, so the
   // vehicle's cash moves by the ledger PLUS the change in deposits it holds.
   const fundDeps = (x) => fund.reduce((a, b) => a + (x.holdings[b]?.tenants ?? []).reduce((n, t) => n + (t.deposit ?? 0), 0), 0);
-  let checked = 0, bad = 0, worst = 0, sponsorPaid = 0, depMonths = 0;
+  let checked = 0, bad = 0, worst = 0, sponsorPaid = 0, depMonths = 0, januaries = 0;
   for (let i = 0; i < 30; i++) {
     const f0 = { ...g.fund };
     const g1 = E.advanceMonth(g, parcels, bbls, adjacency);
     if (!fund.every((b) => g1.holdings[b]?.fundOwned) || g1.fund.settled) break;
     const f1 = g1.fund;
     const dDep = fundDeps(g1) - fundDeps(g);
-    if (Math.abs(dDep) > 0 && g1.month % 12 !== 0) depMonths++;
+    if (Math.abs(dDep) > 0) depMonths++;
     const vehicle = (f1.cash - f0.cash) + (f1.distributed - f0.distributed) + (f1.promotePaid - f0.promotePaid)
       - (f1.called - f0.called) + ((f1.gpAdvance ?? 0) - (f0.gpAdvance ?? 0)) - dDep;
     let ledger = 0;
@@ -168,16 +174,15 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
       const cf = g1.deedCf?.[b]?.cf ?? [];
       for (let k = 0; k < cf.length; k += 2) if (cf[k] === g1.month) ledger += cf[k + 1];
     }
-    if (g1.month % 12 !== 0) {
-      checked++;
-      const gap = vehicle - ledger;
-      if (Math.abs(gap) > 2) { bad++; worst = Math.max(worst, Math.abs(gap)); }
-      sponsorPaid += gap;
-    }
+    checked++;
+    if (g1.month % 12 === 0) januaries++;
+    const gap = vehicle - ledger;
+    if (Math.abs(gap) > 2) { bad++; worst = Math.max(worst, Math.abs(gap)); }
+    sponsorPaid += gap;
     g = g1;
   }
-  ok("every non-January month: vehicle net flow == its deeds' ledger", checked >= 20 && bad === 0,
-    `${checked} months, ${bad} off, worst ${M(worst)}, sponsor-borne ${M(sponsorPaid)}`);
+  ok("every month, January included: vehicle net flow == its deeds' ledger", checked >= 20 && januaries >= 1 && bad === 0,
+    `${checked} months (${januaries} January), ${bad} off, worst ${M(worst)}, sponsor-borne ${M(sponsorPaid)}`);
   ok("...including months in which the fund deeds' tenant deposits moved", depMonths >= 1, `${depMonths} months with deposit movement`);
 
   // DEPOSITS, END TO END. Collected into the vehicle at the closing, handed
@@ -191,9 +196,12 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
     if (!l.err) {
       const t = l.s;
       t.holdings[b].sale.offer = { price: 2_000_000, expiresM: t.month + 2, from: "X" };
+      const px = E.saleProceedsToSeller(t, parcels, t.holdings[b], 2_000_000);
+      const dep = E.depositsOn(t.holdings[b]);
       const a = E.acceptSaleOffer(t, parcels, b);
-      ok("a fund deed's sale hands its deposits over from the vehicle, not the sponsor", !a.err && Math.abs(a.s.cash - t.cash) < 1,
-        a.err ?? `Δcash ${M(a.s.cash - t.cash)}`);
+      ok("a fund deed's sale hands its deposits over from the vehicle, not the sponsor",
+        !a.err && Math.abs(a.s.cash - t.cash + px.tax) < 1 && Math.abs(a.s.fund.cash - t.fund.cash - (px.toSeller - dep)) < 1,
+        a.err ?? `Δcash ${M(a.s.cash - t.cash)} (its tax share ${M(px.tax)}), Δfund ${M(a.s.fund.cash - t.fund.cash)} vs ${M(px.toSeller - dep)}`);
     }
     // In kind to the liquidating trust: an underwater deed at the end of the
     // extension leaves with its deposits paid out of the vehicle's cash.
@@ -261,6 +269,42 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
     ok("the LP leg is on the ledger", lp1 - lp0 > 3_000_000, `lpDistributed ${M(lp1 - lp0)}`);
     ok("the vehicle keeps a reserve for its own bills", g.fund.cash > 0 && g.fund.cash < reserve + 1_500_000, `cash ${M(g.fund.cash)} vs reserve ${M(reserve)}`);
   }
+}
+
+// ---- 4. THE VEHICLE IS PASS-THROUGH ------------------------------------------
+// A fund is a partnership: no entity tax. The sponsor carries its co-invest
+// share of the vehicle's taxable income on its own return, and the promote
+// when it is paid.
+{
+  const { g: g0, fund } = setup(9104, 2, 0);
+  let g = g0;
+  while (g.month % 12 !== 11) g = E.advanceMonth(g, parcels, bbls, adjacency);
+  const januaryTax = (share, promote = 0) => {
+    const t = structuredClone(g);
+    t.taxLossCarry = 0; t.depositInterestYr = 0;
+    t.fund.gpCommit = Math.round(t.fund.called * share);
+    if (promote) t.promoteIncomeYr = promote;
+    const f0 = t.fund.cash, tax0 = t.taxesPaid ?? 0;
+    const t1 = E.advanceMonth(t, parcels, bbls, adjacency);
+    return { tax: (t1.taxesPaid ?? 0) - tax0, t1, t };
+  };
+  // A 3% co-invest on two small deeds is under the $1K the January cheque
+  // bothers with, so the pro-rata rule is read at a half share.
+  const none = januaryTax(0), half = januaryTax(0.5), all = januaryTax(1), coinvest = januaryTax(0.03);
+  ok("setup: a January with only fund deeds on the book", fund.length === 2 && none.t1.month % 12 === 0);
+  ok("a sponsor with no capital in the vehicle pays none of its income tax", none.tax < 1_000, `tax ${M(none.tax)}`);
+  ok("its share of the vehicle's income is on the sponsor's return, pro rata",
+    all.tax > 10_000 && Math.abs(half.tax - all.tax * 0.5) < Math.max(1_000, all.tax * 0.01),
+    `50%: ${M(half.tax)}  100%: ${M(all.tax)}`);
+  const promo = januaryTax(0.03, 1_000_000);
+  ok("the promote paid in the year is taxed as the sponsor's income",
+    Math.abs((promo.tax - coinvest.tax) - 1_000_000 * E.INCOME_TAX_RATE) < 5_000, `+${M(promo.tax - coinvest.tax)} on a $1.000M promote`);
+  // applyDistribute is where the promote is recorded for January.
+  const d = structuredClone(g);
+  d.fund.cash = 20_000_000; d.fund.prefAccrued = 0; d.fund.capReturned = d.fund.called; d.promoteIncomeYr = 0;
+  E.applyDistribute(d, 10_000_000);
+  ok("a distribution records the promote paid as the year's promote income", d.promoteIncomeYr > 0 && Math.abs(d.promoteIncomeYr - d.fund.promotePaid + g.fund.promotePaid) < 1,
+    `${M(d.promoteIncomeYr)}`);
 }
 
 console.log(`\n${fails === 0 ? "fund-plumbing pass" : `${fails} fund-plumbing failure(s)`}`);

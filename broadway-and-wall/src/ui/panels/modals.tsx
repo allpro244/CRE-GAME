@@ -843,7 +843,8 @@ function DecisionBody({
   if (!rec || !parcels) return null;
   // Same waterfall acceptSaleOffer runs — loan, kicker, break fee, facility release, tax.
   const proceeds = saleProceedsToSeller(game, parcels, h, offer.price);
-  const cashAtClose = proceeds.toSeller - (game.exchange ? 0 : proceeds.tax);
+  const onFund = !!(h.fundOwned && game.fund && !game.fund.settled);
+  const cashAtClose = (onFund ? 0 : proceeds.toSeller) - (game.exchange ? 0 : proceeds.tax);
   const value = ownedHoldingValue(game, parcels, h);
   const counterBounds = (() => {
     const b = counterPriceBounds(offer.price, apMid(offerBbl!, value));
@@ -898,7 +899,10 @@ function DecisionBody({
           {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
           {proceeds.partner > 0 && <Row k={`To ${h.jv?.partner ?? "your partner"} (${Math.round((h.jv?.share ?? 0) * 100)}%)`} v={usd(proceeds.partner)} bad />}
           <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
-          {proceeds.tax > 0 && <Row k="Capital-gains tax" v={usd(proceeds.tax)} bad />}
+          {/* A fund deed's gain passes through the vehicle: the proceeds go to
+              the fund, and the sponsor's own tax is its co-invest share. */}
+          {proceeds.tax > 0 && <Row k={onFund ? "Your share of the gains tax" : "Capital-gains tax"} v={usd(proceeds.tax)} bad />}
+          {onFund && <Row k="To the fund" v={usd(proceeds.toSeller)} />}
           <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />
         </div>
         {(() => {
@@ -915,7 +919,7 @@ function DecisionBody({
           <button className="btn btn-buy" onClick={() => setSaleAcceptConfirm({})}>
             Accept · net {usd(cashAtClose)}
           </button>
-          {proceeds.tax > 0 && !game.exchange && (
+          {proceeds.tax > 0 && !game.exchange && !onFund && (
             <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>

@@ -22,6 +22,7 @@ import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { ownersShareOfProceeds, jvConsent } from "./jv";
+import { gpCapitalShare } from "./fund";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -2654,6 +2655,20 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
 }
 
 /**
+ * THE SPONSOR'S TAX ON A SALE — what leaves the sponsor's own account at the
+ * closing. A JV deed: each side is taxed on its own share (the basis is
+ * already the owner's alone). A live fund's deed: the vehicle is a
+ * partnership and pays no entity tax; its gain passes through, and the
+ * sponsor owes only its co-invest share of it (gpCapitalShare). The LPs'
+ * shares are taxed on the LPs' returns, off this book.
+ */
+export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
+  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
+  if (h.fundOwned && s.fund && !s.fund.settled) return Math.round(tax * gpCapitalShare(s.fund));
+  return tax;
+}
+
+/**
  * WHAT REACHES THE SELLER — one helper for the offer modal and the close.
  *
  * The modal used to show `saleTaxQuote.net − loan − tax` and omit the
@@ -2668,9 +2683,7 @@ export function saleProceedsToSeller(
   release: number; loanPayoff: number; toSeller: number; partner: number;
 } {
   const { net, gain } = saleTaxQuote(h, price, s);
-  // A JV deed: each side is taxed on its own share (the basis is already the
-  // owner's alone), and the partner is paid its share at the closing table.
-  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
+  const tax = sponsorsSaleTax(s, h, price);
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
   const stack = stackPayoff(h, s.month);
   const breakFee = stack.penalty;
@@ -2689,7 +2702,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const { gain } = saleTaxQuote(h, offer.price, s);
-  const tax = h.jv ? saleTaxQuote(h, Math.round(offer.price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, offer.price, s).tax;
+  const tax = sponsorsSaleTax(s, h, offer.price);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   // The vehicle's gain is the vehicle's: rolling it into the sponsor's own
@@ -2707,8 +2720,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const breakFee = px.breakFee;
   const release = px.release;
   const toSeller = px.toSeller;
-  // Vehicle deed: proceeds and tax sit on fund.cash so the promote has a
-  // counterparty. GP cash is untouched on a fund exit.
+  // Vehicle deed: the proceeds sit on fund.cash so the promote has a
+  // counterparty. The vehicle pays no tax on them — the sponsor's share of
+  // the gain is taxed on the sponsor, below.
   const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
   if (intoFund && next.fund) next.fund.cash += toSeller;
   else next.cash += toSeller;
@@ -2746,8 +2760,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
-    if (intoFund && next.fund) next.fund.cash -= tax;
-    else next.cash -= tax;
+    // The sponsor's own tax — on a fund deed, its co-invest share of the
+    // vehicle's gain, from its own account (sponsorsSaleTax).
+    next.cash -= tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + tax;
     logBooks(next, "taxes", tax);
   }

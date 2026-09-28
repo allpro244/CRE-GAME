@@ -2898,6 +2898,8 @@ export interface GameState {
    * not the same animal on a return. Absent on older saves and read as zero.
    */
   depositInterestYr?: number;
+  /** Promote received from the live fund this calendar year — taxed in January with the sponsor's income (fund.ts applyDistribute). */
+  promoteIncomeYr?: number;
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;

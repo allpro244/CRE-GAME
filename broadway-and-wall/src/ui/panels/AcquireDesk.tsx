@@ -1344,7 +1344,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               <>
                 <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={negLev} />
                 <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
-                {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
+                {principal > 0 && <Row k={<Gloss term="debt yield">Debt yield</Gloss>} v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
                 {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
                 {prodDef && (
                   <Row
@@ -1354,7 +1354,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   />
                 )}
                 <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />
-                <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
+                <Row k={<Gloss term="cash-on-cash">Cash-on-cash</Gloss>} v={`${coc.toFixed(1)}%`} bad={coc < 0} />
               </>
             )}
             <Row k="Equity to close" v={usd(equity)} strong bad={equity > closePurse} />

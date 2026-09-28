@@ -47,13 +47,30 @@ changes upload 16 bytes; lit civic works; lenses keep the 3D city; owned parapet
 selection as light; framed Go-to; demolition sinks / delivery rises; formwork and a crane
 trolley on sites. See the commit messages on `ThreeBuildings.ts` and `MapView.tsx`.
 
+## Later in the session (PRs #149–#153)
+
+- **One development pro forma** (`engine/proforma.ts`, `developmentProForma`): the land
+  residual (`landRead`) and `planDevelopment` now run the same stack — massing, street
+  retail, GMP, rents on the expected market, lease-up reserve, the construction desk's real
+  terms, land carry over the scheme's own months. At the residual's scheme and a basis equal
+  to the residual the hurdle reads 1.000 on every lot (`test/residual-recon.mjs`; was
+  p05/p50/p95 0.81/1.10/1.54). BASELINE.json was regenerated for it — median land +30%,
+  p10 +76%, floor area −9%; see ECONOMY.md. Ticks are ~50% heavier (landRead runs the pro forma).
+- **Standing sale instructions** (`applySaleInstructions`, actions.ts) and the **buy box**
+  (`engine/buybox.ts`) — the two largest sources of clock stops, now under the player's rules.
+- **Goals** (`engine/goals.ts`) — optional target + deadline chosen at the start.
+- **Returns to date** (`returnsToDate`, standing.ts) — the deed ledger read on held buildings.
+- **First hour**: starter building named in the docket/Marketplace/HUD, offer-grid funding and
+  letting rows, negative-leverage default to cash, letter terms on docket rows, glossary.
+- **Graphics batch 2**: dusk during Play, blue-hour photo frame, street lights, boats, dust,
+  sea-mesh wedge fix.
+- **Review fixes**: underwater fund deeds never bought in, in-kind exits pooled, autosave is
+  max-wait with serialized writes (Play used to never save), dead-branch rewind points pruned.
+
 ## Open, measured, not done
 
-- Land residual (`landRead`) vs `planDevelopment` disagree by −30…+45% at breakeven on the
-  same scheme — an agent was reconciling this at the end of the session
-  (`test/residual-recon.mjs` if it landed).
-- "Offer in hand" is 52–71% of all clock stops — standing sale instructions were in
-  progress (`test/sale-instructions.mjs` if it landed).
-- Buy criteria for broker first looks (class / submarket / min yield) would replace the
-  affordability screen with the player's own.
+- Report letter H (the glut is seen) moved OK → BAND with the pro-forma reconciliation:
+  rate-policy drift during the glut +1.31pp vs a ≤ +0.35 band. Informational; worth a look.
+- Sale instructions act on single offers, not a marketed campaign's bid list.
+- landRead cost: a per-month memo of the residual per lot would recover most of the tick time.
 - Late game: platform sale / listing using `sellStake` + `listPortfolio` machinery.

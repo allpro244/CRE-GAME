@@ -3062,9 +3062,10 @@ export function logBooks(
   /** The caller already moved this dollar through `s.fund.cash` — do not settle it again. */
   vehicleDirect = false,
 ) {
-  if (bbl) tagDeed(s, key, amt, bbl);
-  if (bbl && !vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
-  else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
+  if (bbl) {
+    tagDeed(s, key, amt, bbl);
+    if (!vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
+  } else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
@@ -3142,6 +3143,30 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
   const signed = sign * amt; // + into the owner's account, − out of it
   if (signed > 0) vehicleCollect(s, signed);
   else vehicleReimburse(s, -signed);
+}
+
+/**
+ * THE DEPOSITS SIT WHERE THE DEED DOES. A tenant's security deposit is held by
+ * the landlord of record, and on a fund deed that is the vehicle: collected
+ * into `fund.cash` at signing, returned from it at expiry, true-down or
+ * clearance, and handed over from it when the deed leaves (sale, foreclosure,
+ * in kind to the liquidating trust). Every deposit cash movement on a deed
+ * goes through here; `amt` > 0 is collected, < 0 returned. No books entry — a
+ * deposit is a liability moving with its cash, which conserve sees as
+ * Δdeposits against Δ(cash + fund.cash).
+ */
+export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
+  if (!amt) return;
+  if (h?.fundOwned && s.fund && !s.fund.settled) s.fund.cash += amt;
+  else s.cash += amt;
+}
+
+/** Deposits the vehicle holds — on the live fund's deeds. */
+export function fundDepositsHeld(s: GameState): number {
+  if (!s.fund || s.fund.settled) return 0;
+  let n = 0;
+  for (const h of Object.values(s.holdings)) if (h.fundOwned) for (const t of h.tenants) n += t.deposit ?? 0;
+  return n;
 }
 
 /** The sponsor's account holds `amt` of the vehicle's money: repay any GP advance, send the rest to `fund.cash`. Mutates `s`. */

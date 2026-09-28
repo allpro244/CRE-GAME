@@ -149,14 +149,20 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   // fund deed runs through fund.cash. January also carries the vehicle's own
   // income tax (the deed ledger is pre-tax), so January is checked apart.
   let g = g0;
-  let checked = 0, bad = 0, worst = 0, sponsorPaid = 0;
+  // Tenant deposits on fund deeds are the vehicle's to hold (moveDeposit):
+  // they arrive in and leave from fund.cash with no books entry, so the
+  // vehicle's cash moves by the ledger PLUS the change in deposits it holds.
+  const fundDeps = (x) => fund.reduce((a, b) => a + (x.holdings[b]?.tenants ?? []).reduce((n, t) => n + (t.deposit ?? 0), 0), 0);
+  let checked = 0, bad = 0, worst = 0, sponsorPaid = 0, depMonths = 0;
   for (let i = 0; i < 30; i++) {
     const f0 = { ...g.fund };
     const g1 = E.advanceMonth(g, parcels, bbls, adjacency);
     if (!fund.every((b) => g1.holdings[b]?.fundOwned) || g1.fund.settled) break;
     const f1 = g1.fund;
+    const dDep = fundDeps(g1) - fundDeps(g);
+    if (Math.abs(dDep) > 0 && g1.month % 12 !== 0) depMonths++;
     const vehicle = (f1.cash - f0.cash) + (f1.distributed - f0.distributed) + (f1.promotePaid - f0.promotePaid)
-      - (f1.called - f0.called) + ((f1.gpAdvance ?? 0) - (f0.gpAdvance ?? 0));
+      - (f1.called - f0.called) + ((f1.gpAdvance ?? 0) - (f0.gpAdvance ?? 0)) - dDep;
     let ledger = 0;
     for (const b of fund) {
       const cf = g1.deedCf?.[b]?.cf ?? [];
@@ -172,6 +178,42 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   }
   ok("every non-January month: vehicle net flow == its deeds' ledger", checked >= 20 && bad === 0,
     `${checked} months, ${bad} off, worst ${M(worst)}, sponsor-borne ${M(sponsorPaid)}`);
+  ok("...including months in which the fund deeds' tenant deposits moved", depMonths >= 1, `${depMonths} months with deposit movement`);
+
+  // DEPOSITS, END TO END. Collected into the vehicle at the closing, handed
+  // back out of it at a sale and when a deed goes to the LPs' trust in kind.
+  {
+    const dep0 = fundDeps(g0);
+    ok("setup: the fund deeds carry tenant deposits", dep0 > 0, M(dep0));
+    // A single fund-deed sale: the deposits leave from fund.cash, never GP cash.
+    const b = fund.find((x) => (g0.holdings[x]?.tenants ?? []).some((t) => (t.deposit ?? 0) > 0)) ?? fund[0];
+    const l = E.listForSale(g0, parcels, b, 1, "quiet");
+    if (!l.err) {
+      const t = l.s;
+      t.holdings[b].sale.offer = { price: 2_000_000, expiresM: t.month + 2, from: "X" };
+      const a = E.acceptSaleOffer(t, parcels, b);
+      ok("a fund deed's sale hands its deposits over from the vehicle, not the sponsor", !a.err && Math.abs(a.s.cash - t.cash) < 1,
+        a.err ?? `Δcash ${M(a.s.cash - t.cash)}`);
+    }
+    // In kind to the liquidating trust: an underwater deed at the end of the
+    // extension leaves with its deposits paid out of the vehicle's cash.
+    if (E.windDownFund) {
+      const t = structuredClone(g0);
+      for (const x of fund) { if (x !== b) delete t.holdings[x]; }
+      const h = t.holdings[b];
+      const v = E.ownedHoldingValue(t, parcels, h);
+      h.loan = { ...(h.loan ?? { product: "harbor", ratePct: 6, amortYears: 25, originM: t.month, maturityM: t.month + 60, monthlyPmt: 1 }), balance: v * 3, principal: v * 3 };
+      t.fund.cash = 3_000_000; t.fund.gpAdvance = 0;
+      t.fund.lifeEndM = t.month; t.fund.extendedTo = t.month;
+      const dep = E.depositsOn(h);
+      const w = E.waterfall(t.fund, t.fund.cash - dep);
+      const cash0 = t.cash;
+      E.windDownFund(t, parcels);
+      ok("the deed went to the trust in kind", !t.holdings[b] && t.fund.settled);
+      ok("its deposits left from the vehicle — the sponsor got the waterfall on what remained", Math.abs((t.cash - cash0) - (w.promote + w.toGpCoinvest)) < 2,
+        `Δcash ${M(t.cash - cash0)} vs ${M(w.promote + w.toGpCoinvest)} (deposits ${M(dep)})`);
+    } else ok("windDownFund is reachable from the harness", false);
+  }
 
   // Past its cash and its commitments, the vehicle's bill is a GP advance —
   // recorded, repaid first — not a silent gift from the sponsor.

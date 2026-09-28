@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -391,13 +391,9 @@ export function executePurchase(
     if (fromFund && next.fund) next.fund.cash += extra;
     else next.cash += extra;
   } else {
+    // genRentRoll settles the deposits through moveDeposit, which already puts
+    // a vehicle deed's into fund.cash.
     genRentRoll(next, rec, holding, wasDistress);
-    // genRentRoll settles deposits onto GP cash; a vehicle deed moves them over.
-    if (fromFund && next.fund) {
-      const dep = depositsOn(holding);
-      next.cash -= dep;
-      next.fund.cash += dep;
-    }
   }
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
@@ -2775,9 +2771,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
     // is exactly the size of a small building's roll. The parent's deposits
     // were handed over correctly a few lines below; the children's were not.
-    const childDep = depositsOn(next.holdings[child]);
-    if (intoFund && next.fund) next.fund.cash -= childDep;
-    else next.cash -= childDep;
+    moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
@@ -2789,9 +2783,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
   {
-    const dep = depositsOn(next.holdings[bbl]);
-    if (intoFund && next.fund) next.fund.cash -= dep;
-    else next.cash -= dep;
+    moveDeposit(next, next.holdings[bbl], -depositsOn(next.holdings[bbl]));
   }
   // Somebody owns it now, and they will hold it for years — the tape does
   // not get it back next quarter.
@@ -3691,6 +3683,8 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.renovatingUntilM = next.month + RENO_MONTHS;
+  // Their deposits go back with them — out of whichever purse held them.
+  moveDeposit(next, nh, -depositsOn(nh));
   nh.tenants = []; // remaining tenants are bought out as part of the job
   if (rec.class === "multifamily") nh.occ = 0;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);

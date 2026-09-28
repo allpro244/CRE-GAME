@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding } from "./types";
-import { logBooks, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -673,13 +673,11 @@ export function acceptPortfolioBid(
     recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
     // The deposits go with the deed, out of the purse the sale lands in.
-    if (intoFund && next.fund) next.fund.cash -= depositsOn(h);
-    else next.cash -= depositsOn(h);
+    moveDeposit(next, h, -depositsOn(h));
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
       if (parent !== bbl) continue;
       delete next.merged![child];
-      if (intoFund && next.fund) next.fund.cash -= depositsOn(next.holdings[child]);
-      else next.cash -= depositsOn(next.holdings[child]);
+      moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
       delete next.holdings[child];
       if (next.workouts?.[child]) delete next.workouts[child];
     }

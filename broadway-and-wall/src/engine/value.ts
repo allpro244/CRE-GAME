@@ -3,7 +3,7 @@
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
-import { serviceSpec, START_YEAR } from "./types";
+import { serviceSpec, START_YEAR, fundDepositsHeld } from "./types";
 export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
@@ -3068,7 +3068,9 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // net worth at the raise and the LPs' capital arrived in it the day it
   // bought a building. The sponsor owns what the waterfall would pay them.
   const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
-  let fundNav = liveFund ? liveFund.cash : 0;
+  // The vehicle holds its own tenants' deposits (moveDeposit), so they are
+  // its liability against its cash, not the sponsor's.
+  let fundNav = liveFund ? liveFund.cash - fundDepositsHeld(s) : 0;
   for (const h of Object.values(s.holdings)) {
     const v = ownedHoldingValue(s, parcels, h);
     gav += v;
@@ -3118,6 +3120,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // liability here, and counting it as net worth is the oldest flattering
   // mistake in the business.
   for (const h of Object.values(s.holdings)) {
+    if (liveFund && h.fundOwned) continue; // the vehicle's — netted in fundNav above
     for (const t of h.tenants) nw -= t.deposit ?? 0;
   }
   return { nw, gav };

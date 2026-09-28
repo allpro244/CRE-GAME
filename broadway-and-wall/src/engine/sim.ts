@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, vehicleReimburse } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, vehicleReimburse, moveDeposit } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -1034,7 +1034,7 @@ function tickMonth(
           s.exits.push(ex);
         }
         if (s.groundLeases?.[pick.bbl]) transferGroundLeaseOffBook(s, pick.bbl);
-        s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
+        moveDeposit(s, s.holdings[pick.bbl], -depositsOn(s.holdings[pick.bbl]));   // the deposits go with the deed
         s.lastTradeM = s.lastTradeM ?? {};
         s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
@@ -1791,7 +1791,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
  * book, and the GP's promote on it is waived — which is how a sponsor who
  * cannot finish closes a fund.
  */
-function windDownFund(s: GameState, parcels: ParcelTable) {
+export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
@@ -1808,6 +1808,11 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
     if (price > 0 && paid >= price) {
       f.cash += paid;
+      // The tenants' deposits come across with the deed: the vehicle held
+      // them, the sponsor owes them from here on.
+      const dep = depositsOn(h);
+      f.cash -= dep;
+      s.cash += dep;
       paidTotal += paid;
       delete h.fundOwned;
       // The vehicle's cash and the sponsor's now share one deed: its equity
@@ -1826,7 +1831,7 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     poolDeedLedger(s, h.bbl);
     closeDeedLedger(s, s.exits[s.exits.length - 1]);
     if (s.groundLeases?.[h.bbl]) transferGroundLeaseOffBook(s, h.bbl);
-    s.cash -= depositsOn(h);   // the deposits go with the deed
+    moveDeposit(s, h, -depositsOn(h));   // the deposits go with the deed, out of the vehicle that held them
     s.lastTradeM = s.lastTradeM ?? {};
     s.lastTradeM[h.bbl] = s.month;
     delete s.holdings[h.bbl];

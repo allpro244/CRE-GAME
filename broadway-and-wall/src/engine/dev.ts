@@ -8,7 +8,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState} from "./types";
-import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
+import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
@@ -719,7 +719,7 @@ export function startAdaptiveReuse(
     const oldSf = useRentableSf(rec, use);
     if (oldSf > 0) addStock(next.econ, use, -oldSf);
   }
-  next.cash -= depositsOn(nh);
+  moveDeposit(next, nh, -depositsOn(nh));
   nh.tenants = [];
   nh.occ = 0;
   queueSupplyProject(next, {
@@ -1367,6 +1367,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   fundAndBook(next, parcels, cost, "capex", { bbl });
   next.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const nh = next.holdings[bbl];
+  // A demolished building's tenants are gone, and their deposits go back.
+  moveDeposit(next, nh, -depositsOn(nh));
   nh.tenants = [];
   delete nh.occ;
   delete nh.makeReady;
@@ -1893,7 +1895,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.deliveredM = s.month;
   if (d.bts) {
     const deposit = depositFor(s, d.bts.rentPsf, d.bts.sf, d.bts.credit);
-    s.cash += deposit;
+    moveDeposit(s, h, deposit);
     h.tenants.push({
       name: d.bts.name,
       use: d.bts.use,

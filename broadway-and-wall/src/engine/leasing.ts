@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
+import { logBooks, moveDeposit, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
 
@@ -737,7 +737,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
         endM: Math.max(s.month + 1, endM),
         deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
       });
-      if (settle) s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
+      if (settle) moveDeposit(s, holding, holding.tenants[holding.tenants.length - 1].deposit ?? 0);
       leased += sf;
     }
   }
@@ -1300,7 +1300,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // term. A tenant who left owing you nothing takes it with them; one who
       // defaulted forfeited it when they went, and is not in this list.
       const returned = movedOut.reduce((sum, t) => sum + (t.deposit ?? 0), 0);
-      if (returned > 0) s.cash -= returned;
+      if (returned > 0) moveDeposit(s, h, -returned);
       // Downtime is the expensive half of rollover and nobody underwrites it
       // honestly. A suite handed back in a soft office market is dark for the
       // better part of a year: demo, demise, permit, market, build out.
@@ -1412,7 +1412,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // years — this was the residue left after the balloon cheque was fixed,
       // and it shows up as money APPEARING, which is the tell for a liability
       // being released rather than an asset arriving.
-      if (kept > 0) logBooks(s, "noi", kept, h.bbl);
+      // Already in the purse that held it (moveDeposit) — the vehicle for a fund deed.
+      if (kept > 0) logBooks(s, "noi", kept, h.bbl, true);
       const merge = recombinationCost(rec, t, s.econ.costIdx);
       if (merge > 0) {
         s.cash -= merge;
@@ -2300,7 +2301,7 @@ export function answerAsk(
     const dep = depositFor(next, t.rentPsf, t.sf, t.credit);
     if ((t.deposit ?? 0) > dep) {
       const back = (t.deposit ?? 0) - dep;
-      next.cash -= back;
+      moveDeposit(next, h, -back);
       t.deposit = dep;
     }
     next.news.unshift({
@@ -3485,7 +3486,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     t.bumpPct = bumpOf(l);
     noteTenantSfChange(s, use, -add);
     const top = depositFor(s, t.rentPsf, t.sf, t.credit) - (t.deposit ?? 0);
-    s.cash += top;
+    moveDeposit(s, h, top);
     t.deposit = (t.deposit ?? 0) + top;
   } else if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     const t = h.tenants[l.tenantIdx];
@@ -3545,7 +3546,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // four months of a reduced rent. Every renewal restates it, and the
     // difference moves in cash the way it does at a real renewal.
     const wanted = depositFor(s, t.rentPsf, t.sf, t.credit);
-    s.cash += wanted - (t.deposit ?? 0);
+    moveDeposit(s, h, wanted - (t.deposit ?? 0));
     t.deposit = wanted;
   } else {
     // An LOI was sized against the vacancy on the day it was written. Two of
@@ -3580,7 +3581,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       return;
     }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
-    s.cash += deposit;
+    moveDeposit(s, h, deposit);
     const signed: Tenant = {
       name: l.name, use, sector: l.sector, credit: l.credit,
       sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
@@ -4020,7 +4021,7 @@ export function buyOutTenants(
   // The deposits go back with them; they were never yours — a liability
   // released, not an expense, which is why it books nowhere and shows up in
   // conserve as Δdeposits instead.
-  next.cash -= q.deposits;
+  moveDeposit(next, h, -q.deposits);
   const n = h.tenants.length;
   const sf = q.sf + Math.round(resSf);
   h.tenants = [];

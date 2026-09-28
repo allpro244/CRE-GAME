@@ -28,7 +28,7 @@
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding } from "./types";
-import { logBooks, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { rng, rrange } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
@@ -289,7 +289,7 @@ function playerTakes(s: GameState, parcels: ParcelTable, lot: AuctionLot, paid: 
   while (h.tenants.length && cur > total * occ && guard++ < 200) {
     const gone = h.tenants.splice(Math.floor(rng(s) * h.tenants.length), 1)[0];
     cur -= gone.sf;
-    s.cash -= gone.deposit ?? 0;      // never handed across at a courthouse sale
+    moveDeposit(s, h, -(gone.deposit ?? 0));      // never handed across at a courthouse sale
   }
   if (h.occ !== undefined) h.occ = Math.min(h.occ, occ);
   clearRivalClaims(s, lot.bbl);
@@ -468,7 +468,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       }
       recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
-      s.cash -= depositsOn(h);
+      moveDeposit(s, h, -depositsOn(h));
       s.lastTradeM = s.lastTradeM ?? {};
       s.lastTradeM[lot.bbl] = s.month;
       delete s.holdings[lot.bbl];

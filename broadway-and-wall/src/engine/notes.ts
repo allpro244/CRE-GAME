@@ -45,7 +45,7 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
@@ -387,7 +387,7 @@ function wreckedRoll(s: GameState, rec: ParcelRecord, h: Holding, occ: number) {
     const i = Math.floor(rng(s) * h.tenants.length);
     const gone = h.tenants.splice(i, 1)[0];
     cur -= gone.sf;
-    s.cash -= gone.deposit ?? 0;    // that money was never handed over
+    moveDeposit(s, h, -(gone.deposit ?? 0));    // that money was never handed over
   }
   if (h.occ !== undefined) h.occ = Math.min(h.occ, occ);
 }

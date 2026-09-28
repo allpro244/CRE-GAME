@@ -24,7 +24,7 @@ import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { Gloss } from "@/ui/Glossary";
 import { leasingOdds } from "@/engine/absorption";
-import { usd, sf, termLeft } from "@/ui/format";
+import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 
@@ -348,7 +348,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         <div className="deal-head">For sale · listed {monthLabel(sale.listedM)}</div>
         <div className="grid">
           <Row k={sale.mode === "marketed" ? "Whisper price" : "Your ask"} v={usd(sale.ask)} strong />
-          <Row k="vs. appraisal" v={((sale.ask / apMid(bbl, value) - 1) * 100).toFixed(1) + "%"} />
+          <Row k="vs. appraisal" v={pctSigned(sale.ask / apMid(bbl, value) - 1)} />
           <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
           {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
           {describeInstructions(sale.instructions) && (

@@ -25,7 +25,7 @@ import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engin
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
-import { usd, sf, pct, termLeft } from "@/ui/format";
+import { usd, sf, pct, termLeft, pctSigned } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
@@ -873,7 +873,7 @@ function ParcelPanelInner({
               )}
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
-                <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
+                <Row k="vs. appraisal" v={pctSigned(appr.ask / apMid(selectedBBL, value) - 1)} />
                 <Row k="Good until" v={monthLabel(appr.q + 6)} />
               </div>
               {/* Off-market has always been two acts: they name a number, you

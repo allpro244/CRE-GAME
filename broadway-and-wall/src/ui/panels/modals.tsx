@@ -652,7 +652,7 @@ function DecisionBody({
           </div>
           <div className="grid">
             <Row k="Their number" v={usd(pb.price)} strong />
-            {!inbound && <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />}
+            {!inbound && <Row k="vs. your ask" v={pctSigned(pb.price / Math.max(1, live.ask) - 1)} />}
             <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
             <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
             <PortfolioProceeds book={book} />
@@ -907,8 +907,8 @@ function DecisionBody({
         </div>
         <div className="grid">
           <Row k="Offer" v={usd(offer.price)} strong />
-          {!h.sale!.unsolicited && <Row k="vs. your ask" v={`${((offer.price / h.sale!.ask - 1) * 100).toFixed(1)}%`} />}
-          <Row k="vs. appraisal" v={`${((offer.price / apMid(offerBbl!, value) - 1) * 100).toFixed(1)}%`} />
+          {!h.sale!.unsolicited && <Row k="vs. your ask" v={pctSigned(offer.price / h.sale!.ask - 1)} />}
+          <Row k="vs. appraisal" v={pctSigned(offer.price / apMid(offerBbl!, value) - 1)} />
           <Row k="Loan payoff" v={usd(proceeds.loanPayoff)} />
           {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}

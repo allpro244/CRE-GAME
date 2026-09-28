@@ -7,7 +7,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { BalanceSnapshot, BooksMonth, BooksYear, GameState } from "./types";
-import { logBooks } from "./types";
+import { logBooks, deedCfProbe, deedIrr } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
@@ -15,6 +15,8 @@ import { gpInterestInFund } from "./fund";
 
 /** Re-export so harnesses that load `books` can dual-write without pulling all of types. */
 export { logBooks };
+/** The per-deed equity ledger's test hook and IRR solver — see test/deedledger.mjs. */
+export { deedCfProbe, deedIrr };
 
 export interface BalanceSheetView {
   m: number;

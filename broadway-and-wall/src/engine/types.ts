@@ -2046,6 +2046,46 @@ export interface Exit {
   basis: number;
   gain: number;
   forced?: boolean;
+  /**
+   * THE EQUITY SIDE OF THE DEED, from its own cash ledger (`GameState.deedCf`).
+   * Levered and BEFORE TAX: every dollar the owner put into this building
+   * (equity at closing, leasing, capex, development, debt service, paydowns)
+   * against every dollar it handed back (NOI, refinance draws, net sale
+   * proceeds). Absent when the deed has no complete ledger — a holding bought
+   * before the ledger existed, one acquired through a note or a package, or
+   * one whose financing was pooled with other deeds — because a partial
+   * ledger would print a wrong number rather than no number.
+   */
+  equityIn?: number;
+  equityOut?: number;
+  /** Annualised levered pre-tax IRR, (1+r)^12-1 on monthly flows. null = did not solve. */
+  irr?: number | null;
+}
+
+/**
+ * One deed's equity cash, from the owner's side: positive back to the owner,
+ * negative put in. Pre-tax and levered.
+ */
+export interface DeedLedger {
+  /**
+   * Flat pairs [month, signedCash, month, signedCash, ...], one pair per month
+   * with any flow. Flat rather than [m, v][] because the whole state is
+   * deep-cloned on every action and a numeric array clones far cheaper.
+   */
+  cf: number[];
+  /**
+   * The month an ACQUISITION cheque (`bought`) first landed on this ledger.
+   * A ledger without one never saw the equity that bought the deed — a deed
+   * taken through a note, bought before the ledger existed, inherited — and
+   * would print an equity multiple on a fraction of the story.
+   */
+  from?: number;
+  /**
+   * Part of this deed's cash is not attributable to it alone: financing
+   * pooled with other deeds (the crossed facility), or an assemblage lot
+   * whose own ledger was incomplete. Reports nothing rather than a wrong number.
+   */
+  pooled?: 1;
 }
 
 /**
@@ -2934,6 +2974,13 @@ export interface GameState {
   /** Last month's gross asset value — overhead sizes off this so the tick does not appraise twice. */
   prevGav?: number;
   exits: Exit[];                             // every disposition, forced or chosen
+  /**
+   * PER-DEED EQUITY CASH LEDGER, keyed by bbl. See DeedLedger. Written by
+   * `logBooks` whenever a call site names the deed, so it is the same dollars
+   * as the firm's books and cannot drift from them. Closed into the Exit
+   * record when the deed leaves (`closeDeedLedger`).
+   */
+  deedCf?: Record<string, DeedLedger>;
   milestones: Record<string, number>;        // milestone id -> month achieved
   /** Permanent per-deed events, capped per BBL by engine/history.ts. */
   propertyLog?: Record<string, PropertyEvent[]>;
@@ -2973,7 +3020,11 @@ export interface GameState {
 }
 
 // Write a cash flow into the current year's ledger bucket — and the month's.
-export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number) {
+// Name the deed (`bbl`) when the cheque belongs to one building, and the same
+// dollars also land on that deed's equity ledger (see GameState.deedCf).
+export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl?: string) {
+  if (bbl) tagDeed(s, key, amt, bbl);
+  else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
@@ -2999,6 +3050,195 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();
   }
   me[key] = ((me[key] as number) ?? 0) + amt;
+}
+
+
+/**
+ * THE SIGN OF A BOOKS CATEGORY FROM THE DEED OWNER'S EQUITY. Cash coming back
+ * to the owner is positive; cash the owner puts in is negative. `taxes` is
+ * absent on purpose — the deed ledger is PRE-TAX — and `ga` and `interest` are
+ * firm-level by definition and never belong to one building.
+ */
+const DEED_SIGN: Partial<Record<keyof Omit<BooksYear, "yr">, 1 | -1>> = {
+  noi: 1, sold: 1, borrowed: 1, lpCalled: 1,
+  debtSvc: -1, leasing: -1, capex: -1, dev: -1, bought: -1, lpDistributed: -1,
+};
+
+/**
+ * TEST HOOK. Off in the game. When `on`, every booking also writes to a probe
+ * object carried ON THE STATE (`_deedProbe`), so a clone an action threw away
+ * throws its probe away with it and the totals always describe the state the
+ * test is holding:
+ *   tot       tagged dollars by category (unsigned — what the books got)
+ *   untagged  "category caller" -> dollars booked with no deed named
+ *   closed    signed ledgers folded into exits
+ *   dropped   signed ledgers of deeds that left the book with no exit
+ * `test/deedledger.mjs` switches it on to prove the tagging reconciles to the
+ * books. The caller is found by walking the stack, which is why it is test-only.
+ */
+export const deedCfProbe: { on: boolean } = { on: false };
+
+export interface DeedProbe {
+  tot: Record<string, number>;
+  untagged: Record<string, number>;
+  closed: number;
+  dropped: number;
+}
+
+function probeOf(s: GameState): DeedProbe {
+  const t = s as GameState & { _deedProbe?: DeedProbe };
+  return (t._deedProbe ??= { tot: {}, untagged: {}, closed: 0, dropped: 0 });
+}
+
+function probeUntagged(s: GameState, key: string, amt: number) {
+  // The first frame that is not the booking plumbing names the call site.
+  const frames = (new Error().stack ?? "").split("\n").slice(1);
+  let who = "?";
+  for (const f of frames) {
+    // "at Module.refinance (" / "at Object.foo (" / "at tickLoc (" -> the bare name
+    const m = /at ([\w$.]+) /.exec(f);
+    const name = (m?.[1] ?? "?").split(".").pop()!;
+    if (name === "logBooks" || name === "probeUntagged" || name === "fundAndBook") continue;
+    who = name;
+    break;
+  }
+  const u = probeOf(s).untagged;
+  const k = `${key} ${who}`;
+  u[k] = (u[k] ?? 0) + amt;
+}
+
+const ledgerSum = (l: DeedLedger) => {
+  let v = 0;
+  for (let i = 1; i < l.cf.length; i += 2) v += l.cf[i];
+  return v;
+};
+
+function tagDeed(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl: string) {
+  const sign = DEED_SIGN[key];
+  if (!sign || !amt || !Number.isFinite(amt)) return;
+  if (deedCfProbe.on) { const t = probeOf(s).tot; t[key] = (t[key] ?? 0) + amt; }
+  const l = ((s.deedCf ??= {})[bbl] ??= { cf: [] });
+  if (key === "bought" && amt > 0 && l.from === undefined) l.from = s.month;
+  const cf = l.cf;
+  const n = cf.length;
+  // Cents, so a century-long ledger stays small in the save.
+  if (n >= 2 && cf[n - 2] === s.month) cf[n - 1] = Math.round((cf[n - 1] + sign * amt) * 100) / 100;
+  else cf.push(s.month, Math.round(sign * amt * 100) / 100);
+}
+
+/**
+ * MONTHLY IRR of dated flows, annualised (1+r)^12-1.
+ *
+ * The rate must be UNIQUE to be reported. Flows that change sign more than
+ * once — a deed that paid out, then needed a capital call or a recourse
+ * shortfall, then sold — can have two rates or none, and picking one of them
+ * would be a number with nothing behind it. So the NPV is scanned over the
+ * whole plausible range of monthly rates (-99% to +100%) and a rate is only
+ * solved (by bisection) when the NPV crosses zero exactly once. Otherwise:
+ * null, and the multiple speaks alone.
+ */
+export function deedIrr(cf: number[]): number | null {
+  if (cf.length < 4) return null;
+  let pos = false, neg = false;
+  for (let i = 1; i < cf.length; i += 2) { if (cf[i] > 0) pos = true; if (cf[i] < 0) neg = true; }
+  if (!pos || !neg) return null;
+  const m0 = cf[0];
+  const npv = (r: number) => {
+    const lg = Math.log1p(r);
+    let v = 0;
+    for (let i = 0; i < cf.length; i += 2) v += cf[i + 1] * Math.exp(-(cf[i] - m0) * lg);
+    return v;
+  };
+  // The scan: dense near zero where real buildings live, sparse at the ends.
+  const grid: number[] = [];
+  for (let k = -60; k <= 60; k++) {
+    const x = k / 60;                       // -1..1
+    grid.push(x < 0 ? -0.99 * x * x : 1.0 * x * x);
+  }
+  grid.sort((a, b) => a - b);
+  let bracket: [number, number] | null = null, crossings = 0;
+  let prevR = grid[0], prevF = npv(prevR);
+  if (!Number.isFinite(prevF)) return null;
+  for (let k = 1; k < grid.length; k++) {
+    const r = grid[k];
+    if (r === prevR) continue;
+    const f = npv(r);
+    if (!Number.isFinite(f)) return null;
+    if (f === 0 || (f > 0) !== (prevF > 0)) { crossings++; bracket = [prevR, r]; }
+    prevR = r; prevF = f;
+  }
+  if (crossings !== 1 || !bracket) return null;
+  let [lo, hi] = bracket;
+  let flo = npv(lo);
+  for (let i = 0; i < 200 && hi - lo > 1e-12; i++) {
+    const mid = (lo + hi) / 2;
+    const f = npv(mid);
+    if (f === 0) { lo = hi = mid; break; }
+    if ((f > 0) === (flo > 0)) { lo = mid; flo = f; } else hi = mid;
+  }
+  const ann = Math.pow(1 + (lo + hi) / 2, 12) - 1;
+  return Number.isFinite(ann) ? ann : null;
+}
+
+/**
+ * CLOSE A DEED'S LEDGER INTO ITS EXIT. Call AFTER every cheque of the
+ * disposition has been booked with the deed's bbl. The ledger is deleted
+ * either way, so a deed bought back later starts clean.
+ *
+ * The ledger is trusted only when an acquisition cheque opened it at or
+ * before the deed's `boughtM` and nothing pooled its cash with another deed.
+ * Otherwise the exit carries no equity fields and the UI says nothing.
+ */
+export function closeDeedLedger(s: GameState, e: Exit): void {
+  const l = s.deedCf?.[e.bbl];
+  if (!l) return;
+  delete s.deedCf![e.bbl];
+  if (deedCfProbe.on) probeOf(s).closed += ledgerSum(l);
+  if (l.pooled || l.from === undefined || l.from > e.boughtM) return;
+  let inn = 0, out = 0;
+  for (let i = 1; i < l.cf.length; i += 2) { if (l.cf[i] < 0) inn -= l.cf[i]; else out += l.cf[i]; }
+  if (inn <= 0) return;
+  e.equityIn = Math.round(inn);
+  e.equityOut = Math.round(out);
+  e.irr = deedIrr(l.cf);
+}
+
+/** Mark a deed's ledger as not attributable to the deed alone. */
+export function poolDeedLedger(s: GameState, bbl: string): void {
+  ((s.deedCf ??= {})[bbl] ??= { cf: [] }).pooled = 1;
+}
+
+/**
+ * FOLD ONE DEED'S LEDGER INTO ANOTHER'S — an assemblage makes several deeds
+ * one site, and the site's equity is all of their equity. A lot with no
+ * complete ledger of its own makes the site's ledger incomplete.
+ */
+export function mergeDeedLedger(s: GameState, from: string, into: string, fromBoughtM: number): void {
+  const a = s.deedCf?.[from];
+  const dst = ((s.deedCf ??= {})[into] ??= { cf: [] });
+  if (!a || a.pooled || a.from === undefined || a.from > fromBoughtM) dst.pooled = 1;
+  if (!a) return;
+  if (a.from !== undefined && (dst.from === undefined || a.from < dst.from)) dst.from = a.from;
+  const byM = new Map<number, number>();
+  for (const cf of [dst.cf, a.cf]) for (let i = 0; i < cf.length; i += 2) byM.set(cf[i], (byM.get(cf[i]) ?? 0) + cf[i + 1]);
+  const out: number[] = [];
+  for (const m of [...byM.keys()].sort((x, y) => x - y)) out.push(m, Math.round(byM.get(m)! * 100) / 100);
+  dst.cf = out;
+  delete s.deedCf![from];
+}
+
+/**
+ * A deed that left the book by a route with no exit record (a receiver's sale
+ * of a crossed pool, an assemblage child) takes its ledger with it. Run once a
+ * month; a no-op in the ordinary case.
+ */
+export function sweepDeedLedgers(s: GameState): void {
+  if (!s.deedCf) return;
+  for (const bbl of Object.keys(s.deedCf)) {
+    if (s.holdings[bbl]) continue;
+    if (deedCfProbe.on) probeOf(s).dropped += ledgerSum(s.deedCf[bbl]);
+    delete s.deedCf[bbl];
+  }
 }
 
 /**

@@ -1258,7 +1258,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // once per building per month. Asking it only when the account is
       // actually short keeps the ordinary case free.
       if (want > 0 && (s.cash >= want || fundableNow(s, parcels) >= want)) {
-        partnerFunds(s, h, fundAndBook(s, parcels, want, "capex"));
+        partnerFunds(s, h, fundAndBook(s, parcels, want, "capex", { bbl: h.bbl }));
         h.condIdx += wear * plan.lift;
         h.lastCapM = q;
       } else if (want > 0) {
@@ -1291,7 +1291,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const mergeCost = movedOut.reduce((n, mo) => n + recombinationCost(rec, mo, s.econ.costIdx), 0);
       const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx) + mergeCost;
       s.cash -= turnCost;
-      logBooks(s, "capex", turnCost);
+      logBooks(s, "capex", turnCost, h.bbl);
       partnerFunds(s, h, turnCost);
       // THE DEPOSIT GOES BACK. It was never yours: it arrived as cash at
       // signing and sat as a liability against your net worth for the whole
@@ -1410,11 +1410,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // years — this was the residue left after the balloon cheque was fixed,
       // and it shows up as money APPEARING, which is the tell for a liability
       // being released rather than an asset arriving.
-      if (kept > 0) logBooks(s, "noi", kept);
+      if (kept > 0) logBooks(s, "noi", kept, h.bbl);
       const merge = recombinationCost(rec, t, s.econ.costIdx);
       if (merge > 0) {
         s.cash -= merge;
-        logBooks(s, "capex", merge);
+        logBooks(s, "capex", merge, h.bbl);
         partnerFunds(s, h, merge);
       }
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
@@ -2214,7 +2214,7 @@ export function buildSpecSuites(
     };
   }
   const next: GameState = cloneState(s);
-  fundAndBook(next, parcels, q.cost, "leasing");
+  fundAndBook(next, parcels, q.cost, "leasing", { bbl });
   next.holdings[bbl].specSuites = {
     sf: q.sf, readyM: q.readyM, use,
     blockId: blockIdForSf(rec, next.holdings[bbl], use, q.sf),
@@ -2282,7 +2282,7 @@ export function answerAsk(
     if (fundableNow(next, parcels) < legal) {
       return { s, msg: "", err: `Papering the surrender costs $${(legal / 1000).toFixed(0)}K — you're short.` };
     }
-    fundAndBook(next, parcels, legal, "leasing");
+    fundAndBook(next, parcels, legal, "leasing", { bbl: a.bbl });
     const use = (t.use ?? (rec.class as BuiltClass)) as BuiltClass;
     noteTenantSfChange(next, use, freed);
     const oldSf = t.sf;
@@ -2325,7 +2325,7 @@ export function answerAsk(
   if (fundableNow(next, parcels) < legal) {
     return { s, msg: "", err: `Papering the amendment costs $${(legal / 1000).toFixed(0)}K — you're short.` };
   }
-  fundAndBook(next, parcels, legal, "leasing");
+  fundAndBook(next, parcels, legal, "leasing", { bbl: a.bbl });
   const oldRent = t.rentPsf;
   t.rentPsf = a.askPsf;
   t.endM = t.endM + a.addM;
@@ -2379,7 +2379,7 @@ export function blendExtend(
   if (fundableNow(s, parcels) < q.cost) return { s, err: "You cannot cover the commission on that." };
   const next: GameState = cloneState(s);
   const t = next.holdings[bbl].tenants[idx];
-  fundAndBook(next, parcels, q.cost, "leasing");
+  fundAndBook(next, parcels, q.cost, "leasing", { bbl });
   t.rentPsf = q.newRent;
   t.endM = q.newEndM;
   next.news.unshift({
@@ -3445,14 +3445,14 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   }
   const cost = loiSigningCost(l, feeRate);
   s.cash -= cost;
-  logBooks(s, "leasing", cost);
+  logBooks(s, "leasing", cost, h.bbl);
   partnerFunds(s, h, cost);
   // Demising walls are construction. $9/sf of the smaller piece × costIdx,
   // booked as capex so conserve can see it.
   const demise = Math.max(0, Math.round(l.demiseCost ?? 0));
   if (demise > 0) {
     s.cash -= demise;
-    logBooks(s, "capex", demise);
+    logBooks(s, "capex", demise, h.bbl);
     partnerFunds(s, h, demise);
   }
   if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
@@ -4020,7 +4020,7 @@ export function buyOutTenants(
   }
   const next: GameState = cloneState(s);
   const h = next.holdings[bbl]!;
-  fundAndBook(next, parcels, total, "leasing");
+  fundAndBook(next, parcels, total, "leasing", { bbl });
   // The deposits go back with them; they were never yours — a liability
   // released, not an expense, which is why it books nowhere and shows up in
   // conserve as Δdeposits instead.

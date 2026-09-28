@@ -4,8 +4,8 @@
 // Historical name `advanceQuarter` is kept as an alias: the tick has always
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel } from "./types";
+import type { Exit, GameState, Listing } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -610,8 +610,8 @@ function tickMonth(
     // arrives as ground rent and every CF / DSCR figure has to see it.
     const noiQ = ownedMonthlyNoi(s, parcels, h);
     const debtCash = tickLoan(s, parcels, rec, h, noiQ); // may refi, sweep, or force a sale
-    logBooks(s, "noi", noiQ);
-    logBooks(s, "debtSvc", debtCash);
+    logBooks(s, "noi", noiQ, h.bbl);
+    logBooks(s, "debtSvc", debtCash, h.bbl);
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
@@ -957,8 +957,8 @@ function tickMonth(
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.
         s.cash += toBorrower;
-        if (toBorrower >= 0) logBooks(s, "sold", toBorrower);
-        else logBooks(s, "debtSvc", -toBorrower);
+        if (toBorrower >= 0) logBooks(s, "sold", toBorrower, pick.bbl);
+        else logBooks(s, "debtSvc", -toBorrower, pick.bbl);
         // A forced disposition is a taxable one. The bill on a gain you never
         // saw in cash is the thing that finishes a distressed sponsor, and it
         // is the reason handing back the keys beats being levied.
@@ -968,7 +968,7 @@ function tickMonth(
           logBooks(s, "taxes", tax);
         }
         if (shortfall > 0 && (pick.loan || pick.mezz)) {
-          if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
+          if (pick.loan?.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, pick.bbl); }
           else {
             // Senior eats first; Cordage takes what's left of the hole.
             const seniorHole = Math.min(shortfall, stack.seniorBal + stack.seniorPenalty);
@@ -987,7 +987,11 @@ function tickMonth(
           if (s.facility.balance <= 0) delete s.facility;
         }
         recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
-        s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
+        {
+          const ex: Exit = { bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true };
+          closeDeedLedger(s, ex);
+          s.exits.push(ex);
+        }
         if (s.groundLeases?.[pick.bbl]) transferGroundLeaseOffBook(s, pick.bbl);
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
         s.lastTradeM = s.lastTradeM ?? {};
@@ -1125,6 +1129,9 @@ function tickMonth(
   for (const bbl of Object.keys(s.workouts ?? {})) {
     if (!s.holdings[bbl]?.loan && !(s.holdings[bbl]?.mezz?.balance)) delete s.workouts![bbl];
   }
+  // ...and its equity ledger. An exit closes its own; this catches the routes
+  // that take a deed with no exit record (a receiver selling a crossed pool).
+  sweepDeedLedgers(s);
 
   // PHYSICAL AND ECONOMIC AGREE AT THE MONTH BOUNDARY.
   //
@@ -1738,6 +1745,9 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
       f.cash += paid;
       paidTotal += paid;
       delete h.fundOwned;
+      // The vehicle's cash and the sponsor's now share one deed: its equity
+      // ledger no longer measures one owner's money, so it reports nothing.
+      poolDeedLedger(s, h.bbl);
       boughtIn++;
       continue;
     }
@@ -1746,6 +1756,7 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     f.distributed += price;
     inKind++;
     s.exits.push({ bbl: h.bbl, address: rec?.address ?? h.bbl, boughtM: h.boughtM, soldM: s.month, price: Math.round(value), basis: h.costBasis, gain: Math.round(value - h.costBasis), forced: true });
+    closeDeedLedger(s, s.exits[s.exits.length - 1]);
     if (s.groundLeases?.[h.bbl]) transferGroundLeaseOffBook(s, h.bbl);
     s.cash -= depositsOn(h);   // the deposits go with the deed
     s.lastTradeM = s.lastTradeM ?? {};

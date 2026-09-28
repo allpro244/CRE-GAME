@@ -60,7 +60,9 @@ export function partnerFunds(s: GameState, h: Holding, paid: number): void {
   const call = Math.round(paid * share);
   if (call <= 0) return;
   s.cash += call;
-  logBooks(s, "lpCalled", call);
+  // On the deed's ledger too: the sponsor's equity in this building is its
+  // cash net of the partner's — see GameState.deedCf.
+  logBooks(s, "lpCalled", call, h.bbl);
 }
 
 /**
@@ -72,8 +74,8 @@ export function splitMonthCf(s: GameState, h: Holding, cf: number): number {
   const share = jvShare(h);
   if (!(share > 0) || cf === 0) return cf;
   const part = Math.round(cf * share);
-  if (part > 0) logBooks(s, "lpDistributed", part);
-  else if (part < 0) logBooks(s, "lpCalled", -part);
+  if (part > 0) logBooks(s, "lpDistributed", part, h.bbl);
+  else if (part < 0) logBooks(s, "lpCalled", -part, h.bbl);
   return cf - part;
 }
 
@@ -126,7 +128,7 @@ export function sellStake(
   const next = cloneState(s);
   const h = next.holdings[bbl]!;
   next.cash += q.price;
-  logBooks(next, "sold", q.price);
+  logBooks(next, "sold", q.price, bbl);
   if (q.tax > 0) {
     next.cash -= q.tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + q.tax;
@@ -161,7 +163,7 @@ export function buyOutPartner(
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };
-  logBooks(next, "bought", cost);
+  logBooks(next, "bought", cost, bbl);
   const h = next.holdings[bbl]!;
   const partner = h.jv!.partner;
   h.costBasis += cost;

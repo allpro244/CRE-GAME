@@ -95,9 +95,15 @@ function buildRows(game: GameState, parcels: ParcelTable): Row[] {
       amountNeg: e.gain < 0,
       bbl: e.bbl,
       tone: e.forced ? "danger" : "plain",
-      title: e.forced
+      title: (e.forced
         ? "Taken, not sold — a foreclosure, a receiver's sale, or keys handed back."
-        : `Bought ${monthLabel(e.boughtM)} · ${usd(e.basis)} basis → ${usd(e.price)} price`,
+        : `Bought ${monthLabel(e.boughtM)} · ${usd(e.basis)} basis → ${usd(e.price)} price`)
+        // The equity story, when the deed carried a complete cash ledger.
+        + (e.equityIn
+          ? ` · equity ${usd(e.equityIn)} in, ${usd(e.equityOut ?? 0)} back, `
+            + `${((e.equityOut ?? 0) / e.equityIn).toFixed(2)}x`
+            + (e.irr != null ? `, IRR ${(e.irr * 100).toFixed(1)}% levered before tax` : "")
+          : ""),
       cat: "sold",
     });
   });

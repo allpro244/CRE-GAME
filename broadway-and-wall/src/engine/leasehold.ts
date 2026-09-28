@@ -107,8 +107,9 @@ export function sellLandLeaseBack(
   const stack = stackPayoff(h, next.month);
   // Booked like a sale: the proceeds net of the loan they retire under `sold`,
   // the break fee as the debt cost it is, the gain's tax under `taxes`.
-  logBooks(next, "sold", q.price - q.costs - stack.balance);
-  if (stack.penalty > 0) logBooks(next, "debtSvc", stack.penalty);
+  // The deed stays on the book, so these land on its own equity ledger too.
+  logBooks(next, "sold", q.price - q.costs - stack.balance, bbl);
+  if (stack.penalty > 0) logBooks(next, "debtSvc", stack.penalty, bbl);
   next.cash += q.price - q.costs - stack.balance - stack.penalty;
   if (q.tax > 0) {
     next.cash -= q.tax;
@@ -151,7 +152,7 @@ export function buyLandBack(
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };
-  logBooks(next, "bought", cost);
+  logBooks(next, "bought", cost, bbl);
   const h = next.holdings[bbl]!;
   const holder = h.groundRentOut!.holder;
   h.costBasis += cost;

@@ -27,8 +27,8 @@
 // can read or ignore — passing costs nothing but the bargain, and nothing
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { AuctionLot, AuctionResultRow, GameState, Holding } from "./types";
-import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
+import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding } from "./types";
+import { logBooks, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { rng, rrange } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
@@ -446,9 +446,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const shortfall = Math.max(0, bal - net);
       // The law hands the surplus to the owners — a JV partner takes its share.
       const surplus = ownersShareOfProceeds(h, Math.max(0, net - bal));
-      if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }
+      if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus, lot.bbl); }
       if (shortfall > 0) {
-        if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
+        if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, lot.bbl); }
         else {
           const seniorHole = Math.min(shortfall, seniorBal + (w?.accrued ?? 0));
           const mezzHole = shortfall - seniorHole;
@@ -458,10 +458,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           }
         }
       }
-      s.exits.push({
-        bbl: lot.bbl, address: lot.address, boughtM: h.boughtM, soldM: s.month,
-        price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true,
-      });
+      {
+        const ex: Exit = {
+          bbl: lot.bbl, address: lot.address, boughtM: h.boughtM, soldM: s.month,
+          price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true,
+        };
+        closeDeedLedger(s, ex);
+        s.exits.push(ex);
+      }
       recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       s.cash -= depositsOn(h);
@@ -494,7 +498,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     const r = s.rivals?.find((x) => x.id === lot.borrowerId);
     if (youWin) {
       const paid = Math.max(yours, Math.round(lot.upset));
-      s.cash -= paid; logBooks(s, "bought", paid);
+      // The whole price books at the hammer: the registration deposit was
+      // rolled back in above, so this cheque is the deed's entire equity.
+      s.cash -= paid; logBooks(s, "bought", paid, lot.bbl);
       const occ = Math.max(0.15, Math.min(0.95, r?.occ ?? 0.4));
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);

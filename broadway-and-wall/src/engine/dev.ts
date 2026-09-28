@@ -1285,7 +1285,7 @@ export function startAdaptiveReuse(
   }
   const next = clone(s);
   const nh = next.holdings[bbl];
-  fundAndBook(next, parcels, dayOne, "dev");
+  fundAndBook(next, parcels, dayOne, "dev", { bbl });
   const oldMix = mixOf(rec);
   for (const use of BUILT_CLASSES) {
     const oldSf = useRentableSf(rec, use);
@@ -1762,7 +1762,7 @@ export function startDevelopment(
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
-  fundAndBook(next, parcels, dayOne, "dev");
+  fundAndBook(next, parcels, dayOne, "dev", { bbl });
   if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
   noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
   // YOUR CRANE IS IN THE SAME SKY AS EVERYBODY ELSE'S. A city job enters
@@ -1933,7 +1933,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
     };
   }
   const next = clone(s);
-  fundAndBook(next, parcels, cost, "capex");
+  fundAndBook(next, parcels, cost, "capex", { bbl });
   next.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const nh = next.holdings[bbl];
   nh.tenants = [];
@@ -2045,7 +2045,7 @@ function tickRepudiation(s: GameState, d: Development, rec: { address: string },
   const points = Math.round(gross * q.points);
   // Points are cash at close, exactly as they were the first time.
   s.cash -= points;
-  logBooks(s, "dev", points);
+  logBooks(s, "dev", points, d.bbl);
   // The takeout itself never touches the borrower's account: the new desk pays
   // the receiver directly and books the same number as its own first draw.
   d.commitment = Math.round(gross);
@@ -2157,7 +2157,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // runs to plan this is now zero; it fires for overruns, which is what a
       // capital call is actually for.
       s.cash -= fromEquity + unfunded;
-      logBooks(s, "dev", fromEquity + unfunded);
+      logBooks(s, "dev", fromEquity + unfunded, d.bbl);
       if (unfunded > 0) {
         d.equitySpent += unfunded;
         d.lastCapitalCall = unfunded;
@@ -2194,7 +2194,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // the number that actually ended developers.
       const interest = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
       s.cash -= interest;
-      logBooks(s, "debtSvc", interest);
+      logBooks(s, "debtSvc", interest, d.bbl);
     } else if (d.loanBalance > 0) {
       const interest = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
       if (d.reserveUsed + interest > d.interestReserve) {
@@ -2503,7 +2503,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   const saved = Math.max(0, d.contingency - d.contingencyUsed);
   if (saved > 0) {
     s.cash += saved;
-    logBooks(s, "dev", -saved);
+    logBooks(s, "dev", -saved, d.bbl);
   }
 
   // THE LEASE-UP RESERVE IS RELEASED. This is the money that fills the
@@ -2531,7 +2531,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     d.drawn += advance;
     d.loanBalance += advance;
     s.cash += advance;
-    logBooks(s, "dev", -advance);
+    logBooks(s, "dev", -advance, d.bbl);
     s.news.unshift({
       q: s.month, kind: advance < lease ? "warn" : "info",
       text: advance < lease
@@ -2688,7 +2688,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
     };
   }
   const next = clone(s);
-  fundAndBook(next, parcels, cost, "capex");
+  fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.program = { id: programId, untilM: next.month + p.months };
   next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} ($${(cost / 1e6).toFixed(2)}M).` });

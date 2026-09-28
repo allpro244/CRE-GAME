@@ -568,9 +568,9 @@ export function acceptPrivateBorrowQuote(
   rival.cash -= netToYou;
   next.cash += netDraw - fee;
   coverCashShortfall(next, parcels);
-  if (fee > 0) logBooks(next, "debtSvc", fee);
-  if (netDraw > 0) logBooks(next, "borrowed", netDraw);
-  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
+  if (fee > 0) logBooks(next, "debtSvc", fee, quote.bbl);
+  if (netDraw > 0) logBooks(next, "borrowed", netDraw, quote.bbl);
+  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw, quote.bbl);
 
   holding.loan = buildPrivateLoan(next, quote);
   holding.lastPrivateBridgeM = next.month;

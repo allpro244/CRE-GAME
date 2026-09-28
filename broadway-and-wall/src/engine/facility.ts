@@ -60,7 +60,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
-import { logBooks, monthLabel, cloneState} from "./types";
+import { logBooks, monthLabel, cloneState, poolDeedLedger } from "./types";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
 import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, statedLtv, stackPayoff } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
@@ -406,6 +406,9 @@ export function openFacility(
     drawn: draw,
   };
   next.cash += draw - cost;
+  // A crossed pool's debt is not any one building's debt, so from here on no
+  // deed in it can report its own equity multiple — see DeedLedger.pooled.
+  for (const b of pool) poolDeedLedger(next, b);
   // Fees and prepayment penalties are an expense. Principal that replaces
   // old mortgages is a wash on cash once those mortgages are paid off at the
   // table; any surplus that lands in the operating account is a cash-out

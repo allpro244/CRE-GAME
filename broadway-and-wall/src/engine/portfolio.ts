@@ -24,8 +24,8 @@
 // falling market the second one is right, and it stops being right about six
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
-import type { GameState, Holding } from "./types";
-import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
+import type { Exit, GameState, Holding } from "./types";
+import { logBooks, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -609,15 +609,13 @@ export function acceptPortfolioBid(
   // children). The old path booked kick/break as debtSvc while also netting
   // them out of sold — conserve saw money appear — and skipped release + child
   // deposits entirely.
-  let cashToYou = 0, soldGross = 0, feeExp = 0, taxTotal = 0, gainTotal = 0;
+  let cashToYou = 0, taxTotal = 0, gainTotal = 0;
   book.legs.forEach((leg) => {
     const bbl = leg.bbl;
     const h = next.holdings[bbl];
     const rec = resolveRec(parcels, next, bbl)!;
     const price = leg.price;
     cashToYou += leg.toSeller;
-    soldGross += leg.toSeller + leg.kick + leg.breakFee;
-    feeExp += leg.kick + leg.breakFee;
     if (next.facility?.bbls.includes(bbl)) {
       next.facility.balance = Math.max(0, next.facility.balance - leg.release);
       next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
@@ -625,10 +623,19 @@ export function acceptPortfolioBid(
     }
     gainTotal += leg.gain;
     taxTotal += leg.tax;
-    next.exits.push({
-      bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
-      price, basis: h.costBasis, gain: leg.gain,
-    });
+    // Each deed's leg books on its own ledger — the portfolio closes as one
+    // price, but it settles as nine separate sales, and the firm's books see
+    // exactly the same total as one line did.
+    logBooks(next, "sold", leg.toSeller + leg.kick + leg.breakFee, bbl);
+    if (leg.kick + leg.breakFee > 0) logBooks(next, "debtSvc", leg.kick + leg.breakFee, bbl);
+    {
+      const ex: Exit = {
+        bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
+        price, basis: h.costBasis, gain: leg.gain,
+      };
+      closeDeedLedger(next, ex);
+      next.exits.push(ex);
+    }
     recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
     next.cash -= depositsOn(h);
@@ -652,7 +659,8 @@ export function acceptPortfolioBid(
   // so it comes out of `sold` for the same reason the releases do.
   if (book.facilityDue > 0 && next.facility) {
     cashToYou -= book.facilityDue;
-    soldGross -= book.facilityDue;
+    // Pool principal, not any one deed's: it stays off the deed ledgers.
+    logBooks(next, "sold", -book.facilityDue);
     next.news.unshift({
       q: next.month, kind: "warn",
       text: `${money(book.facilityDue)} of the portfolio proceeds repaid the ${next.facility.lender} facility in full — `
@@ -663,8 +671,8 @@ export function acceptPortfolioBid(
   }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
-  logBooks(next, "sold", soldGross);
-  if (feeExp > 0) logBooks(next, "debtSvc", feeExp);
+  // `sold` and the fees were booked leg by leg above, and the pool payoff
+  // against `sold` with them.
   if (exchange && taxTotal > 0) {
     next.exchange = {
       deferredTax: taxTotal, rolledGain: gainTotal, minPrice: bid.price,

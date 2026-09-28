@@ -849,7 +849,7 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const next = clone(s);
   const lender = h.loan.holder ?? productById(h.loan.product).lender;
   const discount = q.bal - q.px;
-  fundAndBook(next, parcels, q.px, "debtSvc");
+  fundAndBook(next, parcels, q.px, "debtSvc", { bbl });
   next.holdings[bbl]!.loan = null;
   delete next.workouts![bbl];
   chargeLenderLoss(next, lender, discount);

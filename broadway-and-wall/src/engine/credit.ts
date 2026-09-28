@@ -234,10 +234,12 @@ export function fundableNow(
 export function fundAndBook(
   s: GameState, parcels: ParcelTable, amount: number,
   cat: keyof Omit<BooksYear, "yr">,
-  opts?: { allowLoc?: boolean },
+  opts?: { allowLoc?: boolean; bbl?: string },
 ): number {
   const paid = fundCashNeed(s, parcels, amount, opts);
-  if (paid > 0) logBooks(s, cat, paid);
+  // `bbl` names the deed the cheque is for, so it lands on that deed's equity
+  // ledger as well as the firm's books — see GameState.deedCf.
+  if (paid > 0) logBooks(s, cat, paid, opts?.bbl);
   return paid;
 }
 

@@ -189,7 +189,17 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
 
 export function executePurchase(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
+  // ONE DEED OF AN ENTITY DEAL (takeprivate.ts). The deed, the roll, the loan
+  // and the ledger are exactly an ordinary closing's; what is not is the
+  // paperwork around it. No broker introduced it, no newspaper prints a
+  // per-building price for it (the entity desk writes one line for the whole
+  // firm), an allocation out of a company purchase is not an arm's-length comp
+  // for the tape, and a partnership interest is not like-kind property, so it
+  // cannot complete a 1031. The vehicle's cash is not a source for it either —
+  // buying a competitor is the sponsor's balance sheet, not the LPs' deal.
+  opts?: { entity?: boolean },
 ): { s: GameState; err?: string } {
+  const entity = !!opts?.entity;
   if (s.cityGroundLeases?.[bbl]) {
     return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
   }
@@ -206,7 +216,7 @@ export function executePurchase(
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
   // Vehicle path: fundPay + live investment period draws `fund.cash`.
   // Otherwise GP cash — the balance-sheet default.
-  const fromFund = !!(s.fundPay && s.fund && !s.fund.settled
+  const fromFund = !entity && !!(s.fundPay && s.fund && !s.fund.settled
     && s.month <= s.fund.investEndM);
   // CLOSING EQUITY COMES OFF THE BALANCE SHEET, NOT OFF THE CURRENT ACCOUNT.
   // This is the refusal the owner walked into: agree a price, come to the
@@ -254,7 +264,7 @@ export function executePurchase(
   const pointsFee = bq.pointsFee ?? 0;
   logBooks(next, "bought", bq.equity + (bq.deposits ?? 0) - pointsFee, bbl, fromFund);
   // the fee found its way to a named shop, and the shop will remember
-  creditBrokerFee(next, bbl);
+  if (!entity) creditBrokerFee(next, bbl);
   if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl, fromFund);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
@@ -319,7 +329,7 @@ export function executePurchase(
     }
   }
   // a live 1031: this purchase completes the exchange if it's big enough
-  if (next.exchange && price >= next.exchange.minPrice * 0.8) {
+  if (!entity && next.exchange && price >= next.exchange.minPrice * 0.8) {
     holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
     next.news.unshift({
       q: next.month, kind: "deal",
@@ -402,7 +412,7 @@ export function executePurchase(
   const halfBuilt = next.listings.find((l) => l.bbl === bbl)?.halfBuilt;
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   delete next.approaches[bbl];
-  next.news.unshift({
+  if (!entity) next.news.unshift({
     q: next.month, kind: "deal",
     // REPORTED, NOT NARRATED. This said "Deed recorded" in the passive voice of
     // a clerk. The same trade by a rival reads like a newspaper — name, an
@@ -414,8 +424,10 @@ export function executePurchase(
       + `${offMarket ? ", off-market" : ""}.`,
   });
   if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
-  recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
-    s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition, offMarket);
+  if (!entity) {
+    recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
+      s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition, offMarket);
+  }
   return { s: next };
 }
 

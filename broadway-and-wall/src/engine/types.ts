@@ -2231,6 +2231,12 @@ export interface Rival {
   taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
+  /**
+   * The month the player bought the whole firm (takeprivate.ts). Set together
+   * with `failedM`, because from the street's point of view the firm has
+   * stopped existing — but it did not fail, and the table says so.
+   */
+  takenPrivateM?: number;
   /** One-shot epilogue news for a failed firm — the street remembering. */
   epilogueM?: number;
   // A CASH SHORTFALL IS NOT A FAILURE WHILE THERE IS ROOM ON THE BOOK.
@@ -2246,6 +2252,28 @@ export interface Rival {
     firmName: string;
     personName: string;
   };
+}
+
+/** One firm the player bought whole — the closing statement, kept. */
+export interface TakePrivateRecord {
+  m: number;
+  firmId: string;
+  name: string;
+  style: RivalStyle;
+  deeds: number;
+  /** Deeds as they convey, at the market's mark. */
+  gross: number;
+  debtRetired: number;
+  cashAcquired: number;
+  nav: number;
+  /** Paid for the equity, over property equity (cash at par). */
+  premium: number;
+  equityPrice: number;
+  realEstatePrice: number;
+  closingCosts: number;
+  transferTax: number;
+  newLoans: number;
+  situation: string;
 }
 
 /**
@@ -2524,6 +2552,17 @@ export interface GameState {
    * a raise flips this on.
    */
   fundPay?: boolean;
+  /**
+   * THE ENTITY DESK — buying a competitor whole. See takeprivate.ts.
+   * `cool` is the month each board will take a call again after refusing one;
+   * `offer` is a board that has come to you; `done` is the record of closings.
+   */
+  takePrivate?: {
+    cool?: Record<string, number>;
+    lastApproachM?: number;
+    offer?: { firmId: string; name: string; m: number; expiresM: number; ask: number; why: string };
+    done?: TakePrivateRecord[];
+  };
   /**
    * Month the last vehicle failed LPs — the second death. Cleared on
    * succession with the rest of the phone book.

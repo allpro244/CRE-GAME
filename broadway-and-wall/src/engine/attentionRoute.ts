@@ -73,6 +73,8 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     return { page: "notes" };
   }
   if (head === "street-book") return { page: "market" };
+  // The entity desk lives in the rival's drawer on the Street table (Research).
+  if (head === "take-private") return { page: "research" };
   if (head === "auction") return { page: "market", auction: true };
   if (head === "line-over" || head === "cash-runway") return { page: "debt" };
   if (head === "cash") return { page: "books" };

@@ -72,6 +72,8 @@ export const MODULES = [
   "attentionRoute",
   // deliveryNotice — which openings interrupt the player (top 1% by area).
   "deliveryNotice",
+  // takeprivate — buying a rival firm whole (test/take-private.mjs).
+  "takeprivate",
 ];
 
 export function writeEntry(path) {

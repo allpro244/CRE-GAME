@@ -36,6 +36,7 @@ import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
+import { tickTakePrivateApproach } from "./takeprivate";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
@@ -575,6 +576,7 @@ function tickMonth(
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
+  tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale
 
   // the 1031 clock: redeploy in time or the deferred tax comes due
@@ -1677,6 +1679,18 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         ? `${who} has ${p.bbls.length} buildings in receivership at $${(p.ask / 1e6).toFixed(1)}M (${disc}% back) — Marketplace`
         : `${p.bbls.length}-building package at $${(p.ask / 1e6).toFixed(1)}M on Marketplace`,
     });
+  }
+  // A BOARD THAT HAS COME TO YOU. Good for four months, then the banker rings
+  // somebody else; the key carries the month it arrived so it stops once.
+  {
+    const o = s.takePrivate?.offer;
+    if (o && s.month <= o.expiresM) {
+      out.push({
+        key: `take-private:${o.firmId}:${o.m}`,
+        label: `${o.name}'s board wants to sell you the company — about $${(o.ask / 1e6).toFixed(1)}M, answer by ${monthLabel(o.expiresM)}`,
+        lastM: o.expiresM,
+      });
+    }
   }
   // The July docket is live for one month — miss it and the lots are gone.
   if (s.auction && s.month < s.auction.m) {

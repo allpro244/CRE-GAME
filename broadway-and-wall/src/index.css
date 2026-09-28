@@ -1872,6 +1872,14 @@ html, body, #root { overflow-x: hidden; }
   .nav-cluster::before { display: none; }
   .nav-cluster-map .lens-btn { font-size: 0; width: 28px; height: 27px; padding: 0; }
   .nav-cluster-map .lens-btn::first-letter { font-size: 13px; }
+  /* The summary row wrapped "Book" onto a line of its own at 1024 — the
+     readouts' reserved widths (which stop a number jiggling as it ticks) cost
+     more than the row has. Below 1180 the reservations go and the gaps close;
+     the mono digits keep the jiggle to a character. */
+  .topbar-summary .topbar-vital,
+  .topbar-summary .topbar-stats { gap: 9px; }
+  .topbar-summary .topbar-stats { padding-left: 9px; }
+  .topbar-summary .tstat { min-width: 0 !important; }
 }
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }

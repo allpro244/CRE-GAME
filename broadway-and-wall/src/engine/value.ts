@@ -5,7 +5,8 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
 import { serviceSpec, START_YEAR } from "./types";
 export { START_YEAR };
-import type { BuiltClass } from "./types";
+import type { BuiltClass, UseMix } from "./types";
+import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
 import { gpInterestInFund } from "./fund";
@@ -489,6 +490,11 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
 }
 
 export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): ResidualScheme | null {
+  return residualSchemeIn(rec, econ, rentMult, null);
+}
+
+/** `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers. */
+function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualScheme | null {
   if (!rec.lotArea) return null;
   // The envelope you can actually reach, not the one the zoning text allows.
   // This is what siteQualityMult was reaching for and could not express as a
@@ -518,7 +524,10 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
 
   let best: ResidualScheme | null = null;
   const all: { use: BuiltClass; psf: number }[] = [];
-  const uw = underwritingEcon(econ, rentMult);
+  const uw = ctx ? ctxUnderwriting(ctx, econ, rentMult) : underwritingEcon(econ, rentMult);
+  const quote = ctx
+    ? (mix: UseMix) => ctxQuote(ctx, econ, mix)
+    : (mix: UseMix, preReserve: number) => marketConstructionQuote(econ, mix, preReserve);
   for (const use of RESIDUAL_USES) {
     if (!zonePermits(rec.zoneDist, use, rec.demandScore, econ)) continue;
     const choices = residualFloorChoices(use, far);
@@ -552,7 +561,7 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
       const pf = developmentProForma(rec, econ, {
         use, floors, coverage, contract: "gmp", spec: 0.5,
         envelopeFar: far, asIfVacant: true, rentMult, uw,
-        quote: (mix, preReserve) => marketConstructionQuote(econ, mix, preReserve),
+        quote,
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
@@ -712,11 +721,12 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  if (!landMarketMatches(econ)) LAND_MEMO.clear();
+  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
+  if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
   const hit = LAND_MEMO.get(rec.bbl);
   const heat = econ.districtHeat?.[rec.district ?? "—"];
   if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
-  const psf = readLand(rec, econ, false).psf;
+  const psf = readLand(rec, econ, false, LAND_CTX).psf;
   LAND_MEMO.set(rec.bbl, {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
     zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
@@ -768,6 +778,39 @@ function landMarketMatches(econ: Econ): boolean {
   return same;
 }
 
+/**
+ * WHAT EVERY LOT'S RESIDUAL SHARES WHILE THE MARKET STANDS STILL. Valid only
+ * while `landMarketMatches` holds and for this one econ object — landPsfNow
+ * drops it the moment either changes. `underwritingEcon` reads only fields in
+ * that list (rentIdx, effRentIdx, rentExp, capRate, capExp) and prototypes the
+ * econ it was handed, so it is the same object's worth of numbers each time.
+ * The volume desk's quote reads the market (creditIdx, phase, indexRate,
+ * constructionAppetite, cityVac, structTight — all in the list) and the
+ * programme's four shares, and nothing else: with no hold limit passed, the
+ * cost it is handed never enters it.
+ */
+type LandCtx = {
+  econ: Econ;
+  uw: Map<number, Econ>;
+  quotes: { o: number; r: number; m: number; i: number; q: ConstructionQuote }[];
+};
+let LAND_CTX: LandCtx | null = null;
+function ctxUnderwriting(ctx: LandCtx, econ: Econ, rentMult: number): Econ {
+  let uw = ctx.uw.get(rentMult);
+  if (!uw) { uw = underwritingEcon(econ, rentMult); ctx.uw.set(rentMult, uw); }
+  return uw;
+}
+function ctxQuote(ctx: LandCtx, econ: Econ, mix: UseMix): ConstructionQuote {
+  const o = mix.office ?? 0, r = mix.retail ?? 0, m = mix.multifamily ?? 0, i = mix.industrial ?? 0;
+  for (const c of ctx.quotes) {
+    if (Object.is(c.o, o) && Object.is(c.r, r) && Object.is(c.m, m) && Object.is(c.i, i)) return c.q;
+  }
+  const q = marketConstructionQuote(econ, mix, 0);
+  if (ctx.quotes.length >= 256) ctx.quotes.length = 0;
+  ctx.quotes.push({ o, r, m, i, q });
+  return q;
+}
+
 function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | undefined): boolean {
   return Object.is(m.lotArea, rec.lotArea) && Object.is(m.farMaxComm, rec.farMaxComm)
     && Object.is(m.farMaxRes, rec.farMaxRes) && Object.is(m.zoneDist, rec.zoneDist)
@@ -777,7 +820,7 @@ function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | unde
 }
 
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
-  return readLand(rec, econ, true);
+  return readLand(rec, econ, true, null);
 }
 
 /**
@@ -786,7 +829,7 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
  * on a lot that pencils the second residual is not run and `holder` comes back
  * as 0. The price is the same number either way.
  */
-function readLand(rec: ParcelRecord, econ: Econ, whole: boolean): LandRead {
+function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | null): LandRead {
   // LOCATION PRICES DIRT AT THE LEVEL, NOT ONLY IN THE CYCLE.
   //
   // Demand used to enter only as a multiplier on `cycleDev`, so a block that
@@ -814,10 +857,10 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean): LandRead {
   // the holder wins and the number is small but real; and the crossover between
   // them is exactly where redevelopment pressure starts, which is the most
   // important line in a city and the game could not draw it before.
-  const scheme = residualScheme(rec, econ);
+  const scheme = residualSchemeIn(rec, econ, 1, ctx);
   const builder = scheme?.psf ?? 0;
   const holder = whole || !(builder > 0)
-    ? (residualScheme(rec, econ, PEAK_RENT_MULT)?.psf ?? 0) * WAIT_DISCOUNT
+    ? (residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx)?.psf ?? 0) * WAIT_DISCOUNT
     : 0;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
@@ -1163,9 +1206,16 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   //                infill carries a premium for the last mile and not much
   //                more. This is also why industrial land is cheap, and the
   //                land residual now depends on getting it right.
+  // One-entry memo per class: a pure function of (class, demand, pivot), and
+  // the pro forma asks it of the same lot and class many times running.
+  const hit = LOC_MULT_MEMO[cls];
+  if (hit && Object.is(hit.d, rec.demandScore) && Object.is(hit.p, pivot)) return hit.v;
   const shape = LOC_SPREAD[cls] ?? LOC_SPREAD.office;
-  return Math.min(shape.max, Math.max(shape.min, Math.pow(demandIdx(rec.demandScore) / pivot, shape.exp)));
+  const v = Math.min(shape.max, Math.max(shape.min, Math.pow(demandIdx(rec.demandScore) / pivot, shape.exp)));
+  LOC_MULT_MEMO[cls] = { d: rec.demandScore, p: pivot, v };
+  return v;
 }
+const LOC_MULT_MEMO: Record<string, { d: number; p: number; v: number }> = Object.create(null);
 
 /**
  * The prime-to-fringe rent spread each class actually runs, as an exponent on

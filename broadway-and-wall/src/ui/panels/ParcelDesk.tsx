@@ -206,6 +206,13 @@ function ParcelPanelInner({
         // city both the builder's and the holder's are zero — a rebuild does
         // not pencil at today's rents or the next peak's, and the land reads
         // on its location alone. Say that, rather than "$0/sf against $0/sf".
+        // WHERE THE BUTTON GOES. The property page shows no Build tab on a
+        // standing apartment building with no deed of yours next door (there
+        // is nothing to convert it to), so "Open the Build desk" landed on
+        // Overview and did nothing. The way to a rebuild there is the
+        // Operations tab: empty it and clear the site.
+        const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
+          || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
         const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
           + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner}'s bid`);
         const hint = dirt
@@ -218,7 +225,7 @@ function ParcelPanelInner({
               + (read.builder > 0
                 ? ` — cleared, the dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder, and the building on it is worth $${standingPsf.toFixed(0)}/sf of lot`
                 : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
-              + `; ${dirtLine}. Wait for rents, or plan a bigger building on Build.`);
+              + `; ${dirtLine}. ${buildReachable ? "Wait for rents, or plan a bigger building on Build." : "Wait for rents, or empty and clear it on Operations to build again."}`);
         return (
           <div className="deal" style={{ marginTop: 0, marginBottom: 10 }}>
             <div className="deal-head">{head}</div>
@@ -226,9 +233,9 @@ function ParcelPanelInner({
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => useStore.getState().openProperty(selectedBBL, "build")}
+              onClick={() => useStore.getState().openProperty(selectedBBL, buildReachable ? "build" : "ops")}
             >
-              Open the Build desk →
+              {buildReachable ? "Open the Build desk →" : "Clear the site on Operations →"}
             </button>
           </div>
         );

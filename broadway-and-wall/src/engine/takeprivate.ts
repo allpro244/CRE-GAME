@@ -35,7 +35,7 @@
 // city whether this file exists or not.
 import type { ParcelTable } from "../data/types";
 import type { GameState, Rival, RivalStyle, TakePrivateRecord } from "./types";
-import { cloneState } from "./types";
+import { cloneState, monthLabel } from "./types";
 import { resolveRec, holdingNOIYr, heldOccupancy } from "./value";
 import { conveyedDeed, depositsOn } from "./leasing";
 import { assetGrade, livingRivals, marketAppetite, markRival, STYLE_OF, tie } from "./rivals";
@@ -48,6 +48,9 @@ import { newsChance } from "./market";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
+
+/** "Pell Street Holdings'" — not "Holdings's". */
+export const poss = (name: string) => (name.endsWith("s") ? `${name}'` : `${name}'s`);
 
 /** Deterministic 0..1 — the board's number must not perturb the world's RNG. */
 function hash01(str: string): number {
@@ -134,7 +137,7 @@ function situationOf(s: GameState, r: Rival, ltv: number): { sit: TakePrivateSit
     return { sit: "strained", why: `${r.name} is at ${(ltv * 100).toFixed(0)}% leverage against a ${(st.maxLtv * 100).toFixed(0)}% ceiling — one bad year from being a forced seller, and the board knows it.` };
   }
   if (r.occ !== undefined && r.mktOcc !== undefined && r.occ < r.mktOcc - 0.08) {
-    return { sit: "strained", why: `${r.name}'s book is ${(r.occ * 100).toFixed(0)}% let against a market running ${(r.mktOcc * 100).toFixed(0)}%. They are losing the leasing war.` };
+    return { sit: "strained", why: `${poss(r.name)} book is ${(r.occ * 100).toFixed(0)}% let against a market running ${(r.mktOcc * 100).toFixed(0)}%. They are losing the leasing war.` };
   }
   const p = rivalPrincipalOf(s, r.id);
   if (p && ageYears(p, s.month) >= SUCCESSION_AGE) {
@@ -255,11 +258,11 @@ export function takePrivateQuote(s: GameState, parcels: ParcelTable, firmId: str
     return no(`${r.name} has held for two generations and is not for sale. Families sell at succession or in trouble, and they are in neither.`);
   }
   if (propertyEquity <= 0) {
-    return no(`${r.name}'s buildings no longer cover their paper. The equity is worth nothing and the board cannot sell what the lenders own — that conversation is with the receiver.`);
+    return no(`${poss(r.name)} buildings no longer cover their paper. The equity is worth nothing and the board cannot sell what the lenders own — that conversation is with the receiver.`);
   }
   const coolUntil = s.takePrivate?.cool?.[r.id];
   if (coolUntil !== undefined && s.month < coolUntil) {
-    return no(`${r.name}'s board turned you down. They will not take the call again before month ${coolUntil}.`);
+    return no(`${poss(r.name)} board turned you down. They will not take the call again before ${monthLabel(coolUntil)}.`);
   }
   const block = blockers(s, parcels, r);
   if (block) return no(block);
@@ -326,41 +329,159 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   return best;
 }
 
-/**
- * WHAT A GIVEN PRICE COSTS YOU, deed by deed. `price` is for the equity; the
- * real estate is then `price − cash + debt` (the cash comes across, the paper
- * is paid off), allocated across the deeds by value.
- */
-export function takePrivateTerms(
-  s: GameState, parcels: ParcelTable, q: TakePrivateQuote, price: number, financing: "cash" | "debt",
-): TakePrivateTerms {
-  const px = Math.max(0, Math.round(price));
-  const realEstatePrice = Math.max(0, px - q.cash + q.debt);
-  const set = new Set(q.deeds.map((d) => d.bbl));
-  const w = prepared(s, set);
-  const legs: TakePrivateLeg[] = [];
-  let loans = 0, need = 0, tt = 0, closing = 0, allocated = 0;
-  q.deeds.forEach((d, i) => {
-    // Last deed takes the rounding so the legs sum to the price exactly.
+/** The price split across the deeds by value — the purchase price allocation. */
+function allocate(q: TakePrivateQuote, realEstatePrice: number): number[] {
+  let allocated = 0;
+  return q.deeds.map((d, i) => {
+    // The last deed takes the rounding so the legs sum to the price exactly.
     const share = i === q.deeds.length - 1
       ? realEstatePrice - allocated
       : Math.round(realEstatePrice * (d.value / Math.max(1, q.gross)));
     allocated += share;
-    const legTt = Math.round(d.value * TRANSFER_TAX);
-    const pick = financing === "cash"
-      ? { id: "cash", principal: 0, equity: buyQuote(w, parcels, d.bbl, share, "cash", 1).equity }
-      : bestProduct(w, parcels, d.bbl, share, d.land);
-    legs.push({ bbl: d.bbl, address: d.address, price: share, transferTax: legTt, product: pick.id, principal: pick.principal, equity: pick.equity });
-    loans += pick.principal; need += pick.equity + legTt; tt += legTt;
-    closing += Math.round(share * 0.02);
+    return share;
   });
+}
+
+/**
+ * THE CLOSING ITSELF, deed by deed, on the state it is handed.
+ *
+ * The desk picks each deed's lender AS THE CLOSING REACHES IT, because the
+ * desks remember: a lender that has just written three of your loans has less
+ * single-name room for the fourth, and a recourse desk sizes against the
+ * guarantor you are after the last deed, not before it. Measured on the first
+ * cut of this file, which priced every leg against the opening state: the
+ * quote promised $2.25M of mortgages on an eight-building book and the closing
+ * wrote $1.98M, because the land desk would not write a second land loan to
+ * the same name. The quote and the closing are therefore the same function.
+ */
+function runClose(
+  s: GameState, parcels: ParcelTable, q: TakePrivateQuote, price: number, financing: "cash" | "debt",
+): { s?: GameState; err?: string; terms: TakePrivateTerms } {
+  const px = Math.max(0, Math.round(price));
+  const realEstatePrice = Math.max(0, px - q.cash + q.debt);
+  const shares = allocate(q, realEstatePrice);
+  const set = new Set(q.deeds.map((d) => d.bbl));
   const purse = fundableNow(s, parcels);
-  return {
+  // THE FIRM'S OWN MARKETING IS WITHDRAWN at signing: a building of theirs on
+  // the tape, a package with a receiver's name on it, a file on your desk —
+  // the company is selling everything to you, so none of those sales happen,
+  // and each deed conveys the roll the quote read (see `prepared`).
+  let cur = prepared(cloneState(s), set);
+  cur.portfolios = (cur.portfolios ?? []).filter((p) => p.player || !p.bbls.some((b) => set.has(b)));
+  const cash0 = cur.cash, loc0 = cur.loc?.balance ?? 0;
+  const legs: TakePrivateLeg[] = [];
+  let loans = 0, tt = 0, closing = 0, err: string | undefined;
+  let estNeed = 0;
+  q.deeds.forEach((d, i) => {
+    const share = shares[i];
+    const legTt = Math.round(d.value * TRANSFER_TAX);
+    tt += legTt;
+    closing += Math.round(share * 0.02);
+    if (err) {
+      // Past a failure, the rest is priced on the state where it stopped so the
+      // desk can still say how far short the whole closing is.
+      const e = buyQuote(cur, parcels, d.bbl, share, "cash", 1).equity;
+      estNeed += e + legTt;
+      legs.push({ bbl: d.bbl, address: d.address, price: share, transferTax: legTt, product: "cash", principal: 0, equity: e });
+      return;
+    }
+    const pick = financing === "cash"
+      ? { id: "cash", principal: 0, equity: buyQuote(cur, parcels, d.bbl, share, "cash", 1).equity }
+      : bestProduct(cur, parcels, d.bbl, share, d.land);
+    const r = executePurchase(cur, parcels, d.bbl, share, pick.id, true, 1, { entity: true });
+    if (r.err) {
+      err = `${d.address} could not convey (${r.err}). Nothing has closed.`;
+      estNeed += pick.equity + legTt;
+      legs.push({ bbl: d.bbl, address: d.address, price: share, transferTax: legTt, product: pick.id, principal: 0, equity: pick.equity });
+      return;
+    }
+    cur = r.s;
+    if (legTt > 0) {
+      const paid = fundAndBook(cur, parcels, legTt, "bought", { bbl: d.bbl });
+      if (paid < legTt) err = `The transfer tax on ${d.address} could not be funded. Nothing has closed.`;
+      const h = cur.holdings[d.bbl];
+      if (h) h.costBasis += legTt;   // stamps are capitalised, like the rest of the closing
+    }
+    const principal = cur.holdings[d.bbl]?.loan?.principal ?? 0;
+    loans += principal;
+    legs.push({ bbl: d.bbl, address: d.address, price: share, transferTax: legTt, product: cur.holdings[d.bbl]?.loan?.product ?? "cash", principal, equity: pick.equity });
+  });
+  // WHAT THE CLOSING DREW: cash out plus line drawn, before the tenants'
+  // deposits that came across with the rolls — the number `fundableNow` has to
+  // cover, since a deed's cheque is due before its deposits arrive.
+  const drawn = (cash0 - cur.cash) + ((cur.loc?.balance ?? 0) - loc0) + q.deposits;
+  const need = err ? Math.max(estNeed + drawn, purse + 1) : drawn;
+  const terms: TakePrivateTerms = {
     price: px,
     premium: q.propertyEquity > 0 ? (px - q.cash) / q.propertyEquity : 0,
     realEstatePrice, closingCosts: closing, transferTax: tt, loans, deposits: q.deposits,
-    need, purse, short: Math.max(0, need - purse), legs,
+    need, purse, short: err ? Math.max(1, need - purse) : 0, legs,
   };
+  if (err) return { err, terms };
+
+  // THE FIRM IS RETIRED FROM THE STREET. Its deeds are yours, its mortgages
+  // were paid off out of the price (see DUE ON SALE below: the real estate
+  // price is the equity price plus the paper), and its cash came across netted
+  // in the same arithmetic. What is left on its own sheet is zero by
+  // construction; the per-deed settlement in `executePurchase` paid the firm as
+  // if it were selling buildings, and that money is the money you just paid, so
+  // the shell is cleared rather than left holding it.
+  //
+  // DUE ON SALE. Commercial mortgages carry a due-on-sale clause, and the
+  // standard loan documents define a change of control of the borrower as a
+  // transfer. Assumption needs the lender's consent, a fee (typically 1%) and
+  // a fresh underwrite. The street carries one aggregate debt number per firm
+  // with no per-loan terms to assume, so the honest default is the one most
+  // entity deals take: the paper is repaid at par at the closing and the
+  // buyer's own lenders write new loans on each deed. No prepayment premium is
+  // charged because the street's debt is priced at the index plus a spread
+  // (floating), which prepays at par.
+  const r = (cur.rivals ?? []).find((x) => x.id === q.firmId)!;
+  r.bbls = [];
+  r.debt = 0;
+  r.cash = 0;
+  r.uncalled = 0;
+  r.aum = 0;
+  r.stressMs = 0;
+  r.heldSince = {};
+  delete r.extendedTo;
+  delete r.deliveredM;
+  r.failedM = cur.month;
+  r.takenPrivateM = cur.month;
+  // A firm that was bought is not a firm that failed: no courthouse-steps
+  // epilogue years later. -1 never matches a month, and setting it means the
+  // epilogue's scheduling draw is never taken either.
+  r.epilogueM = -1;
+  const rec: TakePrivateRecord = {
+    m: cur.month, firmId: q.firmId, name: q.name, style: q.style, deeds: q.deeds.length,
+    gross: q.gross, debtRetired: q.debt, cashAcquired: q.cash, nav: q.nav, premium: terms.premium,
+    equityPrice: px, realEstatePrice, closingCosts: closing,
+    transferTax: tt, newLoans: loans, situation: q.situation,
+  };
+  cur.takePrivate ??= {};
+  (cur.takePrivate.done ??= []).push(rec);
+  if (cur.takePrivate.offer?.firmId === q.firmId) delete cur.takePrivate.offer;
+  const vsNav = q.propertyEquity > 0 ? (terms.premium - 1) * 100 : 0;
+  cur.news.unshift({
+    q: cur.month, kind: "deal",
+    text: `${q.name} is yours. ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)} came across in one closing: `
+      + `${money(px)} to the owners — ${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} the equity in the buildings, cash at par — `
+      + `${money(q.debt)} of their paper repaid at the table${loans > 0 ? `, ${money(loans)} of new mortgages written deed by deed` : ""}, `
+      + `and ${money(closing + tt)} to the advisers, the title company and the stamps. The name comes off the street.`,
+  });
+  return { s: cur, terms };
+}
+
+/**
+ * WHAT A GIVEN PRICE COSTS YOU, deed by deed. `price` is for the equity; the
+ * real estate is then `price − cash + debt` (the cash comes across, the paper
+ * is paid off), allocated across the deeds by value. Computed by running the
+ * closing on a copy — see `runClose` for why nothing cheaper is honest.
+ */
+export function takePrivateTerms(
+  s: GameState, parcels: ParcelTable, q: TakePrivateQuote, price: number, financing: "cash" | "debt",
+): TakePrivateTerms {
+  return runClose(s, parcels, q, price, financing).terms;
 }
 
 /**
@@ -390,9 +511,15 @@ export function offerTakePrivate(
   const offered = Math.round(price);
   if (!(offered > 0)) return { s, err: "Name a price." };
   const struck = Math.min(offered, q.ask);
-  const t = takePrivateTerms(s, parcels, q, struck, financing);
-  if (t.short > 0) {
-    return { s, err: `The closing needs ${money(t.need)} of cash and line and you can raise ${money(t.purse)} — ${money(t.short)} short.` };
+  const done = runClose(s, parcels, q, struck, financing);
+  const t = done.terms;
+  if (done.err || !done.s) {
+    return {
+      s,
+      err: t.short > 0
+        ? `The closing needs ${money(t.need)} of cash and line and you can raise ${money(t.purse)} — ${money(t.short)} short.`
+        : done.err,
+    };
   }
   const floor = boardFloor(s, q);
   if (struck < floor) {
@@ -405,89 +532,14 @@ export function offerTakePrivate(
     next.news.unshift({
       q: next.month, kind: "info",
       text: insult
-        ? `${q.name}'s board has thrown out your ${money(struck)} for the company. They asked ${money(q.ask)}, and they will remember the number.`
-        : `${q.name}'s board has turned down ${money(struck)} for the company. The ask was ${money(q.ask)}; they will not take the call again for a year.`,
+        ? `${poss(q.name)} board has thrown out your ${money(struck)} for the company. They asked ${money(q.ask)}, and they will remember the number.`
+        : `${poss(q.name)} board has turned down ${money(struck)} for the company. The ask was ${money(q.ask)}; they will not take the call again for a year.`,
     });
     return { s: next, refused: true, msg: insult ? "Thrown out — and they will remember it." : "Refused. The board will not talk again for a year." };
   }
-  return closeTakePrivate(s, parcels, q, t);
+  return { s: done.s, msg: `${q.name} taken private — ${q.deeds.length} buildings, ${money(struck)} for the equity.` };
 }
 
-function closeTakePrivate(
-  s: GameState, parcels: ParcelTable, q: TakePrivateQuote, t: TakePrivateTerms,
-): { s: GameState; err?: string; msg?: string } {
-  const set = new Set(q.deeds.map((d) => d.bbl));
-  // THE FIRM'S OWN MARKETING IS WITHDRAWN at signing: a building of theirs on
-  // the tape, a package with a receiver's name on it, a file on your desk —
-  // the company is selling everything to you, so none of those sales happen.
-  // Withdrawn on the working copy, so the deeds convey on the paper the quote
-  // read (see `prepared`).
-  let cur = prepared(cloneState(s), set);
-  cur.portfolios = (cur.portfolios ?? []).filter((p) => p.player || !p.bbls.some((b) => set.has(b)));
-  for (const leg of t.legs) {
-    const r = executePurchase(cur, parcels, leg.bbl, leg.price, leg.product, true, 1, { entity: true });
-    if (r.err) return { s, err: `${leg.address} could not convey (${r.err}). Nothing has closed.` };
-    cur = r.s;
-    if (leg.transferTax > 0) {
-      const paid = fundAndBook(cur, parcels, leg.transferTax, "bought", { bbl: leg.bbl });
-      if (paid < leg.transferTax) return { s, err: `The transfer tax on ${leg.address} could not be funded. Nothing has closed.` };
-      const h = cur.holdings[leg.bbl];
-      if (h) h.costBasis += leg.transferTax;   // stamps are capitalised, like the rest of the closing
-    }
-  }
-  // THE FIRM IS RETIRED FROM THE STREET. Its deeds are yours, its mortgages
-  // were paid off out of the price (DUE ON SALE — see the file header and
-  // `takePrivateTerms`: the real estate price is the equity price plus the
-  // paper), and its cash came across netted in the same arithmetic. What is
-  // left on its own sheet is zero by construction; the per-deed settlement in
-  // `executePurchase` paid the firm as if it were selling buildings, and that
-  // money is the money you just paid, so the shell is cleared rather than left
-  // holding it.
-  //
-  // DUE ON SALE. Commercial mortgages carry a due-on-sale clause, and the
-  // standard loan documents define a change of control of the borrower as a
-  // transfer. Assumption needs the lender's consent, a fee (typically 1%) and
-  // a fresh underwrite. The street carries one aggregate debt number per firm
-  // with no per-loan terms to assume, so the honest default is the one most
-  // entity deals take: the paper is repaid at par at the closing and the
-  // buyer's own lenders write new loans on each deed. No prepayment premium is
-  // charged because the street's debt is priced at the index plus a spread
-  // (floating), which prepays at par.
-  const r = (cur.rivals ?? []).find((x) => x.id === q.firmId)!;
-  r.bbls = [];
-  r.debt = 0;
-  r.cash = 0;
-  r.uncalled = 0;
-  r.aum = 0;
-  r.stressMs = 0;
-  r.heldSince = {};
-  delete r.extendedTo;
-  delete r.deliveredM;
-  r.failedM = cur.month;
-  r.takenPrivateM = cur.month;
-  // A firm that was bought is not a firm that failed: no courthouse-steps
-  // epilogue years later. -1 never matches a month, and setting it means the
-  // epilogue's scheduling draw is never taken either.
-  r.epilogueM = -1;
-  const rec: TakePrivateRecord = {
-    m: cur.month, firmId: q.firmId, name: q.name, style: q.style, deeds: q.deeds.length,
-    gross: q.gross, debtRetired: q.debt, cashAcquired: q.cash, nav: q.nav, premium: t.premium,
-    equityPrice: t.price, realEstatePrice: t.realEstatePrice, closingCosts: t.closingCosts,
-    transferTax: t.transferTax, newLoans: t.loans, situation: q.situation,
-  };
-  cur.takePrivate ??= {};
-  (cur.takePrivate.done ??= []).push(rec);
-  if (cur.takePrivate.offer?.firmId === q.firmId) delete cur.takePrivate.offer;
-  const vsNav = q.propertyEquity > 0 ? (t.premium - 1) * 100 : 0;
-  cur.news.unshift({
-    q: cur.month, kind: "deal",
-    text: `${q.name} is yours. ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)} came across in one closing: `
-      + `${money(t.price)} to the owners — ${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} the equity in the buildings, cash at par — `
-      + `${money(q.debt)} of their paper repaid at the table${t.loans > 0 ? `, ${money(t.loans)} of new mortgages written deed by deed` : ""}, `
-      + `and ${money(t.closingCosts + t.transferTax)} to the advisers, the title company and the stamps. The name comes off the street.`,
-  });
-  return { s: cur, msg: `${q.name} taken private — ${q.deeds.length} buildings, ${money(t.price)} for the equity.` };
-}
 
 /**
  * THE BOARD RINGS YOU. A firm that is struggling or running a succession
@@ -508,6 +560,10 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   if (!newsChance(s, "take-private-approach", 0.5)) return;
   const purse = fundableNow(s, parcels);
   if (purse <= 0) return;
+  // A SELL-SIDE BANKER'S LIST IS BUYERS WITH A RECORD. A board does not open
+  // its books to a name that has never owned a building; two deeds of your own
+  // is the least that puts you on the list.
+  if (Object.keys(s.holdings).length < 2) return;
   let best: { r: Rival; q: TakePrivateQuote } | null = null;
   for (const r of livingRivals(s)) {
     if (r.bbls.length < 2 || BASE_PREMIUM[r.style] === null) continue;
@@ -533,7 +589,7 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   s.takePrivate.offer = { firmId: r.id, name: r.name, m: s.month, expiresM: s.month + 4, ask: q.ask, why: q.situationWhy };
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `${r.name}'s board has retained a banker, and the banker has called you. ${q.situationWhy} `
+    text: `${poss(r.name)} board has retained a banker, and the banker has called you. ${q.situationWhy} `
       + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Street desk has the book.`,
   });
 }

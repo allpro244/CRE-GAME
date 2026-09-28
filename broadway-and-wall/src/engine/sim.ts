@@ -36,7 +36,7 @@ import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
-import { tickTakePrivateApproach } from "./takeprivate";
+import { tickTakePrivateApproach, poss } from "./takeprivate";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
@@ -1687,7 +1687,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (o && s.month <= o.expiresM) {
       out.push({
         key: `take-private:${o.firmId}:${o.m}`,
-        label: `${o.name}'s board wants to sell you the company — about $${(o.ask / 1e6).toFixed(1)}M, answer by ${monthLabel(o.expiresM)}`,
+        label: `${poss(o.name)} board wants to sell you the company — about $${(o.ask / 1e6).toFixed(1)}M, answer by ${monthLabel(o.expiresM)}`,
         lastM: o.expiresM,
       });
     }

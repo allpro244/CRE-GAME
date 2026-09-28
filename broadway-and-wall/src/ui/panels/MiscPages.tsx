@@ -15,7 +15,7 @@ export function PrimerPage() {
   const noi = 1_000_000;
   const value = Math.round(noi / (cap / 100));
   return (
-    <div>
+    <div className="primer-prose">
       <div className="hint">
         If you have never bought a building, this page is the whole vocabulary. Everything else in the game
         assumes it. It takes about two minutes and the numbers in it are today's, from your own market.

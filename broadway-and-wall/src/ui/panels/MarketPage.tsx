@@ -253,14 +253,6 @@ export function MarketPage() {
       {Object.keys(game.holdings).length === 0 && <StarterBlock go={go} />}
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
-        <button
-          className={"btn" + (lens === "listings" ? " btn-on" : "")}
-          style={{ alignSelf: "center" }}
-          title="Highlight every listing on the map — red lots, pins on roofs"
-          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
-        >
-          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
-        </button>
         <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
         <Big label="Books for sale" value={String(streetBooks.length)} bad={streetBooks.length > 0}
           title="Receiver packages and fund wind-downs — one cheque for the whole book" />
@@ -268,9 +260,19 @@ export function MarketPage() {
         <Big label="Money in the room" value={
           marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
             : marketAppetite(game) > 1.15 ? "everywhere" : "normal"} />
+      </div>
+      {/* Controls sat inside the stat strip as two tiles of a different height
+          and face; they are actions, so they get a row of their own. */}
+      <div className="btn-row" style={{ marginTop: 4, marginBottom: 4 }}>
         <button
-          className="btn"
-          style={{ alignSelf: "center" }}
+          className={"btn btn-sm" + (lens === "listings" ? " btn-on" : "")}
+          title="Highlight every listing on the map — red lots, pins on roofs"
+          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
+        >
+          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
+        </button>
+        <button
+          className="btn btn-sm"
           title="Broker calls and the July auction card are firm settings — change them under Settings."
           onClick={() => useStore.getState().setPage("settings")}
         >

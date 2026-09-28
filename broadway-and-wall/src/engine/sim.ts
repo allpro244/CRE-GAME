@@ -13,6 +13,7 @@ import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
+import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
@@ -1053,6 +1054,8 @@ function tickMonth(
   // marks at year-end so Books can reopen last December without a second model.
   maybeStampYearEndBalance(s, parcels);
   checkMilestones(s, nw);
+  // ...and where that left you on the street, kept for the year's review.
+  stampYearMark(s, parcels, nw);
 
   // THE QUIET DESK — how long since anybody was at the door.
   //

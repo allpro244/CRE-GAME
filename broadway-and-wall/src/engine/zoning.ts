@@ -29,6 +29,7 @@ import { rng, rrange, NATURAL_VAC, RENT_BASE, classIsShort } from "./market";
 import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
+import { districtLabelOf } from "./mix";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -213,9 +214,9 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   s.news.unshift({
     q: s.month, kind: isUp ? "event" : "warn",
     text: isUp
-      ? `${dist} has been upzoned — the envelope goes to ${(next * 100).toFixed(0)}% of what it was at the start. `
+      ? `${districtLabelOf(parcels, dist)} has been upzoned — the envelope goes to ${(next * 100).toFixed(0)}% of what it was at the start. `
         + `Every lot there is worth more this morning than it was last night${yours ? `, and you own ${yours} of them` : ""}.`
-      : `${dist} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
+      : `${districtLabelOf(parcels, dist)} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
         + `The neighbourhood fought it and won${yours ? `, and you are holding ${yours} lots there` : ""}.`,
   });
 
@@ -248,7 +249,7 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (mapped) {
       s.news.unshift({
         q: s.month, kind: "event",
-        text: `${dist} has been mapped for manufacturing — ${mapped} vacant corridor `
+        text: `${districtLabelOf(parcels, dist)} has been mapped for manufacturing — ${mapped} vacant corridor `
           + `lot${mapped === 1 ? "" : "s"} ${mapped === 1 ? "is" : "are"} M now, because there is nowhere to put a shed.`,
       });
     }

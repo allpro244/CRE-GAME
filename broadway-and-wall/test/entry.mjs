@@ -39,6 +39,8 @@ export const MODULES = [
   "leasehold",
   // jv is a minority partner in one deed; fund.ts carries the waterfall.
   "jv",
+  // standing is the reading of the score: the street ranking, the year marks, the reviews.
+  "standing",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the

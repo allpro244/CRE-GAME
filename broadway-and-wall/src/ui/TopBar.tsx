@@ -6,6 +6,8 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { availability } from "@/engine/space";
 import { netWorth } from "@/engine/value";
+import { streetStanding, ordinal } from "@/engine/standing";
+import { openResearchOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal, portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
@@ -184,6 +186,7 @@ export default function TopBar() {
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
         dRateBp: null as number | null,
+        standing: null as ReturnType<typeof streetStanding> | null,
       };
     }
     const parcels = useStore.getState().parcels;
@@ -279,7 +282,12 @@ export default function TopBar() {
     const rateThen = hist.length > 12 ? hist[hist.length - 13]?.indexRate : undefined;
     const dRateBp = rateThen === undefined ? null
       : Math.round((deferredGame.econ.indexRate - rateThen) * 100);
+    // YOUR PLACE ON THE STREET, always in sight. It was two tabs deep on
+    // Research, which is to say the one number that says who is winning was
+    // the one the player never saw. Same ranking the league table prints.
+    const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? streetStanding(deferredGame, parcels, nw) : null;
     return {
+      standing,
       nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
@@ -289,7 +297,7 @@ export default function TopBar() {
   }, [deferredGame, deferredPrev]);
   const {
     nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp,
+    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp, standing,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -545,6 +553,18 @@ export default function TopBar() {
                 1680px — and the whole stats box hides under 760px — so the
                 occupancy readout the player asked for never appeared on a
                 normal screen. Vitals stay up. */}
+            {standing && (
+              <Stat
+                label="Street"
+                value={`${ordinal(standing.rank)} / ${standing.of}`}
+                keep
+                w={70}
+                title={standing.above
+                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
+                  : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
+                onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}
+              />
+            )}
             <span className="vital-pair">
               <Stat
                 label="CF / yr"

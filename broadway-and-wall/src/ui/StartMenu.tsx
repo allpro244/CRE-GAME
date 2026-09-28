@@ -119,6 +119,13 @@ export default function StartMenu() {
       <div className="start-head">
         <div className="start-title">Broadway &amp; Wall</div>
         <div className="start-sub">A hundred years of somebody else&rsquo;s city, and whatever you can hold of it.</div>
+        {/* THE AMBITION, SAID ONCE. There is no win screen in a hundred-year
+            town, and nothing on this page said what the game was for. The
+            street is the scale: every firm on it started where you start. */}
+        <div className="start-sub start-ambition">
+          You open near the bottom of the street. Every firm above you started with a bankroll and a hundred years —
+          climb past them, and build a book the town will remember. Your place is in the top bar, and every January the year is told back to you.
+        </div>
       </div>
 
       <div className="start-body">

@@ -2265,3 +2265,22 @@ html, body, #root { overflow-x: hidden; }
    wrapping ragged against the right edge. The wide desks keep two columns. */
 .panel .grid { grid-template-columns: auto minmax(0, 1fr); }
 .panel .grid .v-long { grid-column: 1 / -1; text-align: left; margin-top: -3px; padding-left: 10px; border-left: 2px solid rgba(146, 110, 40, 0.18); }
+
+/* THE YEAR, TOLD BACK — see YearReview.tsx. Rides the delivery stamp. */
+.year-review-card { max-width: min(520px, calc(100vw - 32px)); text-align: left; }
+.year-review-card .delivery-kicker { text-align: center; }
+.year-review-verdict { font-size: 21px; text-align: center; margin-bottom: 12px; }
+.year-review-grid { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12.5px; color: var(--ink); }
+.year-review-grid > span:nth-child(odd) { color: var(--ink-dim); }
+.year-review-grid .pos { color: #3a7d46; }
+.year-review-grid .neg, .year-review-grid span.neg { color: #a8402e; }
+.year-review-miles { margin-top: 10px; font-size: 13px; color: var(--gold); font-family: var(--serif); }
+.year-review-next { margin-top: 8px; font-size: 12.5px; color: var(--ink-dim); }
+.start-ambition { margin-top: 6px; font-style: normal; opacity: 0.85; max-width: 760px; }
+.milestone-flash {
+  position: absolute; top: calc(var(--topbar-h, 91px) + 14px); left: 50%; transform: translateX(-50%);
+  z-index: 34; padding: 10px 22px 12px; border: 2px solid rgba(160, 120, 40, 0.55); border-radius: var(--r-md);
+  background: linear-gradient(160deg, #fdf8e8, #f3e4bd); box-shadow: var(--lift-3, 0 12px 40px rgba(40, 30, 10, 0.28));
+  text-align: center; cursor: pointer; animation: rail-arrive 0.32s var(--ease);
+}
+.milestone-flash-line { font-family: var(--serif); font-size: 20px; color: var(--ink); }

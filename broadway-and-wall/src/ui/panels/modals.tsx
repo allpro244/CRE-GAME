@@ -1,8 +1,9 @@
 import { Fragment, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
-import { monthLabel, CREDIT_LABEL } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
+import { ordinal } from "@/engine/standing";
 import { saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
@@ -971,6 +972,11 @@ export function GameOverPage() {
   const finalNw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const miles = Object.keys(game.milestones ?? {}).length;
+  // WHERE THE FIRM FINISHED, AND ITS BEST YEAR. The card listed the firm's
+  // own numbers and nothing to read them against; the street is the scale.
+  const marks = (game.yearMarks ?? []).filter((m) => m.y >= 0);
+  const best = marks.length ? marks.reduce((a, m) => (m.rank < a.rank ? m : a), marks[0]) : null;
+  const years = Math.floor(game.month / 12);
   return (
     <div className="page-backdrop">
       <div className="page gameover-page">
@@ -989,6 +995,8 @@ export function GameOverPage() {
           <Big label="Exits" value={String(game.exits.length)} />
           <Big label="Taxes paid" value={usd(game.taxesPaid ?? 0)} />
           <Big label="Milestones" value={`${miles} / ${MILESTONES.length}`} />
+          {best && <Big label="Best place on the street" value={`${ordinal(best.rank)} of ${best.of} · ${START_YEAR + best.y}`} />}
+          <Big label="Years in town" value={String(years)} />
         </div>
         {/* THE RUN IS OVER IS NOT THE SAME AS THE CITY IS OVER.
             The only way out of this screen was "Start a new run", which rerolls

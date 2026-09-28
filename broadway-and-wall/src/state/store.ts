@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel } from "@/engine/types";
@@ -154,6 +154,14 @@ interface AppState {
     bbl: string; address: string; use: string; sf: number; value?: number; rival?: boolean;
   } | null;
   dismissDeliveryCeremony: () => void;
+  /** The year whose review card is up, if any (UI only). See standing.ts. */
+  yearReviewY: number | null;
+  dismissYearReview: () => void;
+  /** A principal's career just closed — the index into game.careers (UI only). */
+  careerCardI: number | null;
+  dismissCareerCard: () => void;
+  /** Milestones reached in the last advance, for the banner (UI only). */
+  milestoneFlash: string[] | null;
   setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
   /**
@@ -393,6 +401,21 @@ interface AppState {
   refreshSlots: () => Promise<void>;
 }
 
+/**
+ * A DECEMBER CLOSED DURING THIS ADVANCE — put the year's review up. A skip
+ * across several years shows the last one; the earlier ones are on Books.
+ */
+function queueYearReview(prev: GameState, next: GameState, set: (partial: Partial<AppState>) => void) {
+  const before = prev.yearMarks?.at(-1)?.y ?? -1;
+  const last = next.yearMarks?.at(-1);
+  if (last && last.y >= 0 && last.y > before) set({ yearReviewY: last.y });
+  const n0 = prev.careers?.length ?? 0, n1 = next.careers?.length ?? 0;
+  if (n1 > n0) set({ careerCardI: n1 - 1 });
+  // A milestone is a moment, not a line on the tape.
+  const got = MILESTONES.filter((m) => next.milestones?.[m.id] !== undefined && prev.milestones?.[m.id] === undefined).map((m) => m.label);
+  if (got.length) set({ milestoneFlash: got });
+}
+
 function queueDeliveryCeremony(
   prev: GameState,
   next: GameState,
@@ -622,6 +645,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
   dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
+  yearReviewY: null,
+  dismissYearReview: () => set({ yearReviewY: null }),
+  careerCardI: null,
+  dismissCareerCard: () => set({ careerCardI: null }),
+  milestoneFlash: null,
   setLens: (lens) => set({ lens }),
   setPage: (page, jump) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
@@ -675,6 +703,7 @@ export const useStore = create<AppState>((set, get) => ({
     const next = advanceMonth(game, parcels, bbls, adjacency);
     set({ game: next, prevForDigest: game });
     queueDeliveryCeremony(game, next, parcels, set);
+    queueYearReview(game, next, set);
     // Month-close feedback: the single-month Advance used to be silent, so
     // Yr/Skip felt like the only clock that answered. Stamp the new month,
     // cash movement, and the first thing waiting — short enough to read once.
@@ -704,6 +733,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
         set({ game: r.s, prevForDigest: game });
         queueDeliveryCeremony(game, r.s, parcels, set);
+        queueYearReview(game, r.s, set);
         toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
         void persist(r.s);
       } finally {
@@ -726,6 +756,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
         set({ game: r.s, prevForDigest: game });
         queueDeliveryCeremony(game, r.s, parcels, set);
+        queueYearReview(game, r.s, set);
         toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along.");
         void persist(r.s);
       } finally {
@@ -2029,7 +2060,7 @@ export const useStore = create<AppState>((set, get) => ({
       // written-down city has no preset to read, so the economy sizes rivals
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
-      set({ game: g, phase: "playing", building: null, resume: null });
+      set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null, careerCardI: null });
       persist(g);
     } catch (e) {
       set({ phase: "menu", building: null });
@@ -2080,7 +2111,7 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      set({ game: saved, phase: "playing", building: null });
+      set({ game: saved, phase: "playing", building: null, yearReviewY: null, careerCardI: null });
     } catch (e) {
       set({ phase: "menu", building: null });
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);

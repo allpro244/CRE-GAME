@@ -96,7 +96,7 @@ export default function YearReview() {
           return (
             <div className="year-review-next">
               {pl.count > 0 && pl.best
-                ? <>On the tape now: <strong>{pl.count} of {pl.of}</strong> buildings earn more than the cheapest money costs — the widest is <a className="lnk" onClick={() => { useStore.getState().openProperty(pl.best!.bbl, "deal"); dismiss(); }}>{addr(pl.best.bbl)}</a> at {pl.best.cap.toFixed(1)}% against {pl.best.coupon.toFixed(1)}%.</>
+                ? <>On the tape now: <strong>{pl.count} of {pl.of}</strong> buildings earn more than the cheapest money costs — the widest is <a className="lnk" onClick={() => { useStore.getState().openProperty(pl.best!.bbl, "deal"); dismiss(); }}>{addr(pl.best.bbl)}</a> at {pl.best.cap.toFixed(2)}% against {pl.best.coupon.toFixed(2)}%.</>
                 : <>On the tape now: none of the {pl.of} buildings earns more than the cheapest money costs — borrowing to buy works against you this year.</>}
             </div>
           );

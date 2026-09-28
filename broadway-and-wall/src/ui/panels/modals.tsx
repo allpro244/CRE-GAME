@@ -993,7 +993,7 @@ export function GameOverPage() {
         <div className="page-title">The run is over.</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
-        <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>
+        <div className="stat-strip gameover-stats" style={{ justifyContent: "center", marginTop: 14 }}>
           <Big label="Final net worth" value={usd(finalNw)} bad={finalNw < 0} />
           <Big label="Peak" value={usd(peak)} />
           <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
@@ -1050,7 +1050,7 @@ function PostMortem() {
   };
   const [bigName, bigAmt] = big(worst);
   return (
-    <div className="page-section" style={{ marginTop: 16, maxWidth: 760, marginLeft: "auto", marginRight: "auto" }}>
+    <div className="page-section gameover-postmortem" style={{ marginTop: 16, maxWidth: 980, marginLeft: "auto", marginRight: "auto" }}>
       <div className="page-section-head">What happened — the last {yrs.length} year{yrs.length === 1 ? "" : "s"} of operating cash</div>
       <table className="tbl tbl-static">
         <thead>
@@ -1080,11 +1080,18 @@ function PostMortem() {
         any purchase, sale or new borrowing. The worst year was {START_YEAR + worst.yr}, and its largest
         outflow was {bigName} at {usd(bigAmt)}.
       </div>
+      {/* One list in date order: the forced sales and the lender's actions
+          were two runs of Jan–Mar one after the other, so the story read
+          backwards halfway down. */}
       {(forced.length > 0 || events.length > 0) && (
-        <div className="hint" style={{ marginTop: 6 }}>
-          {forced.map((e) => <div key={`f${e.bbl}${e.soldM}`}>✕ {monthLabel(e.soldM)} — {e.address} sold under duress for {usd(e.price)} against {usd(e.basis)} basis.</div>)}
-          {events.map((e, i) => <div key={`s${i}`}>✕ {monthLabel(e.m)} — {e.address}: {e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}{e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.</div>)}
-        </div>
+        <ul className="gameover-events">
+          {[
+            ...forced.map((e) => ({ m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis.` })),
+            ...events.map((e, i) => ({ m: e.m, k: `s${i}`, text: `${e.address}: ${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.` })),
+          ].sort((a, b) => a.m - b.m).map((r) => (
+            <li key={r.k}><span className="mono dim">{monthLabel(r.m)}</span> {r.text}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

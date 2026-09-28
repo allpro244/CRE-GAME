@@ -282,7 +282,7 @@ export function buildDocket(
           key,
           cat: "capital",
           title: `${Math.round((game.cash / nwNow) * 100)}% of the book is cash — ${pl.count} of ${pl.of} on the tape earn more than money costs`,
-          sub: `widest: ${addr(pl.best.bbl)} at ${pl.best.cap.toFixed(1)}% against ${pl.best.coupon.toFixed(1)}%`,
+          sub: `widest: ${addr(pl.best.bbl)} at ${pl.best.cap.toFixed(2)}% against ${pl.best.coupon.toFixed(2)}%`,
           bbl: pl.best.bbl,
         });
       }

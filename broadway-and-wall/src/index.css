@@ -686,6 +686,14 @@ body {
 
 /* game-over as a page */
 .gameover-page { text-align: center; padding: 30px 10px; }
+/* eight tiles in two even rows, not seven and an orphan */
+.gameover-page .stat-strip.gameover-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 700px) { .gameover-page .stat-strip.gameover-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.gameover-postmortem .tbl th, .gameover-postmortem .tbl td { padding-left: 10px; padding-right: 0; }
+.gameover-postmortem .tbl th:first-child, .gameover-postmortem .tbl td:first-child { padding-left: 0; }
+.gameover-events { list-style: none; margin: 10px auto 0; padding: 0; max-width: 640px; text-align: left; font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+.gameover-events li { padding: 3px 0; border-top: 1px solid rgba(96, 76, 34, 0.1); }
+.gameover-events .mono { display: inline-block; min-width: 76px; font-size: 11px; }
 
 /* THE COMPACT SIZING IS THE DEFAULT, NOT A CONCESSION TO SMALL WINDOWS.
    Seven nav buttons, three lenses, three advance buttons and four on the right
@@ -2133,6 +2141,11 @@ html, body, #root { overflow-x: hidden; }
 .cycle-digest-chev { font-size: 11px; color: var(--ink-dim); }
 .cycle-digest-body { padding: 0 12px 11px; }
 .cycle-digest-body .hint { margin: 0 0 4px; font-size: 11.5px; }
+.cycle-digest-table { width: 100%; border-collapse: collapse; margin: 2px 0 6px; font-size: 12px; color: var(--ink); }
+.cycle-digest-table th { font-family: var(--mono); font-size: 9px; font-weight: 400; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ink-dim); text-align: right; padding: 0 0 3px; }
+.cycle-digest-table td { padding: 2px 0; border-top: 1px solid rgba(96, 76, 34, 0.1); }
+.cycle-digest-table td + td { text-align: right; padding-left: 10px; white-space: nowrap; }
+.cycle-d { font-size: 10.5px; color: var(--ink-dim); }
 
 /* THE LEASING MANDATE, one drop-down per asset type. The head is the posted
    sheet in one line plus what you hold in that class; the body is the sheet. */

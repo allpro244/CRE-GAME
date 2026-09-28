@@ -4,6 +4,12 @@ import { cycleDigest } from "@/engine/cycleDigest";
 
 const LS_KEY = "bw-digest-collapsed";
 
+const CLS_LABEL: Record<string, string> = {
+  office: "Office", retail: "Retail", multifamily: "Multifamily", industrial: "Industrial", mixed: "Mixed-use",
+};
+/** A real minus, and a plus, on a change. */
+const signed = (n: number) => (n > 0 ? "+" : n < 0 ? "\u2212" : "") + Math.abs(n);
+
 /**
  * Collapsible monthly cycle readout — phase, rates, caps, balloons.
  * Veterans can leave it collapsed; it remembers across sessions.
@@ -47,16 +53,31 @@ export default function CycleDigest() {
       </button>
       {!collapsed && (
         <div className="cycle-digest-body">
-          <div className="hint">
-            Cap rates · {dig.caps.map((c) =>
-              `${c.cls.slice(0, 3)} ${c.pct.toFixed(2)}%${c.dBp ? (c.dBp > 0 ? ` (+${c.dBp}bp)` : ` (${c.dBp}bp)`) : ""}`
-            ).join(" · ")}
-          </div>
-          <div className="hint">
-            Vacancy · {dig.vac.map((v) =>
-              `${v.cls.slice(0, 3)} ${v.pct.toFixed(1)}%${v.dPp != null && v.dPp !== 0 ? ` (${v.dPp > 0 ? "+" : ""}${v.dPp}pp)` : ""}`
-            ).join(" · ")}
-          </div>
+          {/* A four-row table, not two run-on lines of "off 7.74% (-102bp) · ret
+              7.04%…" — class names spelled out, one column per measure. */}
+          <table className="cycle-digest-table">
+            <thead>
+              <tr><th /><th>Cap rate</th><th>Vacancy</th></tr>
+            </thead>
+            <tbody>
+              {dig.caps.map((c) => {
+                const v = dig.vac.find((x) => x.cls === c.cls);
+                return (
+                  <tr key={c.cls}>
+                    <td>{CLS_LABEL[c.cls] ?? c.cls}</td>
+                    <td className="mono">
+                      {c.pct.toFixed(2)}%
+                      {c.dBp ? <span className={"cycle-d" + (c.dBp > 0 ? " up" : " down")}> {signed(c.dBp)} bp</span> : null}
+                    </td>
+                    <td className="mono">
+                      {v ? `${v.pct.toFixed(1)}%` : "—"}
+                      {v && v.dPp != null && v.dPp !== 0 ? <span className={"cycle-d" + (v.dPp > 0 ? " up" : " down")}> {signed(v.dPp)} pp</span> : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           <div className="hint">
             Your book · {dig.balloons12} balloon{dig.balloons12 === 1 ? "" : "s"} in 12 mo
             {dig.floatingShare > 0 ? ` · ${(dig.floatingShare * 100).toFixed(0)}% floating` : ""}

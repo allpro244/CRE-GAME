@@ -659,7 +659,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // which is why every new building's income used to be struck on cores.
   const envelope = rec.lotArea * (o.envelopeFar ?? farMaxFor(rec));
   const gsf = Math.round(Math.min(rec.lotArea * cov * fl, envelope) / 100) * 100;
-  const rentable = Math.round((gsf * rentableRatio(plate)) / 100) * 100;
+  const rentable = Math.round((gsf * rentableRatio(plate, fl)) / 100) * 100;
   if (rentable < 2000) return null;
 
   // Shops at grade wherever the street will carry them — see withStreetRetail —

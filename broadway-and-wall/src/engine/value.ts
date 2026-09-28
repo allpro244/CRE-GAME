@@ -138,8 +138,47 @@ export function physicalMaxFloors(plateSf: number): number {
 export const REF_PLATE_SF = 4300;
 /** The median lot, for the same reason. */
 export const REF_LOT_SF = 4950;
+/**
+ * THE FIXED PART OF A CORE IS VERTICAL CIRCULATION, AND A LOW BUILDING NEEDS
+ * LESS OF IT.
+ *
+ * The 420 ft² a floor was always two exit stairs, a lift and the risers:
+ * a code stair enclosure (44" flights, 48" landings) is about 170 ft² a floor,
+ * so two are ~340; a passenger hoistway ~60; risers and shafts ~20. It was
+ * charged on every floor of every building, which is right for the median
+ * mid-rise and wrong at the bottom of the height range, which is exactly where
+ * every small lot lives:
+ *
+ *   ONE STOREY  has no stair and no lift — its exits are doors at grade. What
+ *               is left is walls, toilets and plant, the proportional 7%.
+ *               (Single-storey retail and industrial are let on the footprint;
+ *               the 0.92 ceiling on the ratio still binds.)
+ *   NO LIFT     is the law, not a saving: the 2010 ADA Standards 206.2.3,
+ *               Exception 1, do not require an accessible route between
+ *               storeys in a private building of fewer than three storeys OR
+ *               under 3,000 ft² a storey, and the walk-up is the ordinary
+ *               small apartment building. Above four storeys nobody builds a
+ *               walk-up whatever the code says, so five and up always has one.
+ *               Two stairs stay in every case — IBC 1006 single-exit
+ *               allowances are narrow and are not modelled.
+ *
+ * `floors` undefined is the old question (a plate with no height attached)
+ * and keeps the full 420, so `plateEfficiency` — an index against the median
+ * mid-rise plate — does not move.
+ */
+const CORE_STAIRS_SF = 360;   // two enclosed exit stairs + risers
+const CORE_LIFT_SF = 60;      // one passenger hoistway
+function verticalCoreSf(plateSf: number, floors?: number): number {
+  if (floors === undefined || !Number.isFinite(floors)) return CORE_STAIRS_SF + CORE_LIFT_SF;
+  const fl = Math.round(floors);
+  if (fl <= 1) return 0;
+  const lift = fl >= 5 || (fl >= 3 && plateSf >= 3000);
+  return CORE_STAIRS_SF + (lift ? CORE_LIFT_SF : 0);
+}
 /** How much of a floor the core, the risers and the corridor take. */
-function coreLoss(plateSf: number): number { return 0.07 + 420 / Math.max(400, plateSf); }
+function coreLoss(plateSf: number, floors?: number): number {
+  return 0.07 + verticalCoreSf(plateSf, floors) / Math.max(400, plateSf);
+}
 const REF_CORE_LOSS = coreLoss(REF_PLATE_SF);
 /**
  * RENTABLE FEET PER GROSS FOOT. The number the business actually uses.
@@ -156,20 +195,22 @@ const REF_CORE_LOSS = coreLoss(REF_PLATE_SF);
  * against the feet a tenant can actually sit in. One function, one answer.
  * A panel that computed its own haircut would be a second opinion.
  */
-export function rentableRatio(plateSf: number): number {
-  return clamp(1 - coreLoss(plateSf), 0.72, 0.92);
+export function rentableRatio(plateSf: number, floors?: number): number {
+  return clamp(1 - coreLoss(plateSf, floors), 0.72, 0.92);
 }
+/** The floor count the core is sized for — a record with none reads as one storey. */
+const floorsOf = (rec: { floors: number }) => Math.max(1, rec.floors || 1);
 export function rentableSf(rec: { bldgArea: number; floors: number }): number {
   if (!rec.bldgArea) return 0;
-  return rec.bldgArea * rentableRatio(plateOf(rec));
+  return rec.bldgArea * rentableRatio(plateOf(rec), floorsOf(rec));
 }
 /** Rentable feet of a planned shell — same identity, no parcel yet. */
 export function rentableFromSpec(gsf: number, floors: number): number {
   if (!(gsf > 0)) return 0;
-  return gsf * rentableRatio(gsf / Math.max(1, floors));
+  return gsf * rentableRatio(gsf / Math.max(1, floors), Math.max(1, floors || 1));
 }
 export function useRentableSf(rec: ParcelRecord, use: BuiltClass): number {
-  return useSf(rec, use) * rentableRatio(plateOf(rec));
+  return useSf(rec, use) * rentableRatio(plateOf(rec), floorsOf(rec));
 }
 /**
  * Plate quality against the median plate — an INDEX, not the rentable ratio.
@@ -391,17 +432,29 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
   const cap = USE_FLOORS_MAX[use];
   const envelopeFl = Math.max(1, Math.round(far / 0.7));
   const maxFl = cap !== undefined ? Math.min(cap, envelopeFl) : envelopeFl;
+  // Shops and sheds: the one-storey box as well as the two-storey one — the
+  // single storey has no stair to pay for (see the note below).
   const floors = cap !== undefined
-    ? [maxFl]
+    ? [...new Set([1, maxFl])]
     // A builder picks the height that maximises residual, not the zoning
     // maximum. Pricing every office/multifamily lot as a tower made
     // heightPremium sink those uses while the desk (capped at 14, coverage
     // 0.6) said they pencilled — one quantity, two answers. Low-rise (no
     // premium), mid-rise, and the envelope are the three rungs the cost
     // ladder actually has.
-    : [...new Set([Math.min(8, maxFl), Math.min(14, maxFl), maxFl])];
+    //
+    // ...AND THE BOTTOM OF THE LADDER HAS RUNGS OF ITS OWN. A one-storey
+    // building carries no stair and no lift; two storeys need stairs and no
+    // lift; up to four can still be a walk-up on a small plate (see
+    // `verticalCoreSf`). On fringe dirt, where eight storeys of anything cost
+    // more than they are worth, one of those is what actually gets built —
+    // and the Develop desk could already draw it, so the desk found schemes
+    // with a positive residual on lots the land market read as having no
+    // builder at all (measured: 21 of 434 vacant 3-5k sf lots, 20 of 287
+    // 5-8k, at coverage the residual also uses; tools/smalllot-lines.mjs).
+    : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, maxFl)).concat(maxFl))];
   return floors.map((fl) => {
-    const usable = cap !== undefined ? Math.min(far, cap * 0.85) : Math.min(far, fl * 0.7);
+    const usable = Math.min(far, fl * (cap !== undefined ? 0.85 : 0.7));
     return { floors: fl, coverage: usable / fl };
   }).filter((c) => c.coverage > 0);
 }

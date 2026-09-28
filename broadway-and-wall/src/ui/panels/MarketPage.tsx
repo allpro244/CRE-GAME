@@ -723,7 +723,19 @@ export function MarketPage() {
                           saying so here saves opening forty lots to find the two that work. */}
                       {!built && !yours && rec.lotArea > 0 && (() => {
                         const lr = landRead(rec, game.econ);
-                        if (lr.builder <= 0) return null;
+                        // ...AND SAY SO WHEN THERE IS NONE. On three small lots
+                        // in four the ask is the street's comparable-sales floor
+                        // or a holder's option, not anything a building can pay
+                        // (tools/smalllot.mjs); a row with no chip read as "not
+                        // yet looked at" rather than "nothing covers its cost".
+                        if (lr.builder <= 0) {
+                          return (
+                            <span className="chip" style={{ marginRight: 6, opacity: 0.7 }}
+                              title={`No scheme covers its own construction and the trade's margin at the rents builders underwrite. The ask ($${(li.ask / Math.max(1, rec.lotArea)).toFixed(0)}/sf) is ${lr.winner === "holder" ? "a holder's bet on the next peak" : "what the street's comparable sales say dirt here clears at"}, not a builder's bid.`}>
+                              NO BUILDER BID
+                            </span>
+                          );
+                        }
                         // The buyer pays the ask plus 2% closing, which lands in
                         // the basis; the same test the buy box applies.
                         const { pencils: works, askPsf } = landPencils(rec, game.econ, li.ask);

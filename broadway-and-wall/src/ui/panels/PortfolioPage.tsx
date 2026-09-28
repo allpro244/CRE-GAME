@@ -244,22 +244,6 @@ export function PortfolioPage() {
           Show book on map →
         </button>
       </div>
-      {assessmentWatch.length > 0 && (
-        <div className="deal" style={{ marginTop: 0, marginBottom: 12 }}>
-          <div className="deal-head">Assessment watch · {assessmentWatch.length} appealable</div>
-          <div className="mini-list">
-            {assessmentWatch.slice(0, 5).map((a) => (
-              <button key={a.bbl} className="neighbor" onClick={() => go(a.bbl)}>
-                <span className="neighbor-addr">{a.address}</span>
-                <span className="neighbor-meta mono">
-                  {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="hint">Open a property to review the evidence and file the appeal.</div>
-        </div>
-      )}
       <div className="stat-strip">
         {/* FIRST, NOT LAST. This sat rightmost, after "Buildings", in the same
             20px mono as every other stat — the only number in the game that can
@@ -797,6 +781,25 @@ export function PortfolioPage() {
           ))}
         </tbody>
       </table>
+      {/* TAX APPEALS ARE HOUSEKEEPING, not the headline: they sat above the
+          value, equity and the book itself, so the first thing a landlord
+          read on opening the portfolio was a list of assessor paperwork. */}
+      {assessmentWatch.length > 0 && (
+        <div className="deal" style={{ marginTop: 16, marginBottom: 12 }}>
+          <div className="deal-head">Assessment watch · {assessmentWatch.length} appealable</div>
+          <div className="mini-list">
+            {assessmentWatch.slice(0, 5).map((a) => (
+              <button key={a.bbl} className="neighbor" onClick={() => go(a.bbl)}>
+                <span className="neighbor-addr">{a.address}</span>
+                <span className="neighbor-meta mono">
+                  {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="hint">Open a property to review the evidence and file the appeal.</div>
+        </div>
+      )}
       {/* History reads under the living book: what left, when, and what
           leaving returned. */}
       <ExitsRecord />

@@ -139,7 +139,7 @@ function PrimerGlossary() {
  * the moment you pressed it — and .modal-actions wrapped the long rows so the
  * switch sat above its label on some rows and beside it on others.
  */
-function Toggle({ on, set, label, detail }: { on: boolean; set: (v: boolean) => void; label: string; detail: string }) {
+function Toggle({ on, set, label, detail, more }: { on: boolean; set: (v: boolean) => void; label: string; detail: string; more?: string }) {
   return (
     <div className="deal setting-row">
       <button className={"btn" + (on ? " btn-buy" : "")} style={{ minWidth: 64 }} aria-pressed={on} aria-label={`${label}: ${on ? "on" : "off"}`} onClick={() => set(!on)}>
@@ -148,6 +148,15 @@ function Toggle({ on, set, label, detail }: { on: boolean; set: (v: boolean) => 
       <div className="setting-text">
         <div style={{ fontWeight: 600 }}>{label}</div>
         <div className="hint" style={{ margin: 0 }}>{detail}</div>
+        {/* A ONE-LINE ANSWER, THEN THE FINE PRINT. Two of these ran to ninety
+            words each; the switch should say what it does before it says
+            everything it touches. */}
+        {more && (
+          <details className="setting-more">
+            <summary>More</summary>
+            <div className="hint" style={{ margin: "4px 0 0" }}>{more}</div>
+          </details>
+        )}
       </div>
     </div>
   );
@@ -187,22 +196,21 @@ export function SettingsPage() {
         on={!popupsOff}
         set={(v) => setPopupsOff(!v)}
         label="Pop-up cards"
-        detail={"Letters of intent, quiet offers and marketed bid lists on buildings you are selling, portfolio indications, and the auction card take the screen when they arrive. "
+        detail="Letters, offers, bid lists and the auction take the screen when they arrive. Off, they wait on Deals — nothing is lost but the interruption."
+        more={"Covers letters of intent, quiet offers and marketed bid lists on buildings you are selling, portfolio indications and the auction card. "
           + "Off, they wait on Deals (watch the badge) and on the property desk — not on Portfolio, which only shows that a deed is listed. "
-          + "Nothing is lost but the interruption. Turn this off to simulate long stretches. "
-          + "A bank going down, a level event, a lender taking a book back, a portfolio indication, and a bid list landing also raise "
+          + "Turn this off to simulate long stretches. Bank failures, level events, books taken back, portfolio indications and bid lists also raise "
           + "stop-everything cards on the switch below."}
       />
       <Toggle
         on={!alertsOff}
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
-        detail={"A bank failing, a level event in the wider economy, a book of buildings taken back at once, "
+        detail="Bank failures, economy-wide events, books taken back and bids on your sales take the screen. Off, you read them on News instead."
+        more={"The full list: a bank failing, a level event in the wider economy, a book of buildings taken back at once, "
           + "an institution indicating on a portfolio you put in the market, and bids landing on a marketed sale. "
-          + "Every one of them is written into the news feed the moment it fires, so turning "
-          + "this off loses the interruption and not the event — you will read it on News / The Tape instead. "
-          + "A lender taking a rival's whole book puts the package on Marketplace under Books for sale — "
-          + "the alert card (when on) links you there. "
+          + "Each is written into the news feed the moment it fires, so turning this off loses the interruption and not the event. "
+          + "A lender taking a rival's whole book puts the package on Marketplace under Books for sale. "
           + "With both switches off a sale or portfolio bid still stops Year/Skip and badges Deals, but will not take the screen — "
           + "and a quiet offer lapses in two months, a bid list in fourteen, a portfolio indication in three, if you never open the desk."}
       />
@@ -230,10 +238,9 @@ export function SettingsPage() {
         on={preferFps}
         set={setPreferFps}
         label="Prefer smoother frames"
-        detail={"For machines without a discrete GPU. Off by default — a fast machine keeps native "
-          + "sharpness and the full photograph. On, it spends less fill rate on pixel density and "
-          + "multisampling so the map stays nearer sixty frames. Facades, occupancy, weather and "
-          + "the sim are unchanged either way."}
+        detail="For machines without a discrete GPU: trades a little sharpness for a steadier frame rate. The sim is unchanged."
+        more={"Off by default — a fast machine keeps native sharpness and the full photograph. On, it spends less fill rate on pixel density and "
+          + "multisampling so the map stays nearer sixty frames. Facades, occupancy and weather are unchanged either way."}
       />
       <div className="hint">
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction

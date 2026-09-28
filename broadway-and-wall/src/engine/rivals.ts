@@ -1106,10 +1106,23 @@ export const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
 };
 
 /**
- * MINIMUM GOING-IN SPREAD OVER THE STREET COUPON (index + RATE_SPREAD), in
- * percentage points. Closers used to fight over every ask by appetite alone —
- * junk and prime at the same weight. Core/family need a real spread; vultures
- * and distress buyers will cross below the coupon for a cheap ticket.
+ * MINIMUM SPREAD OVER THE STREET COUPON (index + RATE_SPREAD), in percentage
+ * points. Closers used to fight over every ask by appetite alone — junk and
+ * prime at the same weight. Core/family need a real spread; vultures and
+ * distress buyers will cross below the coupon for a cheap ticket.
+ *
+ * THE SPREAD IS THE ONE THE FUND WAS RAISED ON: going-in yield plus the rent
+ * growth the market underwrites (`underwrittenGrowthPct`), over the coupon —
+ * the same number `firmEntryPitch` sells to the LPs. It used to be the
+ * going-in yield alone, and on today's cap-rate level that is positive in
+ * about 40% of months, so a family office needing +1.40 on it bought in
+ * well under one month in ten. Measured, 6 seeds x 100 years, no player:
+ * 94 of the 145 opening-roster firms that were wound up with an empty book
+ * had not bought a single building all century (median 111 months since
+ * their last purchase); they sold down on the hold clock and could not
+ * reinvest, so the street's commonest death was a committee refusing every
+ * building a pension fund would have bought. The hurdles themselves are the
+ * styles' preferences and did not move; what they are measured against did.
  */
 const YIELD_OVER_COUPON: Record<RivalStyle, number> = {
   family: 1.40, core: 1.10, reit: 0.95, foreign: 0.85, owneruser: 0.40,
@@ -3425,7 +3438,10 @@ export function rivalBuys(
   const goingInNoi = inPlace(rec, s, rec.bbl, price).noi;
   const goingInYld = price > 0 ? goingInNoi / price : 0;
   const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
-  const spreadPp = (goingInYld - coupon) * 100;
+  // The committee reads the return the fund was raised on — going-in yield
+  // plus underwritten growth, over the coupon — not the going-in yield alone.
+  // See YIELD_OVER_COUPON.
+  const spreadPp = (goingInYld - coupon) * 100 + underwrittenGrowthPct(s.econ);
   const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
   let best = candidates[0], bestW = -Infinity;
   if (prefer) bestW = 1;

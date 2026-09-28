@@ -201,6 +201,8 @@ interface AppState {
   setAutoplay: (v: 0 | 1 | 2) => void;
   /** Standing acquisition criteria: what a broker's first look must match to stop the clock. */
   setBuyBox: (b: import("@/engine/buybox").BuyBox | undefined) => void;
+  /** Take on a new goal mid-run; a decided one moves to the record. */
+  setGoal: (id: GoalId) => void;
   /** Star / unstar a building to follow: the docket says when it lists. */
   toggleWatch: (bbl: string) => void;
   advanceYear: () => void;
@@ -840,6 +842,15 @@ export const useStore = create<AppState>((set, get) => ({
 
   autoplay: 0,
   setAutoplay: (autoplay) => set({ autoplay }),
+  setGoal: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, goal: newGoal(id, game.month, game) };
+    const old = game.goal;
+    if (old && (old.doneM !== undefined || old.failedM !== undefined)) next.pastGoals = [...(game.pastGoals ?? []), old];
+    set({ game: next, goalCard: null });
+    void persist(next);
+  },
   setBuyBox: (b) => {
     const { game } = get();
     if (!game) return;
@@ -2258,7 +2269,7 @@ export const useStore = create<AppState>((set, get) => ({
       // written-down city has no preset to read, so the economy sizes rivals
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
-      if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month);
+      if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month, g);
       set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null, careerCardI: null });
       persist(g);
     } catch (e) {

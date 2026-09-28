@@ -2844,6 +2844,8 @@ export interface GameState {
   brokerStops?: "affordable" | "never";
   /** The run's chosen ambition, if any (see goals.ts). */
   goal?: import("./goals").Goal;
+  /** Goals met or run out earlier in the run, oldest first. */
+  pastGoals?: import("./goals").Goal[];
   /** Standing acquisition criteria (see buybox.ts). */
   buyBox?: import("./buybox").BuyBox;
   /** How many funds this firm has raised — Fund I, II, III. */

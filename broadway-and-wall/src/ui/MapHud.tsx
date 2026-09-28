@@ -218,9 +218,14 @@ export default function MapHud() {
         return (
           <div className="map-hud-block">
             <div className="map-hud-label">Goal · {goalDef(g.id).label}</div>
-            <div className="map-hud-row" style={{ cursor: "default" }}>
-              {g.doneM !== undefined ? "✓ met" : g.failedM !== undefined ? "missed" : `${p.text} · ${left} yr left`}
-            </div>
+            {g.doneM !== undefined || g.failedM !== undefined ? (
+              <button type="button" className="map-hud-row" title="Pick the next goal"
+                onClick={() => useStore.setState({ goalCard: g.doneM !== undefined ? "done" : "failed" })}>
+                {g.doneM !== undefined ? "✓ met" : "missed"} · set the next ▸
+              </button>
+            ) : (
+              <div className="map-hud-row" style={{ cursor: "default" }}>{`${p.text} · ${left} yr left`}</div>
+            )}
             {g.doneM === undefined && g.failedM === undefined && <div className="goal-bar"><span style={{ width: `${Math.round(p.share * 100)}%` }} /></div>}
           </div>
         );

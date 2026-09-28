@@ -4,6 +4,7 @@ import { START_YEAR } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { TIER_LABEL } from "@/engine/firmCapital";
 import { usd } from "@/ui/format";
+import { goalDef } from "@/engine/goals";
 
 /**
  * THE CAREER, YEAR BY YEAR. The tape keeps 120 stories, which in a busy late
@@ -28,6 +29,9 @@ export default function CareerTimeline() {
       const m = game.milestones?.[ms.id];
       if (m !== undefined) at(Math.floor(m / 12)).miles.push(ms.label);
     }
+    for (const g of [...(game.pastGoals ?? []), ...(game.goal ? [game.goal] : [])]) {
+      if (g.doneM !== undefined) at(Math.floor(g.doneM / 12)).miles.push(`goal met: ${goalDef(g.id).label}`);
+    }
     for (const e of game.exits ?? []) {
       const r = at(Math.floor(e.soldM / 12));
       r.sold++; r.gain += e.gain;
@@ -43,7 +47,7 @@ export default function CareerTimeline() {
         ? TIER_LABEL[out[i].tier!] : undefined;
     }
     return out as (typeof out[number] & { tierUp?: string })[];
-  }, [game.yearMarks, game.milestones, game.exits]);
+  }, [game.yearMarks, game.milestones, game.exits, game.goal, game.pastGoals]);
 
   if (!years.length) return null;
   const shown = all ? years : years.slice(0, 8);

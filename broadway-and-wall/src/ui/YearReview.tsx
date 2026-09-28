@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { yearReview, ordinal, careerCard, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
-import { goalProgress, goalDef } from "@/engine/goals";
+import { goalProgress, goalDef, goalsOpen } from "@/engine/goals";
 import { START_YEAR, monthLabel } from "@/engine/types";
 import { openResearchOn } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
@@ -249,9 +249,31 @@ export function GoalCard() {
             : `Where it stood at the deadline: ${goalProgress(game, useStore.getState().parcels)?.text ?? "—"}.`}
           {" "}The town carries on — the run is yours to keep playing.
         </div>
+        <NextGoals />
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
-          <button type="button" className="btn btn-primary" onClick={close}>Carry on</button>
+          <button type="button" className="btn btn-primary" onClick={close}>Carry on without one</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** WHAT NEXT. A decided goal leaves the run with no line to aim at; these are the
+ *  ones not already met, each with its own clock starting today. */
+function NextGoals() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const open = goalsOpen(game, parcels);
+  if (!open.length) return null;
+  return (
+    <div className="next-goals">
+      <div className="delivery-kicker" style={{ marginTop: 12 }}>Set the next one</div>
+      <div className="next-goals-row">
+        {open.map((d) => (
+          <button key={d.id} type="button" className="start-goal" onClick={() => useStore.getState().setGoal(d.id)}>
+            <strong>{d.label}</strong><span>{d.detail} in {d.years} years</span>
+          </button>
+        ))}
       </div>
     </div>
   );

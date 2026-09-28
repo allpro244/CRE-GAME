@@ -1743,8 +1743,12 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     const value = ownedHoldingValue(s, parcels, h);
     const eq = value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
     const price = Math.max(0, Math.round(eq));
+    // AN UNDERWATER DEED IS NEVER BOUGHT IN. At a price of zero the sponsor
+    // would take on the whole negative equity the waterfall had been passing
+    // mostly to the LPs — the same one-month jump this function exists to
+    // stop, downward. It goes in kind to the LPs' trust with its mortgage.
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
-    if (paid >= price) {
+    if (price > 0 && paid >= price) {
       f.cash += paid;
       paidTotal += paid;
       delete h.fundOwned;
@@ -1754,11 +1758,14 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
       boughtIn++;
       continue;
     }
-    // Could not pay in full: the partial cheque goes back, the deed goes in kind.
+    // Could not pay in full (or underwater): the partial cheque goes back,
+    // the deed goes in kind. Its ledger never books the NAV the LPs take,
+    // so it reports nothing rather than a near-zero multiple.
     s.cash += paid;
     f.distributed += price;
     inKind++;
     s.exits.push({ bbl: h.bbl, address: rec?.address ?? h.bbl, boughtM: h.boughtM, soldM: s.month, price: Math.round(value), basis: h.costBasis, gain: Math.round(value - h.costBasis), forced: true });
+    poolDeedLedger(s, h.bbl);
     closeDeedLedger(s, s.exits[s.exits.length - 1]);
     if (s.groundLeases?.[h.bbl]) transferGroundLeaseOffBook(s, h.bbl);
     s.cash -= depositsOn(h);   // the deposits go with the deed
@@ -1772,7 +1779,7 @@ function windDownFund(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
       text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for $${(paidTotal / 1e6).toFixed(2)}M, paid through the waterfall.` : ""}`
-        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — you could not fund the buy-in, and the promote on them is waived.` : ""}`,
+        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages, and the promote on them is waived.` : ""}`,
     });
   }
   settleFund(s);

@@ -101,23 +101,28 @@ export function PrimerPage() {
 function PrimerGlossary() {
   const [lit, setLit] = useState<string | null>(null);
   useEffect(() => {
-    const k = pendingTerm.key;
-    if (!k) return;
-    pendingTerm.key = null;
-    const el = document.getElementById(glossId(k));
-    if (el) {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const go = () => {
+      const k = pendingTerm.key;
+      if (!k) return;
+      pendingTerm.key = null;
+      const el = document.getElementById(glossId(k));
+      if (!el) return;
       el.scrollIntoView({ block: "center" });
-      setLit(k);
-      const t = setTimeout(() => setLit(null), 2200);
-      return () => clearTimeout(t);
-    }
+      setLit(glossId(k));
+      if (t) clearTimeout(t);
+      t = setTimeout(() => setLit(null), 2200);
+    };
+    go();
+    window.addEventListener("bw:gloss", go);
+    return () => { window.removeEventListener("bw:gloss", go); if (t) clearTimeout(t); };
   }, []);
   return (
     <>
       <div className="page-section">Glossary — every underlined word</div>
       <div className="gloss-list">
         {glossaryEntries().map((e) => (
-          <div key={e.key} id={glossId(e.key)} className={"gloss-entry" + (lit === e.key ? " gloss-lit" : "")}>
+          <div key={e.key} id={glossId(e.key)} className={"gloss-entry" + (lit === glossId(e.key) ? " gloss-lit" : "")}>
             <span className="gloss-key">{e.key}</span>
             <span className="gloss-def">{e.def}</span>
           </div>

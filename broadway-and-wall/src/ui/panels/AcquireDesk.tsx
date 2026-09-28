@@ -1182,7 +1182,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const ip = rec ? inPlace(rec, game, bbl, offerPrice) : null;
   const fromFund = !!(game.fundPay && game.fund && !game.fund.settled
     && game.month <= game.fund.investEndM);
-  const closePurse = fromFund ? (game.fund?.cash ?? 0) : spendable(game, parcels).total;
+  // The vehicle calls capital as the deal closes (executePurchase): its purse
+  // is the cash it holds plus the commitments still to call.
+  const closePurse = fromFund ? (game.fund?.cash ?? 0) + (game.fund?.uncalled ?? 0) : spendable(game, parcels).total;
   const noi = ip?.noi ?? 0;
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,

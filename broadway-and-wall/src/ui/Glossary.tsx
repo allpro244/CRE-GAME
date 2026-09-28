@@ -112,6 +112,8 @@ export function Gloss({
         // Land on the word, not the top of the Primer.
         pendingTerm.key = TERMS[term] ? term : term.toLowerCase();
         setPage("primer");
+        // Already on the Primer (a dotted word inside it): no remount, so say so.
+        window.dispatchEvent(new Event("bw:gloss"));
       }}
     >
       {children ?? term}

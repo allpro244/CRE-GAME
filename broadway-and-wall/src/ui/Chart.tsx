@@ -7,7 +7,7 @@
 // chart with optional reference bands, a grouped bar chart for flows, and a
 // horizontal gauge for "where is this relative to normal".
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 /**
  * THE CHART'S REAL WIDTH. Charts used to draw into a fixed 480-unit viewBox
@@ -15,20 +15,26 @@ import { useEffect, useId, useRef, useState } from "react";
  * at 2.2x — axis figures bigger than the body text. Measuring the container
  * and drawing at 1:1 keeps type the size it was asked to be at any width.
  */
-function useWidth(fallback = 480): [React.RefObject<HTMLDivElement | null>, number] {
-  const ref = useRef<HTMLDivElement | null>(null);
+function useWidth(fallback = 480): [(el: HTMLDivElement | null) => void, number] {
+  // A CALLBACK REF, so a chart that first renders its "not enough history"
+  // early return — no element yet — still gets measured once its element
+  // mounts. A plain ref with a mount-only effect never attached, and the
+  // chart kept the 480-unit width whose scaled text this hook exists to stop.
   const [w, setW] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
+  const ro = useRef<ResizeObserver | null>(null);
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    ro.current = null;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((es) => {
+    const obs = new ResizeObserver((es) => {
       const cw = Math.round(es[0]?.contentRect.width ?? 0);
       if (cw > 0) setW((prev) => (Math.abs(prev - cw) > 1 ? cw : prev));
     });
-    ro.observe(el);
-    return () => ro.disconnect();
+    obs.observe(el);
+    ro.current = obs;
   }, []);
-  return [ref, w > 0 ? w : fallback];
+  useEffect(() => () => ro.current?.disconnect(), []);
+  return [setRef, w > 0 ? w : fallback];
 }
 
 export interface Series { label: string; color: string; pts: number[]; dashed?: boolean }

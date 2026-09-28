@@ -74,5 +74,46 @@ check(settledM >= 0, `the fund settles (m${settledM})`);
 check(!Object.values(g.holdings).some((h) => h.fundOwned), "no vehicle deed is left behind on the sponsor's book after settlement");
 check(Math.abs(jump) < 0.05, `net worth moves by the GP's unearned share at the buy-in, not by the LPs' buildings (${(jump * 100).toFixed(1)}% in the settlement month)`);
 
+// AN UNDERWATER VEHICLE DEED IS NEVER BOUGHT IN. At a price of zero the
+// sponsor took the whole negative equity onto its book the month the fund
+// closed — the same jump, downward. It goes to the LPs' trust with its loan.
+{
+  let u = E.firstListings(E.newGame(7919, parcels, 40_000_000), parcels, bbls);
+  const size = 30_000_000, gpCommit = Math.round(size * 0.03), lp = Math.round((size - gpCommit) * 0.6);
+  u = structuredClone(u);
+  u.cash -= gpCommit;
+  u.fund = { raisedM: u.month, size, uncalled: size - gpCommit - lp, cash: lp + gpCommit, called: lp + gpCommit,
+    distributed: 0, promotePaid: 0, prefAccrued: 0, investEndM: u.month + 6, lifeEndM: u.month + 8,
+    pref: 0.08, promote: 0.2, gpCommit };
+  let fb = null;
+  for (const li of u.listings) {
+    const rec = E.resolveRec(parcels, u, li.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || li.halfBuilt || li.ask > 12_000_000) continue;
+    const r = E.executePurchase({ ...u, fundPay: true }, parcels, li.bbl, li.ask, "savings", false, 1);
+    if (!r.err && r.s.holdings[li.bbl]?.loan) { u = { ...r.s, fundPay: false }; fb = li.bbl; break; }
+  }
+  if (fb) {
+    let nw0 = 0, done = false;
+    for (let m = 0; m < 48 && !done; m++) {
+      // push the vehicle deed underwater just before the extension ends
+      if (u.fund?.extendedTo !== undefined && u.month === u.fund.extendedTo - 1 && u.holdings[fb]) {
+        u = structuredClone(u);
+        const v = E.ownedHoldingValue(u, parcels, u.holdings[fb]);
+        u.holdings[fb].loan.balance = Math.round(v * 1.3);
+        nw0 = E.netWorth(u, parcels);
+      }
+      u = E.advanceMonth(u, parcels, bbls, adjacency);
+      if (u.gameOver) u = { ...u, gameOver: null, cash: Math.max(u.cash, 6e6) };
+      if (nw0 && u.fund?.settled) done = true;
+    }
+    check(done, "the fund with an underwater deed settles");
+    check(!u.holdings[fb], "the underwater vehicle deed leaves with its loan rather than landing on the sponsor");
+    const jump = nw0 ? (E.netWorth(u, parcels) - nw0) / Math.abs(nw0) : 0;
+    check(jump > -0.02, `the sponsor does not take the LPs' loss (${(jump * 100).toFixed(1)}% net worth at settlement)`);
+    const ex = (u.exits ?? []).find((e) => e.bbl === fb);
+    check(!!ex && ex.equityIn === undefined, "and its exit reports no equity multiple — the NAV the LPs took is not on its ledger");
+  } else console.log("  (no vehicle purchase with a loan — underwater case skipped)");
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");
 process.exit(bad ? 1 : 0);

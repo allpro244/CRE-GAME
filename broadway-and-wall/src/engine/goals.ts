@@ -1,0 +1,67 @@
+/**
+ * A RUN'S AMBITION, CHOSEN AT THE START. A hundred-year town has no win screen,
+ * and "climb the street" is a direction, not a finish line. A goal is a line
+ * the player draws for themselves — a target and a deadline — read off
+ * quantities the game already keeps (the year marks, net worth, deliveries,
+ * the rent roll). Nothing here draws a random number or moves a dollar.
+ */
+import type { GameState } from "./types";
+
+export type GoalId = "street" | "nw100" | "builder" | "landlord";
+
+export interface GoalDef { id: GoalId; label: string; detail: string; years: number }
+export const GOALS: readonly GoalDef[] = [
+  { id: "landlord", label: "Landlord", detail: "Half a million square feet let across your book", years: 15 },
+  { id: "builder", label: "Builder", detail: "Deliver five buildings of your own", years: 20 },
+  { id: "nw100", label: "A hundred million", detail: "$100M of net worth", years: 25 },
+  { id: "street", label: "Top of the street", detail: "The largest firm on the street at a year's close", years: 30 },
+];
+
+export interface Goal { id: GoalId; setM: number; deadlineM: number; doneM?: number; failedM?: number }
+
+export function goalDef(id: GoalId): GoalDef {
+  return GOALS.find((g) => g.id === id) ?? GOALS[0];
+}
+
+export function newGoal(id: GoalId, month: number): Goal {
+  return { id, setM: month, deadlineM: month + goalDef(id).years * 12 };
+}
+
+/** Where the run stands against its goal: a 0..1 share and a line to print. */
+export function goalProgress(s: GameState): { share: number; text: string } | null {
+  const g = s.goal;
+  if (!g) return null;
+  switch (g.id) {
+    case "street": {
+      const m = (s.yearMarks ?? []).filter((x) => x.y >= 0).at(-1);
+      if (!m) return { share: 0, text: "no year closed yet" };
+      return { share: m.of > 1 ? (m.of - m.rank) / (m.of - 1) : 1, text: `${m.rank} of ${m.of} at the last close` };
+    }
+    case "nw100": {
+      const nw = s.nwHistory.at(-1) ?? 0;
+      return { share: Math.max(0, Math.min(1, nw / 100e6)), text: `$${(nw / 1e6).toFixed(1)}M of $100M` };
+    }
+    case "builder": {
+      const n = s.delivered ?? 0;
+      return { share: Math.min(1, n / 5), text: `${n} of 5 delivered` };
+    }
+    case "landlord": {
+      let let_ = 0;
+      for (const h of Object.values(s.holdings)) for (const t of h.tenants) let_ += t.sf;
+      return { share: Math.min(1, let_ / 500_000), text: `${Math.round(let_).toLocaleString()} of 500,000 sf let` };
+    }
+  }
+}
+
+/** Has the goal just been met, or has its deadline passed? Pure read. */
+export function goalVerdict(s: GameState): "done" | "failed" | null {
+  const g = s.goal;
+  if (!g || g.doneM !== undefined || g.failedM !== undefined) return null;
+  const p = goalProgress(s);
+  const met = g.id === "street"
+    ? (s.yearMarks ?? []).some((m) => m.y >= 0 && m.m >= g.setM && m.rank === 1)
+    : (p?.share ?? 0) >= 1;
+  if (met) return "done";
+  if (s.month > g.deadlineM) return "failed";
+  return null;
+}

@@ -43,6 +43,8 @@ export const MODULES = [
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).
   "buybox",
+  // goals is the run's chosen ambition: progress and verdict, pure reads.
+  "goals",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the

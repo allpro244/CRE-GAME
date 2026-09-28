@@ -1627,6 +1627,48 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
+// THE HOUR, AS A NUMBER. The month decides where the sun stands and how warm
+// it is; the hour decides how much of it is left. 0 is the calibrated
+// afternoon every other constant in this file was tuned under, 0.5 is the
+// sun on the horizon, 1 is the blue hour after it — lamps, lit floors and a
+// sky gone indigo. It deliberately does NOT move the sun: the shadow bake is
+// keyed to the month and costs a full depth pass, so the evening is carried
+// by the light's colour and strength, which is also what the eye reads first.
+//
+// Shared, as functions of one argument, by every shader that has to agree
+// about it — the light rig, the harbour, and the multiply that darkens the
+// MapLibre ground and sky this layer did not draw. Three shaders asking one
+// question, one answer.
+const DUSK_GLSL = /* glsl */ `
+// what is left of the sun: warm and weaker toward the horizon, gone after it
+vec3 duskSunK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(1.04, 0.72, 0.46), smoothstep(0.0, 0.52, d));
+  return k * (1.0 - 0.96 * smoothstep(0.40, 0.92, d));
+}
+// the sky dome's own light: lilac as the sun goes, indigo after it
+vec3 duskSkyK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.70, 0.64, 0.70), smoothstep(0.10, 0.60, d));
+  // (the dome is already blue in SKY_COL; this is chosen so the product is
+  // a dim, faintly blue night and not an indigo enamel on every roof)
+  return mix(k, vec3(0.36, 0.33, 0.31), smoothstep(0.55, 1.0, d));
+}
+// the multiply laid over ground the sun has left: golden, then blue
+vec3 duskGroundK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.90, 0.74, 0.62), smoothstep(0.0, 0.50, d));
+  return mix(k, vec3(0.22, 0.26, 0.40), smoothstep(0.45, 1.0, d));
+}
+// the band of sky just over the sea: it burns, then it holds a glow the
+// zenith has already lost
+vec3 duskHorizonK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(1.0, 0.70, 0.50), smoothstep(0.05, 0.50, d));
+  return mix(k, vec3(0.46, 0.38, 0.52), smoothstep(0.50, 1.0, d));
+}
+vec3 duskZenithK(float d) {
+  vec3 k = mix(vec3(1.0), vec3(0.70, 0.62, 0.78), smoothstep(0.10, 0.55, d));
+  return mix(k, vec3(0.17, 0.20, 0.38), smoothstep(0.50, 1.0, d));
+}
+`;
+
 // The light rig. One sun, a sky dome, and a warm bounce off the pavement —
 // which is what actually makes massing read: cool light from above, warm
 // light from below, and a real shadow between them. Everything lands in a
@@ -1644,11 +1686,18 @@ const LIGHT_GLSL = /* glsl */ `
 // going black.
 uniform vec3 uSunDir;
 uniform vec3 uSunCol;
-uniform vec2 uWeather; // rain, overcast
+uniform vec4 uWeather; // rain, overcast, dusk (the hour — see DUSK_GLSL), spare
 #define RAIN uWeather.x
 #define OVERCAST uWeather.y
+#define DUSK uWeather.z
 #define SUN_DIR uSunDir
-#define SUN_COL (uSunCol * mix(1.0, 0.46, OVERCAST))
+` + DUSK_GLSL + /* glsl */ `
+#define SUN_COL (uSunCol * mix(1.0, 0.46, OVERCAST) * duskSunK(DUSK))
+// Lit windows, lamps and headlights: on in the low winter sun (the month's
+// own dusk) and all the way on once the hour has gone.
+float nightK() {
+  return max(1.0 - smoothstep(0.10, 0.42, SUN_DIR.z), smoothstep(0.30, 0.80, DUSK));
+}
 // THE FILL WAS DOING THE SUN'S JOB. A sky term this bright lands about
 // two-thirds of full illumination on a surface the sun cannot see at all,
 // which is why a city lit at 28 degrees — an angle chosen precisely so the
@@ -1662,8 +1711,8 @@ uniform vec2 uWeather; // rain, overcast
 // shade-face-to-lit-face ratio is the only massing cue that survives the
 // distance — it has to carry the modelling on its own out there, and at 0.408
 // it was not quite deep enough to.
-const vec3 SKY_COL = vec3(0.376, 0.464, 0.640);
-const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
+#define SKY_COL (vec3(0.376, 0.464, 0.640) * duskSkyK(DUSK))
+#define GND_COL (vec3(0.372, 0.318, 0.248) * mix(1.0, 0.30, smoothstep(0.35, 0.95, DUSK)))
 
 vec3 hemiLight(vec3 n, float ao) {
   // THE GROUND HALF OF THIS IS A BOUNCE, AND IT WAS NOT LIT.
@@ -1726,7 +1775,10 @@ vec3 grade(vec3 c) {
   t = clamp(t, 0.0, 1.0);
 
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.40);                 // ACES eats chroma; put it back
+  // ACES eats chroma; put it back — but not after dark, when the only
+  // chroma left in a shaded wall is the sky's indigo, and pumping that turns
+  // every snow roof into a sheet of blue enamel. Night vision is desaturated.
+  t = mix(vec3(lum), t, mix(1.40, 0.92, smoothstep(0.45, 1.0, DUSK)));
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
   // the warm highlight tint was a quarter of the way to sepia and every lit
@@ -1896,7 +1948,16 @@ vec3 airColour(vec3 p, vec3 cam) {
   // glow down-sun is the half of aerial perspective that says LATE LIGHT
   // rather than just distance.
   vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.0));
-  return mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+  haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
+  // AND THE AIR KEEPS THE HOUR. Down-sun it holds the last of the light the
+  // longest — the warm lobe goes rose before it goes out — and away from the
+  // sun it goes to the blue the zenith is going to.
+  if (DUSK > 0.001) {
+    vec3 eve = mix(vec3(0.36, 0.38, 0.54), vec3(0.94, 0.60, 0.46), pow(toSun, 1.6));
+    haze = mix(haze, eve, smoothstep(0.08, 0.55, DUSK));
+    haze = mix(haze, vec3(0.14, 0.17, 0.28), smoothstep(0.55, 1.0, DUSK));
+  }
+  return haze;
 }
 
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
@@ -1937,10 +1998,17 @@ uniform vec4 uSeason;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
 uniform vec3 uCamP;
 uniform vec2 uFade;       // (start, end) metres — 0 disables
+// THE PART OF A PROP THAT IS A LIGHT: local x and z it starts above, and its
+// class (see PROP_FRAG's glow). A lamp's head is the only user; zero is off.
+uniform vec3 uGlowBox;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  vE = uGlowBox.z * step(uGlowBox.x, position.x) * step(uGlowBox.y, position.z);
   float bare = uSeason.z * step(0.5, uFoliage) * step(uFoliage, 1.5);
   vec3 p = position;
   p.xy *= mix(1.0, 0.32, bare);
@@ -1998,10 +2066,19 @@ uniform float uTime;
 uniform float uActivity;
 attribute vec4 aWalk;    // street dir x, y · patrol length m · speed m/s
 attribute vec2 aWalk2;   // phase 0..1 · breath threshold 0..1
+// 1 on the running traffic: its nose and tail are lamps after dark
+uniform float uLights;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  // class 2 on the face that points where the car is going, 3 on the one
+  // that points back. Off the LOCAL normal, so a whole face carries one
+  // class and nothing is interpolated across the doors.
+  vE = uLights * (2.0 * step(0.9, normal.x) + 3.0 * step(0.9, -normal.x));
   float breath = 0.62 + 0.38 * sin(uTime * 0.018 + 1.7);
   // The slow breath keeps the pavement moving; the simulation decides how
   // many people are there to move. A weak labour market or empty buildings
@@ -2024,11 +2101,102 @@ const PROP_VERT_PLAIN = /* glsl */ `
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 void main() {
+  vL = position;
+  vE = 0.0;
   vN = normalize(normal);
   vW = position;
   vC = vec3(1.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// THE HARBOUR'S TRAFFIC. A ferry working a loop off the waterfront and a few
+// sailboats reaching back and forth: every boat runs an ellipse laid in open
+// water at build time, and the whole of its motion is done here off the shared
+// clock — position on the ellipse, heading off its tangent — so a fleet costs
+// the CPU nothing per frame and one draw call. Both hull types live in one
+// geometry; aType says which a vertex belongs to and aRoute2.w which one this
+// instance is, and the other collapses to a point.
+const BOAT_VERT = /* glsl */ `
+uniform float uTime;
+attribute vec4 aRoute;   // centre x, y · semi-axis along · semi-axis across
+attribute vec4 aRoute2;  // axis bearing · angular speed (signed) · phase · kind
+attribute vec3 aHull;    // this boat's hull paint
+attribute vec4 aPaint;   // rgb · mode (0 paint, 1 hull, 2 cabin glass, 3 wake)
+attribute float aType;
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+varying vec3 vL;
+varying float vE;
+void main() {
+  float keep = 1.0 - step(0.5, abs(aType - aRoute2.w));
+  float th = aRoute2.z + uTime * aRoute2.y;
+  vec2 T = vec2(cos(aRoute2.x), sin(aRoute2.x));
+  vec2 N = vec2(-T.y, T.x);
+  vec2 at = aRoute.xy + T * (aRoute.z * cos(th)) + N * (aRoute.w * sin(th));
+  vec2 vel = (-T * (aRoute.z * sin(th)) + N * (aRoute.w * cos(th))) * sign(aRoute2.y);
+  vec2 fw = normalize(vel + vec2(1e-5, 0.0));
+  vec2 sd = vec2(-fw.y, fw.x);
+  vec3 p = position * keep;
+  // a little pitch on the swell, fore and aft, and none of it on the wake
+  float live = 1.0 - step(2.5, aPaint.w);
+  float bob = sin(uTime * 1.3 + aRoute2.z * 7.0) * 0.18 * live;
+  vec3 w = vec3(at + fw * p.x + sd * p.y, p.z + bob * p.x / 16.0);
+  vN = normalize(vec3(fw * normal.x + sd * normal.y, normal.z));
+  vW = w;
+  vL = position;
+  vC = aPaint.w > 0.5 && aPaint.w < 1.5 ? aHull : aPaint.rgb;
+  // the saloon windows are lamps after dark (PROP_FRAG's class 1)
+  vE = step(1.5, aPaint.w) * step(aPaint.w, 2.5) * 0.62;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(w, 1.0);
+}`;
+
+// A PUFF OF SITE DUST: seven-second life, rising nine metres, growing and
+// then shrinking out of existence (a fade would need sorting; a shrink costs
+// nothing) while the wind carries it off along +x/+y.
+const DUST_VERT = /* glsl */ `
+uniform float uTime;
+attribute vec4 aPuff;    // x, y · phase 0..1 · size
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+varying vec3 vL;
+varying float vE;
+void main() {
+  float t = fract(uTime / 7.0 + aPuff.z);
+  float r = aPuff.w * (0.5 + 2.4 * t) * (1.0 - smoothstep(0.55, 1.0, t)) * smoothstep(0.0, 0.08, t);
+  vec3 w = vec3(aPuff.xy + vec2(0.8, 0.5) * (t * 7.0), 0.6 + t * 9.0) + position * r;
+  // a cloud has no facets: shade it as the sphere it approximates
+  vN = normalize(position);
+  vW = w;
+  vC = vec3(1.0);
+  vL = position;
+  vE = 0.0;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(w, 1.0);
+}`;
+
+// A LAMP'S POOL ON THE PAVEMENT. The lamp head lights (PROP_FRAG's class 1),
+// but a street at night is read by what the lamps light, not by the lamps: a
+// soft warm disc on the ground under every head. Additive, on a flat quad per
+// lamp, and the whole mesh is switched off by day so it costs nothing then.
+const POOL_VERT = /* glsl */ `
+varying vec2 vQ;
+void main() {
+  vQ = position.xy;
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+}`;
+const POOL_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vQ;
+uniform vec4 uWeather;
+void main() {
+  float r = length(vQ);
+  float k = smoothstep(0.30, 0.85, uWeather.z);
+  float fall = pow(max(1.0 - r, 0.0), 2.2);
+  gl_FragColor = vec4(vec3(0.50, 0.36, 0.18) * fall * k, 0.0);
 }`;
 
 const SHADOW_GLSL = /* glsl */ `
@@ -6931,7 +7099,9 @@ void main() {
   // roughly October to February, so a summer noon pays nothing and the
   // lit-window read is a winter-afternoon fact — which is when the lights in
   // a working building would actually be on.
-  float duskK = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
+  // ...and the hour can throw it too: the same switch, fed by whichever of
+  // the month's low sun and the evening (DUSK) says it is later. See nightK.
+  float duskK = nightK();
   float letBand = -1.0;
   if (vLit >= 0.0) {
     float bandH = fh * 3.0;
@@ -7405,8 +7575,16 @@ void main() {
     // lift proportional to the building's own occupancy and its glass share —
     // so at three kilometres a let tower reads warm against a vacant one
     // that reads cold, which is the game's subject on its own skyline.
-    float perWin = letBand * (0.22 + 0.78 * winMask * (0.45 + 0.55 * wid));
-    float faceAvg = clamp(vLit, 0.0, 1.0) * (0.30 + 0.70 * win.x * win.y);
+    // (the floor under the per-window term is the fit-out's spill onto the
+    // piers between openings; after dark the piers go dark and the windows
+    // carry it, which is the whole difference between a lit building and a
+    // lamp shade)
+    float pier = mix(0.22, 0.04, smoothstep(0.35, 0.9, DUSK));
+    float perWin = letBand * (pier + (1.0 - pier) * winMask * (0.45 + 0.55 * wid));
+    // (and after dark the far read leans on the windows' own share rather
+    // than a wash over the whole face, or a let tower is a lamp shade)
+    float faceAvg = clamp(vLit, 0.0, 1.0) * (0.30 + 0.70 * win.x * win.y)
+                  * mix(1.0, 0.62, smoothstep(0.35, 1.0, DUSK));
     glowK += duskK * mix(perWin, faceAvg, lod) * 0.30;
   }
 
@@ -7485,7 +7663,10 @@ void main() {
   // December dusk peak) lands near 0.29 before grading, which the filmic
   // curve keeps at the edge of the 0.86 bloom bright-pass: the very
   // brightest frontages may just kiss the bloom, and that is the photograph.
-  col += vec3(1.00, 0.72, 0.35) * glowK;
+  // After dark the interior is most of what the building is: the same
+  // decision, turned up, so a let floor carries across the harbour and just
+  // clears the bloom's knee while a vacant one stays a dark gap in the stack.
+  col += vec3(1.00, 0.72, 0.35) * glowK * (1.0 + 1.1 * smoothstep(0.35, 1.0, DUSK));
 
   // GRAZING SKY, WHICH IS WHAT SEPARATES A BUILDING FROM THE ONE BEHIND IT.
   //
@@ -8069,8 +8250,8 @@ const CATCHER_FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vPos;
 uniform vec4 uSeason;
-uniform vec2 uWeather; // rain, overcast
-` + SHADOW_GLSL + /* glsl */ `
+uniform vec4 uWeather; // rain, overcast, dusk, spare
+` + SHADOW_GLSL + DUSK_GLSL + /* glsl */ `
 // THE TABLE HAS A GRAIN. Two octaves of world-anchored value noise — this is
 // the drafting-table half of the ground fix: the MapLibre fills are flat
 // hexes, so at the establishing zoom the island interior read as one
@@ -8134,6 +8315,11 @@ void main() {
               + wc * wa * (1.0 - a) * (1.0 - sa)
               + gcol * ga * (1.0 - a) * (1.0 - sa) * (1.0 - wa);
   vec3  outC = outA > 0.0001 ? outCA / outA : sc;
+  // After dark there is no sun to be shadowed from, and the ground this
+  // lays its snow and grain on has already been dimmed by the post
+  // multiply — so the sheet dims with it rather than glowing on top.
+  outC *= duskGroundK(uWeather.z);
+  outA *= 1.0 - 0.55 * smoothstep(0.50, 1.0, uWeather.z) * (1.0 - sa);
   gl_FragColor = vec4(outC, outA);
 }`;
 
@@ -8444,6 +8630,25 @@ const AO_MULT_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D uAoTex;
+uniform float uDusk;
+uniform mat4 uInvProj;
+` + DUSK_GLSL + /* glsl */ `
+// THE HOUR REACHES THE GROUND THIS LAYER DID NOT DRAW. The pavement, the
+// parks, the far sea and the sky are MapLibre's; the only hand this layer
+// has on them is this multiply, so the evening goes down here with the
+// occlusion. Sky and ground are told apart by the eye ray itself: a ray
+// that climbs never meets the ground, and how steeply it climbs is where
+// in the dome it is — burning at the horizon, indigo overhead. The far
+// ground takes the horizon's colour as it approaches it, so the two meet
+// without a seam, which is what the fog is doing there in daylight too.
+vec3 duskMul(vec2 uv) {
+  vec4 a = uInvProj * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+  vec4 b = uInvProj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 d = normalize(b.xyz / b.w - a.xyz / a.w);
+  vec3 hor = duskHorizonK(uDusk);
+  if (d.z >= 0.0) return mix(hor, duskZenithK(uDusk), smoothstep(0.0, 0.45, d.z));
+  return mix(hor, duskGroundK(uDusk), smoothstep(0.015, 0.16, -d.z));
+}
 void main() {
   vec2 a = texture2D(uAoTex, vUv).rg;
   // Cool, because ambient occlusion is the absence of SKY light and the sky
@@ -8453,6 +8658,7 @@ void main() {
   // thing than the absence of sky — and bluer still, because what is left
   // lighting it is the dome.
   tint *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), a.g * 0.80);
+  if (uDusk > 0.001) tint *= duskMul(vUv);
   gl_FragColor = vec4(tint, 1.0);
 }`;
 
@@ -8913,6 +9119,13 @@ void main() {
   // two arrive through the SAME Fresnel weight rather than through a second
   // pass keyed on how far away the camera happens to be.
   vec3 skyC = mix(sky, horizonC, pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  // The hour, on the harbour: the body goes the colour the ground went, and
+  // what the surface mirrors is the dome at the angle it is mirrored from —
+  // the burning band low down, the indigo overhead.
+  if (DUSK > 0.001) {
+    body *= duskGroundK(DUSK);
+    skyC *= mix(duskZenithK(DUSK), duskHorizonK(DUSK), pow(1.0 - clamp(V.z, 0.0, 1.0), 3.0));
+  }
   vec3 col = mix(body, skyC, fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
   // angle — that Fresnel curve is the whole reason a harbour mirrors the far
@@ -9025,7 +9238,11 @@ void main() {
   // and the two renderers now converge on one colour from any distance and any
   // angle. Labelled for what it is: a compositing constraint, imposed because a
   // MapLibre fill has no atmosphere and cannot be given one.
-  vec3 outc = mix(grade(col), uSeaFar, airFrac(vec3(vXY, 0.0), uCam));
+  // and the far sea has to land on what the post multiply makes of
+  // MapLibre's — the same function of the same eye ray (see AO_MULT_FRAG)
+  vec3 seaFar = uSeaFar;
+  if (DUSK > 0.001) seaFar *= mix(duskHorizonK(DUSK), duskGroundK(DUSK), smoothstep(0.015, 0.16, V.z));
+  vec3 outc = mix(grade(col), seaFar, airFrac(vec3(vXY, 0.0), uCam));
 
   // THE SEA HAS NO EDGE AND THIS MESH DOES, AND WHAT HIDES THAT EDGE HAS TO
   // BELONG TO THE MESH.
@@ -9079,7 +9296,7 @@ void main() {
   // renderer, flat and unhazed because a fill cannot be anything else. Landing
   // on any other colour is how you get a band across the world's edge, which
   // the style file has a comment worrying about and which was in fact there.
-  outc = mix(outc, uSeaFar, smoothstep(800.0, 3000.0, vDepth));
+  outc = mix(outc, seaFar, smoothstep(800.0, 3000.0, vDepth));
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -9088,11 +9305,30 @@ precision highp float;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
+varying vec3 vL;
+varying float vE;
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
 ` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
+// THE STREET'S OWN LIGHTS. A sodium-warm lamp head, and on the running
+// traffic a pair of headlamps on the nose and a pair of tail lamps on the
+// back — two spots at the corners of the face, not the whole bumper, which
+// is what makes a moving pair of points read as a car from the air. Emitted
+// before the grade, the same way the facade's window light is, so they sit on
+// the bloom's knee at night and are nothing at all by day.
+vec3 propGlow() {
+  if (vE < 0.1) return vec3(0.0);
+  float nk = nightK();
+  if (nk < 0.001) return vec3(0.0);
+  // class 1 is a lamp; a fractional class is the same lamp turned down (a
+  // ferry saloon is lit, it is not a street light)
+  if (vE < 1.5) return vec3(1.00, 0.78, 0.46) * 1.9 * vE * nk;
+  float spot = step(0.46, abs(vL.y)) * step(0.42, vL.z) * step(vL.z, 0.92);
+  vec3 c = vE < 2.5 ? vec3(1.00, 0.94, 0.80) * 2.2 : vec3(0.95, 0.10, 0.06) * 1.3;
+  return c * spot * nk;
+}
 void main() {
   vec3 n = normalize(vN);
   vec3 base = uColor * vC;
@@ -9133,7 +9369,7 @@ void main() {
   } else {
     light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
   }
-  gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
+  gl_FragColor = vec4(aerial(grade(base * light + propGlow()), vW, uCam), uOpacity);
 }`;
 
 /** GLSL's smoothstep, on the CPU side, for uniforms that ease. */
@@ -9316,7 +9552,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private sunColUni = { value: new THREE.Vector3(1.26, 1.09, 0.82) };
   private seasonUni = { value: new THREE.Vector4(0, 0, 0, 1) };
   private seasonBase = new THREE.Vector4(0, 0, 0, 1);
-  private weatherUni = { value: new THREE.Vector2(0, 0) };
+  private weatherUni = { value: new THREE.Vector4(0, 0, 0, 0) };
   private weatherSnow = 0;
   private simMonth = -1;
   private sunDirty = false;
@@ -9326,6 +9562,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
   private hasPonds = false;
+  /** the harbour fleet — one instanced mesh, see buildBoats */
+  private boats: THREE.InstancedMesh | null = null;
+  /** the job sites' dust — one instanced mesh in dynJobs, see dustMesh */
+  private dust: THREE.InstancedMesh | null = null;
+  /** warm discs under the street lamps, drawn only after dark */
+  private lampPools: THREE.InstancedMesh | null = null;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private shadowTexelM = 4400 / 3072;
@@ -9595,6 +9837,65 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   /** Step the demolition / delivery tweens; true while any is running. */
+  // ---- the hour ------------------------------------------------------------
+  // Where the evening is (weatherUni.z, read in the shaders as DUSK) and where
+  // it is going. Eased per frame so a change of mode — Play starting, the photo
+  // frame going up — reads as the light going, not as a switch.
+  private duskTarget = 0;
+  private duskT = 0;
+  private duskClock = 0;
+  /**
+   * THE HOUR. 0 is the calibrated afternoon, 0.5 sunset, 1 the blue hour.
+   * The month still owns the sun's bearing and the shadow bake; this only
+   * changes how much light is left, so it costs no re-bake and can move every
+   * frame. `instant` skips the ease (tests, and a first paint).
+   */
+  setDayPhase(target: number, instant = false) {
+    const t = Math.max(0, Math.min(1, Number.isFinite(target) ? target : 0));
+    this.duskTarget = t;
+    if (instant) { this.duskT = t; this.applyDusk(t); }
+    this.map?.triggerRepaint();
+  }
+
+  /** How many boats are working the harbour (for tests and probes). */
+  harbourFleet(): number { return this.boats?.count ?? 0; }
+
+  /** The hour the frame is actually being drawn at (for tests and probes). */
+  dayPhase(): number { return this.weatherUni.value.z; }
+
+  private applyDusk(d: number) {
+    this.weatherUni.value.z = d;
+    if (this.lampPools) this.lampPools.visible = d > 0.3;
+    this.sceneDirty++;
+    if (!this.postOK || !this.brightMat) return;
+    const night = smoothstep(0.35, 1.0, d);
+    // lit floors and lamps are meant to spill after dark; in daylight the
+    // knee stays where January's snow roofs put it
+    this.brightMat.uniforms.uThresh.value = 0.86 - 0.24 * night;
+    this.compMat.uniforms.uBloomAmt.value = 0.20 + 0.22 * night;
+    this.compMat.uniforms.uGlare.value = 0.26 * (1 - smoothstep(0.30, 0.75, d));
+    this.aoMultMat.uniforms.uDusk.value = d;
+  }
+
+  /** One ease step toward the target hour. True while it is still moving. */
+  private stepDusk(now: number): boolean {
+    const dt = this.duskClock ? Math.min(0.25, (now - this.duskClock) / 1000) : 0;
+    this.duskClock = now;
+    const cur = this.duskT;
+    const goal = this.duskTarget;
+    if (Math.abs(goal - cur) < 0.002) {
+      if (this.weatherUni.value.z !== goal) { this.duskT = goal; this.applyDusk(goal); }
+      return false;
+    }
+    // about three seconds for a full evening, whichever way it runs
+    const step = Math.sign(goal - cur) * Math.min(Math.abs(goal - cur), dt * 0.34);
+    this.duskT = cur + step;
+    // Quantised, because every change dirties the post cache: the eye cannot
+    // tell a 0.004 step in the light, and the idle-frame reuse can.
+    if (Math.abs(this.duskT - this.weatherUni.value.z) >= 0.004) this.applyDusk(this.duskT);
+    return true;
+  }
+
   private stepTweens(now: number): boolean {
     if (!this.tweens.size) return false;
     for (const [key, tw] of this.tweens) {
@@ -9748,7 +10049,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         blending: THREE.CustomBlending,
         blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor,
         blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-        uniforms: { uAoTex: { value: null } },
+        uniforms: { uAoTex: { value: null }, uDusk: { value: 0 }, uInvProj: { value: new THREE.Matrix4() } },
       });
       this.shaftMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: SHAFT_FRAG, depthTest: false, depthWrite: false,
@@ -10629,6 +10930,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.plantStreets();
     this.buildAoGround();
     this.buildWater();
+    this.buildBoats();
     this.buildSeawall();
     this.buildLawns();
 
@@ -10878,7 +11180,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // is CLONED per mesh because instanced attributes live on the geometry
     // and the walkers' must not leak onto the parked cars' shared copy.
     const addWalkers = (
-      geom: THREE.BufferGeometry, items: Walker[], palette: [number, number, number][],
+      geom: THREE.BufferGeometry, items: Walker[], palette: [number, number, number][], lights = false,
     ) => {
       if (!items.length) return;
       const g = geom.clone();
@@ -10891,6 +11193,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       mat.vertexShader = WALKER_VERT;
       mat.uniforms.uTime = this.timeUni;
       mat.uniforms.uActivity = this.activityUni;
+      mat.uniforms.uLights = { value: lights ? 1 : 0 };
       const mesh = new THREE.InstancedMesh(g, mat, items.length);
       const m = new THREE.Matrix4();
       let maxLen = 0;
@@ -10964,9 +11267,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     };
 
-    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0, foliage = 0) => {
+    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0, foliage = 0, glow?: [number, number]) => {
       if (!items.length) return;
-      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color, true, foliage), items.length);
+      // a prop with a light in it owns its material: the glow box is a uniform
+      const mat = this.propMaterial(color, true, foliage, [0, 0], !!glow);
+      if (glow) (mat.uniforms.uGlowBox.value as THREE.Vector3).set(glow[0], glow[1], 1);
+      const mesh = new THREE.InstancedMesh(geom, mat, items.length);
       const m = new THREE.Matrix4();
       const cols = new Float32Array(items.length * 3);
       items.forEach((p, i) => {
@@ -11038,7 +11344,35 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     add(treeCanopyGeom(), 0x71904f, sp[0], 0.34, 1);
     add(columnarCanopyGeom(), 0x6d8a4c, sp[1], 0.30, 1);
     add(coniferCanopyGeom(), 0x4e6f4a, sp[2], 0.26, 2);
-    add(lampGeom(), 0x4e5459, lamps, 0.06);
+    // the head of the lamp (x past the arm's elbow, z at the lantern) lights
+    add(lampGeom(), 0x4e5459, lamps, 0.06, 0, [0.74, 4.28]);
+    if (lamps.length) {
+      const g = new THREE.PlaneGeometry(2, 2);
+      const mat = new THREE.ShaderMaterial({
+        vertexShader: POOL_VERT, fragmentShader: POOL_FRAG,
+        uniforms: { uWeather: this.weatherUni },
+        transparent: true, depthWrite: false,
+        // add light, leave alpha alone — see the ground sheen for why
+        // AdditiveBlending will not do
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      });
+      const mesh = new THREE.InstancedMesh(g, mat, lamps.length);
+      const m = new THREE.Matrix4();
+      lamps.forEach((p, i) => {
+        // under the head, which hangs a metre out along the arm
+        const hx = p.x + Math.cos(p.rot) * p.s, hy = p.y + Math.sin(p.rot) * p.s;
+        m.makeScale(7.5, 7.5, 1).setPosition(hx, hy, 0.12);
+        mesh.setMatrixAt(i, m);
+      });
+      mesh.userData.noShadow = true;
+      mesh.visible = false;
+      this.finishInstances(mesh);
+      this.scene.add(mesh);
+      this.lampPools = mesh;
+    }
     add(pileGeom(), 0x5c4a34, piles, 0.08);
     // Manufactured things do not come in random proportions. Benches and
     // railings go in rigid — uniform scale, exact bearing — because a rail
@@ -11103,7 +11437,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     addCars(cars);
     addPeople(people);
     addWalkers(personGeom(), walkers, COAT);
-    addWalkers(carGeom(), movers, CAR_COLORS);
+    addWalkers(carGeom(), movers, CAR_COLORS, true);
   }
 
   /**
@@ -11454,6 +11788,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     try { tris = THREE.ShapeUtils.triangulateShape(outer, [hole]); } catch { return; }
     if (!tris.length) return;
     const pts = [...outer, ...hole];
+    let depthCache: number[] = [];
     // distance from each vertex to the shoreline — the shallows gradient
     const depthOf = (v: THREE.Vector2) => {
       let best = Infinity;
@@ -11467,7 +11802,78 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       return best;
     };
-    const depths = pts.map(depthOf);
+    // THE PALE WEDGE ACROSS EVERY BAY. The triangulator knows nothing about
+    // depth: across the mouth of a cove it happily lays one long triangle
+    // whose three corners are all ON the coast, so the depth it carries is
+    // zero at every corner and zero everywhere in between — and the shoal,
+    // the wash and the foam light up a hard-edged triangle of shallows a
+    // kilometre across, straight line and all, in the middle of open water.
+    // Every island with a bay had one, in the establishing shot.
+    //
+    // Refined, not re-triangulated: any edge long for its distance from the
+    // coast is split at its midpoint, and because the decision is taken per
+    // EDGE, the two triangles sharing it always agree — no T-junctions, no
+    // cracks, no seams in the interpolated depth. Out past the shoal the
+    // triangles stay as big as they were; near the shore they shrink to a
+    // size where a straight-line interpolation of depth is the truth.
+    {
+      const xs = pts.map((v) => v.x), ys = pts.map((v) => v.y);
+      const at = (x: number, y: number) => depthOf(new THREE.Vector2(x, y));
+      const dist = pts.map(depthOf);
+      let T = tris.map((t) => [t[0], t[1], t[2]]);
+      for (let round = 0; round < 12 && T.length < 60000; round++) {
+        const split = new Map<string, number>();   // edge key -> new vertex, or -1
+        const edge = (a: number, b: number): number => {
+          const k = a < b ? a + "_" + b : b + "_" + a;
+          const hit = split.get(k);
+          if (hit !== undefined) return hit;
+          const mx = (xs[a] + xs[b]) / 2, my = (ys[a] + ys[b]) / 2;
+          const len = Math.hypot(xs[b] - xs[a], ys[b] - ys[a]);
+          let v = -1;
+          if (len > 40) {
+            const d = at(mx, my);
+            // out to the far fade's own reach (vDepth runs the hand-off to
+            // MapLibre's sea from 800 m to 3 km), or its straight triangle
+            // edges show there instead: a hard-sided column of sun glitter
+            // cut off where a fan triangle from the corner of the sea begins
+            if (d < 3600 && len > 0.5 * d) {
+              v = xs.length;
+              xs.push(mx); ys.push(my); dist.push(d);
+            }
+          }
+          split.set(k, v);
+          return v;
+        };
+        const next: number[][] = [];
+        let any = false;
+        for (const [a, b, c] of T) {
+          const ab = edge(a, b), bc = edge(b, c), ca = edge(c, a);
+          const n = (ab >= 0 ? 1 : 0) + (bc >= 0 ? 1 : 0) + (ca >= 0 ? 1 : 0);
+          if (!n) { next.push([a, b, c]); continue; }
+          any = true;
+          if (n === 3) {
+            next.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+          } else if (n === 1) {
+            if (ab >= 0) next.push([a, ab, c], [ab, b, c]);
+            else if (bc >= 0) next.push([b, bc, a], [bc, c, a]);
+            else next.push([c, ca, b], [ca, a, b]);
+          } else {
+            // two split edges: rotate so they are (p,q) and (q,r)
+            let p0 = a, q = b, r = c, m1 = ab, m2 = bc;
+            if (ab < 0) { p0 = b; q = c; r = a; m1 = bc; m2 = ca; }
+            else if (bc < 0) { p0 = c; q = a; r = b; m1 = ca; m2 = ab; }
+            next.push([m1, q, m2], [p0, m1, m2], [p0, m2, r]);
+          }
+        }
+        T = next;
+        if (!any) break;
+      }
+      tris = T;
+      pts.length = 0;
+      for (let i = 0; i < xs.length; i++) pts.push(new THREE.Vector2(xs[i], ys[i]));
+      depthCache = dist;
+    }
+    const depths = depthCache;
     const pos: number[] = [];
     const dep: number[] = [];
     for (const t of tris) for (const i of t) { pos.push(pts[i].x, pts[i].y, 0.01); dep.push(depths[i]); }
@@ -11510,6 +11916,127 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.water = mesh;
   }
 
+  /**
+   * A SITE IS DUSTY. Every live job lifts a few slow puffs of pale grit off
+   * the ground — rising, spreading and thinning downwind — which is the one
+   * thing a building site does from the air that a finished building never
+   * does. All sites in one instanced, translucent draw, moved in DUST_VERT
+   * off the shared clock; rebuilt only with the job frames it belongs to.
+   */
+  private dustMesh(sites: [number, number, number, number][]): THREE.InstancedMesh {
+    const PER = 5;
+    const n = sites.length * PER;
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const puff = new Float32Array(n * 4);
+    sites.forEach(([x, y, k, rad], si) => {
+      for (let j = 0; j < PER; j++) {
+        const i = si * PER + j;
+        const a = hash01(k ^ Math.imul(j + 1, 0x2c1b3c6d), this.citySeed) * Math.PI * 2;
+        const r = rad + 1 + hash01(k ^ Math.imul(j + 5, 0x297a2d39), this.citySeed) * 5;
+        puff.set([x + Math.cos(a) * r, y + Math.sin(a) * r,
+          j / PER + hash01(k ^ (j * 977), this.citySeed) * 0.15,
+          1.8 + hash01(k ^ (j * 131 + 7), this.citySeed) * 1.4], i * 4);
+      }
+    });
+    g.setAttribute("aPuff", new THREE.InstancedBufferAttribute(puff, 4));
+    const mat = this.propMaterial(0xc9bba2, true, 0, [0, 0], true);
+    mat.vertexShader = DUST_VERT;
+    mat.uniforms.uTime = this.timeUni;
+    mat.uniforms.uOpacity.value = 0.42;
+    mat.transparent = true;
+    mat.depthWrite = false;
+    const mesh = new THREE.InstancedMesh(g, mat, n);
+    mesh.frustumCulled = false;
+    mesh.userData.noShadow = true;
+    mesh.renderOrder = 2;
+    return mesh;
+  }
+
+  /**
+   * THE HARBOUR WAS EMPTY. A city on an island lives off its water, and the
+   * water here moved — swell, chop, glitter — with nothing on it. A handful of
+   * boats on loops in the offing: a ferry or two, some sailboats, each with a
+   * wake. Routes are ellipses laid in open water, checked against the coast at
+   * two dozen points so no hull ever crosses the land, and deterministic in the
+   * coastline so a town keeps its ferry between reloads. See BOAT_VERT.
+   */
+  private buildBoats() {
+    const ring = this.landRing();
+    if (!ring || ring.length < 8 || !this.waterMat) return;
+    const R = ring.map((v) => [v.x, v.y] as [number, number]);
+    let per = 0;
+    for (let i = 0; i < R.length; i++) {
+      const a = R[i], b = R[(i + 1) % R.length];
+      per += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    // seeded off the coast itself — same island, same fleet
+    let seed = Math.floor(Math.abs(R[0][0] * 131 + R[0][1] * 71 + per)) % 2147483647 || 1;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const clear = (x: number, y: number, min: number) =>
+      !pointInRing(x, y, R) && edgeDist(R, [x, y]) >= min;
+    const want = Math.max(4, Math.min(14, Math.round(per / 1100)));
+    type Route = { cx: number; cy: number; a: number; b: number; ang: number; w: number; ph: number; kind: number; hull: [number, number, number] };
+    const routes: Route[] = [];
+    const HULLS: [number, number, number][] = [
+      [0.20, 0.24, 0.33], [0.48, 0.22, 0.17], [0.16, 0.30, 0.26], [0.86, 0.85, 0.80],
+    ];
+    for (let tries = 0; tries < want * 40 && routes.length < want; tries++) {
+      const i = Math.floor(rnd() * R.length);
+      const a = R[i], b = R[(i + 1) % R.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const L = Math.hypot(ex, ey);
+      if (L < 1) continue;
+      // outward, for a counter-clockwise solid
+      const nx = ey / L, ny = -ex / L;
+      const ferry = routes.filter((r) => r.kind === 0).length < Math.max(1, Math.round(want / 5));
+      const off = (ferry ? 260 : 150) + rnd() * 520;
+      const cx = (a[0] + b[0]) / 2 + nx * off, cy = (a[1] + b[1]) / 2 + ny * off;
+      const ang = Math.atan2(ey, ex) + (rnd() - 0.5) * 0.5;
+      const sa = ferry ? 260 + rnd() * 420 : 90 + rnd() * 240;
+      const sb = ferry ? 50 + rnd() * 60 : 30 + rnd() * 70;
+      const T = [Math.cos(ang), Math.sin(ang)], N = [-T[1], T[0]];
+      let ok = true;
+      for (let k = 0; k < 24 && ok; k++) {
+        const t = (k / 24) * Math.PI * 2;
+        const x = cx + T[0] * sa * Math.cos(t) + N[0] * sb * Math.sin(t);
+        const y = cy + T[1] * sa * Math.cos(t) + N[1] * sb * Math.sin(t);
+        ok = clear(x, y, 70);
+      }
+      // and not on top of a route already laid
+      for (const r of routes) if (ok && Math.hypot(r.cx - cx, r.cy - cy) < (r.a + sa) * 0.55) ok = false;
+      if (!ok) continue;
+      const speed = ferry ? 7 + rnd() * 3 : 3 + rnd() * 3;
+      const w = (speed / ((sa + sb) / 2)) * (rnd() < 0.5 ? -1 : 1);
+      routes.push({
+        cx, cy, a: sa, b: sb, ang, w, ph: rnd() * Math.PI * 2, kind: ferry ? 0 : 1,
+        hull: ferry ? HULLS[Math.floor(rnd() * 3)] : (rnd() < 0.7 ? HULLS[3] : HULLS[Math.floor(rnd() * 3)]),
+      });
+    }
+    if (!routes.length) return;
+    const g = boatFleetGeom();
+    const n = routes.length;
+    const r1 = new Float32Array(n * 4), r2 = new Float32Array(n * 4), hc = new Float32Array(n * 3);
+    routes.forEach((r, i) => {
+      r1.set([r.cx, r.cy, r.a, r.b], i * 4);
+      r2.set([r.ang, r.w, r.ph, r.kind], i * 4);
+      hc.set(r.hull, i * 3);
+    });
+    g.setAttribute("aRoute", new THREE.InstancedBufferAttribute(r1, 4));
+    g.setAttribute("aRoute2", new THREE.InstancedBufferAttribute(r2, 4));
+    g.setAttribute("aHull", new THREE.InstancedBufferAttribute(hc, 3));
+    const mat = this.propMaterial(0xffffff, true, 0, [0, 0], true);
+    mat.vertexShader = BOAT_VERT;
+    mat.uniforms.uTime = this.timeUni;
+    const mesh = new THREE.InstancedMesh(g, mat, n);
+    // the instance matrices are unused (identity); the routes place the boats
+    mesh.frustumCulled = false;
+    // moved entirely in the vertex stage — the bake would stamp them at the
+    // origin, the same orphan-shadow trap the walkers document
+    mesh.userData.noShadow = true;
+    this.scene.add(mesh);
+    this.boats = mesh;
+  }
+
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
   //
@@ -11544,6 +12071,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uFoliage: { value: foliage },
         uCamP: this.camUni,
         uFade: { value: new THREE.Vector2(fade[0], fade[1]) },
+        uGlowBox: { value: new THREE.Vector3(0, 0, 0) },
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -11932,6 +12460,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.jobsSig = jobsSig;
     }
     const nextDyn = new Map<string, { h: number; construction: boolean }>();
+    // every live site this rebuild draws, for the dust (see dustMesh)
+    const dustSites: [number, number, number, number][] = [];
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -12456,6 +12986,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           phase: hash01(k ^ 0xf3, this.citySeed) * Math.PI * 2,
           trolley, jib, tro,
         });
+        // at the foot of the frame, not inside it: the plate's own reach
+        {
+          let rad = 6;
+          for (const q of tiers[0].fp as [number, number][]) rad = Math.max(rad, Math.hypot(q[0] - cx, q[1] - cy));
+          dustSites.push([cx, cy, k, rad]);
+        }
         // ---- THE FRAME TELLS YOU HOW FAR ALONG IT IS -----------------------
         //
         // A site under a crane was a plain box the height of its progress, so
@@ -12563,6 +13099,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     this.prevDyn = nextDyn;
     this.primed = true;
+    if (rebuildJobs) {
+      // the group's own disposal takes the geometry; the material is this
+      // mesh's alone (propMaterial unique), so it goes here
+      (this.dust?.material as THREE.Material | undefined)?.dispose();
+      this.dust = dustSites.length ? this.dustMesh(dustSites) : null;
+      if (this.dust) this.dynJobs.add(this.dust);
+    }
     // Re-dress the fresh meshes from the last maps the game sent (see
     // lastOcc/lastRet at their declaration for why waiting on the feed's own
     // cadence is a month too late). Only the dynamic slots are written: the
@@ -12950,7 +13493,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
     const p = Math.max(0, Math.min(1, Number.isFinite(precipitation) ? precipitation : 0));
     const cloud = Math.max(0, Math.min(1, Number.isFinite(overcast) ? overcast : 0));
-    this.weatherUni.value.set(kind === "rain" ? p : 0, cloud);
+    this.weatherUni.value.x = kind === "rain" ? p : 0;
+    this.weatherUni.value.y = cloud;
     this.weatherSnow = kind === "snow" ? 0.32 + p * 0.62 : 0;
     this.applySeason();
     this.sceneDirty++;
@@ -13029,6 +13573,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // running and the next frame asked for, water or no water.
     const selAnim = this.selActive;
     if (this.stepTweens(performance.now())) this.map.triggerRepaint();
+    if (this.stepDusk(performance.now())) this.map.triggerRepaint();
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
@@ -13223,6 +13768,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     //    in the buffer, before anything of ours covers it.
     // m is spent (base holds the product) — reuse it for the inverse
     const invProj = m.copy(this.camera.projectionMatrix).invert();
+    if (this.weatherUni.value.z > 0.001) (this.aoMultMat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
     {
       const u = this.aoCalcMat.uniforms;
       u.uDepth.value = this.sceneRT.depthTexture;
@@ -13357,7 +13903,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     // must match the resting value in initPost — this is the same knob,
     // re-asserted every frame so stale shafts cannot linger after a skip
-    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras ? 0.36 : 0.0;
+    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras
+      ? 0.36 * (1 - smoothstep(0.30, 0.75, this.weatherUni.value.z)) : 0.0;
 
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);
@@ -14951,6 +15498,78 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
     return { tiers, style, family: name };
   }
   return { tiers: prism, style: -1, family: "m:prism" };
+}
+
+/**
+ * Both boats of the harbour fleet in one geometry, for BOAT_VERT. Length runs
+ * along +x (bow forward). Each part carries a paint (rgb + mode: 0 its own
+ * colour, 1 the instance's hull colour, 2 saloon glass that lights at night,
+ * 3 wake foam) and a type (0 ferry, 1 sailboat).
+ */
+function boatFleetGeom(): THREE.BufferGeometry {
+  const parts: { g: THREE.BufferGeometry; paint: [number, number, number, number]; type: number }[] = [];
+  const hullGeom = (len: number, beam: number, h: number) => {
+    const L = len / 2, B = beam / 2;
+    const sh = new THREE.Shape();
+    sh.moveTo(-L, -B); sh.lineTo(L * 0.55, -B); sh.lineTo(L, 0); sh.lineTo(L * 0.55, B); sh.lineTo(-L, B); sh.closePath();
+    return new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false });
+  };
+  // a flat V of foam behind the stern: two arms and a short centre scar
+  const wake = (len: number, beam: number, stern: number, type: number) => {
+    const arm = (side: number) => {
+      const g = new THREE.PlaneGeometry(len, beam * 0.22);
+      g.translate(-len / 2, 0, 0);
+      // swing the trailing end OUT to its own side, so the arms diverge
+      g.rotateZ(-side * 0.2);
+      g.translate(stern, side * beam * 0.35, 0.25);
+      return g;
+    };
+    // foam is water with air in it, not paint: a pale sea colour, so the V
+    // reads as disturbance on the harbour rather than as a white decal
+    parts.push({ g: arm(1), paint: [0.66, 0.77, 0.82, 3], type });
+    parts.push({ g: arm(-1), paint: [0.66, 0.77, 0.82, 3], type });
+    const scar = new THREE.PlaneGeometry(len * 0.55, beam * 0.5).translate(stern - len * 0.275, 0, 0.26);
+    parts.push({ g: scar, paint: [0.74, 0.83, 0.87, 3], type });
+  };
+  // ---- the ferry: 34 m, a white saloon deck and a wheelhouse forward
+  parts.push({ g: hullGeom(34, 8.4, 2.1), paint: [1, 1, 1, 1], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(20, 6.8, 2.5).translate(-2.5, 0, 3.35), paint: [0.94, 0.93, 0.89, 0], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(20.3, 7.0, 0.8).translate(-2.5, 0, 3.55), paint: [0.16, 0.20, 0.25, 2], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(5.5, 5.4, 1.8).translate(4.5, 0, 5.5), paint: [0.95, 0.94, 0.90, 0], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(5.7, 5.6, 0.6).translate(4.5, 0, 5.7), paint: [0.16, 0.20, 0.25, 2], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(1.4, 1.4, 2.2).translate(-6, 0, 5.6), paint: [0.55, 0.20, 0.16, 0], type: 0 });
+  wake(46, 8.4, -17, 0);
+  // ---- the sailboat: 10 m, a mast and a mainsail
+  parts.push({ g: hullGeom(10, 3.2, 1.1), paint: [1, 1, 1, 1], type: 1 });
+  parts.push({ g: new THREE.BoxGeometry(3.0, 2.0, 0.7).translate(-0.8, 0, 1.45), paint: [0.90, 0.89, 0.85, 0], type: 1 });
+  parts.push({ g: new THREE.CylinderGeometry(0.09, 0.11, 12, 5).rotateX(Math.PI / 2).translate(0.9, 0, 7.1), paint: [0.82, 0.82, 0.80, 0], type: 1 });
+  {
+    const sail = new THREE.BufferGeometry();
+    sail.setAttribute("position", new THREE.Float32BufferAttribute([
+      0.8, 0, 1.9, -3.6, 0, 1.9, 0.8, 0, 12.6,
+    ], 3));
+    sail.computeVertexNormals();
+    parts.push({ g: sail, paint: [0.97, 0.96, 0.92, 0], type: 1 });
+  }
+  wake(18, 3.2, -5, 1);
+  const pos: number[] = [], norm: number[] = [], paint: number[] = [], type: number[] = [];
+  for (const { g, paint: pt, type: ty } of parts) {
+    const ng = g.index ? g.toNonIndexed() : g;
+    if (!ng.getAttribute("normal")) ng.computeVertexNormals();
+    const P = ng.getAttribute("position"), Nn = ng.getAttribute("normal");
+    for (let i = 0; i < P.count; i++) {
+      pos.push(P.getX(i), P.getY(i), P.getZ(i));
+      norm.push(Nn.getX(i), Nn.getY(i), Nn.getZ(i));
+      paint.push(...pt);
+      type.push(ty);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
+  out.setAttribute("aPaint", new THREE.Float32BufferAttribute(paint, 4));
+  out.setAttribute("aType", new THREE.Float32BufferAttribute(type, 1));
+  return out;
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

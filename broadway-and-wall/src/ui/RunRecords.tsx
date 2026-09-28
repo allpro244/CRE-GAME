@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import type { GameState } from "@/engine/types";
 import { START_YEAR } from "@/engine/types";
 import { cityList, cityName } from "@/citygen/index.mjs";
+import { goalDef } from "@/engine/goals";
 
 /**
  * YOUR RUNS, KEPT ACROSS RUNS. A hundred-year town has no win screen and a
@@ -23,6 +24,9 @@ export interface RunRecord {
   bestYear: number | null;
   over: boolean;
   updatedAt: number;
+  /** The goal chosen at the start, and how it went. */
+  goal?: string;
+  goalResult?: "met" | "missed" | "open";
 }
 
 const KEY = "bw:runs";
@@ -55,6 +59,7 @@ export function recordRun(g: GameState) {
     bestYear: best ? START_YEAR + best.y : null,
     over: !!g.gameOver,
     updatedAt: Date.now(),
+    ...(g.goal ? { goal: goalDef(g.goal.id).label, goalResult: g.goal.doneM !== undefined ? "met" as const : g.goal.failedM !== undefined ? "missed" as const : "open" as const } : {}),
   };
   const all = loadRuns().filter((r) => r.seed !== rec.seed);
   all.push(rec);
@@ -68,7 +73,8 @@ export default function RunRecorder() {
     if (!s.game) return;
     const yearClosed = s.yearReviewY !== null && s.yearReviewY !== p.yearReviewY;
     const ended = !!s.game.gameOver && !p.game?.gameOver;
-    if (yearClosed || ended) recordRun(s.game);
+    const goalDecided = s.goalCard !== null && s.goalCard !== p.goalCard;
+    if (yearClosed || ended || goalDecided) recordRun(s.game);
   }), []);
   return null;
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useStore } from "@/state/store";
+import { useStore, pendingGoal } from "@/state/store";
+import { GOALS, type GoalId } from "@/engine/goals";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
 import { lifeForCash } from "@/engine/estate";
 // `currentCity` is back with the island column: there are two islands now and
@@ -82,6 +83,7 @@ export default function StartMenu() {
   };
   const [dev, setDev] = useState(currentDev(island));
   const [cash0, setCash0] = useState<number>(currentCash0());
+  const [goal, setGoal] = useState<GoalId | null>(null);
 
   // Lot count goes as the square of the scale. The standard island is about
   // 1,420 lots measured, which is what this quotes off — it is a preview of a
@@ -176,6 +178,7 @@ export default function StartMenu() {
                             <td>{r.years} yr{r.years === 1 ? "" : "s"}</td>
                             <td>peak {usd(r.peakNw)}</td>
                             <td>{r.bestRank !== null ? `best ${ordinal(r.bestRank)} of ${r.of} · ${r.bestYear}` : "—"}</td>
+                            <td>{r.goal ? `${r.goal}: ${r.goalResult === "met" ? "✓ met" : r.goalResult === "missed" ? "missed" : "open"}` : ""}</td>
                             <td className="start-runs-state">{r.over ? "ended" : "in progress"}</td>
                           </tr>
                         ))}
@@ -195,6 +198,20 @@ export default function StartMenu() {
                   Press <strong>Break ground</strong> at the bottom and the Marketplace will show you where to start.
                 </div>
               )}
+
+              {/* A GOAL, IF YOU WANT ONE — a target and a deadline, read off the
+                  numbers the game already keeps. None is the sandbox. */}
+              <div className="start-goals">
+                <span className="start-goals-label">Your goal</span>
+                <button type="button" className={"start-goal" + (goal === null ? " start-goal-on" : "")} onClick={() => setGoal(null)}>
+                  <strong>None</strong><span>a hundred years, no finish line</span>
+                </button>
+                {GOALS.map((g) => (
+                  <button key={g.id} type="button" className={"start-goal" + (goal === g.id ? " start-goal-on" : "")} onClick={() => setGoal(g.id)}>
+                    <strong>{g.label}</strong><span>{g.detail} in {g.years} years</span>
+                  </button>
+                ))}
+              </div>
 
               <div className="start-cols">
                 {/* HOW BIG, which is a decision about what game you are playing
@@ -325,7 +342,7 @@ export default function StartMenu() {
         <button
           className="start-go"
           disabled={phase !== "menu"}
-          onClick={() => void startRun(island, size, dev, cash0)}
+          onClick={() => { pendingGoal.id = goal; void startRun(island, size, dev, cash0); }}
         >
           Break ground ▸
         </button>

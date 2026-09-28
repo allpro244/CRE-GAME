@@ -5,7 +5,7 @@ import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
 import MapHud from "@/ui/MapHud";
 import CycleDigest from "@/ui/CycleDigest";
-import YearReview, { CareerCard, MilestoneFlash, ExitCard } from "@/ui/YearReview";
+import YearReview, { CareerCard, MilestoneFlash, ExitCard, GoalCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
 import Sounds from "@/ui/Sounds";
@@ -51,6 +51,7 @@ export default function App() {
       {playing && !photoFrame && <CareerCard />}
       {playing && !photoFrame && <MilestoneFlash />}
       {playing && !photoFrame && <ExitCard />}
+      {playing && !photoFrame && <GoalCard />}
       {playing && <Shortcuts />}
       {playing && <AutoPlay />}
       {playing && <Sounds />}

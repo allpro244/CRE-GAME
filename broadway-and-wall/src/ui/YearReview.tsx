@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { yearReview, ordinal, careerCard, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
+import { goalProgress, goalDef } from "@/engine/goals";
 import { START_YEAR, monthLabel } from "@/engine/types";
 import { openResearchOn } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
@@ -74,6 +75,21 @@ export default function YearReview() {
           </div>
         )}
         {r.next && <div className="year-review-next">Next on the ladder: <strong>{r.next.label}</strong></div>}
+        {(() => {
+          const g = game.goal;
+          const p = goalProgress(game);
+          if (!g || !p) return null;
+          const d = goalDef(g.id);
+          const left = Math.max(0, Math.ceil((g.deadlineM - game.month) / 12));
+          return (
+            <div className="year-review-next">
+              Your goal, <strong>{d.label}</strong>: {g.doneM !== undefined ? "met" : g.failedM !== undefined ? "missed" : `${p.text} · ${left} year${left === 1 ? "" : "s"} left`}
+              {g.doneM === undefined && g.failedM === undefined && (
+                <div className="goal-bar"><span style={{ width: `${Math.round(p.share * 100)}%` }} /></div>
+              )}
+            </div>
+          );
+        })()}
         {(() => {
           const pl = parcels ? positiveLeverage(game, parcels) : null;
           if (!pl || pl.of === 0) return null;
@@ -201,6 +217,40 @@ export function ExitCard() {
           <button type="button" className="btn btn-primary" onClick={dismiss}>Back to the desk</button>
           <button type="button" className="btn" onClick={() => { useStore.getState().setPage("market"); dismiss(); }}>Put it to work</button>
           <button type="button" className="btn" onClick={() => { useStore.getState().setPage("firm"); dismiss(); }}>The record</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * THE GOAL, DECIDED. Met or out of time — the one ending a hundred-year town
+ * has, because the player drew it. The run goes on either way.
+ */
+export function GoalCard() {
+  const verdict = useStore((s) => s.goalCard);
+  const game = useStore((s) => s.game);
+  const popupsOff = useStore((s) => s.popupsOff);
+  if (!verdict || !game?.goal || popupsOff) return null;
+  const g = game.goal;
+  const d = goalDef(g.id);
+  const yrs = ((verdict === "done" ? g.doneM ?? game.month : game.month) - g.setM) / 12;
+  const close = () => useStore.setState({ goalCard: null });
+  return (
+    <div className="delivery-ceremony year-review" role="dialog" aria-modal="true" aria-labelledby="goal-title" onClick={close}>
+      <div className="delivery-stamp year-review-card" onClick={(e) => e.stopPropagation()}>
+        <div className="delivery-kicker">Your goal · {d.label}</div>
+        <div className="delivery-title year-review-verdict" id="goal-title">
+          {verdict === "done" ? `Done, in ${yrs.toFixed(1)} years.` : `Time ran out after ${d.years} years.`}
+        </div>
+        <div className="year-review-next">
+          {d.detail}. {verdict === "done"
+            ? `The deadline was ${d.years} years; you made it with ${Math.max(0, d.years - yrs).toFixed(1)} to spare.`
+            : `Where it stood at the deadline: ${goalProgress(game)?.text ?? "—"}.`}
+          {" "}The town carries on — the run is yours to keep playing.
+        </div>
+        <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
+          <button type="button" className="btn btn-primary" onClick={close}>Carry on</button>
         </div>
       </div>
     </div>

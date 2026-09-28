@@ -41,6 +41,7 @@ import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import { usdSigned } from "@/ui/format";
 import { periodRecap, firmTier } from "@/engine/standing";
+import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
@@ -167,6 +168,8 @@ interface AppState {
   dismissCareerCard: () => void;
   /** Milestones reached in the last advance, for the banner (UI only). */
   milestoneFlash: string[] | null;
+  /** The run's goal was just met or missed (UI only). */
+  goalCard: "done" | "failed" | null;
   /** A sale just closed — the index into game.exits, and the cash it put in the account (UI only). */
   exitCard: { i: number; cash?: number } | null;
   dismissExitCard: () => void;
@@ -424,6 +427,8 @@ interface AppState {
  * across several years shows the last one; the earlier ones are on Books.
  */
 const tierFlashed = new Map<number, number>();
+/** The goal chosen on the start screen, applied when the town is built. */
+export const pendingGoal: { id: GoalId | null } = { id: null };
 function queueYearReview(prev: GameState, next: GameState, set: (partial: Partial<AppState>) => void) {
   const before = prev.yearMarks?.at(-1)?.y ?? -1;
   const last = next.yearMarks?.at(-1);
@@ -446,6 +451,13 @@ function queueYearReview(prev: GameState, next: GameState, set: (partial: Partia
     tierFlashed.set(next.seed, t1.tier);
   }
   if (got.length) set({ milestoneFlash: got });
+  // THE RUN'S GOAL: met, or out of time. Stamped on the state that is about
+  // to be persisted, so it is decided once.
+  const verdict = goalVerdict(next);
+  if (verdict && next.goal) {
+    next.goal = verdict === "done" ? { ...next.goal, doneM: next.month } : { ...next.goal, failedM: next.month };
+    set({ goalCard: verdict });
+  }
   // A sale that closed inside an advance (an accepted bid settling, an
   // exchange completing) gets the same card as one closed by hand.
   const e0 = prev.exits?.length ?? 0, e1 = next.exits?.length ?? 0;
@@ -777,6 +789,7 @@ export const useStore = create<AppState>((set, get) => ({
   careerCardI: null,
   dismissCareerCard: () => set({ careerCardI: null }),
   milestoneFlash: null,
+  goalCard: null,
   exitCard: null,
   dismissExitCard: () => set({ exitCard: null }),
   setLens: (lens) => set({ lens }),
@@ -2245,6 +2258,7 @@ export const useStore = create<AppState>((set, get) => ({
       // written-down city has no preset to read, so the economy sizes rivals
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
+      if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month);
       set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null, careerCardI: null });
       persist(g);
     } catch (e) {

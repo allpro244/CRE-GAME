@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { usd } from "@/ui/format";
 import { starterPicks } from "@/engine/standing";
+import { goalProgress, goalDef } from "@/engine/goals";
 import { spendable } from "@/engine/credit";
 import { useStore, type MapFilter } from "@/state/store";
 import { mapHudSnapshot } from "@/ui/mapHudData";
@@ -208,6 +209,22 @@ export default function MapHud() {
           ))}
         </div>
       )}
+
+      {game?.goal && (() => {
+        const g = game.goal;
+        const p = goalProgress(game);
+        if (!p) return null;
+        const left = Math.max(0, Math.ceil((g.deadlineM - game.month) / 12));
+        return (
+          <div className="map-hud-block">
+            <div className="map-hud-label">Goal · {goalDef(g.id).label}</div>
+            <div className="map-hud-row" style={{ cursor: "default" }}>
+              {g.doneM !== undefined ? "✓ met" : g.failedM !== undefined ? "missed" : `${p.text} · ${left} yr left`}
+            </div>
+            {g.doneM === undefined && g.failedM === undefined && <div className="goal-bar"><span style={{ width: `${Math.round(p.share * 100)}%` }} /></div>}
+          </div>
+        );
+      })()}
 
       {firstDeed && starters.length > 0 && (
         <div className="map-hud-block">

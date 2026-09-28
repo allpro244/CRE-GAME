@@ -2831,6 +2831,8 @@ export interface GameState {
   privateQuoteCool?: Record<string, number>;
   /** Player preference: whether broker first looks / off-market files may stop the clock. */
   brokerStops?: "affordable" | "never";
+  /** The run's chosen ambition, if any (see goals.ts). */
+  goal?: import("./goals").Goal;
   /** Standing acquisition criteria (see buybox.ts). */
   buyBox?: import("./buybox").BuyBox;
   /** How many funds this firm has raised — Fund I, II, III. */

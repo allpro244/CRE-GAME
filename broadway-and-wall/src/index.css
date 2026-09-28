@@ -2381,3 +2381,13 @@ html, body, #root { overflow-x: hidden; }
 .gloss-key { font-weight: 600; color: var(--ink); }
 .gloss-def { color: var(--ink-dim); }
 @media (max-width: 560px) { .gloss-entry { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Goal picker — start screen. */
+.start-goals { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 14px; }
+.start-goals-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--chart-dim, #93aab6); align-self: center; margin-right: 4px; }
+.start-goal { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 11px; border-radius: 6px; border: 1px solid var(--chart-rule, rgba(168,202,216,0.28)); background: rgba(255,255,255,0.04); color: var(--chart-ink, #e6eef2); font: inherit; cursor: pointer; max-width: 220px; }
+.start-goal strong { font-family: var(--serif); font-size: 15px; font-weight: 400; }
+.start-goal span { font-size: 11.5px; color: var(--chart-dim, #93aab6); }
+.start-goal-on { border-color: var(--gold); background: rgba(176,127,30,0.18); }
+.goal-bar { margin-top: 6px; height: 6px; border-radius: 3px; background: rgba(43,37,26,0.1); overflow: hidden; }
+.goal-bar span { display: block; height: 100%; background: linear-gradient(90deg, #b07f1e, #d8a94a); }

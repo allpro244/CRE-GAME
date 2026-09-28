@@ -14,6 +14,7 @@ import { holderOf } from "@/engine/owners";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 import Badges from "./Badges";
+import EventPops from "./EventPops";
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -1517,6 +1518,8 @@ export default function MapView() {
       {/* buildings that need the principal, pinned to their parcels —
           subscribes to its own signature, never to game identity */}
       <Badges mapRef={mapRef} mapReady={mapReady} />
+      {/* what the last advance did, rising off the parcels for a few seconds */}
+      <EventPops mapRef={mapRef} mapReady={mapReady} />
     </>
   );
 }

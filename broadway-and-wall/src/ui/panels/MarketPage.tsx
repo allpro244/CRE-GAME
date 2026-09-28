@@ -4,6 +4,8 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
 import { buyBoxSet, inBuyBox, type BuyBox } from "@/engine/buybox";
+import { starterPicks } from "@/engine/standing";
+import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
@@ -248,6 +250,7 @@ export function MarketPage() {
   const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
   return (
     <div>
+      {Object.keys(game.holdings).length === 0 && <StarterBlock go={go} />}
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
         <button
@@ -991,6 +994,42 @@ function BuyBoxEditor() {
       </label>
       {on && <button type="button" className="btn btn-sm" onClick={() => set({})}>Clear</button>}
       <span className="buybox-note">{on ? "Only first looks inside the box stop the clock." : "Empty — every affordable first look stops the clock."}</span>
+    </div>
+  );
+}
+
+/**
+ * A FIRM WITH NO BUILDINGS SEES THREE FIRST. The tape sits under a stat strip,
+ * a paragraph, the distress pipeline and the brokers' calls; a newcomer had
+ * to scroll past all of it to reach a row. The three best going-in yields
+ * among let buildings the firm could buy outright — the tape's own sort, cut
+ * to what is actually within reach.
+ */
+function StarterBlock({ go }: { go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const picks = starterPicks(game, parcels, spendable(game, parcels).total, 3);
+  if (!picks.length) return null;
+  return (
+    <div className="starter-block">
+      <div className="page-section-head">Where to start — the best yields you can buy outright</div>
+      {picks.map((p) => {
+        const rec = resolveRec(parcels, game, p.bbl);
+        return (
+          <button key={p.bbl} type="button" className="starter-row" onClick={() => go(p.bbl)}>
+            <span className="starter-addr">{rec?.address ?? p.bbl}</span>
+            <span className="dim">{rec ? useLabel(rec) : ""}</span>
+            <span className="mono">{p.cap.toFixed(1)}% going-in</span>
+            <span className="mono">{Math.round(p.occ * 100)}% let</span>
+            <span className="mono">{usd(p.cash)} to close</span>
+            <span className="lnk">Open →</span>
+          </button>
+        );
+      })}
+      <div className="hint" style={{ marginBottom: 0 }}>
+        Going-in yield is the income in place over the price. Buying outright is the simplest first deal; the
+        property file shows what a loan would do to it.
+      </div>
     </div>
   );
 }

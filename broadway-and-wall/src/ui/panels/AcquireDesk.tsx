@@ -22,6 +22,8 @@ import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
+import { Gloss } from "@/ui/Glossary";
+import { leasingOdds } from "@/engine/absorption";
 import { usd, sf, termLeft } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
@@ -856,11 +858,41 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       {goingInPct !== null && (
         <div className="grid">
           <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
-          <Row k="Going-in cap at your number" v={`${goingInPct.toFixed(2)}%`} strong />
+          <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss> at your number</>} v={`${goingInPct.toFixed(2)}%`} strong />
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
-          <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
+          <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
           {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+          {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
+              always printed. The market's cap for the class is the econ's own
+              index, the same one every appraisal reads. */}
+          {rec && rec.class !== "land" && (() => {
+            const mkt = game.econ.capRate[rec.class as keyof typeof game.econ.capRate];
+            if (!(mkt > 0)) return null;
+            const d = goingInPct - mkt;
+            return (
+              <Row k="The market pays" v={`${mkt.toFixed(2)}% for ${rec.class} today — ${d > 0.4 ? "your number buys the income cheap" : d < -0.4 ? "your number is rich for the income in place" : "your number is about market"}`} />
+            );
+          })()}
+          {/* CAN YOU CLOSE IT. Earnest money goes hard when the price is
+              agreed; a newcomer could agree a price they could not fund. */}
+          {(() => {
+            const purse = spendable(game, parcels).total;
+            const outright = Math.round(offerPriceRounded * 1.02);
+            const levered = Math.round(offerPriceRounded * 0.37);
+            return (
+              <Row k="Money to close" v={`${usd(outright)} outright · ~${usd(levered)} on a typical 65% loan · you can raise ${usd(purse)}`} bad={purse < levered} />
+            );
+          })()}
+          {/* WHETHER TENANTS WILL COME — the leasing desk's own pace, read on
+              the disclosed roll before you own it rather than after. */}
+          {ip?.h && rec && rec.class !== "land" && (() => {
+            const odds = leasingOdds(game, parcels, rec, ip.h, rec.class as BuiltClass);
+            if (!odds || odds.availSf <= 0) return null;
+            return (
+              <Row k="Letting prospects" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% chance of a letter a month${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85% let` : " · not reaching 85% at today's pace"}`} bad={odds.loiOdds < 0.05} />
+            );
+          })()}
         </div>
       )}
       {/* ACROSS THE TABLE — and now with their accounts on it. The blurb says
@@ -1022,8 +1054,21 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     const occ = rec0 ? inPlace(rec0, game, bbl, offerPrice).occ : 0;
     return deskAdvice(productChoices.map((p) => { const q = quoteOf(p.id); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
   })();
+  // NEGATIVE LEVERAGE, SAID BEFORE THE CHOICE RATHER than as a red row on
+  // the commit stage after it. When even the cheapest desk that will write
+  // costs more than the building yields in place, every borrowed dollar
+  // lowers the return on the equity — so a firm that can pay cash opens on
+  // cash, with the reason, and can still pick a loan.
+  const goingIn = (() => {
+    const r0 = resolveRec(parcels, game, bbl);
+    return r0 && offerPrice > 0 ? (inPlace(r0, game, bbl, offerPrice).noi / offerPrice) * 100 : 0;
+  })();
+  const cheapestLoan = productChoices.map((p) => quoteOf(p.id)).filter((q) => q.principal > 0).sort((a, b) => a.allInPct - b.allInPct)[0];
+  const allNegLev = !!cheapestLoan && goingIn > 0 && cheapestLoan.allInPct > goingIn;
+  const canCash = spendable(game, parcels).total >= Math.round(offerPrice * 1.02);
   const picked = (() => {
     if (product === null) {
+      if (allNegLev && canCash) return "cash";
       const first = productChoices.find((p) => quoteOf(p.id).principal > 0);
       return first?.id ?? "cash";
     }
@@ -1104,7 +1149,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 <Row k={ip?.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(noi)} bad={noi < 0} />
                 {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
                 <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} strong />
-                <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
+                <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
               </>
             ) : (
               <Row k="Price" v={usd(offerPrice)} strong />
@@ -1143,6 +1188,12 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </button>
           </div>
           {advice && <div className="hint" style={{ marginTop: 6 }}>{advice}</div>}
+          {allNegLev && (
+            <div className="hint neg" style={{ marginTop: 4 }}>
+              Every desk that will write this costs more than it yields: the cheapest is {cheapestLoan!.allInPct.toFixed(2)}% all-in against a {goingIn.toFixed(2)}% going-in yield.
+              Borrowing lowers your return on this building{canCash ? " — the desk opens on cash for that reason" : ""}. A loan still buys you a bigger book with the same money, at a thinner margin.
+            </div>
+          )}
           {max.principal > 0 ? (
             <Slider
               label="Leverage"

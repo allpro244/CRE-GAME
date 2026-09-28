@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { usd } from "@/ui/format";
+import { starterPicks } from "@/engine/standing";
+import { spendable } from "@/engine/credit";
 import { useStore, type MapFilter } from "@/state/store";
 import { mapHudSnapshot } from "@/ui/mapHudData";
 import { developableSites } from "@/ui/developable";
@@ -62,6 +65,15 @@ export default function MapHud() {
     if (!game || !parcels || game.gameOver) return [];
     return developableSites(game, parcels).filter((s) => s.pencils).slice(0, 2);
   }, [game, parcels]);
+  // BEFORE THE FIRST DEED, BUILDINGS — NOT DIRT. "Sites ready · pencils" from
+  // month 0 pointed a newcomer at development, the hardest path in the game,
+  // before they owned anything. Until the first deed the block names the two
+  // best going-in yields they could buy outright instead.
+  const firstDeed = !!game && Object.keys(game.holdings).length === 0 && (game.exits ?? []).length === 0;
+  const starters = useMemo(() => {
+    if (!game || !parcels || game.gameOver || !firstDeed) return [];
+    return starterPicks(game, parcels, spendable(game, parcels).total, 2);
+  }, [game, parcels, firstDeed]);
 
   // One row per tint slot, not per firm. A firm's slot is its position in
   // game.rivals with the dead still counted, because that is exactly how the
@@ -197,7 +209,24 @@ export default function MapHud() {
         </div>
       )}
 
-      {ready.length > 0 && (
+      {firstDeed && starters.length > 0 && (
+        <div className="map-hud-block">
+          <div className="map-hud-label">On the tape for you</div>
+          {starters.map((p) => (
+            <button
+              key={p.bbl}
+              type="button"
+              className="map-hud-row"
+              onClick={() => { focus(p.bbl, true); useStore.getState().openProperty(p.bbl, "summary"); }}
+              title={`${Math.round(p.occ * 100)}% let · ${usd(p.cash)} to buy outright`}
+            >
+              {parcels?.[p.bbl]?.address ?? p.bbl} · {p.cap.toFixed(1)}%
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!firstDeed && ready.length > 0 && (
         <div className="map-hud-block">
           <div className="map-hud-label">Sites ready</div>
           {ready.map((s) => (

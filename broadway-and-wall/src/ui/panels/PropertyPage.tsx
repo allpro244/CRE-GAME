@@ -193,6 +193,14 @@ export function PropertyPage() {
               way round, because the decision to sell is the one you open this
               page having already half made. */}
           <div className="btn-row" style={{ marginTop: 6 }}>
+            {/* THE BUY SIDE GETS A FRONT DOOR TOO. An owner had "Sell this
+                building" up here; a buyer had to find the Acquire tab. */}
+            {!h && game.listings.some((l) => l.bbl === bbl) && (
+              <button className="btn btn-buy" onClick={() => setTab("deal")}
+                title="The asking price, the in-place income, your offer and the money to close it">
+                Make an offer ▸
+              </button>
+            )}
             {!h && (
               <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
                 onClick={() => useStore.getState().toggleWatch(bbl)}

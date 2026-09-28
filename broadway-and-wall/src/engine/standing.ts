@@ -290,3 +290,29 @@ export function firmTier(s: GameState): { tier: number; label: string } {
   const f = firmCapital(s);
   return { tier: f.tier, label: TIER_LABEL[f.tier] ?? f.label };
 }
+
+/**
+ * A FIRST BUILDING WORTH LOOKING AT. The year-one nudge said "buy a building
+ * off the tape" and sent a newcomer to a page of fourteen rows with nothing to
+ * say which one. This names one: the best going-in yield on the tape (in-place
+ * NOI off the disclosed roll over the ask — the Marketplace's own sort) among
+ * let buildings the firm could buy outright today, closing costs included.
+ * A suggestion, not a verdict; the property file carries the rest.
+ */
+export function starterPicks(s: GameState, parcels: ParcelTable, purse: number, n = 3): { bbl: string; cap: number; cash: number; occ: number }[] {
+  const out: { bbl: string; cap: number; cash: number; occ: number }[] = [];
+  for (const li of s.listings ?? []) {
+    const rec = resolveRec(parcels, s, li.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || li.halfBuilt || !(li.ask > 0)) continue;
+    const cash = Math.round(li.ask * 1.02);
+    if (cash > purse) continue;
+    const ip = inPlace(rec, s, li.bbl, li.ask);
+    if (!(ip.noi > 0) || (ip.occ ?? 0) < 0.5) continue;
+    out.push({ bbl: li.bbl, cap: (ip.noi / li.ask) * 100, cash, occ: ip.occ ?? 0 });
+  }
+  return out.sort((a, b) => b.cap - a.cap).slice(0, n);
+}
+
+export function starterPick(s: GameState, parcels: ParcelTable, purse: number): { bbl: string; cap: number; cash: number; occ: number } | null {
+  return starterPicks(s, parcels, purse, 1)[0] ?? null;
+}

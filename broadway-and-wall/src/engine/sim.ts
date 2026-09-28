@@ -1322,7 +1322,11 @@ export function monthCashBit(dCash: number): string {
  * Year / Skip in that month rather than the month they arrive; see
  * `shouldStopFor`.
  */
-export type AttentionItem = { key: string; label: string; lastM?: number };
+export type AttentionItem = {
+  key: string; label: string; lastM?: number;
+  /** Worth seeing on the docket, but not a decision: never stops the clock. */
+  soft?: boolean;
+};
 
 export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
   const out: AttentionItem[] = [];
@@ -1425,8 +1429,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // leased fee still belongs to you and must keep stopping Skip below.
     if (!h.groundLeased) {
       for (const t of h.tenants) {
+        // A NOTICE WITH NOTHING TO DECIDE STOPS NOTHING. The tenant has
+        // already declined; the decision it leaves — re-letting the suite —
+        // arrives as the six-month roll below once the space is marketable.
+        // It rides on the docket instead of stopping the clock.
         if (t.nonRenewM === s.month) {
           out.push({
+            soft: true,
             key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
             label: `${t.name} will leave ${addr(h.bbl)} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
           });
@@ -1816,9 +1825,9 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
-  return (cur) => attentionItems(cur, parcels).find((a) => a.lastM !== undefined
+  return (cur) => attentionItems(cur, parcels).find((a) => !a.soft && (a.lastM !== undefined
     ? cur.month >= a.lastM && !dueAtStart.has(a.key)
-    : !before.has(a.key));
+    : !before.has(a.key)));
 }
 
 // Run up to `cap` months, stopping when something needs the player.

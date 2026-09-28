@@ -387,6 +387,12 @@ function playerNeedsPrivateBorrow(
   const cheapGap = payoff > 0 && bestCheap < payoff * 0.95;
   const shutOut = cheap.every((q) => !q.available);
   if (!balloonFile && !dueSoon && !cheapGap && !shutOut) return null;
+  // NEED, NOT STANDING. A free-and-clear building has nothing to take out: a
+  // shut bank desk is a reason a borrower cannot refinance, not a reason a
+  // private lender rings an owner with no debt to refinance — measured, the
+  // largest firm on the street holding $30M of cash was sent 12–14% bridge
+  // quotes on its unlevered buildings a few times a year.
+  if (payoff <= 0 && !balloonFile) return null;
   // If a cheap desk already clears you, private money has nothing to say.
   if (payoff > 0 && bestCheap >= payoff) return null;
 

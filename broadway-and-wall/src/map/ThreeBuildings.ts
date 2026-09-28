@@ -2112,6 +2112,72 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+// THE HARBOUR'S TRAFFIC. A ferry working a loop off the waterfront and a few
+// sailboats reaching back and forth: every boat runs an ellipse laid in open
+// water at build time, and the whole of its motion is done here off the shared
+// clock — position on the ellipse, heading off its tangent — so a fleet costs
+// the CPU nothing per frame and one draw call. Both hull types live in one
+// geometry; aType says which a vertex belongs to and aRoute2.w which one this
+// instance is, and the other collapses to a point.
+const BOAT_VERT = /* glsl */ `
+uniform float uTime;
+attribute vec4 aRoute;   // centre x, y · semi-axis along · semi-axis across
+attribute vec4 aRoute2;  // axis bearing · angular speed (signed) · phase · kind
+attribute vec3 aHull;    // this boat's hull paint
+attribute vec4 aPaint;   // rgb · mode (0 paint, 1 hull, 2 cabin glass, 3 wake)
+attribute float aType;
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+varying vec3 vL;
+varying float vE;
+void main() {
+  float keep = 1.0 - step(0.5, abs(aType - aRoute2.w));
+  float th = aRoute2.z + uTime * aRoute2.y;
+  vec2 T = vec2(cos(aRoute2.x), sin(aRoute2.x));
+  vec2 N = vec2(-T.y, T.x);
+  vec2 at = aRoute.xy + T * (aRoute.z * cos(th)) + N * (aRoute.w * sin(th));
+  vec2 vel = (-T * (aRoute.z * sin(th)) + N * (aRoute.w * cos(th))) * sign(aRoute2.y);
+  vec2 fw = normalize(vel + vec2(1e-5, 0.0));
+  vec2 sd = vec2(-fw.y, fw.x);
+  vec3 p = position * keep;
+  // a little pitch on the swell, fore and aft, and none of it on the wake
+  float live = 1.0 - step(2.5, aPaint.w);
+  float bob = sin(uTime * 1.3 + aRoute2.z * 7.0) * 0.18 * live;
+  vec3 w = vec3(at + fw * p.x + sd * p.y, p.z + bob * p.x / 16.0);
+  vN = normalize(vec3(fw * normal.x + sd * normal.y, normal.z));
+  vW = w;
+  vL = position;
+  vC = aPaint.w > 0.5 && aPaint.w < 1.5 ? aHull : aPaint.rgb;
+  // the saloon windows are lamps after dark (PROP_FRAG's class 1)
+  vE = step(1.5, aPaint.w) * step(aPaint.w, 2.5) * 0.62;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(w, 1.0);
+}`;
+
+// A PUFF OF SITE DUST: seven-second life, rising nine metres, growing and
+// then shrinking out of existence (a fade would need sorting; a shrink costs
+// nothing) while the wind carries it off along +x/+y.
+const DUST_VERT = /* glsl */ `
+uniform float uTime;
+attribute vec4 aPuff;    // x, y · phase 0..1 · size
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+varying vec3 vL;
+varying float vE;
+void main() {
+  float t = fract(uTime / 7.0 + aPuff.z);
+  float r = aPuff.w * (0.5 + 2.4 * t) * (1.0 - smoothstep(0.55, 1.0, t)) * smoothstep(0.0, 0.08, t);
+  vec3 w = vec3(aPuff.xy + vec2(0.8, 0.5) * (t * 7.0), 0.6 + t * 9.0) + position * r;
+  // a cloud has no facets: shade it as the sphere it approximates
+  vN = normalize(position);
+  vW = w;
+  vC = vec3(1.0);
+  vL = position;
+  vE = 0.0;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(w, 1.0);
+}`;
+
 // A LAMP'S POOL ON THE PAVEMENT. The lamp head lights (PROP_FRAG's class 1),
 // but a street at night is read by what the lamps light, not by the lamps: a
 // soft warm disc on the ground under every head. Additive, on a flat quad per
@@ -2130,7 +2196,7 @@ void main() {
   float r = length(vQ);
   float k = smoothstep(0.30, 0.85, uWeather.z);
   float fall = pow(max(1.0 - r, 0.0), 2.2);
-  gl_FragColor = vec4(vec3(0.34, 0.24, 0.12) * fall * k, 0.0);
+  gl_FragColor = vec4(vec3(0.50, 0.36, 0.18) * fall * k, 0.0);
 }`;
 
 const SHADOW_GLSL = /* glsl */ `
@@ -9496,6 +9562,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
   private hasPonds = false;
+  /** the harbour fleet — one instanced mesh, see buildBoats */
+  private boats: THREE.InstancedMesh | null = null;
+  /** the job sites' dust — one instanced mesh in dynJobs, see dustMesh */
+  private dust: THREE.InstancedMesh | null = null;
   /** warm discs under the street lamps, drawn only after dark */
   private lampPools: THREE.InstancedMesh | null = null;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
@@ -9786,6 +9856,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     if (instant) { this.duskT = t; this.applyDusk(t); }
     this.map?.triggerRepaint();
   }
+
+  /** How many boats are working the harbour (for tests and probes). */
+  harbourFleet(): number { return this.boats?.count ?? 0; }
 
   /** The hour the frame is actually being drawn at (for tests and probes). */
   dayPhase(): number { return this.weatherUni.value.z; }
@@ -10857,6 +10930,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.plantStreets();
     this.buildAoGround();
     this.buildWater();
+    this.buildBoats();
     this.buildSeawall();
     this.buildLawns();
 
@@ -11842,6 +11916,127 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.water = mesh;
   }
 
+  /**
+   * A SITE IS DUSTY. Every live job lifts a few slow puffs of pale grit off
+   * the ground — rising, spreading and thinning downwind — which is the one
+   * thing a building site does from the air that a finished building never
+   * does. All sites in one instanced, translucent draw, moved in DUST_VERT
+   * off the shared clock; rebuilt only with the job frames it belongs to.
+   */
+  private dustMesh(sites: [number, number, number, number][]): THREE.InstancedMesh {
+    const PER = 5;
+    const n = sites.length * PER;
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const puff = new Float32Array(n * 4);
+    sites.forEach(([x, y, k, rad], si) => {
+      for (let j = 0; j < PER; j++) {
+        const i = si * PER + j;
+        const a = hash01(k ^ Math.imul(j + 1, 0x2c1b3c6d), this.citySeed) * Math.PI * 2;
+        const r = rad + 1 + hash01(k ^ Math.imul(j + 5, 0x297a2d39), this.citySeed) * 5;
+        puff.set([x + Math.cos(a) * r, y + Math.sin(a) * r,
+          j / PER + hash01(k ^ (j * 977), this.citySeed) * 0.15,
+          1.8 + hash01(k ^ (j * 131 + 7), this.citySeed) * 1.4], i * 4);
+      }
+    });
+    g.setAttribute("aPuff", new THREE.InstancedBufferAttribute(puff, 4));
+    const mat = this.propMaterial(0xc9bba2, true, 0, [0, 0], true);
+    mat.vertexShader = DUST_VERT;
+    mat.uniforms.uTime = this.timeUni;
+    mat.uniforms.uOpacity.value = 0.42;
+    mat.transparent = true;
+    mat.depthWrite = false;
+    const mesh = new THREE.InstancedMesh(g, mat, n);
+    mesh.frustumCulled = false;
+    mesh.userData.noShadow = true;
+    mesh.renderOrder = 2;
+    return mesh;
+  }
+
+  /**
+   * THE HARBOUR WAS EMPTY. A city on an island lives off its water, and the
+   * water here moved — swell, chop, glitter — with nothing on it. A handful of
+   * boats on loops in the offing: a ferry or two, some sailboats, each with a
+   * wake. Routes are ellipses laid in open water, checked against the coast at
+   * two dozen points so no hull ever crosses the land, and deterministic in the
+   * coastline so a town keeps its ferry between reloads. See BOAT_VERT.
+   */
+  private buildBoats() {
+    const ring = this.landRing();
+    if (!ring || ring.length < 8 || !this.waterMat) return;
+    const R = ring.map((v) => [v.x, v.y] as [number, number]);
+    let per = 0;
+    for (let i = 0; i < R.length; i++) {
+      const a = R[i], b = R[(i + 1) % R.length];
+      per += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    // seeded off the coast itself — same island, same fleet
+    let seed = Math.floor(Math.abs(R[0][0] * 131 + R[0][1] * 71 + per)) % 2147483647 || 1;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const clear = (x: number, y: number, min: number) =>
+      !pointInRing(x, y, R) && edgeDist(R, [x, y]) >= min;
+    const want = Math.max(4, Math.min(14, Math.round(per / 1100)));
+    type Route = { cx: number; cy: number; a: number; b: number; ang: number; w: number; ph: number; kind: number; hull: [number, number, number] };
+    const routes: Route[] = [];
+    const HULLS: [number, number, number][] = [
+      [0.20, 0.24, 0.33], [0.48, 0.22, 0.17], [0.16, 0.30, 0.26], [0.86, 0.85, 0.80],
+    ];
+    for (let tries = 0; tries < want * 40 && routes.length < want; tries++) {
+      const i = Math.floor(rnd() * R.length);
+      const a = R[i], b = R[(i + 1) % R.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const L = Math.hypot(ex, ey);
+      if (L < 1) continue;
+      // outward, for a counter-clockwise solid
+      const nx = ey / L, ny = -ex / L;
+      const ferry = routes.filter((r) => r.kind === 0).length < Math.max(1, Math.round(want / 5));
+      const off = (ferry ? 260 : 150) + rnd() * 520;
+      const cx = (a[0] + b[0]) / 2 + nx * off, cy = (a[1] + b[1]) / 2 + ny * off;
+      const ang = Math.atan2(ey, ex) + (rnd() - 0.5) * 0.5;
+      const sa = ferry ? 260 + rnd() * 420 : 90 + rnd() * 240;
+      const sb = ferry ? 50 + rnd() * 60 : 30 + rnd() * 70;
+      const T = [Math.cos(ang), Math.sin(ang)], N = [-T[1], T[0]];
+      let ok = true;
+      for (let k = 0; k < 24 && ok; k++) {
+        const t = (k / 24) * Math.PI * 2;
+        const x = cx + T[0] * sa * Math.cos(t) + N[0] * sb * Math.sin(t);
+        const y = cy + T[1] * sa * Math.cos(t) + N[1] * sb * Math.sin(t);
+        ok = clear(x, y, 70);
+      }
+      // and not on top of a route already laid
+      for (const r of routes) if (ok && Math.hypot(r.cx - cx, r.cy - cy) < (r.a + sa) * 0.55) ok = false;
+      if (!ok) continue;
+      const speed = ferry ? 7 + rnd() * 3 : 3 + rnd() * 3;
+      const w = (speed / ((sa + sb) / 2)) * (rnd() < 0.5 ? -1 : 1);
+      routes.push({
+        cx, cy, a: sa, b: sb, ang, w, ph: rnd() * Math.PI * 2, kind: ferry ? 0 : 1,
+        hull: ferry ? HULLS[Math.floor(rnd() * 3)] : (rnd() < 0.7 ? HULLS[3] : HULLS[Math.floor(rnd() * 3)]),
+      });
+    }
+    if (!routes.length) return;
+    const g = boatFleetGeom();
+    const n = routes.length;
+    const r1 = new Float32Array(n * 4), r2 = new Float32Array(n * 4), hc = new Float32Array(n * 3);
+    routes.forEach((r, i) => {
+      r1.set([r.cx, r.cy, r.a, r.b], i * 4);
+      r2.set([r.ang, r.w, r.ph, r.kind], i * 4);
+      hc.set(r.hull, i * 3);
+    });
+    g.setAttribute("aRoute", new THREE.InstancedBufferAttribute(r1, 4));
+    g.setAttribute("aRoute2", new THREE.InstancedBufferAttribute(r2, 4));
+    g.setAttribute("aHull", new THREE.InstancedBufferAttribute(hc, 3));
+    const mat = this.propMaterial(0xffffff, true, 0, [0, 0], true);
+    mat.vertexShader = BOAT_VERT;
+    mat.uniforms.uTime = this.timeUni;
+    const mesh = new THREE.InstancedMesh(g, mat, n);
+    // the instance matrices are unused (identity); the routes place the boats
+    mesh.frustumCulled = false;
+    // moved entirely in the vertex stage — the bake would stamp them at the
+    // origin, the same orphan-shadow trap the walkers document
+    mesh.userData.noShadow = true;
+    this.scene.add(mesh);
+    this.boats = mesh;
+  }
+
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
   //
@@ -12265,6 +12460,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.jobsSig = jobsSig;
     }
     const nextDyn = new Map<string, { h: number; construction: boolean }>();
+    // every live site this rebuild draws, for the dust (see dustMesh)
+    const dustSites: [number, number, number, number][] = [];
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -12789,6 +12986,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           phase: hash01(k ^ 0xf3, this.citySeed) * Math.PI * 2,
           trolley, jib, tro,
         });
+        // at the foot of the frame, not inside it: the plate's own reach
+        {
+          let rad = 6;
+          for (const q of tiers[0].fp as [number, number][]) rad = Math.max(rad, Math.hypot(q[0] - cx, q[1] - cy));
+          dustSites.push([cx, cy, k, rad]);
+        }
         // ---- THE FRAME TELLS YOU HOW FAR ALONG IT IS -----------------------
         //
         // A site under a crane was a plain box the height of its progress, so
@@ -12896,6 +13099,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     this.prevDyn = nextDyn;
     this.primed = true;
+    if (rebuildJobs) {
+      // the group's own disposal takes the geometry; the material is this
+      // mesh's alone (propMaterial unique), so it goes here
+      (this.dust?.material as THREE.Material | undefined)?.dispose();
+      this.dust = dustSites.length ? this.dustMesh(dustSites) : null;
+      if (this.dust) this.dynJobs.add(this.dust);
+    }
     // Re-dress the fresh meshes from the last maps the game sent (see
     // lastOcc/lastRet at their declaration for why waiting on the feed's own
     // cadence is a month too late). Only the dynamic slots are written: the
@@ -15288,6 +15498,78 @@ export function playerMassing(o: PlayerMassIn): { tiers: TowerTier[]; style: num
     return { tiers, style, family: name };
   }
   return { tiers: prism, style: -1, family: "m:prism" };
+}
+
+/**
+ * Both boats of the harbour fleet in one geometry, for BOAT_VERT. Length runs
+ * along +x (bow forward). Each part carries a paint (rgb + mode: 0 its own
+ * colour, 1 the instance's hull colour, 2 saloon glass that lights at night,
+ * 3 wake foam) and a type (0 ferry, 1 sailboat).
+ */
+function boatFleetGeom(): THREE.BufferGeometry {
+  const parts: { g: THREE.BufferGeometry; paint: [number, number, number, number]; type: number }[] = [];
+  const hullGeom = (len: number, beam: number, h: number) => {
+    const L = len / 2, B = beam / 2;
+    const sh = new THREE.Shape();
+    sh.moveTo(-L, -B); sh.lineTo(L * 0.55, -B); sh.lineTo(L, 0); sh.lineTo(L * 0.55, B); sh.lineTo(-L, B); sh.closePath();
+    return new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false });
+  };
+  // a flat V of foam behind the stern: two arms and a short centre scar
+  const wake = (len: number, beam: number, stern: number, type: number) => {
+    const arm = (side: number) => {
+      const g = new THREE.PlaneGeometry(len, beam * 0.22);
+      g.translate(-len / 2, 0, 0);
+      // swing the trailing end OUT to its own side, so the arms diverge
+      g.rotateZ(-side * 0.2);
+      g.translate(stern, side * beam * 0.35, 0.25);
+      return g;
+    };
+    // foam is water with air in it, not paint: a pale sea colour, so the V
+    // reads as disturbance on the harbour rather than as a white decal
+    parts.push({ g: arm(1), paint: [0.66, 0.77, 0.82, 3], type });
+    parts.push({ g: arm(-1), paint: [0.66, 0.77, 0.82, 3], type });
+    const scar = new THREE.PlaneGeometry(len * 0.55, beam * 0.5).translate(stern - len * 0.275, 0, 0.26);
+    parts.push({ g: scar, paint: [0.74, 0.83, 0.87, 3], type });
+  };
+  // ---- the ferry: 34 m, a white saloon deck and a wheelhouse forward
+  parts.push({ g: hullGeom(34, 8.4, 2.1), paint: [1, 1, 1, 1], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(20, 6.8, 2.5).translate(-2.5, 0, 3.35), paint: [0.94, 0.93, 0.89, 0], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(20.3, 7.0, 0.8).translate(-2.5, 0, 3.55), paint: [0.16, 0.20, 0.25, 2], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(5.5, 5.4, 1.8).translate(4.5, 0, 5.5), paint: [0.95, 0.94, 0.90, 0], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(5.7, 5.6, 0.6).translate(4.5, 0, 5.7), paint: [0.16, 0.20, 0.25, 2], type: 0 });
+  parts.push({ g: new THREE.BoxGeometry(1.4, 1.4, 2.2).translate(-6, 0, 5.6), paint: [0.55, 0.20, 0.16, 0], type: 0 });
+  wake(46, 8.4, -17, 0);
+  // ---- the sailboat: 10 m, a mast and a mainsail
+  parts.push({ g: hullGeom(10, 3.2, 1.1), paint: [1, 1, 1, 1], type: 1 });
+  parts.push({ g: new THREE.BoxGeometry(3.0, 2.0, 0.7).translate(-0.8, 0, 1.45), paint: [0.90, 0.89, 0.85, 0], type: 1 });
+  parts.push({ g: new THREE.CylinderGeometry(0.09, 0.11, 12, 5).rotateX(Math.PI / 2).translate(0.9, 0, 7.1), paint: [0.82, 0.82, 0.80, 0], type: 1 });
+  {
+    const sail = new THREE.BufferGeometry();
+    sail.setAttribute("position", new THREE.Float32BufferAttribute([
+      0.8, 0, 1.9, -3.6, 0, 1.9, 0.8, 0, 12.6,
+    ], 3));
+    sail.computeVertexNormals();
+    parts.push({ g: sail, paint: [0.97, 0.96, 0.92, 0], type: 1 });
+  }
+  wake(18, 3.2, -5, 1);
+  const pos: number[] = [], norm: number[] = [], paint: number[] = [], type: number[] = [];
+  for (const { g, paint: pt, type: ty } of parts) {
+    const ng = g.index ? g.toNonIndexed() : g;
+    if (!ng.getAttribute("normal")) ng.computeVertexNormals();
+    const P = ng.getAttribute("position"), Nn = ng.getAttribute("normal");
+    for (let i = 0; i < P.count; i++) {
+      pos.push(P.getX(i), P.getY(i), P.getZ(i));
+      norm.push(Nn.getX(i), Nn.getY(i), Nn.getZ(i));
+      paint.push(...pt);
+      type.push(ty);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
+  out.setAttribute("aPaint", new THREE.Float32BufferAttribute(paint, 4));
+  out.setAttribute("aType", new THREE.Float32BufferAttribute(type, 1));
+  return out;
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

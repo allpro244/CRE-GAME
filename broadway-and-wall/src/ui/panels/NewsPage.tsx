@@ -18,7 +18,7 @@ export function NewsPage() {
   const game = useStore((s) => s.game)!;
   const [kind, setKind] = useState<string>("all");
   // A deed you hold now, or sold — the story of your book includes its exits.
-  const mine = new Set([...Object.keys(game.holdings), ...(game.exits ?? []).map((e) => e.bbl)]);
+  const mine = new Set([...Object.keys(game.holdings), ...(game.exits ?? []).map((e) => e.bbl), ...(game.watch ?? [])]);
   const isMine = (n: { bbl?: string }) => !!n.bbl && mine.has(n.bbl);
   const items = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
   const byMonth: { q: number; rows: typeof items }[] = [];

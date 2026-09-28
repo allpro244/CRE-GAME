@@ -1322,6 +1322,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
     out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
+  // A building the player starred reaching the tape: they asked to be told,
+  // so Yr / Skip / Play stop on it like any other thing that needs them. The
+  // key carries the listing month, so a relist is news again.
+  for (const li of s.listings ?? []) {
+    if (!s.watch?.includes(li.bbl)) continue;
+    out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
+  }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
   }

@@ -193,6 +193,13 @@ export function PropertyPage() {
               way round, because the decision to sell is the one you open this
               page having already half made. */}
           <div className="btn-row" style={{ marginTop: 6 }}>
+            {!h && (
+              <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
+                onClick={() => useStore.getState().toggleWatch(bbl)}
+                title="Follow this building: the docket tells you the month it comes to market, and its news files under Your book.">
+                {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
+              </button>
+            )}
             {h && (
               <button className="btn btn-sell" onClick={() => setTab("deal")}
                 title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>

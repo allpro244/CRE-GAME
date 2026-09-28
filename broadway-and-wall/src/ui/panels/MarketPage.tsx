@@ -695,6 +695,7 @@ export function MarketPage() {
                         </span>
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
+                      {!yours && game.watch?.includes(li.bbl) && <span className="chip chip-watch" style={{ marginRight: 6 }} title="A building you are watching">★</span>}
                       {notToYou && (
                         <span className="chip chip-cold" style={{ marginRight: 6 }} title={held!.name}>
                           NOT TO YOU

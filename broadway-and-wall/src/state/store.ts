@@ -196,6 +196,8 @@ interface AppState {
   /** Continuous play: 0 off, 1 about a month a second, 2 fast. Pauses itself on anything Yr would stop on. */
   autoplay: 0 | 1 | 2;
   setAutoplay: (v: 0 | 1 | 2) => void;
+  /** Star / unstar a building to follow: the docket says when it lists. */
+  toggleWatch: (bbl: string) => void;
   advanceYear: () => void;
   advanceUntil: () => void;
   /** True while Year / Skip is ticking months — advance buttons disable. */
@@ -784,6 +786,16 @@ export const useStore = create<AppState>((set, get) => ({
 
   autoplay: 0,
   setAutoplay: (autoplay) => set({ autoplay }),
+  toggleWatch: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const w = game.watch ?? [];
+    const on = w.includes(bbl);
+    const next = { ...game, watch: on ? w.filter((b) => b !== bbl) : [...w, bbl] };
+    set({ game: next });
+    toast(on ? "No longer watching." : "Watching — the desk will say when it comes to market.");
+    void persist(next);
+  },
   advance: (opts) => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;

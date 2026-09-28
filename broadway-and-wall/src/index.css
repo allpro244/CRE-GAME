@@ -2349,3 +2349,4 @@ html, body, #root { overflow-x: hidden; }
 @keyframes tick-up { 0% { color: #2e7a3f; text-shadow: 0 0 8px rgba(58,125,70,0.45); } 100% { } }
 @keyframes tick-down { 0% { color: #a8402e; text-shadow: 0 0 8px rgba(168,64,46,0.4); } 100% { } }
 @media (prefers-reduced-motion: reduce) { .tstat-tick-up, .tstat-tick-down { animation: none; } }
+.chip-watch { background: var(--gold); color: #fdfbf4; }

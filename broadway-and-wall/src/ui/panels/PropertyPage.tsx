@@ -225,7 +225,7 @@ export function PropertyPage() {
                 title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
                 {h.sale
                   ? "◆ On the market — open the file"
-                  : (leasedFee ? "Sell this leased fee" : "Sell this building")}
+                  : (leasedFee ? "Sell this leased fee" : built ? "Sell this building" : "Sell this lot")}
               </button>
             )}
             <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}

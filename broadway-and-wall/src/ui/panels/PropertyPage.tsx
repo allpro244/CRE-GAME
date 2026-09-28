@@ -10,7 +10,7 @@ import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { usd, sf } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
-import { useLabel, band, PropTab, Big, Row } from "@/ui/panels/shared";
+import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle } from "@/ui/panels/shared";
 
 /**
  * WHAT CAN ACTUALLY STAND ON THE LOT. Zoning's envelope is lot x FAR, but a
@@ -120,7 +120,16 @@ export function PropertyPage() {
         {leasedFee ? (
           <Big label="Your role" value="leased fee" />
         ) : (
-          <Big label="Occupancy" value={built ? (occ * 100).toFixed(0) + "%" : "—"} bad={built && occ < 0.75} />
+          // ONE BASIS, THE ONE EVERY OTHER SCREEN USES. This printed physical
+          // occupancy — let feet over all rentable feet — while the card below,
+          // Leasing and the top bar read lettable feet, so one building with an
+          // unlettable remainder showed 88% here, "fully let" underneath and
+          // 100.0% at the top of the screen.
+          (() => {
+            const r = ipHdr.h ? occRead(rec, ipHdr.h) : null;
+            const v = r ? r.lettableOcc : occ;
+            return <Big label="Occupancy" value={!built ? "—" : r ? occLabel(r) : (v * 100).toFixed(0) + "%"} bad={built && v < 0.75} title={r ? occTitle(r) : undefined} />;
+          })()
         )}
         {leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl] && (
           <>

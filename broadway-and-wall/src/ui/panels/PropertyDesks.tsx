@@ -471,7 +471,11 @@ export function ResidualRead({ bbl }: { bbl: string }) {
   return (
     <div className="grid">
       {s
-        ? <Row k="Nothing pencils today" v={`the best scheme (${USE_LABEL[s.use] ?? s.use}) is worth $${s.valuePsf.toFixed(0)}/sf finished against $${s.costPsf.toFixed(0)}/sf to build`} strong />
+        // SAY WHY IT DOES NOT PENCIL. Finished value over cost read as a margin —
+        // $420 against $351 — beside the words "nothing pencils". What fails is
+        // the land bid: after the builder's margin and the years of carry, the
+        // scheme leaves less for the dirt than a holder or the street will pay.
+        ? <Row k="Nothing pencils today" v={`the best scheme (${USE_LABEL[s.use] ?? s.use}) is worth $${s.valuePsf.toFixed(0)}/sf finished against $${s.costPsf.toFixed(0)}/sf to build — after the builder's margin and the wait that ${read.builder > 0 ? `leaves $${read.builder.toFixed(0)}/sf for the land, under the $${read.psf.toFixed(0)}/sf it trades at` : "leaves nothing for the land"}`} strong />
         : <Row k="Nothing pencils today" v="no use covers its own construction at these rents" strong />}
       <Row k="Held for the next cycle" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf — the residual at peak rents, discounted for the years of waiting`} />
       <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf — ${read.winner === "holder" ? "a holder is the high bidder" : "the street sets it, not the income"}`} />

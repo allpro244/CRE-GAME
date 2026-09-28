@@ -89,7 +89,7 @@ for (const SEED of SEEDS) {
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     if (g.gameOver) {
       T.gameOver++;
-      note("EVENT", "gameover", "game over reached", { m: g.month, why: String(g.gameOver).slice(0, 120), cash: Math.round(g.cash), nw: Math.round(E.netWorth(g, parcels)) });
+      note("EVENT", "gameover", "game over reached", { m: g.month, why: String(g.gameOver?.cause ?? g.gameOver).slice(0, 120), cash: Math.round(g.cash), nw: Math.round(E.netWorth(g, parcels)) });
       g = { ...g, gameOver: null, cash: Math.max(g.cash, 0) + 3e6 };
     }
     const e = g.econ;

@@ -24,7 +24,7 @@ import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio, offerStreetBook, acceptStreetBook } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
-import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
+import { refinance, buyRateCap, payOffLoan, paydownLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
@@ -265,6 +265,7 @@ interface AppState {
   placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
+  paydownLoan: (bbl: string, amount: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" }, lender?: string, spec?: number) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
@@ -904,6 +905,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Mezz closed.");
+    void persist(r.s);
+  },
+
+  paydownLoan: (bbl, amount) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = paydownLoan(game, parcels, bbl, amount);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Paid down.");
     void persist(r.s);
   },
 

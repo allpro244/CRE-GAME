@@ -928,18 +928,24 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {atLimit && " That is as many as you can hold — close one or walk away before opening another."}
         </div>
       )}
-      <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
-        <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} />
-        Best and final — they answer once, and a no ends it for both sides
-      </label>
+      {/* THEIR LAST WORD LEAVES TWO MOVES. Once the seller is final a counter
+          can only be at or above their number, which is "Take" spelt longer;
+          the greyed button and the best-and-final box beside it read as moves
+          you still had. */}
+      {!talks?.final && (
+        <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+          <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} />
+          Best and final — they answer once, and a no ends it for both sides
+        </label>
+      )}
       <div className="btn-row">
-        <button
+        {!talks?.final && <button
           className="btn btn-buy"
           disabled={atLimit || (!!talks && talks.final && offerPriceRounded < talks.theirPrice)}
           onClick={() => { useStore.getState().offer(bbl, offerPriceRounded, isFinal); setIsFinal(false); }}
         >
           {talks ? `Counter at ${usd(offerPriceRounded)}` : `Offer ${usd(offerPriceRounded)}`}{isFinal ? " — final" : ""}
-        </button>
+        </button>}
         {!talks && (
           <button
             className="btn"
@@ -959,7 +965,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           </>
         )}
       </div>
-      {talks?.final && offerPriceRounded < talks.theirPrice && (
+      {talks?.final && (
         <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
       )}
       <div className="hint dim">

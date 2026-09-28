@@ -17,7 +17,7 @@ import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unit
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
-import { dscr, ltv, payOffDue, rateCapCost } from "@/engine/debt";
+import { dscr, ltv, payOffDue, rateCapCost, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
@@ -754,6 +754,9 @@ function ParcelPanelInner({
               </button>
             )}
           </div>
+          {!game.facility?.bbls?.includes(selectedBBL) && holding.loan.balance > 1000 && (
+            <PaydownRow bbl={selectedBBL} />
+          )}
           {/* The docked card gets the answer and a door; the desk itself —
               four lenders, a dial and a before/after sheet — is a room's
               worth of reading and opens as one. */}
@@ -1181,3 +1184,48 @@ function ParcelPanelInner({
 
 /** Memo: GamePanels re-renders on every page toggle; the docked card must not. */
 export const ParcelPanel = memo(ParcelPanelShell);
+
+/**
+ * PAY SOME OF IT DOWN. The amount, what it costs today under the note's own
+ * prepayment terms, and what the payment becomes — before the click. When the
+ * loan is in breach the preset is the engine's own cure number, the same one
+ * the sweep would take out of the building on its own.
+ */
+function PaydownRow({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.holdings[bbl];
+  const rec = resolveRec(parcels, game, bbl);
+  const [txt, setTxt] = useState("");
+  if (!h?.loan || !rec) return null;
+  const loan = h.loan;
+  const bal = Math.round(loan.balance);
+  const cure = Math.min(bal - 1, Math.round(equityCureNeed(rec, game, h)));
+  const amt = Math.round(Number(txt.replace(/[^0-9.]/g, "")) || 0);
+  const valid = amt > 0 && amt < bal;
+  const pen = valid ? prepayPenalty({ ...loan, balance: amt }, game.month) : 0;
+  const tooMuch = valid && amt + pen > game.cash;
+  return (
+    <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+      <input
+        className="mono" style={{ width: 110 }} inputMode="numeric" placeholder="amount"
+        value={txt} onChange={(e) => setTxt(e.target.value)}
+      />
+      {cure > 0 && (
+        <button className="btn" title="The paydown that brings the note back inside its covenants" onClick={() => setTxt(String(cure))}>
+          Cure · {usd(cure)}
+        </button>
+      )}
+      <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.1)))}>10%</button>
+      <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.25)))}>25%</button>
+      <button
+        className="btn btn-buy" disabled={!valid || tooMuch}
+        title={!valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
+        onClick={() => { useStore.getState().paydownLoan(bbl, amt); setTxt(""); }}
+      >
+        Pay down{valid ? ` · ${usd(amt + pen)}` : ""}
+      </button>
+      {valid && pen > 0 && <span className="hint">includes {usd(pen)} to prepay early</span>}
+    </div>
+  );
+}

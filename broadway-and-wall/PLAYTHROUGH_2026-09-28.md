@@ -171,20 +171,52 @@ of its own cost-ordered list.
   is the one worth a proper look. A plausible cause is that land no longer
   opens 30–45% rich, so prime lots stop being sold into the wrong decade, but
   that is a hypothesis, not a measurement.
-- **Occupancy has three answers on a building with an unlettable remainder:**
-  88% in the header (physical), "fully let" in the body (lettable basis) and
-  100.0% in the top bar. Each is defensible. Three on one screen is not. Pick
-  one basis for the headline and label the other.
-- **"Yr ▸▸" stops on every letter.** In the first seventeen months it stopped
-  after 5, 7 and 1 months. The docket already queues the letters. A year click
-  could run the year and stop only on something that expires inside it.
-- **The offer desk keeps "Best and final" as its header during a two-round
-  negotiation,** and still offers "Counter" after "They have stopped moving".
-- **"Nothing pencils today" sits beside "worth $420/sf finished against $351/sf
-  to build".** That reads as a margin. Say what the hurdle needs.
-- **`tools/deepplay.mjs` prints `game over … why: [object Object]`.**
-- **Carried from September, still true:** TI cannot be amortised into rent, a
-  loan cannot be paid down in part, and there is no sale-leaseback or JV.
+- **Carried from September, still true:** TI cannot be amortised into rent,
+  and there is no sale-leaseback or JV.
+
+## Second round — the rest of the list
+
+- **"Yr ▸▸" stops when something is due, not when it arrives — DONE.** The
+  multi-month advance stopped the month any new item landed, and an item
+  already on the desk when you clicked never stopped it at all, so a letter
+  could lapse in the middle of a year without a word. Attention items now
+  carry `lastM`, the last month you can act (letters, tenant asks, note
+  sales, private-credit quotes, broker files, first looks, sale offers).
+  Those stop the run in that month, whether they were on the desk at the
+  start or arrived during the run. Items with no deadline (arrears, a sweep,
+  a balloon notice, a bid list) still stop the month they appear. Measured
+  with a one-building book over five years on three seeds: nothing lapsed
+  unseen, and the stops land at deadlines. The number of clicks barely moved
+  (22 either way), because the bot never acts on opportunities: somebody
+  else's note sale or a broker's file still stops the year once, now in its
+  last month rather than its first. That is the existing design ("Skip runs
+  past the best buying window" is why those items are on the list) and it is
+  kept.
+- **One occupancy basis on the property page — DONE.** The header was the last
+  reader of physical occupancy; it now reads `occupancyRead` like the card,
+  Leasing and the top bar ("fully let · 1,562 sf unlettable", with the reason
+  in the tooltip).
+- **Offer desk — MOSTLY A MISREAD, one wart fixed.** "Best and final" is a
+  checkbox, not a header (the text scrape flattened it), and "Counter" was
+  already disabled once the seller stopped. When their word is final, both
+  controls are now hidden, since a counter at or above their number is
+  "Take" spelt longer.
+- **"Nothing pencils" says why — DONE.** It now shows the builder's residual
+  for the land ("leaves $X/sf for the land, under the $Y/sf it trades at"),
+  which is what actually fails.
+- **A loan can be paid down in part — DONE.** `paydownLoan` (debt.ts): cash
+  only; the note's own prepayment terms apply to the dollars prepaid; the
+  payment is re-cut on the remaining amortisation exactly as the monthly tick
+  and the equity cure do; the lien stays. The property's Money tab has an
+  amount box with 10% / 25% presets and, when the note is in breach, a
+  "Cure" preset set to `equityCureNeed`. The cost including any prepayment
+  charge is shown before the click. `pnpm paydown` (in `check`) proves the
+  balance, cash, ledger, recast, refusals, the step-down charge and the cure.
+  In the playable: a $210K note, 25% paid down with a $1,575 prepayment
+  charge, DSCR 1.36 → 1.81.
+- **Small ones — DONE.** The top-bar era column clipped "disinflation"; it is
+  now sized to the longest name. `deepplay` prints the game-over cause
+  instead of `[object Object]`.
 
 ## Tests touched, and why
 

@@ -8,7 +8,7 @@ import { demandNow } from "@/engine/demand";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
-import { usd, sf } from "@/ui/format";
+import { usd, sf, pctSigned } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle } from "@/ui/panels/shared";
@@ -149,6 +149,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Expense leakage"
+            title="The share of the building's operating and tax bill that no lease reimburses — it comes out of your NOI."
             value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
             bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
           />
@@ -156,6 +157,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Roll quality"
+            title="What the rent roll adds to this building's cap rate: short terms, weak credit or empty space widen it, and a buyer prices that in. Positive is a discount to the price."
             value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
             bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
           />
@@ -177,6 +179,7 @@ export function PropertyPage() {
           return (
             <Big
               label="Value vs cost to build"
+              title="Appraisal over what it would cost to put this building up today. Under 1× nobody builds a competitor; well over it, somebody will."
               value={`${x.toFixed(2)}×`}
               bad={x > 1.25}
             />
@@ -187,7 +190,7 @@ export function PropertyPage() {
           // The same ledger read the Portfolio's "Returns to date" prints.
           const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
           if (!r) return null;
-          return <Big label="Your return to date" value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${(r.irr * 100).toFixed(1)}% IRR` : ""}`} bad={r.multiple < 1} />;
+          return <Big label="Your return to date" title="On your equity, before tax: cash back plus today's equity at the mark, over what you put in. Closing costs put a new deed under 1× on day one." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
         })()}
       </div>
       <div className="prop-head">

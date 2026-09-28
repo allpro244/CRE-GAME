@@ -20,7 +20,7 @@ import { MILESTONES } from "@/engine/sim";
 import { firmName, firmShort } from "@/engine/firm";
 import { resolveRec } from "@/engine/value";
 import { PROPERTY_HISTORY_CAP } from "@/engine/history";
-import { usd, sf as fmtSf } from "@/ui/format";
+import { usd, sf as fmtSf, pctSigned } from "@/ui/format";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Spark from "@/ui/vitals/Spark";
 import "./timeline.css";
@@ -102,7 +102,7 @@ function buildRows(game: GameState, parcels: ParcelTable): Row[] {
         + (e.equityIn
           ? ` · equity ${usd(e.equityIn)} in, ${usd(e.equityOut ?? 0)} back, `
             + `${((e.equityOut ?? 0) / e.equityIn).toFixed(2)}x`
-            + (e.irr != null ? `, IRR ${(e.irr * 100).toFixed(1)}% levered before tax` : "")
+            + (e.irr != null ? `, IRR ${pctSigned(e.irr)} levered before tax` : "")
           : ""),
       cat: "sold",
     });
@@ -572,8 +572,8 @@ export default function FirmTimeline() {
           <div className="tl-stat">
             <div className="tl-stat-label">Deeds on / off</div>
             <div className="tl-stat-value">
-              +{review.boughtN} / −{review.soldN}
-              {review.forcedN > 0 ? <span className="neg">({review.forcedN} taken)</span> : null}
+              {review.boughtN ? `+${review.boughtN}` : "0"} / {review.soldN ? `−${review.soldN}` : "0"}
+              {review.forcedN > 0 ? <span className="neg"> ({review.forcedN} taken)</span> : null}
             </div>
           </div>
           <div className="tl-stat">

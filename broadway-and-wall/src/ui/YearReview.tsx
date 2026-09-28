@@ -5,7 +5,7 @@ import { MILESTONES } from "@/engine/sim";
 import { goalProgress, goalDef, goalsOpen } from "@/engine/goals";
 import { START_YEAR, monthLabel } from "@/engine/types";
 import { openResearchOn } from "@/ui/panels/shared";
-import { usd } from "@/ui/format";
+import { usd, pctSigned } from "@/ui/format";
 
 /**
  * THE YEAR, TOLD BACK — once a December closes. A year used to pass with a
@@ -209,7 +209,7 @@ export function ExitCard() {
             <span>Equity multiple</span>
             <span className={(e.equityOut ?? 0) < e.equityIn ? "neg" : "pos"}><strong>{((e.equityOut ?? 0) / e.equityIn).toFixed(2)}×</strong></span>
             <span>IRR (levered, before tax)</span>
-            <span className={e.irr != null && e.irr < 0 ? "neg" : undefined}>{e.irr != null ? `${(e.irr * 100).toFixed(1)}% a year` : "— (the flows do not solve to one rate)"}</span>
+            <span className={e.irr != null && e.irr < 0 ? "neg" : undefined}>{e.irr != null ? `${pctSigned(e.irr)} a year` : "— (the flows do not solve to one rate)"}</span>
           </>) : null}
           {card.cash !== undefined && (<><span>Cash in at closing</span><span title="After the loan payoff, closing costs and any partner's share">{usd(card.cash)} net</span></>)}
         </div>

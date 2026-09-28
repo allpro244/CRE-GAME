@@ -130,6 +130,14 @@ export function fundRaiseQuote(s: GameState): {
   const reup = !prev ? 0 : prevDpi >= 1.5 ? 2 : prevDpi >= 1.2 ? 1.5 : prevDpi >= 1 ? 1.15 : 0;
   const size = Math.round(Math.max(base * phaseMult, (prev?.size ?? 0) * reup * phaseMult) / 100_000) * 100_000;
   const nth = (s.fundsRaised ?? (prev ? 1 : 0)) + 1;
+  // THE QUOTE CARRIES THE CHEQUE. raiseFund refuses without the GP
+  // co-invest in cash (a revolver cannot fund a ten-year commitment), and
+  // the quote used to say yes regardless — the button lit, the raise failed
+  // (81–274 times a run for one bot). Say it here, with the number.
+  const gpNeed = Math.round(size * FUND_GP_COINVEST);
+  if (s.cash < gpNeed) {
+    return { ok: false, size, reason: `LPs would back a $${(size / 1e6).toFixed(0)}M fund, but the GP co-invest is $${(gpNeed / 1e6).toFixed(2)}M in cash — the line cannot fund a ten-year commitment — and you hold $${(Math.max(0, s.cash) / 1e6).toFixed(2)}M.` };
+  }
   return {
     ok: true, size,
     reason: prev

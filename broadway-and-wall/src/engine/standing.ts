@@ -338,7 +338,11 @@ export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] 
     let inn = 0, back = 0;
     for (let i = 1; i < l.cf.length; i += 2) { if (l.cf[i] < 0) inn -= l.cf[i]; else back += l.cf[i]; }
     if (inn <= 0) continue;
-    const eqNow = (ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0));
+    // Non-recourse paper caps the loss at the equity: an owner under water can
+    // hand back the keys, so the mark on what they hold floors at nothing.
+    // Recourse debt can take them below zero, and then it does.
+    const rawEq = ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
+    const eqNow = (h.loan?.recourse ? rawEq : Math.max(0, rawEq)) * (1 - (h.jv?.share ?? 0));
     const cf = [...l.cf];
     const last = cf.length - 2;
     if (cf[last] === s.month) cf[last + 1] += eqNow; else cf.push(s.month, eqNow);

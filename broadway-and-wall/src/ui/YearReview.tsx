@@ -77,7 +77,7 @@ export default function YearReview() {
         {r.next && <div className="year-review-next">Next on the ladder: <strong>{r.next.label}</strong></div>}
         {(() => {
           const g = game.goal;
-          const p = goalProgress(game);
+          const p = goalProgress(game, useStore.getState().parcels);
           if (!g || !p) return null;
           const d = goalDef(g.id);
           const left = Math.max(0, Math.ceil((g.deadlineM - game.month) / 12));
@@ -246,7 +246,7 @@ export function GoalCard() {
         <div className="year-review-next">
           {d.detail}. {verdict === "done"
             ? `The deadline was ${d.years} years; you made it with ${Math.max(0, d.years - yrs).toFixed(1)} to spare.`
-            : `Where it stood at the deadline: ${goalProgress(game)?.text ?? "—"}.`}
+            : `Where it stood at the deadline: ${goalProgress(game, useStore.getState().parcels)?.text ?? "—"}.`}
           {" "}The town carries on — the run is yours to keep playing.
         </div>
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>

@@ -6,6 +6,8 @@
  * the rent roll). Nothing here draws a random number or moves a dollar.
  */
 import type { GameState } from "./types";
+import type { ParcelTable } from "@/data/types";
+import { resolveRec, useRentableSf } from "./value";
 
 export type GoalId = "street" | "nw100" | "builder" | "landlord";
 
@@ -28,7 +30,7 @@ export function newGoal(id: GoalId, month: number): Goal {
 }
 
 /** Where the run stands against its goal: a 0..1 share and a line to print. */
-export function goalProgress(s: GameState): { share: number; text: string } | null {
+export function goalProgress(s: GameState, parcels?: ParcelTable | null): { share: number; text: string } | null {
   const g = s.goal;
   if (!g) return null;
   switch (g.id) {
@@ -46,18 +48,28 @@ export function goalProgress(s: GameState): { share: number; text: string } | nu
       return { share: Math.min(1, n / 5), text: `${n} of 5 delivered` };
     }
     case "landlord": {
+      // Your share of what is let: commercial suites on the roll, and the
+      // flats (tracked as occupancy on the multifamily space, not as suites —
+      // leaving them out missed a third of one measured book). Vehicle deeds
+      // are the LPs'; a JV partner owns its share.
       let let_ = 0;
-      for (const h of Object.values(s.holdings)) for (const t of h.tenants) let_ += t.sf;
+      for (const h of Object.values(s.holdings)) {
+        if (h.fundOwned) continue;
+        let sf = h.tenants.reduce((a, t) => a + t.sf, 0);
+        const rec = parcels ? resolveRec(parcels, s, h.bbl) : null;
+        if (rec && (h.occ ?? 0) > 0) sf += useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+        let_ += sf * (1 - (h.jv?.share ?? 0));
+      }
       return { share: Math.min(1, let_ / 500_000), text: `${Math.round(let_).toLocaleString()} of 500,000 sf let` };
     }
   }
 }
 
 /** Has the goal just been met, or has its deadline passed? Pure read. */
-export function goalVerdict(s: GameState): "done" | "failed" | null {
+export function goalVerdict(s: GameState, parcels?: ParcelTable | null): "done" | "failed" | null {
   const g = s.goal;
   if (!g || g.doneM !== undefined || g.failedM !== undefined) return null;
-  const p = goalProgress(s);
+  const p = goalProgress(s, parcels);
   const met = g.id === "street"
     ? (s.yearMarks ?? []).some((m) => m.y >= 0 && m.m >= g.setM && m.rank === 1)
     : (p?.share ?? 0) >= 1;

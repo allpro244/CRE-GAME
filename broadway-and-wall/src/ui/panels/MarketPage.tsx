@@ -717,10 +717,13 @@ export function MarketPage() {
                         const lr = landRead(rec, game.econ);
                         const askPsf = li.ask / rec.lotArea;
                         if (lr.builder <= 0) return null;
-                        const works = askPsf <= lr.builder;
+                        // The buyer pays the ask plus 2% closing, which lands in
+                        // the basis; a lot priced at exactly the residual reads
+                        // 0.998 on the desk the day you own it. Compare all-in.
+                        const works = askPsf * 1.02 <= lr.builder;
                         return (
                           <span className={"chip" + (works ? " chip-pencils" : "")} style={{ marginRight: 6 }}
-                            title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at the rents the trade underwrites, after cost, carry and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf.`}>
+                            title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at the rents the trade underwrites, after cost, carry and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf, $${(askPsf * 1.02).toFixed(0)} with closing.`}>
                             {works ? "PENCILS" : `BUILDER $${lr.builder.toFixed(0)}/SF`}
                           </span>
                         );

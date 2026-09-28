@@ -386,9 +386,10 @@ export function LeasingPage() {
                       {r.leased ? ` · $${(r.rentRoll / r.leased).toFixed(0)}/sf` : ""}
                     </div>
                     <div className="dim" style={{ fontSize: 11 }}>
-                      {(r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market"}
-                      {" · "}{serviceSpec(r.h.service).label}
-                      {" · "}{planSpec(r.h.plan).label}
+                      {/* named, so "Market · Market · Fund" reads as three settings */}
+                      rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
+                      {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
+                      {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
                       {r.h.broker ? " · broker" : ""}
                       {r.notReady ? " · turning" : ""}
                       {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}

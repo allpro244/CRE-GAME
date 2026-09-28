@@ -91,13 +91,16 @@ function FirmCapitalPanel({ game }: { game: GameState }) {
       <div className="hint">
         What survives when a principal dies: process, name, record. Not a skill build —
         hiring standing, lender file, clean exits, bench, vehicle, and book size.
-        Process cover on your float desk: ×{fc.processCapacityMult.toFixed(3)} (max ×1.08).
+        It lifts the capacity of every desk you have not staffed by up to 8% — yours by{" "}
+        {((fc.processCapacityMult - 1) * 100).toFixed(1)}% today.
       </div>
       <div className="grid" style={{ margin: "8px 0" }}>
         {fc.pillars.map((p) => (
           <div key={p.id} style={{ display: "contents" }}>
             <div className="k">{p.label}</div>
-            <div className="v mono" title={p.detail}>
+            {/* left-aligned so the six bars line up in one column instead of
+                starting wherever each sentence's length pushed them */}
+            <div className="v mono" title={p.detail} style={{ textAlign: "left" }}>
               <span style={{
                 display: "inline-block", width: 100, height: 6,
                 background: "rgba(43,37,26,0.12)", borderRadius: 2, verticalAlign: "middle",
@@ -283,7 +286,7 @@ export default function StaffPage() {
           : "Nobody is on the payroll but you — every desk is yours until you hire and, for leasing, hand them the pen. "}
         {STAFF_CAPACITY_SHIPPED
           ? "Past capacity the roof inspection slips, the renewal conversation happens two months late, and the vendor contract rolls over unexamined. That is work that did not get done, priced below in the units it costs you."
-          : "Capacity and management-load economics are parked — hire and fire still work, payroll still hits the books, and a good hire still helps, but an overloaded book does not quietly tax the month. The load model will come back later."}
+          : "Load is measured but not yet charged: an overloaded desk does not slow the work in this version. Payroll still hits the books, and a good hire still helps."}
         {rep < 0.45 ? " The street remembers messy firings — the next shortlist will read worse." : ""}
       </div>
 
@@ -337,7 +340,9 @@ export default function StaffPage() {
             : `These names came through ${tier.label.toLowerCase()}, so the first impression is tighter than a posted job would give: `}
           about ±{band} points of a hundred before the role's own difficulty is applied, and the difficulties are
           not equal. A room reads presence and negotiation accurately and detail orientation barely at all,
-          which is the entire reason bad hires happen to careful people.
+          which is the entire reason bad hires happen to careful people. Every ask is firm, agreed in
+          year-2000 dollars and billed at today's price level — the industry has been watching these people
+          work for a decade even though you have not.
           {!stale && ` A fresh list goes up in ${POOL_REFRESH_M - poolAge} month${POOL_REFRESH_M - poolAge === 1 ? "" : "s"} — a hiring market that reshuffles on demand is a slot machine, and the decision it produces is "spin again" rather than "is this person worth the money".`}
         </div>
         <div className="btn-row" style={{ marginTop: 8 }}>
@@ -574,7 +579,7 @@ function RoleDesk({ role, rs, backlog, opexBase, staff, pending, month, ownedBbl
         {ROLE_LABEL[role]} · {rs.load.toFixed(2)}× capacity
         {STAFF_CAPACITY_SHIPPED
           ? (priced.slip > 0 ? ` · ${(priced.slip * 100).toFixed(0)}% of the work slipping` : " · keeping up")
-          : " · load parked"}
+          : " · load not charged"}
       </div>
       <LoadBar rs={rs} />
       <div className="hint">
@@ -781,9 +786,10 @@ function CandidateCard({ c, costIdx, cash, month, onHire }: {
         <span className="cand-name">{c.name}</span>
         <span className="cand-ask mono">{usd(askToday)}<span className="dim"> / yr</span></span>
       </div>
-      <div className="cand-sub">
-        {usd(c.askSalary)} a year in year-2000 dollars, billed at today's price level. They will not take less —
-        the rest of the industry has been watching them work for a decade even though you have not.
+      {/* The why of the number lives once, in the shortlist's hint; nine
+          cards repeating the same two sentences was the longest text on the page. */}
+      <div className="cand-sub" title="Salaries are agreed in year-2000 dollars and billed at today's price level. Candidates do not take less than their ask.">
+        {usd(c.askSalary)} a year in year-2000 dollars · firm ask
       </div>
       <div className="band-grid">
         {keys.map((k) => (

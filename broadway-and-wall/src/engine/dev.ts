@@ -91,10 +91,37 @@ export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor, MAX_COVERAGE,
+  developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
+
+/**
+ * THE PLATE THE CITY DRAWS — the site coverage an autonomous start (the
+ * anonymous city, a named rival, a teardown) and the order book's pencil
+ * sampler put a new building of this programme on. It is the use's own
+ * coverage limit (`MAX_COVERAGE`, proforma.ts), which is exactly the plate the
+ * land residual prices the dirt at (`residualFloorChoices`, value.ts).
+ *
+ * It was a flat 0.62 for every use, while the residual struck land at 0.70 for
+ * flats, 0.80 for offices and 0.85 for shops and sheds. So every autonomous
+ * scheme paid for dirt priced on a building a fifth to a third bigger than the
+ * one it drew, and the pencil that gates the order book could not find a
+ * clearing site even on lots where that use IS the highest and best use and
+ * its own residual scheme plans at 1.00 by construction. Measured (seeds 9001,
+ * 9005, 9006, years 18-21, every vacant lot): at 0.62, 0 of 54 / 0 of 22
+ * office-HBU lots cleared, 0 of 116 industrial, 0 of 5 retail, 1-4 of 94
+ * flats; at the use's plate, 7/54 and 11/22 office, 54/116 industrial, 5/5
+ * retail, 7-24 flats. `sitePencil` read zero for office, retail and industrial
+ * in every annual sample on all six orderbook seeds, so `startOwed` never
+ * formed for them and those markets sat welded to their frictional vacancy
+ * for decades with a structural shortage and rising rents. One quantity —
+ * what gets built on this lot — now has one answer. The player's desk is
+ * untouched: it chooses its own footprint up to the same limit.
+ */
+export function cityCoverage(use: DevUse): number {
+  return maxCoverageFor(use);
+}
 
 
 /**
@@ -940,15 +967,16 @@ export function refreshDevelopmentFeasibility(
         // cornice datum and its scarcity push still bind — but it is the same
         // question the start path asks, which is the whole point.
         const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), use, datumMemo);
-        const floors = Math.max(2, Math.min(infill, maxFloorsFor(rec, 0.62, use)));
+        const plate = cityCoverage(use);
+        const floors = Math.max(2, Math.min(infill, maxFloorsFor(rec, plate, use)));
         // ...and PUBLISH what that envelope is worth against the legal one, so
         // the land market can price the building the city will actually permit.
         // See econ.infillShare in market.ts and residualScheme in value.ts.
         {
-          const legalFl = maxFloorsFor(rec, 0.62, use);
+          const legalFl = maxFloorsFor(rec, plate, use);
           if (legalFl > 0) infillRatios.push(Math.max(0.05, Math.min(1, floors / legalFl)));
         }
-        const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+        const u = underwriteDevelopment(s, parcels, bbl, use, floors, plate);
         // Only clearing pencils. Pushing appetite-zero failures from densify
         // sites diluted the P97 and zeroed whole classes (office went to 0
         // while multifamily stayed live — the order book then starved office).
@@ -965,7 +993,7 @@ export function refreshDevelopmentFeasibility(
     // Only sites that can grow housable floor under today's cornice/shortage.
     const leadGuess = rec.class as BuiltClass;
     const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadGuess, datumMemo);
-    const targetSf = rec.lotArea * 0.62 * infill;
+    const targetSf = rec.lotArea * cityCoverage(leadGuess) * infill;
     if (targetSf < rec.bldgArea * 1.12) continue;
     chosen.add(bbl);
     redevCount++;
@@ -973,9 +1001,10 @@ export function refreshDevelopmentFeasibility(
     const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
       if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
-      const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
-      if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
-      const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
+      const plate = cityCoverage(use);
+      const floors = Math.min(infill, maxFloorsFor(rec, plate, use));
+      if (rec.lotArea * plate * floors < rec.bldgArea * 1.08) continue;
+      const u = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opp);
       if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
     }
   }
@@ -3076,7 +3105,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const probeUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
     const probeLead = dominantOf(devMix(probeUse));
     const infill = cityInfillCap(s, parcels, rec, 1, probeLead);
-    const targetSf = Math.max(3000, Math.round(rec.lotArea * 0.62 * infill));
+    const targetSf = Math.max(3000, Math.round(rec.lotArea * cityCoverage(probeUse) * infill));
     const densify = targetSf / Math.max(1, rec.bldgArea);
     const st = e.structTight?.[probeLead] ?? 0;
     const condW = cond === "obsolete" ? 1.35 : cond === "worn" ? 1.15 : 1.0;
@@ -3206,21 +3235,22 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const shareFloor = leadShort ? 0.55 : 0.30;
     const share = shareFloor + (0.80 - shareFloor) * appetite * (0.75 + shareJitter * 0.5);
     let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
-    let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * 0.62)));
+    const plate = cityCoverage(nextUse);
+    let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * plate)));
     const infill = cityInfillCap(s, parcels, rec, 1, lead);
     const wantedFl = nfl;   // what the envelope asked for, before the cornice
-    if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
+    if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100); }
     const ucap = MAX_FLOORS_BY_USE[nextUse];
-    if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
+    if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100); }
     if (leadShort && nsf < oldSf * 1.12) {
       const needFl = Math.min(
         infill,
         ucap ?? infill,
-        Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * 0.62)),
+        Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * plate)),
       );
       if (needFl > nfl) {
         nfl = needFl;
-        nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100);
+        nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100);
       }
       if (nsf < oldSf * 1.08) continue;
     }
@@ -3245,16 +3275,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     {
       const ceilFl = ucap !== undefined ? Math.min(wantedFl, ucap) : wantedFl;
       if (ceilFl > nfl) {
-        const tallSf = Math.max(3000, Math.round((rec.lotArea * 0.62 * ceilFl) / 100) * 100);
+        const tallSf = Math.max(3000, Math.round((rec.lotArea * plate * ceilFl) / 100) * 100);
         const premium = entitlementPremium(ceilFl, infill, tallSf, opportunityCost, e.costIdx ?? 1);
         const tall = premium > 0
-          ? underwriteDevelopment(s, parcels, bbl, nextUse, ceilFl, 0.62, opportunityCost + premium)
+          ? underwriteDevelopment(s, parcels, bbl, nextUse, ceilFl, plate, opportunityCost + premium)
           : null;
         if (tall?.clears) { nfl = ceilFl; nsf = tallSf; densifyBasis = opportunityCost + premium; }
       }
     }
     const underwriting = underwriteDevelopment(
-      s, parcels, bbl, nextUse, nfl, 0.62, densifyBasis,
+      s, parcels, bbl, nextUse, nfl, plate, densifyBasis,
     );
     if (!underwriting) continue;
     const ownerRecycle = recycle
@@ -3864,7 +3894,8 @@ function startCityJob(
   // young town builds small; a mature one builds to the envelope
   const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s, "dev") * 0.15);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  const plate = cityCoverage(use);
+  let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
   // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
   // three-storey town broke ground at a median of fifteen floors. The datum
   // cap is what makes twenty years of growth read like twenty years.
@@ -3880,13 +3911,13 @@ function startCityJob(
     const base = s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
     const premium = entitlementPremium(floors, infill, sf, base, s.econ.costIdx ?? 1);
     const tall = premium > 0
-      ? underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, base + premium)
+      ? underwriteDevelopment(s, parcels, bbl, use, floors, plate, base + premium)
       : null;
     if (tall?.clears) {
       entitleBasis = base + premium;
     } else {
       floors = infill;
-      sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+      sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
     }
   }
   // …and where it IS a shop, it is two storeys, with the area cut to match
@@ -3895,11 +3926,11 @@ function startCityJob(
   const cap = MAX_FLOORS_BY_USE[use];
   if (cap !== undefined && floors > cap) {
     floors = cap;
-    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
   // financing, lease-up reserve, NOI and required margin the player sees.
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, entitleBasis);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, entitleBasis);
   if (!underwriting?.clears) return false;
   const plan = underwriting.plan;
   sf = plan.sf;

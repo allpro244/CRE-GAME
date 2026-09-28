@@ -36,7 +36,7 @@ import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityCoverage, cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -325,7 +325,7 @@ export function claimJob(
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const shared = underwriting
     ? { plan: underwriting, clears: underwriting.hurdleRatio >= 1 && underwriting.ltcMax > 0 }
-    : underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+    : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
   if (!shared?.clears) return null;
   const plan = shared.plan;
   const cost = plan.costTotal;
@@ -1817,7 +1817,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
     if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
     const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe, datumMemo);
-    const targetSf = rec.lotArea * 0.62 * infillProbe;
+    const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;
     const densify = targetSf / rec.bldgArea;
     const score = densify * (1 + 3 * st) * rec.demandScore + rng(s, "rivals") * 10;
@@ -1839,7 +1839,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, (redev ? 0.55 : 0.4) + rng(s, "rivals") * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  const plate = cityCoverage(use);
+  let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
   // A named developer reads the same comps the anonymous city does: one
   // increment above the block's cornice datum, not the zoning envelope.
   const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead);
@@ -1849,12 +1850,12 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const wantedFl = floors;   // what the envelope asked for, before the cornice
   if (floors > infill) {
     floors = infill;
-    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   const cap = MAX_FLOORS_BY_USE[use];
   if (cap !== undefined && floors > cap) {
     floors = cap;
-    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   if (redev && sf < rec.bldgArea * 1.12) return;
   const opp = redev
@@ -1876,16 +1877,16 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   {
     const ceilFl = cap !== undefined ? Math.min(wantedFl, cap) : wantedFl;
     if (ceilFl > floors) {
-      const tallSf = Math.max(3000, Math.round((rec.lotArea * 0.62 * ceilFl) / 100) * 100);
+      const tallSf = Math.max(3000, Math.round((rec.lotArea * plate * ceilFl) / 100) * 100);
       const premium = entitlementPremium(ceilFl, infill, tallSf, ownBasis, s.econ.costIdx ?? 1);
       const tall = premium > 0
-        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, 0.62, ownBasis + premium)
+        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, plate, ownBasis + premium)
         : null;
       if (tall?.clears) { floors = ceilFl; sf = tallSf; entitlePaid = premium; }
     }
   }
   const basisOverride = entitlePaid > 0 ? ownBasis + entitlePaid : opp;
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, basisOverride);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly

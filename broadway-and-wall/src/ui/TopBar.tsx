@@ -797,7 +797,8 @@ export default function TopBar() {
           </button>
           </div>
           <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
-          <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
+          <PlayButton />
+          <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month (Space)">
             Advance ▸
           </button>
           <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
@@ -951,5 +952,30 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
     <div className={className} title={title} style={style}>
       {body}
     </div>
+  );
+}
+
+/**
+ * PLAY. Month, year and skip are all instant, so the skyline the map spends
+ * most of its effort on was never seen growing. This runs the clock a month at
+ * a time with the map drawing between ticks, and pauses itself on exactly what
+ * Yr ▸▸ stops on (stopRule), on any card that wants an answer, and on game over.
+ * Click again to speed up, a third time to stop. G toggles it.
+ */
+function PlayButton() {
+  const autoplay = useStore((s) => s.autoplay);
+  const over = useStore((s) => !!s.game?.gameOver);
+  const next = autoplay === 0 ? 1 : autoplay === 1 ? 2 : 0;
+  return (
+    <button
+      className={"advance-btn advance-play" + (autoplay ? " advance-play-on" : "")}
+      onClick={() => useStore.getState().setAutoplay(next)}
+      disabled={over}
+      aria-pressed={autoplay > 0}
+      title={autoplay === 0 ? "Play — a month a second, pausing when something needs you (G)"
+        : autoplay === 1 ? "Playing a month a second — click for 3× (G pauses)" : "Playing at 3× — click to pause (G)"}
+    >
+      {autoplay === 0 ? "▶ Play" : autoplay === 1 ? "▶ 1×" : "▶ 3×"}
+    </button>
   );
 }

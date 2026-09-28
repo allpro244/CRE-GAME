@@ -191,7 +191,11 @@ interface AppState {
   openProperty: (bbl: string, tab: PropertyTab) => void;
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
-  advance: () => void;
+  /** One month. `quiet` skips the month-close toast — continuous play would stack twelve of them a minute. */
+  advance: (opts?: { quiet?: boolean }) => void;
+  /** Continuous play: 0 off, 1 about a month a second, 2 fast. Pauses itself on anything Yr would stop on. */
+  autoplay: 0 | 1 | 2;
+  setAutoplay: (v: 0 | 1 | 2) => void;
   advanceYear: () => void;
   advanceUntil: () => void;
   /** True while Year / Skip is ticking months — advance buttons disable. */
@@ -778,7 +782,9 @@ export const useStore = create<AppState>((set, get) => ({
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
 
-  advance: () => {
+  autoplay: 0,
+  setAutoplay: (autoplay) => set({ autoplay }),
+  advance: (opts) => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
     const cash0 = game.cash;
@@ -791,7 +797,7 @@ export const useStore = create<AppState>((set, get) => ({
     // cash movement, and the first thing waiting — short enough to read once.
     const dCash = next.cash - cash0;
     const attn = attentionItems(next, parcels)[0];
-    toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
+    if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
     void persist(next);
   },
 

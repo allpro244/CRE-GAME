@@ -20,6 +20,7 @@ export const PAGE_KEYS: readonly { key: string; page: Page; label: string }[] = 
 
 const TIME: readonly [string, string][] = [
   ["Space", "Advance one month"],
+  ["G", "Play / pause — a month a second, pausing when something needs you"],
   ["Y", "Up to one year, stopping when a decision arrives"],
   ["N", "Skip to the next decision, up to three years"],
 ];

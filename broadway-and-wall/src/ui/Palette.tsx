@@ -355,7 +355,7 @@ function PaletteBody() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag !== "INPUT" && tag !== "TEXTAREA"
         && (e.code === "Space" || e.code === "KeyY" || e.code === "KeyN"
-          || e.code === "KeyM" || e.code === "KeyP")
+          || e.code === "KeyM" || e.code === "KeyP" || e.code === "KeyG" || /^Digit[1-9]$/.test(e.code))
         && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); e.stopPropagation();
         inputRef.current?.focus();

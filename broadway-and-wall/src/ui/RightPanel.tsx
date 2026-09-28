@@ -85,6 +85,11 @@ export default function GamePanels() {
         const hit = PAGE_KEYS.find((k) => k.key === e.code.slice(5));
         if (hit) { e.preventDefault(); setPage(page === hit.page ? "none" : hit.page); return; }
       }
+      if (e.code === "KeyG" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (!st.game?.gameOver) st.setAutoplay(st.autoplay ? 0 : 1);
+        return;
+      }
       if (st.advancing) return;
       const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
       if (wantsTime && document.querySelector(".modal-backdrop")) {

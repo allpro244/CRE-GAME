@@ -1686,7 +1686,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
  * go). An item with no deadline — arrears, a covenant sweep, a balloon notice,
  * a bid list — still stops the run the month it first appears.
  */
-function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
+/** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */
+export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));

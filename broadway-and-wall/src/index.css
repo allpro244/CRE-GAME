@@ -2333,3 +2333,12 @@ html, body, #root { overflow-x: hidden; }
 /* A table nobody clicks: no pointer, no row hover. */
 .tbl.tbl-static tbody tr { cursor: default; }
 .tbl.tbl-static tbody tr:hover td { background-color: transparent; }
+
+/* Play ▶ — lit while the clock is running (see TopBar PlayButton, AutoPlay). */
+.advance-btn.advance-play { min-width: 64px; }
+.advance-btn.advance-play-on {
+  background: linear-gradient(to bottom, #3a7d46, #2e6538); color: #fdfbf4; border-color: #2e6538;
+  animation: play-breathe 1.6s ease-in-out infinite;
+}
+@keyframes play-breathe { 50% { box-shadow: 0 0 0 3px rgba(58, 125, 70, 0.25); } }
+@media (prefers-reduced-motion: reduce) { .advance-btn.advance-play-on { animation: none; } }

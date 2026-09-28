@@ -1505,10 +1505,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       const mo = h.loan.maturityM - s.month;
       out.push({
         key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}`,
-        label: `Balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
+        // named: three buildings maturing together were three identical rows
+        label: `${addr(h.bbl)}: balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
       });
     }
-    if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
+    if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: `${addr(h.bbl)}: covenant breach — cash flow swept` });
     // MISSED PAYMENTS, FROM THE FIRST ONE. The arrears clock runs three months
     // before a lender opens a file and nothing on this list said so until the
     // file existed — so auto-advance walked straight through the only part of

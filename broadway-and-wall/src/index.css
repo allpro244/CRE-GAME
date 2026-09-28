@@ -2457,8 +2457,10 @@ html, body, #root { overflow-x: hidden; }
 .start-goals .start-goal { max-width: none; }
 .start-goal:hover { border-color: rgba(216,169,74,0.6); background: rgba(255,255,255,0.07); }
 .start-goal:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.next-goals-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
-.next-goals-row .start-goal { max-width: 220px; text-align: left; color: #2b2317; background: rgba(60,45,20,0.04); border-color: rgba(60,45,20,0.22); }
+/* a two-column grid: as centred flex-wrap the odd last row sat offset from
+   the rows above it */
+.next-goals-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.next-goals-row .start-goal { max-width: none; text-align: left; color: #2b2317; background: rgba(60,45,20,0.04); border-color: rgba(60,45,20,0.22); }
 .next-goals-row .start-goal span { color: #6a5d49; }
 .next-goals-row .start-goal:hover { border-color: #a67c2e; background: rgba(166,124,46,0.08); }
 .start-goal { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 11px; border-radius: 6px; border: 1px solid var(--chart-rule, rgba(168,202,216,0.28)); background: rgba(255,255,255,0.04); color: var(--chart-ink, #e6eef2); font: inherit; cursor: pointer; max-width: 220px; }

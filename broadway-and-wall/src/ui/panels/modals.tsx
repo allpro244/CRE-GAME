@@ -1,6 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
-import { useStore } from "@/state/store";
+import { useStore, rewindPrefix } from "@/state/store";
+import { listSaves, type SaveMeta } from "@/engine/save";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
@@ -1006,6 +1007,7 @@ export function GameOverPage() {
             correctly UNDERNEATH this card and every button on it was
             unclickable, so it looked like the game had simply eaten your
             saves. */}
+        <RewindRow seed={game.seed} month={game.month} />
         <div className="btn-row" style={{ marginTop: 16, justifyContent: "center" }}>
           <button className="btn" onClick={() => useStore.getState().setPage("saves")}
             title="Go back to an earlier save of this same town">
@@ -1016,6 +1018,39 @@ export function GameOverPage() {
         <div className="hint" style={{ textAlign: "center", marginTop: 10 }}>
           Starting a new run rolls a new town. An earlier save of THIS town rebuilds it exactly as it was.
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * GO BACK A FEW YEARS. The rewind points are the first autosave of each of the
+ * run's last few calendar years (see writeRewind in the store) — the lesson
+ * of a balloon that landed in a bad market is worth more replayed from the
+ * January before it than read about on this card.
+ */
+function RewindRow({ seed, month }: { seed: number; month: number }) {
+  const [points, setPoints] = useState<SaveMeta[]>([]);
+  useEffect(() => {
+    let live = true;
+    void listSaves().then((all) => {
+      if (!live) return;
+      const pre = rewindPrefix(seed);
+      setPoints(all.filter((m) => m.slot.startsWith(pre) && m.month < month).sort((a, b) => b.month - a.month));
+    }).catch(() => { /* no save store: nothing to offer */ });
+    return () => { live = false; };
+  }, [seed, month]);
+  if (!points.length) return null;
+  return (
+    <div style={{ marginTop: 16, textAlign: "center" }}>
+      <div className="page-section" style={{ textAlign: "center" }}>Rewind this run</div>
+      <div className="btn-row" style={{ justifyContent: "center", flexWrap: "wrap" }}>
+        {points.map((m) => (
+          <button key={m.slot} className="btn" onClick={() => void useStore.getState().loadFrom(m.slot)}
+            title={`Cash then: ${usd(m.cash)}`}>
+            ↺ {monthLabel(m.month)}
+          </button>
+        ))}
       </div>
     </div>
   );

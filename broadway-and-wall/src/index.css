@@ -2375,3 +2375,9 @@ html, body, #root { overflow-x: hidden; }
 .starter-addr { font-family: var(--serif); font-size: 15px; }
 @media (max-width: 720px) { .starter-row { grid-template-columns: 1fr 1fr; } }
 .start-first { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--gold); color: var(--chart-ink, #e6eef2); font-size: 13.5px; background: rgba(176,127,30,0.10); border-radius: 0 6px 6px 0; }
+.gloss-lit { background: rgba(176,127,30,0.18); border-radius: 4px; transition: background 0.6s; }
+.gloss-list { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.gloss-entry { display: grid; grid-template-columns: 160px 1fr; gap: 12px; padding: 4px 6px; }
+.gloss-key { font-weight: 600; color: var(--ink); }
+.gloss-def { color: var(--ink-dim); }
+@media (max-width: 560px) { .gloss-entry { grid-template-columns: 1fr; gap: 2px; } }

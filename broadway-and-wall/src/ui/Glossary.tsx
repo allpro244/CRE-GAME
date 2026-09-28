@@ -109,6 +109,8 @@ export function Gloss({
       title={entry.def}
       onClick={(e) => {
         e.stopPropagation();
+        // Land on the word, not the top of the Primer.
+        pendingTerm.key = TERMS[term] ? term : term.toLowerCase();
         setPage("primer");
       }}
     >
@@ -117,3 +119,13 @@ export function Gloss({
   );
 }
 
+
+/** The term a click asked for; the Primer scrolls to it once and clears it. */
+export const pendingTerm: { key: string | null } = { key: null };
+export const glossId = (k: string) => "gloss-" + k.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+/** Every term, for the Primer's full glossary. */
+export function glossaryEntries(): { key: string; def: string }[] {
+  return Object.entries(TERMS).map(([key, v]) => ({ key, def: v.def }))
+    .sort((a, b) => a.key.localeCompare(b.key, undefined, { sensitivity: "base" }));
+}

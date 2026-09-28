@@ -1,12 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import MapView from "@/map/MapView";
 import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
 import MapHud from "@/ui/MapHud";
 import CycleDigest from "@/ui/CycleDigest";
-import YearReview, { CareerCard, MilestoneFlash } from "@/ui/YearReview";
+import YearReview, { CareerCard, MilestoneFlash, ExitCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
+import AutoPlay from "@/ui/AutoPlay";
+import Sounds from "@/ui/Sounds";
 import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
@@ -47,7 +49,10 @@ export default function App() {
       {playing && !photoFrame && <YearReview />}
       {playing && !photoFrame && <CareerCard />}
       {playing && !photoFrame && <MilestoneFlash />}
+      {playing && !photoFrame && <ExitCard />}
       {playing && <Shortcuts />}
+      {playing && <AutoPlay />}
+      {playing && <Sounds />}
       {playing && !photoFrame && <PrimerOffer />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />
@@ -73,22 +78,41 @@ function PhotoFrameHint() {
   );
 }
 
+/**
+ * THE TOAST LANE. One slot used to mean the month-close line overwrote
+ * whatever the same click had just said ("◆ Delivered", "Stopped after…") on
+ * the same tick. The store still sets a single `toast`; this keeps the last
+ * three on screen, newest at the bottom, each for as long as it takes to read.
+ */
+type ToastItem = { text: string; kind: "ok" | "err"; at: number; id: number };
+let toastSeq = 0;
 function Toast() {
   const toast = useStore((s) => s.toast);
+  const [items, setItems] = useState<ToastItem[]>([]);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => useStore.setState({ toast: null }), 3200);
-    return () => clearTimeout(t);
+    const id = ++toastSeq;
+    setItems((xs) => [...xs.filter((x) => x.text !== toast.text), { ...toast, id }].slice(-3));
+    // ~3s for a short line, longer for a long one; errors linger.
+    const ms = Math.min(9000, 2600 + toast.text.length * 35) + (toast.kind === "err" ? 1500 : 0);
+    // Not cleared when the next toast lands — each line keeps its own clock.
+    setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), ms);
   }, [toast]);
-  if (!toast) return null;
+  if (!items.length) return null;
   return (
-    <div
-      className={"toast toast-" + toast.kind}
-      role={toast.kind === "err" ? "alert" : "status"}
-      aria-live={toast.kind === "err" ? "assertive" : "polite"}
-      aria-atomic="true"
-    >
-      {toast.text}
+    <div className="toast-stack">
+      {items.map((t) => (
+        <div
+          key={t.id}
+          className={"toast toast-" + t.kind}
+          role={t.kind === "err" ? "alert" : "status"}
+          aria-live={t.kind === "err" ? "assertive" : "polite"}
+          aria-atomic="true"
+          onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))}
+        >
+          {t.text}
+        </div>
+      ))}
     </div>
   );
 }

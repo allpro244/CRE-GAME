@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import { usd } from "@/ui/format";
+import { soundOn, setSoundOn, play } from "@/ui/Sounds";
 import { Row } from "@/ui/panels/shared";
 
 export function PrimerPage() {
@@ -93,6 +94,7 @@ export function PrimerPage() {
 export function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
+  const [sound, setSound] = useState(soundOn());
   const setPopupsOff = useStore((s) => s.setPopupsOff);
   const alertsOff = useStore((s) => s.alertsOff);
   const setAlertsOff = useStore((s) => s.setAlertsOff);
@@ -119,6 +121,12 @@ export function SettingsPage() {
   );
   return (
     <div>
+      <Toggle
+        on={sound}
+        set={(v) => { setSoundOn(v); setSound(v); if (v) play("milestone"); }}
+        label="Sounds"
+        detail="A soft bell on a milestone, a delivery, a sale and a year closing; a low note on an error. Synthesised, quiet, never on the monthly tick."
+      />
       <div className="page-section">Interruptions</div>
       <Toggle
         on={!popupsOff}
@@ -177,6 +185,7 @@ export function SettingsPage() {
       <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
         <Row k="Space" v="Advance one month" />
+        <Row k="G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />
         <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
         <Row k="N" v="Skip to the next decision, up to three years" />
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />

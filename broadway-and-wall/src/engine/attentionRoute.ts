@@ -27,6 +27,7 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     return ask ? { page: "property", bbl: ask.bbl } : { page: "deals" };
   }
   if (head === "portfolio-bid") return { page: "portfolio" };
+  if (head === "watch") return { page: "property", bbl: key.split(":")[1] };
   if (head === "broker") {
     const bbl = key.split(":")[1];
     return { page: "market", bbl };

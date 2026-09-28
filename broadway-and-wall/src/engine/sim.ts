@@ -1322,6 +1322,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
     out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
+  // A building the player starred reaching the tape: they asked to be told,
+  // so Yr / Skip / Play stop on it like any other thing that needs them. The
+  // key carries the listing month, so a relist is news again.
+  for (const li of s.listings ?? []) {
+    if (!s.watch?.includes(li.bbl)) continue;
+    out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
+  }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
   }
@@ -1686,7 +1693,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
  * go). An item with no deadline — arrears, a covenant sweep, a balloon notice,
  * a bid list — still stops the run the month it first appears.
  */
-function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
+/** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */
+export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));

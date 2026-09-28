@@ -248,3 +248,45 @@ export function positiveLeverage(s: GameState, parcels: ParcelTable): { count: n
   }
   return { count, of, best };
 }
+
+/**
+ * WHAT A SKIP DID. Yr ▸▸ and ⏭ used to end on "A year passes." — twelve
+ * months of leases, deeds and cash with nothing said about any of it unless
+ * the run happened to close a December. This is the same count the year card
+ * makes, over whatever window the clock actually ran: the months between two
+ * states of the same campaign. Reads only; draws nothing.
+ */
+export interface PeriodRecap {
+  months: number;
+  dCash: number;
+  /** stamped net worth at each end — the figure nwHistory already carries */
+  nw0: number; nw1: number;
+  leases: number;
+  bought: number;
+  sold: number;
+  delivered: number;
+}
+
+export function periodRecap(a: GameState, b: GameState): PeriodRecap {
+  const lo = a.month + 1, hi = b.month;
+  const inside = (m?: number) => m !== undefined && m >= lo && m <= hi;
+  let leases = 0;
+  for (const h of Object.values(b.holdings)) for (const t of h.tenants) if (inside(t.startM) && t.startM > h.boughtM) leases++;
+  const bought = Object.values(b.holdings).filter((h) => inside(h.boughtM)).length
+    + (b.exits ?? []).filter((e) => inside(e.boughtM)).length;
+  const sold = (b.exits ?? []).filter((e) => inside(e.soldM)).length;
+  return {
+    months: Math.max(0, hi - a.month),
+    dCash: b.cash - a.cash,
+    nw0: a.nwHistory.at(-1) ?? 0,
+    nw1: b.nwHistory.at(-1) ?? 0,
+    leases, bought, sold,
+    delivered: Math.max(0, (b.delivered ?? 0) - (a.delivered ?? 0)),
+  };
+}
+
+/** The firm's standing tier, where a state stands — for noticing a step up as it happens. */
+export function firmTier(s: GameState): { tier: number; label: string } {
+  const f = firmCapital(s);
+  return { tier: f.tier, label: TIER_LABEL[f.tier] ?? f.label };
+}

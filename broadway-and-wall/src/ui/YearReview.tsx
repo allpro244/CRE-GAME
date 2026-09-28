@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { yearReview, ordinal, careerCard, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
-import { START_YEAR } from "@/engine/types";
+import { START_YEAR, monthLabel } from "@/engine/types";
 import { openResearchOn } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
 
@@ -147,6 +147,51 @@ export function MilestoneFlash() {
     <div className="milestone-flash" role="status" onClick={() => useStore.setState({ milestoneFlash: null })}>
       <div className="delivery-kicker">Milestone</div>
       {flash.map((m) => <div key={m} className="milestone-flash-line">◆ {m}</div>)}
+    </div>
+  );
+}
+
+/**
+ * A SALE, CLOSED. An exit is the other half of every deal — the number the
+ * whole hold was for — and it used to end in "Closed. Cash is position." The
+ * Exit record already carried the dates, the price and the basis; this reads
+ * them back. The per-year figure is the PRICE's growth over the basis, not a
+ * return on equity: the game does not yet keep a per-deed cash ledger (see
+ * ExitsRecord), so it says which one it is.
+ */
+export function ExitCard() {
+  const card = useStore((s) => s.exitCard);
+  const game = useStore((s) => s.game);
+  const popupsOff = useStore((s) => s.popupsOff);
+  const dismiss = useStore((s) => s.dismissExitCard);
+  const yr = useStore((s) => s.yearReviewY);
+  if (!card || !game || popupsOff || game.gameOver || yr !== null) return null;
+  const e = game.exits?.[card.i];
+  if (!e) return null;
+  const yrs = Math.max(0, (e.soldM - e.boughtM) / 12);
+  const mult = e.basis > 0 ? e.price / e.basis : 0;
+  const perYr = e.basis > 0 && yrs >= 1 ? (Math.pow(mult, 1 / yrs) - 1) * 100 : null;
+  const verdict = e.gain <= 0 ? "Sold at a loss." : mult >= 2 ? "Sold for twice what it cost." : mult >= 1.4 ? "A good exit." : "Sold at a profit.";
+  return (
+    <div className="delivery-ceremony year-review" role="dialog" aria-modal="true" aria-labelledby="exit-title" onClick={dismiss}>
+      <div className="delivery-stamp year-review-card" onClick={(ev) => ev.stopPropagation()}>
+        <div className="delivery-kicker">Sold · {e.address}</div>
+        <div className="delivery-title year-review-verdict" id="exit-title">{verdict}</div>
+        <div className="year-review-grid mono">
+          <span>Bought</span><span>{monthLabel(e.boughtM)} · basis {usd(e.basis)}</span>
+          <span>Sold</span><span>{monthLabel(e.soldM)} · {usd(e.price)}</span>
+          <span>Held</span><span>{yrs < 1 ? `${e.soldM - e.boughtM} months` : `${yrs.toFixed(1)} years`}</span>
+          <span>Gain on basis</span>
+          <span className={e.gain < 0 ? "neg" : "pos"}><strong>{usd(e.gain)}</strong>{mult > 0 ? ` · ${mult.toFixed(2)}×` : ""}</span>
+          {perYr !== null && (<><span>Price, per year held</span><span>{perYr >= 0 ? "+" : "−"}{Math.abs(perYr).toFixed(1)}% a year over basis</span></>)}
+          {card.cash !== undefined && (<><span>Cash in at closing</span><span title="After the loan payoff, closing costs and any partner's share">{usd(card.cash)} net</span></>)}
+        </div>
+        <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-primary" onClick={dismiss}>Back to the desk</button>
+          <button type="button" className="btn" onClick={() => { useStore.getState().setPage("market"); dismiss(); }}>Put it to work</button>
+          <button type="button" className="btn" onClick={() => { useStore.getState().setPage("firm"); dismiss(); }}>The record</button>
+        </div>
+      </div>
     </div>
   );
 }

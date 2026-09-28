@@ -1,6 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
-import { useStore } from "@/state/store";
+import { useStore, rewindPrefix } from "@/state/store";
+import { listSaves, type SaveMeta } from "@/engine/save";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
@@ -1006,6 +1007,8 @@ export function GameOverPage() {
             correctly UNDERNEATH this card and every button on it was
             unclickable, so it looked like the game had simply eaten your
             saves. */}
+        <PostMortem />
+        <RewindRow seed={game.seed} month={game.month} />
         <div className="btn-row" style={{ marginTop: 16, justifyContent: "center" }}>
           <button className="btn" onClick={() => useStore.getState().setPage("saves")}
             title="Go back to an earlier save of this same town">
@@ -1016,6 +1019,101 @@ export function GameOverPage() {
         <div className="hint" style={{ textAlign: "center", marginTop: 10 }}>
           Starting a new run rolls a new town. An earlier save of THIS town rebuilds it exactly as it was.
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WHAT KILLED IT. The card used to give the totals and a net-worth line, and
+ * the line only says THAT the firm fell. The ledger says why: each of the last
+ * few years' operating cash, bucket by bucket (the same BooksYear the Books
+ * page reads), and the deeds lost on the way down. A run that dies of carry
+ * on two unlet deliveries reads as exactly that.
+ */
+function PostMortem() {
+  const game = useStore((s) => s.game)!;
+  const yrs = (game.books ?? []).slice(-5);
+  const lo = (yrs[0]?.yr ?? 0) * 12;
+  const forced = (game.exits ?? []).filter((e) => e.forced && e.soldM >= lo);
+  const events = (game.sponsor?.events ?? []).filter((e) => e.m >= lo);
+  if (!yrs.length) return null;
+  const opCash = (b: (typeof yrs)[number]) => b.noi + b.interest - b.debtSvc - b.leasing - b.capex - b.dev - b.taxes - b.ga;
+  const worst = yrs.reduce((a, b) => (opCash(b) < opCash(a) ? b : a), yrs[0]);
+  const big = (b: (typeof yrs)[number]) => {
+    const out: [string, number][] = [["debt service", b.debtSvc], ["development", b.dev], ["overhead", b.ga], ["taxes", b.taxes], ["leasing", b.leasing], ["capex", b.capex]];
+    return out.sort((x, y) => y[1] - x[1])[0];
+  };
+  const [bigName, bigAmt] = big(worst);
+  return (
+    <div className="page-section" style={{ marginTop: 16, maxWidth: 760, marginLeft: "auto", marginRight: "auto" }}>
+      <div className="page-section-head">What happened — the last {yrs.length} year{yrs.length === 1 ? "" : "s"} of operating cash</div>
+      <table className="tbl tbl-static">
+        <thead>
+          <tr><th>Year</th><th className="num">Rent in (NOI)</th><th className="num">Interest earned</th><th className="num">Debt service</th><th className="num">Leasing &amp; capex</th><th className="num">Development</th><th className="num">Overhead</th><th className="num">Tax</th><th className="num">Operating cash</th></tr>
+        </thead>
+        <tbody>
+          {yrs.map((b) => {
+            const c = opCash(b);
+            return (
+              <tr key={b.yr}>
+                <td>{START_YEAR + b.yr}</td>
+                <td className="num">{usd(b.noi)}</td>
+                <td className="num">{usd(b.interest)}</td>
+                <td className="num">{usd(-b.debtSvc)}</td>
+                <td className="num">{usd(-(b.leasing + b.capex))}</td>
+                <td className="num">{usd(-b.dev)}</td>
+                <td className="num">{usd(-b.ga)}</td>
+                <td className="num">{usd(-b.taxes)}</td>
+                <td className={"num" + (c < 0 ? " neg" : "")}><strong>{usd(c)}</strong></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="hint">
+        Operating cash is rent and interest in, less everything the books paid out to run the firm — before
+        any purchase, sale or new borrowing. The worst year was {START_YEAR + worst.yr}, and its largest
+        outflow was {bigName} at {usd(bigAmt)}.
+      </div>
+      {(forced.length > 0 || events.length > 0) && (
+        <div className="hint" style={{ marginTop: 6 }}>
+          {forced.map((e) => <div key={`f${e.bbl}${e.soldM}`}>✕ {monthLabel(e.soldM)} — {e.address} sold under duress for {usd(e.price)} against {usd(e.basis)} basis.</div>)}
+          {events.map((e, i) => <div key={`s${i}`}>✕ {monthLabel(e.m)} — {e.address}: {e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}{e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * GO BACK A FEW YEARS. The rewind points are the first autosave of each of the
+ * run's last few calendar years (see writeRewind in the store) — the lesson
+ * of a balloon that landed in a bad market is worth more replayed from the
+ * January before it than read about on this card.
+ */
+function RewindRow({ seed, month }: { seed: number; month: number }) {
+  const [points, setPoints] = useState<SaveMeta[]>([]);
+  useEffect(() => {
+    let live = true;
+    void listSaves().then((all) => {
+      if (!live) return;
+      const pre = rewindPrefix(seed);
+      setPoints(all.filter((m) => m.slot.startsWith(pre) && m.month < month).sort((a, b) => b.month - a.month));
+    }).catch(() => { /* no save store: nothing to offer */ });
+    return () => { live = false; };
+  }, [seed, month]);
+  if (!points.length) return null;
+  return (
+    <div style={{ marginTop: 16, textAlign: "center" }}>
+      <div className="page-section" style={{ textAlign: "center" }}>Rewind this run</div>
+      <div className="btn-row" style={{ justifyContent: "center", flexWrap: "wrap" }}>
+        {points.map((m) => (
+          <button key={m.slot} className="btn" onClick={() => void useStore.getState().loadFrom(m.slot)}
+            title={`Cash then: ${usd(m.cash)}`}>
+            ↺ {monthLabel(m.month)}
+          </button>
+        ))}
       </div>
     </div>
   );

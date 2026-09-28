@@ -5,7 +5,7 @@ import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, De
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, START_YEAR } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
@@ -37,7 +37,10 @@ import {
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
-import { netWorth, resolveRec } from "@/engine/value";
+import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
+import { leasingOdds } from "@/engine/absorption";
+import { usdSigned } from "@/ui/format";
+import { periodRecap, firmTier } from "@/engine/standing";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
@@ -152,6 +155,8 @@ interface AppState {
   /** Non-blocking delivery ceremony payload. */
   deliveryCeremony: {
     bbl: string; address: string; use: string; sf: number; value?: number; rival?: boolean;
+    /** Your own delivery: the all-in basis the holding now carries, and the lease-up read. */
+    basis?: number; monthsToLet?: number | null; letPct?: number;
   } | null;
   dismissDeliveryCeremony: () => void;
   /** The year whose review card is up, if any (UI only). See standing.ts. */
@@ -162,6 +167,9 @@ interface AppState {
   dismissCareerCard: () => void;
   /** Milestones reached in the last advance, for the banner (UI only). */
   milestoneFlash: string[] | null;
+  /** A sale just closed — the index into game.exits, and the cash it put in the account (UI only). */
+  exitCard: { i: number; cash?: number } | null;
+  dismissExitCard: () => void;
   setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
   /**
@@ -183,7 +191,13 @@ interface AppState {
   openProperty: (bbl: string, tab: PropertyTab) => void;
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
-  advance: () => void;
+  /** One month. `quiet` skips the month-close toast — continuous play would stack twelve of them a minute. */
+  advance: (opts?: { quiet?: boolean }) => void;
+  /** Continuous play: 0 off, 1 about a month a second, 2 fast. Pauses itself on anything Yr would stop on. */
+  autoplay: 0 | 1 | 2;
+  setAutoplay: (v: 0 | 1 | 2) => void;
+  /** Star / unstar a building to follow: the docket says when it lists. */
+  toggleWatch: (bbl: string) => void;
   advanceYear: () => void;
   advanceUntil: () => void;
   /** True while Year / Skip is ticking months — advance buttons disable. */
@@ -413,7 +427,18 @@ function queueYearReview(prev: GameState, next: GameState, set: (partial: Partia
   if (n1 > n0) set({ careerCardI: n1 - 1 });
   // A milestone is a moment, not a line on the tape.
   const got = MILESTONES.filter((m) => next.milestones?.[m.id] !== undefined && prev.milestones?.[m.id] === undefined).map((m) => m.label);
+  // A STEP UP THE STANDING LADDER, when it happens rather than at December.
+  // The tier reads reputation and lender relationships, which wander, so it
+  // only flashes a tier the firm has never stood at on any year mark before —
+  // a wobble back up to where it already was is not news.
+  const t0 = firmTier(prev), t1 = firmTier(next);
+  const bestMarked = Math.max(-1, ...(prev.yearMarks ?? []).map((m) => m.tier ?? -1));
+  if (t1.tier > t0.tier && t1.tier > bestMarked) got.push(`Standing: ${t1.label}`);
   if (got.length) set({ milestoneFlash: got });
+  // A sale that closed inside an advance (an accepted bid settling, an
+  // exchange completing) gets the same card as one closed by hand.
+  const e0 = prev.exits?.length ?? 0, e1 = next.exits?.length ?? 0;
+  if (e1 > e0 && !next.exits[e1 - 1].forced) set({ exitCard: { i: e1 - 1 } });
 }
 
 function queueDeliveryCeremony(
@@ -424,18 +449,37 @@ function queueDeliveryCeremony(
 ) {
   const player = deliveriesThisMonth(prev, next);
   const rival = cityDeliveriesThisMonth(prev, next);
-  const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
+  // YOUR OWN BUILDING ALWAYS GETS ITS MOMENT. The top-1% gate is for the
+  // street's towers — a popup on every rival delivery would be noise — but it
+  // was also silencing the player's own: three years of building ended in a
+  // toast the month-close toast overwrote on the same tick.
+  const candidates = [...player, ...rival.filter((b) => parcels && deliveryWorthCeremony(next, parcels, b))];
   const bbl = candidates[0];
   if (!bbl) return;
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;
   const built = next.built?.[bbl];
+  const mine = player.includes(bbl);
+  const h = next.holdings[bbl];
+  // The same marks every other desk reads: ownedHoldingValue is the
+  // Portfolio's value, costBasis is the all-in the holding now carries (land
+  // plus the job), leasingOdds is the leasing desk's own pace.
+  let value: number | undefined, basis: number | undefined, monthsToLet: number | null | undefined, letPct: number | undefined;
+  if (mine && h && parcels && rec) {
+    value = ownedHoldingValue(next, parcels, h);
+    basis = h.costBasis;
+    const use = (built?.class ?? rec.class) as BuiltClass;
+    monthsToLet = leasingOdds(next, parcels, rec, h, use)?.monthsToLet;
+    const let_ = h.tenants.reduce((a, t) => a + t.sf, 0);
+    letPct = rec.bldgArea > 0 ? Math.min(1, let_ / rec.bldgArea) : undefined;
+  }
   set({
     deliveryCeremony: {
       bbl,
       address: rec?.address ?? bbl,
       use: built?.class ?? rec?.class ?? "building",
       sf: built?.bldgArea ?? rec?.bldgArea ?? 0,
-      rival: !player.includes(bbl),
+      rival: !mine,
+      value, basis, monthsToLet, letPct,
     },
   });
   if (player.includes(bbl)) {
@@ -472,6 +516,19 @@ function pushNav(
 
 function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
+}
+
+/** What a multi-month run did, as a tail for its toast. Empty when nothing did. */
+function recapBit(a: GameState, b: GameState): string {
+  const r = periodRecap(a, b);
+  if (r.months <= 1) return "";
+  const bits: string[] = [];
+  bits.push(`net worth ${usdSigned(r.nw1 - r.nw0)}`);
+  if (r.leases) bits.push(`${r.leases} lease${r.leases === 1 ? "" : "s"} signed`);
+  if (r.bought) bits.push(`${r.bought} bought`);
+  if (r.sold) bits.push(`${r.sold} sold`);
+  if (r.delivered) bits.push(`${r.delivered} delivered`);
+  return ` — ${bits.join(" · ")}`;
 }
 
 /** The live crash-protection slot and legacy auto-slot names. */
@@ -537,6 +594,34 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
  * the campaign Continue opens when it is newest.
  */
 const AUTO_SLOT = "auto";
+
+/**
+ * REWIND POINTS. The one autosave is overwritten every month, so the run that
+ * died of a balloon in 2031 could only be reloaded AT its death — "Load an
+ * earlier save" found the corpse. The first autosave of each calendar year is
+ * also kept, the last REWIND_KEEP of them, under a slot named for this run's
+ * seed so a new run in the same town cannot pick up another run's past.
+ * Hidden from the Saves list (isAutoSlot); offered on the game-over card.
+ */
+const REWIND_KEEP = 5;
+export const rewindPrefix = (seed: number) => `Auto · rewind ${seed} · `;
+const rewoundYears = new Set<string>();
+async function writeRewind(game: GameState) {
+  if (game.gameOver) return;
+  const pre = rewindPrefix(game.seed);
+  const key = pre + (START_YEAR + Math.floor(game.month / 12));
+  if (rewoundYears.has(key)) return;
+  rewoundYears.add(key);
+  const all = await listSaves();
+  await saveGame(key, game);
+  const mine = all.filter((m) => m.slot.startsWith(pre)).sort((a, b) => b.month - a.month);
+  const stale = [
+    ...mine.slice(REWIND_KEEP - 1),
+    // another run's rewind points: only that run's game-over could use them
+    ...all.filter((m) => m.slot.startsWith("Auto · rewind ") && !m.slot.startsWith(pre)),
+  ];
+  for (const m of stale) await deleteSave(m.slot);
+}
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistSeq = 0;
 function persist(game: GameState) {
@@ -546,7 +631,8 @@ function persist(game: GameState) {
     persistTimer = null;
     const write = () => {
       if (seq !== persistSeq) return;
-      void saveGame(AUTO_SLOT, game).catch(() => { /* private mode / quota: named save UI reports failures */ });
+      void writeRewind(game).catch(() => { /* a missing rewind point is not worth an error */ })
+        .finally(() => { void saveGame(AUTO_SLOT, game).catch(() => { /* private mode / quota: named save UI reports failures */ }); });
     };
     if (typeof requestIdleCallback === "function") requestIdleCallback(write, { timeout: 3000 });
     else setTimeout(write, 0);
@@ -650,6 +736,8 @@ export const useStore = create<AppState>((set, get) => ({
   careerCardI: null,
   dismissCareerCard: () => set({ careerCardI: null }),
   milestoneFlash: null,
+  exitCard: null,
+  dismissExitCard: () => set({ exitCard: null }),
   setLens: (lens) => set({ lens }),
   setPage: (page, jump) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
@@ -696,7 +784,19 @@ export const useStore = create<AppState>((set, get) => ({
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
 
-  advance: () => {
+  autoplay: 0,
+  setAutoplay: (autoplay) => set({ autoplay }),
+  toggleWatch: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const w = game.watch ?? [];
+    const on = w.includes(bbl);
+    const next = { ...game, watch: on ? w.filter((b) => b !== bbl) : [...w, bbl] };
+    set({ game: next });
+    toast(on ? "No longer watching." : "Watching — the desk will say when it comes to market.");
+    void persist(next);
+  },
+  advance: (opts) => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
     const cash0 = game.cash;
@@ -709,7 +809,7 @@ export const useStore = create<AppState>((set, get) => ({
     // cash movement, and the first thing waiting — short enough to read once.
     const dCash = next.cash - cash0;
     const attn = attentionItems(next, parcels)[0];
-    toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
+    if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
     void persist(next);
   },
 
@@ -734,7 +834,7 @@ export const useStore = create<AppState>((set, get) => ({
         set({ game: r.s, prevForDigest: game });
         queueDeliveryCeremony(game, r.s, parcels, set);
         queueYearReview(game, r.s, set);
-        toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
+        toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`);
         void persist(r.s);
       } finally {
         set({ advancing: false });
@@ -757,7 +857,7 @@ export const useStore = create<AppState>((set, get) => ({
         set({ game: r.s, prevForDigest: game });
         queueDeliveryCeremony(game, r.s, parcels, set);
         queueYearReview(game, r.s, set);
-        toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along.");
+        toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`);
         void persist(r.s);
       } finally {
         set({ advancing: false });
@@ -1528,6 +1628,10 @@ export const useStore = create<AppState>((set, get) => ({
     const r = acceptSaleOffer(game, parcels, bbl, exchange);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
+    const n = r.s.exits?.length ?? 0;
+    // An exchange parks the proceeds with the intermediary, so the account's
+    // movement is not the sale's cash — the card leaves that row off.
+    if (n > (game.exits?.length ?? 0)) set({ exitCard: { i: n - 1, cash: exchange ? undefined : r.s.cash - game.cash } });
     toast(exchange ? "Closed — the 1031 clock is running." : "Closed. Cash is position.");
     void persist(r.s);
   },

@@ -2313,3 +2313,40 @@ html, body, #root { overflow-x: hidden; }
   padding: 2px 6px; border: 1px solid var(--card-line); border-bottom-width: 2px; border-radius: 4px;
   background: var(--paper); color: var(--ink);
 }
+
+/* THE TOAST LANE — up to three, newest at the bottom (see App.tsx Toast). */
+.toast-stack {
+  position: absolute; top: calc(var(--topbar-h, 91px) + 12px); left: 50%; transform: translateX(-50%);
+  z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none; max-width: min(720px, calc(100vw - 32px));
+}
+.toast-stack .toast {
+  position: static; transform: none; pointer-events: auto; cursor: pointer;
+  animation: rail-arrive 0.22s var(--ease, ease-out);
+}
+/* The milestone banner sits below the lane, so a month-close toast cannot cover it. */
+.milestone-flash { top: calc(var(--topbar-h, 91px) + 150px); }
+
+/* A story about a deed you hold carries a gold rule (NewsPage "Your book"). */
+.news-item.news-mine { box-shadow: inset 3px 0 0 var(--gold); padding-left: 9px; }
+.chip-pencils { background: #3a7d46; color: #fdfbf4; }
+/* A table nobody clicks: no pointer, no row hover. */
+.tbl.tbl-static tbody tr { cursor: default; }
+.tbl.tbl-static tbody tr:hover td { background-color: transparent; }
+
+/* Play ▶ — lit while the clock is running (see TopBar PlayButton, AutoPlay). */
+.advance-btn.advance-play { min-width: 64px; }
+.advance-btn.advance-play-on {
+  background: linear-gradient(to bottom, #3a7d46, #2e6538); color: #fdfbf4; border-color: #2e6538;
+  animation: play-breathe 1.6s ease-in-out infinite;
+}
+@keyframes play-breathe { 50% { box-shadow: 0 0 0 3px rgba(58, 125, 70, 0.25); } }
+@media (prefers-reduced-motion: reduce) { .advance-btn.advance-play-on { animation: none; } }
+
+/* A readout that just moved tints once (TopBar Stat `n`). */
+.tstat-tick-up { animation: tick-up 1.1s ease-out; }
+.tstat-tick-down { animation: tick-down 1.1s ease-out; }
+@keyframes tick-up { 0% { color: #2e7a3f; text-shadow: 0 0 8px rgba(58,125,70,0.45); } 100% { } }
+@keyframes tick-down { 0% { color: #a8402e; text-shadow: 0 0 8px rgba(168,64,46,0.4); } 100% { } }
+@media (prefers-reduced-motion: reduce) { .tstat-tick-up, .tstat-tick-down { animation: none; } }
+.chip-watch { background: var(--gold); color: #fdfbf4; }

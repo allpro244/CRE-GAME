@@ -2,7 +2,7 @@ import { marketAppraisal } from "@/engine/value";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
+import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
 import { demandNow } from "@/engine/demand";
@@ -695,11 +695,28 @@ export function MarketPage() {
                         </span>
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
+                      {!yours && game.watch?.includes(li.bbl) && <span className="chip chip-watch" style={{ marginRight: 6 }} title="A building you are watching">★</span>}
                       {notToYou && (
                         <span className="chip chip-cold" style={{ marginRight: 6 }} title={held!.name}>
                           NOT TO YOU
                         </span>
                       )}
+                      {/* DOES THE DIRT PENCIL — the trade's own residual (landRead: what a
+                          builder can pay for this lot after cost and margin at today's rents),
+                          set against the ask. Most lots have no builder bid at all, and
+                          saying so here saves opening forty lots to find the two that work. */}
+                      {!built && !yours && rec.lotArea > 0 && (() => {
+                        const lr = landRead(rec, game.econ);
+                        const askPsf = li.ask / rec.lotArea;
+                        if (lr.builder <= 0) return null;
+                        const works = askPsf <= lr.builder;
+                        return (
+                          <span className={"chip" + (works ? " chip-pencils" : "")} style={{ marginRight: 6 }}
+                            title={`A builder's residual here: $${lr.builder.toFixed(0)}/sf of land for ${lr.scheme ? `${lr.scheme.floors} floors of ${lr.scheme.use}` : "the best scheme"} at today's rents, after cost and the trade's margin — the ask is $${askPsf.toFixed(0)}/sf.`}>
+                            {works ? "PENCILS" : `BUILDER $${lr.builder.toFixed(0)}/SF`}
+                          </span>
+                        );
+                      })()}
                       {rec.address}
                       {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
                         <span className="dim">

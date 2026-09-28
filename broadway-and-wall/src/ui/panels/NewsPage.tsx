@@ -9,12 +9,18 @@ export const NEWS_KINDS = [
   { k: "event", label: "Events" },
   { k: "deal", label: "Deals" },
   { k: "info", label: "Notices" },
+  { k: "rumor", label: "Rumors" },
+  // Not a kind on the wire: every item about a deed you hold or once held.
+  { k: "mine", label: "Your book" },
 ] as const;
 
 export function NewsPage() {
   const game = useStore((s) => s.game)!;
   const [kind, setKind] = useState<string>("all");
-  const items = (game.news ?? []).filter((n) => kind === "all" || n.kind === kind);
+  // A deed you hold now, or sold — the story of your book includes its exits.
+  const mine = new Set([...Object.keys(game.holdings), ...(game.exits ?? []).map((e) => e.bbl), ...(game.watch ?? [])]);
+  const isMine = (n: { bbl?: string }) => !!n.bbl && mine.has(n.bbl);
+  const items = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
   const byMonth: { q: number; rows: typeof items }[] = [];
   for (const n of items) {
     const last = byMonth[byMonth.length - 1];
@@ -22,7 +28,10 @@ export function NewsPage() {
     else byMonth.push({ q: n.q, rows: [n] });
   }
   const counts: Record<string, number> = { all: (game.news ?? []).length };
-  for (const n of game.news ?? []) counts[n.kind] = (counts[n.kind] ?? 0) + 1;
+  for (const n of game.news ?? []) {
+    counts[n.kind] = (counts[n.kind] ?? 0) + 1;
+    if (isMine(n)) counts.mine = (counts.mine ?? 0) + 1;
+  }
 
   return (
     <div>
@@ -56,7 +65,7 @@ export function NewsPage() {
             {g.rows.map((n, i) => (
               <div
                 key={i}
-                className={"news-item news-" + n.kind + (n.bbl ? " news-clickable" : "")}
+                className={"news-item news-" + n.kind + (n.bbl ? " news-clickable" : "") + (isMine(n) ? " news-mine" : "")}
                 onClick={n.bbl ? () => { useStore.getState().focus(n.bbl!, true); } : undefined}
               >
                 <NewsText text={n.text} />{n.bbl ? " ✈" : ""}

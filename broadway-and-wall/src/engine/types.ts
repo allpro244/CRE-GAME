@@ -2933,6 +2933,8 @@ export interface GameState {
   /** Lifetime closed consideration (nominal $). Same reason as `compsTotal`. */
   compsVolume?: number;
   news: NewsItem[];
+  /** Buildings the player has starred to follow (UI only — nothing in the economy reads it). */
+  watch?: string[];
   /**
    * UNREAD interruptions. The engine pushes; the UI shifts them off as it
    * shows them. Optional because a save written before any of this existed has

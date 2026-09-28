@@ -856,9 +856,14 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
  * revolver. Lease-up uses the full residual; older stock still pays the
  * demo haircut.
  */
-export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean): number {
+export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number): number {
   const land = landValue(rec, econ);
-  return inLeaseUp ? land : land * 0.92;
+  // A number is how new the fabric still is (leaseUpWeight: 1 through the
+  // market's lease-up span, fading to 0 at twice it), so the demolition
+  // allowance arrives as the building ages rather than as a one-month step
+  // the day a calendar window closes.
+  const w = typeof inLeaseUp === "number" ? clamp(inLeaseUp, 0, 1) : inLeaseUp ? 1 : 0;
+  return land * (0.92 + 0.08 * w);
 }
 
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
@@ -2216,8 +2221,12 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
     clamp(capRateFor(rec, econ, condition, condIdx), 2.8, 13) / 100,
   );
   // an underbuilt lot is worth the greater of its income or its dirt.
-  // A building still in lease-up is never worth less than the lot.
-  return Math.max(asIs === null ? income : Math.max(income, asIs), landAppraisalFloor(rec, econ, asIs !== null));
+  // A building still in lease-up is never worth less than the lot. The weight
+  // is the same fade holdingValue applies; here it is 1 whenever there is a
+  // mark at all, because a record read off the market's own lease-up curve
+  // reaches its stabilised occupancy exactly when the curve ends.
+  const marked = asIs === null ? income : income + leaseUpWeight(rec, sinceM) * Math.max(0, asIs - income);
+  return Math.max(marked, landAppraisalFloor(rec, econ, leaseUpWeight(rec, sinceM)));
 }
 
 /**
@@ -2420,17 +2429,97 @@ export function remainingAbatement(h: Holding, month: number): number {
  * under for a bad one. Nobody capitalises an empty building's negative NOI,
  * because nobody would sell it for less than nothing.
  *
- * Returns null once the building is no longer new, and the ordinary blend
- * resumes — vacancy in year five is information about the asset, which is
- * exactly what the in-place leg is there to price.
+ * IT ENDS WHEN THE BUILDING STABILISES, NOT ON A DATE. This used to switch
+ * off at a fixed 19 / 38 months after delivery whatever the roll looked like,
+ * and the ordinary blend took over the next month. Measured on a player office
+ * delivered on programme and 87% let at month 37: the mark fell 26% between
+ * month 37 and month 38 with nothing about the building changed; a block of
+ * flats 65% let fell 44% at month 19. And the calendar ran the wrong way
+ * inside the window too: an office still EMPTY at month 37 marked 13% above
+ * the day it opened, because the forgone income was measured against the time
+ * left on the clock rather than the space left to let.
+ *
+ * So the mark is struck against the roll: it applies while the building is
+ * short of the occupancy its corner stabilises at, the years still to run are
+ * read off the market's own lease-up curve from where the roll actually is,
+ * and the value it is struck from is THIS building's ordinary mark with the
+ * missing space let at market — so as the gap closes the deductions go to
+ * zero and the mark lands exactly on the ordinary blend. There is no step to
+ * fall off.
+ *
+ * A building that is still well short twice the market's lease-up time after
+ * it opened is no longer new; its vacancy is information about the asset, which
+ * is what the in-place leg is there to price. The as-is premium over the blend
+ * fades out linearly between one and two market spans (see leaseUpWeight).
  */
-function leaseUpMark(rec: ParcelRecord, econ: Econ, h: Holding, month: number, capNoRoll: number): number | null {
+function leaseUpMark(
+  rec: ParcelRecord, econ: Econ, h: Holding, month: number,
+  capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
+): { mark: number; weight: number } | null {
   if (h.deliveredM === undefined || !rec.bldgArea) return null;
-  const apt = (rec.class as BuiltClass) === "multifamily";
-  const letSf = apt
-    ? Math.max(0, Math.min(1, h.occ ?? 0)) * rentableSf(rec)
-    : (h.tenants ?? []).reduce((a, t) => a + t.sf, 0);
-  return leaseUpMarkAt(rec, econ, h.condition, month - h.deliveredM, letSf / Math.max(1, rentableSf(rec)), capNoRoll);
+  const sinceM = month - h.deliveredM;
+  const weight = leaseUpWeight(rec, sinceM);
+  if (!(weight > 0)) return null;
+  const letShare = heldOccupancy(rec, econ, h);
+  const stabOcc = stabilisedOccupancy(rec, econ);
+  const gap = clamp(stabOcc - letShare, 0, 1);
+  if (!(gap > 0)) return null;
+  // THE SAME BUILDING, WITH THE GAP LET AT MARKET, marked the ordinary way —
+  // both legs of holdingValue's blend, on the owner's own operating statement
+  // (its own tax bill, its own opex, the leases it has actually signed).
+  // The roll spread on the cap belongs to the part of the stabilised roll that
+  // exists; the part that does not exist yet is priced by the deductions in
+  // leaseUpMarkAt (its risk line is the "empty building is a project" spread
+  // in dollars), so charging both would price the same vacancy twice. At a
+  // full gap it is the plain cap, at no gap it is exactly the blend's cap.
+  const inPlaceShare = clamp(letShare / Math.max(0.01, stabOcc), 0, 1);
+  const capFilled = capNoRoll + (cap - capNoRoll) * inPlaceShare;
+  const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
+  const filled = Math.max(0, filledNoi) / capFilled * 0.55
+    + stabNoi / (capFilled + TAX_RATE * taxBorneShare(rec)) * 0.45;
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled);
+  return mark === null ? null : { mark, weight };
+}
+
+/**
+ * The owner's NOI on `gapSf` more feet let at market — the same line items
+ * holdingNOIYr runs the real roll through, on a lease of the class's typical
+ * recovery. After tax, like holdingNOIYr, because it is added to it.
+ */
+function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: number): number {
+  if (!(gapSf > 0)) return 0;
+  const cls = rec.class as BuiltClass;
+  const rent = marketRentPsfYr(rec, econ, h.condition, h.condIdx);
+  if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
+  const systemsDone = h.programsDone?.systems !== undefined;
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const taxNowPsf = grossTaxYr(rec, h) / Math.max(1, rec.bldgArea);
+  return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
+}
+
+/**
+ * The occupancy this building runs at once it is no longer the new one, on
+ * this corner, in this market — `occupancy` without the calendar. It is the
+ * level a lease-up is heading for, and the level at which it has arrived.
+ */
+export function stabilisedOccupancy(rec: ParcelRecord, econ: Econ): number {
+  if (rec.class === "land") return 0;
+  return blendBy(rec, (u) => useOccupancy(rec, econ, u, true));
+}
+
+/**
+ * How much of the as-is lease-up premium an appraiser still gives a building
+ * `sinceM` months after it opened: all of it for the market's lease-up span
+ * (LEASE_UP_YEARS), fading linearly to none at twice that. SHAPE PARAMETER,
+ * not calibrated: the outer bound is a judgement that a building still far
+ * short of stabilised after twice the time the market takes to fill one is
+ * telling you something about itself, and the linear fade exists only so that
+ * judgement does not arrive as a one-month step in the mark.
+ */
+export function leaseUpWeight(rec: ParcelRecord, sinceM: number): number {
+  if (sinceM < 0) return 0;
+  const spanM = Math.round(LEASE_UP_YEARS((rec.class as BuiltClass) === "multifamily") * 12);
+  return clamp(2 - sinceM / spanM, 0, 1);
 }
 
 /**
@@ -2448,14 +2537,33 @@ function leaseUpMark(rec: ParcelRecord, econ: Econ, h: Holding, month: number, c
 export function leaseUpMarkAt(
   rec: ParcelRecord, econ: Econ, condition: Condition,
   sinceM: number, letShare: number, capNoRoll: number,
+  /** This building's ordinary mark with the gap let at market. Defaults to the
+   *  as-if-stabilised value below, which is exactly that for a record with no
+   *  rent roll of its own. */
+  filled?: number,
 ): number | null {
-  if (!rec.bldgArea || sinceM < 0) return null;
-  // The same window leaseUpFactor uses, in months: flats fill in a year and a
-  // half, commercial space in a little over three years.
+  if (!rec.bldgArea || sinceM < 0 || !(leaseUpWeight(rec, sinceM) > 0)) return null;
   const apt = (rec.class as BuiltClass) === "multifamily";
-  const span = apt ? 19 : 38;
-  if (sinceM >= span) return null;
-  const left = Math.max(0, span - sinceM) / 12;   // years still to run
+  // HOW FAR IT HAS TO GO, not how long it has been open. The gap is to the
+  // occupancy this corner stabilises at — the market's structural vacancy is
+  // already in the stabilised NOI, and charging fit-out, forgone income and
+  // risk on it as well priced the same empty floor twice. A building let to
+  // its stabilised level has arrived and leaves the lease-up mark, whatever
+  // the calendar says.
+  const stabOcc = stabilisedOccupancy(rec, econ);
+  const gap = clamp(stabOcc - letShare, 0, 1);
+  if (!(gap > 0) || !(stabOcc > 0)) return null;
+  const gapFrac = gap / stabOcc;                  // share of the stabilised roll still to sign
+  // YEARS STILL TO RUN, from the roll. Read off the same curve leaseUpFactor
+  // draws (a fifth let on opening, climbing on a 0.75 power to stabilised over
+  // LEASE_UP_YEARS): find where on it a building this full sits, and the time
+  // left is the rest of the curve. For a record priced off the market's own
+  // read of its age this is exactly the calendar; for a building that let
+  // slower than the market it is longer, and for one that let faster, shorter.
+  const spanY = LEASE_UP_YEARS(apt);
+  const f = clamp(letShare / stabOcc, 0, 1);
+  const along = f <= 0.2 ? 0 : spanY * Math.pow((f - 0.2) / 0.8, 1 / 0.75);
+  const left = Math.max(0, spanY - along);   // years still to run
 
   // AS IF STABILISED. Not "as if full" — at the occupancy this building runs
   // at when it is no longer the new one, on this corner, in this market. The
@@ -2471,13 +2579,12 @@ export function leaseUpMarkAt(
   const stab = noiYr(rec, econ, condition, true) / (capNoRoll + taxLoad);
   if (!(stab > 0)) return null;
 
-  const vacant = clamp(1 - letShare, 0, 1);
   // THE CHEQUE IS ON RENTABLE FEET. planDevelopment reserves TI and LC on
   // rentable, and this used `bldgArea` — the core, the risers and the lobby
   // being fitted out as if they were suites. On a 400k sf tower that is
   // another 15–25% of fill cost, and it is how a just-delivered building
   // marked below its own dirt.
-  const vacantSf = vacant * rentableSf(rec);
+  const vacantSf = gap * rentableSf(rec);
 
   // THE THREE DEDUCTIONS.
   // 1. The cheque to fill it: fit-out and the commissions on the space still
@@ -2489,15 +2596,15 @@ export function leaseUpMarkAt(
   // 2. The income it does not earn on the way there. Space lets in over the
   //    window rather than all at the end, so on average half of what is empty
   //    today is empty for the time that is left.
-  const forgone = stab * (capNoRoll + taxLoad) * vacant * left * 0.5;
+  const forgone = stab * (capNoRoll + taxLoad) * gapFrac * left * 0.5;
   // 3. And the part nobody underwrites away: it may not let. A wholly empty
   //    building is a project, and it is priced like one.
-  const risk = stab * 0.08 * vacant;
+  const risk = stab * 0.08 * gapFrac;
   // A COMPLETED BUILDING IS NOT WORTH LESS THAN THE LOT. The residual already
   // prices the dirt as what a builder would pay to put this tower up; the
   // tower, empty, is that lot plus a shell. The deductions can eat the
   // improvement. They cannot eat the land.
-  return Math.max(landValue(rec, econ), stab - fill - forgone - risk);
+  return Math.max(landValue(rec, econ), (filled ?? stab) - fill - forgone - risk);
 }
 
 /**
@@ -2738,19 +2845,24 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // read the FULL rate while the street's answer read the pass-through share,
   // so an identical stabilised net-leased building had two values ~14% apart
   // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
-  const stabilized = noiYr(rec, econ, h.condition, true, h.condIdx) / (cap + TAX_RATE * taxBorneShare(rec));
+  const stabNoi = noiYr(rec, econ, h.condition, true, h.condIdx);
+  const stabilized = stabNoi / (cap + TAX_RATE * taxBorneShare(rec));
   const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
-  // Inside the window the as-is-on-completion mark governs, and it retires on
-  // its own as the space lets and the calendar runs out — see leaseUpMark. It
-  // never marks BELOW the ordinary blend, so a job that fills fast keeps the
-  // upside the roll has earned it. And it never marks below the dirt: the
-  // 0.92 floor is a demolition allowance for old empty fabric, not a haircut
-  // on a tower that opened this month.
-  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll);
-  const floor = landAppraisalFloor(rec, econ, asIs !== null);
-  const freehold = asIs !== null ? Math.max(floor, Math.max(blended, asIs) - abate) : Math.max(floor, blended - abate);
+  // Until it stabilises the as-is-on-completion mark governs, and it retires
+  // on its own as the space lets — see leaseUpMark. It never marks BELOW the
+  // ordinary blend, so a job that fills fast keeps the upside the roll has
+  // earned it. And it never marks below the dirt: the 0.92 floor is a
+  // demolition allowance for old empty fabric, not a haircut on a tower that
+  // opened this month.
+  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
+  // The dirt floor follows the age of the fabric, not the roll: a new tower
+  // that let fast is no more a demolition candidate than one still filling.
+  const floor = landAppraisalFloor(rec, econ,
+    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0);
+  const marked = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
+  const freehold = Math.max(floor, marked - abate);
   return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
 }
 

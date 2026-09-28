@@ -771,7 +771,11 @@ function DecisionBody({
     // action came back with an error instead of a new state.
     const act = (a: "accept" | "decline") => {
       const r = respondLoi(loi.id, a, short > 0);
-      if (r.msg) setOutcome({ text: r.msg, ok: r.ok });
+      // Turning a letter away is your answer, not theirs: it already toasts
+      // "Passed.", and a blocking card titled "Their answer" over the word
+      // "Passed." read as the tenant walking. Only acceptances (and errors)
+      // earn the answer card.
+      if (r.msg && !(a === "decline" && r.ok)) setOutcome({ text: r.msg, ok: r.ok });
     };
     const isFinal = loi.stage === "countered";
     return (

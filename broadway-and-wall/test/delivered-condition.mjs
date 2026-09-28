@@ -8,6 +8,7 @@
 // parcel record, whose yearBuilt on a lot that was land is 0, so every
 // delivery was clamped to 0.58 ("standard") for life while the word beside it
 // said "good". Measured on four deliveries: value at delivery 4-56% of basis.
+import { permittedUse } from "./permitted-use.mjs";
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -34,10 +35,13 @@ const { l, rec } = lots[0];
 g = E.executePurchase(g, parcels, l.bbl, l.ask, "cash", false, 1).s;
 const landIdx = g.holdings[l.bbl].condIdx;
 check(landIdx !== undefined && landIdx < 0.7, `the dirt carries a middling index while it is dirt (${landIdx?.toFixed(2)})`);
-const fl = Math.max(2, Math.round(E.maxFloorsFor(rec, 0.6, "office") * 0.8));
-const plan = E.planDevelopment(g, parcels, l.bbl, "office", fl, 0.6, "gmp");
+// Offices where the zoning hosts them, else the first use it does.
+const use = permittedUse(E, E.resolveRec(parcels, g, l.bbl), g.econ, ["office", "multifamily"]);
+check(!!use, `a use the zoning hosts (${use} on ${rec.zoneDist})`);
+const fl = Math.max(2, Math.round(E.maxFloorsFor(rec, 0.6, use) * 0.8));
+const plan = E.planDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
 check(!!plan, "the desk prices the scheme");
-const r = E.startDevelopment(g, parcels, l.bbl, "office", fl, 0.6, "gmp");
+const r = E.startDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
 check(!r.err, `ground breaks${r.err ? `: ${r.err}` : ""}`);
 g = r.s;
 let deliveredAt = -1;

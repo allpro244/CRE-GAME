@@ -15,7 +15,8 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar } from "./value";
+export { zoneUseBar };
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -463,7 +464,15 @@ export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" },
+  custom?: {
+    mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off";
+    /**
+     * A job already out of the ground keeps the use it was permitted under
+     * (vested rights) — a takeover finishes the dead sponsor's building even
+     * if the district has since been remapped. Nothing else sets this.
+     */
+    vested?: boolean;
+  },
   lender?: string,
   spec = 0.5,
   landBasisOverride?: number,
@@ -508,6 +517,11 @@ export function planDevelopment(
     },
   });
   if (!pf) return null;
+  // THE ZONING THE LAND WAS PRICED ON. The residual, the city and the rivals
+  // only ever draw what `zonePermits` hosts; a desk that planned anything
+  // else was quoting the player a building the tape says cannot exist here.
+  // `zoneUseBar` is that rule, asked of the whole programme.
+  if (!custom?.vested && zoneUseBar(rec, use, s.econ, devMix(use, custom?.mix), pf.floors)) return null;
   const { mix, hardCost, softCost, demo, contingency, leaseUp, costTotal, months, ltc, ltcMax,
     commitment, interestReserve, ratePct, pointsCost, stabNoi, exitCap, exitYieldPct, bts, btsShare } = pf;
 
@@ -623,6 +637,22 @@ export function adaptiveReuseEligibility(
   return { ok: true, occupancy };
 }
 
+export function reuseMixFor(target: "multifamily" | "mixed", customMix?: UseMix): UseMix {
+  return customMix ?? (target === "multifamily"
+    ? { multifamily: 0.95, retail: 0.05 }
+    : { multifamily: 0.70, office: 0.20, retail: 0.10 });
+}
+
+/** A conversion is a change of use, and the new use has to be one the lot's zoning hosts. */
+export function reuseZoneBar(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  target: "multifamily" | "mixed" = "multifamily", customMix?: UseMix,
+): string | null {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return null;
+  return zoneUseBar(rec, "mixed", s.econ, devMix("mixed", reuseMixFor(target, customMix)), rec.floors);
+}
+
 export function planAdaptiveReuse(
   s: GameState, parcels: ParcelTable, bbl: string,
   target: "multifamily" | "mixed" = "multifamily",
@@ -637,9 +667,7 @@ export function planAdaptiveReuse(
   // A housing conversion keeps a small active ground-floor allowance but does
   // not let the generic new-build rule turn a two-storey shell into mostly
   // shops (its 1.25-floor retail assumption is for ground-up podium design).
-  const reuseMix = customMix ?? (target === "multifamily"
-    ? { multifamily: 0.95, retail: 0.05 }
-    : { multifamily: 0.70, office: 0.20, retail: 0.10 });
+  const reuseMix = reuseMixFor(target, customMix);
   const planUse: DevUse = "mixed"; // custom programme must travel through devMix
   const base = planDevelopment(
     s, parcels, bbl, planUse, rec.floors, coverage, "gmp",
@@ -696,6 +724,8 @@ export function startAdaptiveReuse(
   const eligible = adaptiveReuseEligibility(s, parcels, bbl);
   if (!eligible.ok) return { s, err: eligible.why };
   const rec = resolveRec(parcels, s, bbl)!;
+  const barred = reuseZoneBar(s, parcels, bbl, target, customMix);
+  if (barred) return { s, err: barred };
   const plan = planAdaptiveReuse(s, parcels, bbl, target, customMix);
   if (!plan) return { s, err: "That conversion cannot be planned." };
   if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
@@ -1004,6 +1034,8 @@ export function proposeBuildToSuit(
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — shop the whole site." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Build-to-suit starts on clear land." };
+  const barred = zoneUseBar(rec, use, s.econ);
+  if (barred) return { s, err: barred };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
   if (!plan) return { s, err: "That programme cannot be built on this site." };
   const next = clone(s);
@@ -1137,6 +1169,11 @@ export function startDevelopment(
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
+  // Same rule, same answer, said before the arithmetic so the refusal names
+  // the zoning rather than reading as "too small".
+  const barred = zoneUseBar(rec, use, s.econ, devMix(use, custom?.mix),
+    Math.min(Math.max(1, Math.round(floors)), maxFloorsFor(rec, coverage, use)));
+  if (barred) return { s, err: barred };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   // AND NOTHING UNPRICEABLE CLOSES. planDevelopment refuses a design it cannot
@@ -1277,7 +1314,7 @@ export function takeoverDevelopment(
   const use = half.use as DevUse;
   const floors = Math.max(1, Math.round(half.floors));
   const coverage = Math.max(0.08, Math.min(0.9, half.sf / Math.max(1, rec.lotArea * floors)));
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp", undefined, { vested: true });
   if (!plan) return;
   const done = Math.max(0, Math.min(0.95, half.progress));
   // What is left to build, plus the lease-up money — which the dead sponsor's
@@ -2655,7 +2692,13 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
   };
   if (zone.startsWith("R")) return "multifamily";
   if (zone.startsWith("M")) {
-    return pick([["industrial", here("industrial")], ["multifamily", gone("industrial")]]);
+    // Housing on M only where `zonePermits` says so — the rule the land was
+    // priced on. This weighted flats by how much industry had left even while
+    // sheds were short, so a rival drew flats on M that no desk could plan
+    // (measured: 2 rival starts in 3 seeds x 25 years, all refused a line
+    // later by the pro forma's zoning check, rolls already spent).
+    return pick([["industrial", here("industrial")],
+                 ["multifamily", zonePermits(zone, "multifamily", demand, e) ? gone("industrial") : 0]]);
   }
   if (demand > 70) {
     return pick([["office", 0.55 * here("office")], ["mixed", 0.30], ["retail", 0.15 * here("retail")],
@@ -2672,7 +2715,7 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
   // weight only carries when the order book owes industrial (pick() multiplies
   // by owed), so a town with no shed shortage builds exactly what it built.
   return pick([["multifamily", 0.70 + 0.30 * gone("retail")], ["retail", 0.30 * here("retail")],
-               ["industrial", 0.25 * here("industrial")]]);
+               ["industrial", zonePermits(zone, "industrial", demand, e) ? 0.25 * here("industrial") : 0]]);
 }
 
 /**

@@ -10,6 +10,7 @@
 // leverage is priced, whether a downturn can hurt you, whether any strategy is
 // strictly dominant. Read the tails, not the medians: a strategy whose p10 is
 // close to its median is not taking risk, whatever it looks like it is doing.
+import { permittedUse } from "./permitted-use.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -108,12 +109,13 @@ function run(stratName, seed) {
         // guaranteed price when costs are running, and only build a spread
         const hot = g.econ.phase === "expansion" || g.econ.phase === "peak";
         const contract = hot ? "gmp" : "costplus";
-        for (let fl = Math.min(E.maxFloorsFor(rec, 0.6), 26); fl >= 2 && !done; fl--) {
-          const plan = E.planDevelopment(g, parcels, bbl, "office", fl, 0.6, contract);
+        const use = permittedUse(E, rec, g.econ, ["office"]);
+        for (let fl = Math.min(E.maxFloorsFor(rec, 0.6, use), 26); use && fl >= 2 && !done; fl--) {
+          const plan = E.planDevelopment(g, parcels, bbl, use, fl, 0.6, contract);
           if (!plan || plan.commitment === 0) continue;
           if (plan.yieldOnCost - plan.exitCap < 1.0) continue;      // no spread, no shovel
           if (plan.equityAtClose > g.cash * 0.45) continue;
-          const r = E.startDevelopment(g, parcels, bbl, "office", fl, 0.6, contract);
+          const r = E.startDevelopment(g, parcels, bbl, use, fl, 0.6, contract);
           if (!r.err) { g = r.s; st.built++; done = true; }
         }
         if (done) break;

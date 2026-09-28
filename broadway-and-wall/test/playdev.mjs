@@ -178,6 +178,7 @@ function play(seed, verbose) {
         // is there a use that pencils on this site today?
         let bestPlan = null;
         for (const use of USES) {
+          if (E.zoneUseBar(rec, use, g.econ)) continue;   // only what the zoning hosts
           const fl = Math.min(E.maxFloorsFor(rec, 0.6), 14);
           const plan = E.planDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
           if (!plan) continue;
@@ -224,6 +225,7 @@ function play(seed, verbose) {
         // the whole equity of the new job, on top of everything already committed
         const budget = g.cash - reserve;
         for (const use of USES) {
+          if (E.zoneUseBar(rec, use, g.econ)) continue;   // only what the zoning hosts
           // Scale the job to the cheque. A developer with six million does not
           // start a twenty-million job and hope; they build what they can fund
           // and do it again next year.

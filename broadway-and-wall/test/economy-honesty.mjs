@@ -9,6 +9,7 @@
 //   6. Pro forma exit yield is tax-loaded like assetValue (one valuation).
 //
 // Run: node test/economy-honesty.mjs
+import { permittedUse } from "./permitted-use.mjs";
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -101,7 +102,7 @@ console.log("\nECONOMY HONESTY — husks, depression, sublet, turnover, off-mark
     };
     g.cash = 200_000_000;
     const floors = Math.min(12, Math.max(4, Math.floor((land.zoningMaxFar ?? 4) * land.lotArea / Math.max(1, land.lotArea * 0.6) )));
-    const plan = E.planDevelopment(g, parcels, land.bbl, "office", floors, 0.6);
+    const plan = E.planDevelopment(g, parcels, land.bbl, permittedUse(E, land, g.econ, ["office"]), floors, 0.6);
     check(!!plan, `planDevelopment returns a plan${plan ? "" : " (null)"}`);
     if (plan) {
       // Bare office exit caps in this engine sit ~5–9%; tax load adds ~TAX_RATE

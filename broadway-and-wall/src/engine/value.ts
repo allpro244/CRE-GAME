@@ -46,6 +46,54 @@ export function zonePermits(
 }
 
 /**
+ * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
+ *
+ * `zonePermits` priced the dirt, drew the city's cranes and the rivals' and
+ * never once stood between the player and a shovel: the desk would plan and
+ * break ground on two storeys of shops on an R6 lot the tape priced as flats
+ * only, and measured, 4 of 10 affordable plans that cleared their hurdle were
+ * uses the zoning does not host. One quantity, two answers (CLAUDE.md, fake
+ * #3). This is the one rule, asked of a whole programme.
+ *
+ * A mixed programme is permitted when every use in it is — except shops at
+ * grade. Street retail under flats or offices is what `withStreetRetail`
+ * programmes on any lot (the pro forma does it on the "Always" setting too),
+ * i.e. the accessory ground-floor commercial a residential district's
+ * overlay allows, so retail up to that ground-floor share (a floor and a
+ * quarter, never more than the two-plate cap) does not need the district to
+ * host shops. Past it, the building is a shop building and it does.
+ *
+ * Returns null when the programme is legal here, or the reason it is not.
+ */
+export function zoneUseBar(
+  rec: { zoneDist?: string; demandScore?: number }, use: BuiltClass | "mixed",
+  econ?: Econ, mix?: UseMix, floors = 1,
+): string | null {
+  const zone = rec.zoneDist ?? "C";
+  const demand = rec.demandScore ?? 100;
+  const programme: UseMix = use === "mixed" ? (mix ?? {}) : { [use]: 1 };
+  const atGrade = Math.min(1, RETAIL_FLOORS_MAX / Math.max(1, floors), 1.25 / Math.max(1, floors));
+  for (const [k, share] of Object.entries(programme) as [BuiltClass, number][]) {
+    if (!(share > 0)) continue;
+    if (use === "mixed" && k === "retail" && share <= atGrade + 1e-6) continue;
+    if (zonePermits(zone, k, demand, econ)) continue;
+    const word = k === "multifamily" ? "flats" : k === "industrial" ? "sheds" : k === "retail" ? "shops" : "offices";
+    const z = zone[0];
+    const why = z === "R"
+      ? `a residential district hosts housing only`
+      : z === "M"
+        ? (k === "multifamily"
+          ? `a manufacturing district takes housing only once industry has left, and the city is short of industrial space`
+          : `a manufacturing district hosts industry, and housing only once industry has left`)
+        : k === "industrial"
+          ? `a commercial district permits light industrial only on low-rent corridors (demand under 45; this street is ${demand.toFixed(0)})`
+          : `the district does not host it`;
+    return `Zoned ${zone}: ${word} are not permitted here — ${why}.`;
+  }
+  return null;
+}
+
+/**
  * THE DEMAND SCORE IS A SCALE, NOT A PRICE.
  *
  * The pipeline reshapes raw location gravity with a gamma before it writes

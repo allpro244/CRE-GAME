@@ -11714,6 +11714,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     try { tris = THREE.ShapeUtils.triangulateShape(outer, [hole]); } catch { return; }
     if (!tris.length) return;
     const pts = [...outer, ...hole];
+    let depthCache: number[] = [];
     // distance from each vertex to the shoreline — the shallows gradient
     const depthOf = (v: THREE.Vector2) => {
       let best = Infinity;
@@ -11727,7 +11728,78 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       return best;
     };
-    const depths = pts.map(depthOf);
+    // THE PALE WEDGE ACROSS EVERY BAY. The triangulator knows nothing about
+    // depth: across the mouth of a cove it happily lays one long triangle
+    // whose three corners are all ON the coast, so the depth it carries is
+    // zero at every corner and zero everywhere in between — and the shoal,
+    // the wash and the foam light up a hard-edged triangle of shallows a
+    // kilometre across, straight line and all, in the middle of open water.
+    // Every island with a bay had one, in the establishing shot.
+    //
+    // Refined, not re-triangulated: any edge long for its distance from the
+    // coast is split at its midpoint, and because the decision is taken per
+    // EDGE, the two triangles sharing it always agree — no T-junctions, no
+    // cracks, no seams in the interpolated depth. Out past the shoal the
+    // triangles stay as big as they were; near the shore they shrink to a
+    // size where a straight-line interpolation of depth is the truth.
+    {
+      const xs = pts.map((v) => v.x), ys = pts.map((v) => v.y);
+      const at = (x: number, y: number) => depthOf(new THREE.Vector2(x, y));
+      const dist = pts.map(depthOf);
+      let T = tris.map((t) => [t[0], t[1], t[2]]);
+      for (let round = 0; round < 12 && T.length < 60000; round++) {
+        const split = new Map<string, number>();   // edge key -> new vertex, or -1
+        const edge = (a: number, b: number): number => {
+          const k = a < b ? a + "_" + b : b + "_" + a;
+          const hit = split.get(k);
+          if (hit !== undefined) return hit;
+          const mx = (xs[a] + xs[b]) / 2, my = (ys[a] + ys[b]) / 2;
+          const len = Math.hypot(xs[b] - xs[a], ys[b] - ys[a]);
+          let v = -1;
+          if (len > 40) {
+            const d = at(mx, my);
+            // out to the far fade's own reach (vDepth runs the hand-off to
+            // MapLibre's sea from 800 m to 3 km), or its straight triangle
+            // edges show there instead: a hard-sided column of sun glitter
+            // cut off where a fan triangle from the corner of the sea begins
+            if (d < 3600 && len > 0.5 * d) {
+              v = xs.length;
+              xs.push(mx); ys.push(my); dist.push(d);
+            }
+          }
+          split.set(k, v);
+          return v;
+        };
+        const next: number[][] = [];
+        let any = false;
+        for (const [a, b, c] of T) {
+          const ab = edge(a, b), bc = edge(b, c), ca = edge(c, a);
+          const n = (ab >= 0 ? 1 : 0) + (bc >= 0 ? 1 : 0) + (ca >= 0 ? 1 : 0);
+          if (!n) { next.push([a, b, c]); continue; }
+          any = true;
+          if (n === 3) {
+            next.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+          } else if (n === 1) {
+            if (ab >= 0) next.push([a, ab, c], [ab, b, c]);
+            else if (bc >= 0) next.push([b, bc, a], [bc, c, a]);
+            else next.push([c, ca, b], [ca, a, b]);
+          } else {
+            // two split edges: rotate so they are (p,q) and (q,r)
+            let p0 = a, q = b, r = c, m1 = ab, m2 = bc;
+            if (ab < 0) { p0 = b; q = c; r = a; m1 = bc; m2 = ca; }
+            else if (bc < 0) { p0 = c; q = a; r = b; m1 = ca; m2 = ab; }
+            next.push([m1, q, m2], [p0, m1, m2], [p0, m2, r]);
+          }
+        }
+        T = next;
+        if (!any) break;
+      }
+      tris = T;
+      pts.length = 0;
+      for (let i = 0; i < xs.length; i++) pts.push(new THREE.Vector2(xs[i], ys[i]));
+      depthCache = dist;
+    }
+    const depths = depthCache;
     const pos: number[] = [];
     const dep: number[] = [];
     for (const t of tris) for (const i of t) { pos.push(pts[i].x, pts[i].y, 0.01); dep.push(depths[i]); }

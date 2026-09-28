@@ -1,4 +1,5 @@
 import { marketAppraisal } from "@/engine/value";
+import { demandNow } from "@/engine/demand";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
@@ -149,7 +150,7 @@ export function BrokerCalls() {
               <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"} v={`${(ip.occ * 100).toFixed(0)}%`} />
               {/* demandScore carries the generator's fractional score; the card
                   printed it raw and produced "Demand 14.870000000000001 / 100". */}
-              <Row k="Demand" v={`${Math.round(rec.demandScore)} / 100`} />
+              <Row k="Demand" v={`${Math.round(demandNow(game, rec))} / 100`} />
               {/* THE FIELD THE CARD DID NOT HAVE TO PRINT, because a card that
                   is in your face cannot be forgotten and a row can. This is the
                   engine's own sweep date, counted down. */}

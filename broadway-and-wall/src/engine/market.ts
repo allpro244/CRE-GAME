@@ -750,6 +750,18 @@ export const CONC_DEPTH = 0.30;
 export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 
 /**
+ * WHERE THE CONCESSION DIAL IS HEADING, for an availability gap over natural
+ * and a phase of the cycle. One function, read by the monthly tick and by the
+ * opening of a game, so the town a player walks into is already at the
+ * package its own vacancy implies — see `createEcon`.
+ */
+export function concessionTarget(gap: number, phase: Econ["phase"]): number {
+  const phaseNudge = phase === "recession" ? 0.22 : phase === "depression" ? 0.16
+    : phase === "recovery" ? 0.08 : phase === "peak" ? -0.04 : -0.10;
+  return clamp(gap * 11 + phaseNudge, 0, 1);
+}
+
+/**
  * THE FLOOR UNDER VACANCY, and the one rail in this engine that actually binds.
  *
  * Frictional vacancy is space empty purely because tenants are moving in and
@@ -1171,6 +1183,23 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
     econ.eraKey = era.key; econ.eraLabel = era.label; econ.eraBlurb = era.blurb;
   }
+  // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
+  //
+  // The dial used to open at zero — effective rent equal to face in every
+  // class — and then chase its target at a quarter a month. The target at an
+  // ordinary opening is not zero: retail at 13% against 8.5% natural in a
+  // recovery wants ~0.6, eighteen points of net effective. So every game spent
+  // its first year marking the whole city down for a concession package the
+  // market already had on the day it opened: measured in the playable, a
+  // retail building bought in January at the lender's appraisal was marked 9%
+  // under it by May, in a recovery, with vacancy falling. Nothing happened in
+  // the market; the dial was spinning up. Seeded here at its own target, from
+  // the same function the tick reads, the first months move only on news.
+  for (const k of BUILT_CLASSES) {
+    const gap = (econ.cityVac[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+    econ.concIdx[k] = concessionTarget(gap, econ.phase);
+    econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
+  }
   // Land tracks the rent that actually opened (era-adjusted), not the pre-era
   // density scale alone — same identity the monthly landIdx step chases.
   {
@@ -1189,6 +1218,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   econ.rentExp = { ...econ.rentIdx };
   econ.effRentIdx = { ...econ.rentIdx };
+  for (const k of BUILT_CLASSES) {
+    econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
+  }
   // Income-anchor parity is this opening print, not the global RENT_BASE table.
   econ.rentAnchor = { ...econ.rentIdx };
   recordHistory(econ, 0);
@@ -3511,9 +3543,7 @@ export function tickEcon(s: GameState) {
       e.vacOverM[k] = 0;
       e.vacWorst[k] = 0;
     }
-    const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "depression" ? 0.16
-      : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
-    const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
+    const concTarget = concessionTarget(gap, e.phase);
     // A CONCESSION IS GIVEN IN A MONTH AND TAKEN BACK OVER A LEASE.
     //
     // This chased its target at 0.25/month in BOTH directions, so the giveaway

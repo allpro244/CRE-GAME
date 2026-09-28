@@ -8,7 +8,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview } from "@/engine/types";
 import {
   assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
-  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr } from "@/engine/value";
+  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
   buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
@@ -19,7 +19,7 @@ import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS, deskAdvice } from "@/engine/debt";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
-import { mixOf, uses as usesOf, useSf } from "@/engine/mix";
+import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { usd, sf, termLeft } from "@/ui/format";
@@ -156,8 +156,11 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
   const standingAssessed = assetValue(rec, game.econ, d.cond ?? gradeOf(game, rec), d.condIdx);
   const st = operatingStatement(rec, game.econ, h, game.month);
   const roll = [...(d.roll ?? [])].sort((a, b) => b.sf - a.sf);
-  const commSf = Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0)));
-  const resSf = Math.round(useSf(rec, "multifamily"));
+  // RENTABLE FEET, AS THE ROLL IS. `genRentRoll` demises the rentable leg, so
+  // vacancy counted off GROSS feet printed the core as empty space: a retail
+  // building 88% let showed 3,439 sf "vacant at market" where 1,562 sf was.
+  const commSf = Math.round(usesOf(rec).filter((u) => u !== "multifamily").reduce((a, u) => a + useRentableSf(rec, u), 0));
+  const resSf = Math.round(useRentableSf(rec, "multifamily"));
   const vacant = Math.max(0, commSf - roll.reduce((a, t) => a + t.sf, 0));
   return (
     <div className="deal">
@@ -981,7 +984,11 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const parcels = useStore((s) => s.parcels)!;
   const { buyOff } = useStore.getState();
   const isLand = parcels[bbl]?.class === "land";
-  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
+  // null until you pick: the desk opens on the cheapest money that will write
+  // it. It used to open on the 30-year regional whenever that quoted, under a
+  // line of advice naming a cheaper desk — a 9.52% loan pre-selected beneath
+  // "Cheapest money that will write it: ... at 9.34% all in".
+  const [product, setProduct] = useState<string | null>(null);
   const [lev, setLev] = useState(1);
   // Thesis → Structure → Commit: one job per stage so the close cheque is not
   // competing with product chips and the underwriting grid on the same scroll.
@@ -1002,6 +1009,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     return deskAdvice(productChoices.map((p) => { const q = buyQuote(game, parcels, bbl, offerPrice, p.id, 1); return { id: p.id, label: p.label, lender: p.lender, maxProceeds: q.principal, allInPct: q.allInPct, bridge: p.bridge, available: q.principal > 0 }; }), 0, occ >= 0.85);
   })();
   const picked = (() => {
+    if (product === null) {
+      const first = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);
+      return first?.id ?? "cash";
+    }
     const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
     if (product === "cash" || direct.principal > 0) return product;
     const alt = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);

@@ -338,7 +338,7 @@ export function LoiTermsGrid({
       />
       <Row
         k="Net effective"
-        v={`$${nowNe.toFixed(2)}/sf · ${((nowNe / market - 1) * 100).toFixed(0)}% vs market ~$${market.toFixed(2)}`}
+        v={`$${nowNe.toFixed(2)}/sf · ${((nowNe / market - 1) * 100).toFixed(0)}% vs market asking ~$${market.toFixed(2)}`}
         strong
         bad={nowNe < market * 0.9}
       />

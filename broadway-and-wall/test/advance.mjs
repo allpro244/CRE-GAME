@@ -115,7 +115,15 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   const nim = (c.bookYield ?? 0) - (c.fundCost ?? 0) - (c.panicBps ?? 0);
   ok(c.appetite >= 0.8, `Cordage at month ${g.month} (${g.econ.phase}, credit ${g.econ.creditIdx.toFixed(2)}): appetite ${c.appetite.toFixed(2)} on a ${nim.toFixed(2)}-point margin (was 0.3 on 0.8 points)`);
   const h = g.lenders.find((l) => l.name === "First Harbor Bank");
-  ok(near(h.bookYield - g.econ.indexRate, 1.9, 1.2), `the hometown bank's book still reprices toward index + 1.9 (now index + ${(h.bookYield - g.econ.indexRate).toFixed(2)})`);
+  // A BOOK IS A STOCK OF LOANS WRITTEN OVER THE LAST YEARS, so it reprices
+  // toward where the index has BEEN, not toward this month's print. Read
+  // against one month, this assertion was sampling policy-rate noise: on the
+  // same seed the spread to the spot index runs +2.3 to +3.3 inside two years
+  // with the book yield itself moving a tenth. The trailing twelve-month mean
+  // is the index the book has actually been written at.
+  const hist = (g.econ.history ?? []).slice(-12).map((r) => r.indexRate).filter((x) => Number.isFinite(x));
+  const idx12 = hist.length ? hist.reduce((a, b) => a + b, 0) / hist.length : g.econ.indexRate;
+  ok(near(h.bookYield - idx12, 1.9, 1.2), `the hometown bank's book still reprices toward index + 1.9 (now trailing-year index + ${(h.bookYield - idx12).toFixed(2)}; spot + ${(h.bookYield - g.econ.indexRate).toFixed(2)})`);
 }
 
 // --- 6. the desks' minimum cheques are written for this town --------------

@@ -776,6 +776,26 @@ export function maxFloorsFor(
 }
 
 /**
+ * THE LARGEST BUILDING THE PLANNER WILL DRAW ON A LOT — the same
+ * `min(plate x floors, envelope)` `planDevelopment` strikes, taken over the
+ * footprints the Build desk offers (8% to 90% of the lot). Zoning alone
+ * (lot x FAR) overstates a small lot several times over, because slenderness
+ * and the core stop it going up long before the FAR runs out.
+ */
+export function maxBuildable(
+  rec: { farMaxComm: number; farMaxRes: number; lotArea: number },
+): { gsf: number; floors: number; coverage: number } {
+  const envelope = rec.lotArea * farMaxFor(rec);
+  let best = { gsf: 0, floors: 1, coverage: 0.6 };
+  for (let c = 0.08; c <= 0.9001; c += 0.01) {
+    const fl = maxFloorsFor(rec, c);
+    const gsf = Math.min(rec.lotArea * c * fl, envelope);
+    if (gsf > best.gsf + 1) best = { gsf: Math.round(gsf / 100) * 100, floors: fl, coverage: c };
+  }
+  return best;
+}
+
+/**
  * A site that wants to be taller than a shop can be. Anything the market would
  * put more than two floors on is a mixed building with retail at grade, not a
  * two-storey shop wasting a fifteen-FAR corner.

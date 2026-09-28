@@ -2199,6 +2199,44 @@ void main() {
   gl_FragColor = vec4(vec3(0.50, 0.36, 0.18) * fall * k, 0.0);
 }`;
 
+// OBSTRUCTION LIGHTS. Anything standing more than 200 ft (61 m) above the
+// ground is an obstruction to air navigation and is lit at night — a red
+// beacon at the top, flashing 20-40 times a minute (FAA AC 70/7460-1, L-864).
+// A tower crane carries steady reds on the apex and the jib ends (L-810).
+// So after dark the skyline is punctuated by exactly the buildings that are
+// tall enough to need one, and a new job announces itself by its crane.
+// Screen-sized points: a beacon is a point source at any distance, which is
+// the whole look of one. aPhase < 0 is steady; otherwise it is where in the
+// two-second cycle this structure flashes — each building's own controller,
+// so two towers do not blink in lockstep.
+const BEACON_VERT = /* glsl */ `
+attribute float aPhase;
+uniform float uPx;
+varying float vPhase;
+void main() {
+  vPhase = aPhase;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = uPx;
+}`;
+const BEACON_FRAG = /* glsl */ `
+precision highp float;
+uniform vec4 uWeather;
+uniform float uTime;
+varying float vPhase;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  float night = smoothstep(0.30, 0.85, uWeather.z);
+  // 30 flashes a minute, lit a third of the cycle, with a lamp's quick rise
+  // and a slower fall rather than a square wave
+  float f = fract(uTime * 0.5 + vPhase);
+  float flash = smoothstep(0.0, 0.04, f) * (1.0 - smoothstep(0.26, 0.40, f));
+  float on = vPhase < 0.0 ? 0.85 : flash;
+  float glow = exp(-r2 * 6.0) * 1.7 + exp(-r2 * 1.6) * 0.22;
+  gl_FragColor = vec4(vec3(1.0, 0.10, 0.05) * glow * on * night, 0.0);
+}`;
+
 const SHADOW_GLSL = /* glsl */ `
 uniform sampler2D uShadow;
 uniform mat4 uSunVP;
@@ -9586,6 +9624,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private dust: THREE.InstancedMesh | null = null;
   /** warm discs under the street lamps, drawn only after dark */
   private lampPools: THREE.InstancedMesh | null = null;
+  // ---- obstruction lights (see BEACON_VERT) ----
+  private beaconMat: THREE.ShaderMaterial | null = null;
+  private beacons: THREE.Points | null = null;
+  private beaconsDirty = true;
+  /** Generator towers over 61 m: tip position, read off the geometry once. */
+  private staticTops: { bbl: string; x: number; y: number; z: number }[] | null = null;
+  /** The game's finished buildings over 61 m, by deed. */
+  private dynTops = new Map<string, [number, number, number]>();
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private shadowTexelM = 4400 / 3072;
@@ -9889,6 +9935,94 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map?.triggerRepaint();
   }
 
+  /** How many obstruction lights are standing on the skyline (for tests and probes). */
+  beaconCount(): number {
+    if (this.beaconsDirty) this.rebuildBeacons();
+    return this.beacons ? (this.beacons.geometry.getAttribute("position")?.count ?? 0) : 0;
+  }
+
+  /** The one shared beacon material; hidden (not drawn at all) until dusk. */
+  private beaconMaterial(): THREE.ShaderMaterial {
+    if (this.beaconMat) return this.beaconMat;
+    const dpr = this.renderer ? this.renderer.getPixelRatio() : 1;
+    this.beaconMat = new THREE.ShaderMaterial({
+      vertexShader: BEACON_VERT, fragmentShader: BEACON_FRAG,
+      uniforms: { uWeather: this.weatherUni, uTime: this.timeUni, uPx: { value: 5.5 * dpr } },
+      transparent: true, depthWrite: false,
+      // add light, leave alpha alone — as the lamp pools do
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
+    this.beaconMat.visible = this.weatherUni.value.z > 0.3;
+    return this.beaconMat;
+  }
+
+  private beaconPoints(xyzp: number[]): THREE.Points {
+    const n = xyzp.length / 4;
+    const pos = new Float32Array(n * 3), ph = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = xyzp[i * 4]; pos[i * 3 + 1] = xyzp[i * 4 + 1]; pos[i * 3 + 2] = xyzp[i * 4 + 2];
+      ph[i] = xyzp[i * 4 + 3];
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(ph, 1));
+    const pts = new THREE.Points(g, this.beaconMaterial());
+    // vertex-free light: nothing to cast, and the depth bake would draw it as a dot
+    pts.userData.noShadow = true;
+    return pts;
+  }
+
+  /**
+   * Every structure over 200 ft, lit. The generator's towers are found once
+   * off the geometry (the tallest vertex of the deed, averaged over whatever
+   * shares that height, so a spire gets its light at the tip); the game's own
+   * finished buildings come from setPlayerBuildings; anything flattened since
+   * drops out. Rebuilt lazily — only when the skyline changed AND it is dark.
+   */
+  private rebuildBeacons() {
+    this.beaconsDirty = false;
+    const FAA_M = 61; // 200 ft AGL, the obstruction-lighting threshold
+    if (!this.staticTops) {
+      this.staticTops = [];
+      for (const [bbl, list] of this.rangesByBBL) {
+        const h = this.staticHeight(bbl);
+        if (h < FAA_M) continue;
+        let sx = 0, sy = 0, n = 0;
+        for (const { attr, r } of list) {
+          const pa = this.posAttrs[attr];
+          if (!pa || attr > 1) continue;
+          const arr = pa.array as Float32Array;
+          for (let i = r.start; i < r.start + r.count; i++) {
+            if (arr[i * 3 + 2] >= h - 0.3) { sx += arr[i * 3]; sy += arr[i * 3 + 1]; n++; }
+          }
+        }
+        if (n) this.staticTops.push({ bbl, x: sx / n, y: sy / n, z: h });
+      }
+    }
+    const pts: number[] = [];
+    const phase = (bbl: string) => {
+      let k = 2166136261;
+      for (let i = 0; i < bbl.length; i++) k = Math.imul(k ^ bbl.charCodeAt(i), 16777619);
+      return ((k >>> 0) % 1000) / 1000;
+    };
+    for (const t of this.staticTops) {
+      if (this.flattened.has(t.bbl) || this.dynTops.has(t.bbl)) continue;
+      pts.push(t.x, t.y, t.z + 1.2, phase(t.bbl));
+    }
+    for (const [bbl, [x, y, z]] of this.dynTops) pts.push(x, y, z + 1.2, phase(bbl));
+    if (this.beacons) {
+      this.scene.remove(this.beacons);
+      this.beacons.geometry.dispose();
+      this.beacons = null;
+    }
+    if (pts.length) {
+      this.beacons = this.beaconPoints(pts);
+      this.scene.add(this.beacons);
+    }
+  }
+
   /** How many boats are working the harbour (for tests and probes). */
   harbourFleet(): number { return this.boats?.count ?? 0; }
 
@@ -9898,6 +10032,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private applyDusk(d: number) {
     this.weatherUni.value.z = d;
     if (this.lampPools) this.lampPools.visible = d > 0.3;
+    if (this.beaconMat) this.beaconMat.visible = d > 0.3;
     this.sceneDirty++;
     if (!this.postOK || !this.brightMat) return;
     const night = smoothstep(0.35, 1.0, d);
@@ -10224,6 +10359,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildCity() {
+    // the obstruction lights are found off this build's geometry
+    this.staticTops = null;
+    this.beacons = null;
+    this.beaconsDirty = true;
     const blank = geomBuf;
     const W = blank();
     const R = blank();
@@ -12435,7 +12574,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const kit = this.sharedKitGeoms();
     const mats = new Set<THREE.Material>();
     group.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
+      // Points too: a crane's obstruction lights are a Points on its slew
+      if (!(o instanceof THREE.Mesh || o instanceof THREE.Points)) return;
       const g = o.geometry;
       if (g && !kit.has(g)) g.dispose();
       if (!disposeMats) return;
@@ -13008,6 +13148,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(0, 0, hook), grey),
         );
         slew.add(trolley);
+        // steady reds on the apex, the jib tip and the counter-jib (L-810):
+        // they turn with the slew, so a working crane reads at night by its
+        // lights sweeping over the site
+        slew.add(this.beaconPoints([
+          0, 0, mastH + 0.3, -1,
+          jib, 0, mastH - 0.6, -1,
+          -back, 0, mastH - 0.5, -1,
+        ]));
         host.add(slew);
         // One lazy sweep every 22-38 seconds, period and phase hashed off the
         // deed like everything else about this crane, so two sites never move
@@ -13148,6 +13296,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // against a registry the bbl already stood in. Job frames have no
     // occupancy slots, so a crane-only month leaves them alone.
     if (rebuildStock) {
+      // the game's finished buildings tall enough to carry an obstruction light
+      this.dynTops.clear();
+      for (const it of items) {
+        if (it.construction || it.heightM < 61) continue;
+        const ring = this.lotRing(it.bbl);
+        if (!ring || ring.length < 3) continue;
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        this.dynTops.set(it.bbl, [cx / ring.length, cy / ring.length, it.heightM]);
+      }
+      this.beaconsDirty = true;
       for (const [bbl, c] of this.tintNow) this.writeTint(bbl, c, 2);
       for (const [bbl, v] of this.lastOcc) this.writeScalar(this.litAttrs, bbl, Math.max(0, Math.min(1, v)), 2);
       for (const [bbl, v] of this.lastRet) this.writeScalar(this.retAttrs, bbl, v, 2);
@@ -13279,6 +13438,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   private flattenLot(bbl: string) {
     this.flattened.add(bbl);
+    this.beaconsDirty = true;
     // AND IT GOES DOWN RATHER THAN VANISHING. After the first sync (a loaded
     // save does not replay its demolitions) the building sinks into its lot
     // over 1.2 s, accelerating like something falling, and only THEN is the
@@ -13672,7 +13832,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // schedule work at all.
     // A selected building sweeps, and a tween moves — both need the clock
     // running and the next frame asked for, water or no water.
-    const selAnim = this.selActive || this.statusAnim;
+    const night = this.weatherUni.value.z > 0.3;
+    if (night && this.beaconsDirty) this.rebuildBeacons();
+    const selAnim = this.selActive || this.statusAnim || (night && !!this.beacons);
     if (this.stepTweens(performance.now())) this.map.triggerRepaint();
     if (this.stepDusk(performance.now())) this.map.triggerRepaint();
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {

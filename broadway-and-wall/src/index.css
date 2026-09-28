@@ -635,6 +635,13 @@ body {
 .page-section-head {
   font-family: var(--serif); font-size: 17px; color: var(--ink); margin-bottom: 8px;
 }
+/* A bare-text .page-section is a heading by convention (SectionNav in
+   RightPanel reads it as one), but it rendered in body sans at 14px — so
+   "Exposure" sat in a different face from "Returns to date" a screen below.
+   It takes the section-head face. */
+.page-section:not(:has(*)) {
+  font-family: var(--serif); font-size: 17px; color: var(--ink); margin-bottom: 8px;
+}
 
 /* big stat strip across the top of a page */
 .stat-strip { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 6px; }
@@ -827,7 +834,8 @@ body {
   cursor: pointer; padding: 2px 6px; border-radius: 3px; white-space: nowrap;
 }
 .slider-mark::before {
-  content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 4px;
+  /* above the label box, not through it — the tick used to strike the top of "¼" */
+  content: ""; position: absolute; left: 50%; top: -5px; width: 1px; height: 4px;
   background: rgba(96, 76, 34, 0.45);
 }
 .slider-mark.at-min { transform: none; }
@@ -1065,6 +1073,10 @@ html, body, #root { overflow-x: hidden; }
 .scroll-x { overflow-x: hidden; max-width: 100%; }
 .page-portfolio .tbl-book { margin-top: 8px; }
 .tbl-book td { vertical-align: top; }
+/* The address column was the narrowest in the table ("75 South / Ingram St")
+   while "fully let · 1,221 sf unlettable" ran one line across two columns. */
+.tbl-book td.book-prop { min-width: 150px; }
+.tbl-book td.book-occ { max-width: 118px; white-space: normal; line-height: 1.3; }
 .deals-grid.deals-one { grid-template-columns: 1fr; }
 
 /* THREE SCALES, ONE COLUMN. Occupancy, rent and NOI cannot share a y-axis —
@@ -1838,15 +1850,10 @@ html, body, #root { overflow-x: hidden; }
   /* Measured at 1024: jobs (~480px) + six worded lenses (~450) + the clock
      (~240) ran the jobs row under the lens buttons — "World" and "Economy"
      printed on top of Market and Land. Below 1180 the lenses go to their glyph
-     (each keeps its title), the cluster captions go, and the summary tightens
-     so Book stops wrapping onto a row of its own. */
+     (each keeps its title) and the cluster captions go. */
   .nav-cluster::before { display: none; }
   .nav-cluster-map .lens-btn { font-size: 0; width: 28px; height: 27px; padding: 0; }
   .nav-cluster-map .lens-btn::first-letter { font-size: 13px; }
-  .topbar-summary,
-  .topbar-summary .topbar-vital,
-  .topbar-summary .topbar-stats { gap: 10px; }
-  .topbar-summary .topbar-stats { padding-left: 10px; }
 }
 @media (max-width: 760px) {
   .topbar { padding-inline: 9px; }
@@ -2348,7 +2355,7 @@ html, body, #root { overflow-x: hidden; }
 /* Stat tiles hold one line. See Big in panels/shared.tsx. */
 .stat-strip { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); }
 .stat-strip .big-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stat-strip .big-value.big-value-long { font-size: 16px; }
+.stat-strip .big-value.big-value-long { font-size: 16px; white-space: normal; overflow: visible; text-overflow: clip; }
 /* The longest readings are ranges ("$1.30M – $1.47M") — an ellipsis there
    cut the top of the appraisal off. They wrap at the dash instead. */
 .stat-strip .big-value.big-value-xl { font-size: 13.5px; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }

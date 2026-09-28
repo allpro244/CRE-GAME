@@ -256,9 +256,9 @@ export function DebtPage() {
         <Big label="Total debt" value={usd(agg.total)} />
         <Big label="Weighted coupon" value={agg.rate > 0 ? agg.rate.toFixed(2) + "%" : "—"} />
         <Big label="Portfolio LTV" value={(agg.ltv * 100).toFixed(0) + "%"} bad={agg.ltv > 0.75} />
-        <Big label="Coverage" value={agg.dscr !== null ? agg.dscr.toFixed(2) + "x" : "—"} bad={agg.dscr !== null && agg.dscr < 1.25} />
-        <Big label="Debt yield" value={agg.dy !== null ? (agg.dy * 100).toFixed(1) + "%" : "—"} bad={agg.dy !== null && agg.dy < 0.08} />
-        <Big label="WAM" value={agg.wam > 0 ? agg.wam.toFixed(1) + " yrs" : "—"} bad={agg.wam > 0 && agg.wam < 3} />
+        <Big label="Coverage" title="Debt service coverage (DSCR): the book's NOI divided by its annual debt service. Lenders want 1.25x or better." value={agg.dscr !== null ? agg.dscr.toFixed(2) + "x" : "—"} bad={agg.dscr !== null && agg.dscr < 1.25} />
+        <Big label="Debt yield" title="NOI divided by the loan balance — what a lender would earn if it took the buildings back tomorrow. Under 8% worries a desk." value={agg.dy !== null ? (agg.dy * 100).toFixed(1) + "%" : "—"} bad={agg.dy !== null && agg.dy < 0.08} />
+        <Big label="WAM" title="Weighted average maturity — years until the average dollar of debt falls due, weighted by balance." value={agg.wam > 0 ? agg.wam.toFixed(1) + " yrs" : "—"} bad={agg.wam > 0 && agg.wam < 3} />
       </div>
 
       {/* WHAT IT IS MADE OF. Three different instruments with three different
@@ -339,9 +339,12 @@ export function DebtPage() {
       {ladder.length === 0 ? (
         <div className="hint">Nothing borrowed yet.</div>
       ) : (
-        <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 90, marginBottom: 6 }}>
+        // Bars carry their amount and keep a bar's width: with two loans the
+        // ladder was two page-wide red slabs and no figure on either.
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 104, marginBottom: 6 }}>
           {ladder.map(([y, v]) => (
-            <div key={y} style={{ flex: 1, textAlign: "center" }} title={`${usd(v)} matures in ${y}`}>
+            <div key={y} style={{ flex: "0 1 96px", textAlign: "center" }} title={`${usd(v)} matures in ${y}`}>
+              <div className="mono" style={{ fontSize: 10.5, color: "var(--ink)", marginBottom: 2 }}>{usd(v)}</div>
               <div style={{
                 height: Math.max(2, Math.round((v / ladderMax) * 64)),
                 background: v / Math.max(1, agg.total) > 0.35 ? "#a8402e" : "#5a6f8a",

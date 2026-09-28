@@ -51,7 +51,7 @@ export function BooksPage() {
       {/* The page opens with the month attributed — where the move came from,
           before the totals that only say how big it was. */}
       <Waterfall />
-      <div className="stat-strip">
+      <div className="stat-strip" style={{ marginTop: 14 }}>
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
         {depositsHeld(game) > 0 && (
@@ -142,6 +142,9 @@ export function BooksPage() {
             <div className="hint">
               Who has been buying, who failed, and where your firm peaked — the campaign read that used to be scattered across Research and the game-over screen.
             </div>
+            {/* Four unlabelled lists in a row read as one list of unrelated
+                rows; each gets the caption the Waterfall above uses. */}
+            {peak > 0 && <div className="wf-kicker">Your firm</div>}
             {peak > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 <div className="mini-row" style={{ cursor: "default" }}>
@@ -154,6 +157,7 @@ export function BooksPage() {
                 </div>
               </div>
             )}
+            {decadePrints.length > 0 && <div className="wf-kicker">The biggest prints on the tape</div>}
             {decadePrints.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {decadePrints.map((c) => (
@@ -164,6 +168,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
+            {flows.length > 0 && <div className="wf-kicker">Who has been buying · ten years</div>}
             {flows.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {flows.map((f) => (
@@ -176,6 +181,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
+            {failed.length > 0 && <div className="wf-kicker">Who failed</div>}
             {failed.length > 0 && (
               <div className="mini-list">
                 {failed.map((r) => (

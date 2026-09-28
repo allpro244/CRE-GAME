@@ -546,7 +546,7 @@ export function PortfolioPage() {
                 })()
               )}
               {ranked && <td className="num dim">{i + 1}</td>}
-              <td>
+              <td className="book-prop">
                 <div>{rec?.address ?? h.bbl}</div>
                 <div className="dim" style={{ fontSize: 11 }}>
                   {rec ? useLabel(rec) : ""}
@@ -594,7 +594,7 @@ export function PortfolioPage() {
                 )}
               </td>
               <td
-                className="num"
+                className="num book-occ"
                 title={dv
                   ? ((dv.signed?.length ?? 0)
                     ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf spoken for — land on the rent roll at delivery`
@@ -653,7 +653,7 @@ export function PortfolioPage() {
                   <td className="num" title={`Cost ${usd(h.costBasis)}${!h.groundLeased && rec && rec.bldgArea > 0 ? ` · $${(h.costBasis / rec.bldgArea).toFixed(0)}/sf` : ""} · ${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
                     {usd(v)}
                     <div className={"dim" + (g < 0 ? " neg" : "")} style={{ fontSize: 11 }}>
-                      {g > 0 ? "+" : ""}{usd(g)} · {g > 0 ? "+" : ""}{pctG.toFixed(0)}%
+                      {g > 0 ? "+" : ""}{usd(g)} · {pctG >= 0.5 ? "+" : pctG <= -0.5 ? "\u2212" : ""}{Math.abs(pctG).toFixed(0)}%
                     </div>
                   </td>
                 );

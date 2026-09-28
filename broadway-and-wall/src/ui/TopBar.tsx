@@ -623,7 +623,9 @@ export default function TopBar() {
               label="Era"
               value={ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}
               drop={3}
-              w={92}
+              // Sized to the longest short name: "disinflation" in the mono
+              // face is ~95px and was clipped to "disinflatio" at 92.
+              w={100}
               title={`${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The cycle takes rates a point or two either way; the era decides whether that is 3% or 13%, and it turns over on a scale of decades.`}
             />
           )}

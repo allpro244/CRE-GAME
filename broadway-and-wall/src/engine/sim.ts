@@ -1274,8 +1274,17 @@ export function monthCashBit(dCash: number): string {
   return dCash > 0 ? ` · +$${absM.toFixed(2)}M` : ` · −$${absM.toFixed(2)}M`;
 }
 
-export function attentionItems(s: GameState, parcels?: ParcelTable | null): { key: string; label: string }[] {
-  const out: { key: string; label: string }[] = [];
+/**
+ * An item the principal has to look at. `lastM`, when set, is the LAST MONTH
+ * THE PLAYER CAN STILL ACT on it — a letter lapses the month its `expiresM`
+ * arrives, an offer is good through its `expiresM`. Items with a deadline stop
+ * Year / Skip in that month rather than the month they arrive; see
+ * `shouldStopFor`.
+ */
+export type AttentionItem = { key: string; label: string; lastM?: number };
+
+export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
+  const out: AttentionItem[] = [];
   const addr = (bbl: string) => parcelAddr(s, bbl, parcels);
   // Only letters the principal still owns — firm agent, exclusive, staff desk
   // or renewal management already worked the rest. Counting every LOI here is
@@ -1287,7 +1296,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       : l.kind === "renewal"
         ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM)}`
         : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}`;
-    out.push({ key: `loi:${l.id}`, label });
+    out.push({ key: `loi:${l.id}`, label, lastM: l.expiresM - 1 });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
   // They lived on Deals but not in the attention list, so Year/Skip could run
@@ -1298,7 +1307,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
     const label = a.kind === "giveback"
       ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM)}`
       : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
-    out.push({ key: `tenant-ask:${a.id}`, label });
+    out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
@@ -1312,6 +1321,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
       if (left <= 2) {
         out.push({
           key: `broker:${bbl}:${a.q}`,
+          lastM: a.q + APPROACH_LIFE_M,
           label: left <= 0
             ? "A broker's off-market file is lapsing this month"
             : `A broker's off-market file lapses in ${left} month${left === 1 ? "" : "s"}`,
@@ -1329,13 +1339,14 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
     const shop = s.brokerRel?.[li.via ?? ""]?.name ?? "A house broker";
     out.push({
       key: `early-look:${li.bbl}:${li.listedM}`,
+      lastM: li.earlyUntilM - 1,
       label: left <= 1
         ? `${shop}'s first look lapses this month`
         : `${shop}'s first look lapses in ${left} months`,
     });
   }
   for (const h of Object.values(s.holdings)) {
-    if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
+    if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}`, lastM: h.sale.offer.expiresM });
     // A marketed bid list is the same kind of decision as a quiet offer — it
     // expires, and Year/Skip used to run straight past it because only
     // `sale.offer` was on this list.
@@ -1537,19 +1548,23 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
     out.push({ key: "exchange", label: `1031 clock: ${monthLabel(s.exchange.deadlineM)} deadline` });
   }
   for (const o of s.noteOffers ?? []) {
-    out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents` });
+    // Somebody else's paper is an opportunity, not an obligation: it stops a
+    // Year click in the month before the window closes, not the month it opens.
+    out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents`, lastM: o.expiresM - 1 });
   }
   // Private-credit asks lapse in two months — same Stop-on-new as bank paper.
   for (const a of s.privateAsks ?? []) {
     out.push({
       key: `private-ask:${a.id}`,
       label: `${a.rivalName} wants ${a.ratePct.toFixed(1)}% private money on ${a.address} — answer by ${monthLabel(a.expiresM)}`,
+      lastM: a.expiresM - 1,
     });
   }
   for (const q of s.privateBorrowQuotes ?? []) {
     out.push({
       key: `private-borrow:${q.id}`,
       label: `${q.lenderName} will lend on ${q.address} at ${q.ratePct.toFixed(1)}% — answer by ${monthLabel(q.expiresM)}`,
+      lastM: q.expiresM - 1,
     });
   }
   // Receiver books and fund wind-downs — buyable on Marketplace. Without this
@@ -1642,7 +1657,32 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): { ke
   return out;
 }
 
-// Run up to `cap` months, stopping when something new needs the player.
+/**
+ * WHEN A MULTI-MONTH ADVANCE STOPS.
+ *
+ * It used to stop the month anything new arrived. A renewal letter answerable
+ * for six months stopped the Year click the month it landed, so a one-building
+ * book ran 5, 7 and 1 months on three clicks and the letters were answered
+ * one at a time instead of together. And an item already on the desk when the
+ * player clicked never stopped the run at all — a letter could lapse in the
+ * middle of the year without the game saying a word.
+ *
+ * Now an item with a deadline stops the run in its LAST month to act, whether
+ * it was on the desk at the start or arrived during the run (unless it was
+ * already in that last month when the player clicked — they chose to let it
+ * go). An item with no deadline — arrears, a covenant sweep, a balloon notice,
+ * a bid list — still stops the run the month it first appears.
+ */
+function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
+  const start = attentionItems(s, parcels);
+  const before = new Set(start.map((a) => a.key));
+  const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
+  return (cur) => attentionItems(cur, parcels).find((a) => a.lastM !== undefined
+    ? cur.month >= a.lastM && !dueAtStart.has(a.key)
+    : !before.has(a.key));
+}
+
+// Run up to `cap` months, stopping when something needs the player.
 // Returns the state plus why it stopped — the UI toasts the reason.
 //
 // ONE CLONE for the whole run. Re-cloning every month was correct and also
@@ -1653,12 +1693,11 @@ export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
 ): { s: GameState; months: number; reason: string | null } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const before = new Set(attentionItems(s, parcels).map((a) => a.key));
+  const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
-    const now = attentionItems(cur, parcels);
-    const fresh = now.find((a) => !before.has(a.key));
+    const fresh = stop(cur);
     if (fresh) return { s: cur, months: i, reason: fresh.label };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
   }
@@ -1675,12 +1714,11 @@ export async function advanceUntilAttentionAsync(
   yieldEvery = 1,
 ): Promise<{ s: GameState; months: number; reason: string | null }> {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const before = new Set(attentionItems(s, parcels).map((a) => a.key));
+  const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
-    const now = attentionItems(cur, parcels);
-    const fresh = now.find((a) => !before.has(a.key));
+    const fresh = stop(cur);
     if (fresh) return { s: cur, months: i, reason: fresh.label };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
     if (yieldEvery > 0 && i % yieldEvery === 0 && i < cap) {

@@ -707,6 +707,64 @@ export function payOffLoan(
   };
 }
 
+/**
+ * PAY A MORTGAGE DOWN WITHOUT RETIRING IT.
+ *
+ * Payoff was all or nothing, so an owner facing a DSCR test, a refinance
+ * sized to a lower number, or simply a coupon dearer than their cash earns
+ * had to find the whole balance or do nothing — and the number a covenant
+ * cure needs is usually a fraction of it. This is the ordinary partial
+ * prepayment: the principal comes down, the paper's own prepayment terms
+ * apply to the amount prepaid (open paper free, a step-down or yield
+ * maintenance on the dollars that leave early), and the payment is re-cut on
+ * the remaining amortisation — the same recast `tickLoan` performs every month
+ * and the equity cure performs when it sweeps. Cash only: drawing the revolver
+ * to prepay a mortgage swaps one lender for a dearer one.
+ */
+export function paydownLoan(
+  s: GameState, parcels: ParcelTable, bbl: string, amount: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h0 = s.holdings[bbl];
+  if (!h0?.loan) return { s, err: "Nothing to pay down on that deed." };
+  if (!resolveRec(parcels, s, bbl)) return { s, err: "Unknown parcel." };
+  if (s.facility?.bbls.includes(bbl)) {
+    return { s, err: "This deed is pledged to your facility. Pay the facility down there — the mortgage is not what holds the lien." };
+  }
+  const amt = Math.round(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return { s, err: "Pay down a positive amount." };
+  const bal = Math.round(h0.loan.balance);
+  if (amt >= bal) return { s, err: "That is the whole balance — use Pay off, which releases the lien." };
+  const next = cloneState(s);
+  const h = next.holdings[bbl]!;
+  const loan = h.loan!;
+  const penalty = prepayPenalty({ ...loan, balance: amt }, next.month);
+  const due = amt + penalty;
+  if (next.cash < due) {
+    return { s, err: `Need $${due.toLocaleString()} in cash${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(next.cash)).toLocaleString()}.` };
+  }
+  const paid = fundCashNeed(next, parcels, due, { allowLoc: false });
+  if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash.` };
+  logBooks(next, "debtSvc", due);
+  loan.balance = Math.max(0, loan.balance - amt);
+  const io = next.month < loan.ioUntilM;
+  const yearsLeft = Math.max(1, loan.amortYears - (next.month - loan.originM) / 12);
+  loan.monthlyPmt = io
+    ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
+    : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
+  const lender = loan.holder ?? productById(loan.product).lender;
+  const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Paid $${amt.toLocaleString()} off the ${lender} note on ${addr}`
+      + (penalty > 0 ? `, plus $${penalty.toLocaleString()} to prepay early` : "")
+      + `. $${Math.round(loan.balance).toLocaleString()} left; the payment is now $${loan.monthlyPmt.toLocaleString()} a month.`,
+  });
+  return {
+    s: next,
+    msg: `Paid down $${amt.toLocaleString()}${penalty > 0 ? ` (+$${penalty.toLocaleString()} prepayment)` : ""} — payment now $${loan.monthlyPmt.toLocaleString()}/mo.`,
+  };
+}
+
 export function monthlyPayment(principal: number, ratePct: number, years: number): number {
   const i = ratePct / 100 / 12;
   const n = years * 12;

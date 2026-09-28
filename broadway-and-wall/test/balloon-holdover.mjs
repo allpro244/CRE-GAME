@@ -112,5 +112,41 @@ console.log("\nBALLOON HOLDOVER — the desk extends once, or files\n");
   check(!h2?.loan || h2.loan.maturityM > g.month - 14 || w?.stage === "foreclosure", `nothing sits past maturity unfiled (${log.slice(-2).join(" | ")})`);
 }
 
+// ---- scenario C: a FILED balloon past its holdover year, on its one extension,
+// whose coupon becomes fundable. Paying interest does not retire a principal that
+// fell due: both pull-backs (the monthly tick and the July docket) used to return
+// it to notice, 13+ months past maturity with neither an extension nor a filing —
+// found by test/invariants.mjs (levered bot, seed 4000, m114). The control is the
+// same file before its holdover year is out, which IS pulled back: the rule that
+// a lender does not auction a note being paid still holds inside the year.
+{
+  const filed = (monthsPast) => {
+    const { g: g0, bbl } = setUp(4242);
+    const g = JSON.parse(JSON.stringify(g0));
+    const h = g.holdings[bbl];
+    h.loan.maturityM = g.month - monthsPast;
+    h.loan.extensions = 1;
+    h.loan.ioUntilM = g.month + 120;
+    h.loan.monthlyPmt = Math.round((h.loan.balance * h.loan.ratePct) / 100 / 12);
+    E.openWorkout(g, bbl, "balloon", Math.round(h.loan.balance * 1.01));
+    const w = g.workouts[bbl];
+    // the decision month is now, so the monthly tick reaches its pull-back branch
+    w.stage = "foreclosure"; w.saleM = g.month + 3; w.decideM = g.month;
+    // the coupon clears many times over; the payoff does not
+    g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+    g.cash = Math.min(h.loan.balance * 0.2, h.loan.monthlyPmt * 24);
+    return { g, bbl, h };
+  };
+  for (const [name, run] of [["the July docket", (g) => E.reinstateFundedForeclosures(g, parcels)], ["the monthly tick", (g) => E.tickWorkouts(g, parcels)]]) {
+    const late = filed(13);
+    check(E.couponFundable(late.g, parcels, late.h), `${name}: the coupon is fundable (the case under test)`);
+    run(late.g);
+    check(late.g.workouts?.[late.bbl]?.stage === "foreclosure", `${name}: 13 months past maturity on its one extension, it stays filed (${late.g.workouts?.[late.bbl]?.stage ?? "no file"})`);
+    const early = filed(8);
+    run(early.g);
+    check(early.g.workouts?.[early.bbl]?.stage === "notice", `${name}: 8 months past, inside the holdover year, a fundable coupon still pulls it back (${early.g.workouts?.[early.bbl]?.stage ?? "no file"})`);
+  }
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");
 process.exit(bad ? 1 : 0);

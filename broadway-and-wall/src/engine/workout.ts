@@ -366,6 +366,32 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
 }
 
 /**
+ * A FILED BALLOON WHOSE HOLDOVER YEAR IS SPENT IS NOT SAVED BY ITS COUPON.
+ *
+ * Both pull-backs from foreclosure (the monthly tick and the July docket) put
+ * a filed note back to notice the moment the coupon is fundable: lenders do
+ * not auction a note that is being paid. On a balloon that is only half true.
+ * The default is the maturity, not the coupon — interest does not retire the
+ * principal that fell due — and a year past the date the desk extends once or
+ * files (holdoverDecision). Pulling that filing back put the note on a
+ * one-year clock it had already run out. Measured in `test/invariants.mjs`
+ * (levered bot, seed 4000): matured m99 on its one extension, filed m106 when
+ * the coupon bounced, pulled back to notice at m114 when a sale refilled the
+ * account — 15 months past maturity with neither an extension nor a filing,
+ * which is the state the balloon invariant forbids.
+ *
+ * Returns true when the file is such a note, after giving it the holdover
+ * decision the clock owes it: the one extension if it has not had it and the
+ * desk will still write it, otherwise it stays on the docket.
+ */
+function holdoverSpentOnFiling(s: GameState, parcels: ParcelTable, w: Workout, address: string): boolean {
+  const l = s.holdings[w.bbl]?.loan;
+  if (!l || w.cause !== "balloon" || s.month - l.maturityM < 12) return false;
+  if ((l.extensions ?? 0) < 1 && workoutMood(s, w.lender).willExtend) holdoverDecision(s, parcels, w, address);
+  return true;
+}
+
+/**
  * Pull every foreclosure the firm can reinstate — or keep current — off the
  * docket BEFORE the August hammer. The county used to settle the sale in the
  * same tick the cure cheque would have cleared after NOI hit; later a
@@ -382,6 +408,8 @@ export function reinstateFundedForeclosures(s: GameState, parcels: ParcelTable):
     const rec = resolveRec(parcels, s, w.bbl);
     if (!h?.loan || !rec) continue;
     if (!couponFundable(s, parcels, h)) continue;
+    // A matured note past its holdover year is not saved by its coupon.
+    if (holdoverSpentOnFiling(s, parcels, w, rec.address)) continue;
     // Coupon clears — pull off the steps back to notice. They can demand a
     // cure again; they do not auction a note that is being paid.
     w.stage = "notice";
@@ -745,6 +773,10 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // stage === "foreclosure": the hammer belongs to the July docket — unless
     // the firm can still fund the coupon or the cure. Auto-cure ran above;
     // a coupon-current file is pulled back to notice so the steps never see it.
+    //
+    // ...except a matured note past its holdover year (holdoverSpentOnFiling).
+    if (w.stage === "foreclosure" && couponFundable(s, parcels, h)
+      && holdoverSpentOnFiling(s, parcels, w, rec.address)) continue;
     if (w.stage === "foreclosure" && couponFundable(s, parcels, h)) {
       w.stage = "notice";
       delete w.saleM;

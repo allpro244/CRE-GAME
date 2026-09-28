@@ -179,6 +179,8 @@ export interface DevPlan {
   coverage: number;   // share of the lot the floorplate covers
   contract: Contract;
   sf: number;
+  /** Rentable feet of the shell (proforma's `rentable`) — what a tenant signs for; `sf` is gross. */
+  rentable: number;
   far: number;
   farMax: number;
   hardCost: number;
@@ -624,6 +626,7 @@ export function planDevelopment(
     // the same capitalisation `assetValue` applies — so reuse / residual
     // readers that call developmentHurdle(yoc, plan.exitCap) stay consistent.
     months, yieldOnCost, yieldOnCostExLand, exitCap: exitYieldPct, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
+    rentable: pf.rentable,
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
@@ -1121,13 +1124,21 @@ function mintBtsCommitment(
   } as never;
   const market = marketRentPsfYr(built, s.econ, "good");
   const discount = credit === 2 ? rrange(s, 0.82, 0.88, "leasing") : rrange(s, 0.78, 0.85, "leasing");
-  const useSfArea = plan.sf * (plan.mix[use] ?? 1);
+  // THE ANCHOR SIGNS FOR RENTABLE FEET. This used to be `plan.sf` — GROSS,
+  // core and stairs included — so the news told the player "Alden Foods will
+  // take 7,400 sf", planDevelopment clipped the commitment to the 6,200
+  // rentable feet the shell actually has (proforma's `bts.sf` guard), and the
+  // tenant moved in on 6,200: one lease, two sizes, and the rent roll the
+  // player was shown was 16% more than the one they got. A lease is measured
+  // to the rentable standard (see rentableRatio); the proforma clip is now a
+  // guard that does not bind. Floored so the clip cannot shave a rounding foot.
+  const useSfArea = Math.floor(plan.rentable * (plan.mix[use] ?? 1));
   return {
     name,
     sector,
     credit,
     use,
-    sf: Math.round(useSfArea),
+    sf: useSfArea,
     rentPsf: +(market * discount).toFixed(2),
     termM: credit === 2 ? 240 : 180,
     tiPsf: use === "office" ? 35 : use === "retail" ? 24 : 8,

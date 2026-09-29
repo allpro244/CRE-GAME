@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { newGame, advanceMonth, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -47,6 +47,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
+import { aiDueNow, runDueAiTurn, advanceSpanWithAi, seedRunWithAi } from "@/state/aiStore";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
@@ -54,7 +55,7 @@ export type MapFilter = "all" | "owned" | "construction";
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "match";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -877,8 +878,17 @@ export const useStore = create<AppState>((set, get) => ({
   advance: (opts) => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
+    // AN AI TURN FIRST, when one is due: the outside firms place their orders
+    // against this month's tape before the month runs. Asynchronous, so the
+    // month waits for it — see state/aiStore.ts.
+    if (aiDueNow(game)) {
+      void runDueAiTurn().then((ran) => { if (ran) get().advance(opts); });
+      return;
+    }
     const cash0 = game.cash;
-    const next = advanceMonth(game, parcels, bbls, adjacency);
+    const ticked = advanceMonth(game, parcels, bbls, adjacency);
+    // A spectator's principal can die; nobody is at the desk, the match goes on.
+    const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
     set({ game: next, prevForDigest: game });
     queueDeliveryCeremony(game, next, parcels, set);
     queueYearReview(game, next, set);
@@ -900,7 +910,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 12, 1);
+        const r = await advanceSpanWithAi(game, parcels, bbls, adjacency, 12);
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -927,7 +937,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 36, 1);
+        const r = await advanceSpanWithAi(game, parcels, bbls, adjacency, 36);
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -2273,7 +2283,8 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      const g = firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels));
+      // AI firms and spectator mode, if the start screen asked for them.
+      const g = seedRunWithAi(firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels)));
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

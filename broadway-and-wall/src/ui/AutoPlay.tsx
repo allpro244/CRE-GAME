@@ -39,7 +39,8 @@ export default function AutoPlay() {
       st.advance({ quiet: true });
       const next = useStore.getState().game;
       if (next && next !== prev) {
-        const why = stop(next);
+        // A spectator is not at the desk: nothing of the player's stops the clock.
+        const why = next.spectator ? undefined : stop(next);
         if (why) { pause(why.label); return; }
         if (next.gameOver) { useStore.setState({ autoplay: 0 }); return; }
       }

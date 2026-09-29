@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useStore, pendingGoal } from "@/state/store";
+import { useAi } from "@/state/aiStore";
+import { AiFirmsSettings } from "@/ui/panels/AiFirms";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
 import { lifeForCash } from "@/engine/estate";
@@ -324,6 +326,8 @@ export default function StartMenu() {
         </div>
       </div>
 
+      <StartAiOptions />
+
       {/* THE CONFIRM CANNOT LEAVE THE SCREEN. It is a sibling of the scroller,
           not a child of it — the old menu put it at the bottom of a 973px
           column in a 720px window and there was no way to reach it. */}
@@ -349,6 +353,36 @@ export default function StartMenu() {
       </div>
 
       {loadError && <div className="start-err">{loadError}</div>}
+    </div>
+  );
+}
+
+/**
+ * AI FIRMS AT THE START. Every saved AI firm opens on the street with the same
+ * capital; a spectator run leaves the player's firm out of it and never stops
+ * the clock for it. The firms are configured in the same panel Settings shows.
+ */
+function StartAiOptions() {
+  const ai = useAi();
+  const n = ai.profiles.length;
+  return (
+    <div className="start-ai" style={{ padding: "8px 24px", display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
+      <label>
+        <input type="checkbox" checked={ai.startWithAi} disabled={!n}
+          onChange={(e) => ai.set({ startWithAi: e.target.checked, ...(e.target.checked ? {} : { startSpectator: false }) })} />
+        {" "}AI firms{n ? ` (${n}: ${ai.profiles.map((p) => p.name).join(", ")})` : " — none set up yet"}
+      </label>
+      <label title="No player: the AI firms compete and you watch">
+        <input type="checkbox" checked={ai.startSpectator} disabled={!n || !ai.startWithAi}
+          onChange={(e) => ai.set({ startSpectator: e.target.checked })} />
+        {" "}Spectator: no player, AI firms compete
+      </label>
+      <details style={{ flexBasis: "100%" }}>
+        <summary style={{ cursor: "pointer" }}>Set up AI firms — plug in any API</summary>
+        <div style={{ maxWidth: 820, maxHeight: 360, overflow: "auto", background: "rgba(255,255,255,0.6)", padding: 10, borderRadius: 4 }}>
+          <AiFirmsSettings />
+        </div>
+      </details>
     </div>
   );
 }

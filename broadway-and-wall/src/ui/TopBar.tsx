@@ -79,6 +79,7 @@ const PAGE_LABEL: Partial<Record<Page, string>> = {
   saves: "Saves",
   settings: "Settings",
   primer: "Primer",
+  match: "AI match",
 };
 
 /**
@@ -853,6 +854,16 @@ export default function TopBar() {
         >
           ? Primer
         </button>
+        {/* THE AI MATCH — only once an outside AI runs a firm in this town. */}
+        {(game?.rivals ?? []).some((r) => r.aiControlled) && (
+          <button
+            className={"lens-btn" + (page === "match" ? " lens-on" : "")}
+            title="Firms run by outside AIs: leaderboard, equity over time, deals and reasoning"
+            onClick={() => setPage(page === "match" ? "none" : "match")}
+          >
+            ◆ AI match
+          </button>
+        )}
         <button
           className={"lens-btn" + (page === "settings" ? " lens-on" : "")}
           title="Settings — pop-up cards, broker calls, the auction card"

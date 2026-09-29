@@ -291,6 +291,37 @@ export function qDistressPick(options: Record<string, Text>, shortfall: string):
   };
 }
 
+// ------------------------------------------------------------------ wording variants
+
+/**
+ * ALTERNATIVE WORDINGS, for A/B tests in tools/jev-lab.mjs (`--variant`). Each
+ * rewrites a finished request; `base` is what the game sends. Add a variant,
+ * run the lab with a key on both, and promote the better one into the
+ * builders above (bumping JEV_QUESTIONS_VERSION).
+ */
+export const WORDING_VARIANTS: Record<string, { note: string; apply: (req: JevRequest) => JevRequest }> = {
+  base: { note: "what the game sends", apply: (r) => r },
+  "v1-timing": {
+    note: "the first timing wording, with a hop through the mandate (live Jev: confidence 0.0-0.3 on most calls)",
+    apply: (r) => {
+      if (!r.questions.buy_timing) return r;
+      return { ...r, questions: { ...r.questions, buy_timing: {
+        type: "score",
+        instructions: "How good a time is it for a firm with `firm_mandate` to buy income property, judged by `market.cycle`, `market.credit` and `market.debt_cost`?",
+        criteria: ["Very bad: the mandate says to be a seller in this market", "Bad: better to wait", "Neutral",
+          "Good: a sensible time to add buildings", "Very good: the kind of market this mandate is built to buy in"],
+      } } };
+    },
+  },
+  "sell-no-mandate": {
+    note: "sell questions judged on the building and market alone, without `firm_mandate`",
+    apply: (r) => ({ ...r, questions: Object.fromEntries(Object.entries(r.questions).map(([id, q]) => {
+      if (!id.startsWith("sell_") || typeof q.instructions !== "object") return [id, q];
+      return [id, { ...q, instructions: { ...(q.instructions as Record<string, unknown>), question: "Should the firm put `holding` up for sale now, given `market`?" } }];
+    })) }),
+  },
+};
+
 // ------------------------------------------------------------------ mapping
 
 /** Normalise a 5-level Score (0..4) to 0..1. */

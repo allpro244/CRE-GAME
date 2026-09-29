@@ -76,7 +76,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const FILE = join(ROOT, "BASELINE.json");
 
-const E = await import(join(ROOT, "test", ".engine.mjs"));
+// PAIRED ATTRIBUTION. `ENGINE=/abs/.engine.mjs` measures another build and
+// `SEEDS=a,b,...` another seed set; `DUMP=out.json` writes every seed's row
+// rather than the median, and neither touches BASELINE.json. Two dumps on the
+// same seeds are what tools/baseline-paired.mjs compares.
+const E = await import(process.env.ENGINE ?? join(ROOT, "test", ".engine.mjs"));
 const { makeCity } = await import(join(ROOT, "src", "citygen", "index.mjs"));
 
 const med = (a) => { const s = [...a].filter(Number.isFinite).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : NaN; };
@@ -86,7 +90,8 @@ const pct = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => 
 //
 // Each returns { key: value } and says, in its comment, what going wrong looks
 // like. `id` in the name marks an identity: it is not allowed to move at all.
-const CITY = "somewhere", CITY_SEED = 1, SEEDS = [550991, 12007, 73303, 4242, 91117, 20603];
+const CITY = "somewhere", CITY_SEED = 1;
+const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(",").map(Number) : [550991, 12007, 73303, 4242, 91117, 20603];
 
 function freshCity() {
   const built = makeCity(CITY, CITY_SEED);
@@ -324,6 +329,11 @@ function measure() {
       row[`rail.vac.${k}.lo`] = +((railAcc[`rail.vac.${k}.lo`] ?? 0) / n).toFixed(4);
     }
     for (const [k, v] of Object.entries(row)) (out[k] ??= []).push(v);
+  }
+  if (process.env.DUMP) {
+    writeFileSync(process.env.DUMP, JSON.stringify({ seeds: SEEDS, rows: out }) + "\n");
+    console.log(`  wrote ${process.env.DUMP}`);
+    process.exit(0);
   }
   // the median across seeds, so one unlucky city cannot move the record
   const final = {};

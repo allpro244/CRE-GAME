@@ -228,7 +228,7 @@ function sellerOf(s: GameState, li: GameState["listings"][number]): string {
   if (li.receiverFor) return `receiver for ${li.receiverFor}`;
   const o = li.sellerId ? (s.rivals ?? []).find((r) => r.id === li.sellerId) : null;
   if (o) return `${o.name} (${o.aiControlled ? "AI" : o.style}${li.reason ? `, ${li.reason}` : ""})`;
-  return li.reason ?? "private owner";
+  return li.reason ? `private owner (${li.reason})` : "private owner";
 }
 
 /** Can this firm buy this listing at all — before any money question. */

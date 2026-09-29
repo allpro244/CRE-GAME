@@ -26,3 +26,4 @@ check*.mjs
 .audit-rails/
 dist-gallery/
 test/.opening-screen.*
+ai-match-*.json

@@ -12,6 +12,8 @@ import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
+import { JevBadge, JevFirmCard, lastJevAct } from "@/ui/panels/JevPanel";
+import { CHARTERS } from "@/ai/jevQuestions";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -150,6 +152,7 @@ export function TheStreet() {
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
+                  {r.jev ? <JevBadge /> : null}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
                 <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
@@ -173,7 +176,14 @@ export function TheStreet() {
                 </td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
-                  {dead ? (r.takenPrivateM !== undefined
+                  {!dead && r.jev ? (() => {
+                    // A JEV-RUN FIRM'S READ: the last thing Jev's answers did.
+                    const l = lastJevAct(game, r.id);
+                    const who = `${CHARTERS[r.jev.charter].label} · Jev`;
+                    if (!l) return `${who} — no decision yet`;
+                    return `${who} · ${monthLabel(l.m)} ${l.point}: ${l.action ?? l.why}`;
+                  })()
+                  : dead ? (r.takenPrivateM !== undefined
                     ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
                     : r.bbls.length
                     ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
@@ -205,6 +215,12 @@ export function TheStreet() {
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
+                          {r.jev && (
+                            <div style={{ marginBottom: 8 }}>
+                              <div className="page-section" style={{ marginTop: 0 }}>Jev · {CHARTERS[r.jev.charter].label} · the latest period</div>
+                              <JevFirmCard firmId={r.id} />
+                            </div>
+                          )}
                           {principal && !dead && (
                             <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
                           )}

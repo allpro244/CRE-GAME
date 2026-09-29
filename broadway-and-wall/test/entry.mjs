@@ -74,9 +74,9 @@ export const MODULES = [
   "deliveryNotice",
   // takeprivate — buying a rival firm whole (test/take-private.mjs).
   "takeprivate",
-  // aifirms — firms run by an outside AI: the brief, the orders, the match
-  // (test/ai-firms.mjs, tools/ai-match.mjs). aibooks is their order ledger.
-  "aifirms", "aibooks",
+  // jev — Jev (TypeSafe) informing rival firms' decisions; jevmatch the setup
+  // and standings (test/jev.mjs, tools/ai-match.mjs). aibooks is their deal ledger.
+  "jev", "jevmatch", "aibooks",
 ];
 
 export function writeEntry(path) {

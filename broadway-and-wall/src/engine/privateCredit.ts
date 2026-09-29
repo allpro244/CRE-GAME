@@ -170,7 +170,7 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
 
   const candidates: { r: Rival; bbl: string; asIs: number; face: number; why: string }[] = [];
   for (const r of s.rivals ?? []) {
-    if (r.failedM !== undefined || r.aiControlled) continue;
+    if (r.failedM !== undefined) continue;
     for (const bbl of r.bbls) {
       if (deedAlreadyLiens(s, bbl)) continue;
       if (s.privateAsks.some((a) => a.bbl === bbl || a.rivalId === r.id)) continue;
@@ -454,7 +454,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
     if ((s.privateQuoteCool?.[h.bbl] ?? -1) > s.month) continue;
     const need = playerNeedsPrivateBorrow(s, parcels, h.bbl);
     if (!need) continue;
-    const lenders = (s.rivals ?? []).filter((r) => !r.aiControlled && rivalCanLend(r, need.principal));
+    const lenders = (s.rivals ?? []).filter((r) => rivalCanLend(r, need.principal));
     if (!lenders.length) continue;
     const lender = lenders[Math.floor(rng(s) * lenders.length)];
     candidates.push({ bbl: h.bbl, ...need, lender });

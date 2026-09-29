@@ -1,5 +1,8 @@
-// The outside-AI plug-in: wire protocol, providers, controller, mock players.
-export { AI_SYSTEM_PROMPT, briefMessage, parseAiReply, type AiReply } from "./protocol";
-export { callProvider, ANTHROPIC_MODELS, DEFAULTS as AI_PROVIDER_DEFAULTS, type AiProviderConfig, type ProviderKind } from "./providers";
-export { runAiTurn, aiTurnDue, type AiControllerOptions } from "./controller";
-export { mockPlayers, type MockStyle } from "./mock";
+// Jev (TypeSafe System One) inside Broadway & Wall: question library, buckets,
+// request builder, HTTP client, mock, controller. See JEV.md.
+export * from "./jevQuestions";
+export * as buckets from "./buckets";
+export { buildJevRequest, JEV_CAPS, type BuiltJevRequest } from "./jevRequest";
+export { callJev, checkResponse, JevBreaker, JevError, TYPESAFE_URL, BRIDGE_URL, type JevClientOptions } from "./jevClient";
+export { mockJev, mockJevFetch, scoreAt, choiceOf } from "./jevMock";
+export { jevDue, fetchJevDecisions, applyJevDecisions, runJevPeriod, type JevRunOptions, type Fetched, type FirmCallInfo } from "./jevController";

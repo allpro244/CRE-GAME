@@ -413,7 +413,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     // names take it; there is no deed chase, because the borrower is current.
     if (o.perf === "performing") {
       const bondBuyers = (s.rivals ?? []).filter((r) =>
-        r.failedM === undefined && !r.aiControlled && r.id !== o.obligorId
+        r.failedM === undefined && r.id !== o.obligorId
         && (r.style === "opportunistic" || r.style === "core" || r.style === "pe")
         && r.cash > px * 1.1);
       const bb = bondBuyers.length && rng(s) < 0.5
@@ -429,7 +429,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
       continue;
     }
     const able = (s.rivals ?? []).filter((r) =>
-      r.failedM === undefined && !r.aiControlled && r.id !== o.obligorId
+      r.failedM === undefined && r.id !== o.obligorId
       && (r.style === "opportunistic")
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
     const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
@@ -751,7 +751,7 @@ export function noteBid(s: GameState, parcels: ParcelTable, n: Note): { px: numb
   // crunch there is no bid at all, which is the correct lesson about paper.
   const px = Math.round(n.face * noteFairPct(s, rec, r, n.face, n.perf) * 0.94);
   const buyer = (s.rivals ?? []).find((x) =>
-    x.failedM === undefined && !x.aiControlled && x.id !== n.obligorId
+    x.failedM === undefined && x.id !== n.obligorId
     && (x.style === "opportunistic" || x.style === "core") && x.cash > px * 1.4);
   return { px, buyer: buyer?.name ?? null };
 }

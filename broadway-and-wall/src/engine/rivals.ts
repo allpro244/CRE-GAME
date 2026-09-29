@@ -48,7 +48,8 @@ import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
 import { FUND_INVEST_M } from "./fund";
-import { aiBook, aiSnap } from "./aibooks";
+import { firmBook, snap } from "./aibooks";
+import { jevActDue, jevDid, jevHolds, jevPeriod, type JevPoint } from "./jev";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -361,6 +362,8 @@ export function claimJob(
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
     if (want <= 0) return false;
+    // Jev said no to city work this period.
+    if (r.jev && jevHolds(s, r, "claim")) return false;
     const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
     if (live >= maxLiveJobs(r.style)) return false;
     // A JOB HAS TO FIT THE FIRM. Nobody with twelve million of equity starts a
@@ -1198,21 +1201,14 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (s.month % 12 === 0) r.capexYr = 0;
 }
 
-/**
- * Firms still standing — THE SCRIPTED STREET. A firm run by an outside AI is
- * left out: every chooser in the engine that picks a counterparty from this
- * list (who takes a listing off the tape, who bids on your sale, who claims a
- * city job, who rescues an orphan, who buys a portfolio) would otherwise make
- * the AI's decisions for it. With no AI firms in the run this is exactly the
- * old list. See AI_FIRMS.md.
- */
+/** Firms still standing. */
 export function livingRivals(s: GameState): Rival[] {
-  return (s.rivals ?? []).filter((r) => r.failedM === undefined && !r.aiControlled);
+  return (s.rivals ?? []).filter((r) => r.failedM === undefined);
 }
 
-/** Living firms run by an outside AI. */
-export function aiRivals(s: GameState): Rival[] {
-  return (s.rivals ?? []).filter((r) => r.failedM === undefined && !!r.aiControlled);
+/** Living firms whose judgement Jev informs (see engine/jev.ts). */
+export function jevRivals(s: GameState): Rival[] {
+  return (s.rivals ?? []).filter((r) => r.failedM === undefined && !!r.jev);
 }
 
 export const MERCHANT_MIN_LEASE_M = 18;
@@ -1554,7 +1550,7 @@ function tickRivalSpinouts(s: GameState) {
   if (s.month % 12 !== 0 || s.month < 120) return;
   const yr = Math.floor(s.month / 12);
   for (const r of s.rivals ?? []) {
-    if (r.failedM !== undefined || r.stressMs || r.aiControlled) continue;
+    if (r.failedM !== undefined || r.stressMs) continue;
     if (s.month - (r.bornM ?? 0) < 120 || r.bbls.length < 4) continue;
     if ((s.founderBids ?? []).some((b) => b.fromFirmId === r.id)) continue;
     const k = `spin:${s.seed}:${r.id}:${yr}`;
@@ -2430,7 +2426,18 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
   }
-  const sell = pick ?? biggest;
+  let sell = pick ?? biggest;
+  // A JEV-RUN FIRM chooses which building goes, among those whose sale nets
+  // cash; a low-confidence answer leaves the scripted pick above.
+  const dv = r.jev ? jevActDue(s, r, "distress") : null;
+  if (dv) {
+    const want = (dv.act as { option: string }).option;
+    const rec = r.bbls.includes(want) && !s.holdings[want] && !s.listings.some((l) => l.bbl === want) ? resolveRec(parcels, s, want) : null;
+    const px = rec ? markAsset(s, r, rec).v * DURESS_MID : 0;
+    const net = rec ? px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px) : 0;
+    if (rec && net > 0) { sell = { bbl: want, rec, net }; jevDid(s, r, "distress", `sold ${rec.address} under duress`); }
+    else jevDid(s, r, "distress", `${want} no longer nets cash`, false);
+  }
   // A closing the sponsor has to fund is not a source of cash. See the header.
   if (!sell || sell.net <= 0) return false;
   const v = markAsset(s, r, sell.rec).v;
@@ -2835,13 +2842,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       continue;
     }
     const st = STYLE[r.style];
-    // A FIRM RUN BY AN OUTSIDE AI keeps the operating chassis below — rent,
-    // debt service, overhead, tax, maturities, the arrears calendar — and
-    // none of the scripted choices: it builds, buys, sells, refinances and
-    // distributes only on its own orders (engine/aifirms.ts).
-    const ai = !!r.aiControlled;
     tickAssetManagement(s, parcels, r);
-    if (!ai) startOwnJob(s, parcels, r, ci);
+    // BUILD. A Jev-run firm starts the scheme Jev chose (if it still clears),
+    // or starts nothing when Jev confidently said hold; otherwise — and always
+    // for a scripted firm — the scripted site search runs untouched.
+    if (r.jev) jevStartJob(s, parcels, r);
+    if (!jevHolds(s, r, "build")) startOwnJob(s, parcels, r, ci);
     const { aum, noiYr, landV } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
     // Absorption / rivalBuys used to call markRival again for every bidder on
@@ -2849,6 +2855,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Publish the mark here; buyers read it off the firm.
     r.markNoi = noiYr;
     r.markLand = landV;
+    // BUY. A Jev-run firm buys the listing Jev picked, if the composite clears
+    // and the close can be funded; see jevBuy and engine/jev.ts.
+    if (r.jev) jevBuy(s, parcels, r);
 
     // --- the money -------------------------------------------------------
     // NOI in, interest and amortisation out. A firm this size amortises on a
@@ -2961,7 +2970,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // vehicles raised on this street carry `uncalled`; the opening roster are
     // established operators whose current fund is already mid-life.
     const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
-    if (!ai && r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
+    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
@@ -2978,13 +2987,32 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Opportunistic/PE shops printed boom powder no desk would have funded,
     // then died on the coupon. Cap the cash-out at what `lineRoom` will still
     // advance against the book's own income.
-    if (!ai && st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
+    //
+    // A JEV-RUN FIRM asks whether to take the money rather than rolling for it:
+    // a confident yes takes exactly the room the scripted rule would take, a
+    // confident no skips it, anything in between is the scripted roll.
+    const refiDue = r.jev ? jevActDue(s, r, "refi") : null;
+    if (refiDue) {
+      const ok = st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06;
+      const room = ok ? Math.min(Math.round((st.maxLtv - 0.04 - lev) * aum), Math.max(0, lineRoom(s, r, aum, noiYr, landV))) : 0;
+      if (room > 1_000_000) {
+        const b0 = snap(r);
+        r.debt += room;
+        r.cash += room;
+        firmBook(s, r, { kind: "refi", amount: room, closing: 0, cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt, by: "jev" });
+        jevDid(s, r, "refi", `took ${money(room)} out against the book`);
+      } else {
+        jevDid(s, r, "refi", "no longer eligible: the desks will not size a cash-out today", false);
+      }
+    } else if (!jevHolds(s, r, "refi") && st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
       const styleRoom = Math.round((st.maxLtv - 0.04 - lev) * aum);
       const deskRoom = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
       const room = Math.min(styleRoom, deskRoom);
       if (room > 1_000_000) {
+        const b0 = snap(r);
         r.debt += room;
         r.cash += room;
+        firmBook(s, r, { kind: "refi", amount: room, closing: 0, cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt, by: "script" });
       }
     }
 
@@ -3008,7 +3036,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // clock at all — ends up owning the best of this city.
     const stH = STYLE[r.style];
     let forcedBbl = null;
-    if (!ai && stH.holdM > 0 && !r.stressMs) {
+    if (stH.holdM > 0 && !r.stressMs) {
       let oldest = -1;
       for (const bbl of r.bbls) {
         // TWO ANSWERS TO ONE QUESTION, and it is deliberate that only one of
@@ -3106,7 +3134,14 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // put a weak ticket out — same rng() call, lower length gate.
     const trimBase = (hot ? 0.07 : 0.018) * (softBook ? 1.85 : 1)
       * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
-    if (!ai && r.bbls.length > 4 && !r.stressMs && rng(s, "rivals") < trimBase) {
+    // SELL. A Jev-run firm lists the holding Jev most wants sold if the answer
+    // clears the bar (asking across the scripted seller's own 1.00-1.14x range,
+    // the surer the cheaper), keeps everything when every answer is a clear
+    // no, and otherwise trims by the scripted rule. Mandated exits above — the
+    // fund's hold clock, the merchant's delivery — are mandates, not judgement,
+    // and stay scripted.
+    if (r.jev && !r.stressMs) jevSell(s, parcels, r);
+    if (!jevHolds(s, r, "sell") && r.bbls.length > 4 && !r.stressMs && rng(s, "rivals") < trimBase) {
       // Sell the WEAKEST ticket, not a random one: lowest mark yield, and
       // off-mandate classes first. Random trim put good assets on the tape
       // while dogs stayed on the book.
@@ -3305,7 +3340,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // tests. Give them two years to redeploy (or burn remaining dry powder),
     // then wind the vehicle up. New funds start empty: they are exempt until
     // they have either held a deed or exhausted their uncalled capital.
-    if (!ai && r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
+    if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
       const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
       const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
       if (everDeployed || dryPowderGone) {
@@ -3473,6 +3508,9 @@ export function rivalBuys(
   }
   const candidates = prefer ? [prefer] : livingRivals(s).filter((r) => {
     if (r === seller) return false;
+    // A Jev-run firm whose buying Jev decided this period (it bought its pick,
+    // or passed) does not also raise its hand on the tape.
+    if (r.jev && jevHolds(s, r, "buy")) return false;
     const st = STYLE[r.style];
     if (st.classes && !st.classes.includes(rec.class)) return false;
     const { debt, need, draw, aum } = drawFor(r);
@@ -3524,7 +3562,7 @@ export function rivalBuys(
     // correspondingly larger, so the street was under-taxed on every disposal
     // by exactly the amount that made the decision and the settlement disagree.
     const tax = gainsTax(seller, price);
-    const snap0 = aiSnap(seller);
+    const snap0 = snap(seller);
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
     forgetDeed(seller, rec.bbl);
     // Same event, same rule — a firm selling to another firm and a firm selling
@@ -3534,7 +3572,7 @@ export function rivalBuys(
     seller.debt -= relief;
     seller.cash += price - relief - tax;
     settleEmptyBook(s, seller);
-    aiBook(s, seller, {
+    firmBook(s, seller, {
       kind: "sale", bbl: rec.bbl, amount: price, tax, with: best.name,
       cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
     });
@@ -3583,14 +3621,14 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const seller = (s.rivals ?? []).find((r) => r.bbls.includes(bbl));
   if (!seller) return false;
   const tax = gainsTax(seller, price);      // struck before the deed moves; see basisShare
-  const snap0 = aiSnap(seller);
+  const snap0 = snap(seller);
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
   forgetDeed(seller, bbl);
   const relief = debtReleasedOnSale(seller, price);
   seller.debt -= relief;
   seller.cash += price - relief - tax;
   settleEmptyBook(s, seller);
-  aiBook(s, seller, {
+  firmBook(s, seller, {
     kind: "sale", bbl, amount: price, tax, with: "an outside buyer",
     cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
   });
@@ -3670,3 +3708,134 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
         : `${r.name} will trade at the right price.`,
   };
 }
+
+
+// ---------------------------------------------------------------- Jev acts
+//
+// What code does with a "jev" verdict at each decision point. Each act goes
+// through the machinery the scripted street uses — rivalBuys, the tape, the
+// line, breakGround — and re-checks every constraint the scripted rule checks,
+// because the world may have moved since the question was asked. An act that
+// no longer stands is logged and hands the decision back to the scripted rule.
+
+/** Can this firm fund this purchase today? The same test rivalBuys applies to a named bidder. */
+export function rivalCanClose(s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelRecord, price: number): boolean {
+  if (r.stressMs || r.failedM !== undefined) return false;
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  const debt = acquisitionLoan(s, rec, price)(r, ci);
+  const reserve = Math.max(500_000, Math.max(0, r.cash) * 0.05);
+  const need = price - debt + reserve + Math.round(price * 0.02);
+  const m = r.aum !== undefined && r.markNoi !== undefined && r.markLand !== undefined
+    ? { aum: r.aum, noiYr: r.markNoi, landV: r.markLand } : markRival(s, parcels, r);
+  const room = Math.max(0, lineRoom(s, r, m.aum, m.noiYr, m.landV));
+  return r.cash + Math.max(0, Math.min(room, need - r.cash)) >= need;
+}
+
+/** What a forced sale of this building would put in the account — marketAssetToRaise's own arithmetic. */
+export function duressNet(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): number {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return 0;
+  const px = markAsset(s, r, rec).v * DURESS_MID;
+  return px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
+}
+
+/** The build appetite of a style (0 = never takes construction risk). */
+export const buildAppetite = (style: RivalStyle) => BUILD_APPETITE[style];
+export const liveJobCap = (style: RivalStyle) => maxLiveJobs(style);
+
+/** A standing building's basis to its own redeveloper — startOwnJob's opportunity cost. */
+export function redevBasis(s: GameState, r: Rival, rec: ParcelRecord): number {
+  const cond = assetGrade(r, rec);
+  const hair = cond === "obsolete" ? 0.78 : cond === "worn" ? 0.86 : 0.93;
+  return Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, cond) * hair);
+}
+
+function openToBuy(s: GameState, r: Rival, li: GameState["listings"][number]): boolean {
+  if (li.earlyUntilM !== undefined && s.month < li.earlyUntilM) return false;
+  if (s.talks?.[li.bbl]?.agreed) return false;
+  if (li.halfBuilt || (s.cityJobs ?? []).some((j) => j.bbl === li.bbl)) return false;
+  if (s.holdings[li.bbl] || li.sellerId === r.id || r.bbls.includes(li.bbl)) return false;
+  if ((s.portfolios ?? []).some((p) => p.bbls.includes(li.bbl))) return false;
+  return !isCivicLand(s, li.bbl);
+}
+export { openToBuy as listingOpenTo };
+
+function jevBuy(s: GameState, parcels: ParcelTable, r: Rival): void {
+  const v = jevActDue(s, r, "buy");
+  if (!v) return;
+  const want = (v.act as { bbl: string }).bbl;
+  const asked = jevPeriod(s, r)?.ctx.buy.find((x) => x.bbl === want);
+  const li = s.listings.find((l) => l.bbl === want);
+  const rec = resolveRec(parcels, s, want);
+  if (!li || !rec || !openToBuy(s, r, li)) { jevDid(s, r, "buy", `${rec?.address ?? want} is no longer available`, false); return; }
+  // Never pay more than the ask Jev was shown.
+  if (asked && li.ask > asked.ask) { jevDid(s, r, "buy", `the ask rose from ${money(asked.ask)} to ${money(li.ask)}`, false); return; }
+  const b0 = snap(r);
+  const from = li.receiverFor ? `receiver for ${li.receiverFor}` : (ownerOf(s, want)?.name ?? "a private owner");
+  const buyer = rivalBuys(s, parcels, rec, li.ask, r, li.receiverFor ?? "a private owner");
+  if (!buyer) { jevDid(s, r, "buy", `could not fund the close at ${money(li.ask)}`, false); return; }
+  s.listings = s.listings.filter((l) => l.bbl !== want);
+  (s.lastTradeM ??= {})[want] = s.month;
+  firmBook(s, r, {
+    kind: "buy", bbl: want, amount: li.ask, closing: Math.round(li.ask * 0.02), with: from, by: "jev",
+    cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt,
+  });
+  jevDid(s, r, "buy", `bought ${rec.address} for ${money(li.ask)}`);
+  if (stakeIn(s, parcels, rec, r.id)) {
+    s.news.unshift({ q: s.month, kind: "deal", text: `${r.name} bought ${rec.address} for ${money(li.ask)}.` });
+  }
+}
+
+function jevSell(s: GameState, parcels: ParcelTable, r: Rival): void {
+  const v = jevActDue(s, r, "sell");
+  if (!v) return;
+  const { bbl, askMult } = v.act as { bbl: string; askMult: number };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || !r.bbls.includes(bbl) || s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)
+    || (s.cityJobs ?? []).some((j) => j.bbl === bbl) || (s.portfolios ?? []).some((p) => p.bbls.includes(bbl))) {
+    jevDid(s, r, "sell", `${rec?.address ?? bbl} can no longer be listed`, false);
+    return;
+  }
+  const val = conveyedValue(s, rec, bbl, false, assetGrade(r, rec));
+  const ask = Math.round(val * askMult / 1000) * 1000;
+  // The scripted voluntary listing runs 6-12 months; the midpoint, not a draw.
+  s.listings.push({ bbl, ask, listedM: s.month, expiresM: s.month + 9, sellerId: r.id, reason: "voluntary" });
+  jevDid(s, r, "sell", `listed ${rec.address} at ${money(ask)} (${askMult.toFixed(2)}x value)`);
+}
+
+function jevStartJob(s: GameState, parcels: ParcelTable, r: Rival): void {
+  const v = jevActDue(s, r, "build");
+  if (!v) return;
+  const id = (v.act as { option: string }).option;
+  const o = jevPeriod(s, r)?.ctx.build.find((x) => x.id === id);
+  const no = (why: string) => jevDid(s, r, "build", why, false);
+  if (!o) { no(`unknown scheme ${id}`); return; }
+  const rec = resolveRec(parcels, s, o.bbl);
+  if (!rec || !r.bbls.includes(o.bbl) || s.holdings[o.bbl] || s.developments[o.bbl]
+    || (s.cityJobs ?? []).some((j) => j.bbl === o.bbl) || s.listings.some((l) => l.bbl === o.bbl)) { no("the site is no longer free"); return; }
+  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+  if (live >= maxLiveJobs(r.style)) { no("already at the style's live-job limit"); return; }
+  const use = o.use as DevUse;
+  const lead = dominantOf(devMix(use));
+  if ((s.econ.startOwed?.[lead] ?? 0) <= 0) { no(`no ${lead} demand is waiting any more`); return; }
+  const redev = rec.class !== "land" && rec.bldgArea > 0;
+  const uw = underwriteDevelopment(s, parcels, o.bbl, use, o.floors, 0.62, redev ? redevBasis(s, r, rec) : undefined);
+  if (!uw?.clears) { no(uw?.why ?? "the scheme no longer clears"); return; }
+  const plan = uw.plan;
+  if (redev && plan.sf < rec.bldgArea * 1.08) { no("the scheme no longer adds enough floor area"); return; }
+  const m = markRival(s, parcels, r);
+  if (plan.costTotal > m.aum * 0.9 + r.cash * 5) { no("the job is too big for the firm"); return; }
+  const dayOne = Math.round(plan.equity * 0.40);
+  if (r.cash < dayOne + Math.max(400_000, r.cash * 0.03)) { no(`day-one equity ${money(dayOne)} is more than the firm can spare`); return; }
+  const b0 = snap(r);
+  breakGround(s, parcels, r, o.bbl, rec, use, plan, redev);
+  firmBook(s, r, { kind: "develop", bbl: o.bbl, amount: dayOne, cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt, by: "jev" });
+  jevDid(s, r, "build", `broke ground on ${Math.round(plan.sf / 1000)}k sf of ${use} at ${rec.address}`);
+}
+
+export type { JevPoint };
+
+/** What a firm on this street pays on its debt, % a year: the index plus the street spread. */
+export const streetDebtRatePct = (s: GameState) => s.econ.indexRate + RATE_SPREAD;
+/** A style's hold clock in months (0 = none). */
+export const holdClockM = (style: RivalStyle) => STYLE[style].holdM;

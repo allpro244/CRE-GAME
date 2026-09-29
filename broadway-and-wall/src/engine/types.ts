@@ -2253,17 +2253,17 @@ export interface Rival {
     personName: string;
   };
   /**
-   * RUN BY AN OUTSIDE AI. Present only on a firm whose buying, selling,
-   * refinancing and building are decided by an external model through
-   * `applyAiOrders` (engine/aifirms.ts). The label is for display; no key,
-   * URL or credential ever lives in the state. The firm keeps the street's
-   * operating chassis — rent, debt service, overhead, tax, maturities and the
-   * arrears calendar all run on it exactly as on any firm — but the scripted
-   * discretionary moves (buying off the tape, trimming, hold-clock exits,
-   * boom cash-outs, own-land starts, distributions) do not. A quarter with no
-   * orders is a quarter it holds. See AI_FIRMS.md.
+   * JUDGEMENT BY JEV. Present only on a firm whose decisions — which listing to
+   * buy, whether to sell a holding, whether to take equity out, which scheme to
+   * start, whether to take city work, what to sell under duress — are informed
+   * by TypeSafe's Jev model (engine/jev.ts, src/ai/jevQuestions.ts). The engine
+   * still computes every number and every constraint; Jev answers typed
+   * questions with probabilities, and code acts only above a confidence
+   * threshold, otherwise the firm's own scripted rule decides. `charter` is the
+   * plain-language mandate sent to Jev as `firm_mandate`. No key or endpoint
+   * ever lives in the state.
    */
-  aiControlled?: { provider: string; model?: string; sinceM: number };
+  jev?: { charter: import("../ai/jevQuestions").CharterId; sinceM: number };
 }
 
 /** One firm the player bought whole — the closing statement, kept. */
@@ -2899,12 +2899,12 @@ export interface GameState {
   pastGoals?: import("./goals").Goal[];
   /** Standing acquisition criteria (see buybox.ts). */
   buyBox?: import("./buybox").BuyBox;
-  /** AI-run firms: order ledger by firm id (engine/aibooks.ts). Absent without AI firms. */
-  aiBooks?: Record<string, import("./aibooks").AiBookEntry[]>;
-  /** AI-run firms: the last turns — stated reasoning and each order's verdict. */
-  aiTurns?: import("./aibooks").AiTurn[];
-  /** AI-run firms: equity marks by quarter, for the match view. */
-  aiHistory?: { m: number; eq: Record<string, number> }[];
+  /** Jev-run firms: the decisions fetched for the current period, and the log of what code did with them. */
+  jev?: import("./jev").JevState;
+  /** Jev-run firms: money each Jev-driven action moved, by firm (engine/aibooks.ts). */
+  jevBooks?: Record<string, import("./aibooks").FirmBookEntry[]>;
+  /** Jev-run firms: equity marks by decision period, for the match chart. */
+  jevHistory?: { m: number; eq: Record<string, number> }[];
   /** Spectator run: the player's own firm sits out; the clock never stops for it. */
   spectator?: boolean;
   /** How many funds this firm has raised — Fund I, II, III. */

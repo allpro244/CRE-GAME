@@ -50,15 +50,18 @@ export async function fetchJevDecisions(s: GameState, parcels: ParcelTable, o: J
   const period = Math.floor(forMonth / Math.max(1, s.jev?.every ?? 3));
   const ids = jevRivals(s).map((r) => r.id).filter((id) => s.jev?.firms[id]?.m !== forMonth).sort();
   const out: Fetched[] = [];
-  const queue = [...ids];
+  // BUILD EVERY REQUEST FIRST, then send them. Building is synchronous work
+  // (the pro formas behind the build options); interleaving it with the calls
+  // blocked the tab while earlier calls' timers ran, and in the browser the
+  // answers arrived "late" although TypeSafe had replied in 200-300ms.
+  const builts: BuiltJevRequest[] = [];
+  for (const id of ids) {
+    try { builts.push(buildJevRequest(s, parcels, id)); } catch { /* not a Jev firm any more */ }
+  }
+  const queue = [...builts];
   const worker = async () => {
-    for (let id = queue.shift(); id; id = queue.shift()) {
-      let built: BuiltJevRequest;
-      try {
-        built = buildJevRequest(s, parcels, id);
-      } catch (e) {
-        continue;   // not a Jev firm any more
-      }
+    for (let built = queue.shift(); built; built = queue.shift()) {
+      const id = built.firmId;
       const tokens = estimateTokens(built.request);
       const qn = Object.keys(built.request.questions).length;
       const t0 = Date.now();

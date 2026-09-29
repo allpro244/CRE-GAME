@@ -58,7 +58,7 @@ export const useJev = create<JevUi>((set, get) => ({
   route: saved.route ?? "bridge",
   bridgeUrl: saved.bridgeUrl ?? BRIDGE_URL,
   every: saved.every ?? 3,
-  timeoutMs: saved.timeoutMs ?? 5000,
+  timeoutMs: saved.timeoutMs ?? 15000,
   startFirms: saved.startFirms ?? 0,
   startSpectator: !!saved.startSpectator,
   startCharter: saved.startCharter ?? "style",

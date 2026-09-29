@@ -104,7 +104,10 @@ for (const seed of seeds) {
       const scripted = await fork(g1, id, () => ({}));
       // ---- BUY: none + the top three candidates
       if (built.ctx.buy.length) {
-        const opts = ["none", ...built.ctx.buy.slice(0, 3).map((x) => x.bbl)];
+        // The top three by the code's own ranking, plus whatever Jev picked —
+        // a pick outside the forked set could never be scored right.
+        const rawPick = A.buy_pick?.choice;
+        const opts = [...new Set(["none", ...built.ctx.buy.slice(0, 3).map((x) => x.bbl), ...(rawPick ? [rawPick] : [])])];
         const outc = {};
         for (const o of opts) outc[o] = await fork(g1, id, o === "none" ? pickOf("buy_pick", "none") : (req2) => ({ ...allHigh(req2), ...pickOf("buy_pick", o)(req2) }));
         const best = opts.reduce((a, b) => (outc[b] > outc[a] ? b : a));
@@ -140,7 +143,8 @@ const mean = (xs) => { const v = xs.filter(Number.isFinite); return v.length ? v
 const f2 = (x) => (Number.isFinite(x) ? x.toFixed(3) : "—");
 console.log(`\n  BUY — ${rows.buy.length} decisions (value multiple vs own world after ${horizon} months; 1.000 = median scripted firm)`);
 if (rows.buy.length) {
-  console.log(`    raw pick = best action           ${rows.buy.filter((r) => r.rawRight).length}/${rows.buy.length}   (chance ≈ ${f2(mean(rows.buy.map((r) => 1 / Object.keys(r.outc).length)))})`);
+  console.log(`    raw pick = best action           ${rows.buy.filter((r) => r.rawRight).length}/${rows.buy.length}   (chance ≈ ${f2(mean(rows.buy.map((r) => 1 / Object.keys(r.outc).length)))}; forks = none + code's top 3 + Jev's pick)`);
+  console.log(`    raw pick earned                  ${f2(mean(rows.buy.map((r) => r.outc[r.raw])))}   mean of the forked options ${f2(mean(rows.buy.map((r) => mean(Object.values(r.outc)))))}`);
   console.log(`    gated decision earned            ${f2(mean(rows.buy.map((r) => r.gated)))}   best available ${f2(mean(rows.buy.map((r) => r.bestV)))}   scripted rule ${f2(mean(rows.buy.map((r) => r.scripted)))}`);
   console.log(`    paths                            ${["jev", "pass", "fallback"].map((p) => `${p} ${rows.buy.filter((r) => r.path === p).length}`).join(" · ")}`);
   for (const [lo, hi] of [[0, 0.45], [0.45, 0.7], [0.7, 1.01]]) {

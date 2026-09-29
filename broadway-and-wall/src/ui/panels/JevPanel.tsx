@@ -82,6 +82,10 @@ export function JevSettings() {
           <input type="checkbox" checked={j.remember} onChange={(e) => j.set({ remember: e.target.checked })} /> Remember the key on this device
           (never written into a save; sent only to {j.route === "bridge" ? "the bridge, which forwards it to api.typesafe.ai" : "api.typesafe.ai"})
         </label>
+        <label htmlFor="jev-timeout">Give up on a call after</label>
+        <select id="jev-timeout" value={j.timeoutMs} onChange={(e) => j.set({ timeoutMs: Number(e.target.value) })}>
+          {[5000, 15000, 30000, 60000].map((ms) => <option key={ms} value={ms}>{ms / 1000} seconds{ms === 15000 ? " (default)" : ""}</option>)}
+        </select>
         <label htmlFor="jev-every">Decision period</label>
         <select id="jev-every" value={j.every} onChange={(e) => {
           const every = Number(e.target.value);

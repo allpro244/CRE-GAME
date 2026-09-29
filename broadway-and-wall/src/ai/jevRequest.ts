@@ -18,7 +18,7 @@ import {
   markAsset, markRival, redevBasis, rivalCanClose, STYLE_OF, streetDebtRatePct,
 } from "@/engine/rivals";
 import { assetValue, inPlace, occupancy, resolveRec, zoneUseBar } from "@/engine/value";
-import { cityInfillCap, MAX_FLOORS_BY_USE, underwriteDevelopment } from "@/engine/dev";
+import { cityCoverage, cityInfillCap, MAX_FLOORS_BY_USE, underwriteDevelopment } from "@/engine/dev";
 import { devMix, dominantOf, farMaxFor } from "@/engine/proforma";
 import { landPencils } from "@/engine/buybox";
 import { productById } from "@/engine/debt";
@@ -217,13 +217,17 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
         if ((rec.yearBuilt ? yr - rec.yearBuilt : 99) < 35 || (g !== "worn" && g !== "obsolete")) continue;
       }
       let any = false;
-      const envelope = Math.max(1, Math.floor(farMaxFor(rec) / 0.62));
       for (const use of USES) {
         const lead = dominantOf(devMix(use)) as BuiltClass;
         if ((e.startOwed?.[lead] ?? 0) <= 0) continue;
-        const floors = Math.max(1, Math.min(envelope, cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead), MAX_FLOORS_BY_USE[use] ?? Infinity));
+        // The plate every other autonomous start draws — the use's own
+        // coverage limit (cityCoverage), not a flat 0.62 — and the one height
+        // rule (cityInfillCap).
+        const plate = cityCoverage(use);
+        const envelope = Math.max(1, Math.floor(farMaxFor(rec) / plate));
+        const floors = Math.max(1, Math.min(envelope, cityInfillCap(s, parcels, rec, lead), MAX_FLOORS_BY_USE[use] ?? Infinity));
         if (zoneUseBar(rec, use, e, use === "mixed" ? devMix(use) : undefined, floors)) continue;
-        const uw = underwriteDevelopment(s, parcels, b, use, floors, 0.62, land ? undefined : redevBasis(s, r, rec));
+        const uw = underwriteDevelopment(s, parcels, b, use, floors, plate, land ? undefined : redevBasis(s, r, rec));
         if (!uw?.clears) continue;
         const plan = uw.plan;
         if (!land && plan.sf < rec.bldgArea * 1.12) continue;

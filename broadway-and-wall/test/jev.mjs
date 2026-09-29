@@ -215,7 +215,7 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
         s = step(s);
         const job = (s.cityJobs ?? []).find((j) => j.bbl === o.bbl && j.firmId === r.id);
         const e = (s.jevBooks?.[r.id] ?? []).find((x) => x.kind === "develop");
-        check(!!job && !!e && e.cashDelta === -e.amount, `build pick (0.9) breaks ground on ${o.id} for ${r.name} (year ${y})`);
+        check(!!job && !!e && e.cashDelta - e.debtDelta - (e.partners ?? 0) === -e.amount, `build pick (0.9) breaks ground on ${o.id} for ${r.name} (year ${y})`);
         buildDone = true;
       }
     }
@@ -274,7 +274,9 @@ async function run(months) {
   let broken = 0;
   for (const e of all) {
     kinds[e.kind] = (kinds[e.kind] ?? 0) + 1;
-    const net = e.cashDelta - e.debtDelta;
+    // A syndicated deal's investors move money in the same event (their
+    // equity in at a groundbreak, their take out of a sale): `partners`.
+    const net = e.cashDelta - e.debtDelta - (e.partners ?? 0);
     const want = e.kind === "buy" ? -(e.amount + (e.closing ?? 0)) : e.kind === "sale" ? e.amount - (e.tax ?? 0)
       : e.kind === "develop" ? -e.amount : 0;
     if (Math.abs(net - want) > 1) { broken++; if (broken < 4) console.log("   ", JSON.stringify(e)); }

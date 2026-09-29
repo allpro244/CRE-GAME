@@ -48,14 +48,20 @@ for (const seed of seeds) {
         firmCash.push(r.cash / 1e6); firmAum.push(r.aum / 1e6);
         if (r.live >= E.liveJobCap(r.style)) { fail.jobs++; continue; }
         if (projectCost > r.aum * 0.9 + r.cash * 5) { fail.size++; continue; }
-        if (r.cash < dayOne + Math.max(400_000, r.cash * 0.04)) { fail.cash++; continue; }
+        if (r.cash < dayOne + Math.max(400_000, r.cash * 0.04)) {
+          fail.cash++;
+          // would the firm's corporate line (the one rivalBuys draws) cover it?
+          const room = Math.max(0, E.lineRoom(g, rv, rv.aum ?? 0, rv.markNoi ?? 0, rv.markLand ?? 0));
+          if (r.cash + room >= dayOne + 400_000) fail.lineWould = (fail.lineWould ?? 0) + 1;
+          continue;
+        }
         fail.eligible++; any = true; (fail.by ??= {})[r.style] = (fail.by[r.style] ?? 0) + 1;
       }
       if (any) withEligible++;
     }
   }
   console.log(`seed ${seed} ${MONTHS}m: city-pipeline starts ${jobsN}, claimed ${claimed}, with >=1 eligible firm ${withEligible}`);
-  console.log(`  firm-job pairs failing: jobs ${fail.jobs} size ${fail.size} cash ${fail.cash} eligible ${fail.eligible} ${JSON.stringify(fail.by)}`);
+  console.log(`  firm-job pairs failing: jobs ${fail.jobs} size ${fail.size} cash ${fail.cash} (line would cover ${fail.lineWould ?? 0}) eligible ${fail.eligible} ${JSON.stringify(fail.by)}`);
   console.log(`  project cost $M p10/50/90 ${q(projectCosts, .1).toFixed(1)}/${q(projectCosts, .5).toFixed(1)}/${q(projectCosts, .9).toFixed(1)}`
     + `  day-one $M ${q(dayOnes, .1).toFixed(2)}/${q(dayOnes, .5).toFixed(2)}/${q(dayOnes, .9).toFixed(2)}`
     + `  builder cash $M ${q(firmCash, .1).toFixed(2)}/${q(firmCash, .5).toFixed(2)}/${q(firmCash, .9).toFixed(2)}`

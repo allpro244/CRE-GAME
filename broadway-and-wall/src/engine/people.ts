@@ -367,7 +367,9 @@ export function ensurePeople(s: GameState): void {
   }
   s.rivalPrincipals ??= {};
   for (const r of s.rivals ?? []) {
-    if (r.failedM != null) continue;
+    // An AI-run firm's principal is the model; it has no mortal on the seat
+    // whose estate could sell its book out from under its orders.
+    if (r.failedM != null || r.aiControlled) continue;
     if (!s.rivalPrincipals[r.id]) {
       s.rivalPrincipals[r.id] = makeRivalPrincipal(s, r.id, r.name);
     } else if (s.rivalPrincipals[r.id].diesM === undefined) {

@@ -253,7 +253,7 @@ function roomBid(s: GameState, est: number): { px: number; heads: number } {
 /** A named buyer if one on the street can carry it; out-of-town money if not. */
 function thirdPartyTakes(s: GameState, rec: ParcelRecord, px: number): string {
   const r = (s.rivals ?? []).filter((x) =>
-    x.failedM === undefined && x.cash > px * 0.3
+    x.failedM === undefined && !x.aiControlled && x.cash > px * 0.3
     && (x.style === "opportunistic" || x.style === "core"))
     .sort((a, b) => b.cash - a.cash)[0];
   if (r) {

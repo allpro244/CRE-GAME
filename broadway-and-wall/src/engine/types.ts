@@ -2252,6 +2252,18 @@ export interface Rival {
     firmName: string;
     personName: string;
   };
+  /**
+   * RUN BY AN OUTSIDE AI. Present only on a firm whose buying, selling,
+   * refinancing and building are decided by an external model through
+   * `applyAiOrders` (engine/aifirms.ts). The label is for display; no key,
+   * URL or credential ever lives in the state. The firm keeps the street's
+   * operating chassis — rent, debt service, overhead, tax, maturities and the
+   * arrears calendar all run on it exactly as on any firm — but the scripted
+   * discretionary moves (buying off the tape, trimming, hold-clock exits,
+   * boom cash-outs, own-land starts, distributions) do not. A quarter with no
+   * orders is a quarter it holds. See AI_FIRMS.md.
+   */
+  aiControlled?: { provider: string; model?: string; sinceM: number };
 }
 
 /** One firm the player bought whole — the closing statement, kept. */
@@ -2887,6 +2899,14 @@ export interface GameState {
   pastGoals?: import("./goals").Goal[];
   /** Standing acquisition criteria (see buybox.ts). */
   buyBox?: import("./buybox").BuyBox;
+  /** AI-run firms: order ledger by firm id (engine/aibooks.ts). Absent without AI firms. */
+  aiBooks?: Record<string, import("./aibooks").AiBookEntry[]>;
+  /** AI-run firms: the last turns — stated reasoning and each order's verdict. */
+  aiTurns?: import("./aibooks").AiTurn[];
+  /** AI-run firms: equity marks by quarter, for the match view. */
+  aiHistory?: { m: number; eq: Record<string, number> }[];
+  /** Spectator run: the player's own firm sits out; the clock never stops for it. */
+  spectator?: boolean;
   /** How many funds this firm has raised — Fund I, II, III. */
   fundsRaised?: number;
   nextPrivateBorrowId?: number;

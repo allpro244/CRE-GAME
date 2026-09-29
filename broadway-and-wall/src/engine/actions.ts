@@ -12,6 +12,7 @@ import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
+import { aiBook, aiSnap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
@@ -272,11 +273,16 @@ export function executePurchase(
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
+      const snap0 = aiSnap(seller);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       forgetDeed(seller, bbl);
       const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
       seller.debt -= relief;
       seller.cash += price - relief;
+      aiBook(next, seller, {
+        kind: "sale", bbl, amount: price, tax: 0, with: firmShort(next),
+        cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
+      });
     }
   }
   clearRivalClaims(next, bbl);

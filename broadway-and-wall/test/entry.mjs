@@ -74,8 +74,14 @@ export const MODULES = [
   "deliveryNotice",
   // takeprivate — buying a rival firm whole (test/take-private.mjs).
   "takeprivate",
+  // aifirms — firms run by an outside AI: the brief, the orders, the match
+  // (test/ai-firms.mjs, tools/ai-match.mjs). aibooks is their order ledger.
+  "aifirms", "aibooks",
 ];
 
 export function writeEntry(path) {
-  return MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n") + "\n";
+  // The AI controller lives outside the engine (it is async and does I/O) but
+  // the headless match runner drives it with the same bundle.
+  return MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n")
+    + `\nexport * from "../src/ai/index";\n`;
 }

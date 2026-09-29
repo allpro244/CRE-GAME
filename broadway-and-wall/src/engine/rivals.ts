@@ -48,6 +48,7 @@ import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
 import { FUND_INVEST_M } from "./fund";
+import { aiBook, aiSnap } from "./aibooks";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1063,7 +1064,7 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
  * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
  * construction rather than by agreement.
  */
-export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number } {
+export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number; occ?: number } {
   const cond = assetGrade(r, rec);
   const v = assetValue(rec, s.econ, cond);
   if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
@@ -1078,6 +1079,7 @@ export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: numbe
   return {
     v: v * (0.42 + 0.58 * ratio),
     noi: noiAfterTaxYr(rec, s.econ, cond, v) * ratio,
+    occ: actual,
   };
 }
 
@@ -1196,9 +1198,21 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (s.month % 12 === 0) r.capexYr = 0;
 }
 
-/** Firms still standing. */
+/**
+ * Firms still standing — THE SCRIPTED STREET. A firm run by an outside AI is
+ * left out: every chooser in the engine that picks a counterparty from this
+ * list (who takes a listing off the tape, who bids on your sale, who claims a
+ * city job, who rescues an orphan, who buys a portfolio) would otherwise make
+ * the AI's decisions for it. With no AI firms in the run this is exactly the
+ * old list. See AI_FIRMS.md.
+ */
 export function livingRivals(s: GameState): Rival[] {
-  return (s.rivals ?? []).filter((r) => r.failedM === undefined);
+  return (s.rivals ?? []).filter((r) => r.failedM === undefined && !r.aiControlled);
+}
+
+/** Living firms run by an outside AI. */
+export function aiRivals(s: GameState): Rival[] {
+  return (s.rivals ?? []).filter((r) => r.failedM === undefined && !!r.aiControlled);
 }
 
 export const MERCHANT_MIN_LEASE_M = 18;
@@ -1540,7 +1554,7 @@ function tickRivalSpinouts(s: GameState) {
   if (s.month % 12 !== 0 || s.month < 120) return;
   const yr = Math.floor(s.month / 12);
   for (const r of s.rivals ?? []) {
-    if (r.failedM !== undefined || r.stressMs) continue;
+    if (r.failedM !== undefined || r.stressMs || r.aiControlled) continue;
     if (s.month - (r.bornM ?? 0) < 120 || r.bbls.length < 4) continue;
     if ((s.founderBids ?? []).some((b) => b.fromFirmId === r.id)) continue;
     const k = `spin:${s.seed}:${r.id}:${yr}`;
@@ -1905,6 +1919,25 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (r.cash < dayOneNeed + Math.max(400_000, r.cash * 0.03)) return;
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
+  breakGround(s, parcels, r, bbl, rec, use, plan, redev);
+}
+
+/**
+ * THE GROUNDBREAK ITSELF, once a firm has decided. Lifted out of
+ * `startOwnJob` unchanged so a firm run by an outside AI breaks ground
+ * through exactly the same lines — the demolition, the job on the city's
+ * books, the delivery queue, the order book netted — rather than a parallel
+ * copy. Draws nothing from the RNG.
+ */
+export function breakGround(
+  s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord,
+  use: DevUse, plan: DevPlan, redev: boolean,
+): void {
+  const sf = plan.sf;
+  const floors = plan.floors;
+  const cost = plan.costTotal;
+  const dayOneNeed = Math.round(plan.equity * 0.40);
+  const lead = dominantOf(devMix(use));
   const months = plan.months;
   const deliverM = s.month + months;
   if (!s.cityJobs) s.cityJobs = [];
@@ -2164,7 +2197,7 @@ function pruneExtensions(r: Rival) {
  * its line therefore pays less carry here than it would in life. Fixing that
  * needs a second rate on `Rival`, which is a field this change does not own.
  */
-function lineRoom(s: GameState, r: Rival, aum: number, noiYr: number, landV: number): number {
+export function lineRoom(s: GameState, r: Rival, aum: number, noiYr: number, landV: number): number {
   const st = STYLE[r.style];
   const covenant = Math.round((st.maxLtv - 0.02) * aum);
   // A BORROWING BASE ADVANCES AGAINST EACH KIND OF COLLATERAL ON ITS OWN
@@ -2802,8 +2835,13 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       continue;
     }
     const st = STYLE[r.style];
+    // A FIRM RUN BY AN OUTSIDE AI keeps the operating chassis below — rent,
+    // debt service, overhead, tax, maturities, the arrears calendar — and
+    // none of the scripted choices: it builds, buys, sells, refinances and
+    // distributes only on its own orders (engine/aifirms.ts).
+    const ai = !!r.aiControlled;
     tickAssetManagement(s, parcels, r);
-    startOwnJob(s, parcels, r, ci);
+    if (!ai) startOwnJob(s, parcels, r, ci);
     const { aum, noiYr, landV } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
     // Absorption / rivalBuys used to call markRival again for every bidder on
@@ -2923,7 +2961,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // vehicles raised on this street carry `uncalled`; the opening roster are
     // established operators whose current fund is already mid-life.
     const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
-    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
+    if (!ai && r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
@@ -2940,7 +2978,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Opportunistic/PE shops printed boom powder no desk would have funded,
     // then died on the coupon. Cap the cash-out at what `lineRoom` will still
     // advance against the book's own income.
-    if (st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
+    if (!ai && st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
       const styleRoom = Math.round((st.maxLtv - 0.04 - lev) * aum);
       const deskRoom = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
       const room = Math.min(styleRoom, deskRoom);
@@ -2970,7 +3008,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // clock at all — ends up owning the best of this city.
     const stH = STYLE[r.style];
     let forcedBbl = null;
-    if (stH.holdM > 0 && !r.stressMs) {
+    if (!ai && stH.holdM > 0 && !r.stressMs) {
       let oldest = -1;
       for (const bbl of r.bbls) {
         // TWO ANSWERS TO ONE QUESTION, and it is deliberate that only one of
@@ -3068,7 +3106,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // put a weak ticket out — same rng() call, lower length gate.
     const trimBase = (hot ? 0.07 : 0.018) * (softBook ? 1.85 : 1)
       * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
-    if (r.bbls.length > 4 && !r.stressMs && rng(s, "rivals") < trimBase) {
+    if (!ai && r.bbls.length > 4 && !r.stressMs && rng(s, "rivals") < trimBase) {
       // Sell the WEAKEST ticket, not a random one: lowest mark yield, and
       // off-mandate classes first. Random trim put good assets on the tape
       // while dogs stayed on the book.
@@ -3267,7 +3305,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // tests. Give them two years to redeploy (or burn remaining dry powder),
     // then wind the vehicle up. New funds start empty: they are exempt until
     // they have either held a deed or exhausted their uncalled capital.
-    if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
+    if (!ai && r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
       const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
       const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
       if (everDeployed || dryPowderGone) {
@@ -3486,6 +3524,7 @@ export function rivalBuys(
     // correspondingly larger, so the street was under-taxed on every disposal
     // by exactly the amount that made the decision and the settlement disagree.
     const tax = gainsTax(seller, price);
+    const snap0 = aiSnap(seller);
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
     forgetDeed(seller, rec.bbl);
     // Same event, same rule — a firm selling to another firm and a firm selling
@@ -3495,6 +3534,10 @@ export function rivalBuys(
     seller.debt -= relief;
     seller.cash += price - relief - tax;
     settleEmptyBook(s, seller);
+    aiBook(s, seller, {
+      kind: "sale", bbl: rec.bbl, amount: price, tax, with: best.name,
+      cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
+    });
   }
   const fin = drawFor(best);
   // The corporate line funds any equity the operating account cannot cover —
@@ -3540,12 +3583,17 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const seller = (s.rivals ?? []).find((r) => r.bbls.includes(bbl));
   if (!seller) return false;
   const tax = gainsTax(seller, price);      // struck before the deed moves; see basisShare
+  const snap0 = aiSnap(seller);
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
   forgetDeed(seller, bbl);
   const relief = debtReleasedOnSale(seller, price);
   seller.debt -= relief;
   seller.cash += price - relief - tax;
   settleEmptyBook(s, seller);
+  aiBook(s, seller, {
+    kind: "sale", bbl, amount: price, tax, with: "an outside buyer",
+    cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
+  });
   return true;
 }
 

@@ -26,7 +26,8 @@ export default function AutoPlay() {
       const st = useStore.getState();
       if (!st.autoplay || !st.game || !st.parcels) return;
       if (st.game.gameOver) { useStore.setState({ autoplay: 0 }); return; }
-      const blocking = document.querySelector(".modal-backdrop, .delivery-ceremony");
+      // A spectator is not at the desk; a card about the world does not stop the match.
+      const blocking = st.game.spectator ? null : document.querySelector(".modal-backdrop, .delivery-ceremony");
       if (st.advancing || st.paletteOpen || blocking) {
         // A card on the desk: wait for it rather than stop, unless it is a
         // decision — those stop the clock like they stop Yr.

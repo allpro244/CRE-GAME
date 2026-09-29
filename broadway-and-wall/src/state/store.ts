@@ -890,8 +890,9 @@ export const useStore = create<AppState>((set, get) => ({
     // A spectator's principal can die; nobody is at the desk, the match goes on.
     const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
     set({ game: next, prevForDigest: game });
-    queueDeliveryCeremony(game, next, parcels, set);
-    queueYearReview(game, next, set);
+    // A spectator is not at the desk: no cards about the player's own firm.
+    if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
+    if (!next.spectator) queueYearReview(game, next, set);
     // Month-close feedback: the single-month Advance used to be silent, so
     // Yr/Skip felt like the only clock that answered. Stamp the new month,
     // cash movement, and the first thing waiting — short enough to read once.
@@ -920,8 +921,9 @@ export const useStore = create<AppState>((set, get) => ({
           return;
         }
         set({ game: r.s, prevForDigest: game });
-        queueDeliveryCeremony(game, r.s, parcels, set);
-        queueYearReview(game, r.s, set);
+        // A spectator is not at the desk: no cards about the player's own firm.
+        if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
+        if (!r.s.spectator) queueYearReview(game, r.s, set);
         toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`);
         void persist(r.s);
       } finally {
@@ -943,8 +945,9 @@ export const useStore = create<AppState>((set, get) => ({
           return;
         }
         set({ game: r.s, prevForDigest: game });
-        queueDeliveryCeremony(game, r.s, parcels, set);
-        queueYearReview(game, r.s, set);
+        // A spectator is not at the desk: no cards about the player's own firm.
+        if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
+        if (!r.s.spectator) queueYearReview(game, r.s, set);
         toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`);
         void persist(r.s);
       } finally {

@@ -241,7 +241,7 @@ export function TheStreet() {
                         <>
                           {/* BUY THE WHOLE FIRM. The entity desk — see
                               engine/takeprivate.ts. */}
-                          {!dead && <TakePrivateDesk firmId={r.id} />}
+                          {!dead && !r.aiControlled && <TakePrivateDesk firmId={r.id} />}
                           {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant
                               it is running against, a book that fills and
                               empties, a capital plan it can be short of the

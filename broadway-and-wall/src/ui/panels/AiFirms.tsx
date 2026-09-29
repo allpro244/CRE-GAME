@@ -95,7 +95,7 @@ export function AiFirmsSettings() {
       <div className="page-section" style={{ marginTop: 12 }}>{ai.profiles.some((p) => p.name === draft.name) ? "Edit firm" : "Add a firm"}</div>
       <div className="grid ai-form" style={{ gridTemplateColumns: "140px 1fr", gap: "6px 10px", alignItems: "center" }}>
         <label htmlFor="ai-name">Firm name</label>
-        <input id="ai-name" className="ask-input" value={draft.name} placeholder="JEV Capital" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        <input id="ai-name" className="ask-input" style={{ width: "100%", maxWidth: 520 }} value={draft.name} placeholder="JEV Capital" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <label htmlFor="ai-kind">Provider</label>
         <select id="ai-kind" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as ProviderKind })}>
           {KINDS.map((k) => <option key={k.k} value={k.k}>{k.label}</option>)}
@@ -104,7 +104,7 @@ export function AiFirmsSettings() {
         <span className="hint" style={{ margin: 0 }}>{KINDS.find((k) => k.k === draft.kind)?.hint}</span>
         {draft.kind !== "mock" && <>
           <label htmlFor="ai-url">{draft.kind === "webhook" ? "URL" : "Base URL"}</label>
-          <input id="ai-url" className="ask-input mono" value={draft.baseUrl ?? ""} placeholder={d.baseUrl} onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })} />
+          <input id="ai-url" className="ask-input mono" style={{ width: "100%", maxWidth: 520 }} value={draft.baseUrl ?? ""} placeholder={d.baseUrl} onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })} />
         </>}
         {draft.kind === "mock" && <>
           <label htmlFor="ai-style">Style</label>
@@ -114,12 +114,12 @@ export function AiFirmsSettings() {
         </>}
         {draft.kind !== "webhook" && draft.kind !== "mock" && <>
           <label htmlFor="ai-model">Model</label>
-          <input id="ai-model" className="ask-input mono" list={draft.kind === "anthropic" ? "ai-claude-models" : undefined} value={draft.model ?? ""} placeholder={d.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })} />
+          <input id="ai-model" className="ask-input mono" style={{ width: "100%", maxWidth: 520 }} list={draft.kind === "anthropic" ? "ai-claude-models" : undefined} value={draft.model ?? ""} placeholder={d.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })} />
           <datalist id="ai-claude-models">{ANTHROPIC_MODELS.map((m) => <option key={m} value={m} />)}</datalist>
         </>}
         {draft.kind !== "mock" && <>
           <label htmlFor="ai-key">API key</label>
-          <input id="ai-key" className="ask-input mono" type="password" autoComplete="off" value={key} placeholder={draft.kind === "webhook" ? "optional (sent as Bearer)" : "empty if the bridge holds it"} onChange={(e) => setKey(e.target.value)} />
+          <input id="ai-key" className="ask-input mono" style={{ width: "100%", maxWidth: 520 }} type="password" autoComplete="off" value={key} placeholder={draft.kind === "webhook" ? "optional (sent as Bearer)" : "empty if the bridge holds it"} onChange={(e) => setKey(e.target.value)} />
           <span />
           <label className="hint" style={{ margin: 0 }}>
             <input type="checkbox" checked={!!draft.remember} onChange={(e) => setDraft({ ...draft, remember: e.target.checked })} /> Remember the key on this device

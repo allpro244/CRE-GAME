@@ -323,10 +323,9 @@ export default function StartMenu() {
               </div>
             </>
           )}
+          <StartAiOptions />
         </div>
       </div>
-
-      <StartAiOptions />
 
       {/* THE CONFIRM CANNOT LEAVE THE SCREEN. It is a sibling of the scroller,
           not a child of it — the old menu put it at the bottom of a 973px
@@ -366,7 +365,7 @@ function StartAiOptions() {
   const ai = useAi();
   const n = ai.profiles.length;
   return (
-    <div className="start-ai" style={{ padding: "8px 24px", display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
+    <div className="start-ai" style={{ padding: "14px 0 8px", display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
       <label>
         <input type="checkbox" checked={ai.startWithAi} disabled={!n}
           onChange={(e) => ai.set({ startWithAi: e.target.checked, ...(e.target.checked ? {} : { startSpectator: false }) })} />
@@ -379,7 +378,7 @@ function StartAiOptions() {
       </label>
       <details style={{ flexBasis: "100%" }}>
         <summary style={{ cursor: "pointer" }}>Set up AI firms — plug in any API</summary>
-        <div style={{ maxWidth: 820, maxHeight: 360, overflow: "auto", background: "rgba(255,255,255,0.6)", padding: 10, borderRadius: 4 }}>
+        <div style={{ maxWidth: 860, background: "rgba(246,241,229,0.92)", color: "#2b251a", padding: 10, borderRadius: 4 }}>
           <AiFirmsSettings />
         </div>
       </details>

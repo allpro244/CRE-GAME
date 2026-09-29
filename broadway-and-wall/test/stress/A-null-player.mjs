@@ -6,6 +6,7 @@
 // the player moves it is a response function, not a simulation. A world that
 // cannot feel the player at all is a diorama. Both are measured here on the
 // same seeds: an empty chair, and a bot deploying capital as hard as it can.
+import { permittedUse } from "../permitted-use.mjs";
 import { assertFreshBundle } from "../fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -60,7 +61,8 @@ function greedy(g, parcels) {
   for (const b of Object.keys(g.holdings)) {
     const rec = E.resolveRec(parcels, g, b);
     if (rec && rec.class === "land" && !g.developments[b] && g.cash > 6_000_000) {
-      const d = E.startDevelopment(g, parcels, b, "office", 8);
+      const use = permittedUse(E, rec, g.econ, ["office"]);
+      const d = use ? E.startDevelopment(g, parcels, b, use, 8) : { err: "zoning" };
       if (!d.err) g = d.s;
     }
   }

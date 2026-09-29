@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, classIsShort, developerOptimism } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon } from "./proforma";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -43,6 +43,54 @@ export function zonePermits(
   }
   if (use === "industrial") return demand < 45;
   return true;
+}
+
+/**
+ * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
+ *
+ * `zonePermits` priced the dirt, drew the city's cranes and the rivals' and
+ * never once stood between the player and a shovel: the desk would plan and
+ * break ground on two storeys of shops on an R6 lot the tape priced as flats
+ * only, and measured, 4 of 10 affordable plans that cleared their hurdle were
+ * uses the zoning does not host. One quantity, two answers (CLAUDE.md, fake
+ * #3). This is the one rule, asked of a whole programme.
+ *
+ * A mixed programme is permitted when every use in it is — except shops at
+ * grade. Street retail under flats or offices is what `withStreetRetail`
+ * programmes on any lot (the pro forma does it on the "Always" setting too),
+ * i.e. the accessory ground-floor commercial a residential district's
+ * overlay allows, so retail up to that ground-floor share (a floor and a
+ * quarter, never more than the two-plate cap) does not need the district to
+ * host shops. Past it, the building is a shop building and it does.
+ *
+ * Returns null when the programme is legal here, or the reason it is not.
+ */
+export function zoneUseBar(
+  rec: { zoneDist?: string; demandScore?: number }, use: BuiltClass | "mixed",
+  econ?: Econ, mix?: UseMix, floors = 1,
+): string | null {
+  const zone = rec.zoneDist ?? "C";
+  const demand = rec.demandScore ?? 100;
+  const programme: UseMix = use === "mixed" ? (mix ?? {}) : { [use]: 1 };
+  const atGrade = Math.min(1, RETAIL_FLOORS_MAX / Math.max(1, floors), 1.25 / Math.max(1, floors));
+  for (const [k, share] of Object.entries(programme) as [BuiltClass, number][]) {
+    if (!(share > 0)) continue;
+    if (use === "mixed" && k === "retail" && share <= atGrade + 1e-6) continue;
+    if (zonePermits(zone, k, demand, econ)) continue;
+    const word = k === "multifamily" ? "flats" : k === "industrial" ? "sheds" : k === "retail" ? "shops" : "offices";
+    const z = zone[0];
+    const why = z === "R"
+      ? `a residential district hosts housing only`
+      : z === "M"
+        ? (k === "multifamily"
+          ? `a manufacturing district takes housing only once industry has left, and the city is short of industrial space`
+          : `a manufacturing district hosts industry, and housing only once industry has left`)
+        : k === "industrial"
+          ? `a commercial district permits light industrial only on low-rent corridors (demand under 45; this street is ${demand.toFixed(0)})`
+          : `the district does not host it`;
+    return `Zoned ${zone}: ${word} are not permitted here — ${why}.`;
+  }
+  return null;
 }
 
 /**
@@ -424,18 +472,23 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  * site coverage. The coverage is chosen so the scheme sits inside the envelope
  * the city will permit (`far`), which means the desk — planning against the
  * legal envelope — draws exactly the same building from the same two numbers.
- * Offices and flats at 70% of the lot; shops and sheds, which are flat, at up
- * to 85%. `developmentProForma` then applies the structure clamp the desk
+ * Each use at its own coverage limit (`MAX_COVERAGE`: flats 70%, offices 80%,
+ * shops and sheds 85%). `developmentProForma` then applies the structure clamp the desk
  * applies, and the scheme reports what it actually drew.
  */
 function residualFloorChoices(use: BuiltClass, far: number): { floors: number; coverage: number }[] {
   const cap = USE_FLOORS_MAX[use];
-  const envelopeFl = Math.max(1, Math.round(far / 0.7));
-  const maxFl = cap !== undefined ? Math.min(cap, envelopeFl) : envelopeFl;
-  // Shops and sheds: the one-storey box as well as the two-storey one — the
-  // single storey has no stair to pay for (see the note below).
+  // THE COVERAGE IS THE USE'S, AND THE DESK'S (MAX_COVERAGE, proforma.ts). The
+  // residual held offices and flats to 70% and shops and sheds to 85% while
+  // the desk let all four cover 90%, so the desk's land value ran 1.2-1.9x
+  // the market's on the same lot. One limit now, read by both.
+  const covMax = MAX_COVERAGE[use];
+  const envelopeFl = Math.max(1, Math.round(far / covMax));
+  // Shops and sheds: every storey up to the use's cap — the one-storey box has
+  // no stair to pay for (see the note below), and the two-storey one is drawn
+  // even where it cannot fill its plate, because the desk can draw it too.
   const floors = cap !== undefined
-    ? [...new Set([1, maxFl])]
+    ? Array.from({ length: cap }, (_, i) => i + 1)
     // A builder picks the height that maximises residual, not the zoning
     // maximum. Pricing every office/multifamily lot as a tower made
     // heightPremium sink those uses while the desk (capped at 14, coverage
@@ -452,9 +505,9 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
     // with a positive residual on lots the land market read as having no
     // builder at all (measured: 21 of 434 vacant 3-5k sf lots, 20 of 287
     // 5-8k, at coverage the residual also uses; tools/smalllot-lines.mjs).
-    : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, maxFl)).concat(maxFl))];
+    : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, envelopeFl)).concat(envelopeFl))];
   return floors.map((fl) => {
-    const usable = Math.min(far, fl * (cap !== undefined ? 0.85 : 0.7));
+    const usable = Math.min(far, fl * covMax);
     return { floors: fl, coverage: usable / fl };
   }).filter((c) => c.coverage > 0);
 }

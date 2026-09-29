@@ -11,7 +11,9 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 let g = E.newGame(71191, parcels, 500_000_000);
-const bbl = bbls.find((b) => parcels[b]?.class === "land" && parcels[b]?.lotArea > 4_000);
+// A lot whose zoning hosts sheds — the engine's own rule (zoneUseBar).
+const bbl = bbls.find((b) => parcels[b]?.class === "land" && parcels[b]?.lotArea > 4_000
+  && !E.zoneUseBar(parcels[b], "industrial"));
 if (!bbl) throw new Error("No BTS site.");
 const rec = parcels[bbl];
 const basis = Math.round(E.landValue(rec, g.econ));

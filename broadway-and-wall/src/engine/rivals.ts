@@ -33,10 +33,10 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
+import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityCoverage, cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -47,6 +47,7 @@ import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
+import { FUND_INVEST_M } from "./fund";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -324,7 +325,7 @@ export function claimJob(
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const shared = underwriting
     ? { plan: underwriting, clears: underwriting.hurdleRatio >= 1 && underwriting.ltcMax > 0 }
-    : underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+    : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
   if (!shared?.clears) return null;
   const plan = shared.plan;
   const cost = plan.costTotal;
@@ -1105,10 +1106,23 @@ export const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
 };
 
 /**
- * MINIMUM GOING-IN SPREAD OVER THE STREET COUPON (index + RATE_SPREAD), in
- * percentage points. Closers used to fight over every ask by appetite alone —
- * junk and prime at the same weight. Core/family need a real spread; vultures
- * and distress buyers will cross below the coupon for a cheap ticket.
+ * MINIMUM SPREAD OVER THE STREET COUPON (index + RATE_SPREAD), in percentage
+ * points. Closers used to fight over every ask by appetite alone — junk and
+ * prime at the same weight. Core/family need a real spread; vultures and
+ * distress buyers will cross below the coupon for a cheap ticket.
+ *
+ * THE SPREAD IS THE ONE THE FUND WAS RAISED ON: going-in yield plus the rent
+ * growth the market underwrites (`underwrittenGrowthPct`), over the coupon —
+ * the same number `firmEntryPitch` sells to the LPs. It used to be the
+ * going-in yield alone, and on today's cap-rate level that is positive in
+ * about 40% of months, so a family office needing +1.40 on it bought in
+ * well under one month in ten. Measured, 6 seeds x 100 years, no player:
+ * 94 of the 145 opening-roster firms that were wound up with an empty book
+ * had not bought a single building all century (median 111 months since
+ * their last purchase); they sold down on the hold clock and could not
+ * reinvest, so the street's commonest death was a committee refusing every
+ * building a pension fund would have bought. The hurdles themselves are the
+ * styles' preferences and did not move; what they are measured against did.
  */
 const YIELD_OVER_COUPON: Record<RivalStyle, number> = {
   family: 1.40, core: 1.10, reit: 0.95, foreign: 0.85, owneruser: 0.40,
@@ -1335,17 +1349,31 @@ const RAISE_M = 14;
 
 // WHAT A FULL-STRENGTH LEVERAGE STORY LOOKS LIKE IN THIS TOWN.
 //
-// The pitch is "buildings yield more than the money costs", and how good that
+// The pitch is "buildings return more than the money costs", and how good that
 // pitch is has to be expressed as a fraction of as-good-as-it-gets rather than
-// as raw percentage points. Measured over 3,600 months of three unplayed
-// centuries: the cap-rate spread over the coupon is positive in 59.4% of
-// months, and conditional on being positive it runs p50 +1.20, p90 +1.71, p99
-// +2.12, maximum +2.40. So 1.7 points is the ninetieth percentile of the good
-// years — the number above which a sponsor is not pitching harder, he is
-// pitching the same thing to people who already said yes. It is a shape
-// parameter and it is anchored on that distribution, not turned until a firm
-// count looked right.
-const SPREAD_FULL = 1.7;
+// as raw percentage points. It is anchored on the distribution of the spread
+// itself: the ninetieth percentile of the months in which it is positive, the
+// number above which a sponsor is not pitching harder, he is pitching the same
+// thing to people who already said yes. A shape parameter, stated as such.
+//
+// THE SPREAD IS TOTAL RETURN OVER THE COUPON, and the percentile had to be
+// re-read when it became so. It used to be the going-in cap over the coupon,
+// anchored at 1.7 on a measurement that said that spread was positive in
+// 59.4% of months (p50 +1.20). The cap block in market.ts has been re-levelled
+// since (it now capitalises against the index less expected inflation), and
+// nobody came back to this number. Re-measured, 6 seeds x 100 years, no
+// player, before this change: going-in cap over the coupon was positive in
+// 35.8% (PR #164) and 41.3% (PR #165) of months, median -0.48 and -0.33 — the
+// leverage term was ZERO most months and the street could not raise a fund in
+// the median year of the century. That is not what the business does: the
+// biggest raising years on record (2005-07) were raised at going-in yields at
+// or under the mortgage coupon, on the rent growth. A fund is sold on an IRR,
+// and an unlevered IRR is the going-in yield plus the growth underwritten
+// (`underwrittenGrowthPct`, the same growth the cap-rate target already
+// capitalises); it is positive leverage when that beats the coupon. The same
+// six centuries read that spread positive in 95.2% of months, p50 +1.98, and
+// p90 of the positive months +3.53 (+3.39 on #164). 3.5 is that percentile.
+const SPREAD_FULL = 3.5;
 
 // HOW MUCH PRODUCT ONE SHOP NEEDS A YEAR TO BE A SHOP.
 //
@@ -1394,8 +1422,9 @@ const DEPLOY_YR = 2;
  * The three terms below are therefore all fractions of one, they multiply, and
  * the clock is the clock:
  *
- *   LEVERAGE  — is the going-in yield above the coupon, and by how much of as
- *               good as it gets. Against the coupon rather than the mortgage
+ *   LEVERAGE  — is the total return (going-in yield plus underwritten rent
+ *               growth) above the coupon, and by how much of as good as it
+ *               gets. Against the coupon rather than the mortgage
  *               constant because a first fund buys interest-only; see debt.ts.
  *   PRODUCT   — is there anything to deploy into, against what a fund needs to
  *               deploy. This is the term that closes behind the fund that
@@ -1423,6 +1452,22 @@ const DEPLOY_YR = 2;
  * 27.5 · 27.0 · 26.0 and 49.3 firms have ever existed. So this town carries
  * about eighteen shops, the number is an OUTPUT of how many trades a year there
  * are to go round, and it is not a floor, a cap or a target.
+ *
+ * THAT MEASUREMENT DID NOT SURVIVE THE CAP-RATE RE-LEVEL, and nothing noticed
+ * until `pnpm firms` failed on PR #165. Re-run on #164 and #165 (6 seeds x 100
+ * years, no player): 29.7 · 27.0 · 21.3 · 12.5 · 10.0 · 8.7 · 7.8 · 5.8 · 6.0 ·
+ * 5.0 and 29.7 · 27.0 · 21.0 · 13.0 · 11.2 · 9.5 · 6.5 · 5.0 · 3.8 · 3.3. The
+ * leverage term read ZERO in 59% of months, because the going-in cap had
+ * fallen under the coupon in most of them (see SPREAD_FULL), and three
+ * quarters of all exits were empty-book wind-ups: entrants that handed their
+ * first close back before buying anything, and incumbents that sold down on
+ * the hold clock and whose committees then refused every building on the
+ * same going-in test (see YIELD_OVER_COUPON). With the pitch, the committee
+ * and the investment period each reading what the business reads, same six
+ * seeds: 29.7 · 28.0 · 25.2 · 18.2 · 14.5 · 13.8 · 12.8 · 10.3 · 10.3 · 12.0,
+ * no seed under 8 after year 30. Entry still answers to product: this is the
+ * street thinning from an opening roster the town's deal flow never carried
+ * to the dozen or so it does, not a floor.
  */
 /**
  * Entry pitch — leverage × product × thin, as a monthly hazard against RAISE_M.
@@ -1433,7 +1478,9 @@ export function firmEntryPitch(s: GameState): {
 } {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
-  const spread = cap - (s.econ.indexRate + RATE_SPREAD);
+  // Total return — going-in yield plus underwritten growth — over the coupon.
+  // See SPREAD_FULL for why the going-in yield alone was the wrong pitch.
+  const spread = cap + underwrittenGrowthPct(s.econ) - (s.econ.indexRate + RATE_SPREAD);
   const leverage = spread <= 0 ? 0 : Math.min(1, spread / SPREAD_FULL);
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
@@ -1770,7 +1817,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
     if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
     const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe, datumMemo);
-    const targetSf = rec.lotArea * 0.62 * infillProbe;
+    const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;
     const densify = targetSf / rec.bldgArea;
     const score = densify * (1 + 3 * st) * rec.demandScore + rng(s, "rivals") * 10;
@@ -1792,7 +1839,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, (redev ? 0.55 : 0.4) + rng(s, "rivals") * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  const plate = cityCoverage(use);
+  let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
   // A named developer reads the same comps the anonymous city does: one
   // increment above the block's cornice datum, not the zoning envelope.
   const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead);
@@ -1802,12 +1850,12 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const wantedFl = floors;   // what the envelope asked for, before the cornice
   if (floors > infill) {
     floors = infill;
-    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   const cap = MAX_FLOORS_BY_USE[use];
   if (cap !== undefined && floors > cap) {
     floors = cap;
-    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   if (redev && sf < rec.bldgArea * 1.12) return;
   const opp = redev
@@ -1829,16 +1877,16 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   {
     const ceilFl = cap !== undefined ? Math.min(wantedFl, cap) : wantedFl;
     if (ceilFl > floors) {
-      const tallSf = Math.max(3000, Math.round((rec.lotArea * 0.62 * ceilFl) / 100) * 100);
+      const tallSf = Math.max(3000, Math.round((rec.lotArea * plate * ceilFl) / 100) * 100);
       const premium = entitlementPremium(ceilFl, infill, tallSf, ownBasis, s.econ.costIdx ?? 1);
       const tall = premium > 0
-        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, 0.62, ownBasis + premium)
+        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, plate, ownBasis + premium)
         : null;
       if (tall?.clears) { floors = ceilFl; sf = tallSf; entitlePaid = premium; }
     }
   }
   const basisOverride = entitlePaid > 0 ? ownBasis + entitlePaid : opp;
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, basisOverride);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly
@@ -2863,7 +2911,20 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // firm went on distributing 35% of its surplus every month it was in
     // forbearance, which is not something a workout desk has ever allowed.
     const swept = sweptNow(r);
-    if (r.cash > reserve && !r.stressMs && !building && !swept) {
+    // A FUND IN ITS INVESTMENT PERIOD RECYCLES; IT DOES NOT HAND THE MONEY
+    // BACK. Same LPA the player's own vehicle runs on (fund.ts,
+    // FUND_INVEST_M and scheduledDistribution): capital called for deals
+    // stays in the vehicle until the investment period closes. This used to
+    // send 35% of a new fund's called capital above the $2M floor back to its
+    // LPs every month from the month it closed — the first close was gone
+    // before the fund had seen a listing, and because a distribution counted
+    // as "deployed", the empty-book clock below wound it up two years later.
+    // Measured, 6 seeds x 100 years: 72 of the 106 entrants wound up as husks
+    // had never held a deed, and 105 of the 106 had "distributed". Only
+    // vehicles raised on this street carry `uncalled`; the opening roster are
+    // established operators whose current fund is already mid-life.
+    const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
+    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
@@ -3394,7 +3455,10 @@ export function rivalBuys(
   const goingInNoi = inPlace(rec, s, rec.bbl, price).noi;
   const goingInYld = price > 0 ? goingInNoi / price : 0;
   const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
-  const spreadPp = (goingInYld - coupon) * 100;
+  // The committee reads the return the fund was raised on — going-in yield
+  // plus underwritten growth, over the coupon — not the going-in yield alone.
+  // See YIELD_OVER_COUPON.
+  const spreadPp = (goingInYld - coupon) * 100 + underwrittenGrowthPct(s.econ);
   const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
   let best = candidates[0], bestW = -Infinity;
   if (prefer) bestW = 1;

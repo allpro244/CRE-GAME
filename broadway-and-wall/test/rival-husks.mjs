@@ -89,7 +89,16 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
       if (E.rivalEquity(E.markRival(g, parcels, r), r) < 0 && !(r.stressMs > 0)) negEmpty++;
       // Two years to redeploy, plus the arrears calendar for one that cannot
       // pay, plus a year for a new fund that has not yet called its capital.
-      if (g.month - emptySince[r.id] > 24 + 14 + 12) stuck++;
+      //
+      // A vehicle raised on the street that has never held a deed is a blind
+      // pool inside its investment period: it keeps its called capital for
+      // FUND_INVEST_M months (the player's LPA, fund.ts) and only then starts
+      // returning it, which is when the two-year clock starts.
+      const blindPool = r.uncalled !== undefined && !(r.basis > 0);
+      const window = blindPool
+        ? Math.max(24 + 14 + 12, (r.bornM ?? 0) + E.FUND_INVEST_M + 24 + 14 - emptySince[r.id])
+        : 24 + 14 + 12;
+      if (g.month - emptySince[r.id] > window) stuck++;
     }
     if (g.month % 12 === 11) meds.push(E.streetStanding(g, parcels).medianRival);
   }

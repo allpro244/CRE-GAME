@@ -2,6 +2,7 @@
 // strategies chosen to stress different parts of the engine. Reports the FIRST
 // month each distinct violation appears, because that is the month with the
 // bug in it.
+import { permittedUse } from "./permitted-use.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -185,10 +186,13 @@ function run(botName, seed) {
       for (const bbl of Object.keys(g.holdings)) {
         const rec = E.resolveRec(parcels, g, bbl);
         if (!rec || rec.class !== "land" || g.developments[bbl]) continue;
-        for (let fl = Math.min(E.maxFloorsFor(rec, 0.6), 20); fl >= 2; fl--) {
-          const plan = E.planDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, m % 2 ? "gmp" : "costplus");
+        // A use the lot's zoning hosts, asked by the engine's rule.
+        const use = permittedUse(E, rec, g.econ, [m % 3 === 0 ? "multifamily" : "office"]);
+        if (!use) break;
+        for (let fl = Math.min(E.maxFloorsFor(rec, 0.6, use), 20); fl >= 2; fl--) {
+          const plan = E.planDevelopment(g, parcels, bbl, use, fl, 0.6, m % 2 ? "gmp" : "costplus");
           if (!plan || plan.commitment === 0 || plan.equityAtClose > g.cash * 0.5) continue;
-          const r = E.startDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, m % 2 ? "gmp" : "costplus");
+          const r = E.startDevelopment(g, parcels, bbl, use, fl, 0.6, m % 2 ? "gmp" : "costplus");
           if (!r.err) { g = r.s; break; }
         }
         break;

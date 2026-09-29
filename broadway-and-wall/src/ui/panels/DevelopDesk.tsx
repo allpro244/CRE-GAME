@@ -16,9 +16,9 @@ const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
   ? ` Finished, it would still be worth ${((h * (1 + DEV_MARGIN) - 1) * 100).toFixed(0)}% more than it cost — thinner than the ${(DEV_MARGIN * 100).toFixed(0)}% a merchant builder needs.`
   : " Finished, it would be worth less than it cost.";
 import {
-  adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes,
+  adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
-  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE,
+  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -48,6 +48,34 @@ export function capStack(p: Stack, retailMaxPct: number): Stack {
     ? Math.round((p.office * (100 - retailMaxPct)) / rest)
     : Math.round((100 - retailMaxPct) / 2);
   return { retail: retailMaxPct, office, multifamily: 100 - retailMaxPct - office };
+}
+
+const DESK_USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
+
+/**
+ * WHAT THE ZONING HOSTS, asked with the rule the land was priced on
+ * (`zoneUseBar` → `zonePermits`). The desk offers these and only these; the
+ * rest are named with the reason. A mixed stack is judged as drawn.
+ */
+function deskZoning(rec: Parameters<typeof zoneUseBar>[0], econ: Parameters<typeof zoneUseBar>[2], mixed: Parameters<typeof devMix>[1], floors: number) {
+  const bar = (u: DevUse) => zoneUseBar(rec, u, econ, u === "mixed" ? devMix("mixed", mixed) : undefined, floors);
+  const legal = DESK_USES.filter((u) => !bar(u));
+  const barred = DESK_USES.filter((u) => bar(u)).map((u) => ({ use: u, why: bar(u)! }));
+  return { bar, legal, barred };
+}
+
+/** One line for the desk: what the lot hosts, what it does not, and whether any hearing changes that. */
+function ZoningNote({ zone, legal, barred }: { zone: string; legal: DevUse[]; barred: { use: DevUse; why: string }[] }) {
+  if (!barred.length) return null;
+  const reason = barred.find((b) => b.use !== "mixed")?.why ?? barred[0].why;
+  return (
+    <div className="hint">
+      Zoned {zone}: permits {legal.length ? legal.map((u) => devUseLabel(u).toLowerCase()).join(", ") : "nothing new"}.
+      {" "}{reason.replace(/^Zoned \S+: /, "")}
+      {" "}The planning board hears bulk variances (more FAR, on the Zoning section of this lot) — not a change of use;
+      the city maps use district by district.
+    </div>
+  );
 }
 
 /**
@@ -116,7 +144,8 @@ export function ReuseSection({ bbl }: { bbl: string }) {
   const mixed = target === "mixed"
     ? { multifamily: 0.70, office: 0.20, retail: 0.10 }
     : undefined;
-  const plan = eligibility.ok ? planAdaptiveReuse(game, parcels, bbl, target, mixed) : null;
+  const reuseBar = eligibility.ok ? reuseZoneBar(game, parcels, bbl, target, mixed) : null;
+  const plan = eligibility.ok && !reuseBar ? planAdaptiveReuse(game, parcels, bbl, target, mixed) : null;
   const equity = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);
   return (
     <div className="deal">
@@ -133,6 +162,8 @@ export function ReuseSection({ bbl }: { bbl: string }) {
       </div>
       {!eligibility.ok ? (
         <div className="hint alarm">{eligibility.why}</div>
+      ) : reuseBar ? (
+        <div className="hint alarm">{reuseBar} A conversion is a change of use, and the new use has to be one the district hosts.</div>
       ) : plan ? (
         <>
           <div className="grid">
@@ -173,11 +204,14 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // called PENCILS opened here reading "does not pencil". Same scheme, first.
   const [seedScheme] = useState(() => (!saved && rec?.class === "land" ? landRead(rec, game.econ).scheme : null));
   const [tab, setTabRaw] = useState<BuildTab>(saved?.tab ?? "programme");
-  const [use, setUseRaw] = useState<DevUse>(saved?.use ?? seedScheme?.use ?? "office");
+  // ...AND ON A USE THE ZONING HOSTS. Eight floors of office on an R6 lot is
+  // a building the tape says cannot exist here; open on the first legal one.
+  const [use, setUseRaw] = useState<DevUse>(() => saved?.use ?? seedScheme?.use
+    ?? (rec ? deskZoning(rec, game.econ, undefined, 1).legal[0] : undefined) ?? "office");
   // ...AND ON ITS FOOTPRINT. Floors without the coverage they were priced at
   // is a different building: the residual's scheme is (use, floors, coverage),
   // and only all three together reproduce the pro forma the tape solved.
-  const [cov, setCovRaw] = useState(saved?.cov ?? seedScheme?.coverage ?? 0.6);
+  const [covDial, setCovRaw] = useState(saved?.cov ?? seedScheme?.coverage ?? 0.6);
   const [floors, setFloorsRaw] = useState(saved?.floors ?? (seedScheme && seedScheme.floors > 0 ? seedScheme.floors : 8));
   const [contract, setContractRaw] = useState<Contract>(saved?.contract ?? "gmp");
   const [ltcWant, setLtcWantRaw] = useState(saved?.ltcWant ?? 1);   // share of the lender's max you take
@@ -198,8 +232,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail });
-  }, [bbl, tab, use, cov, floors, contract, ltcWant, bank, spec, split, groundRetail]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail });
+  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -214,6 +248,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const setSpec = touch(setSpecRaw);
   const setSplit = touch(setSplitRaw);
   const setGroundRetail = touch(setGroundRetailRaw);
+  // THE FOOTPRINT IS THE USE'S TO TAKE (MAX_COVERAGE) — the limit the land
+  // residual prices the dirt at. A held 85% dial on a switch to flats reads
+  // as the 70% the flats may cover, and the slider ends there.
+  const covCap = maxCoverageFor(use, use === "mixed"
+    ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 } : undefined);
+  const cov = Math.min(covDial, covCap);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
@@ -243,7 +283,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
   const canFund = equityRequired <= spendable(game, parcels).total;
   const closeCheque = plan ? plan.equityAtClose + plan.pointsCost : 0;
-  const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
+  const zoning = deskZoning(rec, game.econ, customMix, fl);
+  const USES = zoning.legal;
+  const useBar = zoning.bar(use);
 
   return (
     <div className="deal">
@@ -254,6 +296,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       <div className="hint">
         {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · zoned {rec.zoneDist}.
       </div>
+      <ZoningNote zone={rec.zoneDist} legal={zoning.legal} barred={zoning.barred} />
+      {useBar && <div className="hint alarm">{useBar} Pick a use the district hosts.</div>}
 
       {/* THE ANSWER FIRST. Yield on cost against the hurdle is the number a
           developer reads before any dial, and it sat in a row that looked
@@ -353,9 +397,16 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       {tab === "programme" && (
         <>
           <div className="btn-row">
-            {USES.map((u) => (
-              <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
-            ))}
+            {DESK_USES.map((u) => {
+              const why = zoning.bar(u);
+              // Offered only where permitted. A mixed stack stays clickable
+              // while it is the one on the dials, so its sliders can make it legal.
+              return (
+                <button key={u} className={"btn" + (use === u ? " btn-on" : "")}
+                  disabled={!!why && use !== u} title={why ?? undefined}
+                  onClick={() => setUse(u)}>{devUseLabel(u)}</button>
+              );
+            })}
           </div>
           {(use === "office" || use === "multifamily") && fl >= 2 && (
             <div className="page-section" style={{ marginTop: 8 }}>
@@ -464,11 +515,11 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             label="Footprint"
             value={cov}
             min={0.08}
-            max={0.9}
+            max={covCap}
             step={0.01}
             onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v, use))); }}
             format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
-            marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
+            marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: covCap, label: `max ${Math.round(covCap * 100)}%` }]}
             hint={(() => {
               // THE SLIDER USED TO PROMISE THE OPPOSITE OF WHAT IT DOES HERE.
               //
@@ -482,14 +533,16 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               // Rather than assert either story, ask the same function the
               // planner asks, at a wider and a narrower dial, and report what
               // it says about THIS lot.
-              const wider = maxFloorsFor(rec, Math.min(0.9, cov + 0.15), use);
+              const wider = maxFloorsFor(rec, Math.min(covCap, cov + 0.15), use);
               const slimmer = maxFloorsFor(rec, Math.max(0.08, cov - 0.15), use);
+              const capNote = ` ${devUseLabel(use)} may cover ${Math.round(covCap * 100)}% of the lot at most — ${
+                use === "multifamily" || covCap <= 0.7 ? "flats keep a rear yard for light and air" : use === "office" ? "above the ground floor a commercial building keeps a rear yard" : "the ground floor can run to the line; loading and the upper storey take the rest"}.`;
               const dir = wider > maxFl
-                ? `Widening to ${Math.round(Math.min(0.9, cov + 0.15) * 100)}% carries ${wider} floors — the plate, not the envelope, is what is holding the height down.`
+                ? `Widening to ${Math.round(Math.min(covCap, cov + 0.15) * 100)}% carries ${wider} floors — the plate, not the envelope, is what is holding the height down.`
                 : slimmer > maxFl
                   ? `Narrowing to ${Math.round(Math.max(0.08, cov - 0.15) * 100)}% carries ${slimmer} floors on the same envelope.`
                   : `${maxFl} floors either way — you are between the two ceilings.`;
-              return `${dir} On a big site you can put up something small and keep the rest of the land.`;
+              return `${dir} On a big site you can put up something small and keep the rest of the land.${capNote}`;
             })()}
           />
           {/* WHAT THE SITE YIELDS, AND WHAT IT IMPLIES — see plateVerdict. The
@@ -608,7 +661,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               { label: "Standard", cov: 0.6, spec: 0.5 },
               { label: "Tower", cov: 0.32, spec: 0.55 },
               { label: "Signature", cov: 0.48, spec: 0.88 },
-            ] as const).map((p) => (
+            ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
               <button
                 key={p.label}
                 type="button"
@@ -795,7 +848,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               </div>
             </>
           ) : (
-            <div className="hint">Too small to build — add floors or cover more of the lot on Programme.</div>
+            <div className="hint">{useBar ?? "Too small to build — add floors or cover more of the lot on Programme."}</div>
           )}
         </>
       )}
@@ -819,8 +872,10 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const saved = game.holdings[bbl]?.devDraft;
-  const use: DevUse = saved?.use ?? "office";
-  const cov = saved?.cov ?? 0.6;
+  const use: DevUse = saved?.use ?? deskZoning(rec, game.econ, undefined, 1).legal[0] ?? "office";
+  const covCap = maxCoverageFor(use, use === "mixed" && saved?.split
+    ? { retail: saved.split.retail / 100, office: saved.split.office / 100, multifamily: saved.split.multifamily / 100 } : undefined);
+  const cov = Math.min(saved?.cov ?? 0.6, covCap);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(saved?.floors ?? 8, maxFl);
   const contract: Contract = saved?.contract ?? "gmp";
@@ -854,7 +909,8 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
             : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost. The desk has the height, footprint and programme to move it.${shortNote(plan.hurdleRatio)}`}
         />
       ) : (
-        <div className="hint">No scheme prices on this lot at these dials — {sf(rec.lotArea)} of land, envelope {farMaxFor(rec).toFixed(1)} FAR.</div>
+        <div className="hint">{zoneUseBar(rec, use, game.econ, use === "mixed" ? devMix("mixed", customMix) : undefined, fl)
+          ?? `No scheme prices on this lot at these dials — ${sf(rec.lotArea)} of land, envelope ${farMaxFor(rec).toFixed(1)} FAR.`}</div>
       )}
       <div className="btn-row">
         <button className="btn btn-sm" onClick={open}>Open the Build desk →</button>

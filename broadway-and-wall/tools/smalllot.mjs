@@ -14,7 +14,7 @@
 //   DUMP=1 ...                               per-lot lines
 //
 // Nothing here is tuned. It reports.
-import * as E from "../test/.engine.mjs";
+const E = await import(process.env.ENGINE ?? "../test/.engine.mjs");
 import { makeCity } from "../src/citygen/index.mjs";
 
 const ALL_SEEDS = [550991, 12007, 73303, 4242, 91117, 20603, 31337];

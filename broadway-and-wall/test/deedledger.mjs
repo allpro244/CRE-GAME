@@ -31,6 +31,7 @@
 //
 // A test that cannot fail is itself a fake: delete one `bbl` argument (say
 // the signing cost in leasing.ts `signLoi`) and question 1 fails naming it.
+import { permittedUse } from "./permitted-use.mjs";
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -162,7 +163,8 @@ for (const seed of SEEDS) {
         return rec && rec.class === "land" && !g.developments[b] && !g.holdings[b].sale;
       });
       if (dirt) {
-        const d = E.startDevelopment(g, parcels, dirt, "office", 4);
+        const use = permittedUse(E, E.resolveRec(parcels, g, dirt), g.econ, ["office"]);
+        const d = use ? E.startDevelopment(g, parcels, dirt, use, 4) : { err: "zoning" };
         if (!d.err) { g = d.s; built = true; }
       }
     }

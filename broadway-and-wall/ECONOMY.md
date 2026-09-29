@@ -1897,29 +1897,98 @@ before → after are office 49.4 → 51.1, flats 38.9 → 40.3, shops
 31.1 → 30.1 and sheds 14.6 → 14.4, against a cross-seed range of
 24-78 for office. There is no level shift. `pnpm gate` passes.
 
-## Found and not fixed: the desk is looser than the land market
+## The desk was looser than the land market — both fixed
 
-Both of these make small lots look *better* to the player than the market
-prices them. Neither explains the shortfall. Both are fake #3.
+Both made small lots look *better* to the player than the market priced
+them, and both were fake #3. Neither explained the small-lot shortfall, and
+fixing them makes the desk slightly less generous, not more.
 
-- **The desk ignores zoning use.** `zonePermits` (R = flats; M = sheds;
-  sheds on C only below demand 45) governs the residual, the city and the
-  rivals. `startDevelopment` never asks. The desk used to say "anything may be
-  built here"; it now shows the lot's zoning and still builds anything. In the core-fix run, 4 of the 10 affordable plans that
-  cleared ≥1.0 were uses the zoning does not host (e.g. two storeys of shops
-  at 1.23 on an R6 lot the tape prices as flats only). Fixing this means
-  every harness bot that starts "office" on arbitrary dirt must pick a
-  permitted use, including `conserve` and `invariants`, which are gates.
-- **The desk lets flats and offices cover 90% of the lot. The residual
-  allows 70%.** With the desk capped at the residual's coverage, the
-  desk's best residual equals the engine's exactly (median ratio 1.00).
-  With 0.8-0.9 allowed, it runs 1.2-1.9× the engine's. That is why a lot
-  bought at the residual plans at 1.02-1.07, not 1.00. For flats the
-  residual is the realistic side: light and air, and rear yards hold
-  residential coverage to 60-80% in most codes. For offices in commercial
-  districts, full coverage is common and the residual is the strict side.
-  The fix is a per-use coverage limit shared by both, and it moves land
-  prices city-wide.
+**Zoning use.** `zonePermits` (R = flats; M = sheds, flats only once
+industry has left and never while sheds are short; sheds on C only below
+demand 45) governed the residual, the city and the rivals.
+`startDevelopment` never asked it. In the core-fix run, 4 of the 10
+affordable plans that cleared ≥1.0 were uses the zoning does not host (e.g.
+two storeys of shops at 1.23 on an R6 lot the tape prices as flats only).
+
+- `zoneUseBar` (value.ts) is the same rule asked of a whole programme, with
+  the reason in words. A mixed stack needs every use permitted except shops
+  at grade, up to the street-retail share the pro forma programmes on any
+  lot (the accessory ground floor a residential overlay allows).
+- `planDevelopment` returns no plan for a barred use. `startDevelopment`,
+  `proposeBuildToSuit` and `startAdaptiveReuse` refuse with the reason. A
+  takeover of a half-built job is vested and keeps its use.
+- The desk offers only the permitted uses, names the others with the
+  reason, and says that the board's variance (the Zoning section) buys
+  envelope, not use. No use variance exists in the engine; the city maps
+  use district by district (`zoneUse`, fringe C to M when sheds are short).
+- **The rivals had the same fault.** `useForZone` weighted flats on M by how
+  much industry had left, even while sheds were short, so a rival drew a
+  use `zonePermits` refuses (2 starts in 3 seeds × 25 years). It now asks
+  `zonePermits`. The pro forma refused those starts a line after the rolls
+  were spent, so the rng path is unchanged and BASELINE moved 0 of 39.
+- The harness bots pick a permitted use through the engine's rule
+  (`test/permitted-use.mjs`), including `conserve` and `invariants`. The
+  rule was not loosened for them. `conserve`'s crane had been building
+  illegal uses on 4 of its 7 seeds (sheds on R4 lots, flats on M while
+  sheds were short). All 7 now break ground on legal dirt, and every ledger
+  category still moves. The bot's lifetimes re-roll: 2,699 → 2,434 months
+  reconciled after both fixes, which is still above the 2,242 floor
+  recorded when the crane was added.
+
+**Site coverage: one limit per use, `MAX_COVERAGE` (proforma.ts).** The
+desk let every use cover 90% of the lot. The residual held offices and
+flats to 70% and shops and sheds to 85%. The plate is one footprint carried
+the full height, so each limit is the share of the lot a typical building
+of that use covers:
+
+| use | limit | source |
+|---|---|---|
+| flats | 0.70 | NYC Quality Housing interior-lot coverage is 60-70% (R6 60, R7 65, R8-R10 70). Light-and-air and rear-yard rules hold most codes to 60-80%. |
+| offices | 0.80 | Commercial districts have no coverage cap on a commercial building, but above the first storey they require a 20 ft rear yard (ZR 33-26), which is 80% of a 100 ft deep lot. A tower sets back further (40-50%, ZR 33-45), and the player can draw that. |
+| shops, sheds | 0.85 | These are one or two storeys. The ground floor may run to the lot line and the upper storey takes the rear yard. Sheds give up yard to loading berths. This is a judgement between the two, and it is the residual's long-standing figure. |
+
+The only part of the residual that changed is offices, from 70% to 80%.
+Flats come down to the residual's figure on the desk. A mixed programme
+takes the strictest use in it (flats over shops keep the flats' rear yard).
+A standing shell (conversion, takeover) keeps its footprint. Shops and
+sheds now rung at every storey up to their cap: 1 and 2. The old
+`round(far / 0.7)` dropped the two-storey box on low-FAR dirt the desk
+could draw.
+
+Measured:
+
+- **Desk against market** (`tools/smalllot-lines.mjs`, 2 seeds, year 10,
+  vacant lots with a positive builder bid, zoning-legal sweep). The desk's
+  best residual over the engine's was median 1.30 (p10 1.07, p90 1.90).
+  It is now 1.00 (p10 0.82, p90 1.00). Five lots in 276 remain above 1.1×.
+  All are 17-18 storey flats, where the desk plans against the legal
+  envelope and the residual against the one the city permits
+  (`infillShare`). That split is deliberate and documented at the
+  residual.
+- **A lot bought at the residual** (`tools/smalllot.mjs`, 3 seeds × 12
+  years, H@resid). It planned at 1.022-1.037 on lots under 8k sf. It now
+  plans at 0.995-1.000. `test/residual-recon.mjs` reads 1.000 at p05, p50
+  and p95.
+- **City-wide land, same state, two engines** (`tools/coverage-move.mjs`).
+  At months 60 and 180 (3 seeds, 8,112 lot-reads), 22 lots moved (0.3%),
+  all where offices set the price. At months 192, 252 and 300 (4 seeds,
+  16,224 reads), 1,127 moved (6.9%). The late-run prime ground is where
+  offices bid. Office-priced lots rose a median of 27.5% (p90 47.6%). The
+  residual is leveraged: a plate 14% larger at the same cost per foot adds
+  more than 14% to what is left for the dirt. Of the flats-priced lots, 285
+  flipped to an office price-setter. The city-wide median did not move
+  (141.9 → 141.8), and p90 rose 7% (1,131 → 1,210).
+- **BASELINE** (`pnpm baseline:check`, 6 seeds). The rng path re-rolls (16
+  of 39 moved; land.p90 +32%, affordableLotShare +12%, demolished +17%,
+  employed +5.6%). Over 14 seeds × 25 years (ten-year means), before →
+  after, with the standard error of the difference: land.p90 1,062 → 1,396
+  (+31% ± 16%), land.med 145.4 → 145.7 (0.1% ± 11%),
+  dev.affordableLotShare 0.151 → 0.165 (+9% ± 14%), rentIdx office 54.0
+  → 55.9 (+3% ± 13%), flats 40.8 → 39.8 (−2% ± 7%), employed −3.5% ± 3.9%,
+  demolished +10% ± 14%. Every metric is within about one standard error
+  except land.p90, which is the office-land move above (same-state +7% at
+  p90, amplified by the path). No rail binds more often. `BASELINE.json` is
+  regenerated.
 
 ## What a small firm realistically does instead (suggested, not built)
 
@@ -1944,3 +2013,212 @@ already in the engine:
   modelled correctly (no lift, one-storey box with no core). They pencil
   where rents support them, which on this map is the better C and R streets,
   not the fringe.
+
+# THE STREET THINNED TO TWO — entry and exit read the wrong return (Sep 2026)
+
+`test/firms.mjs` failed on PR #165: seed 7777 ran 26 · 22 · 18 · 11 · 11 ·
+10 · 8 · 8 · 4 · 2 firms by decade and 4242 ended at 3. The base (#164)
+passed by one firm. The test floor was not the problem. The model was.
+
+**Both builds collapse.** 6 seeds (7777, 4242, 11, 22, 33, 44) × 100 years,
+no player, `tools/firm-flows.mjs`. #164 ran
+29.7 · 27.0 · 21.3 · 12.5 · 10.0 · 8.7 · 7.8 · 5.8 · 6.0 · 5.0 and #165 ran
+29.7 · 27.0 · 21.0 · 13.0 · 11.2 · 9.5 · 6.5 · 5.0 · 3.8 · 3.3. Exits were
+37.8 and 42.0 per century. 72-75% of them were empty-book wind-ups (the husk
+rule). The rest were arrears, mostly pe and opportunistic. Takeovers and
+succession were zero in an unplayed run. Entry was 1-4 firms a decade.
+
+**Why entry stalled.** `firmEntryPitch` multiplies leverage × product ×
+thin. Product sat at 0.8-1.0 all century (a thin street has plenty to buy).
+Leverage was the going-in cap over the coupon, as a share of `SPREAD_FULL`
+= 1.7. That was calibrated when the spread was positive in 59.4% of months
+(p50 +1.20). The cap block has since been re-levelled (it capitalises
+against the index less expected inflation). Re-measured, the spread was
+positive in 35.8% (#164) and 41.3% (#165) of months, median −0.48 and −0.33.
+So the leverage term was zero in about 59% of months. In one #165 decade it
+was zero in 98% of months, and in seed 7777's last decade in 100%. Nothing
+could raise a fund in the median year.
+
+**Why exits ran ahead.** Two faults, both measured on the husks:
+
+- *Entrants gave their capital back before they bought anything.* A new fund
+  distributed 35% a month of called capital above the $2M reserve. A
+  distribution counts as "deployed", so the empty-book clock started at
+  once. 72 of the 106 entrant husks had never held a deed, and 105 had
+  "distributed".
+- *Incumbents sold down and their committees could not rebuy.* `rivalBuys`'
+  hurdle (`YIELD_OVER_COUPON`, family +1.40, core +1.10) was read against
+  the same going-in-over-coupon spread. With that spread at p50 −0.4, a
+  family office cleared its own hurdle in well under one month in ten. 94
+  of the 145 opening-roster husks had not bought one building all century
+  (median 111 months since their last purchase). They sold on the hold
+  clock and were wound up with the proceeds.
+
+**The fix: three places now read the return the business reads.**
+
+1. **The pitch is total return over the coupon.** That is going-in yield plus
+   `underwrittenGrowthPct` (the 2% contractual bump, or expected inflation
+   when it runs higher). It is the same growth the cap-rate target already
+   capitalises (market.ts), so there is one answer to what a buyer expects
+   rent to do. A fund is sold on an IRR, and positive leverage on an IRR
+   means the unlevered return beats the cost of debt. 2005-07, the biggest
+   raising years on record, were raised at going-in yields at or under the
+   mortgage coupon. `SPREAD_FULL` was re-anchored by its own stated method,
+   the p90 of positive months: +3.53 on #165 and +3.39 on #164, so 3.5. The
+   spread is now positive in about 95% of months, p50 +1.9. The raise still
+   refuses when there is nothing to buy (product) and when there is no
+   spread.
+2. **The committee reads the same number.** A fund raised on "total return
+   beats the coupon" whose committee refused anything without a going-in
+   spread was fake #3. The hurdles did not move. Only the spread they are
+   read against changed.
+3. **A new fund recycles through its investment period.** It follows
+   `FUND_INVEST_M`, the LPA the player's own vehicle runs on
+   (`scheduledDistribution`). No distributions happen for 60 months after the
+   close. A fund that has not deployed by then starts distributing, and the
+   husk rule winds it up. That is what happens to a blind pool that cannot
+   find deals.
+
+**Result**, same six seeds: 29.7 · 28.0 · 25.2 · 18.2 · 14.5 · 13.8 · 12.8 ·
+10.3 · 10.3 · 12.0. No seed ends under 7. `firms.mjs` reads 7777 as
+26 · 24 · 21 · 19 · 15 · 14 · 12 · 9 · 8 · 13 and 4242 as 30 · 27 · 27 · 20
+· 14 · 14 · 14 · 13 · 12 · 14. Rival purchases per century rose from 1,086
+to 2,045. Arrears exits rose (pe from 26 to 73 across the 6 centuries). More
+firms now buy at thin going-in yields with leverage, and more of them get
+caught, which is the realistic direction. Named-firm entry is still an
+output of deal flow. The street thins from an opening roster the town never
+carried to about a dozen firms, and nothing floors it.
+
+**Why #165 made it worse, and whether that is realistic.** The zoning and
+coverage rule removed illegal schemes. City starts fell from 134.5 to 114.2
+per century and rival purchases from 1,266 to 1,086. Exits rose by about 4
+per century. The per-seed end count moved −1.7 firms (paired t ≈ −2, 6
+seeds). The rival-income channel was not the cause: named firms claimed
+0.5-1 jobs a century on both builds. #165 tipped a street that was already
+collapsing for the reasons above, and fewer legal schemes is the correct
+direction.
+
+**Baseline.** 14 seeds × 25 years, paired, #165 → this: no metric moved at
+|t| ≥ 2. The largest moves were land.med −18.5% (t −1.05), vac.office −17.6%
+(t −1.48) and land.p90 +14.5% (t 0.65). Summed rail binding fell from 0.32
+to 0.17. The six-seed record moves as a re-roll, because the pitch now draws
+on the rivals stream in months it used to skip. `BASELINE.json` is
+regenerated.
+
+**Still open.** Merchant builders buy only land. Land has no in-place income,
+so the yield committee refuses every lot that is not a distress sale, and
+merchants can build only through `claimJob`. In unplayed runs, named firms
+claimed about one or two city jobs a century, far below the 45-48 deliveries
+a run quoted earlier in this file. A land purchase should be underwritten on
+the residual (`underwriteDevelopment`), not on yield. That is not changed
+here.
+
+# THE CITY DREW EVERY BUILDING ON A 0.62 PLATE — the order book could not see commercial land (Sep 2026)
+
+`test/orderbook.mjs` failed on PR #165. `econ.startOwed` is the order book:
+square feet the space market has ordered, cleared through entitlement, and
+waiting for a crane. On all six of the test's seeds it was never positive for
+office, retail or industrial. Only flats ever carried a book, so every class
+printed r = n/a.
+
+On seed 9001, office vacancy sat at 0.054 and industrial at 0.025 from year 6
+to year 20, on both #164 and #165. Those values are not clamps. They are the
+frictional (residence-time) floors, and `rail.vac.*` does not count them,
+because it watches only the 0/0.45 guard. Over the same years, office
+`structTight` rose to 0.29 and real office rent rose about 30%. That is a
+shortage the supply side never answered.
+
+**The chain.** The monthly order is `devPencils × credit × sitePencil`.
+`sitePencil` is the 97th-percentile appetite of the full parcel pro forma over
+sampled lots (`refreshDevelopmentFeasibility`). It read 0 for all three
+commercial uses in every annual sample.
+
+Neither pro forma was at fault. The class pro forma cleared: `devPencils`
+for office ran 1.0-3.0. The parcel pro forma also cleared where it should:
+`landRead` showed office as the highest and best use (the builder bid wins,
+on an office scheme) on 54 vacant lots of seed 9001 at year 18. Industrial
+held that position on 116-167 lots of seed 9005, and retail on up to 51 lots
+of seed 9002. On every one of those lots, the residual's own scheme plans at
+exactly 1.00 in `underwriteDevelopment`.
+
+**The fault is fake #3: one quantity, two answers.** The residual prices dirt
+on a building at the use's coverage limit (`MAX_COVERAGE`: flats 0.70,
+offices 0.80, shops and sheds 0.85; before #165 the figures were 0.70 and
+0.85). Every autonomous path drew a flat 0.62 plate instead: the sampler,
+`startCityJob`, `tickTeardowns`, the rivals' `startOwnJob` and `claimJob`. So
+every autonomous scheme paid for land priced on a building 13-37% bigger than
+the one it drew.
+
+The table counts lots that cleared under each plate, on the same lots (seeds
+9001/9005/9006, years 18-21, lots where that use is highest and best):
+
+| use | clears at 0.62 | clears at the use's own plate |
+|---|---|---|
+| office | 0 of 54; 0 of 22 | 7 of 54; 11 of 22 |
+| industrial | 0 of 116 | 54 of 116 |
+| retail | 0 of 5 | 5 of 5 |
+| flats | 1-4 of 94 | 7-24 of 94 |
+
+The lots that still fail are those where the residual prices more floors than
+`cityInfillCap` allows on that lot. That is the known infill-share seam, and
+it is documented at the residual. Letting the sampler draw a one-storey shed
+added nothing. #165 widened the office gap by moving the residual from 0.70 to
+0.80. That is why the office book that #164 formed on some seeds disappeared.
+
+**The fix.** `cityCoverage(use)` in dev.ts returns `maxCoverageFor(use)`, the
+same limit the residual and the desk read. It now sets the plate in the
+sampler and in every autonomous start path. `cityInfillCap` (height) and the
+player's desk are unchanged.
+
+**Same state.** `tools/plate-move.mjs` takes the old engine's state and asks
+both engines for `sitePencil`, on the 6 baseline seeds at months 60, 180 and
+300. The number of reads with pencil > 0:
+
+| use | old | new |
+|---|---|---|
+| office | 0 of 18 | 6 of 18 |
+| retail | 0 of 18 | 4 of 18 |
+| industrial | 0 of 18 | 2 of 18 |
+| flats | 7 of 18 | 15 of 18 |
+
+No pricing function reads the city's plate, so `landRead` is identical on
+identical state. Every land move below therefore comes through what got
+built.
+
+**Paired, 14 seeds × 25 years.** The baseline metrics were run on two
+engines that differ in one line: "old" has `cityCoverage` returning 0.62.
+Figures are before → after, ± the standard error of the difference.
+
+- **Supply now answers the shortage.**
+  - `occGap.office` fell from 2.20 to 0.82 (−62%, t −3.4, lower on 14 of 14
+    seeds).
+  - `vac.office` rose from 0.057 to 0.083 (t 2.7). It is off the frictional
+    floor and still under the 0.115 natural rate. `vac.retail` rose from
+    0.055 to 0.076 (t 2.1).
+  - Floor area rose 5.6% ± 2.0%. Buildings rose 1.6%, higher on 13 of 14
+    seeds.
+  - Real office rent fell 18% ± 11% (t −1.7) and flats fell 7.5% ± 4.8%.
+  - On the 6 baseline seeds (`tools/plate-move.mjs`, paired), office carried
+    a book in 23-58% of months on 5 of 6 seeds, against 0 on all 6 before.
+    Retail carried one on 6 of 6 seeds and industrial on 3 of 6.
+- **Land got cheaper.** `land.p90` fell 46% ± 7% (lower on 14 of 14 seeds),
+  the median 22% ± 9% and p10 23% ± 11%. Lower rents mean lower residuals.
+  The builder-priced prime lots are now built on instead of standing at
+  their residual. `dev.affordableLotShare` fell from 0.171 to 0.112
+  (t −2.8) for the same reason: the lots a builder can pay for get used up.
+- **Occupancy follows vacancy.** `roll.commercialOcc` fell from 0.871 to
+  0.855 and `deadLegShare` rose from 0.058 to 0.066.
+- **Unchanged.** Employment (+2.2% ± 3.1%) and population did not move. The
+  rail binds stay near zero.
+- **Demolitions fell 15%.** A crane now finds greenfield dirt where it used
+  to have to tear something down.
+
+`BASELINE.json` is regenerated.
+
+**A balloon fault the new path exposed.** Under the new build, the levered
+bot in `pnpm gate` reached a filed balloon that the coupon pull-back
+returned to notice 15 months past maturity. The same pull-back exists in
+both `tickWorkouts` and the July docket. Now a matured note that is past its
+holdover year gets the holdover decision instead: the one extension if it is
+unused, otherwise it stays filed. `test/balloon-holdover.mjs` scenario C
+covers both code paths, with a control case inside the holdover year.

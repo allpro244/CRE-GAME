@@ -26,7 +26,6 @@ const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "550991,12007").split(",").map(Number);
 const MONTHS = (process.env.MONTHS ?? "0,72").split(",").map(Number);
 const USES = ["office", "multifamily", "retail", "industrial"];
-const CAPPED = { retail: 0.85, industrial: 0.85 };
 
 console.log("\nSMALL-LOT RUNGS — the residual prices the one-to-four storey schemes the desk can build\n");
 let lots = 0, lowWins = 0, bad = 0, worst = { gap: 0, what: "" };
@@ -45,7 +44,8 @@ for (const seed of SEEDS) {
         if (!E.zonePermits(rec.zoneDist, use, rec.demandScore, g.econ)) continue;
         for (const fl of [1, 2, 4]) {
           if ((use === "retail" || use === "industrial") && fl > 2) continue;
-          const cov = Math.min(far, fl * (CAPPED[use] ?? 0.7)) / fl;
+          // The use's own coverage limit — the one the desk and the residual share.
+          const cov = Math.min(far, fl * E.MAX_COVERAGE[use]) / fl;
           if (!(cov > 0)) continue;
           const p = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, undefined, undefined, 0.5, 0);
           if (!p || !(p.requiredYield > 0) || p.floors !== fl) continue;

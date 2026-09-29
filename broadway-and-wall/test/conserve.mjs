@@ -200,6 +200,8 @@ for (const seed of SEEDS) {
         const budget = g.cash - (basis ?? 0) - START * 0.25;
         let best = null;
         for (const use of ["office", "multifamily", "retail", "industrial"]) {
+          // Only what the lot's zoning hosts — the engine's own rule.
+          if (E.zoneUseBar(rec, use, g.econ)) continue;
           const top = Math.min(E.maxFloorsFor(rec, 0.6, use), 8);
           for (let fl = 1; fl <= top; fl++) {
             const p = E.planDevelopment(g, parcels, bbl, use, fl, 0.6, "gmp", undefined, undefined, undefined, 0.5, basis);

@@ -6,6 +6,7 @@
 // breaks, quote/close mismatches, and action-contract lies.
 //
 //   pnpm engine && BW_SIZE=hamlet node test/playthrough.mjs
+import { permittedUse } from "./permitted-use.mjs";
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -113,7 +114,7 @@ function walkHoldings(g) {
     }
     const rec = E.resolveRec(parcels, g, h.bbl);
     if (rec && rec.class === "land") {
-      const plan = E.planDevelopment(g, parcels, h.bbl, "office", 8, 0.6);
+      const plan = E.planDevelopment(g, parcels, h.bbl, permittedUse(E, rec, g.econ, ["office"]), 8, 0.6);
       if (plan) {
         for (const k of ["sf", "costTotal", "equity", "yieldOnCost", "requiredYield", "months"]) {
           if (!Number.isFinite(plan[k])) throw new Error(`planDevelopment.${k}=${plan[k]}`);
@@ -339,11 +340,12 @@ catch (e) { fail(`opening attention: ${e.message}`); }
   if (landBbl) {
     try {
       const rec = E.resolveRec(parcels, g, landBbl);
-      const fl = Math.min(6, E.maxFloorsFor(rec, 0.6, "office"));
-      const plan = E.planDevelopment(g, parcels, landBbl, "office", fl, 0.6);
+      const use = permittedUse(E, rec, g.econ, ["office"]);
+      const fl = Math.min(6, E.maxFloorsFor(rec, 0.6, use));
+      const plan = E.planDevelopment(g, parcels, landBbl, use, fl, 0.6);
       if (!plan) note("planDevelopment returned null on owned land");
       else {
-        const start = E.startDevelopment(g, parcels, landBbl, "office", fl, 0.6);
+        const start = E.startDevelopment(g, parcels, landBbl, use, fl, 0.6);
         if (start.err) note(`startDevelopment: ${start.err}`);
         else {
           g = start.s;

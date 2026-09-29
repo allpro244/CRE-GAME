@@ -2112,3 +2112,113 @@ claimed about one or two city jobs a century, far below the 45-48 deliveries
 a run quoted earlier in this file. A land purchase should be underwritten on
 the residual (`underwriteDevelopment`), not on yield. That is not changed
 here.
+
+# THE CITY DREW EVERY BUILDING ON A 0.62 PLATE — the order book could not see commercial land (Sep 2026)
+
+`test/orderbook.mjs` failed on PR #165. `econ.startOwed` is the order book:
+square feet the space market has ordered, cleared through entitlement, and
+waiting for a crane. On all six of the test's seeds it was never positive for
+office, retail or industrial. Only flats ever carried a book, so every class
+printed r = n/a.
+
+On seed 9001, office vacancy sat at 0.054 and industrial at 0.025 from year 6
+to year 20, on both #164 and #165. Those values are not clamps. They are the
+frictional (residence-time) floors, and `rail.vac.*` does not count them,
+because it watches only the 0/0.45 guard. Over the same years, office
+`structTight` rose to 0.29 and real office rent rose about 30%. That is a
+shortage the supply side never answered.
+
+**The chain.** The monthly order is `devPencils × credit × sitePencil`.
+`sitePencil` is the 97th-percentile appetite of the full parcel pro forma over
+sampled lots (`refreshDevelopmentFeasibility`). It read 0 for all three
+commercial uses in every annual sample.
+
+Neither pro forma was at fault. The class pro forma cleared: `devPencils`
+for office ran 1.0-3.0. The parcel pro forma also cleared where it should:
+`landRead` showed office as the highest and best use (the builder bid wins,
+on an office scheme) on 54 vacant lots of seed 9001 at year 18. Industrial
+held that position on 116-167 lots of seed 9005, and retail on up to 51 lots
+of seed 9002. On every one of those lots, the residual's own scheme plans at
+exactly 1.00 in `underwriteDevelopment`.
+
+**The fault is fake #3: one quantity, two answers.** The residual prices dirt
+on a building at the use's coverage limit (`MAX_COVERAGE`: flats 0.70,
+offices 0.80, shops and sheds 0.85; before #165 the figures were 0.70 and
+0.85). Every autonomous path drew a flat 0.62 plate instead: the sampler,
+`startCityJob`, `tickTeardowns`, the rivals' `startOwnJob` and `claimJob`. So
+every autonomous scheme paid for land priced on a building 13-37% bigger than
+the one it drew.
+
+The table counts lots that cleared under each plate, on the same lots (seeds
+9001/9005/9006, years 18-21, lots where that use is highest and best):
+
+| use | clears at 0.62 | clears at the use's own plate |
+|---|---|---|
+| office | 0 of 54; 0 of 22 | 7 of 54; 11 of 22 |
+| industrial | 0 of 116 | 54 of 116 |
+| retail | 0 of 5 | 5 of 5 |
+| flats | 1-4 of 94 | 7-24 of 94 |
+
+The lots that still fail are those where the residual prices more floors than
+`cityInfillCap` allows on that lot. That is the known infill-share seam, and
+it is documented at the residual. Letting the sampler draw a one-storey shed
+added nothing. #165 widened the office gap by moving the residual from 0.70 to
+0.80. That is why the office book that #164 formed on some seeds disappeared.
+
+**The fix.** `cityCoverage(use)` in dev.ts returns `maxCoverageFor(use)`, the
+same limit the residual and the desk read. It now sets the plate in the
+sampler and in every autonomous start path. `cityInfillCap` (height) and the
+player's desk are unchanged.
+
+**Same state.** `tools/plate-move.mjs` takes the old engine's state and asks
+both engines for `sitePencil`, on the 6 baseline seeds at months 60, 180 and
+300. The number of reads with pencil > 0:
+
+| use | old | new |
+|---|---|---|
+| office | 0 of 18 | 6 of 18 |
+| retail | 0 of 18 | 4 of 18 |
+| industrial | 0 of 18 | 2 of 18 |
+| flats | 7 of 18 | 15 of 18 |
+
+No pricing function reads the city's plate, so `landRead` is identical on
+identical state. Every land move below therefore comes through what got
+built.
+
+**Paired, 14 seeds × 25 years.** The baseline metrics were run on two
+engines that differ in one line: "old" has `cityCoverage` returning 0.62.
+Figures are before → after, ± the standard error of the difference.
+
+- **Supply now answers the shortage.**
+  - `occGap.office` fell from 2.20 to 0.82 (−62%, t −3.4, lower on 14 of 14
+    seeds).
+  - `vac.office` rose from 0.057 to 0.083 (t 2.7). It is off the frictional
+    floor and still under the 0.115 natural rate. `vac.retail` rose from
+    0.055 to 0.076 (t 2.1).
+  - Floor area rose 5.6% ± 2.0%. Buildings rose 1.6%, higher on 13 of 14
+    seeds.
+  - Real office rent fell 18% ± 11% (t −1.7) and flats fell 7.5% ± 4.8%.
+  - On the 6 baseline seeds (`tools/plate-move.mjs`, paired), office carried
+    a book in 23-58% of months on 5 of 6 seeds, against 0 on all 6 before.
+    Retail carried one on 6 of 6 seeds and industrial on 3 of 6.
+- **Land got cheaper.** `land.p90` fell 46% ± 7% (lower on 14 of 14 seeds),
+  the median 22% ± 9% and p10 23% ± 11%. Lower rents mean lower residuals.
+  The builder-priced prime lots are now built on instead of standing at
+  their residual. `dev.affordableLotShare` fell from 0.171 to 0.112
+  (t −2.8) for the same reason: the lots a builder can pay for get used up.
+- **Occupancy follows vacancy.** `roll.commercialOcc` fell from 0.871 to
+  0.855 and `deadLegShare` rose from 0.058 to 0.066.
+- **Unchanged.** Employment (+2.2% ± 3.1%) and population did not move. The
+  rail binds stay near zero.
+- **Demolitions fell 15%.** A crane now finds greenfield dirt where it used
+  to have to tear something down.
+
+`BASELINE.json` is regenerated.
+
+**A balloon fault the new path exposed.** Under the new build, the levered
+bot in `pnpm gate` reached a filed balloon that the coupon pull-back
+returned to notice 15 months past maturity. The same pull-back exists in
+both `tickWorkouts` and the July docket. Now a matured note that is past its
+holdover year gets the holdover decision instead: the one extension if it is
+unused, otherwise it stays filed. `test/balloon-holdover.mjs` scenario C
+covers both code paths, with a control case inside the holdover year.

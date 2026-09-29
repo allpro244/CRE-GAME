@@ -27,7 +27,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState, Rival } from "./types";
 import { cloneState, monthLabel } from "./types";
 import {
-  aiRivals, assetGrade, breakGround, clearRivalClaims, gradeOf, lineRoom, markAsset, markRival,
+  aiRivals, assetGrade, breakGround, gradeOf, lineRoom, markAsset, markRival,
   ownerOf, rivalBuys, STYLE_OF,
 } from "./rivals";
 import { assetValue, inPlace, landValue, resolveRec, zoneUseBar } from "./value";
@@ -454,6 +454,7 @@ function applyOne(s: GameState, parcels: ParcelTable, r: Rival, o: AiOrder): { o
       if (r.stressMs) return no("A firm in arrears cannot close a purchase.");
       const lev = Math.max(0, Math.min(AI_MAX_LEVERAGE, o.leverage ?? 0.6));
       const snap = aiSnap(r);
+      const from = sellerOf(s, li);
       // The loan is sized off the firm's own target leverage (see
       // acquisitionLoan), so the order's leverage is that target for this
       // closing and nothing else.
@@ -468,10 +469,9 @@ function applyOne(s: GameState, parcels: ParcelTable, r: Rival, o: AiOrder): { o
       }
       s.listings = s.listings.filter((l) => l.bbl !== o.bbl);
       (s.lastTradeM ??= {})[o.bbl] = s.month;
-      clearRivalClaims(s, o.bbl);
       const closing = Math.round(li.ask * 0.02);
       aiBook(s, r, {
-        kind: "buy", bbl: o.bbl, amount: li.ask, closing, with: sellerOf(s, li),
+        kind: "buy", bbl: o.bbl, amount: li.ask, closing, with: from,
         cashDelta: r.cash - snap.cash, debtDelta: r.debt - snap.debt,
       });
       s.news.unshift({ q: s.month, kind: "deal", text: `${r.name} bought ${rec.address} for ${money(li.ask)} (${Math.round((r.debt - snap.debt) / li.ask * 100)}% financed).` });

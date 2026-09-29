@@ -68,6 +68,8 @@ const DESKS: readonly { id: Page; label: string; note: string; jump?: string }[]
   { id: "saves", label: "Saves", note: "Named snapshots; the live campaign autosaves" },
   { id: "settings", label: "Settings", note: "Pop-up cards, broker calls, the auction card" },
   { id: "primer", label: "Primer", note: "Cap rates, NOI and appraisals, in plain words" },
+  { id: "match", label: "Jev match", note: "Firms whose judgement Jev informs — leaderboard, answers, actions" },
+  { id: "settings", label: "Jev", note: "Plug TypeSafe's Jev into the rival firms' decisions", jump: "Jev" },
 ];
 
 const LENSES: readonly { id: Lens; label: string; note: string }[] = [

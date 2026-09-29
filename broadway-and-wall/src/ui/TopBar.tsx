@@ -79,6 +79,7 @@ const PAGE_LABEL: Partial<Record<Page, string>> = {
   saves: "Saves",
   settings: "Settings",
   primer: "Primer",
+  match: "Jev match",
 };
 
 /**
@@ -853,6 +854,16 @@ export default function TopBar() {
         >
           ? Primer
         </button>
+        {/* THE JEV MATCH — only once Jev informs a firm in this town. */}
+        {(game?.rivals ?? []).some((r) => r.jev) && (
+          <button
+            className={"lens-btn" + (page === "match" ? " lens-on" : "")}
+            title="Firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
+            onClick={() => setPage(page === "match" ? "none" : "match")}
+          >
+            ◆ Jev match
+          </button>
+        )}
         <button
           className={"lens-btn" + (page === "settings" ? " lens-on" : "")}
           title="Settings — pop-up cards, broker calls, the auction card"

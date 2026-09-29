@@ -55,8 +55,7 @@ function answerOne(id: string, q: JevQuestion, state: string): JevAnswer {
     if (id.startsWith("buy_income_")) return scoreAt((has(t, "above the market") ? 3 : has(t, "in line with the market") ? 2 : has(t, "far below the market") ? 0 : 1) + (t.includes("disclosed by the seller") ? 1 : 0));
     if (id.startsWith("buy_fit_")) return scoreAt(t.includes("most of the book") ? 1 : 3);
     if (id === "buy_timing") {
-      const bottomBuyer = has(state, "Buys distress", "near the bottom");
-      return scoreAt(has(state, "peak —") ? 1 : has(state, "recession —", "depression —") ? (bottomBuyer ? 4 : 1) : 3);
+      return scoreAt(has(state, "peak —") ? 0 : has(state, "expansion —") ? 1 : has(state, "depression —") ? 4 : 3);
     }
     return scoreAt(2, 0.5);
   }

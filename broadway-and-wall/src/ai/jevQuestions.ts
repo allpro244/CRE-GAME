@@ -25,7 +25,7 @@
 // Pure: no engine imports, no I/O. engine/jev.ts and engine/rivals.ts import
 // the mapping functions; src/ai/jevRequest.ts imports the builders.
 
-export const JEV_QUESTIONS_VERSION = "2026-09-29.1";
+export const JEV_QUESTIONS_VERSION = "2026-09-29.2";
 export const JEV_MODEL = "jev-latest";
 
 // ------------------------------------------------------------------ wire types
@@ -125,7 +125,7 @@ export interface JevThresholds {
 }
 
 export const DEFAULT_THRESHOLDS: JevThresholds = {
-  buyPick: 0.5, buyComposite: 0.6, scoreConf: 0.35,
+  buyPick: 0.45, buyComposite: 0.6, scoreConf: 0.35,
   sellAct: 0.8, sellHold: 0.2,
   refiAct: 0.75,
   build: 0.65,
@@ -219,16 +219,24 @@ export function qBuyFit(candidate: Record<string, unknown>): JevQuestion {
   };
 }
 
+/**
+ * TIMING, ASKED LITERALLY. The first wording ("how good a time is it for a
+ * firm with `firm_mandate` to buy…") put a hop through the mandate into the
+ * question, and against the live model it came back with confidence 0.0-0.3
+ * on most calls — the docs' signature of an ambiguous rubric. This asks one
+ * observable thing about `market` only; how much each charter cares about it
+ * is the weight in code (CHARTERS[…].weights.timing).
+ */
 export function qBuyTiming(): JevQuestion {
   return {
     type: "score",
-    instructions: "How good a time is it for a firm with `firm_mandate` to buy income property, judged by `market.cycle`, `market.credit` and `market.debt_cost`?",
+    instructions: "Is `market` a buyer's market or a seller's market for income property right now, judged by `market.cycle` and `market.credit`?",
     criteria: FIVE([
-      "Very bad: the mandate says to be a seller in this market",
-      "Bad: better to wait",
-      "Neutral",
-      "Good: a sensible time to add buildings",
-      "Very good: the kind of market this mandate is built to buy in",
+      "Strong seller's market: values at a peak and lenders eager",
+      "Seller's market: values high and rising",
+      "Balanced market",
+      "Buyer's market: values falling, or recovering from a fall, and sellers under pressure",
+      "Strong buyer's market: deep distress, few buyers and scarce credit",
     ]),
   };
 }

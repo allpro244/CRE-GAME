@@ -27,3 +27,4 @@ check*.mjs
 dist-gallery/
 test/.opening-screen.*
 ai-match-*.json
+jev-lab*.json

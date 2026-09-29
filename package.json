@@ -7,7 +7,9 @@
     "check": "pnpm --dir broadway-and-wall check",
     "gate": "pnpm --dir broadway-and-wall gate",
     "readiness": "pnpm --dir broadway-and-wall readiness",
-    "engine": "pnpm --dir broadway-and-wall engine"
+    "engine": "pnpm --dir broadway-and-wall engine",
+    "ai-match": "pnpm --dir broadway-and-wall ai-match",
+    "ai-bridge": "pnpm --dir broadway-and-wall ai-bridge"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -412,7 +412,7 @@ function redevBasis(s: GameState, r: Rival, rec: ParcelRecord): number {
  */
 export function applyAiOrders(
   s0: GameState, parcels: ParcelTable, firmId: string, orders: unknown[],
-  meta: { reasoning?: string; provider?: string; error?: string; ms?: number } = {},
+  meta: { reasoning?: string; provider?: string; error?: string } = {},
 ): { s: GameState; results: AiOrderResult[] } {
   const s = cloneState(s0);
   const results: AiOrderResult[] = [];
@@ -432,8 +432,10 @@ export function applyAiOrders(
   const turn: AiTurn = {
     firmId, m: s.month, provider: meta.provider ?? r.aiControlled.provider,
     reasoning: (meta.reasoning ?? "").slice(0, 1200),
-    results, error: meta.error, ms: meta.ms,
+    results, error: meta.error,
   };
+  // Wall-clock latency is not part of the world: it would make two runs with
+  // the same replies hash differently. The controller reports it via onTurn.
   s.aiTurns = [...(s.aiTurns ?? []), turn].slice(-240);
   return { s, results };
 }

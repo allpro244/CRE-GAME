@@ -81,7 +81,7 @@ export async function runAiTurn(
   let s = s0;
   for (const o of outs) {
     const provider = configs[o.id]?.kind;
-    s = applyAiOrders(s, parcels, o.id, o.orders, { reasoning: o.reasoning, error: o.error, ms: o.ms, provider }).s;
+    s = applyAiOrders(s, parcels, o.id, o.orders, { reasoning: o.reasoning, error: o.error, provider }).s;
     opts.onTurn?.(o.id, { ok: !o.error, reasoning: o.reasoning, error: o.error, ms: o.ms, usage: o.usage });
   }
   return stampAiHistory(s, parcels);

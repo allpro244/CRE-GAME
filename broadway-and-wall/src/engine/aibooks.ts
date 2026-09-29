@@ -50,8 +50,6 @@ export interface AiTurn {
   results: AiOrderResult[];
   /** Set when the call failed and the firm held. */
   error?: string;
-  /** Wall-clock milliseconds the provider took, when known. */
-  ms?: number;
 }
 
 const BOOK_CAP = 400;

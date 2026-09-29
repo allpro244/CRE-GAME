@@ -47,7 +47,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
-import { aiDueNow, runDueAiTurn, advanceSpanWithAi, seedRunWithAi } from "@/state/aiStore";
+import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
@@ -878,11 +878,12 @@ export const useStore = create<AppState>((set, get) => ({
   advance: (opts) => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
-    // AN AI TURN FIRST, when one is due: the outside firms place their orders
-    // against this month's tape before the month runs. Asynchronous, so the
-    // month waits for it — see state/aiStore.ts.
-    if (aiDueNow(game)) {
-      void runDueAiTurn().then((ran) => { if (ran) get().advance(opts); });
+    // JEV'S ANSWERS FIRST, when a decision period is due: the Jev-run firms'
+    // questions were (usually) sent while the last month closed, and are filed
+    // on the state before the tick reads them. Play waits only if they are
+    // still in flight — see state/jevStore.ts.
+    if (jevDueNow(game)) {
+      void runDueJev().then((ran) => { if (ran) get().advance(opts); });
       return;
     }
     const cash0 = game.cash;
@@ -890,6 +891,8 @@ export const useStore = create<AppState>((set, get) => ({
     // A spectator's principal can die; nobody is at the desk, the match goes on.
     const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
     set({ game: next, prevForDigest: game });
+    // Ask Jev about the next period while this month is on screen.
+    prefetchJev(next);
     // A spectator is not at the desk: no cards about the player's own firm.
     if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
     if (!next.spectator) queueYearReview(game, next, set);
@@ -911,7 +914,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithAi(game, parcels, bbls, adjacency, 12);
+        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 12);
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -939,7 +942,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithAi(game, parcels, bbls, adjacency, 36);
+        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 36);
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -2286,8 +2289,8 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      // AI firms and spectator mode, if the start screen asked for them.
-      const g = seedRunWithAi(firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels)));
+      // Jev-run firms and spectator mode, if the start screen asked for them.
+      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels)), parcels);
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

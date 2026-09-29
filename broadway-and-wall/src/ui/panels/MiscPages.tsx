@@ -6,7 +6,7 @@ import { usd } from "@/ui/format";
 import { soundOn, setSoundOn, play } from "@/ui/Sounds";
 import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
-import { AiFirmsSettings } from "@/ui/panels/AiFirms";
+import { JevSettings } from "@/ui/panels/JevPanel";
 
 export function PrimerPage() {
   const game = useStore((s) => s.game)!;
@@ -247,8 +247,8 @@ export function SettingsPage() {
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.
       </div>
-      <div className="page-section" style={{ marginTop: 18 }}>AI firms</div>
-      <AiFirmsSettings />
+      <div className="page-section" style={{ marginTop: 18 }}>Jev</div>
+      <JevSettings />
       <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
         <Row k="Space" v="Advance one month" />

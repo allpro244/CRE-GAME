@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useStore, pendingGoal } from "@/state/store";
-import { useAi } from "@/state/aiStore";
-import { AiFirmsSettings } from "@/ui/panels/AiFirms";
+import { useJev } from "@/state/jevStore";
+import { JevSettings } from "@/ui/panels/JevPanel";
+import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
 import { lifeForCash } from "@/engine/estate";
@@ -323,7 +324,7 @@ export default function StartMenu() {
               </div>
             </>
           )}
-          <StartAiOptions />
+          <StartJevOptions />
         </div>
       </div>
 
@@ -357,29 +358,39 @@ export default function StartMenu() {
 }
 
 /**
- * AI FIRMS AT THE START. Every saved AI firm opens on the street with the same
- * capital; a spectator run leaves the player's firm out of it and never stops
- * the clock for it. The firms are configured in the same panel Settings shows.
+ * JEV AT THE START. Jev informs the judgement of the N largest firms on the
+ * street (each keeps its own style, or all take one charter), and a spectator
+ * run leaves the player's firm out of it. The key and route are set in the
+ * same panel Settings shows.
  */
-function StartAiOptions() {
-  const ai = useAi();
-  const n = ai.profiles.length;
+function StartJevOptions() {
+  const j = useJev();
   return (
     <div className="start-ai" style={{ padding: "14px 0 8px", display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
       <label>
-        <input type="checkbox" checked={ai.startWithAi} disabled={!n}
-          onChange={(e) => ai.set({ startWithAi: e.target.checked, ...(e.target.checked ? {} : { startSpectator: false }) })} />
-        {" "}AI firms{n ? ` (${n}: ${ai.profiles.map((p) => p.name).join(", ")})` : " — none set up yet"}
+        Jev runs{" "}
+        <select value={j.startFirms} aria-label="How many firms Jev runs" onChange={(e) => j.set({ startFirms: Number(e.target.value), ...(Number(e.target.value) ? {} : { startSpectator: false }) })}>
+          {[0, 1, 2, 3, 4, 6, 8, 12].map((k) => <option key={k} value={k}>{k === 0 ? "no" : k}</option>)}
+        </select>{" "}rival firm{j.startFirms === 1 ? "" : "s"}
       </label>
-      <label title="No player: the AI firms compete and you watch">
-        <input type="checkbox" checked={ai.startSpectator} disabled={!n || !ai.startWithAi}
-          onChange={(e) => ai.set({ startSpectator: e.target.checked })} />
-        {" "}Spectator: no player, AI firms compete
+      {j.startFirms > 0 && (
+        <label>
+          as{" "}
+          <select value={j.startCharter} aria-label="Charter" onChange={(e) => j.set({ startCharter: e.target.value as CharterId | "style" })}>
+            <option value="style">their own styles</option>
+            {(Object.keys(CHARTERS) as CharterId[]).map((c) => <option key={c} value={c}>{CHARTERS[c].label}s</option>)}
+          </select>
+        </label>
+      )}
+      <label title="No player: the firms compete and you watch">
+        <input type="checkbox" checked={j.startSpectator} disabled={!j.startFirms}
+          onChange={(e) => j.set({ startSpectator: e.target.checked })} />
+        {" "}Spectator: no player — watch the firms compete
       </label>
       <details style={{ flexBasis: "100%" }}>
-        <summary style={{ cursor: "pointer" }}>Set up AI firms — plug in any API</summary>
+        <summary style={{ cursor: "pointer" }}>Set up Jev — TypeSafe key and route</summary>
         <div style={{ maxWidth: 860, background: "rgba(246,241,229,0.92)", color: "#2b251a", padding: 10, borderRadius: 4 }}>
-          <AiFirmsSettings />
+          <JevSettings />
         </div>
       </details>
     </div>

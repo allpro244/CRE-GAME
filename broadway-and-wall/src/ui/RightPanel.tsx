@@ -18,7 +18,7 @@ import { EconomyPage } from "@/ui/panels/EconomyPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
-import { MatchPage } from "@/ui/panels/AiFirms";
+import { MatchPage } from "@/ui/panels/JevPanel";
 import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
@@ -123,7 +123,7 @@ export default function GamePanels() {
     : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
-    : page === "match" ? "The AI Match"
+    : page === "match" ? "The Jev Match"
     : "The Marketplace";
   const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" || page === "firm" ? "Assets"
     : page === "deals" || page === "market" || page === "notes" ? "Acquire"
@@ -150,7 +150,7 @@ export default function GamePanels() {
     : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
-    : page === "match" ? "Firms run by outside AIs: who is winning, what they bought, and why."
+    : page === "match" ? "Firms whose judgement Jev informs: how they are doing, what Jev said, and what code did with it."
     : "On-market listings, off-market calls and motivated sellers.";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right

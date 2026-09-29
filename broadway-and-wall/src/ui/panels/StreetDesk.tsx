@@ -12,7 +12,8 @@ import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
-import { AiBadge, AiTurnCard, lastTurnOf } from "@/ui/panels/AiFirms";
+import { JevBadge, JevFirmCard, lastJevAct } from "@/ui/panels/JevPanel";
+import { CHARTERS } from "@/ai/jevQuestions";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -151,10 +152,10 @@ export function TheStreet() {
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
-                  {r.aiControlled ? <AiBadge /> : null}
+                  {r.jev ? <JevBadge /> : null}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{dead ? "—" : r.aiControlled ? `${r.aiControlled.provider}${r.aiControlled.model ? ` · ${r.aiControlled.model}` : ""}` : personAgeLine(principal, game.month)}</td>
+                <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
@@ -175,13 +176,12 @@ export function TheStreet() {
                 </td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
-                  {!dead && r.aiControlled ? (() => {
-                    // AN AI FIRM'S READ IS ITS OWN: what it said last quarter.
-                    const lt = lastTurnOf(game, r.id);
-                    if (!lt) return "Run by an outside AI — no turn yet";
-                    if (lt.error) return `Held ${monthLabel(lt.m)}: ${lt.error.slice(0, 80)}`;
-                    const ok = lt.results.filter((x) => x.ok).length;
-                    return `"${lt.reasoning.slice(0, 90)}${lt.reasoning.length > 90 ? "…" : ""}" · ${ok}/${lt.results.length} orders done`;
+                  {!dead && r.jev ? (() => {
+                    // A JEV-RUN FIRM'S READ: the last thing Jev's answers did.
+                    const l = lastJevAct(game, r.id);
+                    const who = `${CHARTERS[r.jev.charter].label} · Jev`;
+                    if (!l) return `${who} — no decision yet`;
+                    return `${who} · ${monthLabel(l.m)} ${l.point}: ${l.action ?? l.why}`;
                   })()
                   : dead ? (r.takenPrivateM !== undefined
                     ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
@@ -215,10 +215,10 @@ export function TheStreet() {
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
-                          {r.aiControlled && (
+                          {r.jev && (
                             <div style={{ marginBottom: 8 }}>
-                              <div className="page-section" style={{ marginTop: 0 }}>Run by an outside AI · latest turn</div>
-                              <AiTurnCard turn={lastTurnOf(game, r.id)} />
+                              <div className="page-section" style={{ marginTop: 0 }}>Jev · {CHARTERS[r.jev.charter].label} · the latest period</div>
+                              <JevFirmCard firmId={r.id} />
                             </div>
                           )}
                           {principal && !dead && (
@@ -241,7 +241,7 @@ export function TheStreet() {
                         <>
                           {/* BUY THE WHOLE FIRM. The entity desk — see
                               engine/takeprivate.ts. */}
-                          {!dead && !r.aiControlled && <TakePrivateDesk firmId={r.id} />}
+                          {!dead && <TakePrivateDesk firmId={r.id} />}
                           {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant
                               it is running against, a book that fills and
                               empties, a capital plan it can be short of the

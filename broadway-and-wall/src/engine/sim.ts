@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M } from "./fund";
+import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -1739,11 +1739,20 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     }
   }
   // Open LOI signing costs vs the treasury reserve the agent itself respects.
+  // A fund deed's letters are the vehicle's cheque, tested against the
+  // vehicle's reserve — not the GP's account.
   {
-    const committed = (s.lois ?? []).reduce((a, l) => {
-      const fee = exclusiveFeeRate(s.holdings[l.bbl]);
-      return a + loiSigningCost(l, fee);
-    }, 0);
+    let committed = 0, vehicle = 0;
+    for (const l of s.lois ?? []) {
+      const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
+      if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c; else committed += c;
+    }
+    if (vehicle > 0 && vehiclePurse(s) - vehicle < fundReserve(s)) {
+      out.push({
+        key: "ti-book-fund",
+        label: `Open lease signing costs ${money(vehicle)} on the fund's buildings would breach the fund's reserve`,
+      });
+    }
     if (committed > 0 && s.cash - committed < agentCashReserve(s)) {
       const n = committed >= 1_000_000
         ? `$${(committed / 1_000_000).toFixed(2)}M`

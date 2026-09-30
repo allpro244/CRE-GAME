@@ -15,7 +15,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
-import { tickTalks } from "./acquire";
+import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed } from "./credit";
@@ -379,7 +379,10 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     const v = rec ? conveyedValue(s, rec, li.bbl, !!li.distress) : 0;
     const floor = v * ASK_FLOOR;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
-    if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]?.agreed) {
+    // Nor from under a buyer across the table: a seller in a live negotiation
+    // has a number in play and does not pull the listing mid-conversation —
+    // the talk's own staleness clock (acquire.ts tickTalks) ends it instead.
+    if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]) {
       withdrawn.push(li.bbl);
       continue;
     }
@@ -389,10 +392,13 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     const pulled = new Set(withdrawn);
     s.listings = s.listings.filter((l) => !pulled.has(l.bbl));
   }
-  // A listing you are under contract on does not lapse out from under you. The
-  // contract has its own clock; this one stops while it runs.
+  // A listing you are under contract on — or still negotiating over — does
+  // not lapse out from under you. The contract (and the negotiation) has its
+  // own clock; this one stops while it runs. Letting it lapse while a counter
+  // was on the table let the buyer accept that counter the next morning and
+  // go under contract on a building that was no longer for sale.
   s.listings = s.listings.filter((l) =>
-    (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
+    (l.expiresM > s.month || s.talks?.[l.bbl]) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "depression" ? 0.32
@@ -1151,6 +1157,9 @@ function tickMonth(
   }
 
   refreshListings(s, parcels, bbls);
+  // Any route that took a listing out from under a live contract this month
+  // voids it and returns the earnest money (acquire.ts reconcileContracts).
+  reconcileContracts(s, parcels);
   if (s.news.length > 120) s.news.length = 120;
 
   // A deed that left the book takes its leased fee with it — the lease

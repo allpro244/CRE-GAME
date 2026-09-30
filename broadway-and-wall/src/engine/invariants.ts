@@ -626,7 +626,8 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!fin(t.agreedPrice ?? NaN) || (t.agreedPrice ?? 0) <= 0) bad("talks", at, `under contract at ${t.agreedPrice}`);
       if (t.closeByM === undefined) bad("talks", at, "under contract with no closing date");
       else if (t.closeByM <= s.month) bad("talks", at, `closing date ${t.closeByM} has passed and the contract is still live`);
-      if (!s.listings.some((l) => l.bbl === t.bbl)) bad("talks", at, "under contract on something that is no longer for sale");
+      // An off-market contract came from an approach, not the tape.
+      if (!t.offMarket && !s.listings.some((l) => l.bbl === t.bbl)) bad("talks", at, "under contract on something that is no longer for sale");
     }
   }
 

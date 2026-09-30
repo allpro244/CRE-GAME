@@ -2051,7 +2051,7 @@ function bidBlind(
     // forced Structure-the-stack before the seller had even accepted a number.
     if (!rec) return { s, err: "Unknown parcel." };
     const seller = sellerOf(next, parcels, bbl);
-    const struck = strikeDeal(next, parcels, bbl, price, { kind: seller.kind, name: seller.name }, rec.address);
+    const struck = strikeDeal(next, parcels, bbl, price, { kind: seller.kind, name: seller.name }, rec.address, { offMarket: true });
     if (struck.err) return { s, err: struck.err };
     delete struck.s.approaches[bbl];
     const eager = price >= reserve * 1.15;

@@ -3566,6 +3566,8 @@ export interface Talks {
    * closing and gone if the clock runs out.
    */
   deposit?: number;
+  /** Struck on an off-market approach, not a listing — there is no tape entry to keep alive. */
+  offMarket?: boolean;
 }
 
 /**

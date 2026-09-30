@@ -699,6 +699,44 @@ export const DEPOSIT_PCT = 0.015;
  * actually is. Both legs net to zero, so the conservation identity does not
  * move; only the story the P&L tells does.
  */
+/**
+ * A CONTRACT ON A BUILDING THE SELLER CAN NO LONGER DELIVER IS VOID. Any route
+ * that takes a listed building off the market while a buyer is under contract
+ * on it — a civic taking, a receiver's auction, a note enforced, a portfolio
+ * trade — is the seller's failure to convey, not the buyer's to fund: the
+ * contract ends and the earnest money comes back (off `bought`, the line it
+ * went out on). An unagreed negotiation on a building that has gone simply
+ * ends. Off-market contracts have no listing to lose and are left alone.
+ * Mutates `s`.
+ */
+export function reconcileContracts(s: GameState, parcels: ParcelTable) {
+  if (!s.talks) return;
+  for (const t of Object.values(s.talks)) {
+    if (t.offMarket || s.holdings[t.bbl]) continue;
+    if (s.listings.some((l) => l.bbl === t.bbl)) continue;
+    voidContract(s, parcels, t.bbl,
+      `${parcels[t.bbl]?.address ?? t.bbl} came off the market before the closing — the contract is void`);
+  }
+  if (s.talks && !Object.keys(s.talks).length) delete s.talks;
+}
+
+/** End a negotiation or contract the seller cannot honour, refunding any earnest money. Mutates `s`. */
+export function voidContract(s: GameState, _parcels: ParcelTable, bbl: string, why: string) {
+  const t = s.talks?.[bbl];
+  if (!t) return;
+  delete s.talks![bbl];
+  if (!Object.keys(s.talks!).length) delete s.talks;
+  const dep = t.agreed ? (t.deposit ?? 0) : 0;
+  if (dep > 0) {
+    s.cash += dep;
+    logBooks(s, "bought", -dep);
+  }
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `${why}${dep > 0 ? ` and your ${fmtM(dep)} of earnest money is returned` : ""}.`,
+  });
+}
+
 function forfeitDeposit(s: GameState, t: Talks) {
   const dep = t.deposit ?? 0;
   if (dep <= 0) return;
@@ -718,7 +756,17 @@ function forfeitDeposit(s: GameState, t: Talks) {
 export function strikeDeal(
   next: GameState, parcels: ParcelTable, bbl: string, px: number,
   seller: { kind: SellerKind; name: string }, address: string,
+  opts?: { offMarket?: boolean },
 ): { s: GameState; err?: string } {
+  // NOTHING GOES UNDER CONTRACT THAT IS NOT FOR SALE. A listed deal needs its
+  // listing; an off-market one needs the approach it came from.
+  if (opts?.offMarket ? !next.approaches?.[bbl] : !next.listings.some((l) => l.bbl === bbl)) {
+    if (next.talks?.[bbl] && !next.talks[bbl].agreed) {
+      delete next.talks[bbl];
+      if (!Object.keys(next.talks).length) delete next.talks;
+    }
+    return { s: next, err: `${address} is no longer on the market.` };
+  }
   // YOU CANNOT SIGN WHAT YOU CANNOT PUT MONEY BEHIND. This is the constraint
   // that replaces the old one-negotiation-at-a-time rule: chase as many as you
   // like, but every handshake costs real money the day you make it, so the
@@ -766,6 +814,7 @@ export function strikeDeal(
     maxRounds: prev?.maxRounds ?? OPEN_ROUNDS[seller.kind],
     openedM: prev?.openedM ?? next.month,
     agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
+    ...(opts?.offMarket ? { offMarket: true } : {}),
     note: `Agreed at ${fmtM(px)} with ${seller.name}${seller.name.endsWith(".") ? "" : "."} ${fmtM(dep)} of earnest money is posted and hard. `
       + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
   };

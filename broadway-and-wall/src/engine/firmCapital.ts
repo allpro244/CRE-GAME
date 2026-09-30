@@ -89,7 +89,7 @@ export function firmCapital(s: GameState): FirmCapital {
   const exits = cleanExits(s);
   const staffN = (s.staff ?? []).length;
   const liveFund = !!(s.fund && !s.fund.settled);
-  const fundRealised = !!(s.fund?.settled && !s.fund.failed);
+  const fundRealised = !!(s.fund?.settled && !s.fund.failed && !s.fund.inKind);
   // Avoid netWorth(parcels) here — firmCapital is called from capacity paths that
   // sometimes lack a parcel table (harnesses). Last stamped NW or cash is enough.
   const nw = s.nwHistory?.length

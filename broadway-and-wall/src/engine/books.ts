@@ -113,7 +113,9 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
   const locLim = locLimit(s, parcels);
   const facility = s.facility?.balance ?? 0;
   const cash = s.cash;
-  const fundInterest = liveFund ? gpInterestInFund(liveFund, fundNav) : 0;
+  // The sponsor's note on a wound-down fund's liquidating trust counts with
+  // its interest in the fund — the same claim, one step later.
+  const fundInterest = (liveFund ? gpInterestInFund(liveFund, fundNav) : 0) + (s.trustNote?.balance ?? 0);
   const totalAssets = cash + propGross + Math.max(0, cip) + notesVal + fundInterest;
   const totalLiab = mortgages + mezz + partners + cipDebt + facility + locBal + deposits;
   const equity = totalAssets - totalLiab;

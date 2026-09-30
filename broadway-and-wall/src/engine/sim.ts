@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund, settleFund, gpCapitalShare } from "./fund";
+import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -532,6 +532,7 @@ function tickMonth(
   tickPlayerMortality(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
+  tickTrustNote(s);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -1209,7 +1210,7 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   { id: "irr20", label: "An exit at a 20% IRR", test: (s) => s.exits.some((e) => !e.forced && (e.irr ?? -1) >= 0.2) },
   { id: "nw25", label: "Net worth $25M", test: (_s, nw) => nw >= 25e6 },
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },
-  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed) || (s.fundsRaised ?? 0) >= 2 },
+  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed && !s.fund.inKind) || (s.fundsRaised ?? 0) >= 2 },
   { id: "nw500", label: "Net worth $500M", test: (_s, nw) => nw >= 500e6 },
   { id: "street1", label: "Top of the street", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
@@ -1807,7 +1808,7 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
-  let boughtIn = 0, inKind = 0, paidTotal = 0;
+  let boughtIn = 0, inKind = 0, paidTotal = 0, trustNav = 0;
   for (const h of deeds) {
     const rec = resolveRec(parcels, s, h.bbl);
     const value = ownedHoldingValue(s, parcels, h);
@@ -1836,8 +1837,10 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     // Could not pay in full (or underwater): the partial cheque goes back,
     // the deed goes in kind. Its ledger never books the NAV the LPs take,
     // so it reports nothing rather than a near-zero multiple.
+    // The deed's equity goes into the trust; the trust is distributed
+    // through the waterfall below, not booked to the LPs whole.
     s.cash += paid;
-    f.distributed += price;
+    trustNav += price;
     inKind++;
     s.exits.push({ bbl: h.bbl, address: rec?.address ?? h.bbl, boughtM: h.boughtM, soldM: s.month, price: Math.round(value), basis: h.costBasis, gain: Math.round(value - h.costBasis), forced: true });
     poolDeedLedger(s, h.bbl);
@@ -1850,11 +1853,26 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     if (s.workouts?.[h.bbl]) delete s.workouts[h.bbl];
     s.lois = s.lois.filter((l) => l.bbl !== h.bbl);
   }
+  // THE VEHICLE'S CASH FIRST (the GP advance comes back out of it ahead of
+  // any distribution), THEN THE TRUST. An in-kind distribution is a
+  // distribution: it runs through the same waterfall a cash one does. It used
+  // to book the whole of the deeds' equity to the LPs — the GP's advance and
+  // its co-invest share included — and the sponsor's claims on the vehicle
+  // simply vanished (measured: $3.37M advance + $0.57M co-invest, NW $2.87M →
+  // −$1.16M in one month, and the LPs "returned 1.05x" on the GP's money).
+  if (f.cash > 0) applyDistribute(s, f.cash);
+  const toGp = inKind ? distributeInKind(s, trustNav) : null;
+  if (inKind) f.inKind = (f.inKind ?? 0) + inKind;
   if (boughtIn + inKind > 0) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
       text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, paid through the waterfall.` : ""}`
-        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages, and the promote on them is waived.` : ""}`,
+        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages.` : ""}`
+        + (toGp && toGp.total > 0
+          ? ` Your share of the trust — ${money(toGp.advance)} of GP advances, senior, and ${money(toGp.coinvest)} for your co-invest`
+            + `${toGp.promote > 0 ? ` and ${money(toGp.promote)} of promote` : ""} — is a note on the trust, paid as it sells over ${TRUST_NOTE_M} months.`
+          : "")
+        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances is more than the trust is worth and is written off.` : ""),
     });
   }
   settleFund(s);

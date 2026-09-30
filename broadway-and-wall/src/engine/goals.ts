@@ -80,7 +80,7 @@ export function goalProgress(s: GameState, parcels?: ParcelTable | null): { shar
       // the LPs got their capital back and the pref on top.
       const f = s.fund && s.fund.raisedM >= g.setM ? s.fund : undefined;
       if (!f) return { share: 0, text: "no fund raised yet" };
-      if (f.settled) return f.failed ? { share: 0, text: "the fund was wound up short — raise another" } : { share: 1, text: "returned" };
+      if (f.settled) return f.failed || f.inKind ? { share: 0, text: f.failed ? "the fund was wound up short — raise another" : "the fund ended in kind, not returned — raise another" } : { share: 1, text: "returned" };
       const dpi = f.called > 0 ? f.distributed / f.called : 0;
       return { share: 0.5, text: `raised · ${dpi.toFixed(2)}x paid back so far` };
     }

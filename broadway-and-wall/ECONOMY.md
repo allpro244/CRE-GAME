@@ -2222,3 +2222,161 @@ both `tickWorkouts` and the July docket. Now a matured note that is past its
 holdover year gets the holdover decision instead: the one extension if it is
 unused, otherwise it stays filed. `test/balloon-holdover.mjs` scenario C
 covers both code paths, with a control case inside the holdover year.
+
+# BUILDERS COULD NOT BUY DIRT, FUND A JOB, OR PRICE THE HEIGHT THEY WERE ALLOWED (Sep 2026)
+
+Three faults recorded as open at the end of "THE STREET THINNED TO TWO" and
+"THE CITY DREW EVERY BUILDING ON A 0.62 PLATE". Instruments:
+`tools/rival-dev.mjs` (starts and deliveries by named firms against the
+anonymous city, vacant lots bought by the street, per century of an unplayed
+run), `tools/claim-gates.mjs` (which of `claimJob`'s gates each building firm
+fails on every city start), `tools/land-tape.mjs` (every vacant listing, who
+priced it, whether its residual scheme clears at the ask),
+`tools/envelope-seam.mjs` and `tools/envelope-move.mjs` (the residual's height
+against the city's on the same lot; land prices on one state under two
+engines).
+
+## What the street was actually building (before, 6 seeds x 100 years)
+
+The earlier note said named firms took "one or two city jobs a century". On
+this engine that is true of **building on their own land** (`startOwnJob`):
+0.17 starts a century. Claims of the city's own pipeline (`claimJob`) ran
+10-90 a century (mean 37.7), so named firms delivered 6.7-32.8% of the city's
+buildings (mean 19.0%). Vacant lots bought by the street: 19 a century, 3 of
+them by developers and **none by a merchant builder**. The three opening
+merchants sold their opening books on the hold clock by year five, could not
+fund a job and were wound up as empty books inside the first decade.
+
+Why, in order:
+
+1. **Dirt was judged on its yield.** `rivalBuys` read every listing's
+   going-in yield plus growth over the coupon. A vacant lot yields nothing,
+   so the spread was the whole coupon below zero and every committee refused
+   every lot that was not a distress sale.
+2. **A firm with a pencilling lot never looked at it.** `startOwnJob` put one
+   site a month in front of the committee, chosen on demand and
+   densification. Over 30 years of seed 7777, 2,987 of 3,236 picks were
+   worn buildings whose replacement did not pencil (22 cleared), so dirt
+   that did pencil was never underwritten.
+3. **The equity cheque ignored the firm's own funding.** A groundbreak's
+   first draw had to come out of the operating account alone, while the same
+   firm drew its corporate line for an acquisition (`rivalBuys`) and a
+   balloon. Over 40 years of seed 7777, 170 of the 307 firm-job pairs that
+   failed on cash would have been covered by the line.
+4. **A deal-by-deal sponsor had to write all of a job's equity.** This file
+   already said a merchant builder "syndicates each job and dissolves it at
+   the sale" (RECALL). Nothing acted on it. The median day-one cheque was
+   $6.0M against a median builder account of $1.3M.
+5. **The dominant gate is size, and it stays.** `projectCost <= 0.9 x AUM +
+   5 x cash` failed 472-508 firm-job pairs in 40 years, more than cash. The
+   median city job is $39-43M and the roster's builders are $3-9M shops. This
+   is the guarantor test a construction lender applies to a sponsor (net
+   worth and liquidity against the loan), so it is not relaxed here. It is
+   why merchants remain scarce: a merchant sells its buildings by design, so
+   its AUM is near zero between jobs and it only qualifies for the city's
+   smallest jobs.
+
+## The fixes
+
+- **Land is bought on the residual.** A firm that builds (BUILD_APPETITE >
+  0) prices a vacant lot on the residual's own scheme (`landRead`: highest
+  and best use, `zonePermits`, the use's MAX_COVERAGE plate, the lot's height
+  cap), planned at the ask on the desk every autonomous start uses
+  (`underwriteDevelopment`: the construction desks' terms, the trade's margin
+  in the required yield). It clears when the scheme clears at the price,
+  that is, when the ask is at or under the residual. Its fit is the
+  yield-on-cost cushion over the required yield, in the points the yield
+  committee reads. A firm that does not build keeps the yield test.
+- **Dirt bought on the residual is built on the residual's scheme.**
+  `startOwnJob` builds a vacant lot's HBU scheme (use, floors, plate) rather
+  than a use drawn from the zone table, and lots whose builder bid sets the
+  price are underwritten before any teardown.
+- **One funding rule.** `claimJob`, `startOwnJob` and the JEV groundbreak
+  test and draw the corporate line (`lineDrawFor`, `drawLine`) exactly as
+  `rivalBuys` does.
+- **Deal-by-deal equity.** Merchant builders and developers syndicate each
+  job: the firm writes a 10% co-invest (`SPONSOR_COINVEST`, the "90/10 JV";
+  5-10% is the range institutional LPs require of a developer partner) and
+  outside investors write the rest, including their share of every later
+  capital call. The sponsor's own land or building counts as its in-kind
+  share. At a sale the investors take their capital and FUND_PREF first, then
+  their share of the excess after FUND_PROMOTE (`jvLpTake`). The pref and
+  promote are the ones the player's own vehicle runs on. Every settlement
+  (`rivalBuys`, `sellToOutsider`, the player buying from a firm,
+  `transferDeed` at a price) and the disposal decision (`disposalNet`) read
+  the same take. A deed that leaves any other way (foreclosure, deed in lieu,
+  an orphaned frame) takes the investors' equity with it. Not modelled: the
+  investors' share of operating cash between delivery and sale. The Jev
+  ledger identities carry the investor flow as `partners`.
+- **JEV builders** drew a flat 0.62 plate in both the option list and the
+  groundbreak. They now draw `cityCoverage(use)`, like every other
+  autonomous start.
+
+## One lot, one envelope
+
+The residual priced every lot on the town's median buildable share of the
+legal envelope (`infillShare`). Every autonomous start is held to the lot's
+own cap (`cityInfillCap`: the block's cornice datum plus the market's push).
+On seeds 9001/9005 at years 10 and 18, the residual's scheme was taller than
+the cap on 2-13% of builder-priced vacant lots, and cut to the cap it planned
+at hurdle 0.925-0.99 at the land's own price. The land was priced for a
+building nobody would be permitted to put up. The teardown desk also read
+maturity 1 while every other path read month/780, so one lot had two heights
+depending on which crane asked.
+
+- `heightCapFloors` (value.ts) is the rule, moved unchanged out of
+  `cityInfillCap`, which now wraps it. `townMaturity` is the one maturity.
+- `resolveRec` stamps each record with its block's cornice datum
+  (`corniceDatum`, memoised per state) and the town's maturity. The residual
+  caps each use's envelope at `heightCapFloors x MAX_COVERAGE[use]` on those.
+  `infillShare` is only the fallback for a record nobody resolved.
+- The player's desk still plans against the legal envelope. Above the cap is
+  the discretionary review the city buys with `entitlementPremium`, and the
+  residual does not price that option.
+- `test/one-envelope.mjs` (in `no-playtest`) requires every builder-priced
+  vacant lot's scheme to fit its cap. It fails on the old engine (14 lots)
+  and passes now (0 of 291). `residual-recon` still reads 1.000 at p05, p50
+  and p95, and `small-lot-rungs` passes.
+- **Same state, two engines** (`tools/envelope-move.mjs`, seeds
+  9001/9005/9006 at months 60, 180, 300): 5-205 of 1,352 lots move per read,
+  both ways (moved lots p10 0.77-0.90, p90 0.95-1.20). The city median does
+  not move, and p90 falls 0-2%. Where the cap now sits between the old rungs
+  the winning scheme is often the cap itself, so the residual now builds to
+  the height the city permits.
+- Cost: `resolveRec` now always copies the record. A 20-year run is about 5%
+  slower.
+
+## Result (6 seeds x 100 years, no player, before -> after)
+
+| per century | before | after |
+|---|---|---|
+| city jobs claimed by named firms | 37.7 (10-90) | 58.7 (27-81) |
+| named firms building on their own land | 0.17 | 2.7 |
+| share of city deliveries by named firms | 19.0% (6.7-32.8) | 25.7% (15.1-36.9) |
+| vacant lots bought by the street | 19.2 | 64.0 |
+| living firms at year 100 | 9.8 | 10.2 |
+
+Seed by seed, the claims and delivery share are re-rolls: they rose on 4 of 6
+seeds, and the paired t is about 1.5 for both. Own-land starts and land
+purchases rose clearly. Most lots go to pe and opportunistic funds, which
+both build. Family land buys (12 -> 85) are distress lots taken on the
+unchanged yield test. Merchant builders still barely exist after the first
+decade (1 lot, 2 own starts across six centuries), for reason 5 above. That
+is the open finding: a merchant's capacity is its equity and its investors,
+not a book of buildings it sells by design. The honest fix is a
+sponsor-covenant test (net worth and liquidity against the loan) that
+replaces the AUM rule for every builder, and it is not made here.
+
+`firms.mjs` passes. Seed 7777's decade series ran 26 · 26 · 16 · 15 · 18 ·
+15 · 12 · 6 · 11 · 5 (end 5, previously 13). 4242 ended at 11 (previously
+14). Across the six seeds above, end-of-century living firms did not fall
+(9.8 -> 10.2). `conserve` reconciled 2,399 months with every category
+exercised (floor 2,242).
+
+**Baseline.** 14 seeds x 25 years, paired (`tools/baseline.mjs` with
+`SEEDS`/`ENGINE`/`DUMP`, then `tools/baseline-paired.mjs`): no metric moved
+at |t| >= 1.4. The largest moves were city.buildings +0.5% ± 0.4% (t 1.39),
+dev.affordableLotShare −9.8% ± 10.4%, land.p90 −9.9% ± 14.8% and land.med
+−1.9% ± 7.9%. No rail binds more often. The six-seed record re-rolls (21 of
+39 metrics moved by more than 0.5%) because the rivals stream now draws in
+months it used to skip. `BASELINE.json` is regenerated.

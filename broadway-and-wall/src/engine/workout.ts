@@ -714,9 +714,19 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // purchase in that harness's receivership scenario reached maturity). A
     // year past the date, the desk extends once or files, whoever is paying.
     if (w.cause === "balloon" && w.stage !== "foreclosure" && !w.servicing
-      && s.month - h.loan.maturityM >= 12 && couponFundable(s, parcels, h)) {
-      holdoverDecision(s, parcels, w, rec.address);
-      continue;
+      && s.month - h.loan.maturityM >= 12) {
+      if (couponFundable(s, parcels, h)) {
+        holdoverDecision(s, parcels, w, rec.address);
+        continue;
+      }
+      // ...AND A NOTICE WINDOW DOES NOT OUTRUN THE HOLDOVER YEAR. A matured
+      // note filed on, pulled back to notice the month its coupon cleared
+      // (a fresh six-month cure window), then gone unfunded again sat in
+      // notice until the window ran out — measured on the critic's run at 15
+      // and 16 months past maturity with no extension and no filing. A year
+      // past the date with the coupon unfunded, the desk files now: the
+      // notice branch below runs its last-look cure and then files.
+      w.decideM = Math.min(w.decideM, s.month);
     }
     if (w.stage !== "foreclosure" && couponFundable(s, parcels, h)) {
       w.decideM = Math.max(w.decideM, s.month + 1);

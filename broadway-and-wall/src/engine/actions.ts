@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
-import type { Bid, BuiltClass, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
+import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
@@ -16,7 +16,7 @@ import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
-import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct } from "./debt";
+import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
@@ -81,6 +81,31 @@ function clone(s: GameState): GameState {
   return cloneState(s);
 }
 
+/**
+ * THE GRADE THE DEED ACTUALLY CONVEYS AT — the one the lender's desk sees at
+ * the closing. `executePurchase` takes the paper's grade verbatim when a roll
+ * was disclosed, and knocks a distressed listing down a step when it was not;
+ * the term sheet has to be struck at the same grade or it quotes a loan the
+ * closing cannot write (a life company quoting a "standard" building that
+ * conveys "worn").
+ */
+export function conveyedGrade(s: GameState, rec: ParcelRecord, bbl: string): Condition {
+  const listing = s.listings.find((l) => l.bbl === bbl);
+  const ap = s.approaches?.[bbl];
+  const paper = listing && (listing.roll !== undefined || listing.occ !== undefined) ? listing
+    : ap && !ap.refused && (ap.roll !== undefined || ap.occ !== undefined) ? ap
+    : null;
+  if (paper?.cond) return paper.cond;
+  const g = gradeOf(s, rec);
+  if (listing?.distress && rec.class !== "land" && rec.bldgArea > 0) {
+    return condGrade(Math.max(0.30, initialCondIdx(rec, s.month, g) - 0.10));
+  }
+  return g;
+}
+
+/** Minimum cheque any desk writes — the same floor `originate` applies. */
+export const MIN_ACQ_LOAN = 100_000;
+
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
   // THE RESOLVED RECORD, ALWAYS. The static table is what the lot looked like
   // at generation; `resolveRec` is what is standing on it today, after
@@ -93,11 +118,16 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
   }
   const prod = productById(product);
+  // THE SAME GATES `originate` APPLIES AT THE CLOSING, in the same order, on
+  // the grade the deed conveys at. A quote that passes here and a closing that
+  // refuses there used to leave the buyer paying only the equity on a quoted
+  // principal nobody lent — see executePurchase.
+  const grade = conveyedGrade(s, rec, bbl);
+  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
+  if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (!conditionOk(prod, gradeOf(s, rec))) {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
-  }
+  if (!conditionOk(prod, grade)) return noLoan("condition");
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
   //
@@ -118,7 +148,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // THE LENDER'S APPRAISER READS THE ROLL — see marketAppraisal. The class
   // model's opinion of a building like this one is not an appraisal of this
   // one, and the desk sizing the loan is the desk that will hold the roll.
-  const appraised = marketAppraisal(s, rec, bbl, gradeOf(s, rec));
+  const appraised = marketAppraisal(s, rec, bbl, grade);
   const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
   const overpay = Math.max(0, price - uwBasis);
   // A LENDER UNDERWRITES THE INCOME THE BUILDING ACTUALLY EARNS.
@@ -143,9 +173,13 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // building's own cap rate. `quote` ignores it for every product but the debt
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
-  const stab = stabViewFor(rec, s.econ, gradeOf(s, rec), uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, gradeOf(s, rec), { nw: netWorth(s, parcels) });
-  const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
+  const stab = stabViewFor(rec, s.econ, grade, uwBasis);
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, grade, { nw: netWorth(s, parcels) });
+  const levered = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
+  // Under the minimum cheque the desk writes nothing — `originate` returns no
+  // loan below it, so the quote must not promise one.
+  if (levered < MIN_ACQ_LOAN) return { ...noLoan(levered > 0 ? "minloan" : "income", q.ratePct), appraised, uwBasis, overpay };
+  const principal = levered;
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
   // The engine has always known which one bound and never told anybody, which
@@ -314,7 +348,7 @@ export function executePurchase(
   };
   // Whatever diligence did not find, you now own. It does not appear on the
   // closing statement; it appears eighteen months later as a roof.
-  if (product !== "cash") {
+  if (product !== "cash" && bq.principal > 0) {
     const prod = productById(product);
     // Same underwriting buyQuote used for the term sheet — lesser of cost or
     // value, in-place NOI on that basis, and the bridge stabilised view.
@@ -322,11 +356,25 @@ export function executePurchase(
     // tax off the deal) wrote a smaller loan than the card promised and left
     // free equity in the deal.
     const uwBasis = bq.uwBasis ?? price;
-    const stab = stabViewFor(rec, next.econ, holding.condition, uwBasis);
+    // The grade the deed conveys at, not the pre-paper guess — the paper
+    // and the distress knock are applied to `holding` further down, and the
+    // desk underwrites the building it is actually lending on.
+    const grade = conveyedGrade(s, rec, bbl);
+    const stab = stabViewFor(rec, next.econ, grade, uwBasis);
     holding.loan = originate(
       next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
-      holding.condition, rec.class, stab,
+      grade, rec.class, stab,
     );
+    // NO LOAN, NO CLOSING. The cheque above was the EQUITY on a quoted
+    // principal; if the desk will not write that principal, closing anyway
+    // conveys the building for the equity alone and the lender's money is a
+    // gift from nobody. buyQuote applies originate's gates, so this should
+    // not fire — it is the guard that refuses rather than pumps if they ever
+    // drift apart again.
+    if (!holding.loan) {
+      return { s, err: `${prod.lender} will not fund the ${money(bq.principal)} it quoted at the closing — `
+        + `close on another desk or all cash.` };
+    }
     // Belt: if float still drifts a dollar, the written balance is the quoted one.
     if (holding.loan && bq.principal > 0 && holding.loan.balance !== bq.principal) {
       holding.loan.balance = holding.loan.principal = bq.principal;

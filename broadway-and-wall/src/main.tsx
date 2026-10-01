@@ -8,6 +8,7 @@ import "./ui/system/fonts.css";
 import "./ui/system/tokens.css";
 import "./ui/system/components.css";
 import "./ui/system/shell.css";
+import "./ui/system/pages.css";
 import { applyTheme } from "./ui/theme";
 
 applyTheme();

@@ -38,6 +38,7 @@ export default function GamePanels() {
   const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
   const pageRef = useRef<HTMLDivElement>(null);
+  useHintFolds(pageRef, page);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // The palette toggle fires even from inside an input — that is how every
@@ -165,7 +166,14 @@ export default function GamePanels() {
             if (e.target === e.currentTarget) setPage("none");
           }}
         >
-          <div className={`page page-${page}`} ref={pageRef}>
+          <div
+            className={`page page-${page}`}
+            ref={pageRef}
+            onClick={(e) => {
+              const h = (e.target as HTMLElement).closest?.(".hint-fold");
+              if (h) { h.classList.remove("hint-fold"); h.removeAttribute("title"); }
+            }}
+          >
             <div className="page-head">
               <div className="page-heading">
                 <div className="page-kicker">{kicker}</div>
@@ -346,4 +354,37 @@ function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HT
       ))}
     </nav>
   );
+}
+
+/**
+ * PROGRESSIVE DISCLOSURE FOR THE LONG EXPLANATIONS.
+ *
+ * Many desks carry a paragraph of method under their numbers — useful once,
+ * then a wall the eye has to climb past every visit. A plain hint longer than
+ * a few lines is clamped to three, and opens in place on a click. Hints with
+ * controls in them are left alone, and the Primer (which is meant to be read)
+ * never folds.
+ */
+const FOLD_CHARS = 300;
+function useHintFolds(ref: React.RefObject<HTMLDivElement | null>, page: Page) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root || page === "primer") return;
+    let raf = 0;
+    const scan = () => {
+      raf = 0;
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>(".hint:not([data-fold])"))) {
+        el.dataset.fold = "1";
+        if (el.closest(".modal, .primer-prose, .page-nav")) continue;
+        if (el.querySelector("button, a, input, select, textarea")) continue;
+        if ((el.textContent ?? "").length < FOLD_CHARS) continue;
+        el.classList.add("hint-fold");
+        el.title = "Click to read the rest";
+      }
+    };
+    scan();
+    const mo = new MutationObserver(() => { if (!raf) raf = requestAnimationFrame(scan); });
+    mo.observe(root, { childList: true, subtree: true });
+    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, [ref, page]);
 }

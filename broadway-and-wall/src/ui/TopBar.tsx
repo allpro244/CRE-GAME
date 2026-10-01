@@ -157,18 +157,28 @@ const ERA_SHORT: Record<string, string> = {
 
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
-  // Icons-only rail: remembered per viewer; narrow windows start compact.
-  const [railCompact, setRailCompactState] = useState<boolean>(() => {
+  // Icons-only rail. Until the player chooses, it follows the window: labels
+  // from 1200px up, icons below. A choice is remembered per viewer.
+  const [railPref, setRailPref] = useState<"auto" | "compact" | "full">(() => {
     try {
       const v = localStorage.getItem("bw:rail");
-      if (v === "compact") return true;
-      if (v === "full") return false;
+      if (v === "compact" || v === "full") return v;
     } catch { /* storage blocked */ }
-    return typeof window !== "undefined" && window.innerWidth < 1200;
+    return "auto";
   });
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 1200);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1199px)");
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const railCompact = railPref === "auto" ? narrow : railPref === "compact";
   const setRailCompact = (v: boolean) => {
-    setRailCompactState(v);
-    try { localStorage.setItem("bw:rail", v ? "compact" : "full"); } catch { /* storage blocked */ }
+    const next = v ? "compact" : "full";
+    setRailPref(next);
+    try { localStorage.setItem("bw:rail", next); } catch { /* storage blocked */ }
   };
   const fpsOn = useStore((s) => s.fpsOn);
   // When the meter is off, this selector is a constant 0 — so the once-a-second
@@ -584,6 +594,7 @@ export default function TopBar() {
               <Stat
                 label="Base rate"
                 value={pct(game.econ.indexRate)}
+                drop={2}
                 keep
                 w={72}
                 title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
@@ -602,6 +613,7 @@ export default function TopBar() {
             {/* Vacancy change, not level — the single highest-EV cycle tell. */}
             <Stat
               label="Vac Δ / yr"
+              drop={2}
               value={vacDpp === null ? "—" : `${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp`}
               bad={vacDpp !== null && vacDpp >= 2}
               keep

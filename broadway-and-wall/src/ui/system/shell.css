@@ -497,7 +497,15 @@
 .app .docket-urgent .docket-tag { color: var(--neg); background: var(--neg-soft); border-color: transparent; }
 .app .docket-title, .app .docket-title-link { font-size: var(--fs-sm); color: var(--text); }
 .app .docket-sub { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
-.app .docket-row .btn { min-height: 26px; padding: 3px 9px; font-size: var(--fs-xs); }
+.app .docket-row .btn,
+.app .docket-row .year-rail-go { min-height: 24px; padding: 2px 8px; font-size: var(--fs-xs); box-shadow: none; }
+.app .docket-row .docket-later { border-color: transparent; background: transparent; color: var(--text-3); }
+.app .docket-row .docket-later:hover { color: var(--text); background: var(--surface-3); }
+/* A row is a line or three, not a paragraph; the whole sentence is on hover
+   and one click away. */
+.app .docket-title {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
 .app .docket-more { font-style: normal; color: var(--text-3); }
 
 /* city HUD */

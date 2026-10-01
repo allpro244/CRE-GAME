@@ -1,0 +1,241 @@
+/* ==========================================================================
+   ROOMS — what individual screens need beyond the shell and components:
+   the start screen, the ceremony cards (delivery, year review, goal, exit,
+   career, milestones), game over, the search palette, the record, and the
+   bits of the status bar that answer to its own width.
+   ========================================================================== */
+
+/* ---------- status bar: secondary readouts shed by the bar's own width ---- */
+.app .topbar-game { container: topvitals / inline-size; }
+.app .topbar .tstat-d2, .app .topbar .tstat-d3 { display: flex; }
+@container topvitals (max-width: 860px) {
+  .app .topbar .tstat-d2 { display: none; }
+}
+@container topvitals (max-width: 640px) {
+  .app .topbar .tstat-d3 { display: none; }
+}
+
+/* ---------- start screen ---------- */
+.app .start {
+  --start-ink: #eef2f4;
+  --start-dim: #a7b8c2;
+  --start-rule: rgba(168, 202, 216, 0.22);
+  color: var(--start-ink);
+  font-family: var(--font-ui);
+}
+.app .start-title {
+  font: 600 var(--fs-3xl)/1.05 var(--font-display);
+  letter-spacing: -0.02em;
+  color: #f7efdc;
+  text-shadow: none;
+}
+.app .start-sub { font-style: normal; color: var(--start-dim); font-size: var(--fs-base); }
+.app .start-sub:first-of-type { font-family: var(--font-display); font-style: italic; font-size: var(--fs-md); color: #d9cfb8; }
+.app .start-or {
+  font: 650 var(--fs-2xs)/1.3 var(--font-ui);
+  letter-spacing: var(--tracking-caps);
+  color: var(--start-dim);
+}
+.app .start-or::after { background: var(--start-rule); }
+.app .start-first {
+  border-left: 3px solid #d0a145;
+  background: rgba(208, 161, 69, 0.12);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--start-ink);
+}
+.app .start-goals-label { font: 650 var(--fs-2xs)/1.3 var(--font-ui); letter-spacing: var(--tracking-caps); color: var(--start-dim); }
+.app .start .start-goal {
+  padding: 10px 12px;
+  color: var(--start-ink);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--start-rule);
+  border-radius: var(--radius-md);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.app .start .start-goal:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(216, 169, 74, 0.6); }
+.app .start .start-goal-on { background: rgba(208, 161, 69, 0.16); border-color: #d0a145; box-shadow: inset 0 0 0 1px #d0a145; }
+.app .start .start-goal strong { font: 600 var(--fs-md)/1.25 var(--font-display); }
+.app .start .start-goal span { color: var(--start-dim); font-size: var(--fs-xs); }
+
+.app .start-col {
+  padding: 12px;
+  background: var(--surface-1);
+  color: var(--text);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 30px rgba(2, 8, 14, 0.45);
+}
+.app .start-col-head {
+  font: 650 var(--fs-2xs)/1.3 var(--font-ui);
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px 8px; margin-bottom: 6px;
+}
+.app .start-opt { padding: 8px 10px; border-radius: var(--radius-md); }
+.app .start-opt:hover { background: var(--surface-2); }
+.app .start-opt-on { background: var(--accent-soft); border-color: var(--accent-line); box-shadow: inset 3px 0 0 var(--accent-bright); }
+.app .start-opt-name { font-weight: 620; color: var(--text); }
+.app .start-opt-note { color: var(--text-3); }
+.app .start-continue {
+  background: var(--surface-1);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+}
+.app .start-continue-head { font: 650 var(--fs-2xs)/1.3 var(--font-ui); letter-spacing: var(--tracking-caps); color: var(--accent); }
+.app .start-continue-town { font: 600 var(--fs-lg)/1.2 var(--font-display); }
+.app .start-continue-go { font: 650 var(--fs-md)/1 var(--font-ui); color: var(--accent); }
+.app .start-foot { background: linear-gradient(to bottom, rgba(10, 22, 31, 0), rgba(8, 18, 26, 0.85)); border-top-color: var(--start-rule); }
+.app .start-foot-town { font: 600 var(--fs-lg)/1.2 var(--font-display); color: #f7efdc; }
+.app .start-foot-note { color: var(--start-dim); }
+.app .start-go {
+  font: 650 var(--fs-md)/1 var(--font-ui);
+  letter-spacing: 0;
+  padding: 13px 26px;
+  color: #1b1a17;
+  background: #d6a64a;
+  border: 1px solid #b98a2f;
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 18px rgba(214, 166, 74, 0.28);
+}
+.app .start-go:hover:not(:disabled) { background: #e2b35a; transform: none; box-shadow: 0 8px 24px rgba(214, 166, 74, 0.38); }
+.app .start-go:focus-visible { outline: 2px solid #f2d18b; outline-offset: 3px; }
+.app .start-runs-tbl { color: var(--start-ink); }
+.app .start-runs-tbl td { border-bottom-color: var(--start-rule); }
+.app .start-runs-town { font-family: var(--font-display); }
+.app .start-wait-line { color: var(--start-dim); }
+.app .start-bar span { background: #d6a64a; }
+
+/* ---------- ceremony cards: delivery, year review, goal, exit, career ---------- */
+.app .delivery-ceremony {
+  left: var(--rail-w, 0px);
+  padding-top: calc(var(--topbar-h, 56px) + 56px);
+  background: color-mix(in srgb, var(--scrim) 55%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.app .delivery-stamp {
+  min-width: min(400px, calc(100vw - 40px));
+  padding: 26px 28px 22px;
+  background: var(--surface-1);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent-bright);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+}
+.app .delivery-kicker { margin-bottom: 8px; }
+.app .delivery-title {
+  font: 600 var(--fs-xl)/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.app .delivery-meta { color: var(--text-3); }
+.app .year-review-card { max-width: min(540px, calc(100vw - 32px)); }
+.app .year-review-verdict { font-size: var(--fs-xl); }
+.app .year-review-grid {
+  gap: 0;
+  margin-top: 6px;
+  font-size: var(--fs-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.app .year-review-grid > span { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+.app .year-review-grid > span:nth-child(odd) { color: var(--text-3); background: var(--surface-2); font-family: var(--font-ui); }
+.app .year-review-grid > span:nth-last-child(-n + 2) { border-bottom: 0; }
+.app .year-review-grid .pos { color: var(--pos); }
+.app .year-review-grid .neg { color: var(--neg); }
+.app .year-review-miles { color: var(--accent); font-family: var(--font-display); font-weight: 600; }
+.app .year-review-next { color: var(--text-2); }
+.app .delivery-stamp .btn-row { justify-content: center; margin-top: 18px; }
+.app .next-goals-row .start-goal {
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.app .next-goals-row .start-goal span { color: var(--text-3); }
+.app .next-goals-row .start-goal:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.app .goal-bar span { background: var(--accent-bright); }
+
+/* ---------- game over ---------- */
+.app .gameover-page { padding: 36px 8px 8px; }
+.app .gameover-page .page-title { font-size: 34px; }
+.app .gameover-page .stat-strip { margin-top: 18px; }
+.app .gameover-events li { border-top-color: var(--border); }
+
+/* ---------- search palette ---------- */
+.app .palette-backdrop { background: var(--scrim); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.app .palette {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  color: var(--text);
+}
+.app .palette-kicker, .app .palette-group-kicker {
+  font: 650 var(--fs-2xs)/1.3 var(--font-ui);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.app .palette-input {
+  min-height: 42px;
+  font: 500 var(--fs-md)/1.2 var(--font-ui);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.app .palette-input:focus-visible { outline: none; border-color: var(--accent-bright); box-shadow: var(--ring); }
+.app .palette-row { border-radius: var(--radius-sm); }
+.app .palette-row-on { background: var(--accent-soft); border-left-color: var(--accent-bright); }
+.app .palette-row-label { color: var(--text); }
+.app .palette-row-sub { color: var(--text-3); }
+.app .palette-tag { font-family: var(--font-mono); border-color: var(--border); border-radius: var(--radius-xs); }
+.app .palette-foot { color: var(--text-3); border-top-color: var(--border); }
+
+/* ---------- the record (timeline) ---------- */
+.app .tl-stats {
+  gap: var(--sp-2);
+}
+.app .tl-stat {
+  padding: 11px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+}
+.app .tl-stat-label { font: 600 var(--fs-2xs)/1.3 var(--font-ui); letter-spacing: var(--tracking-caps); color: var(--text-3); }
+.app .tl-stat-value { font-size: 18px; color: var(--text); }
+.app .tl-year { font: 600 var(--fs-md)/1.2 var(--font-display); color: var(--text); }
+.app .tl-when { color: var(--text-3); }
+.app .tl-lede, .app .tl-chart-key, .app .tl-empty { color: var(--text-3); }
+
+/* ---------- rollups and misc desks ---------- */
+.app .setting-row {
+  align-items: center;
+  padding: 12px 14px; margin-bottom: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.app .setting-more > summary { color: var(--text-3); }
+.app .slot-row { padding: 10px 14px; }
+.app .slot-meta { color: var(--text-3); }
+.app .primer-prose .hint { color: var(--text); font-size: var(--fs-base); max-width: 72ch; }
+.app .gloss-entry { border-bottom: 1px solid var(--border); padding: 8px 6px; }
+.app .gloss-key { color: var(--text); }
+.app .gloss-def { color: var(--text-2); }
+.app .chart-title { font: 600 var(--fs-base)/1.3 var(--font-display); color: var(--text); }
+.app .chart-note, .app .chart-legend, .app .chart-stack .chart-cap { color: var(--text-3); }
+.app .kbd-head { font-weight: 650; color: var(--text-3); letter-spacing: var(--tracking-caps); }
+.app .nw-chart .nw-line { stroke: var(--accent-bright); }
+.app .nw-fill { fill: color-mix(in srgb, var(--accent-bright) 14%, transparent); }
+
+/* Long explanations fold: a hint that runs past four lines is clamped until
+   the player asks (click to expand; see ui/system/pages.css). */
+.app .page .hint.hint-fold { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.app .page .hint.hint-fold:hover { color: var(--text-2); }

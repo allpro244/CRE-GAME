@@ -1305,9 +1305,22 @@ export default function MapView() {
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
-    const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
-    map?.setPixelRatio(preferFps ? Math.min(dpr, 1.25) : dpr);
     threeRef.current?.setPreferFps(preferFps);
+    // The pixel ratio is pinned explicitly, so MapLibre will NOT follow the
+    // display on its own: browser zoom, or dragging the window to a screen of
+    // a different density, left the canvas at the old ratio and the browser
+    // upscaled it. Re-pin whenever devicePixelRatio changes.
+    let mq: MediaQueryList | null = null;
+    const apply = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const want = preferFps ? Math.min(dpr, 1.25) : dpr;
+      if (map && map.getPixelRatio() !== want) map.setPixelRatio(want);
+      mq?.removeEventListener("change", apply);
+      mq = window.matchMedia(`(resolution: ${dpr}dppx)`);
+      mq.addEventListener("change", apply);
+    };
+    apply();
+    return () => mq?.removeEventListener("change", apply);
   }, [preferFps, mapReady]);
   useEffect(() => {
     if (!mapReady) return;

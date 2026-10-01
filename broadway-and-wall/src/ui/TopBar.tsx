@@ -12,62 +12,67 @@ import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engin
 import { loiNeedsPrincipal, portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
+import { PAGE_KEYS } from "./Shortcuts";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Spark from "@/ui/vitals/Spark";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 
-type JobId = "acquire" | "assets" | "capital" | "world" | "economy";
+type JobId = "acquire" | "assets" | "capital" | "world";
+type Lens = "listings" | "land" | "demand" | "zoning" | "owners" | "leases";
 
 const JOBS: {
   id: JobId;
   label: string;
   /** `jump` names a section on the page to land on — a second door into the same room. */
-  pages: readonly { id: Page; label: string; note: string; jump?: string }[];
+  pages: readonly { id: Page; label: string; note: string; icon: string; jump?: string }[];
 }[] = [
   {
     id: "acquire",
     label: "Acquire",
     pages: [
-      { id: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
-      { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
-      { id: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
+      { id: "market", label: "Marketplace", icon: "◎", note: "Listings, receiver books, auctions and off-market calls" },
+      { id: "deals", label: "Deals", icon: "✎", note: "LOIs, negotiations and contracts" },
+      { id: "notes", label: "Notes", icon: "§", note: "Distressed paper — claims on buildings, not the deed" },
     ],
   },
   {
     id: "assets",
     label: "Assets",
     pages: [
-      { id: "portfolio", label: "Portfolio", note: "Holdings, income and concentration" },
-      { id: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
-      { id: "staff", label: "Staff", note: "People, capacity and judgment" },
-      { id: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
+      { id: "portfolio", label: "Portfolio", icon: "▦", note: "Holdings, income and concentration" },
+      { id: "leasing", label: "Leasing", icon: "⌂", note: "Occupancy, expirations and mandate" },
+      { id: "staff", label: "Staff", icon: "☺", note: "People, capacity and judgment" },
+      { id: "firm", label: "The Record", icon: "≡", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },
   {
     id: "capital",
     label: "Capital",
     pages: [
-      { id: "debt", label: "Debt", note: "Loans, line and the maturity wall" },
-      { id: "debt", label: "Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
-      { id: "debt", label: "Fund", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
-      { id: "books", label: "Books", note: "Cash movement and the ledger" },
+      { id: "debt", label: "Debt", icon: "⚖", note: "Loans, line and the maturity wall" },
+      { id: "debt", label: "Refinance", icon: "↻", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
+      { id: "debt", label: "Fund", icon: "◒", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
+      { id: "books", label: "Books", icon: "▤", note: "Cash movement and the ledger" },
     ],
   },
   {
     id: "world",
     label: "World",
     pages: [
-      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
-      { id: "news", label: "News", note: "What the city wrote this month" },
+      { id: "research", label: "Research", icon: "⌕", note: "Comps, submarkets and underwriting" },
+      { id: "economy", label: "Economy", icon: "∿", note: "Cycle, space markets and construction" },
+      { id: "news", label: "News", icon: "✉", note: "What the city wrote this month" },
     ],
   },
-  {
-    id: "economy",
-    label: "Economy",
-    pages: [
-      { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
-    ],
-  },
+];
+
+const LENSES: readonly { id: Lens; label: string; icon: string; title: string }[] = [
+  { id: "listings", label: "For sale", icon: "◉", title: "Market lens — highlight everything for sale on the map" },
+  { id: "land", label: "Land value", icon: "◧", title: "Land value lens — shade every lot by current land $/sf" },
+  { id: "demand", label: "Demand", icon: "◨", title: "Demand lens — transit + employment gravity, the why behind the rents" },
+  { id: "zoning", label: "Zoning", icon: "◩", title: "Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black." },
+  { id: "owners", label: "Owners", icon: "◫", title: "Owners lens — every building the other firms hold, one colour per firm. Yours stay gold." },
+  { id: "leases", label: "Leases", icon: "◬", title: "Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT." },
 ];
 
 /** What to call each room in the Back button. Built from the nav itself so a
@@ -152,7 +157,29 @@ const ERA_SHORT: Record<string, string> = {
 
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
-  const [jobOpen, setJobOpen] = useState<JobId | null>(null);
+  // Icons-only rail. Until the player chooses, it follows the window: labels
+  // from 1200px up, icons below. A choice is remembered per viewer.
+  const [railPref, setRailPref] = useState<"auto" | "compact" | "full">(() => {
+    try {
+      const v = localStorage.getItem("bw:rail");
+      if (v === "compact" || v === "full") return v;
+    } catch { /* storage blocked */ }
+    return "auto";
+  });
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 1200);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1199px)");
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const railCompact = railPref === "auto" ? narrow : railPref === "compact";
+  const setRailCompact = (v: boolean) => {
+    const next = v ? "compact" : "full";
+    setRailPref(next);
+    try { localStorage.setItem("bw:rail", next); } catch { /* storage blocked */ }
+  };
   const fpsOn = useStore((s) => s.fpsOn);
   // When the meter is off, this selector is a constant 0 — so the once-a-second
   // MapView fps write cannot re-render the whole bar (and re-walk the book).
@@ -314,7 +341,7 @@ export default function TopBar() {
   // reach the end of them. They live on the start screen now, which has a
   // scroller and a footer that cannot scroll away. See ui/StartMenu.tsx.
   const newRunRef = useRef<HTMLDivElement>(null);
-  const jobsRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLElement>(null);
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -347,14 +374,18 @@ export default function TopBar() {
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [armNewRun]);
+  /* The rail publishes its width the way the bar publishes its height, so
+     the page rooms and the map cards can sit beside it. */
   useEffect(() => {
-    if (!jobOpen) return;
-    const close = (e: MouseEvent) => {
-      if (jobsRef.current && !jobsRef.current.contains(e.target as Node)) setJobOpen(null);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [jobOpen]);
+    const el = railRef.current;
+    const root = document.documentElement;
+    if (!el) { root.style.setProperty("--rail-w", "0px"); return; }
+    const apply = () => root.style.setProperty("--rail-w", `${Math.round(el.getBoundingClientRect().width)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.setProperty("--rail-w", "0px"); };
+  }, [!!game]);
 
   // THE NET-WORTH POPOVER. Plain local state, same dismissal contract as the
   // job menus plus Escape — a glance card, not a mode. The card itself is
@@ -395,56 +426,11 @@ export default function TopBar() {
   useEffect(() => { if (advancing) setNwOpen(false); }, [advancing]);
 
   return (
+    <>
     <div className="topbar" ref={barRef}>
-      <div className="brand">
+      <div className="topbar-lead">
         {game && <BackButton />}
-        <span className="brand-name">Broadway &amp; Wall</span>
-        {/* WHO THE CITY THINKS YOU ARE. Every rival firm has a name and a
-            characterisation; the player was the string "You". This is the
-            headline epithet — the most quotable true thing about the firm,
-            recomputed every quarter from state the player could have looked
-            up themselves. It costs nothing to read and nothing to maintain. */}
-        {game?.firm && (
-          <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "The town has not formed a view yet."}>
-            <span className="firm-name">{game.firm.name}</span>
-            {(() => {
-              const e = headlineEpithet(game);
-              if (!e) return null;
-              const yrs = Math.floor((game.month - e.sinceM) / 12);
-              return <span className="firm-epithet">{e.text}{yrs >= 8 ? ` — ${yrs} years now` : ""}</span>;
-            })()}
-          </span>
-        )}
-        {/* YOU DO NOT GET TO CHANGE TOWNS MID-CAMPAIGN.
-            The picker used to be live for the whole run, and every island kept
-            its own autosave, so a bad decade in one town was two clicks away
-            from a fresh start in another and the town you were "playing" was
-            never a commitment. A city you are stuck with is the premise of the
-            game: the submarket you misread is the submarket you have to trade
-            your way out of.
-            The choice does not disappear, it moves to where it belongs — the
-            start screen, which is where a run begins now. The New city button
-            still asks twice before erasing anything and then goes back there. */}
-        {game ? (
-          <span
-            className="brand-sub city-locked"
-            title={`You are playing ${manifest?.city ?? currentCity()}, built from seed ${game.citySeed ?? currentSeed()}. `
-              + `A campaign belongs to its town — to play a different one, start a new game.`}
-          >
-            {manifest?.city ?? currentCity()}
-          </span>
-        ) : (
-          <span className="brand-sub">
-            {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
-          </span>
-        )}
-        {manifest?.source === "synthetic" && (
-          <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
-            SYNTHETIC DEV DATA
-          </span>
-        )}
       </div>
-
       {game && (
         <div className="topbar-game">
           {/* THE READOUTS ARE THE ONLY THING ALLOWED TO SHRINK.
@@ -608,6 +594,7 @@ export default function TopBar() {
               <Stat
                 label="Base rate"
                 value={pct(game.econ.indexRate)}
+                drop={2}
                 keep
                 w={72}
                 title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
@@ -626,6 +613,7 @@ export default function TopBar() {
             {/* Vacancy change, not level — the single highest-EV cycle tell. */}
             <Stat
               label="Vac Δ / yr"
+              drop={2}
               value={vacDpp === null ? "—" : `${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp`}
               bad={vacDpp !== null && vacDpp >= 2}
               keep
@@ -637,269 +625,264 @@ export default function TopBar() {
                   : `Office vacancy change vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} percentage points. Rising ≥2 pp is the soft-market tell.`}
             />
           </div>
-          <div className="topbar-stats">
-          {/* Market phase and vacant-lot counts are drop 3 — the two readouts
-              in here that a player never steers by mid-month. */}
-          <Stat
-            label="Market"
-            value={game.econ.phase}
-            drop={3}
-            w={84}
-            title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
-          />
-          {game.econ.eraLabel && (
-            <Stat
-              label="Era"
-              value={ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}
-              drop={3}
-              // Sized to the longest short name: "disinflation" in the mono
-              // face is ~95px and was clipped to "disinflatio" at 92.
-              w={100}
-              title={`${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The cycle takes rates a point or two either way; the era decides whether that is 3% or 13%, and it turns over on a scale of decades.`}
-            />
-          )}
-          {(() => {
-            const book = firmBookStress(game);
-            return (
-              <Stat
-                label="Book"
-                value={book.label}
-                bad={book.bad}
-                keep
-                w={88}
-                title={book.title}
-              />
-            );
-          })()}
-          <Stat
-            drop={3}
-            w={92}
-            label="Vacant lots"
-            value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
-            title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
-          />
-          </div>
-          </div>
-          <div className="topbar-workspace">
-          <nav className="nav-cluster nav-cluster-desks" aria-label="Firm jobs" ref={jobsRef}>
-          <span className="topbar-sep" />
-          {/* Job-based IA: four verbs instead of a peer strip of desks. Each
-              job opens its rooms; badges still sit on the job that owns them. */}
-          {JOBS.map((job) => {
-            const on = job.pages.some((p) => p.id === page);
-            const badge = job.id === "acquire"
-              ? dealsCount + notesLive + bcalls.length + booksLive
-              : job.id === "capital" && (debtSwept || debtHot) ? 1
-              : job.id === "world" ? unread
-              : 0;
-            const title = job.id === "acquire" && (bcalls.length || booksLive)
-              ? [
-                bcalls.length ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo` : "",
-                booksLive ? `${booksLive} book${booksLive === 1 ? "" : "s"}/docket on Marketplace` : "",
-              ].filter(Boolean).join(" · ")
-              : job.id === "capital" && debtBal > 0
-                ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}`
-                : undefined;
-            return (
-              <div key={job.id} className="nav-job">
-                <button
-                  type="button"
-                  className={"nav-btn" + (on || jobOpen === job.id ? " nav-on" : "")}
-                  aria-haspopup="menu"
-                  aria-expanded={jobOpen === job.id}
-                  title={title}
-                  onClick={() => {
-                    if (job.pages.length === 1) {
-                      setJobOpen(null);
-                      const pid = job.pages[0].id;
-                      setPage(page === pid ? "none" : pid);
-                    } else {
-                      setJobOpen((v) => (v === job.id ? null : job.id));
-                    }
-                  }}
-                >
-                  {job.label}
-                  {job.pages.length > 1 ? <span className="nav-caret" aria-hidden="true">▾</span> : null}
-                  {job.id === "acquire" ? <Badge n={badge} /> : null}
-                  {/* the debt flag is a pip like the counts, not " · !" trailing the caret */}
-                  {job.id === "capital" && (debtSwept || debtHot) ? (
-                    <span className="nav-badge nav-badge-warn" aria-label={debtSwept ? "cash sweep on" : "maturity wall"}>{debtSwept ? "⚠" : "!"}</span>
-                  ) : null}
-                  {job.id === "world" ? <Badge n={unread} /> : null}
-                </button>
-                {jobOpen === job.id && (
-                  <div className="nav-menu nav-job-menu" role="menu">
-                    {job.pages.map((p) => (
-                      <button
-                        key={p.jump ? `${p.id}:${p.jump}` : p.id}
-                        type="button"
-                        role="menuitem"
-                        className={"nav-menu-item" + (page === p.id && !p.jump ? " on" : "")}
-                        onClick={() => {
-                          setJobOpen(null);
-                          if (p.jump) setPage(p.id, p.jump);
-                          else setPage(page === p.id ? "none" : p.id);
-                        }}
-                      >
-                        <span>{p.label}</span>
-                        <small>{p.note}</small>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          </nav>
-          <div className="nav-cluster nav-cluster-map" role="group" aria-label="Map lenses">
-          <span className="topbar-sep" />
-          <button
-            className={"lens-btn" + (lens === "listings" ? " lens-on" : "")}
-            aria-pressed={lens === "listings"}
-            onClick={() => setLens(lens === "listings" ? "none" : "listings")}
-            title="Market lens — highlight everything for sale on the map"
-          >
-            ◉ Market
-          </button>
-          <button
-            className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
-            aria-pressed={lens === "land"}
-            onClick={() => setLens(lens === "land" ? "none" : "land")}
-            title="Land value lens — shade every lot by current land $/sf"
-          >
-            ◧ Land
-          </button>
-          <button
-            className={"lens-btn" + (lens === "demand" ? " lens-on lens-on-teal" : "")}
-            aria-pressed={lens === "demand"}
-            onClick={() => setLens(lens === "demand" ? "none" : "demand")}
-            title="Demand lens — transit + employment gravity, the why behind the rents"
-          >
-            ◨ Demand
-          </button>
-          <button
-            className={"lens-btn" + (lens === "zoning" ? " lens-on" : "")}
-            aria-pressed={lens === "zoning"}
-            onClick={() => setLens(lens === "zoning" ? "none" : "zoning")}
-            title="Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black."
-          >
-            ◩ Zoning
-          </button>
-          <button
-            className={"lens-btn" + (lens === "owners" ? " lens-on lens-on-teal" : "")}
-            aria-pressed={lens === "owners"}
-            onClick={() => setLens(lens === "owners" ? "none" : "owners")}
-            title="Owners lens — every building the other firms hold, one colour per firm. Yours stay gold."
-          >
-            ◫ Owners
-          </button>
-          <button
-            className={"lens-btn" + (lens === "leases" ? " lens-on" : "")}
-            aria-pressed={lens === "leases"}
-            onClick={() => setLens(lens === "leases" ? "none" : "leases")}
-            title="Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT."
-          >
-            ◬ Leases
-          </button>
-          </div>
-          <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
-          <PlayButton />
-          <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month (Space)">
-            Advance ▸
-          </button>
-          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
-            {advancing ? "…" : "Yr ▸▸"}
-          </button>
-          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)">
-            {advancing ? "…" : "⏭"}
-          </button>
-          </div>
           </div>
         </div>
       )}
-
-      <div className="topbar-right">
-        <button
-          className={"lens-btn" + (mapOnly ? " lens-on" : "")}
-          title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
-          onClick={() => setMapOnly(!mapOnly)}
-        >
-          ◈ Map
-        </button>
-        <button
-          className="lens-btn"
-          title="Photo frame — hide all chrome for a clean skyline still (P)"
-          onClick={() => useStore.getState().setPhotoFrame(true)}
-        >
-          ◻ Frame
-        </button>
-        {/* SAVES, WHERE SOMEBODY CAN FIND THEM. The whole save/load panel was
-            built and then rendered only at the bottom of the Books page, under
-            the ledger — which is the same as not having one. It is a top-level
-            control now, because loading a game is not an accounting task. */}
-        <button
-          className={"lens-btn" + (page === "saves" ? " lens-on" : "")}
-          title="The live campaign autosaves; create or load named snapshots here"
-          onClick={() => setPage(page === "saves" ? "none" : "saves")}
-        >
-          ⛁ Saves
-        </button>
-        {/* THE ONE PAGE THAT ASSUMES YOU HAVE NEVER DONE THIS. Everything else
-            in this game is written for somebody who already knows what a cap
-            rate is. */}
-        <button
-          className={"lens-btn" + (page === "primer" ? " lens-on" : "")}
-          title="New to commercial real estate? Cap rates, NOI and appraisals, in plain words"
-          onClick={() => setPage(page === "primer" ? "none" : "primer")}
-        >
-          ? Primer
-        </button>
-        {/* THE JEV MATCH — only once Jev informs a firm in this town. */}
-        {(game?.rivals ?? []).some((r) => r.jev) && (
-          <button
-            className={"lens-btn" + (page === "match" ? " lens-on" : "")}
-            title="Firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
-            onClick={() => setPage(page === "match" ? "none" : "match")}
-          >
-            ◆ Jev match
+      {game && (
+        <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
+          <PlayButton />
+          <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month (Space)">
+            Advance <span className="advance-unit">1 mo</span>
           </button>
-        )}
-        <button
-          className={"lens-btn" + (page === "settings" ? " lens-on" : "")}
-          title="Settings — pop-up cards, broker calls, the auction card"
-          onClick={() => setPage(page === "settings" ? "none" : "settings")}
-        >
-          ⚙ Settings
-        </button>
-        {/* No window.confirm here. Browsers that suppress dialogs (an iframe,
-            or "prevent this page from creating dialogs" ticked once) make
-            confirm() return false silently and forever — the button reads as
-            dead. A two-click arm-then-fire needs nothing from the browser. */}
-        {/* ONE BUTTON, ONE PROMISE. It used to open the three menus that chose
-            the next town, which is how it grew taller than the window. It now
-            does what its label says and nothing else: erase this campaign and
-            go back to the start screen, where the next town is chosen with
-            room to read the options. */}
-        <div className="city-pick" ref={newRunRef}>
-          <button
-            className={"lens-btn" + (armNewRun ? " lens-on" : "")}
-            title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. Named saves are left alone. No holdings, the opening bankroll you choose, a brand new town."
-            onClick={() => {
-              if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
-              setArmNewRun(false);
-              useStore.getState().newRun();
-            }}
-          >
-            {armNewRun ? "Erase this game?" : "↺ New city"}
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
+            {advancing ? "…" : "1 yr ▸▸"}
+          </button>
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)" aria-label="Skip to next decision">
+            {advancing ? "…" : "⏭"}
           </button>
         </div>
-        {fpsOn && (
-          <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
-            {fps} fps
-          </span>
-        )}
-      </div>
+      )}
     </div>
+
+    {/* THE SIDE RAIL. Every room in the firm, one click away, grouped by job.
+        The job menus were a click to open and a click to choose, and their
+        contents were invisible until you guessed which verb owned the room;
+        here they are all on the page, with their counts on the room that holds
+        the work. The map lenses and the campaign controls live at the foot. */}
+    {game && (
+      <nav className={"siderail" + (railCompact ? " siderail-compact" : "")} aria-label="Firm desks" ref={railRef}>
+        <div className="brand rail-brand">
+          <span className="brand-mark" aria-hidden="true">B&amp;W</span>
+          <div className="rail-brand-text">
+            <span className="brand-name">Broadway &amp; Wall</span>
+            {/* WHO THE CITY THINKS YOU ARE. Every rival firm has a name and a
+                characterisation; the player was the string "You". This is the
+                headline epithet — the most quotable true thing about the firm,
+                recomputed every quarter from state the player could have looked
+                up themselves. It costs nothing to read and nothing to maintain. */}
+            {game?.firm && (
+              <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "The town has not formed a view yet."}>
+                <span className="firm-name">{game.firm.name}</span>
+                {(() => {
+                  const e = headlineEpithet(game);
+                  if (!e) return null;
+                  const yrs = Math.floor((game.month - e.sinceM) / 12);
+                  return <span className="firm-epithet">{e.text}{yrs >= 8 ? ` — ${yrs} years now` : ""}</span>;
+                })()}
+              </span>
+            )}
+            {/* YOU DO NOT GET TO CHANGE TOWNS MID-CAMPAIGN.
+                The picker used to be live for the whole run, and every island kept
+                its own autosave, so a bad decade in one town was two clicks away
+                from a fresh start in another and the town you were "playing" was
+                never a commitment. A city you are stuck with is the premise of the
+                game: the submarket you misread is the submarket you have to trade
+                your way out of.
+                The choice does not disappear, it moves to where it belongs — the
+                start screen, which is where a run begins now. The New city button
+                still asks twice before erasing anything and then goes back there. */}
+            {game ? (
+              <span
+                className="brand-sub city-locked"
+                title={`You are playing ${manifest?.city ?? currentCity()}, built from seed ${game.citySeed ?? currentSeed()}. `
+                  + `A campaign belongs to its town — to play a different one, start a new game.`}
+              >
+                {manifest?.city ?? currentCity()}
+              </span>
+            ) : (
+              <span className="brand-sub">
+                {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
+              </span>
+            )}
+            {manifest?.source === "synthetic" && (
+              <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
+                SYNTHETIC DEV DATA
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="siderail-scroll">
+          {JOBS.map((job) => {
+            const capTitle = job.id === "capital" && debtBal > 0
+              ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}`
+              : undefined;
+            return (
+              <div key={job.id} className="rail-group" role="group" aria-label={job.label}>
+                <div className="rail-group-label">{job.label}</div>
+                {job.pages.map((p) => {
+                  const on = page === p.id && !p.jump;
+                  const n = p.jump ? 0
+                    : p.id === "market" ? bcalls.length + booksLive
+                    : p.id === "deals" ? dealsCount
+                    : p.id === "notes" ? notesLive
+                    : p.id === "news" ? unread
+                    : 0;
+                  const warn = p.id === "debt" && !p.jump && (debtSwept || debtHot);
+                  const key = PAGE_KEYS.find((k) => k.page === p.id && !p.jump)?.key;
+                  const title = p.id === "market" && (bcalls.length || booksLive)
+                    ? [
+                      bcalls.length ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo` : "",
+                      booksLive ? `${booksLive} book${booksLive === 1 ? "" : "s"}/docket on Marketplace` : "",
+                    ].filter(Boolean).join(" · ")
+                    : p.id === "debt" && !p.jump && capTitle ? capTitle
+                    : `${p.label} — ${p.note}${key ? ` (${key})` : ""}`;
+                  return (
+                    <button
+                      key={p.jump ? `${p.id}:${p.jump}` : p.id}
+                      type="button"
+                      className={"rail-item" + (on ? " on" : "")}
+                      aria-current={on ? "page" : undefined}
+                      title={title}
+                      onClick={() => {
+                        if (p.jump) setPage(p.id, p.jump);
+                        else setPage(page === p.id ? "none" : p.id);
+                      }}
+                    >
+                      <span className="rail-ico" aria-hidden="true">{p.icon}</span>
+                      <span className="rail-label">{p.label}</span>
+                      {n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
+                        : warn ? <span className="rail-badge rail-badge-warn" aria-label={debtSwept ? "cash sweep on" : "maturity wall"}>{debtSwept ? "⚠" : "!"}</span>
+                        : key ? <kbd className="rail-key" aria-hidden="true">{key}</kbd> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div className="rail-group" role="group" aria-label="Map lenses">
+            <div className="rail-group-label">Map lens</div>
+            {LENSES.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                className={"rail-item rail-lens" + (lens === l.id ? " on" : "")}
+                aria-pressed={lens === l.id}
+                onClick={() => setLens(lens === l.id ? "none" : l.id)}
+                title={l.title}
+              >
+                <span className="rail-ico" aria-hidden="true">{l.icon}</span>
+                <span className="rail-label">{l.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="rail-group rail-city" role="group" aria-label="The city">
+            <div className="rail-group-label">The street</div>
+            <div className="topbar-stats">
+              <Stat
+                label="Market"
+                value={game.econ.phase}
+                title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
+              />
+              {game.econ.eraLabel && (
+                <Stat
+                  label="Era"
+                  value={ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}
+                  title={`${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The cycle takes rates a point or two either way; the era decides whether that is 3% or 13%, and it turns over on a scale of decades.`}
+                />
+              )}
+              {(() => {
+                const book = firmBookStress(game);
+                return <Stat label="Book" value={book.label} bad={book.bad} title={book.title} />;
+              })()}
+              <Stat
+                label="Vacant lots"
+                value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
+                title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
+              />
+            </div>
+          </div>
+          <div className="rail-group" role="group" aria-label="Campaign">
+            <div className="rail-group-label">Campaign</div>
+            {/* Loading a game is not an accounting task — a top-level control. */}
+            <button
+              type="button"
+              className={"rail-item" + (page === "saves" ? " on" : "")}
+              title="The live campaign autosaves; create or load named snapshots here"
+              onClick={() => setPage(page === "saves" ? "none" : "saves")}
+            >
+              <span className="rail-ico" aria-hidden="true">⛁</span><span className="rail-label">Saves</span>
+            </button>
+            <button
+              type="button"
+              className={"rail-item" + (page === "primer" ? " on" : "")}
+              title="New to commercial real estate? Cap rates, NOI and appraisals, in plain words"
+              onClick={() => setPage(page === "primer" ? "none" : "primer")}
+            >
+              <span className="rail-ico" aria-hidden="true">?</span><span className="rail-label">Primer</span>
+            </button>
+            {(game?.rivals ?? []).some((r) => r.jev) && (
+              <button
+                type="button"
+                className={"rail-item" + (page === "match" ? " on" : "")}
+                title="Firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
+                onClick={() => setPage(page === "match" ? "none" : "match")}
+              >
+                <span className="rail-ico" aria-hidden="true">◆</span><span className="rail-label">Jev match</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className={"rail-item" + (page === "settings" ? " on" : "")}
+              title="Settings — theme, pop-up cards, broker calls, the auction card"
+              onClick={() => setPage(page === "settings" ? "none" : "settings")}
+            >
+              <span className="rail-ico" aria-hidden="true">⚙</span><span className="rail-label">Settings</span>
+            </button>
+          </div>
+        </div>
+        <div className="rail-foot">
+          <button
+            type="button"
+            className={"rail-item" + (mapOnly ? " on" : "")}
+            aria-pressed={mapOnly}
+            title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
+            onClick={() => setMapOnly(!mapOnly)}
+          >
+            <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map only</span><kbd className="rail-key" aria-hidden="true">M</kbd>
+          </button>
+          <button
+            type="button"
+            className="rail-item"
+            title="Photo frame — hide all chrome for a clean skyline still (P)"
+            onClick={() => useStore.getState().setPhotoFrame(true)}
+          >
+            <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo frame</span><kbd className="rail-key" aria-hidden="true">P</kbd>
+          </button>
+          {/* No window.confirm: a two-click arm-then-fire needs nothing from the
+              browser. It erases this campaign and goes back to the start
+              screen, where the next town is chosen. */}
+          <div className="city-pick" ref={newRunRef}>
+            <button
+              type="button"
+              className={"rail-item rail-danger" + (armNewRun ? " on" : "")}
+              title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. Named saves are left alone. No holdings, the opening bankroll you choose, a brand new town."
+              onClick={() => {
+                if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
+                setArmNewRun(false);
+                useStore.getState().newRun();
+              }}
+            >
+              <span className="rail-ico" aria-hidden="true">↺</span><span className="rail-label">{armNewRun ? "Erase this game?" : "New city"}</span>
+            </button>
+          </div>
+          {fpsOn && (
+            <span className={"stat mono rail-fps " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
+              {fps} fps
+            </span>
+          )}
+          <button
+            type="button"
+            className="rail-item rail-collapse"
+            aria-pressed={railCompact}
+            title={railCompact ? "Show labels" : "Icons only"}
+            onClick={() => setRailCompact(!railCompact)}
+          >
+            <span className="rail-ico" aria-hidden="true">{railCompact ? "»" : "«"}</span><span className="rail-label">Collapse</span>
+          </button>
+        </div>
+      </nav>
+    )}
+    </>
   );
 }
 
@@ -907,20 +890,6 @@ export default function TopBar() {
 // goes first, then 2, and anything unranked never goes. Every one of these
 // numbers is also on a page — Books, the Economy — so losing one costs a
 // glance, not information. The controls are not rankable: they stay.
-/**
- * A COUNT THAT DOES NOT MOVE THE BUTTON IT IS ON.
- *
- * `Deals` becoming `Deals · 3` becoming `Deals · 12` widens the button and
- * walks every control to its right along with it — and the deals count changes
- * on almost every Advance, which is exactly when the player's cursor is parked
- * over a button. The badge gets a fixed slot; the label never moves. It renders
- * the slot even at zero so appearing and disappearing costs nothing either.
- */
-function Badge({ n }: { n: number }) {
-  // A count pinned to the button's corner: no layout slot, so the label never
-  // moves when it appears, and no empty 28px gap when there is nothing to count.
-  return n > 0 ? <span className="nav-badge" aria-label={`${n} waiting`}>{n}</span> : null;
-}
 
 /**
  * A READOUT THAT KEEPS ITS PLACE.

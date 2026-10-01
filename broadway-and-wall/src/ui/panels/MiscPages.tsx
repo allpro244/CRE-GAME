@@ -7,6 +7,7 @@ import { soundOn, setSoundOn, play } from "@/ui/Sounds";
 import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
 import { JevSettings } from "@/ui/panels/JevPanel";
+import { themePref, setThemePref, type ThemePref } from "@/ui/theme";
 
 export function PrimerPage() {
   const game = useStore((s) => s.game)!;
@@ -163,6 +164,33 @@ function Toggle({ on, set, label, detail, more }: { on: boolean; set: (v: boolea
   );
 }
 
+function ThemePicker() {
+  const [pref, setPref] = useState<ThemePref>(themePref());
+  const opts: [ThemePref, string][] = [["light", "Light"], ["dark", "Dark"], ["system", "Match system"]];
+  return (
+    <div className="setting-row">
+      <div className="setting-text">
+        <div style={{ fontWeight: 600 }}>Appearance</div>
+        <div className="hint" style={{ padding: 0 }}>The desks and cards; the city keeps its own light.</div>
+      </div>
+      <div className="seg" role="radiogroup" aria-label="Appearance">
+        {opts.map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            role="radio"
+            aria-checked={pref === v}
+            className={"seg-btn" + (pref === v ? " on" : "")}
+            onClick={() => { setThemePref(v); setPref(v); }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
@@ -180,6 +208,7 @@ export function SettingsPage() {
   };
   return (
     <div>
+      <ThemePicker />
       <Toggle
         on={sound}
         set={(v) => { setSoundOn(v); setSound(v); if (v) play("milestone"); }}

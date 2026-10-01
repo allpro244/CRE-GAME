@@ -8768,6 +8768,7 @@ uniform float uFocus;      // where the plane of focus sits, 0..1 up the frame
 uniform float uBand;       // how much of the frame is sharp
 uniform float uDefocus;    // blur radius in pixels at the top and bottom
 uniform float uGrain;
+uniform float uFxaa;       // 1 at ~1x density; 0 on dense screens, where MSAA at native res is enough
 uniform vec3 uSunScreen;   // xy = where the sun is on screen, z = 1 if in front
 uniform vec3 uSunTint;
 uniform float uGlare;
@@ -8846,7 +8847,7 @@ vec4 defocused(vec2 uv, float r) {
   // Inside the focus band there is no blur to hide the stair-stepping, so this
   // is where the edge work goes. Outside it the disk is already doing more
   // smoothing than any edge filter would.
-  if (r < 0.35) return fxaa(uv);
+  if (r < 0.35) return uFxaa > 0.5 ? fxaa(uv) : texture2D(uScene, uv);
   vec4 sum = texture2D(uScene, uv);
   for (int i = 0; i < 8; i++) {
     float a = float(i) * 2.39996323;
@@ -10136,7 +10137,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const end = () => { this.camMoving = false; this.map.triggerRepaint(); };
       for (const e of ["movestart", "zoomstart", "rotatestart", "pitchstart"] as const) map.on(e, start);
       for (const e of ["moveend", "zoomend", "rotateend", "pitchend"] as const) map.on(e, end);
-      const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
+      const measure = () => {
+        this.viewH = map.getContainer().clientHeight || 900;
+        this.syncRendererSize();
+      };
       measure();
       map.on("resize", measure);
     }
@@ -10259,6 +10263,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // city one is actually looking at lives.
           uFocus: { value: 0.56 }, uBand: { value: 0.26 }, uDefocus: { value: 2.7 },
           uGrain: { value: 0.006 },
+          uFxaa: { value: 1 },
           uSunScreen: { value: new THREE.Vector3() },
           uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
           // Trimmed from 0.30/0.42 when the sun's yearly arc dropped to twelve
@@ -10285,8 +10290,39 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   /** Match the targets to the drawing buffer; rebuild them when it changes. */
+  /**
+   * KEEP THREE'S IDEA OF THE CANVAS IN STEP WITH MAPLIBRE'S.
+   *
+   * The renderer shares MapLibre's canvas and read its size exactly once, in
+   * the constructor. MapLibre resizes that canvas on every window resize, on
+   * setPixelRatio (prefer-smoother-frames, a DPR change) and when the layout
+   * settles — and three kept drawing the city into the old viewport and the
+   * post stage kept rendering into targets of the old size, which the
+   * composite then stretched over the real buffer. That stretch is the
+   * "fuzzy" look. Returns true if anything changed.
+   */
+  private syncRendererSize(): boolean {
+    if (!this.renderer || !this.map) return false;
+    const gl = this.renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    if (w < 1 || h < 1) return false;
+    const cur = this.renderer.getDrawingBufferSize(this.scratchV2);
+    if (cur.x === w && cur.y === h && this.renderer.getPixelRatio() === 1) return false;
+    // Pixel ratio stays 1 on three's side: MapLibre already owns the device
+    // pixel ratio and sized the canvas in device pixels. setSize with
+    // updateStyle=false leaves the CSS size (MapLibre's) alone.
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(w, h, false);
+    this.postSize.set(0, 0);
+    return true;
+  }
+
   private ensurePostSize(): boolean {
     if (!this.postOK || !this.postQuad) return false;
+    // Fallback for any resize that did not come through the map's resize
+    // event: resync now and ask for a clean frame, since setSize clears the
+    // shared canvas MapLibre has already drawn into this frame.
+    if (this.syncRendererSize()) { this.map.triggerRepaint(); return false; }
     const size = this.renderer.getDrawingBufferSize(this.scratchV2);
     if (size.x < 4 || size.y < 4) return false;
     // Prefer-FPS rebuilds with fewer samples; the sample count is part of the
@@ -14105,10 +14141,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // facade and roof work at the camera where decisions are made.
       // While the camera is moving the disk samples are wasted work — the eye
       // cannot read tilt-shift on a frame that is already in motion.
+      // CRISP FIRST. The default play camera sits around z14.6-14.8, which the
+      // old ramp gave a 2.25 px disk — the whole city outside a thin depth
+      // slice went soft, and that is what the owner was calling "fuzzy". The
+      // tilt-shift cue is now kept only for the truly wide fit (below z13.6)
+      // and fades to nothing before the play camera. The radius is in CSS
+      // pixels (scaled by the buffer's density), so a 2x screen gets the same
+      // apparent softness rather than a 1x-sized disk on 2x pixels.
+      const cssToBuf = this.postSize.x > 0 && this.map
+        ? this.postSize.x / Math.max(1, this.map.getCanvas().clientWidth) : 1;
       const model = skipExtras
         ? 0
-        : 2.25 + (0.42 - 2.25) * smoothstep(14.6, 15.3, zoom);
-      this.compMat.uniforms.uDefocus.value = model * (1 - smoothstep(16.4, 18.2, zoom));
+        : 1.1 * cssToBuf * (1 - smoothstep(13.2, 13.9, zoom));
+      this.compMat.uniforms.uDefocus.value = model;
+      // FXAA is an edge blur; on a 1.5x+ buffer the 4x MSAA already resolves
+      // geometry finer than the eye can see, and FXAA only eats window grids.
+      this.compMat.uniforms.uFxaa.value = cssToBuf >= 1.5 ? 0 : 1;
       // The vertical atmosphere gradient is an establishing-shot effect: it
       // needs the camera high (the same altitude band the haze floor uses)
       // and the frame tilted enough that its top is genuinely kilometres away

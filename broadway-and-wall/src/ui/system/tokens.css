@@ -1,0 +1,203 @@
+/* ==========================================================================
+   BROADWAY & WALL — DESIGN TOKENS
+   One source for colour, type, space, radius and elevation. Every sheet in
+   ui/system reads these; the older sheets read them through the legacy names
+   remapped at the bottom of :root, so a change here reaches the whole game.
+
+   The idea: a quiet, precise instrument panel around a living city. Neutral
+   warm-grey surfaces, ink text, one brass accent (the house colour — the same
+   gold your buildings wear on the map), a navy-ink primary for the actions
+   that spend money, and semantic green/red that pass AA on their surfaces.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- type ---- */
+  --font-display: "Source Serif 4 Variable", "Source Serif Pro", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Inter Variable", Inter, "Segoe UI Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-2xs: 10.5px;  /* kicker, eyebrow */
+  --fs-xs: 11.5px;   /* meta, table head */
+  --fs-sm: 12.5px;   /* secondary copy */
+  --fs-base: 13.5px; /* body, controls */
+  --fs-md: 15px;     /* card titles */
+  --fs-lg: 18px;     /* section titles */
+  --fs-xl: 22px;     /* modal titles, big numbers */
+  --fs-2xl: 28px;    /* page titles */
+  --fs-3xl: 36px;    /* start screen */
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
+  --tracking-caps: 0.08em;
+
+  /* ---- space (4px grid) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* ---- radius ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
+  --radius-pill: 999px;
+
+  /* ---- colour: surfaces ---- */
+  --surface-0: #f4f3ef;   /* the room behind cards */
+  --surface-1: #ffffff;   /* cards, sheets, bars */
+  --surface-2: #f6f5f1;   /* inset fills, table heads */
+  --surface-3: #ecebe5;   /* hover, pressed */
+  --surface-glass: rgba(255, 255, 255, 0.86);
+  --scrim: rgba(22, 24, 28, 0.42);
+  --border: #e4e1d9;
+  --border-strong: #cfcabe;
+
+  /* ---- colour: text (contrast on --surface-1) ---- */
+  --text: #1b1a17;        /* 17:1 */
+  --text-2: #4f4c45;      /* 8.6:1 */
+  --text-3: #6f6b62;      /* 5.3:1 */
+  --text-on-dark: #f7f5ef;
+
+  /* ---- colour: brand + semantic ---- */
+  --accent: #8f600f;          /* brass — 5.2:1 on white */
+  --accent-strong: #6f4a0a;
+  --accent-bright: #c8962e;   /* rules, focus, fills — never text */
+  --accent-soft: #f7efdc;
+  --accent-line: #e4d0a3;
+  --primary: #1e2a38;         /* navy ink: the actions that spend money */
+  --primary-hover: #2c3c50;
+  --on-primary: #ffffff;
+  --pos: #1b7342;   --pos-soft: #e5f3ea;
+  --neg: #b0281e;   --neg-soft: #fbe9e7;
+  --warn: #93570a;  --warn-soft: #fbf0dd;
+  --teal: #1f6f67;  --teal-soft: #e3f1ef;
+  --violet: #66508a; --violet-soft: #efeaf6;
+  --focus: #c8962e;
+
+  /* ---- elevation ---- */
+  --shadow-1: 0 1px 2px rgba(20, 18, 12, 0.06), 0 1px 1px rgba(20, 18, 12, 0.04);
+  --shadow-2: 0 2px 6px rgba(20, 18, 12, 0.07), 0 8px 24px rgba(20, 18, 12, 0.08);
+  --shadow-3: 0 8px 20px rgba(20, 18, 12, 0.10), 0 24px 64px rgba(20, 18, 12, 0.18);
+  --ring: 0 0 0 3px rgba(200, 150, 46, 0.35);
+
+  --dur: 140ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* ---- legacy names → the system (older sheets keep working) ---- */
+  --paper: var(--surface-1);
+  --paper-deep: var(--surface-3);
+  --paper-wash: var(--surface-glass);
+  --ink: var(--text);
+  --ink-dim: var(--text-3);
+  --gold: var(--accent);
+  --gold-ink: var(--accent-strong);
+  --gold-soft: var(--accent-soft);
+  --danger: var(--neg);
+  --success: var(--pos);
+  --warning: var(--warn);
+  --card: var(--surface-1);
+  --card-line: var(--border);
+  --line: var(--border-strong);
+  --panel: var(--surface-1);
+  --rule: var(--border-strong);
+  --serif: var(--font-display);
+  --mono: var(--font-mono);
+  --lift-1: var(--shadow-1);
+  --lift-2: var(--shadow-2);
+  --lift-3: var(--shadow-3);
+  --edge-top: 0 0 0 0 transparent;
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --page-room: min(1180px, 100%);
+}
+
+/* ---- dark: the same system at night ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121418;
+    --surface-1: #1a1d22;
+    --surface-2: #20242a;
+    --surface-3: #2a2f36;
+    --surface-glass: rgba(26, 29, 34, 0.88);
+    --scrim: rgba(4, 6, 8, 0.6);
+    --border: #2d323a;
+    --border-strong: #414854;
+    --text: #edebe6;
+    --text-2: #c2beb4;
+    --text-3: #9b978d;
+    --accent: #e3b45c;
+    --accent-strong: #f2cb7f;
+    --accent-bright: #d9a440;
+    --accent-soft: rgba(227, 180, 92, 0.13);
+    --accent-line: rgba(227, 180, 92, 0.38);
+    --primary: #ebe6da;
+    --primary-hover: #ffffff;
+    --on-primary: #15171b;
+    --pos: #6ccb94;   --pos-soft: rgba(108, 203, 148, 0.13);
+    --neg: #f28b80;   --neg-soft: rgba(242, 139, 128, 0.13);
+    --warn: #eaae5a;  --warn-soft: rgba(234, 174, 90, 0.13);
+    --teal: #6cc6ba;  --teal-soft: rgba(108, 198, 186, 0.13);
+    --violet: #b7a3dc; --violet-soft: rgba(183, 163, 220, 0.14);
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121418;
+  --surface-1: #1a1d22;
+  --surface-2: #20242a;
+  --surface-3: #2a2f36;
+  --surface-glass: rgba(26, 29, 34, 0.88);
+  --scrim: rgba(4, 6, 8, 0.6);
+  --border: #2d323a;
+  --border-strong: #414854;
+  --text: #edebe6;
+  --text-2: #c2beb4;
+  --text-3: #9b978d;
+  --accent: #e3b45c;
+  --accent-strong: #f2cb7f;
+  --accent-bright: #d9a440;
+  --accent-soft: rgba(227, 180, 92, 0.13);
+  --accent-line: rgba(227, 180, 92, 0.38);
+  --primary: #ebe6da;
+  --primary-hover: #ffffff;
+  --on-primary: #15171b;
+  --pos: #6ccb94;   --pos-soft: rgba(108, 203, 148, 0.13);
+  --neg: #f28b80;   --neg-soft: rgba(242, 139, 128, 0.13);
+  --warn: #eaae5a;  --warn-soft: rgba(234, 174, 90, 0.13);
+  --teal: #6cc6ba;  --teal-soft: rgba(108, 198, 186, 0.13);
+  --violet: #b7a3dc; --violet-soft: rgba(183, 163, 220, 0.14);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- base ---- */
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: #b8d3e6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss03";
+}
+button, input, select, textarea { font-family: inherit; }
+.mono, code, kbd, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.mono { font-size: 0.94em; letter-spacing: -0.01em; }
+::selection { background: var(--accent-soft); color: var(--text); }
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

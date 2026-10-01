@@ -38,7 +38,17 @@ if (js.length !== 1 || css.length !== 1) {
 }
 
 const jsSrc = readFileSync(join(ASSETS, js[0]), "utf8");
-const cssSrc = readFileSync(join(ASSETS, css[0]), "utf8");
+// The bundled typefaces (ui/system/fonts.css) come out of vite as separate
+// woff2 files; a file:// page cannot fetch them, so they ride inside the CSS.
+const FONT_MIME = { woff2: "font/woff2", woff: "font/woff" };
+const cssSrc = readFileSync(join(ASSETS, css[0]), "utf8").replace(
+  /url\(\s*["']?\/assets\/([^"')]+\.(woff2?))["']?\s*\)/g,
+  (_m, file, ext) => `url(data:${FONT_MIME[ext]};base64,${readFileSync(join(ASSETS, file)).toString("base64")})`,
+);
+if (/url\(\s*["']?\/assets\//.test(cssSrc)) {
+  console.error("A url(/assets/…) reference survived inlining in the CSS; the file would need the network.");
+  process.exit(1);
+}
 
 // Vite's single chunk is already a closed IIFE (no import/export). Ship it as a
 // classic script — not type=module — so double-clicking the file works in

@@ -7,6 +7,7 @@ import "./ui/craft.css"; // after index.css on purpose — these rules settle ti
 import "./ui/system/fonts.css";
 import "./ui/system/tokens.css";
 import "./ui/system/components.css";
+import "./ui/system/shell.css";
 import { applyTheme } from "./ui/theme";
 
 applyTheme();

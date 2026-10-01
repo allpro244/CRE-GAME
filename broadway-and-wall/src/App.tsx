@@ -3,8 +3,7 @@ import MapView from "@/map/MapView";
 import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
-import MapHud from "@/ui/MapHud";
-import CycleDigest from "@/ui/CycleDigest";
+import MapRail from "@/ui/MapRail";
 import YearReview, { CareerCard, MilestoneFlash, ExitCard, GoalCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
@@ -43,8 +42,7 @@ export default function App() {
     <div className={"app" + (photoFrame ? " photo-frame" : "")}>
       <MapView />
       {playing && !photoFrame && <TopBar />}
-      {playing && !photoFrame && <MapHud />}
-      {playing && !photoFrame && <CycleDigest />}
+      {playing && !photoFrame && <MapRail />}
       {!photoFrame && <RightPanel />}
       {!photoFrame && <DeliveryCeremony />}
       {playing && !photoFrame && <YearReview />}

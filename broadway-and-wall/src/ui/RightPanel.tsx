@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import type { Page } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
-import Docket from "@/ui/docket/Docket";
 import Palette from "@/ui/Palette";
 import FirmTimeline from "@/ui/FirmTimeline";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
@@ -157,7 +156,6 @@ export default function GamePanels() {
   // dock from the map-first pass was too small for that work.
   return (
     <>
-      <Docket />
       <Palette />
       {page === "none" && <ParcelPanel />}
       {page !== "none" && !mapOnly && (

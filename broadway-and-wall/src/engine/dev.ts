@@ -10,13 +10,14 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
+import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity } from "./value";
 export { zoneUseBar };
+export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -918,7 +919,6 @@ export function refreshDevelopmentFeasibility(
   const chosen = new Set<string>();
   // nothing in this pass builds, demolishes or merges, so the cornice of a
   // block is the same number every time it is asked
-  const datumMemo: DatumMemo = new Map();
   let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
   const yrNow = START_YEAR + Math.floor(s.month / 12);
   let landCount = 0, redevCount = 0;
@@ -969,7 +969,7 @@ export function refreshDevelopmentFeasibility(
         // sampler asks for that and no more. It is not the legal maximum — the
         // cornice datum and its scarcity push still bind — but it is the same
         // question the start path asks, which is the whole point.
-        const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), use, datumMemo);
+        const infill = cityInfillCap(s, parcels, rec, use);
         const plate = cityCoverage(use);
         const floors = Math.max(2, Math.min(infill, maxFloorsFor(rec, plate, use)));
         // ...and PUBLISH what that envelope is worth against the legal one, so
@@ -995,7 +995,7 @@ export function refreshDevelopmentFeasibility(
     if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
     // Only sites that can grow housable floor under today's cornice/shortage.
     const leadGuess = rec.class as BuiltClass;
-    const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadGuess, datumMemo);
+    const infill = cityInfillCap(s, parcels, rec, leadGuess);
     const targetSf = rec.lotArea * cityCoverage(leadGuess) * infill;
     if (targetSf < rec.bldgArea * 1.12) continue;
     chosen.add(bbl);
@@ -2341,219 +2341,18 @@ export function setOpsPolicy(
  * overbuilding their own market is their risk to take.
  */
 /**
- * A COMP SET IS WALKING DISTANCE, NOT A PROPERTY LINE.
- *
- * The datum used to read only parcels sharing this parcel's `block` id — a
- * mean of 3.4 lots on this island. So a lot facing a twenty-storey tower
- * across the street inherited nothing from it, and the cornice restarted from
- * zero at every kerb. Measured over 3 seeds x 50 years: block datum p50 3
- * floors against a legal envelope p50 11, with the cornice (not zoning)
- * binding on 72% of lots. Height could not propagate.
- *
- * That is not how the comp set works. A developer arguing for eighteen storeys
- * points at what is standing within a few streets, and a lender underwrites
- * the same set. The adjustment for distance is the appraiser's own: a tower on
- * your own block is a full comparable, one three hundred metres away is worth
- * something and less. So the datum is the best DISTANCE-ADJUSTED comparable
- * rather than the tallest thing sharing a lot line — one mechanism, not a
- * blend of two.
- *
- * 300m is about a four-minute walk and is the radius the retail and station
- * layers in this engine already treat as "here".
- *
- * NEUTRAL IN A FLAT CITY BY CONSTRUCTION. Where nothing nearby is taller than
- * the home block, the home block's own weight of 1 wins and the number is
- * exactly what it was. It moves only where height already varies, which is
- * where a real comp set would have found the argument.
+ * How high the market will speculatively build on this lot TODAY. The rule is
+ * `heightCapFloors` (value.ts), shared with the land residual; this supplies
+ * the block's cornice datum and the town's maturity from the state, through
+ * the same per-state reads `resolveRec` stamps on the record — so a lot's
+ * height and its land price cannot be asked two different questions.
  */
-const COMP_RADIUS_M = 300;
-const M_PER_DEG_LAT = 111_320;
-type BlockGeo = {
-  byBlock: Map<string, string[]>;
-  neigh: Map<string, { b: string; w: number }[]>;
-};
-/** Static geometry, computed once per parcel table — same pattern as demand.ts. */
-const BLOCK_GEO = new WeakMap<ParcelTable, BlockGeo>();
-
-function blockGeo(parcels: ParcelTable): BlockGeo {
-  const hit = BLOCK_GEO.get(parcels);
-  if (hit) return hit;
-  const byBlock = new Map<string, string[]>();
-  const acc = new Map<string, [number, number, number]>();
-  for (const bbl in parcels) {
-    const p = parcels[bbl];
-    if (!p?.block) continue;
-    const list = byBlock.get(p.block);
-    if (list) list.push(bbl); else byBlock.set(p.block, [bbl]);
-    const c = p.centroid;
-    if (!c) continue;
-    const a = acc.get(p.block) ?? [0, 0, 0];
-    a[0] += c[0]; a[1] += c[1]; a[2]++;
-    acc.set(p.block, a);
-  }
-  const centre = new Map<string, [number, number]>();
-  for (const [b, a] of acc) if (a[2] > 0) centre.set(b, [a[0] / a[2], a[1] / a[2]]);
-  const blocks = [...byBlock.keys()];
-  const neigh = new Map<string, { b: string; w: number }[]>();
-  for (const b of blocks) {
-    const out: { b: string; w: number }[] = [{ b, w: 1 }];
-    const c0 = centre.get(b);
-    if (c0) {
-      const mPerLon = M_PER_DEG_LAT * Math.cos((c0[1] * Math.PI) / 180);
-      for (const o of blocks) {
-        if (o === b) continue;
-        const c1 = centre.get(o);
-        if (!c1) continue;
-        const d = Math.hypot((c1[0] - c0[0]) * mPerLon, (c1[1] - c0[1]) * M_PER_DEG_LAT);
-        if (d >= COMP_RADIUS_M) continue;
-        out.push({ b: o, w: 1 - d / COMP_RADIUS_M });
-      }
-    }
-    neigh.set(b, out);
-  }
-  const geo = { byBlock, neigh };
-  BLOCK_GEO.set(parcels, geo);
-  return geo;
-}
-
-export function blockDatumFloors(
-  s: GameState, parcels: ParcelTable, block: string, memo?: Map<string, number>,
-): number {
-  const { byBlock, neigh } = blockGeo(parcels);
-  let datum = 0;
-  for (const { b, w } of neigh.get(block) ?? [{ b: block, w: 1 }]) {
-    let top = memo?.get(b);
-    if (top === undefined) {
-      top = blockTopFloors(s, parcels, byBlock.get(b));
-      memo?.set(b, top);
-    }
-    // w > 0, and multiplying by a positive constant is monotone in floating
-    // point, so the block's tallest times w is exactly the largest
-    // floors * w over its lots — the number the per-lot loop used to find.
-    const adjusted = top * w;
-    if (adjusted > datum) datum = adjusted;
-  }
-  return Math.floor(datum);
-}
-
-/**
- * The tallest standing building on one block, 0 when there is none. Only
- * class and floors are read, so this skips resolveRec's full copy of the
- * record: they are the delivered building's (s.built) when there is one, and
- * the deed's own otherwise — including on a merged-away child, which
- * resolveRec returns without consulting s.built.
- */
-function blockTopFloors(s: GameState, parcels: ParcelTable, lots: string[] | undefined): number {
-  if (!lots) return 0;
-  const built = s.built;
-  const merged = s.merged;
-  let top = 0;
-  for (const bbl of lots) {
-    const rec = parcels[bbl];
-    if (!rec) continue;
-    const d = merged?.[bbl] ? undefined : built?.[bbl];
-    const cls = d ? d.class : rec.class;
-    const floors = d ? d.floors : rec.floors;
-    if (cls === "land" || !(floors > 0)) continue;
-    if (floors > top) top = floors;
-  }
-  return top;
-}
-
-/**
- * A per-block memo for `cityInfillCap` / `blockDatumFloors`, for a caller that
- * asks about many lots in one pass. Valid only while nothing is built,
- * demolished or merged — make a fresh one for each such pass.
- */
-export type DatumMemo = Map<string, number>;
-
-/** How high the market will speculatively build on this lot TODAY. */
 export function cityInfillCap(
   s: GameState, parcels: ParcelTable,
   rec: { block: string; lotArea: number; farMaxComm?: number; farMaxRes?: number },
-  maturity: number,
   use: BuiltClass = "office",
-  datumMemo?: DatumMemo,
 ): number {
-  const datum = blockDatumFloors(s, parcels, rec.block, datumMemo);
-  // one increment above the datum; the increment itself grows as the town
-  // matures and its comps deepen — 2 floors in year one, 6 by year 65
-  //
-  // ...AND CONTEXT YIELDS TO ECONOMICS. This was the whole story, and it meant
-  // the city answered a shortage with MORE buildings and never with TALLER
-  // ones: a district at 3.7% vacancy with rents tripling got exactly as much
-  // height over its cornice line as one sitting half empty. That is the reason
-  // supply could not answer price anywhere in this model — the crane count
-  // responds to demand through startOwed, the envelope on each crane did not,
-  // so the median city building stayed at 26,000 sf however desperate the
-  // market got. `sim:accept` F and H are both downstream of it.
-  //
-  // A cornice datum is real — most of any city is uniform height because
-  // building in context is cheaper, easier to finance and easier to permit.
-  // But it is a behavioural cap sitting well below the LEGAL one (farMaxFor
-  // times the district's zoneAdj, which the return below still enforces), and
-  // what breaks it is scarcity. When land is dear enough somebody builds the
-  // tower that ignores the street, and then the street has a new datum. That
-  // is how every skyline that exists got made.
-  //
-  // Neutral by construction: at natural vacancy with rent at parity to income
-  // the push is zero and nothing about the old calibration moves.
-  const ez = s.econ;
-  // THE PROJECT'S MARKET, not office by default. Apartment supply was reading
-  // office vacancy and office rent here, so a housing shortage raised the
-  // number of apartment orders but never the size of an apartment building.
-  // The result was multifamily vacancy sitting on its frictional floor for
-  // more than a third of measured months while perfectly usable FAR went
-  // untouched.
-  const natural = NATURAL_VAC[use];
-  const tight = clamp(
-    (natural - (ez.cityVac?.[use] ?? natural)) / natural, -1, 1);
-  // EFFECTIVE, not asking — a tenant pays net of concessions, so scoring the
-  // envelope off the face rate read a concession-soaked market as dear and
-  // raised the cornice into a glut. Same fix as the rezoning trigger.
-  const rentPress = clamp(
-    ((ez.effRentIdx?.[use] ?? ez.rentIdx[use]) / RENT_BASE[use])
-      / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
-  // When vacancy is pinned, vacancy-tightness alone saturates — structural
-  // capacity shortage (desired demand vs housable) still says "build taller."
-  const struct = clamp(ez.structTight?.[use] ?? 0, 0, 0.45);
-  const push = clamp(tight * 0.9 + rentPress * 0.5 + struct * 1.1, -0.35, 2.0);
-  const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
-  const physical = physicalMaxFloors(rec.lotArea * 0.62);
-  let cap = Math.max(2, Math.min(Math.max(1, datum) + step, physical));
-  // CHRONIC EMPLOYMENT SHORTAGE BREAKS THE CORNICE. ECONOMY.md §F #2: stock
-  // grew at half the jobs rate because each crane stayed cornice-bound while
-  // `structTight` said the market needed more housable floor. Scarcity that
-  // has already saturated the vacancy rail is exactly when real cities put up
-  // the building that ignores the street — the legal envelope, not another
-  // two floors of context. Blend toward zoning/physical; do not free the
-  // friction floor or mint demand.
-  // EITHER SIGNAL OPENS IT, NOT BOTH AT ONCE. This required a chronic capacity
-  // shortage AND vacancy 45% below natural, simultaneously. Measured over 3
-  // seeds x 50 years: `struct` alone qualifies on 40.0% of lot-reads and
-  // `tight` alone on 56.7%, but the conjunction only on 33.3% — the AND was
-  // throwing away most of both signals.
-  //
-  // No city waits for two emergencies. A market where space is simply not
-  // there is one argument for the building that ignores the street; a market
-  // where rent has run away is a different and equally sufficient one, and
-  // 1920s Manhattan, 1980s Hong Kong and present-day Austin each broke their
-  // cornice on one of them without the other. Whichever signal is louder sets
-  // how far the reach goes.
-  //
-  // Still neutral at rest: at natural vacancy with no capacity shortage both
-  // reaches are zero, the branch does not fire, and month zero is unchanged.
-  const structReach = clamp((struct - 0.08) / 0.22, 0, 1);
-  const tightReach = clamp((tight - 0.45) / 0.40, 0, 1);
-  const reach = Math.max(structReach, tightReach);
-  if (reach > 0 && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
-    const legal = Math.ceil(farMaxFor({
-      farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
-    }) / 0.62);
-    const ceiling = Math.min(physical, Math.max(cap, legal));
-    cap = Math.max(cap, Math.round(cap + (ceiling - cap) * reach));
-  }
-  return Math.max(2, Math.min(cap, physical));
+  return heightCapFloors(corniceDatum(s, parcels, rec.block), townMaturity(s), s.econ, rec, use);
 }
 
 /**
@@ -3115,7 +2914,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const ratio = land / built;
     const probeUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
     const probeLead = dominantOf(devMix(probeUse));
-    const infill = cityInfillCap(s, parcels, rec, 1, probeLead);
+    const infill = cityInfillCap(s, parcels, rec, probeLead);
     const targetSf = Math.max(3000, Math.round(rec.lotArea * cityCoverage(probeUse) * infill));
     const densify = targetSf / Math.max(1, rec.bldgArea);
     const st = e.structTight?.[probeLead] ?? 0;
@@ -3248,7 +3047,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
     const plate = cityCoverage(nextUse);
     let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * plate)));
-    const infill = cityInfillCap(s, parcels, rec, 1, lead);
+    const infill = cityInfillCap(s, parcels, rec, lead);
     const wantedFl = nfl;   // what the envelope asked for, before the cornice
     if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100); }
     const ucap = MAX_FLOORS_BY_USE[nextUse];
@@ -3910,7 +3709,7 @@ function startCityJob(
   // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
   // three-storey town broke ground at a median of fifteen floors. The datum
   // cap is what makes twenty years of growth read like twenty years.
-  const infill = cityInfillCap(s, parcels, rec, maturity, lead);
+  const infill = cityInfillCap(s, parcels, rec, lead);
   // ...AND IT PAYS TO GO OVER IT WHEN THE PRO FORMA SAYS SO. The cornice is
   // by-right; above it is discretionary review with a price on it. A
   // speculative developer maximises feet subject to the margin, so the

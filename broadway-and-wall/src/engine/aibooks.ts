@@ -30,6 +30,12 @@ export interface FirmBookEntry {
   tax?: number;
   cashDelta: number;
   debtDelta: number;
+  /**
+   * Money that moved between the firm and a job's deal investors in the same
+   * event: + their equity in at a groundbreak, − their share of a sale. The
+   * identities above hold on Δcash − Δdebt − partners.
+   */
+  partners?: number;
   /** Counterparty or channel. */
   with?: string;
   /** Whether Jev's answer drove it ("jev") or the firm's scripted rule ("script"). */

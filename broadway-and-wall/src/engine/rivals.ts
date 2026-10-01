@@ -34,9 +34,9 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
-import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityCoverage, cityInfillCap, type DatumMemo, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -47,7 +47,7 @@ import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
-import { FUND_INVEST_M } from "./fund";
+import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { firmBook, snap } from "./aibooks";
 import { jevActDue, jevDid, jevHolds, jevPeriod, type JevPoint } from "./jev";
 
@@ -234,6 +234,79 @@ const BUILD_APPETITE: Record<RivalStyle, number> = {
 };
 const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
 
+// ---------------------------------------------------------------- deal equity
+//
+// A DEAL-BY-DEAL SPONSOR SYNDICATES EACH JOB. That sentence was already in
+// this file (RECALL: "a merchant builder syndicates each job and dissolves it
+// at the sale") and nothing acted on it: a merchant builder or a developer
+// had to write every dollar of a job's equity out of its own operating
+// account. Measured, 6 seeds x 100 years, no player: the three opening
+// merchants sold their opening books down on the hold clock by year five,
+// could not fund a single city job (claimJob's median day-one cheque $6.0M
+// against a median builder account of $1.3M, tools/claim-gates.mjs) and were
+// wound up as empty books inside the first decade — the one style whose whole
+// business is building, extinct before the town had built anything.
+//
+// So a merchant builder and a developer raise each job's equity from outside
+// investors and write the co-invest themselves. Ten per cent is the standard
+// sponsor co-invest in a development joint venture (the "90/10 JV"; 5-10% is
+// the range institutional LPs require of a developer partner). The investors
+// are paid at the sale through the same pref and promote the player's own
+// vehicle runs on (FUND_PREF, FUND_PROMOTE, fund.ts): capital back with the
+// pref first, then the excess split with the sponsor taking the promote. The
+// firm owns and runs the building in between, which is what the operating
+// partner in a JV does. Fund vehicles (pe, opportunistic, the institutions)
+// raised their equity at the fund level and use their own account.
+//
+// What is NOT modelled: the investors' share of operating cash flow between
+// delivery and sale. A merchant holds 18-42 months (MERCHANT_MIN_LEASE_M,
+// MERCHANT_MAX_HOLD_M), mostly in lease-up; the whole of that cash stays with
+// the sponsor, which overstates it by the investors' share of a thin number.
+export const SPONSOR_COINVEST = 0.10;
+const SYNDICATES: Partial<Record<RivalStyle, boolean>> = { merchant: true, developer: true };
+/** The share of a job's equity cheque the firm writes itself (1 = all of it). */
+export function sponsorShare(style: RivalStyle): number {
+  return SYNDICATES[style] ? SPONSOR_COINVEST : 1;
+}
+/**
+ * The deal investors write their share of an equity cheque the firm is about
+ * to pay on this job. Returns what came in. `inKind` is what the sponsor
+ * contributes besides cash — its own land or standing building, at the basis
+ * the job was underwritten on — which counts toward its share of the deal.
+ */
+function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0): number {
+  const g = sponsorShare(r.style);
+  if (g >= 1 || !(cheque > 0)) return 0;
+  const lp = Math.round(cheque * (1 - g));
+  const jv = ((r.jvs ??= {})[bbl] ??= { lp: 0, gp: Math.max(0, Math.round(inKind)), m: s.month });
+  jv.lp += lp;
+  jv.gp += cheque - lp;
+  r.cash += lp;
+  return lp;
+}
+/** The deal investors' interest in a deed, removed — read it before the deed moves. */
+function takeJv(r: Rival, bbl: string): { lp: number; gp: number; m: number } | undefined {
+  const jv = r.jvs?.[bbl];
+  if (jv) delete r.jvs![bbl];
+  return jv;
+}
+/**
+ * WHAT THE DEAL INVESTORS TAKE OUT OF A SALE that nets the partnership `net`
+ * (price less the debt retired and the tax): their capital and the pref
+ * first, pro rata with the sponsor's; above that, their share of the excess
+ * after the sponsor's promote. Nothing when the sale nets nothing — equity
+ * is last in line.
+ */
+export function jvLpTake(jv: { lp: number; gp: number; m: number } | undefined, net: number, month: number): number {
+  if (!jv || !(net > 0)) return 0;
+  const paidIn = jv.lp + jv.gp;
+  if (!(paidIn > 0)) return 0;
+  const lpFrac = jv.lp / paidIn;
+  const pref = paidIn * Math.pow(1 + FUND_PREF, Math.max(0, month - jv.m) / 12);
+  if (net <= pref) return Math.round(net * lpFrac);
+  return Math.round(pref * lpFrac + (net - pref) * lpFrac * (1 - FUND_PROMOTE));
+}
+
 /** Concurrent live frames a style will carry. Developers/merchants are shops. */
 function maxLiveJobs(style: RivalStyle): number {
   if (style === "developer" || style === "merchant") return 3;
@@ -254,6 +327,7 @@ function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
   for (const r of s.rivals ?? []) {
     if (r === to || !r.bbls.includes(bbl)) continue;
     r.bbls = r.bbls.filter((b) => b !== bbl);
+    const jv = takeJv(r, bbl);
     // The paper goes with the deed. Leaving a stale extension record behind
     // meant that if the same firm ever bought the same corner back, its first
     // month of ownership arrived with an expired forbearance already on file.
@@ -262,6 +336,7 @@ function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
       const relief = Math.min(r.debt, Math.round(price * r.targetLtv));
       r.debt -= relief;
       r.cash += price - relief;
+      r.cash -= jvLpTake(jv, price - relief, s.month);
     }
   }
   if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
@@ -300,6 +375,37 @@ function stakeIn(s: GameState, parcels: ParcelTable, rec: ParcelRecord, firmId?:
     if (mine && (mine.block === rec.block || mine.district === rec.district)) return true;
   }
   return false;
+}
+
+/**
+ * WHAT THE CORPORATE LINE WOULD ADVANCE TOWARD A CHEQUE OF `need`.
+ *
+ * A firm on this street already draws its line for the equity in an
+ * acquisition when the operating account is thin (`rivalBuys`) and for a
+ * balloon (`tickMaturities`). A groundbreak's first equity draw is the same
+ * kind of cheque written by the same treasurer, and it was the one place the
+ * line was not asked: `claimJob` and `startOwnJob` tested the operating
+ * account alone. Measured over 40 years of seed 7777 (tools/claim-gates.mjs):
+ * of the 307 firm-job pairs that failed on cash, the firm's own line — the
+ * covenant room `lineRoom` sizes at the income desks and the land loan — would
+ * have covered 170. One firm, one balance sheet, one funding rule.
+ */
+function lineDrawFor(s: GameState, parcels: ParcelTable, r: Rival, need: number): number {
+  if (r.cash >= need) return 0;
+  let aum = r.aum, noiYr = r.markNoi, landV = r.markLand;
+  if (aum === undefined || noiYr === undefined || landV === undefined) {
+    const m = markRival(s, parcels, r);
+    aum = m.aum; noiYr = m.noiYr; landV = m.landV;
+  }
+  const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
+  return Math.max(0, Math.min(room, need - r.cash));
+}
+/** Book a line draw — the same three lines `rivalBuys` writes. */
+function drawLine(r: Rival, draw: number) {
+  if (!(draw > 0)) return;
+  r.revolver = (r.revolver ?? 0) + draw;
+  r.debt += draw;
+  r.cash += draw;
 }
 
 /**
@@ -370,7 +476,11 @@ export function claimJob(
     // sixty-million-dollar tower, and a shop that does it anyway is not a
     // developer, it is a casualty.
     if (projectCost > (r.aum ?? 0) * 0.9 + r.cash * 5) return false;
-    if (r.cash < dayOneEquity + Math.max(400_000, r.cash * 0.04)) return false;
+    // The firm's own cheque: all of the day-one equity, or a deal-by-deal
+    // sponsor's co-invest (sponsorShare) with the deal's investors writing the
+    // rest.
+    const need = Math.round(dayOneEquity * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.04);
+    if (r.cash + lineDrawFor(s, parcels, r, need) < need) return false;
     // Named builders should claim a real share of the pipeline. Near the
     // player is still hotter (comp + tenant risk), but far sites are no longer
     // a coin-flip against a 0.5× haircut that left them at ~3%.
@@ -382,11 +492,12 @@ export function claimJob(
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
   for (const r of runners) {
-    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, dayOneEquity)) * (0.6 + rng(s, "rivals") * 0.8);
+    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, dayOneEquity * sponsorShare(r.style))) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
 
-  best.cash -= dayOneEquity;
+  drawLine(best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000, best.cash * 0.04)));
+  best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
   const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
@@ -478,6 +589,12 @@ function anonShouldOrphan(s: GameState, j: NonNullable<GameState["cityJobs"]>[nu
 /** Orphan the frame and stall economic delivery in the same month — stock must not land while the map job dies. */
 function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
   j.orphaned = true;
+  // A frame the sponsor walked away from is a total loss to the deal's
+  // investors: their equity is in the ground and the receiver takes the site.
+  if (j.firmId) {
+    const r = (s.rivals ?? []).find((x) => x.id === j.firmId);
+    if (r) takeJv(r, j.bbl);
+  }
   if (j.bbl) stallSupplyProject(s, j.bbl);
 }
 
@@ -569,7 +686,8 @@ export function fundJobs(s: GameState) {
     // buying window in the game — it is not a bonus, it is somebody's job.
     if (j.repudiatedM !== undefined) {
       const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
-      if (r.cash < spend + carry) {
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round((spend + carry) * (1 - sponsorShare(r.style))) : 0;
+      if (r.cash + partnersIn < spend + carry) {
         orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
@@ -578,6 +696,7 @@ export function fundJobs(s: GameState) {
         });
         continue;
       }
+      if (partnersIn > 0) jvFund(s, r, j.bbl, spend + carry);
       r.cash -= spend + carry;
       j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - spend);
       j.spent = (j.spent ?? 0) + spend;
@@ -619,7 +738,9 @@ export function fundJobs(s: GameState) {
       const fromDebt = Math.min(afterEquity, debtRoom);
       const capitalCall = afterEquity - fromDebt;
       const cashNeed = fromEquity + capitalCall;
-      if (r.cash < cashNeed) {
+      // A syndicated job's investors meet their share of every call.
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round(cashNeed * (1 - sponsorShare(r.style))) : 0;
+      if (r.cash + partnersIn < cashNeed) {
         // Prefer a month of schedule slip over a standing skeleton when the
         // sponsor is only short this draw — orphans were eating most named
         // starts before they could deliver.
@@ -636,6 +757,7 @@ export function fundJobs(s: GameState) {
         });
         continue;
       }
+      if (partnersIn > 0) jvFund(s, r, j.bbl, cashNeed);
       r.cash -= cashNeed;
       j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
       j.debt = (j.debt ?? 0) + fromDebt;
@@ -1801,7 +1923,6 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   type Site = { bbl: string; rec: ParcelRecord; redev: boolean; score: number };
   let best: Site | null = null;
   // the scan below builds and demolishes nothing, so each block's cornice is asked once
-  const datumMemo: DatumMemo = new Map();
   const yrNow = START_YEAR + Math.floor(s.month / 12);
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
@@ -1809,7 +1930,17 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.lotArea < 2500) continue;
     if (rec.class === "land") {
-      const score = rec.demandScore + rng(s, "rivals") * 20;
+      // DIRT THAT PENCILS IS BUILT BEFORE A BUILDING IS KNOCKED DOWN. The
+      // firm put one site a month in front of its committee and chose it on
+      // demand and densification alone, so a worn building that would not
+      // pencil (2,987 of 3,236 picks over 30 years of seed 7777, 22 of which
+      // cleared) crowded out a lot whose residual scheme clears at its own
+      // price. A lot pencils when the builder's residual is what prices it
+      // (`landRead`), which is exactly when its scheme plans at hurdle 1.0 at
+      // the land's value; those go first.
+      const read = landRead(rec, s.econ);
+      const pencils = read.winner === "builder" && (read.scheme?.psf ?? 0) > 0;
+      const score = (pencils ? 1e6 : 0) + rec.demandScore + rng(s, "rivals") * 20;
       if (!best || score > best.score) best = { bbl, rec, redev: false, score };
       continue;
     }
@@ -1826,7 +1957,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     const st = s.econ.structTight?.[leadProbe] ?? 0;
     const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
     if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
-    const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe, datumMemo);
+    const infillProbe = cityInfillCap(s, parcels, rec, leadProbe);
     const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;
     const densify = targetSf / rec.bldgArea;
@@ -1835,10 +1966,20 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   }
   if (!best) return;
   const { bbl, rec, redev } = best;
-  let use = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
+  let use: DevUse = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
   // Shops do not stack, and a corner that carries twenty floors does not get a
   // two-storey shop on it — it gets shops at grade with something above.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
+  // DIRT BOUGHT ON THE RESIDUAL IS BUILT ON THE RESIDUAL'S SCHEME. A firm that
+  // paid for a lot on its highest and best use (rivalBuys) and then drew a use
+  // out of a hat at groundbreak was pricing one building and building
+  // another — the same quantity with two answers. On vacant dirt the firm
+  // builds the scheme the land market prices it on: use, floors and plate
+  // from `landRead`, inside the zoning, the coverage limit and the lot's
+  // height cap. Where nothing pencils any more it falls back to the draw
+  // above, which the shared underwriting below then refuses or passes.
+  const hbu = !redev ? landRead(rec, s.econ).scheme : null;
+  if (hbu && hbu.psf > 0) use = hbu.use;
   const lead = dominantOf(devMix(use));
   // Owning the dirt does not manufacture tenant demand. A named start drains
   // the same class order book as an anonymous one and cannot precede it.
@@ -1849,11 +1990,15 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, (redev ? 0.55 : 0.4) + rng(s, "rivals") * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  const plate = cityCoverage(use);
+  const plate = hbu && hbu.psf > 0 ? hbu.coverage : cityCoverage(use);
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
+  if (hbu && hbu.psf > 0) {
+    floors = hbu.floors;
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
+  }
   // A named developer reads the same comps the anonymous city does: one
   // increment above the block's cornice datum, not the zoning envelope.
-  const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead);
+  const infill = cityInfillCap(s, parcels, rec, lead);
   // ...and he can go over it by buying the permission. Same rule as the
   // anonymous city: the taller scheme stands only if it clears the same
   // hurdle carrying the entitlement premium. See entitlementPremium in dev.ts.
@@ -1913,9 +2058,12 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
   const dayOneNeed = Math.round(plan.equity * 0.40);
-  if (r.cash < dayOneNeed + Math.max(400_000, r.cash * 0.03)) return;
+  const needWithReserve = Math.round(dayOneNeed * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
+  const draw = lineDrawFor(s, parcels, r, needWithReserve);
+  if (r.cash + draw < needWithReserve) return;
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
+  drawLine(r, draw);
   breakGround(s, parcels, r, bbl, rec, use, plan, redev);
 }
 
@@ -1963,6 +2111,9 @@ export function breakGround(
   // the entire sponsor equity out of monthly cash calls is what stalled land-
   // bank jobs with debt still at zero.
   const dayOne = dayOneNeed;
+  // The deal's investors write their share of the cheque; the sponsor's own
+  // dirt (or the building it is replacing) is its in-kind contribution.
+  jvFund(s, r, bbl, dayOne, plan.landBasis);
   r.cash -= dayOne;
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
@@ -2120,6 +2271,10 @@ const clearExtended = (r: Rival, bbl: string) => { if (r.extendedTo) delete r.ex
  * now.
  */
 export function forgetDeed(r: Rival, bbl: string) {
+  // A deed that leaves without a sale paying the investors (foreclosure, a
+  // deed in lieu, a receiver) takes their equity with it. The sale paths
+  // settle them first — see takeJv.
+  if (r.jvs) delete r.jvs[bbl];
   if (r.heldSince) delete r.heldSince[bbl];
   if (r.extendedTo) delete r.extendedTo[bbl];
   if (r.deliveredM) delete r.deliveredM[bbl];
@@ -2423,7 +2578,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     // agreement it reported (+0.01% over 291 sales) was the formula compared
     // against itself — a test that cannot fail.
     const px = markAsset(s, r, rec).v * DURESS_MID;
-    const net = px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
+    const net = disposalNet(s, r, bbl, px);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
   }
@@ -2435,7 +2590,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     const want = (dv.act as { option: string }).option;
     const rec = r.bbls.includes(want) && !s.holdings[want] && !s.listings.some((l) => l.bbl === want) ? resolveRec(parcels, s, want) : null;
     const px = rec ? markAsset(s, r, rec).v * DURESS_MID : 0;
-    const net = rec ? px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px) : 0;
+    const net = rec ? disposalNet(s, r, want, px) : 0;
     if (rec && net > 0) { sell = { bbl: want, rec, net }; jevDid(s, r, "distress", `sold ${rec.address} under duress`); }
     else jevDid(s, r, "distress", `${want} no longer nets cash`, false);
   }
@@ -3536,16 +3691,54 @@ export function rivalBuys(
   // See YIELD_OVER_COUPON.
   const spreadPp = (goingInYld - coupon) * 100 + underwrittenGrowthPct(s.econ);
   const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
+  // DIRT IS BOUGHT ON THE RESIDUAL, NOT ON ITS YIELD.
+  //
+  // A vacant lot has no income, so the committee above read its spread as the
+  // whole coupon below zero and refused every lot that was not a distress
+  // sale. Measured, 6 seeds x 100 years, no player: merchant builders — a
+  // style that buys only land — bought 0 lots in six centuries, developers 3,
+  // and firms that build broke ground on their own dirt once. A builder does
+  // not ask what dirt yields; it asks what the building it can put there
+  // supports after cost and margin, which is the land residual. So a firm
+  // that builds (BUILD_APPETITE > 0) prices a lot on the residual's own
+  // scheme (`landRead`: highest and best use, the zoning `zonePermits` hosts,
+  // the use's MAX_COVERAGE plate, the lot's height cap) planned at THIS price
+  // on the same desk every autonomous start uses (`underwriteDevelopment`:
+  // the construction desks' own terms, the trade's margin in the required
+  // yield). It clears when the scheme clears at the price, i.e. when the ask
+  // is at or under what the building supports. Its fit is the yield-on-cost
+  // cushion over the required yield, in the same points the yield committee
+  // reads. A firm that does not build keeps the yield test and still only
+  // takes dirt in distress.
+  const land = rec.class === "land" && rec.lotArea > 0;
+  let dirt: { clears: boolean; cushionPp: number } | null | undefined;
+  const dirtCase = () => {
+    if (dirt !== undefined) return dirt;
+    const sc = landRead(rec, s.econ).scheme;
+    const uw = sc && sc.psf > 0
+      ? underwriteDevelopment(s, parcels, rec.bbl, sc.use, sc.floors, sc.coverage, price)
+      : null;
+    dirt = uw ? { clears: uw.clears, cushionPp: uw.plan.yieldOnCost - uw.plan.requiredYield } : null;
+    return dirt;
+  };
   let best = candidates[0], bestW = -Infinity;
   if (prefer) bestW = 1;
   for (const r of prefer ? [] : candidates) {
     const st = STYLE[r.style];
-    const need = YIELD_OVER_COUPON[r.style] ?? 0.8;
-    // Soft refuse: ordinary stock below the style's hurdle is not a deal for
-    // this committee. Distress and vultures still clear below the coupon.
-    if (!isDistress && spreadPp + 0.15 < need) continue;
+    const builds = land && BUILD_APPETITE[r.style] > 0;
+    const need = builds ? 0 : (YIELD_OVER_COUPON[r.style] ?? 0.8);
+    let fitPp = spreadPp;
+    if (builds) {
+      const d = dirtCase();
+      if (!d?.clears && !isDistress) continue;
+      fitPp = d ? d.cushionPp : 0;
+    } else if (!isDistress && spreadPp + 0.15 < need) {
+      // Soft refuse: ordinary stock below the style's hurdle is not a deal
+      // for this committee. Distress and vultures still clear below the coupon.
+      continue;
+    }
     const cyc = 1 + st.procyclical * ((s.econ.creditIdx ?? 1) - 1) + st.contra * shut;
-    const yieldFit = Math.max(0.15, 0.55 + (spreadPp - need) * 0.18);
+    const yieldFit = Math.max(0.15, 0.55 + (fitPp - need) * 0.18);
     const locFit = 0.55 + 0.90 * loc;
     const w = st.appetite * Math.max(0.05, cyc)
       * (isDistress ? st.distressBias : 1)
@@ -3565,6 +3758,7 @@ export function rivalBuys(
     const tax = gainsTax(seller, price);
     const snap0 = snap(seller);
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
+    const jv = takeJv(seller, rec.bbl);
     forgetDeed(seller, rec.bbl);
     // Same event, same rule — a firm selling to another firm and a firm selling
     // to Hartford both retire the loan that was on the building. See
@@ -3572,9 +3766,11 @@ export function rivalBuys(
     const relief = debtReleasedOnSale(seller, price);
     seller.debt -= relief;
     seller.cash += price - relief - tax;
+    const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+    seller.cash -= partnersOut;
     settleEmptyBook(s, seller);
     firmBook(s, seller, {
-      kind: "sale", bbl: rec.bbl, amount: price, tax, with: best.name,
+      kind: "sale", bbl: rec.bbl, amount: price, tax, with: best.name, partners: -partnersOut,
       cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
     });
   }
@@ -3624,13 +3820,16 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const tax = gainsTax(seller, price);      // struck before the deed moves; see basisShare
   const snap0 = snap(seller);
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
+  const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
   const relief = debtReleasedOnSale(seller, price);
   seller.debt -= relief;
   seller.cash += price - relief - tax;
+  const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+  seller.cash -= partnersOut;
   settleEmptyBook(s, seller);
   firmBook(s, seller, {
-    kind: "sale", bbl, amount: price, tax, with: "an outside buyer",
+    kind: "sale", bbl, amount: price, tax, with: "an outside buyer", partners: -partnersOut,
     cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
   });
   return true;
@@ -3737,7 +3936,18 @@ export function duressNet(s: GameState, parcels: ParcelTable, r: Rival, bbl: str
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return 0;
   const px = markAsset(s, r, rec).v * DURESS_MID;
-  return px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
+  return disposalNet(s, r, bbl, px);
+}
+
+/**
+ * WHAT A SALE AT `px` PUTS IN THE FIRM'S ACCOUNT: the price, less the debt it
+ * retires, the tax, and the deal investors' take where the deed was
+ * syndicated. The one expression the disposal decision and every settlement
+ * (rivalBuys, sellToOutsider) read.
+ */
+function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
+  const gross = px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
+  return gross - jvLpTake(r.jvs?.[bbl], gross, s.month);
 }
 
 /** The build appetite of a style (0 = never takes construction risk). */
@@ -3820,17 +4030,24 @@ function jevStartJob(s: GameState, parcels: ParcelTable, r: Rival): void {
   const lead = dominantOf(devMix(use));
   if ((s.econ.startOwed?.[lead] ?? 0) <= 0) { no(`no ${lead} demand is waiting any more`); return; }
   const redev = rec.class !== "land" && rec.bldgArea > 0;
-  const uw = underwriteDevelopment(s, parcels, o.bbl, use, o.floors, 0.62, redev ? redevBasis(s, r, rec) : undefined);
+  const uw = underwriteDevelopment(s, parcels, o.bbl, use, o.floors, cityCoverage(use), redev ? redevBasis(s, r, rec) : undefined);
   if (!uw?.clears) { no(uw?.why ?? "the scheme no longer clears"); return; }
   const plan = uw.plan;
   if (redev && plan.sf < rec.bldgArea * 1.08) { no("the scheme no longer adds enough floor area"); return; }
   const m = markRival(s, parcels, r);
   if (plan.costTotal > m.aum * 0.9 + r.cash * 5) { no("the job is too big for the firm"); return; }
   const dayOne = Math.round(plan.equity * 0.40);
-  if (r.cash < dayOne + Math.max(400_000, r.cash * 0.03)) { no(`day-one equity ${money(dayOne)} is more than the firm can spare`); return; }
+  // Same funding rule as startOwnJob: the firm's own cheque (its co-invest
+  // where it syndicates) and a working reserve, from the account and the line.
+  const need = Math.round(dayOne * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
+  const draw = lineDrawFor(s, parcels, r, need);
+  if (r.cash + draw < need) { no(`day-one equity ${money(dayOne)} is more than the firm can spare`); return; }
+  drawLine(r, draw);
   const b0 = snap(r);
+  const lp0 = r.jvs?.[o.bbl]?.lp ?? 0;
   breakGround(s, parcels, r, o.bbl, rec, use, plan, redev);
-  firmBook(s, r, { kind: "develop", bbl: o.bbl, amount: dayOne, cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt, by: "jev" });
+  const partnersIn = (r.jvs?.[o.bbl]?.lp ?? 0) - lp0;
+  firmBook(s, r, { kind: "develop", bbl: o.bbl, amount: dayOne, partners: partnersIn, cashDelta: r.cash - b0.cash, debtDelta: r.debt - b0.debt, by: "jev" });
   jevDid(s, r, "build", `broke ground on ${Math.round(plan.sf / 1000)}k sf of ${use} at ${rec.address}`);
 }
 

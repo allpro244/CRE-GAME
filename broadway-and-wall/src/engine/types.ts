@@ -2176,6 +2176,17 @@ export interface Rival {
   /** Delivery month of buildings this firm constructed, for merchant exits. */
   deliveredM?: Record<string, number>;
   /**
+   * THE DEAL INVESTORS IN A JOB, by BBL — a deal-by-deal sponsor (merchant
+   * builder, developer) syndicates each job's equity: the firm writes its
+   * co-invest (`SPONSOR_COINVEST`) and outside investors write the rest. `lp`
+   * and `gp` are dollars contributed, `m` the month the partnership closed.
+   * The investors are paid out of the deed's sale proceeds through the pref
+   * and promote (`jvLpTake`, rivals.ts); a deed that leaves any other way
+   * (foreclosure, a deed in lieu, an orphaned frame) takes their equity with
+   * it, which is what happens to deal equity in life.
+   */
+  jvs?: Record<string, { lp: number; gp: number; m: number }>;
+  /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;
    * absent is the ordinary case and means the loan sits on the term ladder.

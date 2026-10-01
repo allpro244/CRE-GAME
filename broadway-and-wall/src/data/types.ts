@@ -32,6 +32,15 @@ export interface ParcelRecord {
   suites?: Partial<Record<Exclude<AssetClass, "land">, number>>;
   lotArea: number;      // sf
   bldgArea: number;     // sf
+  /**
+   * Stamped by `resolveRec`, never stored: the block's cornice datum (the
+   * tallest distance-weighted comparable, floors) and the town's maturity
+   * (0..1) as of the state the record was resolved against — the two
+   * state-dependent inputs of the one height rule (`heightCapFloors`), so the
+   * land residual can read it. Absent on a record nobody resolved.
+   */
+  cornice?: number;
+  maturity?: number;
   floors: number;
   yearBuilt: number;
   unitsRes: number;

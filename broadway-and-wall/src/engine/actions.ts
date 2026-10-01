@@ -11,7 +11,7 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
 import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
@@ -309,12 +309,17 @@ export function executePurchase(
     if (seller) {
       const snap0 = snap(seller);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
+      const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
       const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
       seller.debt -= relief;
       seller.cash += price - relief;
+      // A syndicated deed pays its deal investors out of the closing — see
+      // jvLpTake (rivals.ts).
+      const partnersOut = jvLpTake(jv, price - relief, next.month);
+      seller.cash -= partnersOut;
       firmBook(next, seller, {
-        kind: "sale", bbl, amount: price, tax: 0, with: firmShort(next),
+        kind: "sale", bbl, amount: price, tax: 0, with: firmShort(next), partners: -partnersOut,
         cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
       });
     }

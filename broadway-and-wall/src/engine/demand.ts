@@ -56,6 +56,7 @@ import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
+import { voidContract } from "./acquire";
 
 /** What the neighbourhood panel can recommend: a use, or a mixed-use stack. */
 export type WantsKey = BuiltClass | "mixed";
@@ -962,10 +963,9 @@ function takeCivicLots(s: GameState, model: DemandModel, parcels: ParcelTable) {
     l.bbl = site;
     s.civicLand = { ...(s.civicLand ?? {}), [site]: { kind, fromM: s.month } };
     s.listings = (s.listings ?? []).filter((x) => x.bbl !== site);
-    if (s.talks?.[site]) {
-      delete s.talks[site];
-      if (!Object.keys(s.talks).length) delete s.talks;
-    }
+    // The city's taking voids any contract on the lot, and the earnest money
+    // comes back — it used to vanish with the talk.
+    if (s.talks?.[site]) voidContract(s, parcels, site, `The city took ${parcels[site]?.address ?? site} — your deal on it is void`);
     if (s.approaches?.[site]) delete s.approaches[site];
     const addr = parcels[site]?.address ?? l.name;
     s.news.unshift({

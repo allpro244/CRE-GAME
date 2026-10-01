@@ -626,7 +626,8 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!fin(t.agreedPrice ?? NaN) || (t.agreedPrice ?? 0) <= 0) bad("talks", at, `under contract at ${t.agreedPrice}`);
       if (t.closeByM === undefined) bad("talks", at, "under contract with no closing date");
       else if (t.closeByM <= s.month) bad("talks", at, `closing date ${t.closeByM} has passed and the contract is still live`);
-      if (!s.listings.some((l) => l.bbl === t.bbl)) bad("talks", at, "under contract on something that is no longer for sale");
+      // An off-market contract came from an approach, not the tape.
+      if (!t.offMarket && !s.listings.some((l) => l.bbl === t.bbl)) bad("talks", at, "under contract on something that is no longer for sale");
     }
   }
 
@@ -749,8 +750,22 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
         + Object.values(prev.developments ?? {}).reduce((a, d) => a + d.loanBalance, 0);
       const borrowed = Math.max(0, owedNow - owedWas)
         + Math.max(0, (s.loc?.drawnTotal ?? 0) - (prev.loc?.drawnTotal ?? 0));
+      // THE SPONSOR'S OTHER PURSE PAYS IN TOO. A live fund's scheduled
+      // distribution sends the promote and the co-invest's share (and any GP
+      // advance repaid) from `fund.cash` to the sponsor in the same month the
+      // bailiff calls, and a liquidating trust pays its note. Neither is the
+      // levied deed's money and neither was in the ceiling: measured on the
+      // critic's month-210 save, a $4.13M quarterly distribution to the GP
+      // read as "levied and the account rose 5.23M against 4.34M" — the
+      // seizure itself released exactly its $4.12M of net equity.
+      const mb = s.booksMonthly?.at(-1);
+      const thisMonth = mb && mb.m === s.month ? mb : undefined;
+      const fromVehicle = prev.fund && s.fund
+        ? Math.max(0, (prev.fund.cash - s.fund.cash) - (thisMonth?.lpDistributed ?? 0) + (thisMonth?.lpCalled ?? 0))
+        : 0;
+      const fromTrust = Math.max(0, (prev.trustNote?.balance ?? 0) - (s.trustNote?.balance ?? 0));
       const rose = s.cash - prev.cash;
-      const ceiling = released + income + borrowed;
+      const ceiling = released + income + borrowed + fromVehicle + fromTrust;
       const slack = Math.max(50_000, 0.004 * levied.reduce((a, e) => a + e.price, 0));
       if (rose > ceiling + slack) {
         bad("duress", `month ${s.month}`,

@@ -3186,6 +3186,8 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     nw += eq * (1 - (h.jv?.share ?? 0));
   }
   if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
+  // The note on a wound-down fund's liquidating trust — see fund.ts TrustNote.
+  nw += s.trustNote?.balance ?? 0;
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
   // This booked `costTotal` — the WHOLE build budget — the instant a shovel

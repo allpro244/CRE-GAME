@@ -1181,7 +1181,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     return alt?.id ?? "cash";
   })();
   const max = quoteOf(picked);
-  const principal = Math.round(max.principal * lev);
+  // under the smallest cheque a desk writes, the dial is all cash — buyQuote says the same
+  const principal = Math.round(max.principal * lev) < 100_000 ? 0 : Math.round(max.principal * lev);
   const equity = max.equity > 0 && lev >= 0.999
     ? max.equity
     : offerPrice - principal + Math.round(offerPrice * 0.02)
@@ -1334,7 +1335,11 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </div>
           )}
           {max.principal <= 0 && (
-            <div className="hint">{picked === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+            <div className="hint">{picked === "cash" ? "Buying it outright."
+              : max.bind === "condition" ? "This desk will not lend on a building in the condition the deed conveys at — all cash or another desk."
+              : max.bind === "closed" ? "This desk is not writing today — all cash or another desk."
+              : max.bind === "minloan" ? "The loan this income supports is under the smallest cheque any desk writes ($100K) — all cash or nothing."
+              : "No lender will size a loan against this income — all cash or nothing."}</div>
           )}
           {/* THE ANSWER FOR THE STACK ON THE DIAL: what the money costs all
               in against what the building earns going in. Positive leverage

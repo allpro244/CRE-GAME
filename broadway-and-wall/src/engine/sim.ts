@@ -10,12 +10,12 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
-import { tickTalks } from "./acquire";
+import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, stackPayoff } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed } from "./credit";
@@ -26,7 +26,7 @@ import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCity
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickPlayerMortality, lifeForCash } from "./estate";
-import { tickFund, settleFund, gpCapitalShare } from "./fund";
+import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -379,7 +379,10 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     const v = rec ? conveyedValue(s, rec, li.bbl, !!li.distress) : 0;
     const floor = v * ASK_FLOOR;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
-    if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]?.agreed) {
+    // Nor from under a buyer across the table: a seller in a live negotiation
+    // has a number in play and does not pull the listing mid-conversation —
+    // the talk's own staleness clock (acquire.ts tickTalks) ends it instead.
+    if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]) {
       withdrawn.push(li.bbl);
       continue;
     }
@@ -389,10 +392,13 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     const pulled = new Set(withdrawn);
     s.listings = s.listings.filter((l) => !pulled.has(l.bbl));
   }
-  // A listing you are under contract on does not lapse out from under you. The
-  // contract has its own clock; this one stops while it runs.
+  // A listing you are under contract on — or still negotiating over — does
+  // not lapse out from under you. The contract (and the negotiation) has its
+  // own clock; this one stops while it runs. Letting it lapse while a counter
+  // was on the table let the buyer accept that counter the next morning and
+  // go under contract on a building that was no longer for sale.
   s.listings = s.listings.filter((l) =>
-    (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
+    (l.expiresM > s.month || s.talks?.[l.bbl]) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "depression" ? 0.32
@@ -532,6 +538,7 @@ function tickMonth(
   tickPlayerMortality(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
+  tickTrustNote(s);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -1150,6 +1157,9 @@ function tickMonth(
   }
 
   refreshListings(s, parcels, bbls);
+  // Any route that took a listing out from under a live contract this month
+  // voids it and returns the earnest money (acquire.ts reconcileContracts).
+  reconcileContracts(s, parcels);
   if (s.news.length > 120) s.news.length = 120;
 
   // A deed that left the book takes its leased fee with it — the lease
@@ -1209,7 +1219,7 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   { id: "irr20", label: "An exit at a 20% IRR", test: (s) => s.exits.some((e) => !e.forced && (e.irr ?? -1) >= 0.2) },
   { id: "nw25", label: "Net worth $25M", test: (_s, nw) => nw >= 25e6 },
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },
-  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed) || (s.fundsRaised ?? 0) >= 2 },
+  { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed && !s.fund.inKind) || (s.fundsRaised ?? 0) >= 2 },
   { id: "nw500", label: "Net worth $500M", test: (_s, nw) => nw >= 500e6 },
   { id: "street1", label: "Top of the street", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
@@ -1738,11 +1748,20 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     }
   }
   // Open LOI signing costs vs the treasury reserve the agent itself respects.
+  // A fund deed's letters are the vehicle's cheque, tested against the
+  // vehicle's reserve — not the GP's account.
   {
-    const committed = (s.lois ?? []).reduce((a, l) => {
-      const fee = exclusiveFeeRate(s.holdings[l.bbl]);
-      return a + loiSigningCost(l, fee);
-    }, 0);
+    let committed = 0, vehicle = 0;
+    for (const l of s.lois ?? []) {
+      const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
+      if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c; else committed += c;
+    }
+    if (vehicle > 0 && vehiclePurse(s) - vehicle < fundReserve(s)) {
+      out.push({
+        key: "ti-book-fund",
+        label: `Open lease signing costs ${money(vehicle)} on the fund's buildings would breach the fund's reserve`,
+      });
+    }
     if (committed > 0 && s.cash - committed < agentCashReserve(s)) {
       const n = committed >= 1_000_000
         ? `$${(committed / 1_000_000).toFixed(2)}M`
@@ -1807,7 +1826,7 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
-  let boughtIn = 0, inKind = 0, paidTotal = 0;
+  let boughtIn = 0, inKind = 0, paidTotal = 0, trustNav = 0;
   for (const h of deeds) {
     const rec = resolveRec(parcels, s, h.bbl);
     const value = ownedHoldingValue(s, parcels, h);
@@ -1836,8 +1855,10 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     // Could not pay in full (or underwater): the partial cheque goes back,
     // the deed goes in kind. Its ledger never books the NAV the LPs take,
     // so it reports nothing rather than a near-zero multiple.
+    // The deed's equity goes into the trust; the trust is distributed
+    // through the waterfall below, not booked to the LPs whole.
     s.cash += paid;
-    f.distributed += price;
+    trustNav += price;
     inKind++;
     s.exits.push({ bbl: h.bbl, address: rec?.address ?? h.bbl, boughtM: h.boughtM, soldM: s.month, price: Math.round(value), basis: h.costBasis, gain: Math.round(value - h.costBasis), forced: true });
     poolDeedLedger(s, h.bbl);
@@ -1850,11 +1871,26 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     if (s.workouts?.[h.bbl]) delete s.workouts[h.bbl];
     s.lois = s.lois.filter((l) => l.bbl !== h.bbl);
   }
+  // THE VEHICLE'S CASH FIRST (the GP advance comes back out of it ahead of
+  // any distribution), THEN THE TRUST. An in-kind distribution is a
+  // distribution: it runs through the same waterfall a cash one does. It used
+  // to book the whole of the deeds' equity to the LPs — the GP's advance and
+  // its co-invest share included — and the sponsor's claims on the vehicle
+  // simply vanished (measured: $3.37M advance + $0.57M co-invest, NW $2.87M →
+  // −$1.16M in one month, and the LPs "returned 1.05x" on the GP's money).
+  if (f.cash > 0) applyDistribute(s, f.cash);
+  const toGp = inKind ? distributeInKind(s, trustNav) : null;
+  if (inKind) f.inKind = (f.inKind ?? 0) + inKind;
   if (boughtIn + inKind > 0) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
       text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, paid through the waterfall.` : ""}`
-        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages, and the promote on them is waived.` : ""}`,
+        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages.` : ""}`
+        + (toGp && toGp.total > 0
+          ? ` Your share of the trust — ${money(toGp.advance)} of GP advances, senior, and ${money(toGp.coinvest)} for your co-invest`
+            + `${toGp.promote > 0 ? ` and ${money(toGp.promote)} of promote` : ""} — is a note on the trust, paid as it sells over ${TRUST_NOTE_M} months.`
+          : "")
+        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances is more than the trust is worth and is written off.` : ""),
     });
   }
   settleFund(s);

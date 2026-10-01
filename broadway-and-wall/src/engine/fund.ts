@@ -78,7 +78,25 @@ export interface PlayerFund {
   gpAdvance?: number;
   /** Last month the vehicle made a scheduled distribution. */
   lastDistM?: number;
+  /**
+   * Deeds that went to the LPs' liquidating trust in kind at the wind-down —
+   * the sponsor could not buy them in. A fund that ends that way was not
+   * "raised and returned", whatever its DPI reads.
+   */
+  inKind?: number;
 }
+
+/**
+ * THE SPONSOR'S NOTE ON THE LIQUIDATING TRUST. What the waterfall paid the
+ * GP out of an in-kind distribution — the advance (senior), the co-invest's
+ * pro-rata share and any promote — is a claim on the trust, not cash: the
+ * trust pays it as it sells the buildings. Carried at face in net worth
+ * (the trust's assets were marked at NAV the day it was formed) and paid in
+ * equal monthly instalments over TRUST_NOTE_M months — a stated
+ * simplification of a trust's sell-down, not a calibrated schedule.
+ */
+export interface TrustNote { balance: number; monthly: number; fromM: number }
+export const TRUST_NOTE_M = 12;
 
 /** Two one-year extensions — the common LPA term for a closed-end real estate fund. */
 export const FUND_EXTENSION_M = 24;
@@ -310,6 +328,64 @@ export function applyDistribute(s: GameState, amount: number): number {
   if (w.promote > 0) s.promoteIncomeYr = (s.promoteIncomeYr ?? 0) + w.promote;
   if (w.toLp > 0) logBooks(s, "lpDistributed", w.toLp);
   return w.toLp;
+}
+
+/**
+ * AN IN-KIND DISTRIBUTION, THROUGH THE WATERFALL. `nav` is the equity of the
+ * deeds the LPs' liquidating trust just took. The GP advance comes back first
+ * (it was a loan to the vehicle, not capital in it); the rest runs the
+ * waterfall exactly as cash would — pref, capital, then the promote, which a
+ * trust that does not clear the pref and the capital simply never reaches.
+ * The GP's legs (advance, co-invest share, promote) become a note on the
+ * trust; the LPs' legs are booked as distributed. No cash moves here, so
+ * nothing is booked to the ledger — the note pays in cash later
+ * (`tickTrustNote`). An advance larger than the trust is written off.
+ * Mutates `s`.
+ */
+export function distributeInKind(s: GameState, nav: number): { advance: number; coinvest: number; promote: number; writtenOff: number; total: number } {
+  const f = s.fund;
+  const out = { advance: 0, coinvest: 0, promote: 0, writtenOff: 0, total: 0 };
+  if (!f || f.settled) return out;
+  let rest = Math.max(0, Math.round(nav));
+  const owed = Math.max(0, Math.round(f.gpAdvance ?? 0));
+  out.advance = Math.min(rest, owed);
+  rest -= out.advance;
+  f.gpAdvance = 0;
+  out.writtenOff = owed - out.advance;
+  if (rest > 0) {
+    const w = waterfall(f, rest);
+    f.prefAccrued -= w.pref;
+    f.capReturned = (f.capReturned ?? 0) + w.capital;
+    f.distributed += w.pref + w.capital + w.split;
+    f.promotePaid += w.promote;
+    out.coinvest = w.toGpCoinvest;
+    out.promote = w.promote;
+    if (w.promote > 0) s.promoteIncomeYr = (s.promoteIncomeYr ?? 0) + w.promote;
+  }
+  out.total = out.advance + out.coinvest + out.promote;
+  if (out.total > 0) {
+    const bal = (s.trustNote?.balance ?? 0) + out.total;
+    s.trustNote = { balance: bal, monthly: Math.ceil(bal / TRUST_NOTE_M), fromM: s.month };
+  }
+  return out;
+}
+
+/**
+ * THE TRUST PAYS ITS NOTE as it sells. Cash in from outside the firm —
+ * the trust's sale proceeds — booked to `sold` (it is real estate sold, by
+ * the trust, for the sponsor's account). Mutates `s`.
+ */
+export function tickTrustNote(s: GameState): void {
+  const n = s.trustNote;
+  if (!n || !(n.balance > 0) || s.month <= n.fromM) return;
+  const pay = Math.min(n.balance, n.monthly);
+  n.balance -= pay;
+  s.cash += pay;
+  logBooks(s, "sold", pay);
+  if (n.balance <= 0) {
+    s.trustNote = null;
+    s.news.unshift({ q: s.month, kind: "info", text: "The fund's liquidating trust has paid off your note — its last building is sold." });
+  }
 }
 
 /**

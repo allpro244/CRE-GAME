@@ -24,6 +24,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve } from "./credit";
+import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
 
@@ -2705,7 +2706,31 @@ function isMustTake(loi: LOI, rec: ParcelRecord | undefined): boolean {
  * and let an agent sign the firm into an over-advance nobody authorised.
  */
 function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE): boolean {
-  return s.cash - loiSigningCost(loi, feeRate) - Math.max(0, Math.round(loi.demiseCost ?? 0)) >= agentCashReserve(s);
+  const cost = loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  // A VEHICLE DEED'S LEASE IS THE VEHICLE'S CHEQUE, against the vehicle's
+  // reserve: the fit-out and commission settle from `fund.cash` and, short,
+  // from a call on uncalled commitments (settleVehicleDeedFlow). Testing it
+  // against the GP's own account docketed every fund lease the month the GP
+  // ran thin while the vehicle sat on the money.
+  if (vehicleSigns(s, s.holdings[loi.bbl])) return vehiclePurse(s) - cost >= fundReserve(s);
+  return s.cash - cost >= agentCashReserve(s);
+}
+
+/** Does the vehicle, not the sponsor, pay this deed's signing costs? */
+export function vehicleSigns(s: GameState, h: Holding | undefined): boolean {
+  return !!(h?.fundOwned && s.fund && !s.fund.settled);
+}
+
+/** What the vehicle can put into an existing investment today: its cash and its uncalled commitments. */
+export function vehiclePurse(s: GameState): number {
+  return s.fund && !s.fund.settled ? Math.max(0, s.fund.cash) + Math.max(0, s.fund.uncalled) : 0;
+}
+
+/** The reserve a signing on this letter's deed is tested against, and whose it is. */
+export function signingReserve(s: GameState, loi: LOI): { reserve: number; whose: string } {
+  return vehicleSigns(s, s.holdings[loi.bbl])
+    ? { reserve: fundReserve(s), whose: "the fund's" }
+    : { reserve: agentCashReserve(s), whose: "the treasury" };
 }
 
 /**
@@ -2959,7 +2984,7 @@ export function clearAgainstPlan(
   if (!agentCanFund(s, { ...loi, rentPsf: Math.max(loi.rentPsf, quotePsf), tiPsf: Math.min(loi.tiPsf ?? 0, row.maxTiPsf) }, feeRate)) {
     return {
       verdict: "docket",
-      why: `signing would leave less than the ${money(agentCashReserve(s))} treasury reserve`,
+      why: `signing would leave less than ${signingReserve(s, loi).whose} ${money(signingReserve(s, loi).reserve)} reserve`,
       quotePsf, row,
     };
   }
@@ -3059,7 +3084,7 @@ function planTrySign(
 ): boolean {
   if (!agentCanFund(s, loi, feeRate)) {
     planDocketLoi(s, loi, rec,
-      `signing needs ${money(loiSigningCost(loi, feeRate))} against the ${money(agentCashReserve(s))} treasury reserve`,
+      `signing needs ${money(loiSigningCost(loi, feeRate))} against ${signingReserve(s, loi).whose} ${money(signingReserve(s, loi).reserve)} reserve`,
       who);
     return false;
   }
@@ -3679,8 +3704,15 @@ export function respondLOI(
   const fee = exclusiveFeeRate(h);
   const sign = (l: LOI): string | null => {
     const cost = loiSigningCost(l, fee) + Math.max(0, Math.round(l.demiseCost ?? 0));
-    if (next.cash < cost) {
-      const short = Math.ceil((cost - next.cash) / 1000) * 1000;
+    // A FUND DEED'S LEASE IS PAID BY THE FUND. The cheque settles through the
+    // vehicle (settleVehicleDeedFlow: its cash, then a call on uncalled
+    // commitments, which an LPA allows for an existing investment); only what
+    // the vehicle cannot raise is the sponsor's, as a GP advance. This used to
+    // test the sponsor's cash and line alone and refused the letter — 736
+    // refusals on one run, fund occupancy 0.76 → 0.15.
+    const own = vehicleSigns(next, next.holdings[l.bbl]) ? Math.max(0, cost - vehiclePurse(next)) : cost;
+    if (next.cash < own) {
+      const short = Math.ceil((own - next.cash) / 1000) * 1000;
       const avail = locAvailable(next, parcels);
       if (short > avail) {
         // Say what would make it signable: most of the cheque is usually the

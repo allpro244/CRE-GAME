@@ -2558,6 +2558,8 @@ export interface GameState {
    * (the default). See fund.ts / PRINCIPAL_CALLS.md.
    */
   fund?: import("./fund").PlayerFund | null;
+  /** The sponsor's claim on a wound-down fund's liquidating trust — see fund.ts TrustNote. */
+  trustNote?: import("./fund").TrustNote | null;
   /**
    * When true, new purchases draw equity from the live fund during its
    * investment period. Opt-in path; balance-sheet remains the default until
@@ -3564,6 +3566,8 @@ export interface Talks {
    * closing and gone if the clock runs out.
    */
   deposit?: number;
+  /** Struck on an off-market approach, not a listing — there is no tape entry to keep alive. */
+  offMarket?: boolean;
 }
 
 /**

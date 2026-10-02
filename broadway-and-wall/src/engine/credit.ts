@@ -41,13 +41,25 @@ export const LOC_DEFAULT_MARGIN = 0.05;
  * Now the sweep keeps what the agent needs.
  */
 export function operatingReserve(s: GameState): number {
-  const mortgages = Object.values(s.holdings)
-    .reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0);
+  return Math.max(LOC_CASH_RESERVE, Math.round(6 * monthlyDebtService(s)));
+}
+
+/**
+ * ONE MONTH OF SCHEDULED DEBT SERVICE — every mortgage payment, every mezz
+ * coupon, the facility's interest and the line's own interest. This is the
+ * cheque the firm must be able to write next month whatever else happens.
+ */
+export function monthlyDebtService(s: GameState): number {
+  let deeds = 0;
+  for (const h of Object.values(s.holdings)) {
+    deeds += h.loan?.monthlyPmt ?? 0;
+    if (h.mezz && h.mezz.balance > 0) deeds += h.mezz.monthlyPmt ?? 0;
+  }
   const facility = s.facility
     ? (s.facility.balance * s.facility.ratePct) / 100 / 12
     : 0;
   const line = ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + LOC_SPREAD)) / 100 / 12;
-  return Math.max(LOC_CASH_RESERVE, Math.round(6 * (mortgages + facility + line)));
+  return Math.round(deeds + facility + line);
 }
 
 /** Line amounts in news — never "$0.00M" for a $4k cheque. */
@@ -350,7 +362,17 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
   // a shrinking portfolio can put you over the line; the lender wants it back
   const over = s.loc.balance - locLimit(s, parcels);
   if (over > 0) {
-    const pay = Math.min(over, Math.max(0, s.cash));
+    // THE MORTGAGES ARE PAID FIRST. This handed the bank every dollar in the
+    // account, so a firm whose net worth dipped under its line cleared part of
+    // the over-advance and then missed next month's mortgage payments — with
+    // the line already maxed there was nothing to draw them from. A missed
+    // mortgage puts a specific deed on the road to foreclosure; an
+    // over-advance that runs a little longer accrues default interest and
+    // starts the same insolvency clock it always did. No sponsor trades the
+    // first for the second, so one month of scheduled debt service stays in
+    // the account and only what is above it goes to the line.
+    const holdBack = monthlyDebtService(s);
+    const pay = Math.min(over, Math.max(0, s.cash - holdBack));
     if (pay > 0) {
       s.loc.balance -= pay;
       s.cash -= pay;

@@ -7,8 +7,8 @@ import { depositsHeld } from "@/engine/leasing";
 import { resolveRec, netWorth } from "@/engine/value";
 import { deedMark } from "@/ui/deedMarks";
 import {
-  balanceSnapshotView, buildBalanceSheet, booksMonthAsYear,
-  type BalanceSheetView,
+  balanceSnapshotView, buildBalanceSheet, booksMonthAsYear, pnlView,
+  type BalanceSheetView, type PnlView,
 } from "@/engine/books";
 import { taxAppealQuote, INCOME_TAX_RATE, NOL_SHELTER_CAP } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
@@ -16,7 +16,7 @@ import { usd, pct } from "@/ui/format";
 import { NWChart, Big } from "@/ui/panels/shared";
 import Waterfall from "@/ui/vitals/Waterfall";
 
-type BooksTab = "balance" | "income";
+type BooksTab = "balance" | "pnl" | "cash";
 
 export function BooksPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -71,8 +71,13 @@ export function BooksPage() {
         <button className={"btn" + (tab === "balance" ? " btn-on" : "")} onClick={() => setTab("balance")}>
           Balance sheet
         </button>
-        <button className={"btn" + (tab === "income" ? " btn-on" : "")} onClick={() => setTab("income")}>
+        <button className={"btn" + (tab === "pnl" ? " btn-on" : "")} onClick={() => setTab("pnl")}
+          title="What the firm earned — accrual basis: interest not principal, depreciation, gains on sale">
           Income statement
+        </button>
+        <button className={"btn" + (tab === "cash" ? " btn-on" : "")} onClick={() => setTab("cash")}
+          title="What moved through the bank account — principal, purchases, sales and draws included">
+          Cash flow
         </button>
         <button className="btn" onClick={() => useStore.getState().setPage("staff")}
           title="Property management, leasing and construction — capacity, the shortlist, and what the slip is costing you">
@@ -80,7 +85,7 @@ export function BooksPage() {
         </button>
       </div>
 
-      {tab === "balance" ? <BalanceSheet /> : <IncomeStatementTab />}
+      {tab === "balance" ? <BalanceSheet /> : tab === "pnl" ? <ProfitAndLoss /> : <IncomeStatementTab />}
 
       {(pendingAppeals.length > 0 || appealable.length > 0) && (
         <div className="page-section">
@@ -576,7 +581,7 @@ export function IncomeStatement() {
   if (!books.length && !months.length) {
     return (
       <div className="page-section">
-        <div className="page-section-head">Income statement</div>
+        <div className="page-section-head">Cash flow</div>
         <div className="hint">Nothing on the books yet — advance a month and the year opens.</div>
       </div>
     );
@@ -648,7 +653,7 @@ export function IncomeStatement() {
 
   return (
     <div className="page-section">
-      <div className="page-section-head">Income statement · {headLabel}</div>
+      <div className="page-section-head">Cash flow · {headLabel}</div>
       <div className="btn-row" style={{ marginBottom: 10 }}>
         <button
           type="button"
@@ -746,6 +751,108 @@ export function IncomeStatement() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE PROFIT AND LOSS — the firm's accrual income statement, years side by
+ * side the way a company report lays them out.
+ *
+ * The cash-flow statement next to it answers "where did the money go"; this
+ * answers "did the firm make money". They differ for honest reasons and the
+ * page says which: principal repaid, buildings bought, loans drawn and sale
+ * proceeds are cash but not profit; depreciation and interest accrued on a
+ * file in foreclosure are profit-and-loss but not cash. Leasing costs and
+ * capital work are expensed as incurred — the simple statement, and the one
+ * that shows a heavy re-letting year as the expensive year it was.
+ */
+function ProfitAndLoss() {
+  const game = useStore((s) => s.game)!;
+  const years = useMemo(
+    () => [...(game.pnl ?? [])].sort((a, b) => b.yr - a.yr).slice(0, 4).map((e) => pnlView(game, e)),
+    [game],
+  );
+  if (!years.length) {
+    return (
+      <div className="page-section">
+        <div className="page-section-head">Income statement</div>
+        <div className="hint">Nothing earned yet — advance a month and the year opens.</div>
+      </div>
+    );
+  }
+  const cur = years[0];
+  type Key = keyof Omit<PnlView, "yr" | "label" | "months" | "deprFinal">;
+  const line = (k: string, key: Key, opts: { sign?: 1 | -1; sub?: boolean; strong?: boolean; rule?: boolean; note?: string } = {}) => (
+    <tr className={opts.rule ? "is-rule" : undefined}>
+      <td style={{ paddingLeft: opts.sub ? 22 : 0, fontWeight: opts.strong ? 600 : undefined }}>
+        {k}{opts.note && <span className="dim" style={{ fontWeight: 400 }}> · {opts.note}</span>}
+      </td>
+      {years.map((y) => {
+        const v = (opts.sign ?? 1) * y[key];
+        const r = Math.round(v);
+        return (
+          <td key={y.yr} className={"num" + (r < 0 ? " neg" : "") + (opts.strong ? " is-strong" : "")}>
+            {r === 0 ? "—" : (r < 0 ? "(" : "") + usd(Math.abs(r)) + (r < 0 ? ")" : "")}
+          </td>
+        );
+      })}
+    </tr>
+  );
+  const margin = cur.totalRev > 0 ? cur.net / cur.totalRev : null;
+  const cover = cur.intExp > 0 ? cur.ebitda / cur.intExp : null;
+  return (
+    <div className="page-section">
+      <div className="page-section-head">Income statement · accrual basis</div>
+      <div className="hint">
+        What the firm earned, not what moved through the bank. Interest is the interest — principal is a balance-sheet
+        movement and lives on the Cash flow tab, with purchases, sales and loan draws. A sale shows its gain over the
+        depreciated basis, not its proceeds. Your fund&apos;s deeds report through the fund; a JV partner&apos;s share comes off
+        on its own line.
+      </div>
+      <table className="tbl tbl-stmt">
+        <thead>
+          <tr>
+            <th></th>
+            {years.map((y) => (
+              <th key={y.yr} className="num" title={y.months < 12 ? `${y.months} month${y.months === 1 ? "" : "s"} so far` : "full year"}>
+                {y.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries and other income billed" })}
+          {line("Interest on cash", "intInc", { sub: true })}
+          {line("Total revenue", "totalRev", { strong: true, rule: true })}
+          {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}
+          {line("Leasing costs", "leasing", { sign: -1, sub: true, note: "TI and commissions, expensed as signed" })}
+          {line("Capital work", "capex", { sign: -1, sub: true, note: "make-ready, programmes, renovations" })}
+          {line("Firm overhead", "ga", { sign: -1, sub: true, note: "staff, accounting, legal" })}
+          {line("Total operating expenses", "totalOpex", { sign: -1, strong: true, rule: true })}
+          {line("Operating profit before depreciation", "ebitda", { strong: true, rule: true })}
+          {line("Depreciation", "depr", { sign: -1, sub: true, note: cur.deprFinal ? "per the tax return" : "accrued at last year's rate · trued to the return in January" })}
+          {line("Operating profit", "ebit", { strong: true, rule: true })}
+          {line("Interest expense", "intExp", { sign: -1, sub: true, note: "mortgages, mezzanine, facility, line" })}
+          {line("Gain (loss) on sales", "gains", { sub: true, note: "net proceeds over depreciated basis" })}
+          {line("JV partners' share", "jv", { sign: -1, sub: true })}
+          {line("Profit before tax", "pretax", { strong: true, rule: true })}
+          {line("Income and capital-gains tax", "taxes", { sign: -1, sub: true, note: "paid in the year" })}
+          {line("Net profit", "net", { strong: true, rule: true })}
+        </tbody>
+      </table>
+      <div className="hint">
+        {[
+          margin !== null ? `Net margin ${cur.label}: ${(margin * 100).toFixed(0)}% of revenue.` : null,
+          cover !== null ? `Interest cover ${cover.toFixed(2)}× — operating profit before depreciation over interest.` : null,
+          cur.leasing + cur.capex > Math.max(0, cur.ebitda + cur.leasing + cur.capex) * 0.5
+            ? "Leasing and capital work took more than half of what the buildings made — a re-letting year shows here as the expensive year it is."
+            : null,
+          cur.net < 0 && cur.depr > -cur.net
+            ? "The loss is smaller than the depreciation: on cash, before principal, the firm still made money. That is the shelter working."
+            : null,
+        ].filter(Boolean).join(" ")}
+      </div>
     </div>
   );
 }

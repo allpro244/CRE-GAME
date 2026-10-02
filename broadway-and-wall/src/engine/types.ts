@@ -91,6 +91,13 @@ export interface Tenant {
   startM: number;
   endM: number;        // lease expiration
   freeUntilM?: number; // free-rent concession
+  /**
+   * When this suite was last fitted out — the start of the lease, or the last
+   * renewal that carried a refresh allowance. How tired the space is decides
+   * how much of an allowance the tenant can ask for at the next renewal.
+   * Absent reads as `startM`.
+   */
+  fitM?: number;
   defaulted?: boolean;
   /**
    * SECURITY. One to two months of rent, taken at signing and held against the
@@ -414,6 +421,8 @@ export interface Holding {
   boughtM: number;
   costBasis: number;
   deprTaken?: number;  // accumulated depreciation — reduces basis on sale
+  /** Last January's depreciation on this deed — the P&L accrues a twelfth of it each month. */
+  deprYr?: number;
   assessed?: number;   // property-tax assessed value; steps up on reassessment
   /** A property-tax challenge pending before the assessor. */
   taxAppeal?: {
@@ -542,6 +551,14 @@ export interface Holding {
   // can move in next month does not need six months of drawings and a fit-out
   // allowance. It costs the fit-out up front on space that may sit.
   specSuites?: { sf: number; readyM: number; use: BuiltClass; blockId?: number };
+  /**
+   * FIRST-GENERATION FEET, by use: space in a building you delivered that no
+   * tenant has fitted out yet. Stamped at delivery, used up as new leases and
+   * expansions sign. A shell costs a first-generation allowance to let — see
+   * FIRST_GEN_TI_MULT in leasing.ts. Absent means every vacant foot is
+   * second-generation, which is true of nearly every standing building.
+   */
+  shellSf?: Partial<Record<BuiltClass, number>>;
   occ?: number;        // multifamily aggregate occupancy
   /**
    * THE FLATS' IN-PLACE RENT, $/sf/yr on rentable feet. Apartment income
@@ -2010,6 +2027,44 @@ export interface BooksYear {
   lpDistributed?: number;
 }
 
+/**
+ * THE INCOME STATEMENT, ON AN ACCRUAL BASIS — what the firm EARNED, as against
+ * BooksYear, which is what moved through the bank account. Principal, equity
+ * in and out, acquisitions and debt draws are not income or expense and never
+ * appear here; interest accrues on what is owed, depreciation is the tax
+ * return's own figure, and a sale shows its gain over the depreciated basis
+ * rather than its proceeds.
+ *
+ * Consolidated the way the balance sheet is (`buildBalanceSheet`): deeds the
+ * firm holds itself at 100%, with a JV partner's share taken out on its own
+ * line, and the fund vehicle's deeds not at all — those are the LPs' income
+ * and reach the sponsor through the fund. Ledger lines are fed from the same
+ * `logBooks` call as the cash books, so the two statements can never disagree
+ * about a cheque; they disagree only where accrual and cash honestly differ.
+ */
+export interface PnlYear {
+  yr: number;
+  /** Effective gross income — rent, recoveries and other income actually billed. */
+  rev: number;
+  /** Booked NOI on the same deeds. Property operating cost is `rev - noi`. */
+  noi: number;
+  leasing: number;
+  capex: number;
+  ga: number;
+  /** Interest earned on idle cash. */
+  intInc: number;
+  /** Interest accrued on mortgages, mezzanine, the facility and the line. */
+  intExp: number;
+  /** Straight-line depreciation — accrued at last January's rate, trued to the return at close. */
+  depr: number;
+  /** True once January has replaced the accrual with the year's actual return figure. */
+  deprFinal?: boolean;
+  /** JV partners' share of income before depreciation (NOI less interest). */
+  jv: number;
+  /** Income and capital-gains tax paid in the year. */
+  taxes: number;
+}
+
 /** Same flow buckets as BooksYear, stamped once per game month for the monthly statement. */
 export interface BooksMonth {
   m: number;
@@ -3077,6 +3132,8 @@ export interface GameState {
   booksMonthly?: BooksMonth[];
   /** December balance-sheet stamps — one per game year. Optional for old saves. */
   balanceHistory?: BalanceSnapshot[];
+  /** The firm's accrual income statement, one entry per year. See PnlYear. Optional for old saves. */
+  pnl?: PnlYear[];
   nwHistory: number[];                       // net worth at each month, for the chart
   /** Last month's gross asset value — overhead sizes off this so the tick does not appraise twice. */
   prevGav?: number;
@@ -3161,6 +3218,33 @@ export function logBooks(
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();
   }
   me[key] = ((me[key] as number) ?? 0) + amt;
+  // THE INCOME STATEMENT READS THE SAME CHEQUE. Only the lines that are income
+  // or expense; a vehicle deed's flows are the fund's, not the firm's.
+  const pk = PNL_FROM_BOOKS[key];
+  if (pk && !(bbl && s.holdings[bbl]?.fundOwned && s.fund && !s.fund.settled)) pnlAdd(s, pk, amt);
+}
+
+const PNL_FROM_BOOKS: Partial<Record<keyof Omit<BooksYear, "yr">, keyof Omit<PnlYear, "yr" | "deprFinal">>> = {
+  noi: "noi", leasing: "leasing", capex: "capex", ga: "ga", interest: "intInc", taxes: "taxes",
+};
+
+/** The income-statement year the current month belongs to, opened on first write. */
+export function pnlYear(s: GameState, yr = Math.floor(s.month / 12)): PnlYear {
+  if (!s.pnl) s.pnl = [];
+  let e = s.pnl.find((x) => x.yr === yr);
+  if (!e) {
+    e = { yr, rev: 0, noi: 0, leasing: 0, capex: 0, ga: 0, intInc: 0, intExp: 0, depr: 0, jv: 0, taxes: 0 };
+    s.pnl.push(e);
+    s.pnl.sort((a, b) => a.yr - b.yr);
+    while (s.pnl.length > 120) s.pnl.shift();
+  }
+  return e;
+}
+
+export function pnlAdd(s: GameState, key: keyof Omit<PnlYear, "yr" | "deprFinal">, amt: number) {
+  if (!amt || !Number.isFinite(amt)) return;
+  const e = pnlYear(s);
+  e[key] += amt;
 }
 
 

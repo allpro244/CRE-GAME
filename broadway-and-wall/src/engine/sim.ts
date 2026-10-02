@@ -27,7 +27,7 @@ import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
-import { maybeStampYearEndBalance } from "./books";
+import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
@@ -647,6 +647,9 @@ function tickMonth(
     const noiQ = ownedMonthlyNoi(s, parcels, h);
     const debtCash = tickLoan(s, parcels, rec, h, noiQ); // may refi, sweep, or force a sale
     logBooks(s, "noi", noiQ, h.bbl);
+    // The income statement's revenue line, off the same operating statement
+    // the quarterly report below reads (a leased fee's revenue is its coupon).
+    stampPnlDeed(s, h, noiQ, h.groundLeased ? null : (operatingStatement(rec, s.econ, h, s.month).egi ?? 0));
     logBooks(s, "debtSvc", debtCash, h.bbl);
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
     const cf = noiQ - debtCash;
@@ -819,6 +822,7 @@ function tickMonth(
     // taxed when it is paid (fund.ts applyDistribute).
     const liveFund = s.fund && !s.fund.settled ? s.fund : undefined;
     let fundTaxable = 0;
+    let firmDepr = 0;
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
@@ -856,6 +860,8 @@ function tickMonth(
       const deprCapacity = improvements - (h.deprTaken ?? 0);
       const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
+      h.deprYr = Math.round(depr);
+      if (!(liveFund && h.fundOwned)) firmDepr += depr;
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
       if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
@@ -874,6 +880,7 @@ function tickMonth(
     // THE LOSS CARRIES. Netting happens in settleIncomeTax so the cheque, the
     // news line and the Books page are one answer — see tax.ts for the 80%
     // §172(a) cap and why there is no expiry.
+    closePnlDepreciation(s, s.month / 12 - 1, firmDepr);
     const yr = settleIncomeTax(taxable, s.taxLossCarry ?? 0);
     const priorCarry = Math.max(0, s.taxLossCarry ?? 0);
     s.taxLossCarry = yr.carry;
@@ -1124,6 +1131,7 @@ function tickMonth(
   // DECEMBER CLOSE. The live sheet is always "today"; this freezes the same
   // marks at year-end so Books can reopen last December without a second model.
   maybeStampYearEndBalance(s, parcels);
+  stampPnlMonth(s);
   checkMilestones(s, nw);
   // ...and where that left you on the street, kept for the year's review.
   stampYearMark(s, parcels, nw);

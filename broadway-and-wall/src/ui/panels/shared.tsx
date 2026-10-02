@@ -1,4 +1,5 @@
 import { LineChart } from "@/ui/Chart";
+import { glossFor } from "@/ui/Glossary";
 import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
@@ -222,9 +223,10 @@ export function workStage(
 export { pendingRTab, openResearchOn, clearPendingRTab } from "@/ui/researchTab";
 
 export function Big({ label, value, bad, title }: { label: string; value: string; bad?: boolean; title?: string }) {
+  const gloss = title ? undefined : glossFor(label);
   return (
-    <div className="big-stat" title={title}>
-      <div className="big-label">{label}</div>
+    <div className="big-stat" title={title ?? gloss}>
+      <div className={"big-label" + (gloss ? " has-gloss" : "")}>{label}</div>
       {/* A long reading (a band, a label, "3.8 yrs avg") steps down a size
           rather than breaking across two or three lines of a tile. */}
       <div className={"big-value mono" + (bad ? " v-bad" : "") + (value.length > 14 ? " big-value-xl" : value.length > 9 ? " big-value-long" : "")}>{value}</div>
@@ -313,9 +315,10 @@ export function Row({ k, v, strong, bad, title }: {
   // Past a line's worth it is marked long; the narrow card drops it under its
   // label, left-aligned, and the wide desks — where it fits — ignore the mark.
   const long = v.length > 34;
+  const gloss = title ? undefined : glossFor(k);
   return (
     <>
-      <div className="k" title={title}>{k}</div>
+      <div className={"k" + (gloss ? " has-gloss" : "")} title={title ?? gloss}>{k}</div>
       <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "") + (long ? " v-long" : "")} title={title}>{v}</div>
     </>
   );

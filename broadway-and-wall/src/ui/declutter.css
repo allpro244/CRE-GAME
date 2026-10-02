@@ -130,3 +130,13 @@
   .app .map-controls-carded .map-controls-label { display: none; }
   .app .map-controls-carded .map-controls-btn { padding: 0 8px; }
 }
+
+/* ---------- a label that carries a glossary definition ---------- */
+.app .has-gloss {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+/* long explanations open on two lines, not three (see useHintFolds) */
+.app .page .hint.hint-fold { -webkit-line-clamp: 2; }

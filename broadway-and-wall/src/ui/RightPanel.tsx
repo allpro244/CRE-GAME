@@ -402,11 +402,12 @@ function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HT
  *
  * Many desks carry a paragraph of method under their numbers — useful once,
  * then a wall the eye has to climb past every visit. A plain hint longer than
- * a few lines is clamped to three, and opens in place on a click. Hints with
- * controls in them are left alone, and the Primer (which is meant to be read)
- * never folds.
+ * about two lines at desk width is clamped to two, and opens in place on a
+ * click. Hints with controls in them are left alone, and the Primer (which is
+ * meant to be read) never folds. (It was 300 characters against a three-line
+ * clamp, which at desk width folded almost nothing.)
  */
-const FOLD_CHARS = 300;
+const FOLD_CHARS = 200;
 function useHintFolds(ref: React.RefObject<HTMLDivElement | null>, page: Page) {
   useEffect(() => {
     const root = ref.current;

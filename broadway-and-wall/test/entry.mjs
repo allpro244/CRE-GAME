@@ -43,6 +43,8 @@ export const MODULES = [
   "buybox",
   // goals is the run's chosen ambition: progress and verdict, pure reads.
   "goals",
+  // setup is the setup page's world: eras, credit position, field, the family book.
+  "setup",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
   // books carries the balance-sheet stamp and month→year view helpers the

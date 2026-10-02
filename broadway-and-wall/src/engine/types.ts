@@ -2889,6 +2889,21 @@ export interface GameState {
   privateQuoteCool?: Record<string, number>;
   /** Player preference: whether broker first looks / off-market files may stop the clock. */
   brokerStops?: "affordable" | "never";
+  /**
+   * WHAT STOPS THE CLOCK, chosen on the setup page and editable in Settings.
+   * Absent is "decisions" — every item on the attention list that is not
+   * `soft` — which is how the game has always run. "everything" also stops on
+   * the soft notices; "money" stops only on items where not answering costs the
+   * firm something it already has (OPPORTUNITY_KEYS wait). See stopRule in sim.ts.
+   */
+  clockStops?: "everything" | "money";
+  /**
+   * THE WORLD THIS RUN WAS DEALT, as chosen on the setup page (setup.ts).
+   * Recorded so the Saves page and the run record can say which world it was;
+   * the engine reads `era`, `credit`, `field`, `inherit`, `home` and `sandbox`
+   * once, in newGame, and nothing reads it after that except `sandbox`.
+   */
+  setup?: import("./setup").GameSetup;
   /** The run's chosen ambition, if any (see goals.ts). */
   goal?: import("./goals").Goal;
   /** Goals met or run out earlier in the run, oldest first. */

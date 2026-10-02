@@ -879,6 +879,67 @@ export const TI_ASK: Record<string, [number, number]> = {
 };
 
 /**
+ * FIRST-GENERATION SPACE COSTS MORE TO FIT OUT THAN SECOND.
+ *
+ * TI_ASK is a SECOND-generation allowance: the space a tenant tours has a
+ * ceiling grid, lights, a restroom core and somebody's old partitions standing
+ * in it, and most of what an allowance pays for is reworking that. Almost
+ * every vacant foot in a standing building is that kind of space, which is
+ * why the band was right for the book it was measured on. A building you have
+ * just delivered is not: its floors are a cold dark shell, and a tenant cannot
+ * occupy a shell at any rent. Broker surveys put a first-generation office
+ * allowance at roughly 1.6-2x the second-generation one in the same market
+ * (CBRE / Cushman TI benchmarks: shell $60-100, second-gen $30-60), shell
+ * retail further apart still. 1.7 is the middle of that, and it is the same
+ * multiple `planDevelopment` already reserves ($35/sf office first-gen
+ * against a ~$20/sf second-gen tour at an ordinary term).
+ */
+export const FIRST_GEN_TI_MULT = 1.7;
+
+/**
+ * HOW MUCH OF A RENEWAL'S ALLOWANCE THE TENANT CAN ASK FOR, from how old their
+ * fit-out is. A sitting tenant does not need a build-out — they are already in
+ * one — so a renewal allowance is a REFRESH: paint, carpet, some
+ * reconfiguration, and the older the space the more of it. Market practice is
+ * a quarter or less of a new deal's allowance for a fit-out a few years old,
+ * rising to about half once it is a decade old and the space is as tired as
+ * anything on the market. Measured before this: renewals asked a flat $2-9/sf
+ * whatever the term and whatever the age of the space, so a ten-year renewal
+ * of a fifteen-year-old fit-out asked for the same as a three-year renewal of
+ * last year's — 0.11 months of rent per year of term, a fifth of the market.
+ */
+export function renewalRefreshShare(fitAgeYrs: number): number {
+  return clamp01(Math.min(0.5, 0.15 + 0.035 * Math.max(0, fitAgeYrs)));
+}
+
+/**
+ * HOW MUCH OF THE VACANT SPACE IN ONE USE IS STILL SHELL — never fitted out
+ * since the building was delivered. Read as a share of what is vacant in that
+ * leg, because the tour is shown the leg, not a particular foot of it.
+ */
+export function shellShare(rec: ParcelRecord, h: Holding, use: string, q: number): number {
+  const shell = h.shellSf?.[use as BuiltClass] ?? 0;
+  if (!(shell > 0)) return 0;
+  const vac = useVacantSf(rec, h, use as BuiltClass, q);
+  return vac > 0 ? clamp01(shell / vac) : 0;
+}
+
+/** A tenant fitted out some shell — those feet are second-generation now. */
+function useUpShell(h: Holding, use: BuiltClass, sf: number) {
+  const left = h.shellSf?.[use];
+  if (!h.shellSf || !(left !== undefined && left > 0) || !(sf > 0)) return;
+  const rest = Math.max(0, Math.round(left - sf));
+  if (rest > 0) h.shellSf[use] = rest;
+  else delete h.shellSf[use];
+  if (!Object.keys(h.shellSf).length) delete h.shellSf;
+}
+
+/** The covenant's pull on the allowance — the same multiple on every kind of letter. */
+function tiCreditMult(credit: Credit): number {
+  return credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90;
+}
+
+/**
  * HOW HARD A TENANT CAN PUSH, from the state of the market they are in.
  *
  * Concessions used to key off the phase LABEL alone — 0.7 in an expansion,
@@ -1670,7 +1731,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         name: t.name, sector: t.sector, credit: t.credit, sf: wantSf,
         rentPsf: +(market * rrange(s, 0.96, 1.06, "leasing")).toFixed(2),
         termM: Math.max(24, t.endM - q),          // coterminous with what they hold
-        tiPsf: Math.round(rrange(s, 1, 5, "leasing") * concessionPressure(s.econ, use)),
+        // THE SPACE NEXT DOOR IS NEW TO THEM. It is somebody else's old suite
+        // (or a shell, in a building that has not finished letting), and it
+        // gets the allowance a new tenant would get for the same feet over the
+        // same term — prorated, because coterminous paper is usually short.
+        // This was a flat $1-5/sf whatever the term, the generation of the
+        // space or the cost of building anything, which made the expansion
+        // the cheapest lease in the game to sign.
+        tiPsf: Math.round(rrange(s, (TI_ASK[use] ?? TI_ASK.office)[0], (TI_ASK[use] ?? TI_ASK.office)[1], "leasing") * (Math.max(24, t.endM - q) / 12)
+          * tiPressure(concessionPressure(s.econ, use)) * tiCreditMult(t.credit) * s.econ.costIdx
+          * (1 + (FIRST_GEN_TI_MULT - 1) * shellShare(rec, h, use, q))),
         freeM: 0,
         // Coterminous paper keeps the escalator they already live under.
         bumpPct: bumpOf(t),
@@ -1740,6 +1810,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const boom = Math.max(0, (s.econ.industryMom?.[t.sector] ?? 0)) * 6;
       const trade = 1 - stress * 0.14 + boom;
       const ask = market * leverage * soft * creditDisc * clampL(trade, 0.78, 1.18);
+      const renewTermM = Math.round(rrange(s, 36, 84, "leasing"));
       // Renewals are cheap to do: no downtime, a fraction of the TI, no free
       // rent worth the name. That gap is why renewal economics beat a new
       // lease at a higher face rent almost every time.
@@ -1780,10 +1851,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           return Math.max(minLettableSf(rec, use), fitWantSf(rec, need, t.sf, use) || t.sf);
         })(),
         rentPsf: +(Math.max(market * 0.6, ask) * rentMultFor(s, h)).toFixed(2),
-        termM: Math.round(rrange(s, 36, 84, "leasing")),
+        termM: renewTermM,
         // A sitting tenant asks for less than a new one — no fit-out, no
         // moving costs to cover — but the same market decides how far they get.
-        tiPsf: Math.round(rrange(s, 2, 9, "leasing") * concessionPressure(s.econ, t.use ?? "office")),
+        // It is a REFRESH allowance (see renewalRefreshShare): a share of the
+        // new-deal band for the same use, per year of the new term, sized by
+        // how old the space they sit in is. Fit-out money is construction, so
+        // it moves with the cost index and on the flatter fit-out curve rather
+        // than the free-rent one — the same two facts every other allowance in
+        // this file obeys.
+        tiPsf: Math.round(rrange(s, (TI_ASK[t.use ?? "office"] ?? TI_ASK.office)[0], (TI_ASK[t.use ?? "office"] ?? TI_ASK.office)[1], "leasing") * (renewTermM / 12)
+          * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12)
+          * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit) * s.econ.costIdx),
         freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
           ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
         // Renewals reopen the escalator a notch — incumbents usually ask to
@@ -1859,6 +1938,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const p = odds.loiOdds;
       if (rng(s, "leasing") < p) {
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
+        const shell = specLive ? 0 : shellShare(rec, h, use, q);
         const concession = concessionPressure(s.econ, use);
         // ...and at the rent THAT market pays, not a blend of markets the
         // tenant is not in.
@@ -2012,9 +2092,21 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Full allowance at the ask, nothing at 15% under it, straight line
           // between — so a lowball costs the tenant the fit-out, which is
           // usually the more expensive half of what they were asking for.
+          //
+          // AS-IS IS A SECOND-GENERATION TRADE. "We'll take it as it stands
+          // at eighteen" is the commonest lowball in the business, and it
+          // only exists because somebody's fit-out is already standing there.
+          // A shell cannot be occupied as-is at any rent, so on first-
+          // generation feet the lowball gives up only the premium over an
+          // ordinary allowance, never the allowance itself. And the whole
+          // thing is construction, so it moves with the cost index the way
+          // demising, make-ready and spec suites already do; it did not, and
+          // across a long game the allowance shrank against rents for no
+          // reason but inflation.
           tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession)
-            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)
-            * clamp01((bid - 0.85) / 0.15)),
+            * tiCreditMult(credit) * (specLive ? 0.12 : 1) * s.econ.costIdx
+            * ((1 - shell) * clamp01((bid - 0.85) / 0.15)
+              + shell * (1 + (FIRST_GEN_TI_MULT - 1) * clamp01((bid - 0.85) / 0.15)))),
           // Free rent scales with the LENGTH of the deal, the way it does in
           // life — the rule of thumb is about a month a year, and it is the
           // concession a landlord gives before cutting the face rent. A flat
@@ -3516,6 +3608,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     }
     t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
     t.sf += add;
+    useUpShell(h, use, add);
     t.staff = Math.min(t.staff ?? 1, 1.05);
     // Expansion keeps one escalator on the blended lease — the letter's rate.
     t.bumpPct = bumpOf(l);
@@ -3561,6 +3654,19 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
         t.staff = Math.min(t.staff ?? 1, 1.05);
         noteTenantSfChange(s, use, -add);
       }
+    }
+    // THE REFRESH TAKES YEARS OFF THE SPACE, in proportion to what was spent.
+    // A full refresh allowance (half the new-deal band over the term, at
+    // today's cost) makes the suite as good as new; a renewal you countered
+    // down to nothing leaves it exactly as tired as it was, and the tenant
+    // will ask again next time.
+    {
+      const use = (t.use ?? dominantUse(rec)) as BuiltClass;
+      const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+      const full = ((lo + hi) / 2) * 0.5 * (l.termM / 12) * s.econ.costIdx;
+      const share = full > 0 ? clamp01((l.tiPsf ?? 0) / full) : 0;
+      const fit = t.fitM ?? t.startM;
+      if (share > 0) t.fitM = Math.round(fit + (s.month - fit) * share);
     }
     t.rentPsf = l.rentPsf;
     t.endM = s.month + l.termM;
@@ -3629,6 +3735,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     const stack = stackForUse(rec, use);
     if (stack) placeOnStack(rec, h.tenants, signed, stack);
     h.tenants.push(signed);
+    useUpShell(h, use, sf);
     blocksOf(rec, h);
     noteTenantSfChange(s, use, -sf);
   }
@@ -4124,7 +4231,13 @@ export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): nu
     const termYrs = 5;
     const rent = Math.max(t.rentPsf, managedRentPsfYr(rec, s.econ, h, use));
     const downtime = rent * t.sf * (reletMonths(use) / 12);
-    const ti = ((lo + hi) / 2) * termYrs * t.sf;
+    // The same allowance a new letter writes for these feet today: second
+    // generation (the outgoing tenant's fit-out is what the next one tours),
+    // on the fit-out curve, at today's construction cost. This used the raw
+    // band in base-year dollars at full pressure, a different number from the
+    // one the letter would carry — two answers to one quantity.
+    const ti = ((lo + hi) / 2) * termYrs * t.sf * s.econ.costIdx
+      * tiPressure(concessionPressure(s.econ, use));
     const lc = rent * t.sf * termYrs * 0.045;
     const ramp = 0.35 + 0.65 * (1 - left / 12);
     reserve += (1 - p) * (downtime + ti + lc) * ramp;

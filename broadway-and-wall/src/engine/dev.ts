@@ -22,7 +22,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, depositsOn, genAnchorTenant, minLettableSf, useVacantSf } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -1457,6 +1457,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   delete nh.occ;
   delete nh.makeReady;
   delete nh.deliveredM;
+  delete nh.shellSf;
   nh.condition = "standard";
   nh.lastCapM = s.month;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
@@ -2082,6 +2083,22 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
       text: `${rec.address} opened with ${(lostSf / 1000).toFixed(1)}k sf of construction pre-lets that could not take possession — `
         + `the space will not demise under the floor. ${placed} pre-let${placed === 1 ? "" : "s"} did move in.`,
     });
+  }
+
+  // EVERY FOOT NOBODY MOVED INTO IS SHELL. The next tenant through the door
+  // needs a first-generation build-out, not a refresh of somebody else's.
+  {
+    const built = resolveRec(parcels, s, d.bbl);
+    if (built) {
+      const shell: Partial<Record<BuiltClass, number>> = {};
+      for (const u of leasableUses(built)) {
+        if (u === "multifamily") continue;
+        const free = Math.round(useVacantSf(built, h, u, s.month));
+        if (free > 0) shell[u] = free;
+      }
+      if (Object.keys(shell).length) h.shellSf = shell;
+      else delete h.shellSf;
+    }
   }
 
   // THE TAKEOUT. The construction loan does not evaporate — it rolls into a

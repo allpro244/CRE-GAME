@@ -6,10 +6,11 @@
  * without inventing a second set of numbers.
  */
 import type { ParcelTable } from "@/data/types";
-import type { BalanceSnapshot, BooksMonth, BooksYear, GameState } from "./types";
-import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld } from "./types";
+import type { BalanceSnapshot, BooksMonth, BooksYear, GameState, Holding, PnlYear } from "./types";
+import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR } from "./types";
 import { depositsHeld } from "./leasing";
-import { locLimit, locRate } from "./credit";
+import { locLimit, locRate, LOC_SPREAD } from "./credit";
+import { jvShare } from "./jv";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
 import { gpInterestInFund } from "./fund";
 
@@ -187,4 +188,115 @@ export function maybeStampYearEndBalance(s: GameState, parcels: ParcelTable) {
 export function booksMonthAsYear(b: BooksMonth): BooksYear {
   const { m, ...flows } = b;
   return { yr: Math.floor(m / 12), ...flows };
+}
+
+// ---- the income statement ------------------------------------------------
+
+/** A deed the firm reports on its own statement — not the fund vehicle's. */
+function onFirmBooks(s: GameState, h: Holding): boolean {
+  return !(h.fundOwned && s.fund && !s.fund.settled);
+}
+
+/**
+ * THE MONTH'S REVENUE ON ONE DEED, stamped at the moment its NOI is booked so
+ * the two are the same month of the same building. `egiYr` is the operating
+ * statement's effective gross income; a leased fee's revenue is its coupon.
+ */
+export function stampPnlDeed(s: GameState, h: Holding, noiMonth: number, egiYr: number | null) {
+  if (!onFirmBooks(s, h)) return;
+  pnlAdd(s, "rev", egiYr === null ? noiMonth : egiYr / 12);
+  const share = jvShare(h);
+  if (share > 0) pnlAdd(s, "jv", noiMonth * share);
+}
+
+/**
+ * MONTH-END ACCRUALS: interest on everything owed, and a twelfth of last
+ * January's depreciation. Interest accrues on the balance outstanding at the
+ * contract rate — the same `balance × rate / 12` `tickLoan` charges — whether
+ * or not a cheque left this month; a loan in foreclosure is still accruing,
+ * which is exactly what an accrual statement is for. Construction loans are
+ * left out: their interest is capitalised into the job (see `dev`).
+ */
+export function stampPnlMonth(s: GameState) {
+  let intExp = 0, depr = 0, jvInt = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (!onFirmBooks(s, h)) continue;
+    let i = 0;
+    if (h.loan && h.loan.balance > 0) i += (h.loan.balance * h.loan.ratePct) / 100 / 12;
+    if (h.mezz && h.mezz.balance > 0) i += (h.mezz.balance * h.mezz.ratePct) / 100 / 12;
+    intExp += i;
+    jvInt += i * jvShare(h);
+    depr += (h.deprYr ?? 0) / 12;
+  }
+  if (s.facility && s.facility.balance > 0) intExp += (s.facility.balance * s.facility.ratePct) / 100 / 12;
+  if (s.loc && s.loc.balance > 0) intExp += (s.loc.balance * ((s.econ.indexRate ?? 0) + LOC_SPREAD)) / 100 / 12;
+  pnlAdd(s, "intExp", intExp);
+  pnlAdd(s, "jv", -jvInt);
+  pnlAdd(s, "depr", depr);
+}
+
+/**
+ * JANUARY TRUES THE YEAR UP. The return just filed is the one answer to how
+ * much depreciation last year carried, so the year's accrual is replaced by
+ * it — a deed bought in November and depreciated for the full year by the
+ * return shows up here exactly as the return took it.
+ */
+export function closePnlDepreciation(s: GameState, closingYr: number, deprTotal: number) {
+  if (closingYr < 0) return;
+  const e = pnlYear(s, closingYr);
+  e.depr = Math.round(deprTotal);
+  e.deprFinal = true;
+}
+
+export interface PnlView {
+  yr: number;
+  label: string;
+  months: number;
+  rev: number;
+  intInc: number;
+  totalRev: number;
+  propOpex: number;
+  leasing: number;
+  capex: number;
+  ga: number;
+  totalOpex: number;
+  ebitda: number;
+  depr: number;
+  deprFinal: boolean;
+  ebit: number;
+  intExp: number;
+  gains: number;
+  jv: number;
+  pretax: number;
+  taxes: number;
+  net: number;
+}
+
+/**
+ * One year of the income statement, assembled. Gains on sale come from the
+ * exits ledger — the same figure the Realized gains tile prints — struck on
+ * net proceeds over the depreciated basis (`saleTaxQuote`).
+ */
+export function pnlView(s: GameState, e: PnlYear): PnlView {
+  const thisYr = Math.floor(s.month / 12);
+  const months = e.yr === thisYr ? (s.month % 12) + 1 : 12;
+  const gains = (s.exits ?? [])
+    .filter((x) => Math.floor(x.soldM / 12) === e.yr)
+    .reduce((a, x) => a + (x.gain ?? 0), 0);
+  const propOpex = e.rev - e.noi;
+  const totalRev = e.rev + e.intInc;
+  const totalOpex = propOpex + e.leasing + e.capex + e.ga;
+  const ebitda = totalRev - totalOpex;
+  const ebit = ebitda - e.depr;
+  const pretax = ebit - e.intExp + gains - e.jv;
+  return {
+    yr: e.yr,
+    label: `${START_YEAR + e.yr}${months < 12 ? ` YTD` : ""}`,
+    months,
+    rev: e.rev, intInc: e.intInc, totalRev,
+    propOpex, leasing: e.leasing, capex: e.capex, ga: e.ga, totalOpex,
+    ebitda, depr: e.depr, deprFinal: !!e.deprFinal, ebit,
+    intExp: e.intExp, gains, jv: e.jv, pretax,
+    taxes: e.taxes, net: pretax - e.taxes,
+  };
 }

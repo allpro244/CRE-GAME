@@ -109,6 +109,12 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     inherit: p.inherit ?? 0, home: p.home ?? "any", sandbox: !!p.sandbox, cash0: p.cash0 ?? DEFAULT_START_CASH,
   }));
 
+  const matches = (p: Partial<GameSetup> & { cash0?: number }) =>
+    d.era === (p.era ?? DEFAULT_SETUP.era) && d.credit === (p.credit ?? DEFAULT_SETUP.credit)
+    && d.field === (p.field ?? DEFAULT_SETUP.field) && d.inherit === (p.inherit ?? 0)
+    && (!d.inherit || d.home === (p.home ?? "any")) && d.sandbox === !!p.sandbox
+    && d.cash0 === (p.cash0 ?? DEFAULT_START_CASH);
+
   const randomiseAll = () => {
     const r = Math.random;
     const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)];
@@ -135,14 +141,33 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const [active, setActive] = useState<string>("presets");
   useEffect(() => {
     const root = bodyRef.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((ents) => {
-      const vis = ents.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      if (vis[0]) setActive(vis[0].target.id.replace("setup-", ""));
-    }, { root, rootMargin: "0px 0px -65% 0px" });
-    for (const s of SECTIONS) { const el = document.getElementById(`setup-${s.id}`); if (el) io.observe(el); }
-    return () => io.disconnect();
+    if (!root) return;
+    // The section whose top has crossed the upper third of the scroller; at
+    // the very bottom, the last one (it may never reach the line).
+    const onScroll = () => {
+      const line = root.getBoundingClientRect().top + root.clientHeight * 0.3;
+      let cur: string = SECTIONS[0].id;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(`setup-${s.id}`);
+        if (el && el.getBoundingClientRect().top <= line) cur = s.id;
+      }
+      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 4) cur = SECTIONS[SECTIONS.length - 1].id;
+      setActive(cur);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => root.removeEventListener("scroll", onScroll);
   }, []);
+  // On a narrow window the rail is a chip row; keep the live chip in it.
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const rail = railRef.current;
+    const chip = rail?.querySelector<HTMLElement>(".setup-rail-item.on");
+    if (!rail || !chip || rail.scrollWidth <= rail.clientWidth) return;
+    const l = chip.offsetLeft - rail.offsetLeft, r = l + chip.offsetWidth;
+    if (l < rail.scrollLeft) rail.scrollLeft = l - 8;
+    else if (r > rail.scrollLeft + rail.clientWidth) rail.scrollLeft = r - rail.clientWidth + 8;
+  }, [active]);
   const go = (id: string) => document.getElementById(`setup-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const eraSel = eras.find((e) => e.key === d.era);
@@ -196,7 +221,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       </div>
 
       <div className="setup-frame">
-        <nav className="setup-rail" aria-label="Setup sections">
+        <nav className="setup-rail" aria-label="Setup sections" ref={railRef}>
           {SECTIONS.map((s, i) => (
             <button key={s.id} type="button" className={"setup-rail-item" + (active === s.id ? " on" : "")} onClick={() => go(s.id)}>
               <span className="setup-rail-n">{i === 0 ? "★" : i}</span>{s.label}
@@ -211,7 +236,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
             <p className="setup-lede">Named scenarios, each built only from the options below. Pick one and adjust, or save your own.</p>
             <div className="setup-cards">
               {PRESETS.map((p) => (
-                <button key={p.id} type="button" className="setup-card" onClick={() => applyPreset(p.setup)}>
+                <button key={p.id} type="button" className={"setup-card" + (matches(p.setup) ? " on" : "")} aria-pressed={matches(p.setup)} onClick={() => applyPreset(p.setup)}>
                   <strong>{p.label}</strong><span>{p.note}</span>
                 </button>
               ))}
@@ -307,7 +332,12 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 <div className="start-col-head">the opening book</div>
                 {opt(d.inherit === 0, () => up({ inherit: 0 }), "Start from nothing", "Cash and a desk. Every deed on the book is one you bought or built.", "inh0")}
                 {([2, 3, 4] as const).map((n) => opt(d.inherit === n, () => up({ inherit: n }), `Inherit ${n} family buildings`,
-                  "Small buildings ($0.6–3.5M) from the town's own stock, with their real rent rolls and fresh hometown-bank paper at 35% — family leverage. They come in kind, at the appraiser's number; no cash changes hands.", `inh${n}`))}
+                  n === 2 ? "A corner shop and a walk-up, say." : n === 3 ? "A small family book." : "Most of what a family accumulates in a generation.", `inh${n}`))}
+                <div className="start-opt-note" style={{ padding: "4px 9px 2px" }}>
+                  Small buildings ($0.6–3.5M) from the town&rsquo;s own stock, with their real rent rolls and fresh
+                  hometown-bank paper at 35% — family leverage. They come in kind at the appraiser&rsquo;s number: no cash
+                  changes hands, and the rolls, deposits and roofs are yours from month one.
+                </div>
                 <div className="start-col-head" style={{ marginTop: 10 }}>where the family bought</div>
                 <div className="setup-seg" role="radiogroup" aria-label="Where the family's buildings are">
                   {HOME_OPTIONS.map((h) => (

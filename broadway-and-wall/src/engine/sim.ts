@@ -259,7 +259,7 @@ export function newGame(
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years in ${sizeLabel}. `
+    text: `${monthLabel(0)}. You arrive with $${(cash0 / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years in ${sizeLabel}. `
       + `${howEmpty} — the city will fill in around you, with or without your name on it. `
       + (s.citySize === "hamlet" || s.citySize === "town"
         ? "This pond is small enough that one firm can matter."

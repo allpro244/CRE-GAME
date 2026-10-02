@@ -11,7 +11,7 @@ import { openResearchOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
-import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel } from "./desks";
+import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Spark from "@/ui/vitals/Spark";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
@@ -607,7 +607,7 @@ export default function TopBar() {
               const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
               const title = [
                 `${d.label} — ${d.note} (${d.key})`,
-                d.tabs.length > 1 ? `Tabs: ${d.tabs.map((t) => t.label).join(", ")}.` : "",
+                visibleTabs(d, game, page).length > 1 ? `Tabs: ${visibleTabs(d, game, page).map((t) => t.label).join(", ")}.` : "",
                 d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
                   ? `${counts.market} file${counts.market === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
                 d.id === "capital" && debtBal > 0
@@ -620,7 +620,7 @@ export default function TopBar() {
                   className={"rail-item" + (on ? " on" : "")}
                   aria-current={on ? "page" : undefined}
                   title={title}
-                  onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts))}
+                  onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts, game))}
                 >
                   <span className="rail-ico" aria-hidden="true">{d.icon}</span>
                   <span className="rail-label">{d.label}</span>

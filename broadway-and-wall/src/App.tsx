@@ -22,6 +22,22 @@ export default function App() {
   // it waits on `city`, which is null until somebody breaks ground.
   const playing = useStore((s) => s.phase === "playing");
   const photoFrame = useStore((s) => s.photoFrame);
+  // ONE CARD AT A TIME. The year's review, a goal verdict, an exit and a
+  // delivery are each a moment, and one advance can produce all four — they
+  // used to arrive stacked on top of each other. They queue now, in the order
+  // a principal would read them: the year, the goal, the sale, the building.
+  // Each still clears its own state, and the next one shows when it does.
+  // A card that would not draw itself (pop-ups off, the run over) must not
+  // hold the queue either, so the gates here are the cards' own.
+  const card = useStore((s) => {
+    if (s.popupsOff) return null;
+    const over = !!s.game?.gameOver;
+    return s.yearReviewY !== null && !over ? "year"
+      : s.goalCard && s.game?.goal ? "goal"
+      : s.exitCard && !over ? "exit"
+      : s.deliveryCeremony ? "delivery"
+      : null;
+  });
   useEffect(() => {
     void bootMenu();
   }, []);
@@ -46,11 +62,11 @@ export default function App() {
       {playing && !photoFrame && <MapRail />}
       {playing && !photoFrame && <MapControls />}
       {!photoFrame && <RightPanel />}
-      {!photoFrame && <DeliveryCeremony />}
-      {playing && !photoFrame && <YearReview />}
+      {!photoFrame && (card === "delivery" || !playing) && <DeliveryCeremony />}
+      {playing && !photoFrame && card === "year" && <YearReview />}
       {playing && !photoFrame && <MilestoneFlash />}
-      {playing && !photoFrame && <ExitCard />}
-      {playing && !photoFrame && <GoalCard />}
+      {playing && !photoFrame && card === "exit" && <ExitCard />}
+      {playing && !photoFrame && card === "goal" && <GoalCard />}
       {playing && <Shortcuts />}
       {playing && <AutoPlay />}
       {playing && <Sounds />}

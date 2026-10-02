@@ -16,7 +16,11 @@ import { liveBrokerCalls } from "@/ui/panels/broker";
  */
 export type DeskId = "portfolio" | "market" | "deals" | "capital" | "city" | "firm";
 
-export type DeskTab = { page: Page; label: string; note: string };
+export type DeskTab = {
+  page: Page; label: string; note: string;
+  /** Shown only while this holds — a tab with nothing on it is not a room yet. */
+  when?: (g: GameState) => boolean;
+};
 export type Desk = { id: DeskId; label: string; icon: string; key: string; note: string; tabs: readonly DeskTab[] };
 
 export const DESKS: readonly Desk[] = [
@@ -33,7 +37,13 @@ export const DESKS: readonly Desk[] = [
     note: "What is for sale — buildings, land and distressed paper",
     tabs: [
       { page: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
-      { page: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
+      // Distressed paper exists only when a bank is selling it, a rival is
+      // asking for a bridge, or you hold some. Until then the tab is noise —
+      // ⌘K still finds the desk, and it appears the month there is a file.
+      {
+        page: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed",
+        when: (g) => (g.noteOffers?.length ?? 0) + (g.privateAsks?.length ?? 0) + (g.notes?.length ?? 0) > 0,
+      },
     ],
   },
   {
@@ -79,19 +89,26 @@ export function tabLabel(page: Page): string | null {
   return null;
 }
 
+/** The tabs a desk shows right now. The open page always keeps its tab. */
+export function visibleTabs(d: Desk, g: GameState | null, page?: Page): readonly DeskTab[] {
+  return d.tabs.filter((t) => !t.when || t.page === page || (g ? t.when(g) : false));
+}
+
 // The tab a desk opens on: wherever the player last was in it, this session.
 const lastTab: Partial<Record<DeskId, Page>> = {};
 export function rememberTab(page: Page) {
   const d = deskOf(page);
   if (d && page !== "property") lastTab[d.id] = page;
 }
-export function deskLanding(d: Desk, counts?: TabCounts): Page {
+export function deskLanding(d: Desk, counts?: TabCounts, g?: GameState | null): Page {
+  const tabs = visibleTabs(d, g ?? null);
   // Something waiting on a tab outranks habit — the badge is why they clicked.
   if (counts) {
-    const hot = d.tabs.find((t) => (counts[t.page] ?? 0) > 0);
+    const hot = tabs.find((t) => (counts[t.page] ?? 0) > 0);
     if (hot) return hot.page;
   }
-  return lastTab[d.id] ?? d.tabs[0].page;
+  const last = lastTab[d.id];
+  return last && tabs.some((t) => t.page === last) ? last : tabs[0].page;
 }
 
 /**

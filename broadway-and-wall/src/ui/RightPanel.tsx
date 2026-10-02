@@ -25,7 +25,7 @@ import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
 } from "@/ui/panels/modals";
 
-import { DESKS, deskOf, deskLanding, rememberTab, tabCounts, type Desk } from "@/ui/desks";
+import { DESKS, deskOf, deskLanding, rememberTab, tabCounts, visibleTabs, type Desk } from "@/ui/desks";
 
 export { liveBrokerCalls } from "@/ui/panels/broker";
 
@@ -89,7 +89,7 @@ export default function GamePanels() {
         if (hit) {
           e.preventDefault();
           const g = useStore.getState().game;
-          setPage(deskOf(page)?.id === hit.id && page !== "property" ? "none" : deskLanding(hit, g ? tabCounts(g) : undefined));
+          setPage(deskOf(page)?.id === hit.id && page !== "property" ? "none" : deskLanding(hit, g ? tabCounts(g) : undefined, g));
           return;
         }
       }
@@ -234,9 +234,11 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
   const game = useStore((s) => s.game);
   const setPage = useStore((s) => s.setPage);
   const counts = useMemo(() => (game ? tabCounts(game) : {}), [game]);
+  const tabs = visibleTabs(desk, game, page);
+  if (tabs.length < 2) return null;
   return (
     <div className="desk-tabs" role="tablist" aria-label={`${desk.label} desk`}>
-      {desk.tabs.map((t) => {
+      {tabs.map((t) => {
         const on = t.page === page;
         const n = counts[t.page] ?? 0;
         const warn = t.page === "debt" && counts.debtWarn;

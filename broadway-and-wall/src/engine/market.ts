@@ -1201,7 +1201,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // the run seed on a private generator — see regime.ts for why that matters.
   // Density sets the LEVEL; the era still multiplies rents and vacancy on top.
   {
-    const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
+    // The setup page may name the era and the opening credit position inside
+    // it (setup.ts); absent, the seed draws both exactly as it always has.
+    const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>,
+      s.setup ? { eraKey: s.setup.era !== "random" ? s.setup.era : undefined, credit: s.setup.credit !== "drawn" ? s.setup.credit : undefined } : undefined);
     econ.eraKey = era.key; econ.eraLabel = era.label; econ.eraBlurb = era.blurb;
   }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.

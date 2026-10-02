@@ -1,5 +1,12 @@
 # HANDOFF — THE PRINCIPAL
 
+> **SUPERSEDED IN PART (owner decision, final):** "remove the age from
+> everything … in this game, everyone doesn't die so age doesn't matter."
+> Age, mortality, estate tax, §6166, heirs and succession are REMOVED for the
+> player, staff and every rival principal. Everything below about death,
+> estates or succession is history, not the design. See ECONOMY.md,
+> "No age, no mortality".
+
 Design handoff for two changes that are really one change: **the player becomes
 a person who dies**, and **the money stops being theirs**. Written to be picked
 up cold, in the shape of `HANDOFF.md`: what is where, what already exists, what

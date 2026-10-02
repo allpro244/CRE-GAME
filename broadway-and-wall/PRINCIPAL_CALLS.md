@@ -1,5 +1,12 @@
 # The Principal — owner calls (final)
 
+> **SUPERSEDED IN PART (owner decision, final):** "remove the age from
+> everything … in this game, everyone doesn't die so age doesn't matter."
+> Age, mortality, estate tax, §6166, heirs and succession are REMOVED for the
+> player, staff and every rival principal. Everything below about death,
+> estates or succession is history, not the design. See ECONOMY.md,
+> "No age, no mortality".
+
 Locked for implementation. Realism over preference; difficulty is an output.
 
 1. **Succession** — continue as the heir. Portfolio and bench survive; relationships (`sponsor.events`, `lenderRel`, `StreetTie`, `hireReputation`) reset with the dead principal.

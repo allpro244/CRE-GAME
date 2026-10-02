@@ -38,7 +38,7 @@ export function FundDesk() {
       {game.fundFailedM !== undefined && (
         <div className="hint" style={{ color: "var(--neg, #a33)" }}>
           Nobody will back you again. The last vehicle did not return capital
-          ({monthLabel(game.fundFailedM)}). Succession clears the name; nothing else does.
+          ({monthLabel(game.fundFailedM)}). That record does not clear.
         </div>
       )}
       {live && f ? (

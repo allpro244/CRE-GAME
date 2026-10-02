@@ -13,7 +13,7 @@
 //             after it; every acquired deed has its own equity ledger.
 //   REFUSALS  a lowball is refused and cools the board; an insult is
 //             remembered; an unaffordable offer changes nothing; firms that do
-//             not sell (owner-users, a family not in succession, a book under
+//             not sell (owner-users, a family not in trouble, a book under
 //             water, a crane on site) say why.
 //   RNG       quoting draws nothing from the world's stream.
 //   APPROACH  a board in trouble rings a buyer who could close — as an inbox
@@ -197,7 +197,6 @@ let owned = null;   // the player after the close — a buyer with a record, for
   const [f1, f2, f3, f4] = E.livingRivals(h).filter((x) => x.bbls.length >= 2 && noJob(h, x) && x.style !== "family" && x.style !== "owneruser").slice(0, 4);
   f1.style = "owneruser";
   f2.style = "family"; f2.stressMs = 0; f2.debt = 0; f2.occ = undefined;
-  if (h.rivalPrincipals?.[f2.id]) h.rivalPrincipals[f2.id].bornM = h.month - 40 * 12;
   f3.debt = 1e12;
   const tests = [[f1, "owns its own premises"], [f2, "not for sale"], [f3, "no longer cover"]];
   for (const [f, word] of tests) {
@@ -209,11 +208,19 @@ let owned = null;   // the player after the close — a buyer with a record, for
     const x = E.takePrivateQuote(h, parcels, f4.id);
     check(!x.available && x.why.includes("under construction"), "a crane on site stops a change of control");
   }
-  // a family at succession WILL sell, near NAV
-  if (h.rivalPrincipals?.[f2.id]) {
-    h.rivalPrincipals[f2.id].bornM = h.month - 75 * 12;
-    const x = E.takePrivateQuote(h, parcels, f2.id);
-    check(x.available && x.situation === "succession" && x.premium <= 1.03, `a family in succession sells at ${x.premium.toFixed(3)}× property equity`);
+  // A FAMILY SELLS ONLY IN TROUBLE. There is no succession any more (nobody
+  // ages or dies — ECONOMY.md "No age, no mortality"): a family near its
+  // limits still will not sell, and a family in arrears will, under NAV.
+  {
+    const st = structuredClone(h);
+    const fs = E.livingRivals(st).find((x) => x.id === f2.id);
+    fs.occ = 0.10; fs.mktOcc = 0.95;       // losing the leasing war: strained, not distressed
+    const xs = E.takePrivateQuote(st, parcels, f2.id);
+    check(xs.situation === "strained" && !xs.available && xs.why.includes("not for sale"), `a strained family still does not sell (${xs.situation})`);
+    const sd = structuredClone(h);
+    E.livingRivals(sd).find((x) => x.id === f2.id).stressMs = 2;
+    const xd = E.takePrivateQuote(sd, parcels, f2.id);
+    check(xd.available && xd.situation === "distressed" && xd.premium <= 0.95, `a family in arrears sells at ${xd.premium.toFixed(3)}× property equity`);
   }
 }
 

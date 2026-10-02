@@ -53,7 +53,7 @@ import { cloneState } from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
 import {
-  careerLoadMult, principalTemperament, queueFounderBid, stampEmployeeLife,
+  careerLoadMult, principalTemperament, queueFounderBid, seedEmployeeCareer,
   type Person,
 } from "./people";
 import { firmCapital } from "./firmCapital";
@@ -154,9 +154,9 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 };
 
 /**
- * A hire is a Person with an employee seat and a payroll role. bornM / diesM
- * are stamped from peopleRng after staffRng work so the economy stream and the
- * hiring stream keep their step counts (see people.ts, HANDOFF_PRINCIPAL.md).
+ * A hire is a Person with an employee seat and a payroll role. The prior
+ * career is seeded from peopleRng after staffRng work so the economy stream and
+ * the hiring stream keep their step counts (see people.ts). No age, no death.
  */
 export interface Staff extends Omit<Person, "seat" | "firmId"> {
   seat?: "employee";
@@ -278,7 +278,7 @@ export function generateCandidate(s: GameState, role: StaffRole, band0: number):
     seat: "employee" as const,
   } as Candidate;
   // peopleRng only — after every staffRng step for this candidate.
-  stampEmployeeLife(s, cand);
+  seedEmployeeCareer(s, cand);
   return cand;
 }
 

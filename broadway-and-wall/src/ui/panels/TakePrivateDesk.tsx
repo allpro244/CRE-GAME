@@ -18,7 +18,6 @@ import { Row } from "@/ui/panels/shared";
 const SIT_WORD = {
   distressed: "In arrears — selling under NAV",
   strained: "Near its limits — selling at NAV",
-  succession: "Succession — an orderly sale",
   healthy: "Healthy — sells only for a premium",
 } as const;
 

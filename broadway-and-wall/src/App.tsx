@@ -4,7 +4,7 @@ import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
 import MapRail from "@/ui/MapRail";
-import YearReview, { CareerCard, MilestoneFlash, ExitCard, GoalCard } from "@/ui/YearReview";
+import YearReview, { MilestoneFlash, ExitCard, GoalCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
 import Sounds from "@/ui/Sounds";
@@ -46,7 +46,6 @@ export default function App() {
       {!photoFrame && <RightPanel />}
       {!photoFrame && <DeliveryCeremony />}
       {playing && !photoFrame && <YearReview />}
-      {playing && !photoFrame && <CareerCard />}
       {playing && !photoFrame && <MilestoneFlash />}
       {playing && !photoFrame && <ExitCard />}
       {playing && !photoFrame && <GoalCard />}

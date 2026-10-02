@@ -698,7 +698,7 @@ export function MarketPage() {
                         <span className="chip" style={{ marginRight: 6 }}
                           title={li.reason === "merchant" ? "A merchant builder selling what it built — the business plan was always to sell on completion"
                             : li.reason === "fund-life" ? "A closed-end fund reaching the end of its life: it has to sell to return its investors' capital, whatever the market"
-                              : li.reason === "estate" ? "An owner has died and the estate is selling to settle it"
+                              : li.reason === "estate" ? "A property held in an estate — the executors are selling to settle it"
                                 : li.reason === "receiver" ? "A lender took it back and a receiver is clearing it off the balance sheet"
                                   : "The owner simply decided to sell"}>
                           {li.reason === "merchant" ? "MERCHANT EXIT"

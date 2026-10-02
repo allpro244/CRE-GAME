@@ -54,6 +54,34 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
+/**
+ * NOBODY AGES AND NOBODY DIES (owner decision — ECONOMY.md "No age, no
+ * mortality"). Saves from before carry the old life fields: a principal's
+ * birth and death months, every hire's, every founder bid's, the opening age,
+ * an outstanding estate-tax bill and the closed-career cards. They are
+ * stripped on load and nothing reads them. An estate bill still owing is
+ * simply dropped — there is no death for it to be the tax on. SAVE_VERSION
+ * does NOT move for this: it is a pure field strip that runs on every load,
+ * the same as the other shape migrations here.
+ */
+function migrateNoAge(state: GameState) {
+  const legacy = state as GameState & Record<string, unknown>;
+  delete legacy.startAge;
+  delete legacy.estateDue;
+  delete legacy.careers;
+  const strip = (p: unknown) => {
+    if (!p || typeof p !== "object") return;
+    const o = p as Record<string, unknown>;
+    delete o.bornM; delete o.diesM; delete o.diedM;
+  };
+  strip(state.principal);
+  for (const p of Object.values(state.rivalPrincipals ?? {})) strip(p);
+  for (const st of state.staff ?? []) strip(st);
+  for (const ph of state.pendingHires ?? []) strip(ph.staff);
+  for (const c of state.hirePool?.list ?? []) strip(c);
+  for (const b of state.founderBids ?? []) strip(b);
+}
+
 export const SAVE_VERSION = 39 as const;
 
 /**
@@ -199,6 +227,7 @@ export function migrateSaveState(state: GameState): GameState {
   // ensurePeople synthesises a principal and rival faces from peopleRng only;
   // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
   clearStyleOverrides(state);
+  migrateNoAge(state);
   ensurePeople(state);
   // Floorplate inventory (LEASING_OVERHAUL Phase 1): Tenant.floorLo/floorHi
   // and Holding.blocks are optional. Old saves stamp lazily on first

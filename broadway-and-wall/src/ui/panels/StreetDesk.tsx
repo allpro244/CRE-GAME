@@ -6,7 +6,7 @@ import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firm
 import { rivalPrincipalOf } from "@/engine/people";
 import { ownerById } from "@/engine/ownership";
 import { OwnerStatement } from "@/ui/panels/OwnersDesk";
-import { PersonCard, personAgeLine } from "@/ui/PersonCard";
+import { PersonCard, personLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
@@ -155,7 +155,7 @@ export function TheStreet() {
                   {r.jev ? <JevBadge /> : null}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
+                <td className="dim">{dead ? "—" : personLine(principal)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>

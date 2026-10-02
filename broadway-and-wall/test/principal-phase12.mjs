@@ -14,58 +14,19 @@ const ok = (name, cond, detail = "") => {
 
 const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
-// 1. newGame synthesises principal + rival faces; save version 34.
+// 1. newGame synthesises principal + rival faces. No age, no death clock.
 {
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-  ok("v is 38", g.v === 38);
+  ok(`v is ${E.SAVE_VERSION}`, g.v === E.SAVE_VERSION);
   ok("principal seat you", g.principal?.seat === "you");
-  ok("principal age matches start life (2.5M → 35)", E.ageYears(g.principal, 0) === 35);
-  ok("principal has diesM in future", (g.principal?.diesM ?? -1) > 0);
-  {
-    const deathAge = (g.principal.diesM - g.principal.bornM) / 12;
-    ok("player death age in 70–105",
-      deathAge >= E.PLAYER_DEATH_AGE_LO && deathAge <= E.PLAYER_DEATH_AGE_HI,
-      `age ${deathAge.toFixed(1)}`);
-  }
+  ok("principal carries no age or death clock", g.principal.bornM === undefined && g.principal.diesM === undefined);
+  ok("principal has a seeded career", Object.keys(g.principal.career?.classM ?? {}).length > 0);
   ok("peopleRng initialised", typeof g.peopleRng === "number");
   const live = (g.rivals ?? []).filter((r) => r.failedM === undefined);
   ok("every living rival has a principal",
     live.every((r) => g.rivalPrincipals?.[r.id]?.seat === "rival"),
     `${live.length} firms`);
   ok("no style overrides on new game", !g.ownerStyle && !g.benchStyle);
-}
-
-// 2. Death draw is once and sane — never before birth, almost always after now.
-{
-  const g = E.newGame(99, parcels);
-  const deaths = [];
-  for (let i = 0; i < 200; i++) {
-    const bornM = -40 * 12;
-    const d = E.drawDeathM(g, bornM, 0);
-    deaths.push(d);
-  }
-  ok("death after birth", deaths.every((d) => d > -40 * 12));
-  const ages = deaths.map((d) => (d + 40 * 12) / 12);
-  const med = [...ages].sort((a, b) => a - b)[Math.floor(ages.length / 2)];
-  ok("median death age in adult band (55–95)", med >= 55 && med <= 95, `median ${med.toFixed(1)}`);
-  const alreadyDead = deaths.filter((d) => d <= 0).length;
-  ok("few already-dead at age 40 (<5%)", alreadyDead / deaths.length < 0.05, `${alreadyDead}/200`);
-}
-
-// 2b. Player death band — always 70–105, one peopleRng step, never mid-run.
-{
-  const g = E.newGame(77, parcels, 20_000_000);
-  const ages = [];
-  for (let i = 0; i < 200; i++) {
-    const bornM = -52 * 12;
-    const d = E.drawPlayerDeathM(g, bornM, 0);
-    ages.push((d - bornM) / 12);
-  }
-  ok("player draw all in 70–105",
-    ages.every((a) => a >= E.PLAYER_DEATH_AGE_LO && a <= E.PLAYER_DEATH_AGE_HI),
-    `min ${Math.min(...ages).toFixed(1)} max ${Math.max(...ages).toFixed(1)}`);
-  const med = [...ages].sort((a, b) => a - b)[100];
-  ok("player draw median near mid-band", med >= 82 && med <= 93, `median ${med.toFixed(1)}`);
 }
 
 // 3. RNG isolation — people work must not move s.rng or staffRng vs a twin
@@ -86,7 +47,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   ok("principals still present after 24m", !!a.principal && Object.keys(a.rivalPrincipals ?? {}).length > 0);
 }
 
-// 4. Hire stamps life from peopleRng without changing staffRng step count shape:
+// 4. Hire seeds a career from peopleRng without changing staffRng step count shape:
 //    two pools generated with same staffRng seed produce same candidate attrs.
 {
   const mk = () => {
@@ -101,11 +62,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   const c1 = E.generateCandidate(g1, "pm", 26);
   const c2 = E.generateCandidate(g2, "pm", 26);
   ok("candidate attrs identical across twins", JSON.stringify(c1.attrs) === JSON.stringify(c2.attrs));
-  ok("candidate has bornM and diesM", c1.bornM !== undefined && c1.diesM !== undefined);
-  ok("candidate age in 28–55", (() => {
-    const age = E.ageYears(c1, 0);
-    return age >= 28 && age <= 55;
-  })(), `age ${E.ageYears(c1, 0)}`);
+  ok("candidate has a career and no life fields", !!c1.career && c1.bornM === undefined && c1.diesM === undefined);
   ok("staffRng advanced identically", g1.staffRng === g2.staffRng);
 }
 
@@ -113,7 +70,8 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 {
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
   const snap = structuredClone(g);
-  snap.v = 32;
+  // (v32 would now be refused: the island's ground moved at v39.)
+  snap.v = E.SAVE_VERSION;
   delete snap.principal;
   delete snap.rivalPrincipals;
   delete snap.peopleRng;
@@ -126,12 +84,30 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
     obs: {}, salary: 100_000, hiredM: 0, band0: 18,
   }];
   const m = E.migrateSaveState(snap);
-  ok("migrate bumps to 38", m.v === 38);
+  ok(`migrate bumps to ${E.SAVE_VERSION}`, m.v === E.SAVE_VERSION);
   ok("migrate clears style overrides", !m.ownerStyle && !m.benchStyle);
   ok("migrate synthesises principal", m.principal?.seat === "you");
-  ok("migrate stamps staff bornM", m.staff[0].bornM !== undefined && m.staff[0].diesM !== undefined);
+  ok("migrate seeds staff career", !!m.staff[0].career);
   ok("migrate fills rival principals",
     (m.rivals ?? []).filter((r) => !r.failedM).every((r) => m.rivalPrincipals?.[r.id]));
+}
+
+// 5b. A save from before carries life fields — they are stripped on load.
+{
+  const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
+  const snap = structuredClone(g);
+  snap.startAge = 52;
+  snap.principal.bornM = -52 * 12; snap.principal.diesM = 400;
+  for (const p of Object.values(snap.rivalPrincipals)) { p.bornM = -50 * 12; p.diesM = 300; }
+  snap.estateDue = { gross: 4e7, tax: 1e6, remaining: 1e6, deadlineM: 9, deathM: 0, decedentName: "Old" };
+  snap.careers = [{ name: "Old", heir: "New", fromM: 0, toM: 0, age: 80, gross: 1, tax: 0 }];
+  snap.founderBids = [{ readyM: 3, name: "F", bornM: -400, diesM: 500, attrs: {}, obs: {}, band0: 10, role: "pm", fromFirmId: "you", fromFirmName: "Y" }];
+  const m = E.migrateSaveState(structuredClone(snap));
+  ok("legacy save with life fields migrates at the current version", m.v === E.SAVE_VERSION);
+  ok("legacy life fields stripped", m && m.startAge === undefined && m.estateDue === undefined && m.careers === undefined
+    && m.principal.bornM === undefined && m.principal.diesM === undefined
+    && Object.values(m.rivalPrincipals).every((p) => p.bornM === undefined && p.diesM === undefined)
+    && m.founderBids.every((b) => b.bornM === undefined && b.diesM === undefined));
 }
 
 // 6. Inferred firm shape still works; forced override ignored.
@@ -142,7 +118,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   g.ownerStyle = "delegated"; // should be ignored
   ok("forced ownerStyle ignored", E.effectiveOwnerStyle(g) === "handsOn");
   g.staff = [1, 2, 3, 4, 5].map((i) => ({
-    id: i, name: "X", role: "pm", bornM: -40 * 12,
+    id: i, name: "X", role: "pm",
     attrs: { judgment: 80, urgency: 80, diligence: 80, relationships: 80, costControl: 80, tenantCare: 80 },
     obs: {}, salary: 100_000, hiredM: 0, band0: 10,
   }));
@@ -171,11 +147,11 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 {
   const g = E.firstListings(E.newGame(33, parcels), parcels, bbls);
   const rng1 = g.peopleRng;
-  const dies = g.principal.diesM;
+  const career = JSON.stringify(g.principal.career);
   E.ensurePeople(g);
   E.ensurePeople(g);
   ok("ensurePeople idempotent on peopleRng", g.peopleRng === rng1);
-  ok("ensurePeople idempotent on diesM", g.principal.diesM === dies);
+  ok("ensurePeople idempotent on career", JSON.stringify(g.principal.career) === career);
 }
 
 console.log(`\n${fails === 0 ? "principal-phase12 pass" : `${fails} principal-phase12 failure(s)`}`);

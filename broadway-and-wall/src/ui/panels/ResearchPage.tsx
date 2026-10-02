@@ -12,7 +12,7 @@ import { Owners } from "@/ui/panels/OwnersDesk";
 import { BuildingDatabase } from "@/ui/panels/MarketPage";
 import { creditWord, pendingRTab, clearPendingRTab, Big, Row } from "@/ui/panels/shared";
 import { resolveRec } from "@/engine/value";
-import { PersonCard, personAgeLine } from "@/ui/PersonCard";
+import { PersonCard } from "@/ui/PersonCard";
 import type { Person } from "@/engine/people";
 import { monthLabel } from "@/engine/types";
 
@@ -376,7 +376,6 @@ function PeopleLookup() {
                 {person.name}
                 <span className="dim" style={{ fontWeight: 400 }}>
                   {" · "}{role}{firm ? ` · ${firm}` : ""}
-                  {" · "}{personAgeLine(person, game.month)}
                 </span>
               </button>
               {openId === person.id && (

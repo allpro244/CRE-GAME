@@ -142,7 +142,7 @@ const STYLE: Record<RivalStyle, {
   /** how far they will chase a DISTRESSED listing specifically */
   distressBias: number;
 }> = {
-  // Family money holds for a generation, not forever — estate, divorce, and
+  // Family money holds for a generation, not forever — estate planning, divorce, and
   // rebalancing put deeds on the tape. holdM: 0 used to mean "never sells",
   // and the century tape implied an 84-year average hold.
   family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02, holdM: 300, contra: 0.25, distressBias: 1.1 },
@@ -1683,8 +1683,6 @@ function tickRivalSpinouts(s: GameState) {
     (s.founderBids ??= []).push({
       readyM: s.month + 3 + Math.floor(spinHash(k + ":w") * 7),
       name: nm,
-      bornM: s.month - (12 * (34 + Math.floor(spinHash(k + ":a") * 14))),
-      diesM: s.month + 12 * (30 + Math.floor(spinHash(k + ":m") * 20)),
       attrs,
       obs: { judgment: attrs.judgment - 8, urgency: attrs.urgency - 6, diligence: attrs.diligence - 7, relationships: attrs.relationships - 6 },
       band0: 16,

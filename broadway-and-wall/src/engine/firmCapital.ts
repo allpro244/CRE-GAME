@@ -1,17 +1,17 @@
 /**
- * FIRM CAPITAL — what survives when a person dies.
+ * FIRM CAPITAL — what the firm has earned as an institution.
  *
  * Not XP. Not a skill tree. A readout of institutional standing already earned
  * in hireReputation, lender relationships, clean exits, payroll shape, and
  * whether a vehicle is live. See ATTR_CONTRACT.md Phases 5–6.
  *
  * Process capacity: a mature shop covers slightly more float SF (playbooks,
- * reporting) — capped and earned, never a free dial. Heirs keep process;
- * they lose the principal's phone book (estate.ts already clears street /
- * lenderRel / hireReputation on death — process from exits/milestones remains).
+ * reporting) — capped and earned, never a free dial. (There is no death or
+ * succession in this game — owner decision, ECONOMY.md "No age, no
+ * mortality" — so nothing ever strips it back.)
  */
 import type { GameState } from "./types";
-import { ageYears, topCareerLines, type Person } from "./people";
+import { topCareerLines, type Person } from "./people";
 
 /** Labels only — keep in sync with MILESTONES in sim.ts (avoid sim↔staff cycle). */
 const MILESTONE_LABELS: Record<string, string> = {
@@ -189,26 +189,18 @@ function valsDetail(lender: number): string {
 }
 
 /** Career years + top lines for the leveling readout (person track). */
-export function personProgress(person: Person | undefined, month: number): {
-  age: number;
+export function personProgress(person: Person | undefined): {
   careerYears: number;
   knows: string[];
-  deathAge: number | null;
 } {
   if (!person) {
-    return { age: 0, careerYears: 0, knows: [], deathAge: null };
+    return { careerYears: 0, knows: [] };
   }
-  const age = ageYears(person, month);
   const classM = Object.values(person.career?.classM ?? {}).reduce((a, m) => a + (m ?? 0), 0);
   const careerYears = Math.round((classM / 12) * 10) / 10;
-  const deathAge = person.diesM !== undefined
-    ? Math.round(((person.diesM - person.bornM) / 12) * 10) / 10
-    : null;
   return {
-    age,
     careerYears,
     knows: topCareerLines(person.career, 3),
-    deathAge,
   };
 }
 

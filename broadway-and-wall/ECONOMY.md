@@ -2380,3 +2380,81 @@ dev.affordableLotShare −9.8% ± 10.4%, land.p90 −9.9% ± 14.8% and land.med
 −1.9% ± 7.9%. No rail binds more often. The six-seed record re-rolls (21 of
 39 metrics moved by more than 0.5%) because the rivals stream now draws in
 months it used to skip. `BASELINE.json` is regenerated.
+
+# NO AGE, NO MORTALITY — removed by owner decision
+
+The owner's call, explicit and final: *"remove the age from everything … in
+this game, everyone doesn't die so age doesn't matter."* Nobody in the game
+has an age, a birth year, a death date, an estate or an heir. That covers the
+player, staff, and every rival principal.
+
+**Removed.**
+- `estate.ts` is deleted. That takes out the opening age paired with the
+  bankroll (`START_LIFE_CHOICES` / `lifeForCash`), the player's 70–105 death
+  draw, the 40% estate tax over the exclusion, the step-up at death, §6166
+  instalments, the `estateDue` attention item, continue-as-heir, and the
+  closed-career card.
+- From `people.ts`: `bornM`/`diesM`/`diedM`, the SSA period life table, rival
+  principal mortality, and the rival estate sales it caused (up to six
+  buildings listed as distress at 0.78–0.93 of value, then an heir seated).
+- From `takeprivate.ts`: the `succession` situation. A founder aged 70 or more
+  with nobody behind them used to put a healthy firm in play, with the
+  premium capped at 1.03.
+- From the UI: the age text on the start screen, the Age, Born and death-clock
+  rows on PersonCard, the estate-tax desk, the career card at succession, the
+  "Succession clears the name" line on the fund desk, and the principal's age
+  on the street table.
+
+**What replaced what.** No new numbers were added. Each age-driven trigger now
+falls back to a non-age driver that already existed:
+- *Family firm sells the company.* This used to happen "at succession or in
+  trouble". It is now distress only (in arrears), using the distressed price
+  that already existed (0.90 of property equity). A strained family still
+  refuses.
+- *Take-private situations.* Only `distressed`, `strained` and `healthy` are
+  left. A firm comes into play only for the existing non-age reasons.
+- *Rival estate listings.* Not replaced. Stock still reaches the tape through
+  holder exits (`owners.ts`, which use flat per-holder hazards, not ages),
+  fund-life and merchant exits, receivers, and voluntary listings. The
+  register's `estate` holder kind stays. It is a legal form the deed is
+  already held in on day one (executors and beneficiaries), and settling it
+  runs on the existing flat 3%/yr hazard. No person dies to produce it.
+- *Career seeds.* Previously `(age − 22) × 12 × 0.55` months. They are now
+  years in the business directly, over the same spans the age draws fed:
+  rivals 16–50, hires 6–33, and register heirs 6–26. The register keeps its
+  owners-stream draw, so that stream is not re-rolled. The player opens with
+  18 years, which was the old default principal's track record. The bankroll
+  no longer buys or costs experience.
+- *A failed fund.* `fundFailedM` used to be cleared by succession. It is now
+  permanent, because there is no new name to clear it.
+
+**Saves.** `migrateNoAge` (save.ts) runs on every load. It strips
+`startAge`, `estateDue`, `careers`, and `bornM`/`diesM`/`diedM` from the
+principal, rival principals, staff, pending hires, the hire pool and founder
+bids. An estate bill still owing is dropped. `SAVE_VERSION` does not move,
+because this is a field strip and not a break to the ground.
+
+**Baseline, attributed.** The same states were run on two engines and paired
+(`tools/baseline.mjs` with `SEEDS`/`ENGINE`/`DUMP`, then
+`tools/baseline-paired.mjs`), on 24 seeds × 25 years. One metric moved at
+|t| ≥ 2: `roll.deadLegShare` fell 3.9% ± 1.6% (t −2.4, down on 19 of 24
+seeds). `roll.commercialOcc` rose 0.5% ± 0.3% (t 1.9). Both point the same
+way, and the cause is consistent: there are no more batches of up to six
+rival buildings listed at an estate haircut, followed by a change of hands
+and a re-letting. On the first 12 seeds, `city.floorAreaM` read −2.8%
+(t −1.9). On 24 seeds it read −1.2% ± 1.2% (t −1.0), which makes it a
+re-roll. Every other metric was within |t| < 1.7, and no rail binds more
+often. peopleRng now takes fewer draws (no death draws), so names and
+attributes re-roll. The economy streams are untouched apart from the removed
+estate listings. `BASELINE.json` is regenerated on the six standard seeds
+against this attribution.
+
+**firms.mjs passes, and the street is no thinner.** Decade series before →
+after:
+- seed 7777: 26·26·16·15·18·15·12·6·11·5 → 26·24·21·20·16·10·14·13·12·6
+- seed 4242: 30·28·28·14·16·15·12·12·12·11 → 30·28·27·14·14·16·15·19·16·16
+
+Rival principal deaths never ended a firm (an heir always took over), so
+removing them does not remove a firm exit. ECONOMY.md's firm-flow section
+above already counted "takeovers and succession" as zero exits in an
+unplayed run.

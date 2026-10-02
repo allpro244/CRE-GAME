@@ -1,5 +1,12 @@
 # Principal playtest sheet — machine findings + what only you can see
 
+> **SUPERSEDED IN PART (owner decision, final):** "remove the age from
+> everything … in this game, everyone doesn't die so age doesn't matter."
+> Age, mortality, estate tax, §6166, heirs and succession are REMOVED for the
+> player, staff and every rival principal. Everything below about death,
+> estates or succession is history, not the design. See ECONOMY.md,
+> "No age, no mortality".
+
 **No playtest in this repository is based on Manhattan. Every playtest, every harness run and every number quoted in any of these documents is on a GENERATED city.** The Manhattan pipeline exists (`pnpm pipeline:manhattan`) and is not what any of this was measured on.
 
 **Branch:** `cursor/the-principal-9786` · **PR #62**  

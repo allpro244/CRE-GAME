@@ -109,7 +109,7 @@ const PREFIXES = [
   "facility-balloon", "facility-sweep", "capital-call", "workout",
   "contract", "talks", "exchange", "note", "npl", "private-ask", "private-borrow",
   "street-book", "auction", "line-over", "cash", "cash-runway", "ti-book",
-  "estate", "over",
+  "over",
 ];
 for (const p of PREFIXES) {
   const sample = p === "tenant-ask" ? `${p}:1`
@@ -124,7 +124,6 @@ for (const p of PREFIXES) {
     : p === "npl" ? `${p}:1:12`
     : p === "street-book" ? `${p}:pkg1`
     : p === "auction" ? `${p}:84`
-    : p === "estate" ? `${p}:120`
     : p;
   const route = E.routeAttention(sample, E.newGame(1, parcels));
   ok(`prefix ${p}`, routed(route));

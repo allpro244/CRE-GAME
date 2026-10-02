@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
-import { yearReview, ordinal, careerCard, positiveLeverage } from "@/engine/standing";
+import { yearReview, ordinal, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
 import { goalProgress, goalDef, goalsOpen } from "@/engine/goals";
 import { START_YEAR, monthLabel } from "@/engine/types";
@@ -19,8 +19,7 @@ export default function YearReview() {
   const game = useStore((s) => s.game);
   const popupsOff = useStore((s) => s.popupsOff);
   const dismiss = useStore((s) => s.dismissYearReview);
-  const career = useStore((s) => s.careerCardI);
-  if (y === null || !game || popupsOff || game.gameOver || career !== null) return null;
+  if (y === null || !game || popupsOff || game.gameOver) return null;
   const r = yearReview(game, y, MILESTONES, START_YEAR);
   if (!r) return null;
   const pct = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
@@ -106,44 +105,6 @@ export default function YearReview() {
           <button type="button" className="btn" onClick={() => go("research")}>The street</button>
           <button type="button" className="btn" onClick={() => go("books")}>The books</button>
           <button type="button" className="btn" onClick={() => go("market")}>The tape</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A CAREER, CLOSED. The principal's death used to be one line on the tape and
- * the run went on as the heir — decades of work, and nothing said about them.
- * This is the obituary the trade press would write: where they started on the
- * street, where they finished, the best year, the book they handed on.
- */
-export function CareerCard() {
-  const i = useStore((s) => s.careerCardI);
-  const game = useStore((s) => s.game);
-  const dismiss = useStore((s) => s.dismissCareerCard);
-  if (i === null || !game || game.gameOver) return null;
-  const c = careerCard(game, i, MILESTONES, START_YEAR);
-  if (!c) return null;
-  return (
-    <div className="delivery-ceremony year-review" role="dialog" aria-modal="true" aria-labelledby="career-title" onClick={dismiss}>
-      <div className="delivery-stamp year-review-card" onClick={(e) => e.stopPropagation()}>
-        <div className="delivery-kicker">{c.name} · {c.fromYear}–{c.toYear} · died at {c.age}</div>
-        <div className="delivery-title year-review-verdict" id="career-title">{c.verdict}</div>
-        <div className="year-review-grid mono">
-          <span>The book</span>
-          <span>{usd(c.nw0)} handed over → {usd(c.nw1)} at the end</span>
-          {c.rank0 !== null && c.rank1 !== null && (<><span>On the street</span><span>{ordinal(c.rank0)} → <strong>{ordinal(c.rank1)}</strong> of {c.of}</span></>)}
-          {c.best && (<><span>Best year</span><span>{ordinal(c.best.rank)} of {c.best.of} · {c.best.year}</span></>)}
-          <span>Deeds</span><span>{c.bought} bought · {c.sold} sold · {c.years} years</span>
-          <span>Estate tax</span><span>{c.tax > 0 ? usd(c.tax) : "under the exclusion"}</span>
-        </div>
-        {c.milestones.length > 0 && (
-          <div className="year-review-miles">{c.milestones.map((m) => <div key={m}>◆ {m}</div>)}</div>
-        )}
-        <div className="year-review-next">You continue as <strong>{c.heir}</strong>. The buildings stay. The phone book does not.</div>
-        <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
-          <button type="button" className="btn btn-primary" onClick={dismiss}>Carry on as {c.heir}</button>
         </div>
       </div>
     </div>

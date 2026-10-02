@@ -70,6 +70,10 @@ export interface GameSetup {
   cash0?: number;
   goal?: string | null;
   clock?: "decisions" | "everything" | "money";
+  /** "never" keeps broker first looks off the clock (GameState.brokerStops). */
+  brokerStops?: "affordable" | "never";
+  jevFirms?: number;
+  spectator?: boolean;
 }
 
 export const DEFAULT_SETUP: GameSetup = {

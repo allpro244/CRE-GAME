@@ -4,6 +4,7 @@ import type { GameState } from "@/engine/types";
 import { START_YEAR } from "@/engine/types";
 import { cityList, cityName } from "@/citygen/index.mjs";
 import { goalDef } from "@/engine/goals";
+import { describeSetup } from "@/engine/setup";
 
 /**
  * YOUR RUNS, KEPT ACROSS RUNS. A hundred-year town has no win screen and a
@@ -27,6 +28,8 @@ export interface RunRecord {
   /** The goal chosen at the start, and how it went. */
   goal?: string;
   goalResult?: "met" | "missed" | "open";
+  /** Which world it was played in (setup.ts describeSetup). */
+  setup?: string;
 }
 
 const KEY = "bw:runs";
@@ -46,6 +49,9 @@ function townOf(g: GameState): string {
 }
 
 export function recordRun(g: GameState) {
+  // A SANDBOX IS NOT A RUN. Unlimited capital and no creditors: whatever it
+  // scored, it scored on terms nobody else played, so it is never recorded.
+  if (g.setup?.sandbox) return;
   const marks = (g.yearMarks ?? []).filter((m) => m.y >= 0);
   const best = marks.length ? marks.reduce((a, m) => (m.rank < a.rank ? m : a), marks[0]) : null;
   const rec: RunRecord = {
@@ -59,6 +65,7 @@ export function recordRun(g: GameState) {
     bestYear: best ? START_YEAR + best.y : null,
     over: !!g.gameOver,
     updatedAt: Date.now(),
+    ...(g.setup ? { setup: describeSetup(g.setup, g.econ?.eraKey) } : {}),
     ...(g.goal ? { goal: goalDef(g.goal.id).label, goalResult: g.goal.doneM !== undefined ? "met" as const : g.goal.failedM !== undefined ? "missed" as const : "open" as const } : {}),
   };
   const all = loadRuns().filter((r) => r.seed !== rec.seed);

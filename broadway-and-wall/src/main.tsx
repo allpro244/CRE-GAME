@@ -9,6 +9,7 @@ import "./ui/system/tokens.css";
 import "./ui/system/components.css";
 import "./ui/system/shell.css";
 import "./ui/system/pages.css";
+import "./ui/system/setup.css";
 import { applyTheme } from "./ui/theme";
 
 applyTheme();

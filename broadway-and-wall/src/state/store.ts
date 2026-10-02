@@ -44,6 +44,7 @@ import { leasingOdds } from "@/engine/absorption";
 import { usdSigned } from "@/ui/format";
 import { periodRecap, firmTier } from "@/engine/standing";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
+import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
@@ -414,7 +415,7 @@ interface AppState {
   assignStaffBuilding: (staffId: number, bbl: string) => void;
   unassignStaffBuilding: (staffId: number, bbl: string) => void;
   /** Cut a brand new town on this island at this size and build-out, and play it. */
-  startRun: (island: string, size: string, dev: string, cash0?: number) => Promise<void>;
+  startRun: (island: string, size: string, dev: string, cash0?: number, setup?: Partial<GameSetup>, seed?: number) => Promise<void>;
   /** Rebuild the town in a named save and pick the campaign back up. */
   continueRun: () => Promise<void>;
   newRun: () => void;
@@ -844,6 +845,7 @@ export const useStore = create<AppState>((set, get) => ({
   setGoal: (id) => {
     const { game } = get();
     if (!game) return;
+    if (game.setup?.sandbox) { toast("A sandbox run is not scored — goals are for runs played on the real terms.", "err"); return; }
     const next = { ...game, goal: newGoal(id, game.month, game) };
     const old = game.goal;
     if (old && (old.doneM !== undefined || old.failedM !== undefined)) next.pastGoals = [...(game.pastGoals ?? []), old];
@@ -2263,7 +2265,7 @@ export const useStore = create<AppState>((set, get) => ({
    * `setSize` both key off the current island and rolling a seed on the wrong
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
-  startRun: async (island, size, dev, cash0) => {
+  startRun: async (island, size, dev, cash0, setupIn, seedIn) => {
     set({ phase: "generating", building: islandName(island), loadError: null });
     await painted();
     try {
@@ -2274,7 +2276,11 @@ export const useStore = create<AppState>((set, get) => ({
       const money = cash0 ?? currentCash0();
       setCash0(money);
       setDev(dev, island);
-      const seed = rerollCity();
+      // A SEED FROM THE SETUP PAGE replays or shares a world: the same seed on
+      // the same island, size and build-out is the same town and the same
+      // draws. Absent, a fresh one is rolled exactly as before.
+      const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
+      if (seedIn && seedIn >>> 0) setSeed(seed, island);
       const { built, parcels } = buildTown(island, seed, size, dev);
       get().setData({
         parcels,
@@ -2283,7 +2289,15 @@ export const useStore = create<AppState>((set, get) => ({
         city: built,
       });
       // Jev-run firms and spectator mode, if the start screen asked for them.
-      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels)), parcels);
+      // THE SETUP IS RECORDED ON THE SAVE, including the parts the store
+      // applies itself (town, cash, goal), so Saves and the run record can say
+      // which world this was. A default setup is bit-identical to none.
+      const sandbox = !!setupIn?.sandbox;
+      if (sandbox) pendingGoal.id = null;   // a sandbox is not scored
+      const setup: Partial<GameSetup> = {
+        ...(setupIn ?? {}), island, size, dev, cash0: money, goal: pendingGoal.id,
+      };
+      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money, undefined, setup), parcels, Object.keys(parcels)), parcels);
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

@@ -211,6 +211,7 @@ export function newGame(
   if (setup) s.setup = setup;
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
   if (setup?.clock === "everything" || setup?.clock === "money") s.clockStops = setup.clock;
+  if (setup?.brokerStops === "never") s.brokerStops = "never";
   s.econ = initEcon(s, parcels);
   // Player principal BEFORE rivals so the principal's draws do not depend on
   // roster size — peopleRng only; s.rng untouched.

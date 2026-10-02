@@ -2297,7 +2297,7 @@ export const useStore = create<AppState>((set, get) => ({
       const setup: Partial<GameSetup> = {
         ...(setupIn ?? {}), island, size, dev, cash0: money, goal: pendingGoal.id,
       };
-      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money, undefined, setup), parcels, Object.keys(parcels)), parcels);
+      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money, setup), parcels, Object.keys(parcels)), parcels);
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

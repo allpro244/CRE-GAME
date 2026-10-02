@@ -83,7 +83,7 @@ for (const k of [...IN, ...OUT]) coverage[k] = 0;
 
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(seed, parcels, undefined, undefined, SETUP), parcels, bbls);
+  let g = E.firstListings(E.newGame(seed, parcels, undefined, SETUP), parcels, bbls);
   const START = g.cash;
   let built = false;
   let prev = { cash: liquidity(g), books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };

@@ -46,6 +46,8 @@ const HZ = Number(process.env.HZ ?? 600);
 // A dollar is a dollar. The tolerance exists only for the rounding the engine
 // does at the edges of a cent, not to give a real leak somewhere to hide.
 const TOL = 1000;
+// SETUP_JSON='{"inherit":3}' runs the same bot on a setup-page world (engine/setup.ts).
+const SETUP = process.env.SETUP_JSON ? JSON.parse(process.env.SETUP_JSON) : undefined;
 
 // `borrowed` is net new mortgage/facility principal drawn into cash — the
 // bucket that closes conserve's old blind spot on cash-out refinance and
@@ -81,7 +83,7 @@ for (const k of [...IN, ...OUT]) coverage[k] = 0;
 
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+  let g = E.firstListings(E.newGame(seed, parcels, undefined, undefined, SETUP), parcels, bbls);
   const START = g.cash;
   let built = false;
   let prev = { cash: liquidity(g), books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };

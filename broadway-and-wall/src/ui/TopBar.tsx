@@ -509,7 +509,7 @@ export default function TopBar() {
                 n={nw}
                 w={96}
                 keep
-                title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
+                title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
                 onClick={toggleNwPop}
                 expanded={nwOpen}
               />

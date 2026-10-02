@@ -30,8 +30,8 @@
  *   that makes reputation local and personal instead of a global mark, and it
  *   is the reason a careful buyer works a relationship rather than a listing.
  *
- *   THEY HAVE LIVES. Estates get settled, funds reach the end of a hold, an
- *   old man finally retires — and when that happens a NAMED holder's whole
+ *   THEY HAVE LIVES. Estates get settled, funds reach the end of a hold, a
+ *   family decides it is done — and when that happens a NAMED holder's whole
  *   book comes to market at once, which is where the interesting stock in any
  *   real cycle actually comes from.
  *
@@ -563,7 +563,7 @@ export function standingWith(s: GameState, id: string): string {
 // interesting stock in any real cycle does not arrive one building at a time
 // from nobody in particular — it arrives because SOMEBODY'S CIRCUMSTANCES
 // CHANGED: an estate was settled, a fund's hold period ended, a partnership
-// finally split, the old man retired. When that happens the whole book comes to
+// finally split, a family decided it was done. When that happens the whole book comes to
 // market at once, under a name everyone in town knows, and every buyer in the
 // city reads the same headline on the same morning.
 //
@@ -574,8 +574,11 @@ export function standingWith(s: GameState, id: string): string {
 // front of the player over a career rather than one a month.
 //
 // THE HAZARDS ARE ANNUAL RATES EXPRESSED MONTHLY, and they are demographic
-// rather than tuned. An estate settles when somebody dies: a holding family
-// turns over roughly once a generation, so about 3% a year. An institutional
+// rather than tuned. They are flat per-holder rates, not anybody's age: no
+// person in this game ages or dies (ECONOMY.md "No age, no mortality"). An
+// "estate" holder is a legal form the deed is ALREADY held in on day one —
+// executors and beneficiaries — and settling it is a decision with a rate,
+// about 3% a year, the same order as a family's generational turnover. An institutional
 // hold period runs seven to twelve years and ends in a decision, so about 8% a
 // year once it is mature — funds ARE sellers, that is what a hold period is. A
 // partnership that has not spoken in twenty years splits eventually. A
@@ -689,7 +692,7 @@ export function tickHolders(
   //
   // Now an estate or a split partnership sometimes seats an OPERATOR: the
   // holder's book transfers whole to a new firm under the family's name, run
-  // by an heir with an age and a doctrine. Entry follows exit, as it does in
+  // by a beneficiary with a doctrine. Entry follows exit, as it does in
   // life — the street's deal flow supports roughly the population it opened
   // with, so a seat only opens when failures have thinned the field below the
   // founding roster. The probabilities are demographic guesses stated as
@@ -721,7 +724,10 @@ export function tickHolders(
     };
     if (!s.rivals) s.rivals = [];
     s.rivals.push(firm);
-    const heir = makeRivalPrincipal(s, id, firm.name, Math.round(28 + rng(s) * 20));
+    // The draw stays (one owners-stream step, so the stream is not re-rolled);
+    // it seeds YEARS IN THE BUSINESS (6–26), which is what it always fed the
+    // career log as (age 28–48 less a working life starting ~22). No age.
+    const heir = makeRivalPrincipal(s, id, firm.name, Math.round(6 + rng(s) * 20));
     if (!s.rivalPrincipals) s.rivalPrincipals = {};
     s.rivalPrincipals[id] = heir;
     if (!s.holderExit) s.holderExit = {};
@@ -729,7 +735,7 @@ export function tickHolders(
     s.news.unshift({
       q: s.month, kind: "event",
       text: h.kind === "estate"
-        ? `The ${h.name} succession is settled and nothing is coming to market: ${heir.name} is keeping the book — `
+        ? `${h.name} is settled and nothing is coming to market: ${heir.name} is keeping the book — `
           + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The street has a new landlord with an old name.`
         : `${h.name} split, and one side bought the other out: ${heir.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
           + `and is said to be looking for more. A holder has become a competitor.`,

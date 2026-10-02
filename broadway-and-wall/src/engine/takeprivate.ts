@@ -41,7 +41,6 @@ import { conveyedDeed, depositsOn } from "./leasing";
 import { assetGrade, livingRivals, marketAppetite, markRival, STYLE_OF, tie } from "./rivals";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
-import { rivalPrincipalOf, ageYears } from "./people";
 import { isCivicLand } from "./demand";
 import { PRODUCTS, allInCostPct, productById } from "./debt";
 import { newsChance } from "./market";
@@ -76,7 +75,9 @@ function hash01(str: string): number {
  *  - PE / merchant: on a clock to sell anyway — an entity exit is their exit.
  *  - opportunistic / vulture: they know what a buyer of a book pays.
  *  - slumlord: nobody pays for that franchise.
- *  - family: holds for a generation and sells only at succession (see below).
+ *  - family: holds for a generation and sells the company only in trouble
+ *    (see below). Its base is kept for the record; the healthy path never
+ *    reaches it, because a healthy family is not for sale.
  *  - owner-user: a company's own premises, not a real estate firm at all.
  */
 const BASE_PREMIUM: Record<RivalStyle, number | null> = {
@@ -85,10 +86,14 @@ const BASE_PREMIUM: Record<RivalStyle, number | null> = {
   slumlord: 1.02, family: 1.20, owneruser: null,
 };
 
-/** A founder this age with nobody behind them is running a succession, not a firm. */
-const SUCCESSION_AGE = 70;
-
-export type TakePrivateSituation = "distressed" | "strained" | "succession" | "healthy";
+// NO SUCCESSION SITUATION. A founder aged 70+ with nobody behind them used to
+// put a healthy firm in play at an orderly-wind-down price (premium capped at
+// 1.03). Nobody in this game ages or dies (owner decision — ECONOMY.md "No
+// age, no mortality"), so that trigger is gone and nothing replaces it: a firm
+// is put in play by the non-age reasons that already existed — arrears
+// (distressed), leverage near its ceiling or losing the leasing war
+// (strained) — or it is healthy and asks its full control premium.
+export type TakePrivateSituation = "distressed" | "strained" | "healthy";
 
 export interface TakePrivateDeed {
   bbl: string;
@@ -128,7 +133,7 @@ export interface TakePrivateQuote {
   deposits: number;
 }
 
-function situationOf(s: GameState, r: Rival, ltv: number): { sit: TakePrivateSituation; why: string } {
+function situationOf(r: Rival, ltv: number): { sit: TakePrivateSituation; why: string } {
   if ((r.stressMs ?? 0) > 0) {
     return { sit: "distressed", why: `${r.name} is ${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind on debt service. The board would rather sell the company than hand the lenders the keys one building at a time.` };
   }
@@ -138,10 +143,6 @@ function situationOf(s: GameState, r: Rival, ltv: number): { sit: TakePrivateSit
   }
   if (r.occ !== undefined && r.mktOcc !== undefined && r.occ < r.mktOcc - 0.08) {
     return { sit: "strained", why: `${poss(r.name)} book is ${(r.occ * 100).toFixed(0)}% let against a market running ${(r.mktOcc * 100).toFixed(0)}%. They are losing the leasing war.` };
-  }
-  const p = rivalPrincipalOf(s, r.id);
-  if (p && ageYears(p, s.month) >= SUCCESSION_AGE) {
-    return { sit: "succession", why: `${p.name} is ${ageYears(p, s.month)} and there is nobody behind them. An orderly sale of the company is the alternative to an estate selling it.` };
   }
   return { sit: "healthy", why: `${r.name} is performing and does not need to sell. A board that does not need to sell is paid to.` };
 }
@@ -156,7 +157,6 @@ function situationOf(s: GameState, r: Rival, ltv: number): { sit: TakePrivateSit
  *    band — still under NAV, because the alternative is the lenders.
  *  - STRAINED (near its covenant, or losing the leasing war): 1.00. It can wait
  *    a little, not long.
- *  - SUCCESSION: at most 1.03. The alternative is an orderly liquidation.
  *  - HEALTHY: the style's base (above), plus up to 4 points for a book leasing
  *    ahead of its market (a platform that outperforms is worth paying for), plus
  *    up to ±5 points for the room: with more competing money about, the board
@@ -172,7 +172,6 @@ function premiumFor(s: GameState, r: Rival, sit: TakePrivateSituation): { premiu
   let p: number;
   if (sit === "distressed") { p = 0.90; why.push("in arrears: sells under NAV rather than to its lenders"); }
   else if (sit === "strained") { p = 1.00; why.push("near its limits: sells at NAV"); }
-  else if (sit === "succession") { p = Math.min(base, 1.03); why.push("succession: priced against an orderly wind-down"); }
   else {
     p = base;
     const kind = r.style === "reit" ? "REIT" : r.style === "pe" ? "PE shop" : `${r.style} firm`;
@@ -243,7 +242,7 @@ export function takePrivateQuote(s: GameState, parcels: ParcelTable, firmId: str
   const debt = Math.max(0, Math.round(r.debt));
   const cash = Math.round(r.cash);
   const propertyEquity = gross - debt;
-  const { sit, why: situationWhy } = situationOf(s, r, m.ltv);
+  const { sit, why: situationWhy } = situationOf(r, m.ltv);
   const { premium, why: premiumWhy } = premiumFor(s, r, sit);
   const ask = Math.round((Math.max(0, propertyEquity) * premium + cash) / 1000) * 1000;
   const q: TakePrivateQuote = {
@@ -255,8 +254,10 @@ export function takePrivateQuote(s: GameState, parcels: ParcelTable, firmId: str
   if (r.failedM !== undefined) return no(r.takenPrivateM !== undefined ? "You already own this firm." : `${r.name} is gone. What is left is the receiver's.`);
   if (!deeds.length) return no(`${r.name} owns nothing. There is no book to buy.`);
   if (BASE_PREMIUM[r.style] === null) return no(`${r.name} is a company that owns its own premises, not a real estate firm. There is no book for sale — only a business you do not want.`);
-  if (r.style === "family" && sit !== "succession" && sit !== "distressed") {
-    return no(`${r.name} has held for two generations and is not for sale. Families sell at succession or in trouble, and they are in neither.`);
+  // A FAMILY SELLS THE COMPANY ONLY IN TROUBLE. It used to sell at succession
+  // too; with no ages and no deaths, distress is the one remaining reason.
+  if (r.style === "family" && sit !== "distressed") {
+    return no(`${r.name} has held for two generations and is not for sale. Families sell the company when they are in trouble, and they are not.`);
   }
   if (propertyEquity <= 0) {
     return no(`${poss(r.name)} buildings no longer cover their paper. The equity is worth nothing and the board cannot sell what the lenders own — that conversation is with the receiver.`);
@@ -543,7 +544,7 @@ export function offerTakePrivate(
 
 
 /**
- * THE BOARD RINGS YOU. A firm that is struggling or running a succession
+ * THE BOARD RINGS YOU. A firm that is struggling
  * retains a banker, and the banker calls the buyers who could close. Once a
  * year at most is checked (July), no more than one conversation every three
  * years, and only the firms whose situation is a reason to sell. The call

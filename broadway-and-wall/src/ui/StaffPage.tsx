@@ -89,7 +89,7 @@ function FirmCapitalPanel({ game }: { game: GameState }) {
         <span className="dim mono" style={{ marginLeft: 8 }}>tier {fc.tier}/5 · {pct}%</span>
       </div>
       <div className="hint">
-        What survives when a principal dies: process, name, record. Not a skill build —
+        What the firm has earned as an institution: process, name, record. Not a skill build —
         hiring standing, lender file, clean exits, bench, vehicle, and book size.
         It lifts the capacity of every desk you have not staffed by up to 8% — yours by{" "}
         {((fc.processCapacityMult - 1) * 100).toFixed(1)}% today.

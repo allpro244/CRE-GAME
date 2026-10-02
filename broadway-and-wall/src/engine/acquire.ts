@@ -178,8 +178,9 @@ export function anonymousOwner(rec: ParcelRecord | null, month: number, r: numbe
   }
   const age = START_YEAR + Math.floor(month / 12) - (rec.yearBuilt || START_YEAR);
   if (age <= 15) return r < 0.65 ? "developer" : "partnership";
-  // A small lot held through two generations is a family's building until the
-  // generation that bought it dies, and then it is an estate.
+  // A small lot held through two generations is a family's building or sits
+  // in an estate (a legal form the deed is already held in — nobody in this
+  // game ages or dies; the building's age is what is read here).
   if (age >= 55 && rec.lotArea <= 6_000) return r < 0.62 ? "local" : "estate";
   return r < 0.34 ? "local" : r < 0.6 ? "partnership" : r < 0.82 ? "estate" : "institution";
 }

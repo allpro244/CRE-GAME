@@ -166,9 +166,6 @@ interface AppState {
   /** The year whose review card is up, if any (UI only). See standing.ts. */
   yearReviewY: number | null;
   dismissYearReview: () => void;
-  /** A principal's career just closed — the index into game.careers (UI only). */
-  careerCardI: number | null;
-  dismissCareerCard: () => void;
   /** Milestones reached in the last advance, for the banner (UI only). */
   milestoneFlash: string[] | null;
   /** The run's goal was just met or missed (UI only). */
@@ -440,8 +437,6 @@ function queueYearReview(prev: GameState, next: GameState, set: (partial: Partia
   const before = prev.yearMarks?.at(-1)?.y ?? -1;
   const last = next.yearMarks?.at(-1);
   if (last && last.y >= 0 && last.y > before) set({ yearReviewY: last.y });
-  const n0 = prev.careers?.length ?? 0, n1 = next.careers?.length ?? 0;
-  if (n1 > n0) set({ careerCardI: n1 - 1 });
   // A milestone is a moment, not a line on the tape.
   const got = MILESTONES.filter((m) => next.milestones?.[m.id] !== undefined && prev.milestones?.[m.id] === undefined).map((m) => m.label);
   // A STEP UP THE STANDING LADDER, when it happens rather than at December.
@@ -794,8 +789,6 @@ export const useStore = create<AppState>((set, get) => ({
   dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   yearReviewY: null,
   dismissYearReview: () => set({ yearReviewY: null }),
-  careerCardI: null,
-  dismissCareerCard: () => set({ careerCardI: null }),
   milestoneFlash: null,
   goalCard: null,
   exitCard: null,
@@ -2301,7 +2294,7 @@ export const useStore = create<AppState>((set, get) => ({
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
       if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month, g);
-      set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null, careerCardI: null });
+      set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null });
       persist(g);
     } catch (e) {
       set({ phase: "menu", building: null });
@@ -2352,7 +2345,7 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      set({ game: saved, phase: "playing", building: null, yearReviewY: null, careerCardI: null });
+      set({ game: saved, phase: "playing", building: null, yearReviewY: null });
     } catch (e) {
       set({ phase: "menu", building: null });
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);

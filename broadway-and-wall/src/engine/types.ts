@@ -2306,8 +2306,6 @@ export interface TakePrivateRecord {
 export interface FounderBid {
   readyM: number;
   name: string;
-  bornM: number;
-  diesM?: number;
   attrs: Record<string, number>;
   obs: Record<string, number>;
   band0: number;
@@ -2538,7 +2536,7 @@ export interface GameState {
   /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
   staffRng?: number;
   /**
-   * People stream — mortality, principal synthesis, hire life stamps.
+   * People stream — principal synthesis, hire career seeds.
    * Seeded `seed ^ 0x50454f50`. Must not step s.rng. See people.ts.
    */
   peopleRng?: number;
@@ -2546,24 +2544,8 @@ export interface GameState {
   principal?: import("./people").Person;
   /** Operating principal per living rival firm id. */
   rivalPrincipals?: Record<string, import("./people").Person>;
-  /** Ids for non-staff persons (rival principals, heirs). Staff keep nextStaffId. */
+  /** Ids for non-staff persons (rival principals). Staff keep nextStaffId. */
   nextPersonId?: number;
-  /**
-   * Outstanding estate tax after the principal's death. Absent while alive or
-   * once paid. See estate.ts — must never set gameOver on its own.
-   */
-  estateDue?: {
-    gross: number;
-    tax: number;
-    remaining: number;
-    deadlineM: number;
-    deathM: number;
-    decedentName: string;
-    elect6166?: boolean;
-    installmentMo?: number;
-  };
-  /** Opening age chosen on the start menu (Phase 5). */
-  startAge?: number;
   /**
    * Player fund vehicle — second cash account. Absent = balance-sheet path
    * (the default). See fund.ts / PRINCIPAL_CALLS.md.
@@ -2589,8 +2571,9 @@ export interface GameState {
     done?: TakePrivateRecord[];
   };
   /**
-   * Month the last vehicle failed LPs — the second death. Cleared on
-   * succession with the rest of the phone book.
+   * Month the last vehicle failed LPs. Permanent: nobody in this game dies or
+   * is succeeded, so there is no new name to clear it (owner decision — see
+   * ECONOMY.md "No age, no mortality").
    */
   fundFailedM?: number;
   /**
@@ -3120,8 +3103,6 @@ export interface GameState {
   gameOver: { cause: string; complete?: boolean } | null;
   /** Each December close: net worth and your place on the street. See standing.ts. */
   yearMarks?: import("./standing").YearMark[];
-  /** Each principal's tenure, closed at their death — the career card reads it. */
-  careers?: { name: string; heir: string; fromM: number; toM: number; age: number; gross: number; tax: number }[];
   insolventMs: number;
   /** Months with cash below zero this run — never reset by a seizure. */
   underwaterMs?: number;

@@ -1,21 +1,24 @@
 /**
- * THE PRINCIPAL — one person type for the player, every hire, every heir, and
- * every rival firm's operating principal.
+ * THE PRINCIPAL — one person type for the player, every hire, and every rival
+ * firm's operating principal.
  *
- * Phase 1 lands the type inert: existing staff behaviour is re-pointed at the
- * same fields unchanged, a principal is synthesised for old saves, and nothing
- * yet dies, raises a fund, or earns a career. See HANDOFF_PRINCIPAL.md.
+ * NOBODY AGES AND NOBODY DIES. Owner decision, explicit and final: "remove the
+ * age from everything … in this game, everyone doesn't die so age doesn't
+ * matter." There is no birth month, no death draw, no estate, no heir and no
+ * succession — for the player, for staff, and for every rival principal. The
+ * period life table, the player's 70–105 death band, rival-principal estate
+ * sales and the heir seat that used to live here are gone (see ECONOMY.md,
+ * "No age, no mortality"). What a person has DONE — the career log — is the
+ * only thing about time a person carries, and it is seeded from YEARS IN THE
+ * BUSINESS, never from an age.
  *
  * RNG: this module owns `s.peopleRng`, seeded `s.seed ^ 0x50454f50` ("PEOP").
- * A hiring pool must not re-roll the economy (staff.ts); a man's date of death
- * must not either. Draw the death month ONCE at creation — never a monthly
- * hazard — so the draw count is auditable and foreshadowing stays honest.
+ * A hiring pool must not re-roll the economy (staff.ts).
  */
 import type { ParcelTable } from "@/data/types";
 import type { FounderBid, GameState } from "./types";
-import { START_YEAR } from "./types";
 import { mulberry32Step } from "./market";
-import { assetValue, initialCondition, resolveRec } from "./value";
+import { resolveRec } from "./value";
 
 export type PersonSeat = "you" | "employee" | "partner" | "rival" | "none";
 
@@ -39,20 +42,6 @@ export interface CareerLog {
 export interface Person {
   id: number;
   name: string;
-  /**
-   * Birth month on the campaign clock. May be negative (born before month 0).
-   * Age arithmetic always goes through ageYears() so START_YEAR stays single-
-   * sourced — do not invent `2000 + month/12` beside this.
-   */
-  bornM: number;
-  /**
-   * Death month on the campaign clock, drawn once at creation from a period
-   * life table (drawDeathM). Absent on legacy staff synthesised without a
-   * draw; filled on the next ensurePeople pass.
-   */
-  diesM?: number;
-  /** Month the death was processed (estate fired). Absent while alive. */
-  diedM?: number;
   /** TRUE ability, 1-100. Shown only for seat "you". Never for anyone else. */
   attrs: Record<string, number>;
   /** Noisy first read — interview / dealing history. */
@@ -79,101 +68,26 @@ export function prrange(s: GameState, lo: number, hi: number): number {
   return lo + prng(s) * (hi - lo);
 }
 
-/**
- * US SSA Period Life Table 2019, male — selected ages, annual death probability qx.
- * Source: https://www.ssa.gov/oact/STATS/table4c6.html (period life table).
- * Shape parameter: male table (CRE principals historically skew male; a later
- * pass can sex-mix without changing the draw contract — one U per person).
- *
- * Calibrated industry constant, not a balance dial. Hardcoded with citation.
- */
-const QX_MALE: ReadonlyArray<readonly [age: number, qx: number]> = [
-  [20, 0.00115], [25, 0.00135], [30, 0.00152], [35, 0.00178],
-  [40, 0.00234], [45, 0.00348], [50, 0.00528], [55, 0.00812],
-  [60, 0.01248], [65, 0.01872], [70, 0.02915], [75, 0.04682],
-  [80, 0.07591], [85, 0.12140], [90, 0.18870], [95, 0.28750],
-  [100, 0.41450], [105, 0.55100], [110, 0.68000],
-];
-
-function qxAt(age: number): number {
-  if (age <= QX_MALE[0][0]) return QX_MALE[0][1];
-  if (age >= QX_MALE[QX_MALE.length - 1][0]) return QX_MALE[QX_MALE.length - 1][1];
-  for (let i = 1; i < QX_MALE.length; i++) {
-    const [a1, q1] = QX_MALE[i - 1];
-    const [a2, q2] = QX_MALE[i];
-    if (age <= a2) {
-      const t = (age - a1) / (a2 - a1);
-      return q1 + t * (q2 - q1);
-    }
-  }
-  return QX_MALE[QX_MALE.length - 1][1];
-}
-
-/**
- * Draw the death month ONCE. One uniform from peopleRng; invert residual
- * lifetime from current age against the period table. Contract: exactly one
- * peopleRng step per call.
- *
- * Used for rivals, staff, and heirs-as-rivals. The player uses
- * `drawPlayerDeathM` — a late-career band, not the open table.
- */
-export function drawDeathM(s: GameState, bornM: number, atMonth: number = s.month): number {
-  const age0 = Math.max(18, (atMonth - bornM) / 12);
-  const u = prng(s);
-  let cdf = 0;
-  let surv = 1;
-  const start = Math.floor(age0);
-  for (let age = start; age < 110; age++) {
-    const qx = qxAt(age + 0.5);
-    const pDie = surv * qx;
-    if (u < cdf + pDie) {
-      const within = pDie > 0 ? (u - cdf) / pDie : 0.5;
-      return Math.round(bornM + (age + within) * 12);
-    }
-    cdf += pDie;
-    surv *= (1 - qx);
-  }
-  return Math.round(bornM + 110 * 12);
-}
-
-/**
- * Player death age band. Succession is a late-career event — not mid-run.
- * Inclusive bounds on calendar age at death. One peopleRng step.
- */
-export const PLAYER_DEATH_AGE_LO = 70;
-export const PLAYER_DEATH_AGE_HI = 105;
-
-/**
- * Draw the player principal's death month ONCE into [70, 105].
- * Contract: exactly one peopleRng step per call — same discipline as drawDeathM.
- * If the principal is already past the floor (should not happen on a fresh
- * start), the band begins at next birthday so diesM stays in the future.
- */
-export function drawPlayerDeathM(s: GameState, bornM: number, atMonth: number = s.month): number {
-  const ageNow = Math.max(0, (atMonth - bornM) / 12);
-  const lo = Math.max(PLAYER_DEATH_AGE_LO, ageNow + 1 / 12);
-  const hi = Math.max(lo, PLAYER_DEATH_AGE_HI);
-  const u = prng(s);
-  const age = lo + u * (hi - lo);
-  return Math.round(bornM + age * 12);
-}
-
-/** Calendar age in whole years at the current (or given) month. */
-export function ageYears(p: Pick<Person, "bornM">, month: number): number {
-  return Math.max(0, Math.floor((month - p.bornM) / 12));
-}
-
-/** Calendar year of birth for display. */
-export function birthYear(p: Pick<Person, "bornM">): number {
-  return START_YEAR + Math.floor(p.bornM / 12);
-}
-
 export const GENERAL_PERSON_ATTRS = [
   "judgment", "urgency", "diligence", "relationships",
 ] as const;
 
-/** Default opening age when the start-menu trade (Phase 5) is not yet live. */
-export const DEFAULT_PRINCIPAL_AGE = 40;
+/**
+ * Years in the business behind the player's opening career seed. It is the
+ * track record the opening principal always carried by default (the old
+ * default principal seeded (40 − 22) = 18 years of exposure); it no longer
+ * comes from an age, and the opening bankroll does not buy it.
+ */
+export const PLAYER_START_YEARS_IN_BUSINESS = 18;
+
+/**
+ * Prior years in the business for a rival principal and for a hire. These are
+ * the same spans the career seed always drew (rival principals 38–72 less a
+ * working life starting ~22; hires 28–55 less 22) — re-expressed as tenure,
+ * with no age attached and one peopleRng step each, as before.
+ */
+export const RIVAL_YEARS_IN_BUSINESS: readonly [number, number] = [16, 50];
+export const HIRE_YEARS_IN_BUSINESS: readonly [number, number] = [6, 33];
 
 function drawGeneralAttrs(s: GameState): Record<string, number> {
   const out: Record<string, number> = {};
@@ -208,23 +122,20 @@ export function nextPersonId(s: GameState): number {
 }
 
 /**
- * Opening principal for a new run. Age is fixed until Phase 5's start-menu
- * trade; death is drawn once. Attrs use peopleRng only — never s.rng / staffRng.
+ * Opening principal for a new run. Attrs use peopleRng only — never s.rng /
+ * staffRng. No age, no death draw.
  */
-export function makePlayerPrincipal(s: GameState, ageYrs: number = DEFAULT_PRINCIPAL_AGE): Person {
-  const bornM = s.month - Math.round(ageYrs * 12);
+export function makePlayerPrincipal(s: GameState, yearsInBusiness: number = PLAYER_START_YEARS_IN_BUSINESS): Person {
   const attrs = drawGeneralAttrs(s);
   const p: Person = {
     id: 0,
     name: s.firm?.name ? principalNameFromFirm(s.firm.name, s) : pickName(s),
-    bornM,
     attrs,
     obs: observeSelf(attrs),
     band0: 0,
     seat: "you",
   };
-  p.diesM = drawPlayerDeathM(s, bornM, s.month);
-  p.career = seedCareer(s, ageYrs);
+  p.career = seedCareer(s, yearsInBusiness);
   return p;
 }
 
@@ -242,8 +153,6 @@ export function queueFounderBid(
   s: GameState,
   st: {
     name: string;
-    bornM: number;
-    diesM?: number;
     attrs: Record<string, number>;
     obs: Record<string, number>;
     band0: number;
@@ -257,8 +166,6 @@ export function queueFounderBid(
   const bid: FounderBid = {
     readyM: s.month + delay,
     name: st.name,
-    bornM: st.bornM,
-    diesM: st.diesM,
     attrs: { ...st.attrs },
     obs: { ...st.obs },
     band0: st.band0,
@@ -278,8 +185,6 @@ export function seatFounderAsRival(s: GameState, firmId: string, bid: FounderBid
   const p: Person = {
     id: nextPersonId(s),
     name: bid.name,
-    bornM: bid.bornM,
-    diesM: bid.diesM,
     attrs: { ...bid.attrs },
     obs: { ...bid.obs },
     band0: bid.band0,
@@ -290,15 +195,12 @@ export function seatFounderAsRival(s: GameState, firmId: string, bid: FounderBid
       districtM: { ...bid.career.districtM },
     } : undefined,
   };
-  if (p.diesM === undefined) p.diesM = drawDeathM(s, p.bornM, s.month);
   return p;
 }
 
-/** Rival operating principal. */
-export function makeRivalPrincipal(s: GameState, firmId: string, firmName: string, ageYrs?: number): Person {
-  // Age band 38–72: working principals, not the opening associate class.
-  const age = ageYrs ?? Math.round(prrange(s, 38, 72));
-  const bornM = s.month - Math.round(age * 12);
+/** Rival operating principal. `yearsInBusiness` seeds the career log only. */
+export function makeRivalPrincipal(s: GameState, firmId: string, firmName: string, yearsInBusiness?: number): Person {
+  const years = yearsInBusiness ?? Math.round(prrange(s, RIVAL_YEARS_IN_BUSINESS[0], RIVAL_YEARS_IN_BUSINESS[1]));
   const attrs = drawGeneralAttrs(s);
   // Noisy read of a rival — wide band; never shown as truth.
   const band0 = 22;
@@ -310,83 +212,62 @@ export function makeRivalPrincipal(s: GameState, firmId: string, firmName: strin
   const p: Person = {
     id: nextPersonId(s),
     name: pickName(s),
-    bornM,
     attrs,
     obs,
     band0,
     seat: "rival",
     firmId,
   };
-  p.diesM = drawDeathM(s, bornM, s.month);
-  p.career = seedCareer(s, age);
+  p.career = seedCareer(s, years);
   return p;
 }
 
 /**
- * Birth month for a new hire, drawn from peopleRng AFTER staffRng work is done
- * so the staff stream's step count is unchanged. Age 28–55 at hire.
+ * Prior career for a new hire, drawn from peopleRng AFTER staffRng work is done
+ * so the staff stream's step count is unchanged. A desk that has been on your
+ * payroll since `hiredM` has that tenure on top of what it walked in with.
  */
-export function stampEmployeeLife(
+export function seedEmployeeCareer(
   s: GameState,
-  st: { bornM?: number; diesM?: number; hiredM?: number; career?: CareerLog },
+  st: { hiredM?: number; career?: CareerLog },
 ): void {
-  if (st.bornM === undefined) {
-    const age = Math.round(prrange(s, 28, 55));
-    // Anchor age at hire month when known so a migrated decade-old desk
-    // does not become "thirty today" on load.
-    const at = typeof st.hiredM === "number" && st.hiredM >= 0 ? st.hiredM : s.month;
-    st.bornM = at - age * 12;
-  }
-  if (st.diesM === undefined) {
-    st.diesM = drawDeathM(s, st.bornM, s.month);
-  }
-  if (!st.career) {
-    st.career = seedCareer(s, ageYears({ bornM: st.bornM }, s.month));
-  }
+  if (st.career) return;
+  const prior = Math.round(prrange(s, HIRE_YEARS_IN_BUSINESS[0], HIRE_YEARS_IN_BUSINESS[1]));
+  const tenure = typeof st.hiredM === "number" && st.hiredM >= 0 ? Math.max(0, s.month - st.hiredM) / 12 : 0;
+  st.career = seedCareer(s, prior + tenure);
 }
 
 /**
- * Idempotent: ensure the player principal and every living rival have a Person,
- * and every staff row has bornM/diesM. Uses peopleRng only. Safe on every load.
+ * Idempotent: ensure the player principal and every living rival have a Person
+ * with a career, and every staff row has a career. peopleRng only. Safe on
+ * every load.
  */
 export function ensurePeople(s: GameState): void {
   if (s.peopleRng === undefined) {
     s.peopleRng = (s.seed ^ PEOPLE_RNG_XOR) | 0;
   }
   if (!s.principal || s.principal.seat !== "you") {
-    s.principal = makePlayerPrincipal(s, DEFAULT_PRINCIPAL_AGE);
-  } else if (s.principal.diesM === undefined) {
-    s.principal.diesM = drawPlayerDeathM(s, s.principal.bornM, s.month);
-  } else {
-    // Clamp legacy / SSA-drawn player deaths into the product band so a save
-    // from before the floor does not kill at 55.
-    const deathAge = (s.principal.diesM - s.principal.bornM) / 12;
-    if (deathAge < PLAYER_DEATH_AGE_LO || deathAge > PLAYER_DEATH_AGE_HI) {
-      s.principal.diesM = drawPlayerDeathM(s, s.principal.bornM, s.month);
-    }
+    s.principal = makePlayerPrincipal(s);
   }
   s.rivalPrincipals ??= {};
   for (const r of s.rivals ?? []) {
     if (r.failedM != null) continue;
     if (!s.rivalPrincipals[r.id]) {
       s.rivalPrincipals[r.id] = makeRivalPrincipal(s, r.id, r.name);
-    } else if (s.rivalPrincipals[r.id].diesM === undefined) {
-      const p = s.rivalPrincipals[r.id];
-      p.diesM = drawDeathM(s, p.bornM, s.month);
     }
   }
   if (s.principal && !s.principal.career) {
-    s.principal.career = seedCareer(s, ageYears(s.principal, s.month));
+    s.principal.career = seedCareer(s, PLAYER_START_YEARS_IN_BUSINESS);
   }
   for (const id of Object.keys(s.rivalPrincipals)) {
     const p = s.rivalPrincipals[id];
-    if (p && !p.career) p.career = seedCareer(s, ageYears(p, s.month));
+    if (p && !p.career) p.career = seedCareer(s, Math.round(prrange(s, RIVAL_YEARS_IN_BUSINESS[0], RIVAL_YEARS_IN_BUSINESS[1])));
   }
   for (const st of s.staff ?? []) {
-    stampEmployeeLife(s, st as { bornM?: number; diesM?: number; career?: CareerLog });
+    seedEmployeeCareer(s, st as { hiredM?: number; career?: CareerLog });
   }
   for (const c of s.hirePool?.list ?? []) {
-    stampEmployeeLife(s, c as { bornM?: number; diesM?: number; career?: CareerLog });
+    seedEmployeeCareer(s, c as { hiredM?: number; career?: CareerLog });
   }
 }
 
@@ -400,11 +281,10 @@ export function rivalPrincipalOf(s: GameState, firmId: string): Person | undefin
   return s.rivalPrincipals?.[firmId];
 }
 
-/** Short league-table line: "Halloran Voss, 44". Never attributes. */
+/** Short league-table line: the principal's name. Never attributes. */
 export function principalTag(s: GameState, firmId: string): string | null {
   const p = rivalPrincipalOf(s, firmId);
-  if (!p) return null;
-  return `${p.name}, ${ageYears(p, s.month)}`;
+  return p ? p.name : null;
 }
 
 /**
@@ -443,12 +323,11 @@ export function emptyCareer(): CareerLog {
 
 /**
  * Prior career from years in the business. Drawn from peopleRng — one primary
- * class, a secondary, a handful of districts. Shape parameter: working life
- * starts ~22; months of exposure ≈ (age − 22) × 12 × 0.55 (not every month
- * is operating a book).
+ * class, a secondary, a handful of districts. Shape parameter: months of
+ * exposure ≈ years × 12 × 0.55 (not every month is operating a book).
  */
-export function seedCareer(s: GameState, ageYrs: number): CareerLog {
-  const years = Math.max(0, ageYrs - 22);
+export function seedCareer(s: GameState, yearsInBusiness: number): CareerLog {
+  const years = Math.max(0, yearsInBusiness);
   const months = Math.round(years * 12 * 0.55);
   const log = emptyCareer();
   if (months <= 0) return log;
@@ -521,7 +400,7 @@ export function accrueCareer(
 }
 
 function ensureCareer(s: GameState, p: Person): CareerLog {
-  if (!p.career) p.career = seedCareer(s, ageYears(p, s.month));
+  if (!p.career) p.career = seedCareer(s, p.seat === "you" ? PLAYER_START_YEARS_IN_BUSINESS : Math.round(prrange(s, RIVAL_YEARS_IN_BUSINESS[0], RIVAL_YEARS_IN_BUSINESS[1])));
   return p.career;
 }
 
@@ -535,7 +414,7 @@ export function tickCareers(s: GameState, parcels: ParcelTable): void {
   for (const st of s.staff ?? []) {
     const person = st as Person & { role?: string; assignedBbls?: string[] };
     if (!person.career) {
-      stampEmployeeLife(s, st as { bornM?: number; diesM?: number; career?: CareerLog; hiredM?: number });
+      seedEmployeeCareer(s, st as { career?: CareerLog; hiredM?: number });
     }
     const career = (st as { career?: CareerLog }).career ?? emptyCareer();
     (st as { career?: CareerLog }).career = career;
@@ -565,85 +444,10 @@ export function tickCareers(s: GameState, parcels: ParcelTable): void {
 }
 
 /**
- * Rival principals whose diesM has arrived — estate sales via reason:"estate",
- * heir takes the seat, player–firm StreetTie clears (relationships attach to
- * the person). Uses peopleRng for ask noise ONLY — never s.rng.
- *
- * Iteration order: sorted firm ids so draw count does not depend on object
- * key insertion order when several die the same month.
+ * Monthly people tick — careers only. Rival-principal mortality (estate sales
+ * at a drawn death month, an heir seated) and the player's estate were removed
+ * with age: nobody dies in this game.
  */
-export function tickRivalMortality(s: GameState, parcels: ParcelTable): void {
-  const ids = Object.keys(s.rivalPrincipals ?? {}).sort();
-  for (const firmId of ids) {
-    const p = s.rivalPrincipals![firmId];
-    if (!p || p.seat !== "rival") continue;
-    if (p.diedM !== undefined) continue;
-    if (p.diesM === undefined || s.month < p.diesM) continue;
-    p.diedM = s.month;
-    beginRivalEstate(s, parcels, firmId, p);
-  }
-}
-
-function beginRivalEstate(
-  s: GameState,
-  parcels: ParcelTable,
-  firmId: string,
-  dead: Person,
-): void {
-  const r = (s.rivals ?? []).find((x) => x.id === firmId);
-  if (!r || r.failedM !== undefined) return;
-
-  // Relationships attached to the person — the firm's street file was theirs.
-  if (s.street?.[firmId]) delete s.street[firmId];
-
-  const book = r.bbls.filter(
-    (bbl) => !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl),
-  );
-  // Estates do not dump the whole book on a Tuesday — same six-at-a-time
-  // discipline as owners.tickHolders.
-  const take = Math.min(6, book.length);
-  let listed = 0;
-  for (let i = 0; i < take; i++) {
-    const bbl = book[i];
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec) continue;
-    const v = assetValue(rec, s.econ, initialCondition(rec));
-    if (v <= 0) continue;
-    // peopleRng — estate pricing must not re-roll the century.
-    const haircut = 0.78 + prng(s) * 0.15;
-    const ask = Math.round((v * haircut) / 1000) * 1000;
-    s.listings.push({
-      bbl,
-      ask,
-      listedM: s.month,
-      expiresM: s.month + 9, // estate filing clock — nine months (calibrated)
-      distress: true,
-      sellerId: r.id,
-      reason: "estate",
-    });
-    listed++;
-  }
-
-  // Heir continues the firm — younger, thin on relationships, keeps the book.
-  const heirAge = Math.round(prrange(s, 28, 48));
-  const heir = makeRivalPrincipal(s, firmId, r.name, heirAge);
-  s.rivalPrincipals![firmId] = heir;
-
-  const age = ageYears(dead, s.month);
-  s.news.unshift({
-    q: s.month,
-    kind: "event",
-    text: listed > 0
-      ? `${dead.name} of ${r.name} has died at ${age}. The estate is listing ${listed} building${listed === 1 ? "" : "s"}; ${heir.name} takes the firm.`
-      : `${dead.name} of ${r.name} has died at ${age}. ${heir.name} inherits a book with nothing left to put on the tape.`,
-  });
-}
-
-/** Monthly people tick — careers, rival mortality, then player estate. */
 export function tickPeople(s: GameState, parcels: ParcelTable): void {
   tickCareers(s, parcels);
-  tickRivalMortality(s, parcels);
-  // Player mortality lives in estate.ts so the tax spine stays one file.
-  // Imported lazily inside the call site in sim to keep people↔estate acyclic
-  // at module load; sim calls tickPlayerMortality directly after tickPeople.
 }

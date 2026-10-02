@@ -63,7 +63,7 @@
     "reo-books": "node test/reo-books.mjs",
     "loc-draw": "node test/loc-draw.mjs",
     "attrs": "node test/attrs.mjs",
-    "principal": "node test/principal-phase12.mjs && node test/principal-mortality.mjs && node test/principal-estate.mjs",
+    "principal": "node test/principal-phase12.mjs && node test/principal-careers.mjs",
     "fund": "node test/fund.mjs",
     "holder": "node test/holder-listing.mjs",
     "attention": "node test/attention-route.mjs",

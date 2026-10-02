@@ -31,8 +31,6 @@ export const MODULES = [
   // people is the Person substrate (player, hires, rival principals). Missing
   // from this list once made every harness re-derive a person — silent drift.
   "people",
-  // estate is player mortality, the tax bill, §6166, continue-as-heir.
-  "estate",
   // fund is the player vehicle — second cash account, raise, promote.
   "fund",
   // leasehold is the landlord sale-leaseback: sell the land, keep the building.

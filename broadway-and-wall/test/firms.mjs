@@ -36,8 +36,6 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   g.founderBids = [{
     readyM: g.month,
     name: "Vera Whitcomb",
-    bornM: g.month - 40 * 12,
-    diesM: g.month + 40 * 12,
     attrs: { judgment: 80, urgency: 70, diligence: 75, relationships: 72 },
     obs: { judgment: 70, urgency: 65, diligence: 68, relationships: 66 },
     band0: 18,
@@ -87,7 +85,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 {
   let g = E.newGame(99, parcels, 10_000_000);
   g.staff = [{
-    id: 9001, name: "Gus Radcliffe", bornM: -400, diesM: 800,
+    id: 9001, name: "Gus Radcliffe",
     attrs: { judgment: 85, urgency: 80, diligence: 82, relationships: 78,
       operations: 80, leasing: 70, construction: 60 },
     obs: { judgment: 70 }, band0: 20, seat: "employee",

@@ -41,13 +41,13 @@ check(!!r0 && r0.milestones.includes("First deed recorded") && r0.deedsIn >= 1, 
 const pl = E.positiveLeverage(g, parcels);
 check(pl.count <= pl.of && (!pl.best || pl.best.cap > pl.best.coupon), `positive leverage on the tape: ${pl.count} of ${pl.of}${pl.best ? ` (widest ${pl.best.cap.toFixed(1)}% against ${pl.best.coupon.toFixed(1)}%)` : ""}`);
 
-// a death closes a career; the run goes on
-const n0 = g.careers?.length ?? 0;
-g.principal.diesM = g.month + 1;
+// NOBODY AGES OR DIES (owner decision — ECONOMY.md "No age, no mortality"):
+// the principal who opened the run is the principal months later, with no
+// life fields and no closed-career cards.
+const who0 = g.principal.name;
 for (let m = 0; m < 3; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
-check((g.careers?.length ?? 0) === n0 + 1 && !g.gameOver, "the principal's death closes a career and the run continues");
-const c = E.careerCard(g, n0, E.MILESTONES, E.START_YEAR);
-check(!!c && c.fromYear === E.START_YEAR && c.heir === g.principal.name && c.nw1 > 0, `a career card: "${c?.verdict}" — ${c?.fromYear}–${c?.toYear}, handed to ${c?.heir}`);
+check(g.principal.name === who0 && g.principal.bornM === undefined && g.principal.diesM === undefined
+  && g.careers === undefined && g.estateDue === undefined && !g.gameOver, "the principal carries no age and no death clock, and the run goes on");
 
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");
 process.exit(bad ? 1 : 0);

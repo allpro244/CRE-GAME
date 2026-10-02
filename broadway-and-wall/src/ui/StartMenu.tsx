@@ -5,7 +5,6 @@ import { JevSettings } from "@/ui/panels/JevPanel";
 import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
-import { lifeForCash } from "@/engine/estate";
 // `currentCity` is back with the island column: there are two islands now and
 // they are different games, so which one this browser last played is a default
 // worth keeping again.
@@ -45,11 +44,11 @@ import { ordinal } from "@/engine/standing";
  * overhead alone.
  */
 const CASH_NOTE: Record<number, string> = {
-  1_000_000: "Age 28. One small building outright, or two with debt, and almost no reserve — decades on the clock.",
-  2_500_000: "Age 35. The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
-  5_000_000: "Age 42. A real first book. Enough to be wrong once and still be in business.",
-  10_000_000: "Age 48. A small institutional platform. Capital bought with years you will not get back.",
-  20_000_000: "Age 52. A serious acquisition book. The estate clock is already running.",
+  1_000_000: "One small building outright, or two with debt, and almost no reserve.",
+  2_500_000: "The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
+  5_000_000: "A real first book. Enough to be wrong once and still be in business.",
+  10_000_000: "A small institutional platform. More room to be wrong, and more overhead to carry.",
+  20_000_000: "A serious acquisition book from the first month.",
 };
 
 export default function StartMenu() {
@@ -197,7 +196,7 @@ export default function StartMenu() {
                   played; they are all pre-set, and this says so. */}
               {!resume && loadRuns().length === 0 && (
                 <div className="start-first">
-                  First time here? Everything highlighted below is the standard game — a young town, $2.50M, age 35.
+                  First time here? Everything highlighted below is the standard game — a young town, $2.50M.
                   Press <strong>Break ground</strong> at the bottom and the Marketplace will show you where to start.
                 </div>
               )}
@@ -309,14 +308,14 @@ export default function StartMenu() {
                     trades around $0.5-2.5M, so these are five different
                     openings rather than difficulty settings. */}
                 <div className="start-col">
-                  <div className="start-col-head">age · capital</div>
+                  <div className="start-col-head">capital</div>
                   {START_CASH_CHOICES.map((v) => (
                     <button
                       key={v}
                       className={"start-opt" + (v === cash0 ? " start-opt-on" : "")}
                       onClick={() => setCash0(v)}
                     >
-                      <span className="start-opt-name">{lifeForCash(v).age} · {usd(v)}</span>
+                      <span className="start-opt-name">{usd(v)}</span>
                       <span className="start-opt-note">{CASH_NOTE[v]}</span>
                     </button>
                   ))}
@@ -334,11 +333,10 @@ export default function StartMenu() {
       <div className="start-foot">
         <div className="start-foot-sum">
           {/* No island name here: the island is generated when Break ground is
-              pressed, so there is nothing truthful to name yet. The age and the
-              bankroll are on the note line directly below rather than twice. */}
+              pressed, so there is nothing truthful to name yet. */}
           <span className="start-foot-town">A new island · {sizeName} · {devName} · {usd(cash0)}</span>
           <span className="start-foot-note">
-            Age {lifeForCash(cash0).age} with {usd(cash0)} and no holdings. The town is generated when you press this.
+            {usd(cash0)} and no holdings. The town is generated when you press this.
             {resume ? " Named saves stay on the Saves page." : ""}
             {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
           </span>

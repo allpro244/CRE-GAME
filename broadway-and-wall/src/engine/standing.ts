@@ -178,50 +178,6 @@ export function ordinal(n: number): string {
   return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 }
 
-export interface CareerCard {
-  name: string; heir: string; age: number;
-  fromYear: number; toYear: number; years: number;
-  nw0: number; nw1: number;
-  rank0: number | null; rank1: number | null; of: number | null;
-  best: { rank: number; of: number; year: number } | null;
-  bought: number; sold: number; milestones: string[];
-  tax: number;
-  verdict: string;
-}
-
-/** A principal's career, told back at their death — from the records already kept. */
-export function careerCard(
-  s: GameState, i: number, milestoneList: { id: string; label: string }[], startYear: number,
-): CareerCard | null {
-  const c = s.careers?.[i];
-  if (!c) return null;
-  const inT = (m?: number) => m !== undefined && m >= c.fromM && m <= c.toM;
-  const nw0 = s.nwHistory?.[c.fromM] ?? s.nwHistory?.[0] ?? 0;
-  const marks = (s.yearMarks ?? []).filter((m) => m.m >= c.fromM && m.m <= c.toM);
-  const first = marks[0], last = marks[marks.length - 1];
-  const bestM = marks.filter((m) => m.y >= 0).reduce<YearMark | null>((a, m) => (!a || m.rank < a.rank ? m : a), null);
-  const bought = Object.values(s.holdings).filter((h) => inT(h.boughtM)).length + (s.exits ?? []).filter((e) => inT(e.boughtM)).length;
-  const sold = (s.exits ?? []).filter((e) => inT(e.soldM)).length;
-  const got = milestoneList.filter((m) => inT(s.milestones?.[m.id])).map((m) => m.label);
-  const climbed = first && last ? first.rank - last.rank : 0;
-  const x = nw0 > 0 ? c.gross / nw0 : 0;
-  const verdict = last?.rank === 1 ? `${c.name} left the biggest book in town.`
-    : climbed >= 5 ? `${c.name} climbed ${climbed} places on the street.`
-    : x >= 10 ? `${c.name} turned the book ${x.toFixed(0)}-fold.`
-    : x >= 2 ? `${c.name} left more than they found.`
-    : x >= 1 ? `${c.name} held the line.`
-    : `${c.name} left less than they were handed.`;
-  return {
-    name: c.name, heir: c.heir, age: c.age,
-    fromYear: startYear + Math.floor(c.fromM / 12), toYear: startYear + Math.floor(c.toM / 12),
-    years: Math.round((c.toM - c.fromM) / 12),
-    nw0, nw1: c.gross,
-    rank0: first?.rank ?? null, rank1: last?.rank ?? null, of: last?.of ?? null,
-    best: bestM ? { rank: bestM.rank, of: bestM.of, year: startYear + bestM.y } : null,
-    bought, sold, milestones: got, tax: c.tax, verdict,
-  };
-}
-
 /**
  * WHAT IS WORTH A LOOK ON THE TAPE: listed buildings whose going-in yield
  * beats the cheapest money a desk will write against them — positive

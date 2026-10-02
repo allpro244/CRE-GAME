@@ -9,76 +9,17 @@ import { netWorth } from "@/engine/value";
 import { streetStanding, ordinal } from "@/engine/standing";
 import { openResearchOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
-import { loiNeedsPrincipal, portfolioOccupancy } from "@/engine/leasing";
+import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
-import { liveBrokerCalls } from "./RightPanel";
-import { PAGE_KEYS } from "./Shortcuts";
+import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Spark from "@/ui/vitals/Spark";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 
-type JobId = "acquire" | "assets" | "capital" | "world";
-type Lens = "listings" | "land" | "demand" | "zoning" | "owners" | "leases";
-
-const JOBS: {
-  id: JobId;
-  label: string;
-  /** `jump` names a section on the page to land on — a second door into the same room. */
-  pages: readonly { id: Page; label: string; note: string; icon: string; jump?: string }[];
-}[] = [
-  {
-    id: "acquire",
-    label: "Acquire",
-    pages: [
-      { id: "market", label: "Marketplace", icon: "◎", note: "Listings, receiver books, auctions and off-market calls" },
-      { id: "deals", label: "Deals", icon: "✎", note: "LOIs, negotiations and contracts" },
-      { id: "notes", label: "Notes", icon: "§", note: "Distressed paper — claims on buildings, not the deed" },
-    ],
-  },
-  {
-    id: "assets",
-    label: "Assets",
-    pages: [
-      { id: "portfolio", label: "Portfolio", icon: "▦", note: "Holdings, income and concentration" },
-      { id: "leasing", label: "Leasing", icon: "⌂", note: "Occupancy, expirations and mandate" },
-      { id: "staff", label: "Staff", icon: "☺", note: "People, capacity and judgment" },
-      { id: "firm", label: "The Record", icon: "≡", note: "Every deed, delivery, exit and refinancing since founding" },
-    ],
-  },
-  {
-    id: "capital",
-    label: "Capital",
-    pages: [
-      { id: "debt", label: "Debt", icon: "⚖", note: "Loans, line and the maturity wall" },
-      { id: "debt", label: "Refinance", icon: "↻", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
-      { id: "debt", label: "Fund", icon: "◒", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
-      { id: "books", label: "Books", icon: "▤", note: "Cash movement and the ledger" },
-    ],
-  },
-  {
-    id: "world",
-    label: "World",
-    pages: [
-      { id: "research", label: "Research", icon: "⌕", note: "Comps, submarkets and underwriting" },
-      { id: "economy", label: "Economy", icon: "∿", note: "Cycle, space markets and construction" },
-      { id: "news", label: "News", icon: "✉", note: "What the city wrote this month" },
-    ],
-  },
-];
-
-const LENSES: readonly { id: Lens; label: string; icon: string; title: string }[] = [
-  { id: "listings", label: "For sale", icon: "◉", title: "Market lens — highlight everything for sale on the map" },
-  { id: "land", label: "Land value", icon: "◧", title: "Land value lens — shade every lot by current land $/sf" },
-  { id: "demand", label: "Demand", icon: "◨", title: "Demand lens — transit + employment gravity, the why behind the rents" },
-  { id: "zoning", label: "Zoning", icon: "◩", title: "Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black." },
-  { id: "owners", label: "Owners", icon: "◫", title: "Owners lens — every building the other firms hold, one colour per firm. Yours stay gold." },
-  { id: "leases", label: "Leases", icon: "◬", title: "Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT." },
-];
-
 /** What to call each room in the Back button. Built from the nav itself so a
  *  renamed desk cannot drift out of sync with the label on the way back. */
 const PAGE_LABEL: Partial<Record<Page, string>> = {
-  ...Object.fromEntries(JOBS.flatMap((j) => j.pages.filter((p) => !p.jump).map((p) => [p.id, p.label]))),
+  ...Object.fromEntries(DESKS.flatMap((d) => d.tabs.map((t) => [t.page, tabLabel(t.page) ?? t.label]))),
   none: "Map",
   property: "Property",
   saves: "Saves",
@@ -193,8 +134,6 @@ export default function TopBar() {
   // both are written by the same set(), so they settle on the same paint.
   const prevGame = useStore((s) => s.prevForDigest);
   const deferredPrev = useDeferredValue(prevGame);
-  const lens = useStore((s) => s.lens);
-  const setLens = useStore((s) => s.setLens);
   const mapOnly = useStore((s) => s.mapOnly);
   const setMapOnly = useStore((s) => s.setMapOnly);
   const advance = useStore((s) => s.advance);
@@ -209,9 +148,7 @@ export default function TopBar() {
     if (!deferredGame) {
       return {
         nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
-        line: 0, dealsCount: 0, unread: 0,
-        bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
-        notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
+        line: 0, counts: {} as ReturnType<typeof tabCounts>,
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
         dRateBp: null as number | null,
@@ -246,57 +183,9 @@ export default function TopBar() {
     // here while Leasing called it full. One function now, shared with the
     // Leasing total: leased over lettable, operated deeds only.
     const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
-    // Count every decision that actually lives on Deals. The badge used to
-    // count only LOIs and single-building offers, so tenant relief, purchase
-    // counters, contracts and portfolio bids could expire behind a clean tab.
-    const loisOnDesk = deferredGame.lois.filter((l) => loiNeedsPrincipal(deferredGame, l)).length;
-    const asksOnDesk = (deferredGame.asks ?? []).filter(
-      (a) => !deferredGame.holdings[a.bbl]?.groundLeased,
-    ).length;
-    const dealsCount = loisOnDesk
-      + asksOnDesk
-      + Object.keys(deferredGame.talks ?? {}).length
-      + (deferredGame.portfolioSale?.bids?.length ?? 0)
-      + Object.values(deferredGame.holdings).filter((h) =>
-        h.sale?.offer || (h.sale?.bids ?? []).some((b) => !b.dropped)).length;
-    // What happened THIS MONTH that was not routine — the badge is the reason to
-    // look, not a count of everything ever written.
-    const unread = deferredGame.news.filter((n) =>
-      n.q === deferredGame.month && (n.kind === "warn" || n.kind === "event")).length;
-    // OFF-MARKET FILES WAITING, AND HOW LONG THE NEAREST ONE HAS.
-    //
-    // These arrived as a full-screen card until this pass, which meant the player
-    // could not miss one and did not need a badge. On a page they can, and the
-    // engine drops an approach twelve months after it lands whether or not
-    // anybody read it — so a list with no signal would turn a file with a clock
-    // on it into free optionality, which is a difficulty dial wearing a UI
-    // change's clothes. Counted the same way News counts: what wants an answer,
-    // not what exists. The tooltip carries the soonest lapse, because "3" tells
-    // you there is something and not whether it is urgent.
-    const bcalls = liveBrokerCalls(deferredGame);
-    const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
-    const notesLive = (deferredGame.noteOffers?.length ?? 0)
-      + (deferredGame.privateAsks?.length ?? 0)
-      + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
-    const privateBorrowLive = deferredGame.privateBorrowQuotes?.length ?? 0;
-    // Receiver books / fund packages on Marketplace — the seizure alert's desk.
-    const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length
-      + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
-    let debtBal = 0, debtWall = 0;
-    for (const h of Object.values(deferredGame.holdings)) {
-      if (h.loan) {
-        debtBal += h.loan.balance;
-        if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
-      }
-      if (h.mezz && h.mezz.balance > 0) {
-        debtBal += h.mezz.balance;
-        if (h.mezz.maturityM - deferredGame.month <= 36) debtWall += h.mezz.balance;
-      }
-    }
-    if (deferredGame.facility) {
-      debtBal += deferredGame.facility.balance;
-      if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
-    }
+    // Badges: one counter shared with the desk tabs, so the rail and the
+    // tab inside the desk cannot disagree about what is waiting.
+    const counts = tabCounts(deferredGame);
     // WHICH WAY, AND SINCE WHEN. ΔNW is the last two entries of the same tape
     // the Books chart draws; ΔCF walks the pre-advance snapshot with the same
     // portfolioMonthlyCF the readout uses — one quantity, one function, so the
@@ -322,16 +211,12 @@ export default function TopBar() {
     const dRank = standing && standPrev ? standPrev.rank - standing.rank : 0;
     return {
       standing, dRank,
-      nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-      debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
-      debtSwept: !!deferredGame.facility?.breachedSince,
-      debtBal, debtWall,
+      nw, cf, occ, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-    debtHot, debtSwept, debtBal, debtWall, dNw, nwSpark, dCf, dCfSince, dRateBp, standing, dRank,
+    nw, cf, occ, vacDpp, line, counts, dNw, nwSpark, dCf, dCfSince, dRateBp, standing, dRank,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -463,7 +348,7 @@ export default function TopBar() {
                 : undefined}
             />
             <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={88} keep
-              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+              title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${line > 0 && !(game.loc?.balance) ? ` Undrawn credit line ${usd(line)} on top — draw it on Capital → Debt.` : ""}`} />
             {game.fund && !game.fund.settled && (
               <Stat
                 label="Vehicle"
@@ -473,25 +358,21 @@ export default function TopBar() {
                 title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
               />
             )}
-            {(() => {
-              const drawn = game.loc?.balance ?? 0;
-              const label = drawn > 0 ? "Line drawn" : "Line";
-              const value = drawn > 0
-                ? `${usd(drawn)} / ${usd(line)}`
-                : line > 0 ? usd(line) : "—";
-              return (
-                <Stat
-                  label={label}
-                  value={value}
-                  bad={drawn > 0}
-                  keep
-                  w={drawn > 0 ? 148 : 96}
-                  title={drawn > 0
-                    ? `Revolver drawn ${usd(drawn)} of ${usd(line)} available against net worth. Draw and repay on Debt.`
-                    : `Undrawn line capacity ${usd(line)}. Opens against net worth; draw and repay on Debt.`}
-                />
-              );
-            })()}
+            {/* THE LINE SHOWS UP WHEN IT IS OWED. Undrawn capacity is a fact
+                about the bank's appetite, and it sits in the Cash tooltip and on
+                Debt; a drawn balance is money the firm owes at index + 400, and
+                that is worth a readout of its own. */}
+            {(game.loc?.balance ?? 0) > 0 && (
+              <Stat
+                label="Line drawn"
+                value={`${usd(game.loc!.balance)} / ${usd(line)}`}
+                bad
+                keep
+                w={148}
+                title={`Revolver drawn ${usd(game.loc!.balance)} of ${usd(line)} available against net worth. Draw and repay on Capital → Debt.`}
+                onClick={() => setPage("debt", "Line of credit")}
+              />
+            )}
             {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
                 reasons spread across four pages; the chip says which way, the
                 spark says which way it has BEEN going, and the click opens the
@@ -590,14 +471,30 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${(100 * occ).toFixed(1)}% of lettable feet leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
+            {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
+                and the era used to be four separate readouts across the bar and
+                the rail. They are one question — what is money and space doing
+                — so they are one readout: the phase and the rate, with the
+                vacancy tell turning it red when the market is softening. The
+                full picture is a click away on City → Economy. */}
             <span className="vital-pair">
               <Stat
-                label="Base rate"
-                value={pct(game.econ.indexRate)}
-                drop={2}
+                label={game.econ.eraLabel ? `Market · ${ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}` : "Market"}
+                value={`${game.econ.phase} · ${pct(game.econ.indexRate)}`}
+                bad={vacDpp !== null && vacDpp >= 2}
                 keep
-                w={72}
-                title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
+                w={150}
+                onClick={() => setPage("economy")}
+                title={[
+                  `City cycle: ${game.econ.phase}. Base rate ${pct(game.econ.indexRate)} — the benchmark every loan in town prices off; floating loans reprice to it monthly (through the cap strike, if you bought one).`,
+                  vacDpp === null
+                    ? "Office vacancy change appears after the first year of tape."
+                    : vacDpp >= 2
+                      ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago — the soft-market tell. In simulated centuries, real rents were lower three years later ~93% of the time.`
+                      : `Office vacancy vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp. Rising ≥2 pp is the soft-market tell.`,
+                  game.econ.eraLabel ? `Era: ${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""}` : "",
+                  "Click for the Economy.",
+                ].filter(Boolean).join(" ")}
               />
               {dRateBp !== null && (
                 <span className="vital-extra">
@@ -610,20 +507,11 @@ export default function TopBar() {
                 </span>
               )}
             </span>
-            {/* Vacancy change, not level — the single highest-EV cycle tell. */}
-            <Stat
-              label="Vac Δ / yr"
-              drop={2}
-              value={vacDpp === null ? "—" : `${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp`}
-              bad={vacDpp !== null && vacDpp >= 2}
-              keep
-              w={84}
-              title={vacDpp === null
-                ? "Office vacancy vs twelve months ago — appears after the first year of tape."
-                : vacDpp >= 2
-                  ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago. In simulated centuries, real rents were lower three years later ~93% of the time — confirmation you are past the top, not a prophecy.`
-                  : `Office vacancy change vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} percentage points. Rising ≥2 pp is the soft-market tell.`}
-            />
+            {/* The firm's own trouble, only when there is some. */}
+            {(() => {
+              const book = firmBookStress(game);
+              return book.bad ? <Stat label="Book" value={book.label} bad keep w={88} title={book.title} /> : null;
+            })()}
           </div>
           </div>
         </div>
@@ -707,135 +595,80 @@ export default function TopBar() {
           </div>
         </div>
         <div className="siderail-scroll">
-          {JOBS.map((job) => {
-            const capTitle = job.id === "capital" && debtBal > 0
-              ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}`
-              : undefined;
-            return (
-              <div key={job.id} className="rail-group" role="group" aria-label={job.label}>
-                <div className="rail-group-label">{job.label}</div>
-                {job.pages.map((p) => {
-                  const on = page === p.id && !p.jump;
-                  const n = p.jump ? 0
-                    : p.id === "market" ? bcalls.length + booksLive
-                    : p.id === "deals" ? dealsCount
-                    : p.id === "notes" ? notesLive
-                    : p.id === "news" ? unread
-                    : 0;
-                  const warn = p.id === "debt" && !p.jump && (debtSwept || debtHot);
-                  const key = PAGE_KEYS.find((k) => k.page === p.id && !p.jump)?.key;
-                  const title = p.id === "market" && (bcalls.length || booksLive)
-                    ? [
-                      bcalls.length ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo` : "",
-                      booksLive ? `${booksLive} book${booksLive === 1 ? "" : "s"}/docket on Marketplace` : "",
-                    ].filter(Boolean).join(" · ")
-                    : p.id === "debt" && !p.jump && capTitle ? capTitle
-                    : `${p.label} — ${p.note}${key ? ` (${key})` : ""}`;
-                  return (
-                    <button
-                      key={p.jump ? `${p.id}:${p.jump}` : p.id}
-                      type="button"
-                      className={"rail-item" + (on ? " on" : "")}
-                      aria-current={on ? "page" : undefined}
-                      title={title}
-                      onClick={() => {
-                        if (p.jump) setPage(p.id, p.jump);
-                        else setPage(page === p.id ? "none" : p.id);
-                      }}
-                    >
-                      <span className="rail-ico" aria-hidden="true">{p.icon}</span>
-                      <span className="rail-label">{p.label}</span>
-                      {n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
-                        : warn ? <span className="rail-badge rail-badge-warn" aria-label={debtSwept ? "cash sweep on" : "maturity wall"}>{debtSwept ? "⚠" : "!"}</span>
-                        : key ? <kbd className="rail-key" aria-hidden="true">{key}</kbd> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-          <div className="rail-group" role="group" aria-label="Map lenses">
-            <div className="rail-group-label">Map lens</div>
-            {LENSES.map((l) => (
-              <button
-                key={l.id}
-                type="button"
-                className={"rail-item rail-lens" + (lens === l.id ? " on" : "")}
-                aria-pressed={lens === l.id}
-                onClick={() => setLens(lens === l.id ? "none" : l.id)}
-                title={l.title}
-              >
-                <span className="rail-ico" aria-hidden="true">{l.icon}</span>
-                <span className="rail-label">{l.label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="rail-group rail-city" role="group" aria-label="The city">
-            <div className="rail-group-label">The street</div>
-            <div className="topbar-stats">
-              <Stat
-                label="Market"
-                value={game.econ.phase}
-                title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
-              />
-              {game.econ.eraLabel && (
-                <Stat
-                  label="Era"
-                  value={ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}
-                  title={`${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The cycle takes rates a point or two either way; the era decides whether that is 3% or 13%, and it turns over on a scale of decades.`}
-                />
-              )}
-              {(() => {
-                const book = firmBookStress(game);
-                return <Stat label="Book" value={book.label} bad={book.bad} title={book.title} />;
-              })()}
-              <Stat
-                label="Vacant lots"
-                value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
-                title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
-              />
-            </div>
-          </div>
-          <div className="rail-group" role="group" aria-label="Campaign">
-            <div className="rail-group-label">Campaign</div>
-            {/* Loading a game is not an accounting task — a top-level control. */}
-            <button
-              type="button"
-              className={"rail-item" + (page === "saves" ? " on" : "")}
-              title="The live campaign autosaves; create or load named snapshots here"
-              onClick={() => setPage(page === "saves" ? "none" : "saves")}
-            >
-              <span className="rail-ico" aria-hidden="true">⛁</span><span className="rail-label">Saves</span>
-            </button>
-            <button
-              type="button"
-              className={"rail-item" + (page === "primer" ? " on" : "")}
-              title="New to commercial real estate? Cap rates, NOI and appraisals, in plain words"
-              onClick={() => setPage(page === "primer" ? "none" : "primer")}
-            >
-              <span className="rail-ico" aria-hidden="true">?</span><span className="rail-label">Primer</span>
-            </button>
-            {(game?.rivals ?? []).some((r) => r.jev) && (
-              <button
-                type="button"
-                className={"rail-item" + (page === "match" ? " on" : "")}
-                title="Firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
-                onClick={() => setPage(page === "match" ? "none" : "match")}
-              >
-                <span className="rail-ico" aria-hidden="true">◆</span><span className="rail-label">Jev match</span>
-              </button>
-            )}
-            <button
-              type="button"
-              className={"rail-item" + (page === "settings" ? " on" : "")}
-              title="Settings — theme, pop-up cards, broker calls, the auction card"
-              onClick={() => setPage(page === "settings" ? "none" : "settings")}
-            >
-              <span className="rail-ico" aria-hidden="true">⚙</span><span className="rail-label">Settings</span>
-            </button>
+          {/* SIX DESKS. Each is a job, and the rooms that serve it are tabs
+              inside (see desks.ts). The badge is everything waiting across the
+              desk's tabs; the tab strip at the top of the desk says where. */}
+          <div className="rail-group" role="group" aria-label="Desks">
+            {DESKS.map((d) => {
+              const on = deskOf(page)?.id === d.id;
+              const n = deskCount(d, counts);
+              const warn = d.id === "capital" ? counts.debtWarn : null;
+              const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
+              const title = [
+                `${d.label} — ${d.note} (${d.key})`,
+                d.tabs.length > 1 ? `Tabs: ${d.tabs.map((t) => t.label).join(", ")}.` : "",
+                d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
+                  ? `${counts.market} file${counts.market === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
+                d.id === "capital" && debtBal > 0
+                  ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
+              ].filter(Boolean).join(" ");
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={"rail-item" + (on ? " on" : "")}
+                  aria-current={on ? "page" : undefined}
+                  title={title}
+                  onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts))}
+                >
+                  <span className="rail-ico" aria-hidden="true">{d.icon}</span>
+                  <span className="rail-label">{d.label}</span>
+                  {n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
+                    : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
+                    : <kbd className="rail-key" aria-hidden="true">{d.key}</kbd>}
+                </button>
+              );
+            })}
           </div>
         </div>
+        {/* THE TOOLS, ONE ROW. Saves, the primer, settings and the view modes
+            are things you reach for, not places you work — icons with their
+            names in the tooltip. The map lenses moved onto the map itself. */}
         <div className="rail-foot">
+          <button
+            type="button"
+            className={"rail-item" + (page === "saves" ? " on" : "")}
+            title="Saves — the live campaign autosaves; create or load named snapshots here"
+            onClick={() => setPage(page === "saves" ? "none" : "saves")}
+          >
+            <span className="rail-ico" aria-hidden="true">⛁</span><span className="rail-label">Saves</span>
+          </button>
+          <button
+            type="button"
+            className={"rail-item" + (page === "primer" ? " on" : "")}
+            title="Primer — cap rates, NOI and appraisals, in plain words"
+            onClick={() => setPage(page === "primer" ? "none" : "primer")}
+          >
+            <span className="rail-ico" aria-hidden="true">?</span><span className="rail-label">Primer</span>
+          </button>
+          {(game?.rivals ?? []).some((r) => r.jev) && (
+            <button
+              type="button"
+              className={"rail-item" + (page === "match" ? " on" : "")}
+              title="Jev match — firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
+              onClick={() => setPage(page === "match" ? "none" : "match")}
+            >
+              <span className="rail-ico" aria-hidden="true">◆</span><span className="rail-label">Jev match</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className={"rail-item" + (page === "settings" ? " on" : "")}
+            title="Settings — sounds, pop-up cards, broker calls, the auction card"
+            onClick={() => setPage(page === "settings" ? "none" : "settings")}
+          >
+            <span className="rail-ico" aria-hidden="true">⚙</span><span className="rail-label">Settings</span>
+          </button>
           <button
             type="button"
             className={"rail-item" + (mapOnly ? " on" : "")}

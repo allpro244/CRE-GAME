@@ -4,6 +4,7 @@ import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
 import StartMenu from "@/ui/StartMenu";
 import MapRail from "@/ui/MapRail";
+import MapControls from "@/ui/MapControls";
 import YearReview, { MilestoneFlash, ExitCard, GoalCard } from "@/ui/YearReview";
 import Shortcuts from "@/ui/Shortcuts";
 import AutoPlay from "@/ui/AutoPlay";
@@ -43,6 +44,7 @@ export default function App() {
       <MapView />
       {playing && !photoFrame && <TopBar />}
       {playing && !photoFrame && <MapRail />}
+      {playing && !photoFrame && <MapControls />}
       {!photoFrame && <RightPanel />}
       {!photoFrame && <DeliveryCeremony />}
       {playing && !photoFrame && <YearReview />}

@@ -8,6 +8,7 @@
 // opens and thrown away when it closes, never kept warm behind a surface
 // that is almost always shut.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DESKS as DESK_TABLE } from "@/ui/desks";
 import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
 import type { GameState } from "@/engine/types";
@@ -48,23 +49,19 @@ const KIND_KICKER: Record<Kind, string> = {
   lot: "The city",
 };
 
-// The same words the top bar's nav uses for the same rooms. Kept by hand:
-// the palette must read like the nav it stands in for, and importing the bar
-// to borrow its copy would drag the whole vitals machine along.
+// The same rooms the rail's desks hold, read from the same table (desks.ts),
+// so the palette cannot drift from the nav it stands in for. Each room is
+// labelled with its desk ("Capital · Debt") so a search for either word finds
+// it; sections that used to be their own rail rows stay findable by name.
 const DESKS: readonly { id: Page; label: string; note: string; jump?: string }[] = [
-  { id: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
-  { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
-  { id: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
-  { id: "portfolio", label: "Portfolio", note: "Holdings, income and concentration" },
-  { id: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
-  { id: "staff", label: "Staff", note: "People, capacity and judgment" },
-  { id: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
-  { id: "debt", label: "Debt", note: "Loans, line and the maturity wall" },
-  { id: "debt", label: "Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
-  { id: "books", label: "Books", note: "Cash movement and the ledger" },
-  { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
-  { id: "news", label: "News", note: "What the city wrote this month" },
-  { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
+  ...DESK_TABLE.flatMap((d) => d.tabs.map((t) => ({
+    id: t.page,
+    label: d.tabs.length > 1 ? `${d.label} · ${t.label}` : t.label,
+    note: t.note,
+  }))),
+  { id: "debt", label: "Capital · Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
+  { id: "debt", label: "Capital · Fund", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
+  { id: "debt", label: "Capital · Line of credit", note: "Draw and repay the revolver", jump: "Line of credit" },
   { id: "saves", label: "Saves", note: "Named snapshots; the live campaign autosaves" },
   { id: "settings", label: "Settings", note: "Pop-up cards, broker calls, the auction card" },
   { id: "primer", label: "Primer", note: "Cap rates, NOI and appraisals, in plain words" },

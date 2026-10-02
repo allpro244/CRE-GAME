@@ -17,8 +17,11 @@ const signed = (n: number) => (n > 0 ? "+" : n < 0 ? "\u2212" : "") + Math.abs(n
 export default function CycleDigest() {
   const game = useStore((s) => s.game);
   const prevEcon = useStore((s) => s.prevForDigest);
+  // FOLDED UNTIL ASKED. The phase and the rate are on the top bar now, so the
+  // folded line is enough at a glance; the class table is one click away and
+  // the fold is remembered either way.
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem(LS_KEY) === "1"; } catch { return false; }
+    try { return localStorage.getItem(LS_KEY) !== "0"; } catch { return true; }
   });
 
   const dig = useMemo(() => {
@@ -82,6 +85,7 @@ export default function CycleDigest() {
             Your book · {dig.balloons12} balloon{dig.balloons12 === 1 ? "" : "s"} in 12 mo
             {dig.floatingShare > 0 ? ` · ${(dig.floatingShare * 100).toFixed(0)}% floating` : ""}
             {" · "}{dig.underConstruction} crane{dig.underConstruction === 1 ? "" : "s"} citywide
+            {game ? ` · ${Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length)} vacant lots` : ""}
           </div>
         </div>
       )}

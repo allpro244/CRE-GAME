@@ -31,10 +31,13 @@ export default function MapControls() {
   const setMapFilter = useStore((s) => s.setMapFilter);
   const page = useStore((s) => s.page);
   const mapOnly = useStore((s) => s.mapOnly);
+  // With a building selected its card takes the right-hand column; the strip
+  // centres on the map that is left rather than running under the card.
+  const carded = useStore((s) => !!s.selectedBBL);
   // A desk covers the map; its controls go with it.
   if (page !== "none" && !mapOnly) return null;
   return (
-    <div className="map-controls" role="toolbar" aria-label="Map view">
+    <div className={"map-controls" + (carded ? " map-controls-carded" : "")} role="toolbar" aria-label="Map view">
       <div className="map-controls-group" role="group" aria-label="Emphasis">
         {FILTERS.map((f) => (
           <button

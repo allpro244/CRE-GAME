@@ -55,6 +55,11 @@
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-2);
 }
+.app .map-controls-carded {
+  /* the map card is 380px wide at 12px from the edge (340px under 1100px) */
+  left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px) - 404px) / 2);
+  max-width: calc(100vw - var(--rail-w, 0px) - 430px);
+}
 .app .map-controls-group { display: flex; gap: 2px; }
 .app .map-controls-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--border); }
 .app .map-controls-btn {
@@ -74,6 +79,7 @@
 .app .map-controls-ico { font-size: 13px; line-height: 1; }
 /* narrow windows: lens icons only, names in the tooltip */
 @media (max-width: 1100px) {
+  .app .map-controls-carded { left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px) - 364px) / 2); }
   .app .map-controls-label { display: none; }
   .app .map-controls-btn { padding: 0 8px; }
 }
@@ -119,3 +125,8 @@
 }
 .app .linkish:hover { color: var(--accent-strong); text-decoration-color: currentColor; }
 .app .linkish:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-xs); }
+/* beside the card there is less map: lens names go to the tooltip sooner */
+@media (max-width: 1440px) {
+  .app .map-controls-carded .map-controls-label { display: none; }
+  .app .map-controls-carded .map-controls-btn { padding: 0 8px; }
+}

@@ -79,8 +79,17 @@ function ParcelPanelInner({
   // rather than a bare boolean so selecting a different building simply
   // dismisses the question instead of asking it about the wrong address.
   const [razeAsk, setRazeAsk] = useState<string | null>(null);
-  // Summary keeps the glance card readable; Full OM is the veteran default after year one.
-  const [omFull, setOmFull] = useState(() => useStore.getState().game!.month >= 12);
+  // SUMMARY UNTIL ASKED. This flipped to the full offering memorandum —
+  // seventy-odd rows — once the campaign passed month 12, on the theory that a
+  // veteran wants everything. A veteran who does picks Full OM once and the
+  // card remembers; everyone else gets a glance card that fits on the screen.
+  const [omFull, setOmFullState] = useState(() => {
+    try { return localStorage.getItem("bw:om") === "full"; } catch { return false; }
+  });
+  const setOmFull = (v: boolean) => {
+    setOmFullState(v);
+    try { localStorage.setItem("bw:om", v ? "full" : "summary"); } catch { /* storage blocked */ }
+  };
 
   if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
@@ -107,8 +116,15 @@ function ParcelPanelInner({
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
   const taxAppeal = holding ? taxAppealQuote(game, parcels, selectedBBL) : null;
-  // No tab means the docked card, which shows the whole file as it always has.
-  const on = (t: PropTab) => tab === undefined || tab === t;
+  // No tab means the docked card on the map. It used to run every section of
+  // the file stacked — 6,000px and four dozen buttons for one owned building,
+  // with Summary and Full OM differing by two rows. The card is a glance now:
+  // the overview, plus the buy desk when the building is not yours (that is
+  // why you clicked it), and a row of doors into the property file's tabs.
+  // Full OM brings the whole file back for whoever wants it on the map.
+  const on = (t: PropTab) => tab === undefined
+    ? (omFull || t === "summary" || (t === "deal" && !holding))
+    : tab === t;
   // Land desk: property-page Build tab always; docked card only when the lot
   // can assemble / is land / is already folded — not on every leased tower.
   // Ground-leased lots stay on this desk even after the lessee's frame rises.
@@ -171,6 +187,23 @@ function ParcelPanelInner({
           >
             Full OM
           </button>
+        </div>
+      )}
+      {tab === undefined && !embedded && !omFull && holding && (
+        <div className="btn-row card-doors" style={{ marginBottom: 10 }}>
+          {([
+            ["leasing", "Rent roll", isBuilt],
+            ["money", "Money", isBuilt || !!holding.loan || !!holding.groundLeased],
+            ["ops", "Operations", isBuilt],
+            ["deal", "Sell", true],
+            ["build", isBuilt ? "Convert / Build" : "Build", true],
+          ] as const).filter(([, , show]) => show).map(([t, label]) => (
+            <button key={t} type="button" className="btn-mini"
+              title={`Open the property file on ${label}`}
+              onClick={() => useStore.getState().openProperty(selectedBBL, t)}>
+              {label} →
+            </button>
+          ))}
         </div>
       )}
 
@@ -354,8 +387,15 @@ function ParcelPanelInner({
             label drops "(mkt)" with it, because it is no longer an opinion. */}
         {isBuilt && !holding && (() => {
           const ip = goingIn(game, selectedBBL, value);
+          // ONE BASIS WITH THE HEADER. The property page's strip reads let
+          // over LETTABLE feet ("fully let · 1,209 sf unlettable"); this row
+          // read let over rentable and printed 82% under it for the same
+          // building. A disclosed roll gets the same read the strip does.
+          const r = ip.h ? occRead(rec, ip.h) : null;
           return <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
-            v={(ip.occ * 100).toFixed(0) + "%"} bad={ip.disclosed && ip.occ < 0.75} />;
+            v={r ? occLabel(r) : (ip.occ * 100).toFixed(0) + "%"}
+            bad={ip.disclosed && (r ? r.lettableOcc : ip.occ) < 0.75}
+            title={r ? occTitle(r) : undefined} />;
         })()}
         {/* HOW BIG IT IS — two quantities, because they are two facts.
             #116 put a "Leasable area" row on `bldgArea` and refused a private
@@ -811,10 +851,16 @@ function ParcelPanelInner({
                     {/* The seller's other number, and it is labelled as the
                         forecast it is. What you buy is the line above. */}
                     <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />
-                    <Row
-                      k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
-                      v={(ip.occ * 100).toFixed(0) + "%"}
-                    />
+                    {(() => {
+                      const r = ip.h ? occRead(rec, ip.h) : null;
+                      return (
+                        <Row
+                          k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
+                          v={r ? occLabel(r) : (ip.occ * 100).toFixed(0) + "%"}
+                          title={r ? occTitle(r) : undefined}
+                        />
+                      );
+                    })()}
                     {ip.h && <Row k="In place" v={`${ip.h.tenants.length} lease${ip.h.tenants.length === 1 ? "" : "s"}`} />}
                   </>
                 );

@@ -694,6 +694,11 @@ export default function TopBar() {
                 {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
               </span>
             )}
+            {game?.setup?.sandbox && (
+              <span className="badge badge-warn" title="Sandbox: unlimited capital, no bankruptcy. Not recorded, not scored.">
+                SANDBOX
+              </span>
+            )}
             {manifest?.source === "synthetic" && (
               <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
                 SYNTHETIC DEV DATA

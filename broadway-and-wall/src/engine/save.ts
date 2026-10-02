@@ -3,11 +3,12 @@
 import type { Credit, GameState, PlanRow } from "./types";
 import { clearStyleOverrides, ensurePeople } from "./people";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
+import { describeSetup } from "./setup";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
 
-export interface SaveMeta { slot: string; month: number; cash: number; savedAt: number }
+export interface SaveMeta { slot: string; month: number; cash: number; savedAt: number; /** The world it was dealt — setup.ts describeSetup. */ setup?: string; sandbox?: boolean }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -321,7 +322,7 @@ export async function listSaves(): Promise<SaveMeta[]> {
         const cur = req.result;
         if (!cur) { resolve(metas); db.close(); return; }
         const v = cur.value as { state: GameState; savedAt: number };
-        metas.push({ slot: String(cur.key), month: v.state.month, cash: v.state.cash, savedAt: v.savedAt });
+        metas.push({ slot: String(cur.key), month: v.state.month, cash: v.state.cash, savedAt: v.savedAt, setup: describeSetup(v.state.setup, v.state.econ?.eraKey) || undefined, sandbox: !!v.state.setup?.sandbox });
         cur.continue();
       };
       req.onerror = () => reject(req.error);

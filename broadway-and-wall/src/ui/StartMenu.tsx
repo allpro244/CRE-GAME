@@ -1,19 +1,12 @@
 import { useState } from "react";
-import { useStore, pendingGoal } from "@/state/store";
-import { useJev } from "@/state/jevStore";
-import { JevSettings } from "@/ui/panels/JevPanel";
-import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
-import { GOALS, type GoalId } from "@/engine/goals";
-import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
-// `currentCity` is back with the island column: there are two islands now and
-// they are different games, so which one this browser last played is a default
-// worth keeping again.
-import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList, extentList } from "@/citygen/index.mjs";
+import { useStore } from "@/state/store";
+import { monthLabel } from "@/engine/types";
+import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 import { loadRuns } from "./RunRecords";
 import { ordinal } from "@/engine/standing";
+import GameSetup from "./GameSetup";
 
 /**
  * THE START SCREEN.
@@ -26,86 +19,33 @@ import { ordinal } from "@/engine/standing";
  * with no way to scroll to it. A custom city was unreachable, which is to say
  * unbuildable.
  *
- * So the choice gets a room instead of a dropdown. The three questions sit in
- * columns rather than in one long list, because a column is what makes them
- * fit in a short window; the body scrolls if it does not; and the confirm
- * button lives in a footer OUTSIDE the scroller, so it cannot go off the
- * bottom of anything. Measured at 1280x720 and 1600x1000 — see the probe in
- * the report.
+ * So the choice gets a room instead of a dropdown — and now a whole page: the
+ * GAME SETUP (GameSetup.tsx) holds every choice a new campaign makes, from the
+ * island to the era to the clock, with the confirm button in a footer OUTSIDE
+ * the scroller so it cannot go off the bottom of anything.
  *
- * Nothing is generated until Break ground is pressed. That is the other half
- * of the fault: choosing an island used to mean living with whatever town the
- * boot had already built.
+ * This screen is the lobby in front of it: Continue first, because for anyone
+ * who has played before it is the only thing they came here to press; then
+ * the record; then the door to a new campaign. A first-time player has none
+ * of the first two and is taken straight to the setup, whose defaults are
+ * the standard game.
+ *
+ * Nothing is generated until Break ground is pressed.
  */
-/**
- * What each opening actually buys, in the game's own numbers rather than in
- * adjectives. Measured: overhead starts at $57K/yr and reaches $131K by year
- * seventeen, and an idle firm holding $6M went insolvent in year fifteen on
- * overhead alone.
- */
-const CASH_NOTE: Record<number, string> = {
-  1_000_000: "One small building outright, or two with debt, and almost no reserve.",
-  2_500_000: "The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
-  5_000_000: "A real first book. Enough to be wrong once and still be in business.",
-  10_000_000: "A small institutional platform. More room to be wrong, and more overhead to carry.",
-  20_000_000: "A serious acquisition book from the first month.",
-};
-
 export default function StartMenu() {
   const phase = useStore((s) => s.phase);
   const resume = useStore((s) => s.resume);
   const building = useStore((s) => s.building);
   const loadError = useStore((s) => s.loadError);
-  const startRun = useStore((s) => s.startRun);
   const continueRun = useStore((s) => s.continueRun);
+  const [setup, setSetup] = useState(false);
 
   const sizes = sizeList();
   const devs = developmentList();
-  // THERE IS AN ISLAND TO CHOOSE AGAIN, and only because there are now two that
-  // are genuinely different games rather than two of the same thing. The column
-  // was removed when it offered one button; the bar a second island has to clear
-  // was set in the same commit that deleted the last pair — "two genuinely
-  // different games, and that is what a second map has to earn."
-  //
-  // A generated island and Manhattan differ in what the SEED does. On a
-  // generated island the seed draws the coast, the districts, the parks and
-  // every street name, so the geography is the thing you are dealt. On Manhattan
-  // the geography is history and the seed deals the STOCK instead — which lots
-  // are built on, how old, how tall inside the same envelope, and who owns them.
-  const [island, setIsland] = useState<string>(currentCity());
-  const [size, setSize] = useState(currentSize(island));
-  const cities = cityList();
-  const isWritten = !!cities.find((c) => c.id === island)?.extents;
-  // The size slot means different things in the two cities, so switching island
-  // has to re-read it or Manhattan inherits "metro" and the island inherits
-  // "42nd" — both of which fall back silently and neither of which is what the
-  // player picked.
-  const pickIsland = (id: string) => {
-    setIsland(id); setSize(currentSize(id)); setDev(currentDev(id));
-  };
-  const [dev, setDev] = useState(currentDev(island));
-  const [cash0, setCash0] = useState<number>(currentCash0());
-  const [goal, setGoal] = useState<GoalId | null>(null);
-
-  // Lot count goes as the square of the scale. The standard island is about
-  // 1,420 lots measured, which is what this quotes off — it is a preview of a
-  // decision, not a promise, so it is rounded hard.
-  const lotsAt = (k: number) => {
-    const n = 1420 * k * k;
-    return n >= 1000 ? `${(n / 1000).toFixed(n < 3000 ? 1 : 0)}k` : `${Math.round(n / 50) * 50}`;
-  };
-
   const islandName = (id: string) => cityList().find((c) => c.id === id)?.name ?? id;
-  // A SAVED TOWN IS NAMED, even the generated one. The picker entry for a
-  // procedural island can only say "Somewhere else", because the seed is not
-  // rolled until Break ground is pressed and there is nothing yet to name. A
-  // campaign is different: it carries the seed it was built from, so the
-  // Continue row can say what the place is actually called rather than offering
-  // to resume "Somewhere else", which is not where anyone has spent twenty
-  // years.
+  // A SAVED TOWN IS NAMED, even the generated one — the save carries its seed.
   const townName = (id: string, seed: number) => cityName(id, seed) || islandName(id);
-  const sizeName = sizes.find((s) => s.id === size)?.name ?? "City";
-  const devName = devs.find((d) => d.id === dev)?.name ?? "Young town";
+
   if (phase === "generating") {
     return (
       <div className="start" aria-busy="true">
@@ -120,14 +60,17 @@ export default function StartMenu() {
     );
   }
 
+  const runs = loadRuns();
+  const firstTime = phase === "menu" && !resume && runs.length === 0;
+  if (phase === "menu" && (setup || firstTime)) {
+    return <GameSetup onBack={firstTime ? undefined : () => setSetup(false)} />;
+  }
+
   return (
     <div className="start">
       <div className="start-head">
         <div className="start-title">Broadway &amp; Wall</div>
         <div className="start-sub">A hundred years of somebody else&rsquo;s city, and whatever you can hold of it.</div>
-        {/* THE AMBITION, SAID ONCE. There is no win screen in a hundred-year
-            town, and nothing on this page said what the game was for. The
-            street is the scale: every firm on it started where you start. */}
         <div className="start-sub start-ambition">
           You open near the bottom of the street. Every firm above you started with a bankroll and a hundred years —
           climb past them, and build a book the town will remember. Your place is in the top bar, and every January the year is told back to you.
@@ -135,18 +78,11 @@ export default function StartMenu() {
       </div>
 
       <div className="start-body">
-        {/* The inner block is what gets centred when the window is taller than
-            the choices; it is a child of the scroller rather than the scroller
-            itself, because centring a flex CONTAINER clips the top of its
-            content the moment the content is taller than the box. */}
         <div className="start-inner">
           {phase === "boot" ? (
             <div className="start-boot">Looking for a game in progress&hellip;</div>
           ) : (
             <>
-              {/* CONTINUE IS THE FIRST THING, because for anyone who has played
-                  before it is the only thing they came here to press. It names
-                  the town and the date so it is a decision and not a leap. */}
               {resume && (
                 <button className="start-continue" onClick={() => void continueRun()}>
                   <span className="start-continue-l">
@@ -166,231 +102,46 @@ export default function StartMenu() {
                 </button>
               )}
 
-              {(() => {
-                const runs = loadRuns().slice(0, 5);
-                if (!runs.length) return null;
-                return (
-                  <div className="start-runs">
-                    <div className="start-or" style={{ marginTop: 0 }}>Your best runs</div>
-                    <table className="start-runs-tbl mono">
-                      <tbody>
-                        {runs.map((r) => (
-                          <tr key={r.seed}>
-                            <td className="start-runs-town">{r.town}</td>
-                            <td>{r.years} yr{r.years === 1 ? "" : "s"}</td>
-                            <td>peak {usd(r.peakNw)}</td>
-                            <td>{r.bestRank !== null ? `best ${ordinal(r.bestRank)} of ${r.of} · ${r.bestYear}` : "—"}</td>
-                            <td>{r.goal ? `${r.goal}: ${r.goalResult === "met" ? "✓ met" : r.goalResult === "missed" ? "missed" : "open"}` : ""}</td>
-                            <td className="start-runs-state">{r.over ? "ended" : "in progress"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
-
-              <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
-              {/* FIRST RUN: the highlighted choices ARE the standard game. Twenty-one
-                  options in four columns read as homework to someone who has not
-                  played; they are all pre-set, and this says so. */}
-              {!resume && loadRuns().length === 0 && (
-                <div className="start-first">
-                  First time here? Everything highlighted below is the standard game — a young town, $2.50M.
-                  Press <strong>Break ground</strong> at the bottom and the Marketplace will show you where to start.
+              {runs.length > 0 && (
+                <div className="start-runs">
+                  <div className="start-or" style={{ marginTop: 0 }}>Your best runs</div>
+                  <table className="start-runs-tbl mono">
+                    <tbody>
+                      {runs.slice(0, 5).map((r) => (
+                        <tr key={r.seed}>
+                          <td className="start-runs-town">{r.town}</td>
+                          <td>{r.years} yr{r.years === 1 ? "" : "s"}</td>
+                          <td>peak {usd(r.peakNw)}</td>
+                          <td>{r.bestRank !== null ? `best ${ordinal(r.bestRank)} of ${r.of} · ${r.bestYear}` : "—"}</td>
+                          <td>{r.goal ? `${r.goal}: ${r.goalResult === "met" ? "✓ met" : r.goalResult === "missed" ? "missed" : "open"}` : ""}</td>
+                          <td className="start-runs-setup">{r.setup ?? ""}</td>
+                          <td className="start-runs-state">{r.over ? "ended" : "in progress"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-
-              {/* A GOAL, IF YOU WANT ONE — a target and a deadline, read off the
-                  numbers the game already keeps. None is the sandbox. */}
-              <div className="start-goals">
-                <span className="start-goals-label">Your goal</span>
-                <button type="button" className={"start-goal" + (goal === null ? " start-goal-on" : "")} onClick={() => setGoal(null)}>
-                  <strong>None</strong><span>a hundred years, no finish line</span>
-                </button>
-                {GOALS.map((g) => (
-                  <button key={g.id} type="button" className={"start-goal" + (goal === g.id ? " start-goal-on" : "")} onClick={() => setGoal(g.id)}>
-                    <strong>{g.label}</strong><span>{g.detail} in {g.years} years</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="start-cols">
-                {/* HOW BIG, which is a decision about what game you are playing
-                    rather than a graphics setting. Land area goes as the square
-                    of the scale, so this moves the lot count from a few hundred
-                    to a few thousand — and with it the standing stock, the size
-                    of the banks that lend against it, rival dry powder, and how
-                    much of the town one firm can ever be. Your opening cheque
-                    does NOT scale: Hamlet is a concentration game, Great City
-                    is a bigger pond. */}
-                {/* WHICH ISLAND. Two entries, and they are not two flavours of
-                    one thing — see the note by `island` above. */}
-                <div className="start-col">
-                  <div className="start-col-head">where</div>
-                  <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
-                    You do not get to change town mid-campaign. A run belongs to its island.
-                  </div>
-                  {cities.map((c) => (
-                    <button
-                      key={c.id}
-                      className={"start-opt" + (c.id === island ? " start-opt-on" : "")}
-                      onClick={() => pickIsland(c.id)}
-                    >
-                      <span className="start-opt-name">{c.name}</span>
-                      <span className="start-opt-note">{c.tagline}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* HOW BIG, or on a written-down city HOW FAR UPTOWN.
-                    A generated island scales: the geography multiplies and the
-                    street grid does not, so a bigger map is more blocks rather
-                    than bigger ones. Manhattan cannot do that — scaling a traced
-                    coastline gives a fictional island shaped like a shrunken one
-                    with real-sized blocks in it — so its dial is the extent, and
-                    every entry is a real place at real scale. */}
-                <div className="start-col">
-                  <div className="start-col-head">{isWritten ? "how far uptown" : "how big"}</div>
-                  <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
-                    {isWritten
-                      ? "Real lots at real block sizes, so the map grows by taking in more of the island rather than by stretching it. Further uptown is a bigger game and a slower month."
-                      : "Same starting cash on every size. Bigger maps mean more lots, bigger banks and richer rivals — not higher rents by themselves."}
-                  </div>
-                  {isWritten
-                    ? extentList().map((e) => (
-                      <button
-                        key={e.id}
-                        className={"start-opt" + (e.id === size ? " start-opt-on" : "")}
-                        onClick={() => setSize(e.id)}
-                      >
-                        <span className="start-opt-name">{e.name}</span>
-                        <span className="start-opt-note">{e.note}</span>
-                      </button>
-                    ))
-                    : sizes.map((s) => (
-                      <button
-                        key={s.id}
-                        className={"start-opt" + (s.id === size ? " start-opt-on" : "")}
-                        onClick={() => setSize(s.id)}
-                      >
-                        <span className="start-opt-name">
-                          {s.name}
-                          <span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span>
-                        </span>
-                        <span className="start-opt-note">{s.note}</span>
-                      </button>
-                    ))}
-                </div>
-
-                {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it
-                    decides how many lots are still dirt and how tall what stands
-                    on the rest is, which is the difference between a game about
-                    building a city and a game about buying one. */}
-                <div className="start-col">
-                  <div className="start-col-head">how built up</div>
-                  {devs.map((d) => (
-                    <button
-                      key={d.id}
-                      className={"start-opt" + (d.id === dev ? " start-opt-on" : "")}
-                      onClick={() => setDev(d.id)}
-                    >
-                      <span className="start-opt-name">{d.name}</span>
-                      <span className="start-opt-note">{d.note}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* WHAT YOU START WITH. Not a difficulty slider — the money does
-                    not scale anything, it decides how many mistakes you get
-                    before overhead eats you. Firm overhead runs $57K a year at
-                    the start and $131K by year seventeen, and a small building
-                    trades around $0.5-2.5M, so these are five different
-                    openings rather than difficulty settings. */}
-                <div className="start-col">
-                  <div className="start-col-head">capital</div>
-                  {START_CASH_CHOICES.map((v) => (
-                    <button
-                      key={v}
-                      className={"start-opt" + (v === cash0 ? " start-opt-on" : "")}
-                      onClick={() => setCash0(v)}
-                    >
-                      <span className="start-opt-name">{usd(v)}</span>
-                      <span className="start-opt-note">{CASH_NOTE[v]}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {loadError && <div className="start-err">{loadError}</div>}
             </>
           )}
-          <StartJevOptions />
         </div>
       </div>
 
-      {/* THE CONFIRM CANNOT LEAVE THE SCREEN. It is a sibling of the scroller,
-          not a child of it — the old menu put it at the bottom of a 973px
-          column in a 720px window and there was no way to reach it. */}
       <div className="start-foot">
         <div className="start-foot-sum">
-          {/* No island name here: the island is generated when Break ground is
-              pressed, so there is nothing truthful to name yet. */}
-          <span className="start-foot-town">A new island · {sizeName} · {devName} · {usd(cash0)}</span>
+          <span className="start-foot-town">{resume ? "Or cut a new town" : "Cut a town and break ground"}</span>
           <span className="start-foot-note">
-            {usd(cash0)} and no holdings. The town is generated when you press this.
+            The setup page chooses the island, the decade, the firm and the clock. Its defaults are the standard game.
             {resume ? " Named saves stay on the Saves page." : ""}
             {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
           </span>
         </div>
-        <button
-          className="start-go"
-          disabled={phase !== "menu"}
-          onClick={() => { pendingGoal.id = goal; void startRun(island, size, dev, cash0); }}
-        >
-          Break ground ▸
+        <button className="start-go" disabled={phase !== "menu"} onClick={() => setSetup(true)}>
+          New campaign ▸
         </button>
       </div>
-
-      {loadError && <div className="start-err">{loadError}</div>}
     </div>
   );
 }
 
-/**
- * JEV AT THE START. Jev informs the judgement of the N largest firms on the
- * street (each keeps its own style, or all take one charter), and a spectator
- * run leaves the player's firm out of it. The key and route are set in the
- * same panel Settings shows.
- */
-function StartJevOptions() {
-  const j = useJev();
-  return (
-    <div className="start-ai" style={{ padding: "14px 0 8px", display: "flex", gap: 18, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
-      <label>
-        Jev runs{" "}
-        <select value={j.startFirms} aria-label="How many firms Jev runs" onChange={(e) => j.set({ startFirms: Number(e.target.value), ...(Number(e.target.value) ? {} : { startSpectator: false }) })}>
-          {[0, 1, 2, 3, 4, 6, 8, 12].map((k) => <option key={k} value={k}>{k === 0 ? "no" : k}</option>)}
-        </select>{" "}rival firm{j.startFirms === 1 ? "" : "s"}
-      </label>
-      {j.startFirms > 0 && (
-        <label>
-          as{" "}
-          <select value={j.startCharter} aria-label="Charter" onChange={(e) => j.set({ startCharter: e.target.value as CharterId | "style" })}>
-            <option value="style">their own styles</option>
-            {(Object.keys(CHARTERS) as CharterId[]).map((c) => <option key={c} value={c}>{CHARTERS[c].label}s</option>)}
-          </select>
-        </label>
-      )}
-      <label title="No player: the firms compete and you watch">
-        <input type="checkbox" checked={j.startSpectator} disabled={!j.startFirms}
-          onChange={(e) => j.set({ startSpectator: e.target.checked })} />
-        {" "}Spectator: no player — watch the firms compete
-      </label>
-      <details style={{ flexBasis: "100%" }}>
-        <summary style={{ cursor: "pointer" }}>Set up Jev — TypeSafe key and route</summary>
-        <div style={{ maxWidth: 860, background: "rgba(246,241,229,0.92)", color: "#2b251a", padding: 10, borderRadius: 4 }}>
-          <JevSettings />
-        </div>
-      </details>
-    </div>
-  );
-}

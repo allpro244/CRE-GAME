@@ -29,6 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
+import { fieldRoster } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
@@ -956,7 +957,14 @@ function rosterFor(s: GameState): typeof FIRMS {
   // re-roll the field, they resize the cheques against a bigger or smaller pond.
   const area = sizeAreaScale(s);
   const out: typeof FIRMS = [];
-  for (const f of FIRMS) {
+  // WHO OWNS THIS TOWN, if the setup page said (setup.ts FIELDS). The default
+  // field is the whole roster and takes exactly the draws it always took; a
+  // narrower field is a different set of incumbents drawn the same way, and
+  // its "too thin" floor below scales with it so the same share of the roster
+  // has to survive the draw.
+  const pool = fieldRoster(s.setup?.field, FIRMS);
+  const floor = Math.round(22 * pool.length / FIRMS.length);
+  for (const f of pool) {
     // A quarter of the field, at most, never got off the ground in this city.
     if (rng(s, "rivals") < 0.14) continue;
     out.push({
@@ -967,7 +975,7 @@ function rosterFor(s: GameState): typeof FIRMS {
   }
   // A town with four landlords is not a market. If the draw thinned the field
   // too far, take the population as it stands — still sized to this island.
-  return out.length >= 22 ? out : FIRMS.map((f) => ({
+  return out.length >= floor ? out : pool.map((f) => ({
     ...f,
     equity: Math.round(f.equity * area / 100_000) * 100_000,
   }));

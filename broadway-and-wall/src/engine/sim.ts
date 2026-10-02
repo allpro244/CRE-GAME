@@ -45,6 +45,8 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
+import { netWorth } from "./value";
+import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -141,7 +143,15 @@ export function newGame(
   seed: number,
   parcels?: ParcelTable,
   cash0: number = DEFAULT_START_CASH,
+  /**
+   * THE SETUP PAGE'S WORLD (setup.ts). Absent means "no setup was asked
+   * for"; DEFAULT_SETUP is bit-identical to it apart from the recorded
+   * `s.setup` itself — test/setup.mjs holds that with a state hash.
+   */
+  setupIn?: Partial<GameSetup>,
 ): GameState {
+  const setup = setupIn ? normalizeSetup(setupIn) : undefined;
+  if (setup?.sandbox) cash0 = SANDBOX_CASH;
   const s: GameState = {
     v: 39,
     seed,
@@ -196,6 +206,12 @@ export function newGame(
     insolventMs: 0,
     underwaterMs: 0,
   };
+  // Before the economy, because initEcon reads the era and the credit
+  // position off it, and initRivals reads the field.
+  if (setup) s.setup = setup;
+  if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
+  if (setup?.clock === "everything" || setup?.clock === "money") s.clockStops = setup.clock;
+  if (setup?.brokerStops === "never") s.brokerStops = "never";
   s.econ = initEcon(s, parcels);
   // Player principal BEFORE rivals so the principal's draws do not depend on
   // roster size — peopleRng only; s.rng untouched.
@@ -207,6 +223,11 @@ export function newGame(
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
   if (parcels) reconcileDemand(s, parcels);
+  // The family's buildings, if any, after the rivals have taken theirs.
+  if (parcels && setup?.inherit) {
+    inheritPortfolio(s, parcels);
+    s.nwHistory = [netWorth(s, parcels)];
+  }
   // THE FIRST SENTENCE OF THE CAMPAIGN, AND IT HAS TO BE TRUE OF THIS CAMPAIGN.
   // It used to be a fixed string: "You arrive with $6M... Half this town is
   // still empty lots." Both halves were wrong. The bankroll is a choice of
@@ -238,7 +259,7 @@ export function newGame(
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years in ${sizeLabel}. `
+    text: `${monthLabel(0)}. You arrive with $${(cash0 / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years in ${sizeLabel}. `
       + `${howEmpty} — the city will fill in around you, with or without your name on it. `
       + (s.citySize === "hamlet" || s.citySize === "town"
         ? "This pond is small enough that one firm can matter."
@@ -906,7 +927,10 @@ function tickMonth(
   // briefly overdrawn a few times over decades was ended while solvent
   // (measured: a $17.7M net worth firm, run over at month 235).
   if (s.cash >= 0) s.underwaterMs = 0;
-  if (s.cash < 0) {
+  // SANDBOX: no creditors, no seizures, no end (setup.ts). The run is flagged
+  // and kept out of run records, goals and milestones, so nothing it does is
+  // scored against a run that played the real thing.
+  if (s.cash < 0 && !s.setup?.sandbox) {
     s.insolventMs++;
     s.underwaterMs = (s.underwaterMs ?? 0) + 1;
     if (s.insolventMs === 6) {
@@ -1245,6 +1269,7 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
 ];
 
 function checkMilestones(s: GameState, nw: number) {
+  if (s.setup?.sandbox) return;   // a sandbox run scores nothing
   for (const m of MILESTONES) {
     if (s.milestones[m.id] === undefined && m.test(s, nw)) {
       s.milestones[m.id] = s.month;
@@ -1882,11 +1907,29 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
 const TYPICAL_LTV = 0.65;
 
 /** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */
+/**
+ * The attention keys that are someone OFFERING the firm something rather
+ * than something the firm already owns coming due. See stopRule.
+ */
+export const OPPORTUNITY_KEYS = new Set([
+  "watch", "portfolio-bid", "broker", "early-look", "offer", "sale-bids", "talks", "note", "private-ask", "street-book",
+]);
+
 export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
-  return (cur) => attentionItems(cur, parcels).find((a) => !a.soft && (a.lastM !== undefined
+  // WHAT STOPS THE CLOCK (GameState.clockStops). Absent is the standard
+  // rule; "everything" lets the soft notices stop it too; "money" keeps only
+  // the items where not answering costs the firm something it already has —
+  // a balloon, a sweep, a lapsing tenant, a capital call, a workout — and lets
+  // the opportunities (a listing, a first look, a bid, a loan for sale) wait
+  // on the docket. Missing an opportunity costs nothing you own.
+  const mode = s.clockStops;
+  const counts = (a: AttentionItem) => mode === "everything" ? true
+    : mode === "money" ? !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0])
+    : !a.soft;
+  return (cur) => attentionItems(cur, parcels).find((a) => counts(a) && (a.lastM !== undefined
     ? cur.month >= a.lastM && !dueAtStart.has(a.key)
     : !before.has(a.key)));
 }

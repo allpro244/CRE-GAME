@@ -193,8 +193,29 @@ export function chooseEra(seed: number): Era {
  * old fixed opening and the old opening is still what `postwar` at the middle
  * of its ranges looks like.
  */
-export function applyEra(econ: Econ, seed: number, natural: Record<string, number>): Era {
-  const era = chooseEra(seed);
+/**
+ * WHAT THE SETUP PAGE MAY CHOOSE, AND ONLY THAT.
+ *
+ * `eraKey` names one of the five ERAS above instead of drawing one off the
+ * seed — the same era, at the same seeded positions inside its ranges, that
+ * the seed would have produced had it landed there. Nothing about the era is
+ * re-tuned; the player just picks which decade they walk into.
+ *
+ * `credit` picks WHERE INSIDE THE ERA'S OWN creditIdx BAND the town opens,
+ * instead of a seeded point in it: "loose" is the top of the band, "tight"
+ * the bottom. Real-world basis: every era above spans both easing and
+ * tightening quarters in the Fed's Senior Loan Officer Survey (1990-) and
+ * its predecessors — 1972-73 easing vs 1974 tightening inside the Great
+ * Inflation, 2010 tight vs 2013 easing inside the post-crash years. The
+ * bands are the measured ranges, so either end is a position the market has
+ * actually opened from. The loan index then follows through the same
+ * term-premium identity as always, so a tight opening also costs more.
+ * The draw is still taken so every later draw in this function is unmoved.
+ */
+export interface EraChoice { eraKey?: string; credit?: "loose" | "tight" }
+
+export function applyEra(econ: Econ, seed: number, natural: Record<string, number>, choice?: EraChoice): Era {
+  const era = (choice?.eraKey && ERAS.find((e) => e.key === choice.eraKey)) || chooseEra(seed);
   const nat = econ.nat;
   if (!nat) return era;                       // nothing to position yet
   let k = 1;
@@ -241,7 +262,11 @@ export function applyEra(econ: Econ, seed: number, natural: Record<string, numbe
   for (const cls of Object.keys(econ.capRate) as (keyof typeof econ.capRate)[]) {
     econ.capRate[cls] = +Math.max(CAP_RAIL.lo, Math.min(CAP_RAIL.hi, econ.capRate[cls] + bump + d(-0.2, 0.2))).toFixed(2);
   }
-  econ.creditIdx = +d(...era.creditIdx).toFixed(3);
+  {
+    const drawn = d(...era.creditIdx);
+    const at = choice?.credit === "loose" ? era.creditIdx[1] : choice?.credit === "tight" ? era.creditIdx[0] : drawn;
+    econ.creditIdx = +at.toFixed(3);
+  }
 
   // AND WHAT A BORROWER ACTUALLY PAYS. The loan index is the policy rate plus
   // a term premium that widens when credit is frightened — the same identity

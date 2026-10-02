@@ -8,6 +8,7 @@ import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
 import { JevSettings } from "@/ui/panels/JevPanel";
 import { themePref, setThemePref, type ThemePref } from "@/ui/theme";
+import { CLOCK_OPTIONS, describeSetup } from "@/engine/setup";
 
 export function PrimerPage() {
   const game = useStore((s) => s.game)!;
@@ -216,6 +217,24 @@ export function SettingsPage() {
         detail="A soft bell on a milestone, a delivery, a sale and a year closing; a low note on an error. Synthesised, quiet, never on the monthly tick."
       />
       <div className="page-section">Interruptions</div>
+      {/* THE CLOCK, as chosen on the setup page — editable here for the life
+          of the campaign. See stopRule in engine/sim.ts. */}
+      <div className="setting-row">
+        <div className="setting-text">
+          <div style={{ fontWeight: 600 }}>What stops Yr / Skip / Play</div>
+          <div className="hint" style={{ padding: 0 }}>{CLOCK_OPTIONS.find((c) => c.id === (game.clockStops ?? "decisions"))?.note}</div>
+        </div>
+        <div className="seg" role="radiogroup" aria-label="What stops the clock">
+          {CLOCK_OPTIONS.map((c) => {
+            const on = (game.clockStops ?? "decisions") === c.id;
+            return (
+              <button key={c.id} type="button" role="radio" aria-checked={on} title={c.note}
+                className={"seg-btn" + (on ? " on" : "")}
+                onClick={() => flip({ clockStops: c.id === "decisions" ? undefined : c.id })}>{c.label}</button>
+            );
+          })}
+        </div>
+      </div>
       <Toggle
         on={game.brokerStops !== "never"}
         set={(v) => flip({ brokerStops: v ? undefined : "never" })}
@@ -324,6 +343,7 @@ export function SavesPage() {
 // a debounced idle autosave that stays out of this list.
 export function SaveSlots() {
   const slots = useStore((s) => s.slots);
+  const thisRun = useStore((s) => s.game);
   const { saveTo, loadFrom, dropSave, refreshSlots } = useStore.getState();
   const [name, setName] = useState("");
   // The named save with a deletion pending — window.confirm here had the same
@@ -333,6 +353,12 @@ export function SaveSlots() {
   return (
     <div className="page-section">
       <div className="page-section-head">Named saves</div>
+      {thisRun?.setup && (
+        <div className="hint" style={{ marginBottom: 6 }}>
+          This campaign: {thisRun.setup.sandbox ? <span className="badge badge-warn">SANDBOX</span> : null}{" "}
+          {describeSetup(thisRun.setup, thisRun.econ?.eraKey) || "the standard world"} · seed <span className="mono">{thisRun.citySeed ?? thisRun.seed}</span>
+        </div>
+      )}
       <div className="hint">
         Your live campaign autosaves after changes and Continue opens the newest state. Name a slot when you want
         a permanent snapshot you can return to without overwriting it.
@@ -357,6 +383,7 @@ export function SaveSlots() {
             <div>
               <div className="slot-name">{m.slot}</div>
               <div className="slot-meta mono">{monthLabel(m.month)} · {usd(m.cash)} cash · saved {new Date(m.savedAt).toLocaleDateString()}</div>
+              {m.setup && <div className="slot-meta">{m.sandbox ? <span className="badge badge-warn">SANDBOX</span> : null} {m.setup}</div>}
             </div>
             <div className="btn-row" style={{ margin: 0 }}>
               <button className="btn btn-buy" onClick={() => void loadFrom(m.slot)}>Load</button>

@@ -213,6 +213,12 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
         const o = b.ctx.build[0];
         let s = await E.runJevPeriod(probe, parcels, { answer: fixture({ build_pick: (q) => E.choiceOf(o.id, Object.keys(q.criteria), 0.9) }) });
         s = step(s);
+        // A pick the scheme no longer clears when the period executes (the
+        // yield moved under the hurdle between the ask and the act) falls back
+        // with "could not act" — the engine refusing correctly, not a failed
+        // build. Keep walking for an option that is still live.
+        const refused = (s.jev?.log ?? []).some((l) => l.firmId === r.id && l.point === "build" && l.path === "fallback" && l.why === "could not act" && l.m >= probe.month);
+        if (refused) continue;
         const job = (s.cityJobs ?? []).find((j) => j.bbl === o.bbl && j.firmId === r.id);
         const e = (s.jevBooks?.[r.id] ?? []).find((x) => x.kind === "develop");
         check(!!job && !!e && e.cashDelta - e.debtDelta - (e.partners ?? 0) === -e.amount, `build pick (0.9) breaks ground on ${o.id} for ${r.name} (year ${y})`);

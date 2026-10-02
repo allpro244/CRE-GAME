@@ -306,11 +306,8 @@ export function DealsPage() {
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
   const setPage = useStore((s) => s.setPage);
-  const q = game.month;
   const go = (bbl: string) => { focus(bbl); setPage("property"); };
 
-  const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
-  const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];
   const sales: { bbl: string; ask: number; offer?: { price: number; expiresM: number } }[] = [];
   // YOUR OWN KNOCKS, and only yours. This list used to carry the inbound calls
   // too, which was right while their only other home was a pop-up. They have a
@@ -329,19 +326,13 @@ export function DealsPage() {
     .sort((a, b) => a.lapseM - b.lapseM);
   const inbound = liveBrokerCalls(game);
   for (const h of Object.values(game.holdings)) {
-    for (const t of h.tenants) if (t.endM - q <= 12 && t.endM > q) expiring.push({ bbl: h.bbl, name: t.name, sf: t.sf, endM: t.endM });
-    if (h.loan && (h.loan.maturityM - q <= 24 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matM: h.loan.maturityM, bal: h.loan.balance, sweep: h.loan.sweep });
     if (h.sale) sales.push({ bbl: h.bbl, ask: h.sale.ask, offer: h.sale.offer });
   }
-  const facilityWatch = game.facility
-    && (game.facility.maturityM - q <= 24 || game.facility.sweep || game.facility.breachedSince !== undefined)
-    ? game.facility
-    : null;
   const saleCount = sales.length + (game.portfolioSale ? 1 : 0);
   const liveCount = Object.keys(game.talks ?? {}).length
     + (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased).length
     + game.lois.filter((l) => loiNeedsPrincipal(game, l)).length;
-  const [desk, setDesk] = useState<"live" | "sales" | "watch">(
+  const [desk, setDesk] = useState<"live" | "sales">(
     saleCount > 0 ? "sales" : "live",
   );
 
@@ -362,11 +353,6 @@ export function DealsPage() {
           className={"btn" + (desk === "sales" ? " btn-on" : "")}
           onClick={() => setDesk("sales")}>
           Your sales · {saleCount}
-        </button>
-        <button type="button" role="tab" aria-selected={desk === "watch"}
-          className={"btn" + (desk === "watch" ? " btn-on" : "")}
-          onClick={() => setDesk("watch")}>
-          Watch
         </button>
       </div>
       <div className={"deals-grid" + (desk !== "live" ? " deals-one" : "")}>
@@ -588,55 +574,10 @@ export function DealsPage() {
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
       </section>}
 
-      {desk === "watch" && <section>
-        <div className="page-section">Rolling within a year · {expiring.length}</div>
-        <div className="mini-list">
-          {expiring.map((e, i) => (
-            <button key={i} className="neighbor" onClick={() => go(e.bbl)}>
-              <span className="neighbor-addr">{e.name}</span>
-              <span className="neighbor-meta mono">{parcels[e.bbl]?.address} · exp {monthLabel(e.endM)}</span>
-            </button>
-          ))}
-          {expiring.length === 0 && (
-            <div className="deal">
-              <div className="hint">No near-term expirations.</div>
-              <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
-                Review the rent roll →
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="page-section" style={{ marginTop: 18 }}>Debt watch · {maturities.length + (facilityWatch ? 1 : 0)}</div>
-        <div className="mini-list">
-          {facilityWatch && (
-            <button className="neighbor" onClick={() => setPage("debt")}>
-              <span className="neighbor-addr">
-                {facilityWatch.sweep || facilityWatch.breachedSince !== undefined ? "⚠ " : ""}
-                Portfolio facility · {facilityWatch.lender}
-              </span>
-              <span className="neighbor-meta mono">
-                {usd(facilityWatch.balance)} · balloon {monthLabel(facilityWatch.maturityM)}
-                {facilityWatch.sweep || facilityWatch.breachedSince !== undefined ? " · BREACH" : ""}
-              </span>
-            </button>
-          )}
-          {maturities.map((m, i) => (
-            <button key={i} className="neighbor" onClick={() => go(m.bbl)}>
-              <span className="neighbor-addr">{m.sweep ? "⚠ " : ""}{parcels[m.bbl]?.address}</span>
-              <span className="neighbor-meta mono">{usd(m.bal)} · balloon {monthLabel(m.matM)}{m.sweep ? " · SWEEP" : ""}</span>
-            </button>
-          ))}
-          {maturities.length === 0 && !facilityWatch && (
-            <div className="deal">
-              <div className="hint">No balloons or breaches on the radar.</div>
-              <button className="btn" onClick={() => useStore.getState().setPage("debt")}>
-                Open Debt →
-              </button>
-            </div>
-          )}
-        </div>
-      </section>}
+      {/* The Watch tab that sat here listed leases rolling within a year and
+          loans ballooning — the Leasing desk's roll and the Debt desk's wall,
+          a third time each. Deals is where things are negotiated; the docket
+          on the map is where a clock that wants you is flagged. */}
       </div>
     </div>
   );

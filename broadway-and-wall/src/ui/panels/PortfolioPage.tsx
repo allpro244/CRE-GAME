@@ -22,11 +22,8 @@ import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
 import { siteDeeds } from "@/engine/actions";
 import { useLabel, devUseLabel, occRead, occLabel, occTitle, Big, Row } from "@/ui/panels/shared";
-import { MaturityWall } from "@/ui/rollups/MaturityWall";
-import { Rollover } from "@/ui/rollups/Rollover";
 import { Concentration } from "@/ui/rollups/Concentration";
 import { ExitsRecord } from "@/ui/rollups/ExitsRecord";
-import CareerTimeline from "@/ui/rollups/CareerTimeline";
 
 export function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -73,7 +70,7 @@ export function PortfolioPage() {
             of everything still has its record, and this page is where the
             record lives. */}
         <ExitsRecord />
-        <CareerTimeline />
+        <button type="button" className="linkish" onClick={() => setPage("firm")}>The whole record, year by year →</button>
       </div>
     );
   }
@@ -252,14 +249,21 @@ export function PortfolioPage() {
         {Object.keys(game.workouts ?? {}).length > 0 && (
           <Big label="In default" value={String(Object.keys(game.workouts ?? {}).length)} bad />
         )}
-        <Big label="Assets" value={usd(totV)} />
-        <Big label="Debt" value={usd(totD)} />
-        <Big label="Equity" value={usd(totV - totD)} />
+        {/* SIX TILES, NOT TEN. Assets and debt are the two halves of equity
+            and ride in its tooltip (debt has a desk of its own); the building
+            count and the basis ride with the square feet. */}
+        <Big label="Equity" value={usd(totV - totD)} bad={totV - totD < 0}
+          title={`${usd(totV)} of property less ${usd(totD)} of debt against it. The debt itself is on Capital → Debt.`} />
+        {/* NOT THE TOP BAR'S NUMBER, SO NOT THE TOP BAR'S NAME. The header's
+            CF / yr is the FIRM — after overhead, construction interest, the
+            facility and the revolver. This is the buildings alone. Two
+            different quantities wearing one label read as one number that
+            disagrees with itself. */}
         <Big
-          label="Cash flow / mo"
+          label="Property CF / mo"
           value={usd(totCF)}
           bad={totCF < 0}
-          title="Deed cash flow only — NOI (including ground rent) less mortgages. The header CF / yr also subtracts construction interest, facility and the revolver, then annualises."
+          title="The buildings' cash flow only — NOI (including ground rent) less their mortgages. The top bar's CF / yr is the firm's: it also subtracts overhead and payroll, construction interest, the facility and the revolver, then annualises."
         />
         {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
             Dollars of assets is a number about the market as much as about the
@@ -278,12 +282,8 @@ export function PortfolioPage() {
           const val = built.reduce((a, r) => a + r.v, 0);
           return (
             <>
-              <Big label="Square feet" value={area > 0 ? sf(area) : "—"}
-                title={`${built.length} building${built.length === 1 ? "" : "s"}${rows.length > built.length ? ` and ${rows.length - built.length} lot${rows.length - built.length === 1 ? "" : "s"} of land` : ""}. Square footage is the one measure of a book that does not move with the cap rate.`} />
-              <Big label="Basis / psf" value={area > 0 ? `$${(basis / area).toFixed(0)}` : "—"}
-                title={area > 0
-                  ? `What you paid per foot across the whole book, including closing costs. Worth $${(val / area).toFixed(0)}/sf today.`
-                  : "No buildings yet."} />
+              <Big label={`${holdings.length} building${holdings.length === 1 ? "" : "s"}`} value={area > 0 ? sf(area) : "—"}
+                title={`${built.length} building${built.length === 1 ? "" : "s"}${rows.length > built.length ? ` and ${rows.length - built.length} lot${rows.length - built.length === 1 ? "" : "s"} of land` : ""}. Square footage is the one measure of a book that does not move with the cap rate.${area > 0 ? ` Basis $${(basis / area).toFixed(0)}/sf — what you paid per foot, closing costs included — against $${(val / area).toFixed(0)}/sf today.` : ""}`} />
             </>
           );
         })()}
@@ -305,8 +305,6 @@ export function PortfolioPage() {
                 : "Appears once you own an operated building."} />
           );
         })()}
-        <Big label="Buildings" value={String(holdings.length)} />
-        {/* THE ONE THING YOU CANNOT AFFORD TO MISS. */}
 
       </div>
       {Object.values(game.workouts ?? {}).length > 0 && (
@@ -383,10 +381,17 @@ export function PortfolioPage() {
           wall, the roll and the top exposures; these are the same quantities
           with their shape put back — which YEAR the debt lands, which year
           the leases roll, and where the eggs actually sit. */}
-      <ReturnsToDate />
-      <MaturityWall />
-      <Rollover />
-      <Concentration />
+      {/* The year-by-year shape of the two rows above lives on the desk that
+          acts on it: the maturity wall on Capital → Debt, the lease rollover on
+          Leasing. Returns and concentration sit under the book they describe. */}
+      {exposure.roll > 0 && (
+        <div className="hint">
+          Year by year:{" "}
+          <button type="button" className="linkish" onClick={() => setPage("leasing")}>lease rollover →</button>
+          {" · "}
+          <button type="button" className="linkish" onClick={() => setPage("debt", "The maturity wall")}>maturity wall →</button>
+        </div>
+      )}
       <div className="btn-row" style={{ marginTop: 10 }}>
         {/* Shortcuts, not modes. Every column sorts from its own header now;
             these two are here because they are the two questions asked most. */}
@@ -781,29 +786,21 @@ export function PortfolioPage() {
           ))}
         </tbody>
       </table>
-      {/* TAX APPEALS ARE HOUSEKEEPING, not the headline: they sat above the
-          value, equity and the book itself, so the first thing a landlord
-          read on opening the portfolio was a list of assessor paperwork. */}
+      {/* TAX APPEALS ARE HOUSEKEEPING, not the headline — and their desk is
+          the property-tax desk on Capital → Books, which also tracks the
+          appeals already filed. This is the pointer, not a second list. */}
       {assessmentWatch.length > 0 && (
-        <div className="deal" style={{ marginTop: 16, marginBottom: 12 }}>
-          <div className="deal-head">Assessment watch · {assessmentWatch.length} appealable</div>
-          <div className="mini-list">
-            {assessmentWatch.slice(0, 5).map((a) => (
-              <button key={a.bbl} className="neighbor" onClick={() => go(a.bbl)}>
-                <span className="neighbor-addr">{a.address}</span>
-                <span className="neighbor-meta mono">
-                  {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="hint">Open a property to review the evidence and file the appeal.</div>
+        <div className="hint" style={{ marginTop: 12 }}>
+          {assessmentWatch.length} assessment{assessmentWatch.length === 1 ? " looks" : "s look"} appealable
+          {" "}— up to {usd(assessmentWatch.reduce((a, w) => a + w.annualSavings, 0))} / yr ·{" "}
+          <button type="button" className="linkish" onClick={() => setPage("books", "Property-tax desk")}>property-tax desk →</button>
         </div>
       )}
+      <ReturnsToDate />
+      <Concentration />
       {/* History reads under the living book: what left, when, and what
-          leaving returned. */}
+          leaving returned. The career strip lives on Firm → The Record. */}
       <ExitsRecord />
-      <CareerTimeline />
     </div>
   );
 }

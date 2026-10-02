@@ -49,8 +49,13 @@ export default function CycleDigest() {
         aria-expanded={!collapsed}
       >
         <span className="map-hud-kicker">Cycle · {dig.label}</span>
-        <span className="cycle-digest-summary">
-          {dig.phase}{dig.rumored ? ` ⚠→ ${dig.rumored}` : ""} · {dig.ratePct.toFixed(2)}%{rateBit}
+        {/* The rate and its year-on-year move are on the top bar's Market
+            readout; a second rate here, with a month-on-month move beside the
+            bar's twelve-month one, read as two answers to one question. The
+            folded line keeps what only this card knows: where the phase is
+            heading, and the month's move for whoever opens it. */}
+        <span className="cycle-digest-summary" title={`Base rate ${dig.ratePct.toFixed(2)}%${rateBit ? `, ${rateBit.replace(" · ", "")} since last month` : ""}`}>
+          {dig.phase}{dig.rumored ? ` ⚠→ ${dig.rumored}` : ""} · caps &amp; vacancy by class
         </span>
         <span className="cycle-digest-chev">{collapsed ? "▸" : "▾"}</span>
       </button>

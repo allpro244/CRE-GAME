@@ -482,6 +482,7 @@ export default function TopBar() {
                 label={game.econ.eraLabel ? `Market · ${ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}` : "Market"}
                 value={`${game.econ.phase} · ${pct(game.econ.indexRate)}`}
                 bad={vacDpp !== null && vacDpp >= 2}
+                drop={2}
                 keep
                 w={150}
                 onClick={() => setPage("economy")}

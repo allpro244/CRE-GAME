@@ -505,6 +505,19 @@ export function generateCity(cfg) {
     .map((st) => st.ring).filter((r) => r && r.length >= 3);
   const inWater = (p) => WATER_M.some((r) => inRing(p, r));
   const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
+  /** Shortest distance from a point to a closed ring's boundary, in metres. */
+  const ringDist = (p, ring) => {
+    let best = Infinity;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], q = ring[(i + 1) % ring.length];
+      const dx = q[0] - a[0], dy = q[1] - a[1];
+      const l2 = dx * dx + dy * dy;
+      let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
+    }
+    return best;
+  };
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
   // leaves is the frontage road around the park — it has to be PAVED, or the
@@ -2050,10 +2063,22 @@ export function generateCity(cfg) {
       if (centerSeen.has(k)) continue;
       centerSeen.add(k);
       if (!edgeClear(a, c)) continue;
+      // THE MARKING FOLLOWS THE WIDTH. The cell edge is the street's middle
+      // and the inset is its kerb line, so the gap between them is half the
+      // carriageway-plus-footway — measured, not looked up, so it holds for
+      // every layout kind and every superblock's internal way alike. A
+      // nine-metre residential lane gets no paint at all, a working street a
+      // dashed centre line, an avenue the double yellow.
+      const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+      const w = b.inset ? 2 * ringDist(mid, b.inset) : 0;
       centerFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [proj.toLL(a), proj.toLL(c)] },
-        properties: { kind: "centerline", cls: b.u !== undefined ? "grid" : "lane" },
+        properties: {
+          kind: "centerline", cls: b.u !== undefined ? "grid" : "lane",
+          w: Math.round(w * 10) / 10,
+          mk: w >= 21 ? 2 : w >= 13 && (b.u !== undefined || w >= 15) ? 1 : 0,
+        },
       });
     }
   }
@@ -2086,6 +2111,200 @@ export function generateCity(cfg) {
       run.push(proj.toLL(c));
     }
     flush();
+  }
+  // THE FOOTWAY, IN METRES. The sidewalk was a screen-pixel stroke centred
+  // on the lot line — half of it on the lots, its width a function of zoom
+  // rather than of the street, and a three-metre lane wore the same band as
+  // a thirty-metre avenue. Now it is ground: a ring outside every block's
+  // kerb line, as wide as a fifth of the street it fronts (2-5 m, the range
+  // a real footway runs), with a rounded kerb at each convex corner where a
+  // turning radius would be. The curb is that ring's outer edge, and the
+  // zebra at each gridded corner spans the carriageway the corner actually
+  // faces, from kerb to centre line — each block paints its half.
+  //
+  // Purely the context layer: no rand() is drawn here, so parcels, lots and
+  // every number the engine reads are byte-identical to before.
+  const sidewalkFeatures = [];
+  const curbFeatures = [];
+  const zebraFeatures = [];
+  const swOf = (half) => Math.max(1.6, Math.min(5, half * 0.4));
+  for (const b of drawn) {
+    const r = b.inset;
+    const cell = b.ring;
+    if (!r || r.length < 3 || !cell) continue;
+    const n = r.length;
+    const c0 = centroid(r);
+    // per edge: outward unit normal, unit direction, half street width
+    const E = [];
+    for (let i = 0; i < n; i++) {
+      const a = r[i], q = r[(i + 1) % n];
+      const dx = q[0] - a[0], dy = q[1] - a[1];
+      const L = Math.hypot(dx, dy) || 1;
+      const ux = dx / L, uy = dy / L;
+      let nx = -uy, ny = ux;
+      const mx = (a[0] + q[0]) / 2, my = (a[1] + q[1]) / 2;
+      if ((mx - c0[0]) * nx + (my - c0[1]) * ny < 0) { nx = -nx; ny = -ny; }
+      const half = ringDist([mx, my], cell);
+      // an edge with no street in front of it (a party line inside a
+      // superblock, the lot line against a park or the water) gets none
+      const wet = !edgeClear(a, q) || inWater([mx + nx * (half + 1), my + ny * (half + 1)]);
+      E.push({ ux, uy, nx, ny, L, half, sw: half > 2.6 && !wet ? swOf(half) : 0 });
+    }
+    const outer = [];
+    for (let i = 0; i < n; i++) {
+      const p = r[i];
+      const e0 = E[(i - 1 + n) % n], e1 = E[i];
+      const cross = e0.ux * e1.uy - e0.uy * e1.ux;
+      if (Math.abs(cross) < 0.05) {
+        // nearly straight through: one point on the mean offset
+        const s = (e0.sw + e1.sw) / 2;
+        outer.push([p[0] + (e0.nx + e1.nx) / 2 * s, p[1] + (e0.ny + e1.ny) / 2 * s]);
+        continue;
+      }
+      // the corner turns outward when the next edge's normal leans along
+      // the previous edge's direction
+      const turnsOut = e1.nx * e0.ux + e1.ny * e0.uy > 0;
+      if (turnsOut && (e0.sw > 0 || e1.sw > 0)) {
+        // rounded kerb: an arc about the lot corner from one normal to the next
+        const a0 = Math.atan2(e0.ny, e0.nx), a1 = Math.atan2(e1.ny, e1.nx);
+        let da = a1 - a0;
+        while (da > Math.PI) da -= 2 * Math.PI;
+        while (da < -Math.PI) da += 2 * Math.PI;
+        const steps = Math.max(2, Math.ceil(Math.abs(da) / 0.26));
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps;
+          const ang = a0 + da * t;
+          const s = e0.sw + (e1.sw - e0.sw) * t;
+          outer.push([p[0] + Math.cos(ang) * s, p[1] + Math.sin(ang) * s]);
+        }
+      } else {
+        // inside corner: where the two offset kerb lines meet, capped so a
+        // sharp re-entrant cannot throw a spike across the street
+        const px0 = p[0] + e0.nx * e0.sw, py0 = p[1] + e0.ny * e0.sw;
+        const px1 = p[0] + e1.nx * e1.sw, py1 = p[1] + e1.ny * e1.sw;
+        const den = e0.ux * e1.uy - e0.uy * e1.ux;
+        const t = ((px1 - px0) * e1.uy - (py1 - py0) * e1.ux) / den;
+        const ix = px0 + e0.ux * t, iy = py0 + e0.uy * t;
+        if (Math.hypot(ix - p[0], iy - p[1]) < 3 * Math.max(e0.sw, e1.sw, 0.5)) outer.push([ix, iy]);
+        else { outer.push([px0, py0]); outer.push([px1, py1]); }
+      }
+    }
+    if (outer.length >= 3 && E.some((e) => e.sw > 0)) {
+      sidewalkFeatures.push({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [...outer.map(proj.toLL), proj.toLL(outer[0])],
+            [...r.map(proj.toLL), proj.toLL(r[0])],
+          ],
+        },
+        properties: { kind: "sidewalk", dt: districtTone(b.district), org: b.u === undefined ? 1 : 0 },
+      });
+      // the kerb line: only where there is a footway in front of it, so a
+      // block's park side does not draw a kerb across the lawn
+      let run = [];
+      const flushC = () => {
+        if (run.length >= 2) curbFeatures.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: run.map(proj.toLL) },
+          properties: { kind: "curb" },
+        });
+        run = [];
+      };
+      for (let k = 0; k < outer.length; k++) {
+        const p = outer[k], q = outer[(k + 1) % outer.length];
+        const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+        if (ringDist(m, r) < 0.8 || inPark(m) || inWater(m)) { flushC(); continue; }
+        if (!run.length) run.push(p);
+        run.push(q);
+      }
+      flushC();
+    }
+    // zebras: lattice blocks only — the colonial lanes were never painted
+    if (b.u === undefined) continue;
+    for (let i = 0; i < n; i++) {
+      const e = E[i], prev = E[(i - 1 + n) % n];
+      if (e.L < 26 || e.sw <= 0 || prev.L < 18 || prev.half < 5) continue;
+      // turning outward at this corner (a real street corner, not a notch)
+      if (prev.nx * e.ux + prev.ny * e.uy > -0.6) continue;
+      const p = r[i];
+      // along this block face's footway, out across the street that the
+      // previous face fronts — from that street's kerb to its centre line
+      const off = e.sw * 0.5;
+      const sx = p[0] + e.nx * off, sy = p[1] + e.ny * off;
+      const from = prev.sw + 0.6, to = prev.half - 0.25;
+      if (to - from < 2) continue;
+      const A = [sx - e.ux * from, sy - e.uy * from];
+      const B = [sx - e.ux * to, sy - e.uy * to];
+      if (inPark(A) || inPark(B) || inWater(B)) continue;
+      zebraFeatures.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(B)] },
+        properties: { kind: "zebra" },
+      });
+    }
+  }
+  // STREETS THAT MEET THE WATER CROSS IT. The cells tile the land straight
+  // over the creek, so every cell edge — a street's middle line — that runs
+  // into a channel and out the other bank is a street the river cuts. It was
+  // drawn as exactly that: asphalt to the bank, water, asphalt again, and no
+  // bridge, because the generator's own bridges are laid by spacing along the
+  // stream rather than where the streets are. Each such crossing is emitted
+  // here, bank to bank plus an abutment, with the width of the street it
+  // carries, and the renderer builds the bridge on it. Context only.
+  const CH_M = (cfg.streams ?? [])
+    .filter((st) => !st.cut && st.paint !== false && st.kind !== "pond" && st.ring && st.ring.length >= 3)
+    .map((st) => st.ring);
+  const inChannel = (p) => CH_M.some((r) => inRing(p, r));
+  // the clearance the lots were cut back to either side of a channel — drawn
+  // as the creek's own green bank instead of left as bare paved ground
+  const CUT_M = (cfg.streams ?? [])
+    .filter((st) => st.cut && st.ring && st.ring.length >= 3)
+    .map((st) => st.ring);
+  const bankFeatures = CUT_M.map((ring) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+    properties: { kind: "bank" },
+  }));
+  const crossingFeatures = [];
+  if (CH_M.length) {
+    const seenX = new Set();
+    for (const b of blocks) {
+      const r = b.ring;
+      if (!r || r.length < 3) continue;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], c = r[(i + 1) % r.length];
+        const k = edgeKey(a, c);
+        if (seenX.has(k)) continue;
+        seenX.add(k);
+        const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (len < 8) continue;
+        const ux = (c[0] - a[0]) / len, uy = (c[1] - a[1]) / len;
+        const steps = Math.ceil(len);
+        let runStart = -1;
+        for (let st = 0; st <= steps; st++) {
+          const t = Math.min(len, st);
+          const wet = inChannel([a[0] + ux * t, a[1] + uy * t]);
+          if (wet && runStart < 0) runStart = t;
+          if ((!wet || st === steps) && runStart >= 0) {
+            const t0 = runStart, t1 = wet ? t : t - 1;
+            runStart = -1;
+            // dry on both banks, and a creek rather than a long reach along it
+            if (t0 < 1 || t1 > len - 1 || t1 - t0 < 3 || t1 - t0 > 60) continue;
+            const A = [a[0] + ux * (t0 - 4), a[1] + uy * (t0 - 4)];
+            const B = [a[0] + ux * (t1 + 4), a[1] + uy * (t1 + 4)];
+            if (inPark(A) || inPark(B)) continue;
+            const half = b.inset ? ringDist([a[0] + ux * Math.max(0, t0 - 6), a[1] + uy * Math.max(0, t0 - 6)], b.inset) : 6;
+            crossingFeatures.push({
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(B)] },
+              properties: { kind: "crossing", w: Math.round(Math.max(7, Math.min(28, 2 * half)) * 10) / 10 },
+            });
+          }
+        }
+      }
+    }
   }
   const shoreRoad = {
     type: "Feature",
@@ -2969,7 +3188,40 @@ export function generateCity(cfg) {
         return {
           type: "Feature",
           geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
-          properties: { kind: "bridge", name: br.name },
+          // the span and the channel it spans, for the renderer's deck: the
+          // gap is `w` long down the flow, and the creek either side of it is
+          // measured off the painted ribbon, since the config does not keep it
+          properties: {
+            kind: "bridge", name: br.name, deg: br.deg ?? 0, w: br.w ?? 16, h: br.h ?? 11,
+            // and the green corridor the lots were cut back from, which is
+            // what a footbridge actually has to span from pavement to pavement
+            cw: (() => {
+              const t = ((br.deg ?? 0) * Math.PI) / 180;
+              const ux = Math.cos(t), uy = Math.sin(t);
+              const inCut = (p) => CUT_M.some((r) => inRing(p, r)) || inChannel(p);
+              let lo = 0, hi = 0;
+              while (lo < 60 && inCut([br.cx - uy * lo, br.cy + ux * lo])) lo += 0.5;
+              while (hi < 60 && inCut([br.cx + uy * hi, br.cy - ux * hi])) hi += 0.5;
+              return lo + hi;
+            })(),
+            rw: (() => {
+              const t = ((br.deg ?? 0) * Math.PI) / 180;
+              const ux = Math.cos(t), uy = Math.sin(t);
+              let best = 0;
+              for (const sgn of [-1, 1]) {
+                for (let d = (br.w ?? 16) / 2; d < (br.w ?? 16) / 2 + 12; d += 1.5) {
+                  const px = br.cx + ux * d * sgn, py = br.cy + uy * d * sgn;
+                  if (!inChannel([px, py])) continue;
+                  let lo = 0, hi = 0;
+                  while (lo < 40 && inChannel([px - uy * lo, py + ux * lo])) lo += 0.5;
+                  while (hi < 40 && inChannel([px + uy * hi, py - ux * hi])) hi += 0.5;
+                  best = Math.max(best, lo + hi);
+                  break;
+                }
+              }
+              return best;
+            })(),
+          },
         };
       }),
       // The frontage road around each park and the roadway of each diagonal,
@@ -3083,6 +3335,11 @@ export function generateCity(cfg) {
       ...blockFeatures,
       ...centerFeatures,
       ...streetFeatures,
+      ...sidewalkFeatures,
+      ...curbFeatures,
+      ...zebraFeatures,
+      ...crossingFeatures,
+      ...bankFeatures,
       shoreRoad,
       ...pondFeatures.map((ring) => ({
         type: "Feature",

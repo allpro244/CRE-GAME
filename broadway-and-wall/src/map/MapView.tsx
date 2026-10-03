@@ -371,7 +371,24 @@ export default function MapView() {
                     flavour: String(f.properties?.flavour ?? "park"),
                   };
                 }),
-              ponds: [...ringsOf("pond"), ...ringsOf("stream")],
+              // park ponds stay level with the lawn; creeks and canals go
+              // into a channel of their own (ThreeBuildings.buildRiver)
+              ponds: ringsOf("pond"),
+              streams: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "stream" && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  water: String(f.properties?.water ?? "creek"),
+                })),
+              bridges: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "bridge" && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  deg: Number(f.properties?.deg ?? 0),
+                  w: Number(f.properties?.w ?? 16),
+                  rw: Number(f.properties?.rw ?? 0),
+                  cw: Number(f.properties?.cw ?? 0),
+                })),
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),

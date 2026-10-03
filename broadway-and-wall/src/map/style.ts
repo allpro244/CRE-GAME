@@ -13,6 +13,25 @@ export const BASEMAP_URL: string | undefined =
 const EMPTY = { type: "FeatureCollection" as const, features: [] };
 
 /**
+ * A LINE WIDTH IN METRES, NOT PIXELS. MapLibre line widths are screen pixels,
+ * so every stroke that stands for something physical — a kerb, a lane line, a
+ * zebra — used to be one width at every scale: a 15 px "sidewalk" was a
+ * footpath at one zoom and a dual carriageway at the next. Pixels per metre
+ * double per zoom level, so an exponential-2 ramp is exact; `minPx` keeps a
+ * mark from vanishing below a pixel when the camera pulls back.
+ *
+ * 59,100 is metres per pixel at zoom 0 on a 512 px tile (78,271.5) times
+ * cos(41°), the latitude band every island here is generated in.
+ */
+export function metres(m: number, minPx = 0, sign = 1): unknown {
+  const stops: number[] = [];
+  for (const z of [10, 13, 14, 15, 16, 17, 18, 19, 20, 22]) {
+    stops.push(z, sign * Math.max(minPx, (m * Math.pow(2, z)) / 59100));
+  }
+  return ["interpolate", ["exponential", 2], ["zoom"], ...stops];
+}
+
+/**
  * THE CITY IS MADE, NOT FETCHED — so its layers are GeoJSON, not tiles.
  *
  * These two were PMTiles archives cut by the pipeline, which is the right
@@ -123,9 +142,9 @@ export function gameLayers(): LayerSpecification[] {
         ] as never,
         "line-opacity": [
           "interpolate", ["linear"], ["zoom"],
-          13, ["case", selected, 1, neighbor, 0.95, assembled, 0.95, hovered, 0.9, ["case", owned, 0.9, listed, 0.8, 0.3]],
-          15, ["case", selected, 1, neighbor, 0.95, assembled, 0.97, hovered, 0.9, ["case", owned, 0.95, listed, 0.85, 0.55]],
-          16.5, ["case", selected, 1, neighbor, 0.95, assembled, 1, hovered, 0.9, ["case", owned, 1, listed, 0.9, 0.8]],
+          13, ["case", selected, 1, neighbor, 0.95, assembled, 0.95, hovered, 0.9, ["case", owned, 0.9, listed, 0.8, 0.12]],
+          15, ["case", selected, 1, neighbor, 0.95, assembled, 0.97, hovered, 0.9, ["case", owned, 0.95, listed, 0.85, 0.26]],
+          16.5, ["case", selected, 1, neighbor, 0.95, assembled, 1, hovered, 0.9, ["case", owned, 1, listed, 0.9, 0.42]],
         ] as never,
       },
     },
@@ -505,10 +524,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#5f574c",
+            ["==", ["get", "org"], 1], "#5e574e",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#636260", 1, "#5f6360", 2, "#67615a", 3, "#616662", 4, "#665e5b",
-              "#636260"],
+              0, "#55575a", 1, "#535759", 2, "#58575a", 3, "#545859", 4, "#57565a",
+              "#55575a"],
           ] as never,
         },
       },
@@ -517,7 +536,9 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         id: "crosswalk",
         type: "fill",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "crosswalk"],
+        // retired: a solid nine-metre bar whatever the street's width. The
+        // zebras below are measured from each corner's own carriageway.
+        filter: ["==", ["get", "kind"], "__retired_crosswalk"],
         minzoom: 14,
         paint: {
           "fill-color": "#e6e2d2",
@@ -538,79 +559,119 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#eae1c9",
+            ["==", ["get", "org"], 1], "#c9bfa8",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#e8e3d5", 1, "#e3e4db", 2, "#eae2cf", 3, "#e2e6da", 4, "#e9ddd4",
-              "#e8e3d5"],
+              0, "#c4c0b2", 1, "#bfc1b4", 2, "#c8bfae", 3, "#bdc2b3", 4, "#c6bcb2",
+              "#c4c0b2"],
           ] as never,
         },
       },
       {
-        // SIDEWALK: a pale band hugging the block, inside the curb line.
-        // Grid and lane only — park rings, seams and the shore road used to
-        // wear this stroke too, which is how a boulevard tagged `shore` got
-        // a kilometre of sidewalk smeared across the town.
+        // THE FOOTWAY. A ring of concrete outside every block's kerb line, in
+        // metres and as wide as the street it fronts warrants (citygen sizes
+        // it) — the lightest ground surface in town, because a street is read
+        // from the air by its two pale edges more than by its asphalt.
         id: "sidewalk",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "sidewalk"],
+        paint: {
+          "fill-color": [
+            "case",
+            ["==", ["get", "org"], 1], "#cfc5b2",
+            ["match", ["coalesce", ["get", "dt"], 0],
+              0, "#d2cfc6", 1, "#cdd0c9", 2, "#d4cec2", 3, "#ccd0c6", 4, "#d3ccc5",
+              "#d2cfc6"],
+          ] as never,
+          "fill-antialias": true,
+        },
+      },
+      {
+        // CURB, PART ONE: the gutter. The darkest thing on the ground, as a
+        // kerb's own shadow and the wet line of grit beside it always are.
+        id: "curb-shadow",
         type: "line",
         source: "bw-context",
-        filter: ["all",
-          ["==", ["get", "kind"], "street"],
-          ["match", ["get", "cls"], "grid", true, "lane", true, false],
-        ],
+        filter: ["==", ["get", "kind"], "curb"],
+        minzoom: 14,
         paint: {
-          // a clear MIDDLE value — the old band sat within a few points of the
-          // block fills, so kerb-to-kerb and lot-line-to-lot-line were one
-          // surface. Dropped a step, warm/cool district tints kept, so the
-          // walking band reads between the dark asphalt and the pale block.
-          "line-color": [
-            "case",
-            ["==", ["get", "org"], 1], "#c5b9a4",
-            ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#c5c2b5", 1, "#bfc4c0", 2, "#c8c0af", 3, "#c0c6bd", 4, "#c7bcb6",
-              "#c5c2b5"],
-          ] as never,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
+          "line-color": "#34353a",
+          "line-width": metres(0.62, 0.5) as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.35, 16, 0.75] as never,
         },
-        layout: { "line-join": "round", "line-cap": "round" },
+        layout: { "line-join": "round" },
       },
       {
-        // CURB: the hard edge where pavement meets block
+        // CURB, PART TWO: the granite top, catching the light
         id: "curb",
         type: "line",
         source: "bw-context",
-        filter: ["all",
-          ["==", ["get", "kind"], "street"],
-          ["match", ["get", "cls"], "grid", true, "lane", true, false],
-        ],
-        minzoom: 14,
+        filter: ["==", ["get", "kind"], "curb"],
+        minzoom: 15,
         paint: {
-          // still the darkest line on the ground: the asphalt came down to
-          // ~#636260, which had swallowed the old #66645f entirely — a kerb
-          // that matches its own roadway is no kerb at all
-          "line-color": "#454340",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
-          "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
+          "line-color": "#b9b5ab",
+          "line-width": metres(0.24) as never,
         },
-        layout: { "line-join": "round", "line-miter-limit": 1 },
+        layout: { "line-join": "round" },
       },
       {
-        // LANE DIVIDER. Two neighbouring cells share their boundary, so the
-        // cell ring runs exactly down the middle of the street — no separate
-        // centreline geometry needed.
-        // A road without a centreline is a paved corridor, not a road. These
-        // come in a full zoom earlier and read brighter than they did.
+        // LANE MARKINGS, BY WIDTH. citygen measured each street: a narrow
+        // residential street carries no paint, a working street a dashed
+        // centre line, an avenue the double yellow. Metres again, so a line
+        // is ten centimetres at every scale and does not swell into a stripe.
         id: "lane-divider",
         type: "line",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "centerline"],
-        minzoom: 14,
+        filter: ["all", ["==", ["get", "kind"], "centerline"], ["==", ["get", "mk"], 1]],
+        minzoom: 15,
         paint: {
-          "line-color": "#e6d99b",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 16, 0.9, 18, 1.8] as never,
-          "line-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.3, 16, 0.75, 18, 0.9] as never,
-          "line-dasharray": [5, 7],
+          "line-color": "#ece6cf",
+          "line-width": metres(0.15, 0.6) as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16, 0.75] as never,
+          "line-dasharray": [10, 14],
         },
-        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        id: "lane-double-a",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "centerline"], ["==", ["get", "mk"], 2]],
+        minzoom: 14.5,
+        paint: {
+          "line-color": "#e2c35a",
+          "line-width": metres(0.15, 0.55) as never,
+          "line-offset": metres(0.2, 0.5) as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 14.5, 0, 15.5, 0.85] as never,
+        },
+      },
+      {
+        id: "lane-double-b",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "centerline"], ["==", ["get", "mk"], 2]],
+        minzoom: 14.5,
+        paint: {
+          "line-color": "#e2c35a",
+          "line-width": metres(0.15, 0.55) as never,
+          "line-offset": metres(0.2, 0.5, -1) as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 14.5, 0, 15.5, 0.85] as never,
+        },
+      },
+      {
+        // ZEBRAS. A three-metre band laid across the carriageway and broken
+        // into sixty-centimetre bars by its own dash pattern — a dash is a
+        // multiple of the line's width, so the bars stay bars at any zoom.
+        id: "zebra",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "zebra"],
+        minzoom: 15,
+        paint: {
+          "line-color": "#eeece4",
+          "line-width": metres(3.0) as never,
+          "line-dasharray": [0.2, 0.22],
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16, 0.85] as never,
+        },
       },
       {
         // the shore road still gets its own stroke — sun-bleached concrete, a
@@ -620,8 +681,8 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
         paint: {
-          "line-color": "#8d8a82",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
+          "line-color": "#6c6c6c",
+          "line-width": metres(9, 1.2) as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },
@@ -633,8 +694,8 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "seam"]],
         paint: {
-          "line-color": "#55504b",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 16, 12] as never,
+          "line-color": "#4c4d50",
+          "line-width": metres(13, 1.6) as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },
@@ -710,6 +771,17 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "line-color": "#8fb3c9", "line-width": 1.4 },
       },
       {
+        // THE CREEK'S OWN GROUND. The lots were cut back from every channel
+        // by a clearance band and the band was left as bare paving — a pale
+        // strip either side of the water that read as a dry riverbed. It is
+        // a bank: rough grass down to the stone, darker than a mown park.
+        id: "bank",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bank"],
+        paint: { "fill-color": "#8f9f76" },
+      },
+      {
         // Inland water, ABOVE the roadway. Pavement used to paint over the
         // creek wherever a cell still overlapped the ribbon, which read as
         // asphalt triangles stretching to the bank.
@@ -764,14 +836,16 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         id: "bridges",
         type: "fill",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "bridge"],
+        // retired: the 3D layer builds each crossing (ThreeBuildings.buildRiver)
+        // and a flat grey slab under it read as a second, sunken deck
+        filter: ["==", ["get", "kind"], "__retired_bridge"],
         paint: { "fill-color": "#67665f" },
       },
       {
         id: "bridge-edge",
         type: "line",
         source: "bw-context",
-        filter: ["==", ["get", "kind"], "bridge"],
+        filter: ["==", ["get", "kind"], "__retired_bridge"],
         paint: {
           "line-color": "#4a4844",
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 16.5, 2.6] as never,

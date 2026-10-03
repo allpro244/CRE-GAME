@@ -11419,6 +11419,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const hw = meta?.hw?.[i] ?? 7.5;
         const sw = meta?.sw?.[i] ?? 2.6;
         const road = Math.max(0, hw - sw);
+        // a 2.0 m parking lane plus a 1.8 m running lane is the tightest
+        // two-use half-street a city actually paints (a 14 m street)
+        const PARK_MIN = 3.8;
         // A sidewalk that still chords the green would plant people and
         // lamps on the lawn. Citygen drops those edges; this is the last
         // line if one still arrives.
@@ -11464,13 +11467,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // something four metres long standing next to it. They sit in the
         // parking lane, nose-to-tail, aligned with the frontage.
         // no parking lane on a street too narrow to keep a running lane past it
-        for (let d = rnd() * 6; d < len - 5 && road >= 4.6; d += 5.4 + rnd() * 3.4) {
+        for (let d = rnd() * 6; d < len - 5 && road >= PARK_MIN; d += 5.4 + rnd() * 3.4) {
           if (rnd() > 0.62) continue;              // gaps: hydrants, drives, luck
           const t = d / len;
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
-          const park = sw + 1.15 + rnd() * 0.15;
+          const park = sw + 1.05 + rnd() * 0.12;
           const cxp = px + nx * park, cyp = py + ny * park;
           if (inParkXY(cxp, cyp)) continue;
           cars.push({
@@ -11511,7 +11514,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const laneStep = 26 + (1 - dn) * 60;
           for (let d = rnd() * laneStep; d < len; d += laneStep * (0.7 + rnd() * 0.7)) {
             // the middle of the near half's running lane, clear of the parked one
-            const lane = sw + (road >= 4.6 ? 2.2 : 0) + Math.max(1.1, (road - (road >= 4.6 ? 2.2 : 0)) * 0.5) + (rnd() - 0.5) * 0.3;
+            const lane = sw + (road >= PARK_MIN ? 2.0 : 0) + Math.max(0.95, (road - (road >= PARK_MIN ? 2.0 : 0)) * 0.5) + (rnd() - 0.5) * 0.3;
             const mx = a[0] + ux * len * 0.5 + nx * lane;
             const my = a[1] + uy * len * 0.5 + ny * lane;
             if (inParkXY(mx, my)) continue;

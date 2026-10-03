@@ -14651,12 +14651,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // the shader could reason about.
     {
       const sd = this.sunDirUni.value;
-      const p = this.scratchV3.set(
-        this.camUni.value.x + sd.x * 9000,
-        this.camUni.value.y + sd.y * 9000,
-        this.camUni.value.z + sd.z * 9000,
-      ).applyMatrix4(this.camera.projectionMatrix);
-      const inFront = p.z > -1 && p.z < 1;
+      const sx = this.camUni.value.x + sd.x * 9000;
+      const sy = this.camUni.value.y + sd.y * 9000;
+      const sz = this.camUni.value.z + sd.z * 9000;
+      const p = this.scratchV3.set(sx, sy, sz).applyMatrix4(this.camera.projectionMatrix);
+      // BEHIND THE CAMERA IS NOT IN FRONT OF IT. applyMatrix4 divides by w,
+      // and a point behind the eye has w < 0 — its projection comes out
+      // mirrored through the centre of the screen with a z that can land
+      // inside the clip range. So with the sun over the player's shoulder
+      // the shaft pass marched rays toward a phantom sun on the far side of
+      // the frame, and every building between lit a long dark streak across
+      // the harbour. Test w itself.
+      const e = this.camera.projectionMatrix.elements;
+      const w = e[3] * sx + e[7] * sy + e[11] * sz + e[15];
+      const inFront = w > 0 && p.z > -1 && p.z < 1;
       const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
     }

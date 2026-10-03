@@ -12147,14 +12147,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         road, canal: near?.water === "canal",
       });
     }
-    const water: { ring: P2[]; canal: boolean }[] = [
-      ...rings.map((r) => ({ ring: r.ring, canal: r.water === "canal" || r.water === "slip" })),
-      ...gaps.map((g) => ({ ring: g, canal: false })),
+    // A SLIP IS THE HARBOUR, NOT A CREEK. It is a dock basin open to the sea,
+    // so its water stands at the harbour's own level behind a stone quay; a
+    // creek or a canal runs down its channel 1.35 m below the street.
+    const water: { ring: P2[]; canal: boolean; slip: boolean }[] = [
+      ...rings.map((r) => ({ ring: r.ring, canal: r.water === "canal" || r.water === "slip", slip: r.water === "slip" })),
+      ...gaps.map((g) => ({ ring: g, canal: false, slip: false })),
     ];
+    const land = this.landRing()?.map((v) => [v.x, v.y] as P2) ?? null;
     const inWaterOther = (v: P2, self: number) => water.some((w, i) => i !== self && inPoly(v, w.ring));
 
     // the bank: every ring edge that is not inside some other piece of water
-    type Edge = { a: P2; b: P2; nx: number; ny: number; canal: boolean };
+    type Edge = { a: P2; b: P2; nx: number; ny: number; canal: boolean; slip: boolean };
     const bank: Edge[] = [];
     water.forEach((w, wi) => {
       const r = w.ring;
@@ -12167,7 +12171,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         if (inWaterOther([mx, my], wi)) continue;
         let nx = -dy / L, ny = dx / L;              // toward the water
         if (!inPoly([mx + nx * 0.4, my + ny * 0.4], r)) { nx = -nx; ny = -ny; }
-        bank.push({ a, b, nx, ny, canal: w.canal });
+        // a slip's mouth opens onto the sea: no wall across it
+        if (land && !inPoly([mx - nx * 1.5, my - ny * 1.5], land)) continue;
+        bank.push({ a, b, nx, ny, canal: w.canal, slip: w.slip });
       }
     });
     const bankDist = (v: P2) => {
@@ -12184,7 +12190,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
     // ---- the water surface: the park pond's shader, in its river colours --
     const T = { pos: [] as number[], u: [] as number[] };
-    const emit = (q: P2[]) => { for (const v of q) { T.pos.push(v[0], v[1], WATER_Z); T.u.push(bankDist(v)); } };
+    let level = WATER_Z;
+    const emit = (q: P2[]) => { for (const v of q) { T.pos.push(v[0], v[1], level); T.u.push(bankDist(v)); } };
     const split = (q: P2[], depth: number) => {
       const a = Math.abs((q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1])) / 2;
       if (a < 70 || depth > 6) { emit(q); return; }
@@ -12194,6 +12201,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       split([m20, m12, q[2]], depth + 1); split([m01, m12, m20], depth + 1);
     };
     for (const w of water) {
+      level = w.slip ? 0.0 : WATER_Z;
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(w.ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
       let ringA = 0;
@@ -12255,9 +12263,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     };
     for (const e of bank) {
       if (e.canal) {
-        const top = 0.16;
+        const top = e.slip ? 0.45 : 0.16, bot = e.slip ? -0.35 : BED;
         const A = [e.a[0], e.a[1], top], B = [e.b[0], e.b[1], top];
-        const A2 = [e.a[0], e.a[1], BED], B2 = [e.b[0], e.b[1], BED];
+        const A2 = [e.a[0], e.a[1], bot], B2 = [e.b[0], e.b[1], bot];
         const want = [e.nx, e.ny, 0];
         tri(wallPos, wallN, A, B, B2, want); tri(wallPos, wallN, A, B2, A2, want);
         // the coping, laid back over the walk

@@ -1,11 +1,11 @@
 BROADWAY & WALL — PLAYABLE
 ======================================
-Build id:  occupancy-identity
+Build id:  map-overhaul
 Office:    $35.5 base (secondary market)
 
 HOW TO KNOW YOU HAVE THIS BUILD
   On the start screen footer you should see:
-    build occupancy-identity · office base $35.5
+    build map-overhaul · office base $35.5
   The start screen asks WHICH CITY first:
     Somewhere else - a generated island, a new one every run
     Manhattan      - the written-down one, with an extent picker

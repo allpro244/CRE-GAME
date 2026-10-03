@@ -2223,26 +2223,32 @@ export function generateCity(cfg) {
     }
     // zebras: lattice blocks only — the colonial lanes were never painted
     if (b.u === undefined) continue;
-    for (let i = 0; i < n; i++) {
-      const e = E[i], prev = E[(i - 1 + n) % n];
-      if (e.L < 26 || e.sw <= 0 || prev.L < 18 || prev.half < 5) continue;
-      // turning outward at this corner (a real street corner, not a notch)
-      if (prev.nx * e.ux + prev.ny * e.uy > -0.6) continue;
-      const p = r[i];
-      // along this block face's footway, out across the street that the
-      // previous face fronts — from that street's kerb to its centre line
-      const off = e.sw * 0.5;
-      const sx = p[0] + e.nx * off, sy = p[1] + e.ny * off;
-      const from = prev.sw + 0.6, to = prev.half - 0.25;
-      if (to - from < 2) continue;
-      const A = [sx - e.ux * from, sy - e.uy * from];
-      const B = [sx - e.ux * to, sy - e.uy * to];
-      if (inPark(A) || inPark(B) || inWater(B)) continue;
+    // Each corner carries TWO half-crossings: along one face's footway across
+    // the street the other face fronts, and the mirror of it. The block on
+    // the far side of that street paints the other half of each, so the four
+    // blocks round a junction lay its four crossings complete.
+    const half = (along, across, sgn, p) => {
+      if (along.L < 26 || along.sw <= 0 || across.L < 18 || across.half < 5) return;
+      const off = along.sw * 0.5;
+      const sx = p[0] + along.nx * off, sy = p[1] + along.ny * off;
+      const from = across.sw + 0.6, to = across.half - 0.25;
+      if (to - from < 2) return;
+      const A = [sx + sgn * along.ux * from, sy + sgn * along.uy * from];
+      const B = [sx + sgn * along.ux * to, sy + sgn * along.uy * to];
+      if (inPark(A) || inPark(B) || inWater(B)) return;
       zebraFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(B)] },
         properties: { kind: "zebra" },
       });
+    };
+    for (let i = 0; i < n; i++) {
+      const e = E[i], prev = E[(i - 1 + n) % n];
+      // turning outward at this corner (a real street corner, not a notch)
+      if (prev.nx * e.ux + prev.ny * e.uy > -0.6) continue;
+      const p = r[i];
+      half(e, prev, -1, p);     // back along e's footway, across prev's street
+      half(prev, e, 1, p);      // on along prev's footway, across e's street
     }
   }
   // STREETS THAT MEET THE WATER CROSS IT. The cells tile the land straight

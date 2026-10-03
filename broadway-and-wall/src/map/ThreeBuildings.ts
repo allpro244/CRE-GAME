@@ -1778,7 +1778,9 @@ vec3 grade(vec3 c) {
   // ACES eats chroma; put it back — but not after dark, when the only
   // chroma left in a shaded wall is the sky's indigo, and pumping that turns
   // every snow roof into a sheet of blue enamel. Night vision is desaturated.
-  t = mix(vec3(lum), t, mix(1.40, 0.92, smoothstep(0.45, 1.0, DUSK)));
+  // 1.40 put every lit wall a third of the way to poster paint; the palette
+  // is already chosen in display space, so it only needs ACES's loss back.
+  t = mix(vec3(lum), t, mix(1.16, 0.92, smoothstep(0.45, 1.0, DUSK)));
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
   // the warm highlight tint was a quarter of the way to sepia and every lit
@@ -2011,8 +2013,12 @@ void main() {
   vE = uGlowBox.z * step(uGlowBox.x, position.x) * step(uGlowBox.y, position.z);
   float bare = uSeason.z * step(0.5, uFoliage) * step(uFoliage, 1.5);
   vec3 p = position;
-  p.xy *= mix(1.0, 0.32, bare);
-  p.z  *= mix(1.0, 0.94, bare);
+  // A bare crown is still a crown: a winter tree from the air is a soft grey
+  // net of twigs about two-thirds the summer spread, not a black matchstick.
+  // At a third of the width every street tree in January became a dark pin
+  // and the pavements read as a bed of nails.
+  p.xy *= mix(1.0, 0.70, bare);
+  p.z  *= mix(1.0, 0.92, bare);
 
   // ---- THE SPECKLE ---------------------------------------------------------
   //
@@ -2446,6 +2452,11 @@ vec3 ownMetal() {
   float swell = stListed() * (0.5 + 0.5 * sin(uTime * 2.513));
   return c * (1.0 + 0.55 * swell) + vec3(0.10, 0.09, 0.07) * swell;
 }
+// the highlight, and the condition packed above it (see setDeedState)
+float condQ() { return floor(vState.z * 0.5 + 0.001); }
+float hiOf() { return vState.z - 2.0 * condQ(); }
+// 0..1, or -1 where the game has not said
+float condOf() { float q = condQ(); return q > 0.5 ? (q - 1.0) / 14.0 : -1.0; }
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * (uLensN - 1.0);
   vec3 c = uLensRamp[0];
@@ -4659,7 +4670,14 @@ void main() {
   float v = vZ / fh;
   // how many pixels a floor spans: everything expensive below is skipped once
   // the facade is too small on screen for it to read
-  float lod = clamp(max(fwidth(u), fwidth(v)) * 2.6 - 0.3, 0.0, 1.0);
+  // The dissolve opened at 8.7 px a cell and finished at 2 px, which left the
+  // whole mid-distance band of a tall town drawing window grids at three to
+  // five pixels a bay — and every sub-cell detail the families draw inside a
+  // bay (mullions, frit, pier fluting) at under a pixel. That is the moiré
+  // speckle on every tower at the play camera. Opening at ~12 px and
+  // finishing at ~2.6 px averages the pattern before it can alias, and
+  // leaves a near building's windows exactly as they were.
+  float lod = smoothstep(0.085, 0.385, max(fwidth(u), fwidth(v)));
   // ...and how many METRES a pixel spans, which is what the masonry grain has
   // to be judged against. Same question at a different scale; see grainFade.
   float mpp = max(fwidth(vU), fwidth(vZ));
@@ -7512,6 +7530,55 @@ void main() {
   vec3 facadeAvg = mix(wall, mix(wall * revShade, glassAvg, seen), win.x * win.y * 0.8);
   col = mix(col, facadeAvg, lod);
 
+  // ---- CONDITION — the deed's own condition index, as weather on the wall ---
+  // A building nobody has spent on is not a different colour, it is the same
+  // colour under forty years of soot and rain: greyer, darker, streaked down
+  // from every sill and cornice, and — near enough to see windows — with
+  // openings boarded where the floors are dead. A refit is the opposite: the
+  // stone cleaned, the glass new. Value first, so it survives the dissolve.
+  {
+    float cnd = condOf();
+    if (cnd >= 0.0) {
+      float worn = 1.0 - smoothstep(0.28, 0.62, cnd);
+      float fresh = smoothstep(0.74, 0.94, cnd);
+      float lumC = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(col, vec3(lumC) * vec3(0.95, 0.92, 0.87), worn * 0.38);
+      // streaks: a soot run under each bay, heavier toward the street
+      float run = hash(vec2(floor(vU / max(colW, 1.0)) + 7.0, vRand * 41.0));
+      float streak = smoothstep(0.35, 1.0, run) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 18.0, vZ)));
+      col *= 1.0 - worn * (0.13 + 0.15 * streak);
+      if (!glassy && lod < 0.6 && winMask > 0.5) {
+        float board = step(hash(vec2(floor(u) + 3.1, floor(v) + vRand * 17.0)), max(0.0, worn - 0.62) * 0.9);
+        col = mix(col, vec3(0.40, 0.34, 0.26) * (0.85 + 0.3 * hash(vec2(floor(u), floor(v)))), board * (1.0 - lod));
+      }
+      col *= 1.0 + fresh * 0.05;
+    }
+  }
+
+  // ---- THE BASE — where the building meets the pavement ------------------
+  // A masonry street reads from the air as walls standing on a line: a
+  // granite water table a knee to a waist high, darker and harder than the
+  // wall above, lit along its top edge. A tower's base is the opposite: a
+  // double-height lobby of dark clear glass under the first spandrel. Both
+  // are tone, below the dissolve, so they hold at the play camera — and both
+  // are by type, so a walk-up, a glass tower and a shed each meet the street
+  // their own way (a shed's wall simply comes down to the slab).
+  {
+    // (not under a shopfront, whose glass runs to the pavement)
+    bool mason = isMasonry(s) && !glassy && vTop > 5.0 && vRet < 0.0;
+    if (mason) {
+      float ph = 0.55 + 0.45 * vVar;
+      if (vZ < ph) {
+        vec3 granite = mix(vec3(0.36, 0.35, 0.34), col * 0.62, 0.35);
+        col = mix(col, granite, 0.85);
+        col *= 1.0 + 0.16 * smoothstep(ph - 0.10, ph, vZ);
+      }
+    } else if (glassy && vTop > 24.0 && vZ < 5.2) {
+      float lob = 1.0 - smoothstep(4.9, 5.2, vZ);
+      col = mix(col, vec3(0.16, 0.19, 0.22) + 0.10 * glassB, lob * 0.70);
+    }
+  }
+
   // ---- value: the half of the facade that reads from the air --------------
 
   // THE TWO-HUNDRED-METRE WALL. A handful of plates in the stock — the customs
@@ -7773,7 +7840,7 @@ void main() {
     vec3 warm = dz > 1.5 ? vec3(1.07, 0.95, 0.93) : dz > 0.5 ? vec3(1.06, 0.99, 0.93) : vec3(1.05, 1.02, 0.95);
     col *= mix(vec3(1.0), warm, 1.0 - band);
   }
-  float hi = vState.z;
+  float hi = hiOf();
   if (hi > 0.01) {
     float sel = step(0.75, hi);
     // a rim of gold light round the silhouette, strongest where the wall turns
@@ -8044,6 +8111,17 @@ void main() {
     roof = mix(roof, vec3(0.330, 0.455, 0.290), smoothstep(0.46, 0.14, clump) * 0.50);
     roof *= 0.94 + 0.12 * rnoise(wp * 1.9);
     roof = mix(roof, vec3(0.560, 0.515, 0.415), smoothstep(0.80, 0.96, rnoise(wp * 0.6 + 41.0)) * 0.45);
+  } else if (s == 13 && vU > 40.0) {
+    // THE MARKET SQUARE. It was the park walk's pale buff gravel — a chalk
+    // oval in the middle of town. A square is granite setts: mid grey-brown,
+    // laid in a grid you can just see, worn lighter where people walk.
+    roof = vec3(0.515, 0.490, 0.455);
+    vec2 g = fract(wp / 0.9);
+    float joint = 1.0 - smoothstep(0.0, 0.08, min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)));
+    float jf = 1.0 - smoothstep(0.15, 0.6, fwidth(wp.x / 0.9));
+    roof *= 1.0 - 0.10 * joint * jf;
+    roof *= 0.92 + 0.14 * rnoise(wp * 0.6);
+    roof = mix(roof, roof * 1.10, smoothstep(0.55, 0.85, rnoise(wp * 0.05 + 3.0)) * 0.6);
   } else if (s == 13) {
     roof *= 0.94 + 0.13 * rnoise(wp * 2.6);              // raked gravel
     roof *= 0.97 + 0.06 * rnoise(wp * 0.5);
@@ -8060,7 +8138,31 @@ void main() {
     // DARKER than paving — it always is — and the city snaps into blocks the
     // moment it is.
     if (vVar > 0.62)      roof = mix(vec3(0.435, 0.520, 0.305), vec3(0.505, 0.560, 0.350), rnoise(wp * 1.1));
-    else if (vVar < 0.18) roof = vec3(0.515, 0.435, 0.335);
+    else if (vVar < 0.18) {
+      // A DOWNTOWN HOLE IS A PARKING LOT, and a parking lot is asphalt with
+      // stalls painted on it — the cars were already parked here in rows, on
+      // what was drawn as pale gravel, which from the air is a field of snow.
+      // Rows run with the lot's long side (vCcv, the same bearing the roof
+      // seams use): 2.6 m stalls, 5.2 m deep, a 6.5 m aisle between pairs.
+      roof = vec3(0.235, 0.234, 0.236) * (0.92 + 0.16 * rnoise(wp * 0.35));
+      vec2 dir = length(vCcv) > 0.5 ? normalize(vCcv) : vec2(1.0, 0.0);
+      vec2 rp = vec2(dot(wp, dir), dot(wp, vec2(-dir.y, dir.x)));
+      float row = fract(rp.y / 16.9);
+      float inStall = step(0.03, row) * step(row, 0.34) + step(0.66, row) * step(row, 0.97);
+      float sx = fract(rp.x / 2.6);
+      float line = 1.0 - smoothstep(0.0, 0.05, min(sx, 1.0 - sx));
+      float fine = 1.0 - smoothstep(0.25, 0.8, fwidth(rp.x / 2.6) * 6.0);
+      roof = mix(roof, vec3(0.80, 0.79, 0.74), line * inStall * fine * 0.85);
+    }
+    else {
+      // gravel and packed dirt, a step under the footway — and never one
+      // flat fill: an empty lot is tyre-packed dirt where the trucks turned,
+      // loose gravel where it was spread, and weeds wherever nobody drove
+      float wN = rnoise(wp * 0.07) * 0.6 + rnoise(wp * 0.23) * 0.4;
+      roof = mix(vec3(0.455, 0.425, 0.370), vec3(0.420, 0.360, 0.290), smoothstep(0.35, 0.60, rnoise(wp * 0.12 + 7.0)));
+      vec3 weed = seasonTurf(vec3(0.380, 0.420, 0.260));
+      roof = mix(roof, weed, smoothstep(0.52, 0.78, wN) * 0.75);
+    }
     roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel / scrub texture
   } else {
     int dk = int(max(vSeg.x, 0.0) + 0.5);
@@ -8186,6 +8288,15 @@ void main() {
     float up = smoothstep(0.28, 0.80, n.z);
     float drift = 0.62 + 0.55 * rnoise(wp * 0.22) + 0.20 * rnoise(wp * 1.3);
     if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
+    // PAVING THE CITY CLEARS. A parking lot and a market square are ploughed
+    // the morning after a fall: what lies on them is a few banked windrows and
+    // a grey slush film, not the unbroken white of a roof nobody walks on.
+    // They were white fields with cars parked in them.
+    if ((s == 10 && vVar < 0.18) || (s == 13 && vU > 40.0)) {
+      float bank = smoothstep(0.72, 0.90, rnoise(wp * vec2(0.09, 0.6)));
+      drift *= 0.18 + 0.82 * bank;
+      roof *= mix(1.0, 0.86, SNOW);   // wet, darker
+    }
     roof = snowOn(roof, up, drift);
   }
   // ---- the pond, which is water and was never treated as any ---------------
@@ -8237,8 +8348,22 @@ void main() {
     // puddle of sky lying on the lawn.
     roof = vec3(0.088, 0.128, 0.116);
     float rim = 1.0 - smoothstep(0.0, 3.4, vU);
+    // RUNNING WATER IS NOT A POND. A creek is shallow, moving and full of
+    // light — the pond's near-black read as a crack in the town a mile long.
+    // aVar marks the channels buildRiver lays: a clearer green-blue body, a
+    // gravel-and-weed margin, and the current's long streaks down the flow.
+    bool river = vVar > 0.9;
+    if (river) {
+      roof = vec3(0.150, 0.250, 0.272);
+      roof *= 0.92 + 0.16 * rnoise(wp * vec2(0.08, 0.35) + vec2(t * 0.25, 0.0));
+    }
+    // A LAKE IS NOT A POND. The dark body is right for a pond you can see
+    // across in a few strides; out in the middle of a big one there is fetch
+    // for a ripple and depth for colour, and a 150 m lake drawn pond-black
+    // read as a hole in the park. Distance from the bank is the measure.
+    if (!river) roof = mix(roof, vec3(0.125, 0.205, 0.235), smoothstep(10.0, 45.0, vU) * 0.85);
     // the bank: silt, weed and the bottom showing through
-    roof = mix(roof, vec3(0.232, 0.290, 0.212), rim * 0.72);
+    roof = mix(roof, river ? vec3(0.300, 0.330, 0.262) : vec3(0.232, 0.290, 0.212), rim * (river ? 0.55 : 0.72));
     roof = mix(roof, vec3(0.556, 0.688, 0.836), fr * (1.0 - rim * 0.55));
     // and the sun on it — broad sheen, then the hard points
     float sd = max(dot(pn, normalize(SUN_DIR + Vp)), 0.0);
@@ -8274,9 +8399,9 @@ void main() {
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
     outc = mix(outc, ownMetal() * (light * 0.80 + 0.26), edge * 0.88);
   }
-  if (vState.z > 0.01) {
-    float sel = step(0.75, vState.z);
-    outc *= 1.0 + 0.08 * vState.z;
+  if (hiOf() > 0.01) {
+    float sel = step(0.75, hiOf());
+    outc *= 1.0 + 0.08 * hiOf();
     float ew = max(1.6, ufw * 1.5);
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
     outc = mix(outc, OWN_GOLD * (light * 0.9 + 0.40), edge * 0.9 * sel);
@@ -9135,7 +9260,9 @@ void main() {
   // as a sticker on blue paper. Richer going in means still teal-dark coming
   // out the far side of the air.
   vec3 deep    = vec3(0.078, 0.220, 0.352);
-  vec3 shallow = vec3(0.262, 0.472, 0.568);
+  // and the shoal itself a sandier, greener teal a step under the old cyan,
+  // which glowed as a rim at altitude once the grade stopped boosting chroma
+  vec3 shallow = vec3(0.228, 0.420, 0.470);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
 
   // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
@@ -9269,7 +9396,7 @@ void main() {
   // water meets sand — not a painted surf stroke, so it reads at the dive
   // camera and disappears into the coastline at altitude.
   col = mix(col, vec3(0.845, 0.882, 0.910) * whiteK,
-            wash * 0.38 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
+            wash * 0.22 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
   // all winter — but the still water inside the shoal line skins over and
@@ -9281,7 +9408,7 @@ void main() {
     float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
     float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
                             * sin(p.x * 0.017 - p.y * 0.023);
-    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.80, 0.0, 1.0));
+    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.45, 0.0, 1.0));
   }
 
   // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.
@@ -9397,7 +9524,9 @@ void main() {
   vec3 base = uColor * vC;
   if (uFoliage > 0.5 && uFoliage < 1.5) {
     base = seasonGreen(base);
-    base = mix(base, vec3(0.068, 0.045, 0.030), BARE * 0.80);
+    // the twig mass: grey-brown and lighter than the bark it is made of,
+    // because it is mostly sky seen through it
+    base = mix(base, vec3(0.330, 0.300, 0.265), BARE * 0.85);
   } else if (uFoliage > 1.5) {
     base = mix(base, base * vec3(0.82, 0.90, 0.94), (1.0 - VIGOUR) * 0.45);
   }
@@ -9451,7 +9580,16 @@ const SUN_LEN = 1.05799;
 // at thirty-one, within a couple of degrees of the summer light the city was
 // calibrated under. The azimuth swing widens with it so the winter sun also
 // RAKES, coming further round toward the west the way a low sun actually does.
-const SUN_EL_MID = 21.5, SUN_EL_AMP = 9.5;
+// RAISED AGAIN, AND THIS TIME FOR THE MAP RATHER THAN THE PHOTOGRAPH. At
+// twelve to thirty-one degrees every street in town sat in a shadow three to
+// five times as long as the building casting it, so from the play camera the
+// ground was mostly shade, every lit wall was the same raking amber, and the
+// materials the facade shader works so hard on were all reading as one hue
+// of sunset. A strong city map is lit like a mid-afternoon aerial: 24° in
+// December (still long, still warm), 46° in June. The windows no longer come
+// on in daylight off the low sun (nightK's sun term opens below z 0.42, which
+// a 24° sun now just clears) — the evening carries that, via the hour.
+const SUN_EL_MID = 35, SUN_EL_AMP = 11;
 const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 17;
 // Lifted with the sky dome's drop, so a sunlit wall keeps the exposure it had
 // and only the shaded one moves. The ratio between them is the whole point.
@@ -9462,7 +9600,10 @@ const SUN_COL_SUMMER: readonly [number, number, number] = [1.462, 1.258, 0.936];
 // whole city went amber. December light through a lot of air is gold with the
 // red worn off it — the blue still drains, but the green survives better than
 // an ember implies.
-const SUN_COL_WINTER: readonly [number, number, number] = [1.620, 0.958, 0.408];
+// And paler: the amber above was right for twelve degrees and is wrong for
+// twenty-four. Winter light is still warmer than June's, with the blue only
+// partly drained, so a red brick wall stays red and a limestone one cream.
+const SUN_COL_WINTER: readonly [number, number, number] = [1.560, 1.150, 0.700];
 const SUN_WARMTH = 0.55;
 
 const SEASON_TABLE: readonly (readonly [number, number, number, number])[] = [
@@ -9625,6 +9766,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
   private hasPonds = false;
+  /** The sunk channels and their bridges — hidden from the mirrored pass. */
+  private riverParts: THREE.Object3D[] = [];
   /** the harbour fleet — one instanced mesh, see buildBoats */
   private boats: THREE.InstancedMesh | null = null;
   /** the job sites' dust — one instanced mesh in dynJobs, see dustMesh */
@@ -9780,6 +9923,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   /** Write one channel for a deed — both its static and its dynamic building. */
   private setDeedState(bbl: string, ch: 0 | 1 | 2, v: number) {
+    // THE HIGHLIGHT CHANNEL ALSO CARRIES THE BRICKS. Highlight is 0 / 0.5 / 1
+    // and never reaches 2, so the integer part above it is free: 2·q, where
+    // q is the deed's condition index quantised to 1-15 (0 = not known, which
+    // the shaders read as "standard"). See setCondition and condOf in GLSL.
+    if (ch === 2) {
+      const c = this.condNow.get(bbl);
+      if (c !== undefined) v += 2 * (1 + Math.round(Math.max(0, Math.min(1, c)) * 14));
+    }
     for (const key of [bbl, "d:" + bbl]) {
       const bid = this.bidByKey.get(key);
       if (bid === undefined) continue;
@@ -9840,6 +9991,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * SELECTION AND HOVER AS LIGHT. `selected` is every deed of the picked site
    * (an assemblage is one building); `hover` gets a subtle lift only.
    */
+  /**
+   * THE STATE OF THE BRICKS, ON THE BRICKS. The engine keeps a condition index
+   * for every deed (value.ts condIdxOf — 0.2 a building nobody has spent on in
+   * forty years, 0.97 one just delivered) and prices rent, cap rate and
+   * lending off it; until now the map drew a ruin and a refit identically.
+   * Read, never written: MapView hands over the same index the desks show.
+   */
+  private condNow = new Map<string, number>();
+  setCondition(cond: Map<string, number>) {
+    let changed = false;
+    for (const [bbl, c] of cond) {
+      const q = Math.round(Math.max(0, Math.min(1, c)) * 14);
+      const prev = this.condNow.get(bbl);
+      if (prev !== undefined && Math.round(prev * 14) === q) continue;
+      this.condNow.set(bbl, c);
+      this.setDeedState(bbl, 2, this.hiNow.get(bbl) ?? 0);
+      changed = true;
+    }
+    if (changed) { this.sceneDirty++; this.map?.triggerRepaint(); }
+  }
+
   setHighlight(selected: string[], hover: string | null) {
     const next = new Map<string, number>();
     if (hover) next.set(hover, 0.5);
@@ -10090,6 +10262,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     private curbs: [number, number][][] = [],
     private ctxPoints: {
       trees?: [number, number][];
+      /** Parallel to `curbs`: per segment, half-street width and footway width (m). */
+      curbMeta?: { hw: number[]; sw: number[] }[];
       piles?: [number, number][];
       land?: [number, number][];
       // street furniture arrives with a baked bearing: a bench that does not
@@ -10099,6 +10273,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       rails?: Oriented[];
       parks?: { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }[] | [number, number][][];
       ponds?: [number, number][][];
+      /** Creeks, canals and mill ponds — sunk into a channel with banks (buildRiver). */
+      streams?: { ring: [number, number][]; water: string }[];
+      /** The generator's crossings: its footprint ring, the flow bearing, and
+       *  the creek (rw) and green corridor (cw) widths it was measured to span. */
+      bridges?: { ring: [number, number][]; deg: number; w: number; rw: number; cw: number }[];
       paths?: [number, number][][];
       /**
        * THE PARCEL OUTLINES, BY BBL — the one piece of per-lot geometry this
@@ -10451,6 +10630,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
     const decoTintRanges: { attr: number; r: Ranges; c: [number, number, number] }[] = [];
     for (const v of this.volumes) {
+      // The generator's two parapet slabs per crossing stood on dry ground in
+      // mid-gap — black boards by the creek. buildRiver lays the real bridge.
+      if (v.dk === "bridgerail") continue;
       const style = styleFor(v);
       // EVERY FACADE CHOICE IN THE CITY CAME OUT OF 485 NUMBERS.
       //
@@ -11146,6 +11328,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.buildBoats();
     this.buildSeawall();
     this.buildLawns();
+    this.buildRiver();
 
     this.bakeShadows();
   }
@@ -11219,7 +11402,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       });
     };
 
-    for (const curb of this.curbs) {
+    for (let ci = 0; ci < this.curbs.length; ci++) {
+      const curb = this.curbs[ci];
+      const meta = this.ctxPoints.curbMeta?.[ci];
       const ring = curb.map((p) => this.project(p));
       if (ring.length < 3) continue;
       let cx = 0, cy = 0;
@@ -11231,6 +11416,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const len = Math.hypot(dx, dy);
         if (len < 2 || len > 400) continue;
+        // THE KERB, MEASURED. Everything below used fixed offsets from the
+        // lot line — trees at 2.1-2.8 m, parked cars at 4.4 m, traffic at
+        // 7.2 m — which on a 9 m lane put the traffic over the centre line
+        // and the trees in the gutter, and on a boulevard parked the cars on
+        // the footway. citygen hands over this face's half-street (hw) and
+        // footway (sw); the furniture stands in the footway, the parked lane
+        // is the first 2.2 m of road past the kerb, and traffic runs in the
+        // middle of the near half.
+        const hw = meta?.hw?.[i] ?? 7.5;
+        const sw = meta?.sw?.[i] ?? 2.6;
+        const road = Math.max(0, hw - sw);
+        // a parking lane each side and one shared running lane down the
+        // middle is how a 12 m street is painted: 2.0 m of parking and a
+        // metre of the shared lane per half
+        const PARK_MIN = 3.0;
         // A sidewalk that still chords the green would plant people and
         // lamps on the lawn. Citygen drops those edges; this is the last
         // line if one still arrives.
@@ -11241,10 +11441,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }  // point outward
-          const off = 2.1 + rnd() * 0.7;
+          // tree pits and lamp standards stand in the footway, back from the kerb
+          const off = Math.max(0.6, sw - 0.75) + (rnd() - 0.5) * 0.3;
           const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28, ctx: 0 };
           if (inParkXY(item.x, item.y)) continue;
-          if (rnd() < 0.76) trees.push(item);
+          // a footway under two metres has no room for a tree pit
+          if (rnd() < 0.76 && sw >= 1.9) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
         }
         // PEOPLE. A city with cars but nobody in it reads as an evacuation.
@@ -11264,7 +11466,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
-          const off = 0.9 + rnd() * 1.1;             // on the pavement, not the road
+          const off = 0.35 + rnd() * Math.max(0.3, sw - 0.9);   // on the pavement, not the road
           const pxp = px + nx * off, pyp = py + ny * off;
           if (inParkXY(pxp, pyp)) continue;
           people.push({ x: pxp, y: pyp, s: 0.92 + rnd() * 0.2, rot: rnd() * 6.28 });
@@ -11273,13 +11475,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // parked cars along it — a building is abstract until there is
         // something four metres long standing next to it. They sit in the
         // parking lane, nose-to-tail, aligned with the frontage.
-        for (let d = rnd() * 6; d < len - 5; d += 5.4 + rnd() * 3.4) {
+        // no parking lane on a street too narrow to keep a running lane past it
+        for (let d = rnd() * 6; d < len - 5 && road >= PARK_MIN; d += 5.4 + rnd() * 3.4) {
           if (rnd() > 0.62) continue;              // gaps: hydrants, drives, luck
           const t = d / len;
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
-          const cxp = px + nx * (4.4 + rnd() * 0.4), cyp = py + ny * (4.4 + rnd() * 0.4);
+          const park = sw + 1.05 + rnd() * 0.12;
+          const cxp = px + nx * park, cyp = py + ny * park;
           if (inParkXY(cxp, cyp)) continue;
           cars.push({
             x: cxp,
@@ -11302,7 +11506,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
           const walkStep = 5 + (1 - dn) * 23;
           for (let d = rnd() * walkStep; d < len; d += walkStep * (0.7 + rnd() * 0.6)) {
-            const off = 0.8 + rnd() * 1.3;
+            const off = 0.35 + rnd() * Math.max(0.3, sw - 0.9);
             const flip = rnd() < 0.5 ? 1 : -1;   // both directions on a pavement
             const wx = a[0] + ux * len * 0.5 + nx * off, wy = a[1] + uy * len * 0.5 + ny * off;
             if (inParkXY(wx, wy)) continue;
@@ -11318,8 +11522,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // other way), thicker downtown, always sparser than the parked lane
           const laneStep = 26 + (1 - dn) * 60;
           for (let d = rnd() * laneStep; d < len; d += laneStep * (0.7 + rnd() * 0.7)) {
-            const mx = a[0] + ux * len * 0.5 + nx * (7.2 + rnd() * 0.5);
-            const my = a[1] + uy * len * 0.5 + ny * (7.2 + rnd() * 0.5);
+            // the middle of the near half's running lane, clear of the parked one
+            const lane = sw + (road >= PARK_MIN ? 2.0 : 0) + Math.max(0.95, (road - (road >= PARK_MIN ? 2.0 : 0)) * 0.5) + (rnd() - 0.5) * 0.3;
+            const mx = a[0] + ux * len * 0.5 + nx * lane;
+            const my = a[1] + uy * len * 0.5 + ny * lane;
             if (inParkXY(mx, my)) continue;
             movers.push({
               x: mx,
@@ -11783,7 +11989,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
       return inside;
     };
-    const wetM = (this.ctxPoints.ponds ?? []).map((p) => p.map((q) => this.project(q)));
+    const wetM = [...(this.ctxPoints.ponds ?? []), ...(this.ctxPoints.streams ?? []).map((st) => st.ring)]
+      .map((p) => p.map((q) => this.project(q)));
     const inWet = (v: [number, number]) => wetM.some((r) => r.length >= 3 && inPoly(v, r));
 
     const fillRing = (
@@ -11840,7 +12047,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const flavour = Array.isArray(p) && typeof p[0]?.[0] === "number"
         ? "park"
         : (p as { ring: [number, number][]; flavour?: string }).flavour ?? "park";
+      // a market square is paved, not gravelled: vU = 50 tells the walk
+      // shader it is a plaza (setts) rather than a path through a park
+      if (flavour === "market") uOf = () => 50;
       fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true, holes);
+      uOf = null;
     }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was
@@ -11911,6 +12122,343 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(mesh);
   }
 
+
+  /**
+   * THE CREEK, CUT INTO THE GROUND — AND THE BRIDGES OVER IT.
+   *
+   * A creek was a flat dark ribbon painted at street level: no banks, no
+   * depth, the water flush with the pavement like a puddle a city block long,
+   * and it ended in a rounded cap at every "bridge" — the generator lays its
+   * crossings as dry gaps in the ribbon, and the only thing that stood in the
+   * gap was a pair of parapet slabs on bare ground. Nothing spanned anything.
+   *
+   * Now the water lies a metre and a third down a real channel. A canal has a
+   * dressed stone wall and a coping; a creek has a riprap bank that slopes
+   * into the water. The gap at each crossing is flooded so the channel runs
+   * through, and a bridge is built over it: a stone arch footbridge across
+   * the green corridor where no street meets it, a flat road deck the width
+   * of the boulevard where one does.
+   *
+   * The near bank needs care, because MapLibre paints the ground and the
+   * ground is not in this layer's depth buffer: water drawn a metre down would
+   * show THROUGH the near bank, whose real top surface is MapLibre's. So every
+   * bank wall is drawn twice — its water-facing side in colour, and its back
+   * side depth-only, ahead of the water — and the back side is what stops the
+   * water at the near bank's lip, exactly where the land would.
+   */
+  private buildRiver() {
+    const streams = this.ctxPoints.streams ?? [];
+    if (!streams.length) return;
+    const WATER_Z = -1.35, BED = -1.75;
+    type P2 = [number, number];
+    const rings = streams
+      .map((st) => ({ ring: st.ring.map((q) => this.project(q)) as P2[], water: st.water }))
+      .filter((r) => r.ring.length >= 3);
+    const inPoly = (v: P2, poly: P2[]) => {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+        if ((yi > v[1]) !== (yj > v[1])
+          && v[0] < ((xj - xi) * (v[1] - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+      }
+      return inside;
+    };
+
+    // ---- the crossings: flood the gap, and say what spans it --------------
+    const gaps: P2[][] = [];
+    const spans: { cx: number; cy: number; ax: number; ay: number; len: number; wid: number; road: boolean; rw: number; canal: boolean }[] = [];
+    for (const b of this.ctxPoints.bridges ?? []) {
+      const r = b.ring.map((q) => this.project(q));
+      if (r.length < 4) continue;
+      const cx = (r[0][0] + r[1][0] + r[2][0] + r[3][0]) / 4;
+      const cy = (r[0][1] + r[1][1] + r[2][1] + r[3][1]) / 4;
+      const t = (b.deg * Math.PI) / 180;
+      const ux = Math.cos(t), uy = Math.sin(t);    // down the flow
+      const vx = -uy, vy = ux;                     // across it
+      const rw = b.rw > 2 ? b.rw : 14;
+      const along = b.w / 2 + rw * 0.6;
+      const hw = rw / 2;
+      gaps.push([
+        [cx - ux * along - vx * hw, cy - uy * along - vy * hw],
+        [cx + ux * along - vx * hw, cy + uy * along - vy * hw],
+        [cx + ux * along + vx * hw, cy + uy * along + vy * hw],
+        [cx - ux * along + vx * hw, cy - uy * along + vy * hw],
+      ]);
+      const near = rings.find((x) => inPoly([cx + ux * along, cy + uy * along], x.ring)
+        || inPoly([cx - ux * along, cy - uy * along], x.ring));
+      const road = !(b.cw > 0);
+      spans.push({
+        cx, cy, ax: vx, ay: vy, rw,
+        len: road ? rw + 9 : Math.max(rw + 6, b.cw + 1.5),
+        wid: road ? Math.max(9, Math.min(30, b.w)) : 4.4,
+        road, canal: near?.water === "canal",
+      });
+    }
+    // A SLIP IS THE HARBOUR, NOT A CREEK. It is a dock basin open to the sea,
+    // so its water stands at the harbour's own level behind a stone quay; a
+    // creek or a canal runs down its channel 1.35 m below the street.
+    const water: { ring: P2[]; canal: boolean; slip: boolean }[] = [
+      ...rings.map((r) => ({ ring: r.ring, canal: r.water === "canal" || r.water === "slip", slip: r.water === "slip" })),
+      ...gaps.map((g) => ({ ring: g, canal: false, slip: false })),
+    ];
+    const land = this.landRing()?.map((v) => [v.x, v.y] as P2) ?? null;
+    const inWaterOther = (v: P2, self: number) => water.some((w, i) => i !== self && inPoly(v, w.ring));
+
+    // the bank: every ring edge that is not inside some other piece of water
+    type Edge = { a: P2; b: P2; nx: number; ny: number; canal: boolean; slip: boolean };
+    const bank: Edge[] = [];
+    water.forEach((w, wi) => {
+      const r = w.ring;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const L = Math.hypot(dx, dy);
+        if (L < 0.05) continue;
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        if (inWaterOther([mx, my], wi)) continue;
+        let nx = -dy / L, ny = dx / L;              // toward the water
+        if (!inPoly([mx + nx * 0.4, my + ny * 0.4], r)) { nx = -nx; ny = -ny; }
+        // a slip's mouth opens onto the sea: no wall across it
+        if (land && !inPoly([mx - nx * 1.5, my - ny * 1.5], land)) continue;
+        bank.push({ a, b, nx, ny, canal: w.canal, slip: w.slip });
+      }
+    });
+    const bankDist = (v: P2) => {
+      let best = 8;
+      for (const e of bank) {
+        const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((v[0] - e.a[0]) * dx + (v[1] - e.a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(v[0] - e.a[0] - t * dx, v[1] - e.a[1] - t * dy));
+      }
+      return best;
+    };
+
+    // ---- the water surface: the park pond's shader, in its river colours --
+    const T = { pos: [] as number[], u: [] as number[] };
+    let level = WATER_Z;
+    const emit = (q: P2[]) => { for (const v of q) { T.pos.push(v[0], v[1], level); T.u.push(bankDist(v)); } };
+    const split = (q: P2[], depth: number) => {
+      const a = Math.abs((q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1])) / 2;
+      if (a < 70 || depth > 6) { emit(q); return; }
+      const m = (u: P2, v: P2): P2 => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2];
+      const m01 = m(q[0], q[1]), m12 = m(q[1], q[2]), m20 = m(q[2], q[0]);
+      split([q[0], m01, m20], depth + 1); split([m01, q[1], m12], depth + 1);
+      split([m20, m12, q[2]], depth + 1); split([m01, m12, m20], depth + 1);
+    };
+    for (const w of water) {
+      level = w.slip ? 0.0 : WATER_Z;
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(w.ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
+      let ringA = 0;
+      for (let i = 0; i < w.ring.length; i++) {
+        const p0 = w.ring[i], p1 = w.ring[(i + 1) % w.ring.length];
+        ringA += p0[0] * p1[1] - p1[0] * p0[1];
+      }
+      ringA = Math.abs(ringA) / 2;
+      for (const t of tris) {
+        const q = t.map((i) => w.ring[i]) as P2[];
+        const area = Math.abs((q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1])) / 2;
+        if (area > 8000 || (ringA > 1 && area > ringA * 0.45 && w.ring.length > 8)) continue;
+        split(q, 0);
+      }
+    }
+    if (T.pos.length) {
+      const g = new THREE.BufferGeometry();
+      const n = T.pos.length / 3;
+      const fill = (v: number, k: number) => new THREE.Float32BufferAttribute(new Float32Array(n * k).fill(v), k);
+      g.setAttribute("position", new THREE.Float32BufferAttribute(T.pos, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => (i % 3 === 2 ? 1 : 0)), 3));
+      g.setAttribute("aU", new THREE.Float32BufferAttribute(T.u, 1));
+      g.setAttribute("aStyle", fill(S_POND, 1));
+      g.setAttribute("aRand", fill(0.5, 1));
+      // aVar marks running water: the pond branch keys its river colours off it
+      g.setAttribute("aVar", fill(0.97, 1));
+      g.setAttribute("aTop", fill(1, 1));
+      g.setAttribute("aFh", fill(3.5, 1));
+      g.setAttribute("aEra", fill(0.55, 1));
+      g.setAttribute("aTint", fill(1, 3));
+      g.setAttribute("aSeg", fill(0, 2));
+      g.setAttribute("aCcv", fill(0, 2));
+      g.setAttribute("aLit", fill(-1, 1));
+      g.setAttribute("aRet", fill(-1, 1));
+      g.setAttribute("aBid", fill(0, 1));
+      const mesh = new THREE.Mesh(g, this.roofMat!);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = -4;
+      mesh.userData.noShadow = true;
+      this.scene.add(mesh);
+      this.riverParts.push(mesh);
+      this.hasPonds = true;
+    }
+
+    // ---- the banks --------------------------------------------------------
+    // Triangles are wound so their face normal points at the water; the
+    // coloured copy culls its back, the depth copy culls its front.
+    const wallPos: number[] = [], wallN: number[] = [];
+    const copePos: number[] = [], copeN: number[] = [];
+    const tri = (P: number[], N: number[], a: number[], b: number[], c: number[], want: number[]) => {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+      const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const l = Math.hypot(nx, ny, nz) || 1;
+      nx /= l; ny /= l; nz /= l;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) { const t = b; b = c; c = t; nx = -nx; ny = -ny; nz = -nz; }
+      P.push(...a, ...b, ...c);
+      for (let k = 0; k < 3; k++) N.push(nx, ny, nz);
+    };
+    for (const e of bank) {
+      if (e.canal) {
+        const top = e.slip ? 0.45 : 0.16, bot = e.slip ? -0.35 : BED;
+        const A = [e.a[0], e.a[1], top], B = [e.b[0], e.b[1], top];
+        const A2 = [e.a[0], e.a[1], bot], B2 = [e.b[0], e.b[1], bot];
+        const want = [e.nx, e.ny, 0];
+        tri(wallPos, wallN, A, B, B2, want); tri(wallPos, wallN, A, B2, A2, want);
+        // the coping, laid back over the walk
+        const ox = -e.nx * 0.55, oy = -e.ny * 0.55;
+        const C = [e.a[0] + ox, e.a[1] + oy, top], D = [e.b[0] + ox, e.b[1] + oy, top];
+        tri(copePos, copeN, A, B, D, [0, 0, 1]); tri(copePos, copeN, A, D, C, [0, 0, 1]);
+      } else {
+        // riprap: a slope from the lip down into the water
+        const run = 1.5;
+        const A = [e.a[0], e.a[1], 0.03], B = [e.b[0], e.b[1], 0.03];
+        const A2 = [e.a[0] + e.nx * run, e.a[1] + e.ny * run, BED + 0.1];
+        const B2 = [e.b[0] + e.nx * run, e.b[1] + e.ny * run, BED + 0.1];
+        const want = [e.nx * 0.8, e.ny * 0.8, 0.6];
+        tri(wallPos, wallN, A, B, B2, want); tri(wallPos, wallN, A, B2, A2, want);
+      }
+    }
+    const addSided = (P: number[], N: number[], color: number) => {
+      if (!P.length) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+      g.computeBoundingSphere();
+      const mat = this.propMaterial(color, false, 0, [0, 0], true);
+      mat.side = THREE.FrontSide;
+      const vis = new THREE.Mesh(g, mat);
+      vis.renderOrder = -4;
+      vis.userData.noShadow = true;
+      const occ = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.BackSide }));
+      occ.renderOrder = -5;
+      occ.userData.noShadow = true;
+      this.scene.add(occ, vis);
+      this.riverParts.push(occ, vis);
+    };
+    addSided(wallPos, wallN, rings.some((r) => r.water === "canal") ? 0x8f887b : 0x7d7566);
+    if (copePos.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(copePos, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(copeN, 3));
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, this.propMaterial(0xb9b1a0, false));
+      m.userData.noShadow = true;
+      this.scene.add(m);
+      this.riverParts.push(m);
+    }
+
+    // ---- the bridges ------------------------------------------------------
+    // Built in each span's own frame — s along the deck, p across it — and
+    // laid as plain lit geometry in three materials. They cast: a bridge's
+    // shadow on the water is half of what says the water is below it.
+    const stone: number[] = [], stoneN: number[] = [];
+    const deck: number[] = [], deckN: number[] = [];
+    const cope: number[] = [], copeNn: number[] = [];
+    const SEG = 14;
+    const bridgeLamps: { x: number; y: number; z: number; rot: number }[] = [];
+    for (const sp of spans) {
+      const { cx, cy, ax, ay, len, wid, road, rw } = sp;
+      const px = -ay, py = ax;
+      const half = len / 2, hw = wid / 2;
+      const rise = road ? 0.45 : Math.max(0.7, Math.min(1.7, rw * 0.09));
+      const zTop = (s: number) => 0.06 + rise * Math.max(0, 1 - (s / half) * (s / half));
+      const at = (s: number, p: number, z: number) => [cx + ax * s + px * p, cy + ay * s + py * p, z];
+      const archHalf = rw / 2 + 0.6;
+      const archTop = (s: number) => {
+        const k = Math.max(0, 1 - (s / archHalf) * (s / archHalf));
+        return WATER_Z + (zTop(0) - 0.75 - WATER_Z) * Math.sqrt(k);
+      };
+      const PAR = road ? 0.95 : 1.05, PT = road ? 0.4 : 0.32;
+      for (let i = 0; i < SEG; i++) {
+        const s0 = -half + (len * i) / SEG, s1 = -half + (len * (i + 1)) / SEG;
+        const z0 = zTop(s0), z1 = zTop(s1);
+        // the walking surface
+        tri(deck, deckN, at(s0, -hw, z0), at(s1, -hw, z1), at(s1, hw, z1), [0, 0, 1]);
+        tri(deck, deckN, at(s0, -hw, z0), at(s1, hw, z1), at(s0, hw, z0), [0, 0, 1]);
+        for (const side of [-1, 1]) {
+          const po = side * hw, pi = side * (hw - PT);
+          const out = [px * side, py * side, 0], inn = [-px * side, -py * side, 0];
+          // parapet: outer face (down to the soffit), inner face, coping
+          tri(stone, stoneN, at(s0, po, z0 - 0.55), at(s1, po, z1 - 0.55), at(s1, po, z1 + PAR), out);
+          tri(stone, stoneN, at(s0, po, z0 - 0.55), at(s1, po, z1 + PAR), at(s0, po, z0 + PAR), out);
+          tri(stone, stoneN, at(s0, pi, z0), at(s1, pi, z1), at(s1, pi, z1 + PAR), inn);
+          tri(stone, stoneN, at(s0, pi, z0), at(s1, pi, z1 + PAR), at(s0, pi, z0 + PAR), inn);
+          tri(cope, copeNn, at(s0, po + side * 0.05, z0 + PAR), at(s1, po + side * 0.05, z1 + PAR), at(s1, pi - side * 0.05, z1 + PAR), [0, 0, 1]);
+          tri(cope, copeNn, at(s0, po + side * 0.05, z0 + PAR), at(s1, pi - side * 0.05, z1 + PAR), at(s0, pi - side * 0.05, z0 + PAR), [0, 0, 1]);
+          // spandrel: from the soffit down to the arch (or the bank, past it)
+          const b0 = Math.abs(s0) < archHalf ? archTop(s0) : BED;
+          const b1 = Math.abs(s1) < archHalf ? archTop(s1) : BED;
+          const lo0 = Math.min(b0, z0 - 0.55), lo1 = Math.min(b1, z1 - 0.55);
+          tri(stone, stoneN, at(s0, po, lo0), at(s1, po, lo1), at(s1, po, z1 - 0.55), out);
+          tri(stone, stoneN, at(s0, po, lo0), at(s1, po, z1 - 0.55), at(s0, po, z0 - 0.55), out);
+        }
+        // the soffit / intrados: under the deck, or the arch barrel over the water
+        const b0 = Math.abs(s0) < archHalf ? archTop(s0) : z0 - 0.55;
+        const b1 = Math.abs(s1) < archHalf ? archTop(s1) : z1 - 0.55;
+        tri(stone, stoneN, at(s0, -hw, b0), at(s1, hw, b1), at(s1, -hw, b1), [0, 0, -1]);
+        tri(stone, stoneN, at(s0, -hw, b0), at(s0, hw, b0), at(s1, hw, b1), [0, 0, -1]);
+      }
+      // abutment ends: close the deck where it lands on the bank
+      for (const s of [-half, half]) {
+        const z = zTop(s);
+        const out = [ax * Math.sign(s), ay * Math.sign(s), 0];
+        tri(stone, stoneN, at(s, -hw, BED), at(s, hw, BED), at(s, hw, z), out);
+        tri(stone, stoneN, at(s, -hw, BED), at(s, hw, z), at(s, -hw, z), out);
+      }
+      void sp.canal;
+      // lamp standards on the parapet at the third points, arms over the deck:
+      // what tells you a crossing is a crossing after dark
+      if (len > 14) {
+        for (const s3 of [-len * 0.3, len * 0.3]) {
+          for (const side of [-1, 1]) {
+            const q = at(s3, side * (hw - PT * 0.5), zTop(s3));
+            bridgeLamps.push({ x: q[0], y: q[1], z: q[2], rot: Math.atan2(-py * side, -px * side) });
+          }
+        }
+      }
+    }
+    if (bridgeLamps.length) {
+      const mat = this.propMaterial(0x3f464b, true, 0, [0, 0], true);
+      (mat.uniforms.uGlowBox.value as THREE.Vector3).set(0.74, 4.28, 1);
+      const mesh = new THREE.InstancedMesh(lampGeom(), mat, bridgeLamps.length);
+      const m = new THREE.Matrix4();
+      const cols = new Float32Array(bridgeLamps.length * 3).fill(1);
+      bridgeLamps.forEach((l, i) => {
+        m.compose(new THREE.Vector3(l.x, l.y, l.z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, l.rot)),
+          new THREE.Vector3(0.85, 0.85, 0.85));
+        mesh.setMatrixAt(i, m);
+      });
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      this.finishInstances(mesh);
+      this.scene.add(mesh);
+      this.riverParts.push(mesh);
+    }
+    const addLit = (P: number[], N: number[], color: number) => {
+      if (!P.length) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, this.propMaterial(color, false));
+      this.scene.add(m);
+      this.riverParts.push(m);
+    };
+    addLit(stone, stoneN, 0xa39a89);
+    addLit(deck, deckN, 0x77726b);
+    addLit(cope, copeNn, 0xc4bcaa);
+  }
   /**
    * A FLOOR THAT IS NEVER DRAWN.
    *
@@ -12080,6 +12628,63 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
         T = next;
         if (!any) break;
+      }
+      // AND NO NEEDLES. The pass above splits any edge long for its distance
+      // from the coast, and that is enough everywhere except at a re-entrant
+      // corner of the coastline: earcut fans long thin triangles out of the
+      // notch vertex, every one of their edges passes the length test, and
+      // depth interpolated straight across a needle is not the distance field
+      // it was sampled from. The shoal broke along the fan into a dark wedge
+      // running straight out to sea from the notch — in every wide shot of
+      // every island with a cove. So: bisect the longest edge of any thin
+      // triangle near the coast, edge-keyed like the pass above so the two
+      // triangles sharing that edge both split and nothing cracks.
+      for (let round = 0; round < 10 && T.length < 120000; round++) {
+        const want = new Set<string>();
+        const key = (a: number, b: number) => (a < b ? a + "_" + b : b + "_" + a);
+        for (const [a, b, c] of T) {
+          if (Math.min(dist[a], dist[b], dist[c]) > 3600) continue;
+          const lab = Math.hypot(xs[b] - xs[a], ys[b] - ys[a]);
+          const lbc = Math.hypot(xs[c] - xs[b], ys[c] - ys[b]);
+          const lca = Math.hypot(xs[a] - xs[c], ys[a] - ys[c]);
+          const L = Math.max(lab, lbc, lca);
+          if (L < 25) continue;
+          const area = Math.abs((xs[b] - xs[a]) * (ys[c] - ys[a]) - (xs[c] - xs[a]) * (ys[b] - ys[a])) / 2;
+          if (L * L < 3.5 * 2 * area) continue;          // L / altitude under 3.5: well shaped
+          want.add(L === lab ? key(a, b) : L === lbc ? key(b, c) : key(c, a));
+        }
+        if (!want.size) break;
+        const made = new Map<string, number>();
+        const edge = (a: number, b: number): number => {
+          const k = key(a, b);
+          if (!want.has(k)) return -1;
+          const hit = made.get(k);
+          if (hit !== undefined) return hit;
+          const mx = (xs[a] + xs[b]) / 2, my = (ys[a] + ys[b]) / 2;
+          const v = xs.length;
+          xs.push(mx); ys.push(my); dist.push(at(mx, my));
+          made.set(k, v);
+          return v;
+        };
+        const next: number[][] = [];
+        for (const [a, b, c] of T) {
+          const ab = edge(a, b), bc = edge(b, c), ca = edge(c, a);
+          const n = (ab >= 0 ? 1 : 0) + (bc >= 0 ? 1 : 0) + (ca >= 0 ? 1 : 0);
+          if (!n) { next.push([a, b, c]); continue; }
+          if (n === 3) {
+            next.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+          } else if (n === 1) {
+            if (ab >= 0) next.push([a, ab, c], [ab, b, c]);
+            else if (bc >= 0) next.push([b, bc, a], [bc, c, a]);
+            else next.push([c, ca, b], [ca, a, b]);
+          } else {
+            let p0 = a, q = b, r = c, m1 = ab, m2 = bc;
+            if (ab < 0) { p0 = b; q = c; r = a; m1 = bc; m2 = ca; }
+            else if (bc < 0) { p0 = c; q = a; r = b; m1 = ca; m2 = ab; }
+            next.push([m1, q, m2], [p0, m1, m2], [p0, m2, r]);
+          }
+        }
+        T = next;
       }
       tris = T;
       pts.length = 0;
@@ -13798,7 +14403,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const cloud = Math.max(0, Math.min(1, Number.isFinite(overcast) ? overcast : 0));
     this.weatherUni.value.x = kind === "rain" ? p : 0;
     this.weatherUni.value.y = cloud;
-    this.weatherSnow = kind === "snow" ? 0.32 + p * 0.62 : 0;
+    // a dusting most snow months, a real cover only in a heavy fall — the
+    // old floor put two-thirds cover on every roof in town at any flurry
+    this.weatherSnow = kind === "snow" ? 0.16 + p * 0.56 : 0;
     this.applySeason();
     this.sceneDirty++;
     this.map?.triggerRepaint();
@@ -13977,6 +14584,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
       const wasSheen = this.groundSheen?.visible ?? false;
+      for (const o of this.riverParts) o.visible = false;
       this.water!.visible = false;
       if (this.groundCatcher) this.groundCatcher.visible = false;
       if (this.aoGround) this.aoGround.visible = false;
@@ -14002,6 +14610,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
       if (this.aoGround) this.aoGround.visible = wasAo;
       if (this.groundSheen) this.groundSheen.visible = wasSheen;
+      for (const o of this.riverParts) o.visible = true;
       this.camera.projectionMatrix = base;
 
       this.waterMat!.uniforms.uReflect.value = this.reflectRT!.texture;
@@ -14174,12 +14783,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // the shader could reason about.
     {
       const sd = this.sunDirUni.value;
-      const p = this.scratchV3.set(
-        this.camUni.value.x + sd.x * 9000,
-        this.camUni.value.y + sd.y * 9000,
-        this.camUni.value.z + sd.z * 9000,
-      ).applyMatrix4(this.camera.projectionMatrix);
-      const inFront = p.z > -1 && p.z < 1;
+      const sx = this.camUni.value.x + sd.x * 9000;
+      const sy = this.camUni.value.y + sd.y * 9000;
+      const sz = this.camUni.value.z + sd.z * 9000;
+      const p = this.scratchV3.set(sx, sy, sz).applyMatrix4(this.camera.projectionMatrix);
+      // BEHIND THE CAMERA IS NOT IN FRONT OF IT. applyMatrix4 divides by w,
+      // and a point behind the eye has w < 0 — its projection comes out
+      // mirrored through the centre of the screen with a z that can land
+      // inside the clip range. So with the sun over the player's shoulder
+      // the shaft pass marched rays toward a phantom sun on the far side of
+      // the frame, and every building between lit a long dark streak across
+      // the harbour. Test w itself.
+      const e = this.camera.projectionMatrix.elements;
+      const w = e[3] * sx + e[7] * sy + e[11] * sz + e[15];
+      const inFront = w > 0 && p.z > -1 && p.z < 1;
       const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
     }

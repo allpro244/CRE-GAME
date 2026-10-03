@@ -11419,9 +11419,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const hw = meta?.hw?.[i] ?? 7.5;
         const sw = meta?.sw?.[i] ?? 2.6;
         const road = Math.max(0, hw - sw);
-        // a 2.0 m parking lane plus a 1.8 m running lane is the tightest
-        // two-use half-street a city actually paints (a 14 m street)
-        const PARK_MIN = 3.8;
+        // a parking lane each side and one shared running lane down the
+        // middle is how a 12 m street is painted: 2.0 m of parking and a
+        // metre of the shared lane per half
+        const PARK_MIN = 3.0;
         // A sidewalk that still chords the green would plant people and
         // lamps on the lawn. Citygen drops those edges; this is the last
         // line if one still arrives.

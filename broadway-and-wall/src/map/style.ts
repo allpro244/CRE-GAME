@@ -413,7 +413,8 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         // the promenade ring was within a couple of points of the block fills,
         // which made it the widest single piece of the coastal halo. A worn
         // paving tone, clearly below the blocks and above the roadway.
-        paint: { "fill-color": "#cdd1c1" },
+        // and a step further: the promenade is worn granite setts, not chalk
+        paint: { "fill-color": "#bdb9ab" },
       },
       {
         // THE PAVED CITY. Everything inside the shoreline, laid down before a

@@ -2452,6 +2452,11 @@ vec3 ownMetal() {
   float swell = stListed() * (0.5 + 0.5 * sin(uTime * 2.513));
   return c * (1.0 + 0.55 * swell) + vec3(0.10, 0.09, 0.07) * swell;
 }
+// the highlight, and the condition packed above it (see setDeedState)
+float condQ() { return floor(vState.z * 0.5 + 0.001); }
+float hiOf() { return vState.z - 2.0 * condQ(); }
+// 0..1, or -1 where the game has not said
+float condOf() { float q = condQ(); return q > 0.5 ? (q - 1.0) / 14.0 : -1.0; }
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * (uLensN - 1.0);
   vec3 c = uLensRamp[0];
@@ -7525,6 +7530,55 @@ void main() {
   vec3 facadeAvg = mix(wall, mix(wall * revShade, glassAvg, seen), win.x * win.y * 0.8);
   col = mix(col, facadeAvg, lod);
 
+  // ---- CONDITION — the deed's own condition index, as weather on the wall ---
+  // A building nobody has spent on is not a different colour, it is the same
+  // colour under forty years of soot and rain: greyer, darker, streaked down
+  // from every sill and cornice, and — near enough to see windows — with
+  // openings boarded where the floors are dead. A refit is the opposite: the
+  // stone cleaned, the glass new. Value first, so it survives the dissolve.
+  {
+    float cnd = condOf();
+    if (cnd >= 0.0) {
+      float worn = 1.0 - smoothstep(0.28, 0.62, cnd);
+      float fresh = smoothstep(0.74, 0.94, cnd);
+      float lumC = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(col, vec3(lumC) * vec3(0.95, 0.92, 0.87), worn * 0.38);
+      // streaks: a soot run under each bay, heavier toward the street
+      float run = hash(vec2(floor(vU / max(colW, 1.0)) + 7.0, vRand * 41.0));
+      float streak = smoothstep(0.35, 1.0, run) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 18.0, vZ)));
+      col *= 1.0 - worn * (0.13 + 0.15 * streak);
+      if (!glassy && lod < 0.6 && winMask > 0.5) {
+        float board = step(hash(vec2(floor(u) + 3.1, floor(v) + vRand * 17.0)), max(0.0, worn - 0.62) * 0.9);
+        col = mix(col, vec3(0.40, 0.34, 0.26) * (0.85 + 0.3 * hash(vec2(floor(u), floor(v)))), board * (1.0 - lod));
+      }
+      col *= 1.0 + fresh * 0.05;
+    }
+  }
+
+  // ---- THE BASE — where the building meets the pavement ------------------
+  // A masonry street reads from the air as walls standing on a line: a
+  // granite water table a knee to a waist high, darker and harder than the
+  // wall above, lit along its top edge. A tower's base is the opposite: a
+  // double-height lobby of dark clear glass under the first spandrel. Both
+  // are tone, below the dissolve, so they hold at the play camera — and both
+  // are by type, so a walk-up, a glass tower and a shed each meet the street
+  // their own way (a shed's wall simply comes down to the slab).
+  {
+    // (not under a shopfront, whose glass runs to the pavement)
+    bool mason = isMasonry(s) && !glassy && vTop > 5.0 && vRet < 0.0;
+    if (mason) {
+      float ph = 0.55 + 0.45 * vVar;
+      if (vZ < ph) {
+        vec3 granite = mix(vec3(0.36, 0.35, 0.34), col * 0.62, 0.35);
+        col = mix(col, granite, 0.85);
+        col *= 1.0 + 0.16 * smoothstep(ph - 0.10, ph, vZ);
+      }
+    } else if (glassy && vTop > 24.0 && vZ < 5.2) {
+      float lob = 1.0 - smoothstep(4.9, 5.2, vZ);
+      col = mix(col, vec3(0.16, 0.19, 0.22) + 0.10 * glassB, lob * 0.70);
+    }
+  }
+
   // ---- value: the half of the facade that reads from the air --------------
 
   // THE TWO-HUNDRED-METRE WALL. A handful of plates in the stock — the customs
@@ -7786,7 +7840,7 @@ void main() {
     vec3 warm = dz > 1.5 ? vec3(1.07, 0.95, 0.93) : dz > 0.5 ? vec3(1.06, 0.99, 0.93) : vec3(1.05, 1.02, 0.95);
     col *= mix(vec3(1.0), warm, 1.0 - band);
   }
-  float hi = vState.z;
+  float hi = hiOf();
   if (hi > 0.01) {
     float sel = step(0.75, hi);
     // a rim of gold light round the silhouette, strongest where the wall turns
@@ -8057,6 +8111,17 @@ void main() {
     roof = mix(roof, vec3(0.330, 0.455, 0.290), smoothstep(0.46, 0.14, clump) * 0.50);
     roof *= 0.94 + 0.12 * rnoise(wp * 1.9);
     roof = mix(roof, vec3(0.560, 0.515, 0.415), smoothstep(0.80, 0.96, rnoise(wp * 0.6 + 41.0)) * 0.45);
+  } else if (s == 13 && vU > 40.0) {
+    // THE MARKET SQUARE. It was the park walk's pale buff gravel — a chalk
+    // oval in the middle of town. A square is granite setts: mid grey-brown,
+    // laid in a grid you can just see, worn lighter where people walk.
+    roof = vec3(0.515, 0.490, 0.455);
+    vec2 g = fract(wp / 0.9);
+    float joint = 1.0 - smoothstep(0.0, 0.08, min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)));
+    float jf = 1.0 - smoothstep(0.15, 0.6, fwidth(wp.x / 0.9));
+    roof *= 1.0 - 0.10 * joint * jf;
+    roof *= 0.92 + 0.14 * rnoise(wp * 0.6);
+    roof = mix(roof, roof * 1.10, smoothstep(0.55, 0.85, rnoise(wp * 0.05 + 3.0)) * 0.6);
   } else if (s == 13) {
     roof *= 0.94 + 0.13 * rnoise(wp * 2.6);              // raked gravel
     roof *= 0.97 + 0.06 * rnoise(wp * 0.5);
@@ -8312,9 +8377,9 @@ void main() {
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
     outc = mix(outc, ownMetal() * (light * 0.80 + 0.26), edge * 0.88);
   }
-  if (vState.z > 0.01) {
-    float sel = step(0.75, vState.z);
-    outc *= 1.0 + 0.08 * vState.z;
+  if (hiOf() > 0.01) {
+    float sel = step(0.75, hiOf());
+    outc *= 1.0 + 0.08 * hiOf();
     float ew = max(1.6, ufw * 1.5);
     float edge = (1.0 - smoothstep(ew, ew + ufw, vU)) * flatDeck;
     outc = mix(outc, OWN_GOLD * (light * 0.9 + 0.40), edge * 0.9 * sel);
@@ -9173,7 +9238,9 @@ void main() {
   // as a sticker on blue paper. Richer going in means still teal-dark coming
   // out the far side of the air.
   vec3 deep    = vec3(0.078, 0.220, 0.352);
-  vec3 shallow = vec3(0.262, 0.472, 0.568);
+  // and the shoal itself a sandier, greener teal a step under the old cyan,
+  // which glowed as a rim at altitude once the grade stopped boosting chroma
+  vec3 shallow = vec3(0.228, 0.420, 0.470);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
 
   // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
@@ -9307,7 +9374,7 @@ void main() {
   // water meets sand — not a painted surf stroke, so it reads at the dive
   // camera and disappears into the coastline at altitude.
   col = mix(col, vec3(0.845, 0.882, 0.910) * whiteK,
-            wash * 0.38 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
+            wash * 0.22 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
   // all winter — but the still water inside the shoal line skins over and
@@ -9319,7 +9386,7 @@ void main() {
     float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
     float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
                             * sin(p.x * 0.017 - p.y * 0.023);
-    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.80, 0.0, 1.0));
+    col = mix(col, vec3(0.845, 0.878, 0.905) * whiteK, clamp(crust * ragged * 0.45, 0.0, 1.0));
   }
 
   // THE SEA HAZES TOWARD THE OPEN SEA, NOT TOWARD THE SKY.
@@ -9834,6 +9901,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   /** Write one channel for a deed — both its static and its dynamic building. */
   private setDeedState(bbl: string, ch: 0 | 1 | 2, v: number) {
+    // THE HIGHLIGHT CHANNEL ALSO CARRIES THE BRICKS. Highlight is 0 / 0.5 / 1
+    // and never reaches 2, so the integer part above it is free: 2·q, where
+    // q is the deed's condition index quantised to 1-15 (0 = not known, which
+    // the shaders read as "standard"). See setCondition and condOf in GLSL.
+    if (ch === 2) {
+      const c = this.condNow.get(bbl);
+      if (c !== undefined) v += 2 * (1 + Math.round(Math.max(0, Math.min(1, c)) * 14));
+    }
     for (const key of [bbl, "d:" + bbl]) {
       const bid = this.bidByKey.get(key);
       if (bid === undefined) continue;
@@ -9894,6 +9969,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * SELECTION AND HOVER AS LIGHT. `selected` is every deed of the picked site
    * (an assemblage is one building); `hover` gets a subtle lift only.
    */
+  /**
+   * THE STATE OF THE BRICKS, ON THE BRICKS. The engine keeps a condition index
+   * for every deed (value.ts condIdxOf — 0.2 a building nobody has spent on in
+   * forty years, 0.97 one just delivered) and prices rent, cap rate and
+   * lending off it; until now the map drew a ruin and a refit identically.
+   * Read, never written: MapView hands over the same index the desks show.
+   */
+  private condNow = new Map<string, number>();
+  setCondition(cond: Map<string, number>) {
+    let changed = false;
+    for (const [bbl, c] of cond) {
+      const q = Math.round(Math.max(0, Math.min(1, c)) * 14);
+      const prev = this.condNow.get(bbl);
+      if (prev !== undefined && Math.round(prev * 14) === q) continue;
+      this.condNow.set(bbl, c);
+      this.setDeedState(bbl, 2, this.hiNow.get(bbl) ?? 0);
+      changed = true;
+    }
+    if (changed) { this.sceneDirty++; this.map?.triggerRepaint(); }
+  }
+
   setHighlight(selected: string[], hover: string | null) {
     const next = new Map<string, number>();
     if (hover) next.set(hover, 0.5);
@@ -11904,7 +12000,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const flavour = Array.isArray(p) && typeof p[0]?.[0] === "number"
         ? "park"
         : (p as { ring: [number, number][]; flavour?: string }).flavour ?? "park";
+      // a market square is paved, not gravelled: vU = 50 tells the walk
+      // shader it is a plaza (setts) rather than a path through a park
+      if (flavour === "market") uOf = () => 50;
       fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true, holes);
+      uOf = null;
     }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was

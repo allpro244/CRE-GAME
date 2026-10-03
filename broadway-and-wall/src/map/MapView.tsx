@@ -4,7 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
-import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
+import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -1118,10 +1118,14 @@ export default function MapView() {
     // ...and the shops separately, because a full office tower can still have
     // a dead ground floor, and the street knows the difference.
     const ret = new Map<string, number>();
+    // ...and the condition index every price reader in the engine uses: the
+    // holding's own where it is yours, the age-derived reading elsewhere.
+    const cond = new Map<string, number>();
     for (const bbl of layer.rangesByBBL.keys()) {
       const h = game.holdings[bbl];
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      cond.set(bbl, condIdxOf(rec, game.month, h?.condition, h));
       if (h) {
         const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
         occ.set(bbl, Math.max(0, Math.min(1, leased / Math.max(1, rec.bldgArea))));
@@ -1161,6 +1165,7 @@ export default function MapView() {
     }
     layer.setOccupancy(occ);
     layer.setRetail(ret);
+    layer.setCondition(cond);
     // the courthouse on the door: auction lots, noticed foreclosures, and
     // owned balloons inside eighteen months — cycle risk on the skyline.
     const notices = new Set<string>();

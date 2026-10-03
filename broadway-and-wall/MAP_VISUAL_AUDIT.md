@@ -102,3 +102,59 @@ ground. Water sits below the land in a channel you can see the sides of, and a
 bridge is a structure with a deck, a parapet and something holding it up. The
 light is a mid-afternoon sun — long enough shadows to model the massing, short
 enough that the streets are lit — and colour is honest rather than graded.
+
+---
+
+# WHAT CHANGED
+
+Same ranking. Every change is in `src/map/` or in the context layer citygen
+hands the map; no engine file is touched, and the citygen additions draw no
+`rand()`, so parcels and `buildings3d` hash identically to before (checked on
+four towns) and `pnpm check` reports 0 of 39 metrics moved.
+
+1. **Light.** `SUN_EL_MID 35 ± 11` (24° in December, 46° in June), a winter
+   sun of `[1.56, 1.15, 0.70]`, and `grade()` chroma ×1.16. Shadows still
+   model the massing; the streets are lit; the facade families read as what
+   they are made of.
+2. **January.** A snow month lays a dusting (`0.16 + 0.56·p`) rather than
+   two-thirds cover; the shoal's ice skin is half as strong.
+3. **Ground.** Yards `#c4c0b2` under footways `#d2cfc6` over asphalt
+   `#55575a` — three values, dark to light. Downtown vacant lots are striped
+   asphalt parking (stalls 2.6 × 5.2 m along the lot's long side); gravel lots
+   sit a step under the footway. Lot lines at 12-42% instead of 30-80%.
+   Market squares are granite setts instead of park gravel. The esplanade is
+   worn setts, not chalk.
+4. **Streets in metres.** citygen measures each block face's half-street (cell
+   edge to kerb line) and emits: a footway ring outside the kerb line 2-5 m
+   wide (0.4 × the half-street) with a rounded kerb at convex corners; the
+   curb as its outer edge; centre lines tagged by width (none under 13 m, a
+   dashed line on working streets, the double yellow at 21 m+); zebras at
+   every gridded corner, along the footway and across the carriageway that
+   corner faces, kerb to centre line. `style.ts metres()` draws all of it in
+   metres at every zoom (exponential-2 ramp, with a pixel floor for the fine
+   marks).
+5. **Creeks.** `buildRiver` sinks the water 1.35 m into a channel. Canals get
+   a dressed stone wall and coping, creeks a riprap slope into the water. The
+   near bank is solved with a depth-only copy of each wall drawn ahead of the
+   water, so MapLibre's ground shows at the lip exactly where land would. The
+   water uses the pond shader's river branch: a clearer green-blue with a
+   gravel margin and streaks down the flow. The clearance strip the lots were
+   cut back to is a grass bank.
+6. **Bridges.** Each generator crossing floods its gap so the creek runs
+   through, and gets a structure: a stone arch footbridge (humped deck,
+   parapets with coping, spandrel walls, an arch barrel over the water,
+   abutments) spanning the green corridor, or a flat road deck the width of the
+   boulevard where one crosses. The two parapet slabs on dry ground are gone.
+7. **Towers.** The facade dissolve runs from ~12 px to ~2.6 px a bay.
+8. **Winter trees** keep 70% of the crown in grey-brown twig.
+9. **Coast.** The shoal is a step greener and darker, the wet edge at 0.22,
+   the esplanade a mid tone.
+10. **Buildings by data.** On top of the 180 families, two new readings:
+    - *Condition*: the engine's own condition index (`condIdxOf` — the
+      holding's where it is yours, the age reading elsewhere) is packed above
+      the highlight in the state texture and drawn as weather — greyer,
+      darker, soot runs under each bay heavier toward the street, and boarded
+      windows on genuinely neglected deeds; a refit is a touch cleaner.
+    - *The base*: masonry stands on a granite water table; a glass tower on a
+      double-height lobby of dark glass; a shed comes straight down to the
+      slab. Shopfronts keep their glass to the pavement.

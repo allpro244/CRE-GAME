@@ -1,22 +1,11 @@
 import { useEffect, useState } from "react";
-import type { Page } from "@/state/store";
+import { DESKS } from "@/ui/desks";
 
 /**
  * THE KEYS, WRITTEN DOWN. Space, Y, N, M, P and ⌘K all existed and nothing in
  * the game said so — a player found them by accident or not at all. "?" opens
  * this card from anywhere that is not a text box; any key or click closes it.
  */
-export const PAGE_KEYS: readonly { key: string; page: Page; label: string }[] = [
-  { key: "1", page: "portfolio", label: "Portfolio" },
-  { key: "2", page: "market", label: "Marketplace" },
-  { key: "3", page: "deals", label: "Deals" },
-  { key: "4", page: "leasing", label: "Leasing" },
-  { key: "5", page: "debt", label: "Debt" },
-  { key: "6", page: "books", label: "Books" },
-  { key: "7", page: "research", label: "Research" },
-  { key: "8", page: "economy", label: "Economy" },
-  { key: "9", page: "news", label: "News" },
-];
 
 const TIME: readonly [string, string][] = [
   ["Space", "Advance one month"],
@@ -73,7 +62,7 @@ export default function Shortcuts() {
           </div>
           <div>
             <div className="kbd-head">Desks</div>
-            {PAGE_KEYS.map((p) => row([p.key, p.label]))}
+            {DESKS.map((d) => row([d.key, d.tabs.length > 1 ? `${d.label} — ${d.tabs.map((t) => t.label).join(", ")}` : d.label]))}
           </div>
         </div>
         <div className="hint" style={{ textAlign: "center", marginTop: 10 }}>Any key closes this.</div>

@@ -2,7 +2,7 @@ import { useState, Fragment } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
-import { monthLabel, START_YEAR } from "@/engine/types";
+import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
 import { PRODUCTS, productById, payOffDue, rateCapCost } from "@/engine/debt";
 import { fundableNow, locRate } from "@/engine/credit";
@@ -13,6 +13,7 @@ import { RefiSection } from "@/ui/panels/RefiDesk";
 import { Big, Row } from "@/ui/panels/shared";
 import { FundDesk } from "@/ui/panels/FundDesk";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
+import { MaturityWall } from "@/ui/rollups/MaturityWall";
 
 export { TheBanks } from "@/ui/panels/BanksDesk";
 export { SponsorRecord } from "@/ui/panels/SponsorRecord";
@@ -218,23 +219,6 @@ export function DebtPage() {
     };
   })();
 
-  // ---- the maturity ladder, by calendar year -------------------------------
-  const ladder = (() => {
-    const by = new Map<number, number>();
-    const yr = (m: number) => START_YEAR + Math.floor(m / 12);
-    for (const { h } of rows) {
-      if (h.loan) by.set(yr(h.loan.maturityM), (by.get(yr(h.loan.maturityM)) ?? 0) + h.loan.balance);
-      if (h.mezz && h.mezz.balance > 0) {
-        by.set(yr(h.mezz.maturityM), (by.get(yr(h.mezz.maturityM)) ?? 0) + h.mezz.balance);
-      }
-    }
-    if (game.facility) by.set(yr(game.facility.maturityM), (by.get(yr(game.facility.maturityM)) ?? 0) + game.facility.balance);
-    for (const d of Object.values(game.developments ?? {})) {
-      if (d.loanBalance > 0) by.set(yr(d.deliverM + 12), (by.get(yr(d.deliverM + 12)) ?? 0) + d.loanBalance);
-    }
-    return [...by.entries()].sort((a, b) => a[0] - b[0]).slice(0, 12);
-  })();
-  const ladderMax = Math.max(1, ...ladder.map(([, v]) => v));
 
   const fac = game.facility;
   const facM = facilityMetrics(game, parcels);
@@ -335,30 +319,13 @@ export function DebtPage() {
         <Row k="Maturing inside 3 years" v={`${usd(agg.wall36)} · ${agg.bal > 0 ? ((agg.wall36 / agg.bal) * 100).toFixed(0) : 0}% of the book`} bad={agg.bal > 0 && agg.wall36 / agg.bal > 0.35} />
       </div>
 
-      <div className="page-section">The maturity ladder</div>
-      {ladder.length === 0 ? (
-        <div className="hint">Nothing borrowed yet.</div>
-      ) : (
-        // Bars carry their amount and keep a bar's width: with two loans the
-        // ladder was two page-wide red slabs and no figure on either.
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 104, marginBottom: 6 }}>
-          {ladder.map(([y, v]) => (
-            <div key={y} style={{ flex: "0 1 96px", textAlign: "center" }} title={`${usd(v)} matures in ${y}`}>
-              <div className="mono" style={{ fontSize: 10.5, color: "var(--ink)", marginBottom: 2 }}>{usd(v)}</div>
-              <div style={{
-                height: Math.max(2, Math.round((v / ladderMax) * 64)),
-                background: v / Math.max(1, agg.total) > 0.35 ? "#a8402e" : "#5a6f8a",
-                borderRadius: 2,
-              }} />
-              <div className="dim mono" style={{ fontSize: 10 }}>{y}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="hint">
-        A wall is not a number, it is a year. Anything over a third of the book landing in one of these
-        is a year you have to refinance in whatever market happens to be open.
-      </div>
+      {/* ONE WALL, ONE HOME. The ladder that sat here and the wall on
+          Portfolio drew the same balloons twice; the wall is the richer of the
+          two (each segment wears its building's coverage) and now carries the
+          construction loans the ladder used to add, so it is the only one. */}
+      {agg.bal > 0 || Object.values(game.developments ?? {}).some((d) => d.loanBalance > 0)
+        ? <MaturityWall />
+        : <><div className="page-section">The maturity wall</div><div className="hint">Nothing borrowed yet.</div></>}
 
       {/* ---- the facility ---------------------------------------------- */}
       <div className="page-section">Borrowing against the whole book</div>

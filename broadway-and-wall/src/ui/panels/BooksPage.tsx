@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
+import Fold from "@/ui/Fold";
 import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
@@ -32,9 +33,8 @@ export function BooksPage() {
   // function, one answer.
   const nw = useMemo(() => netWorth(game, parcels), [game, parcels]);
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
-  const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
+  const exits = game.exits ?? [];
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
-  const pending = MILESTONES.filter((m) => game.milestones?.[m.id] === undefined);
   const holdings = Object.values(game.holdings).filter((h) => !game.merged?.[h.bbl]);
   const pendingAppeals = holdings.flatMap((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
@@ -79,10 +79,6 @@ export function BooksPage() {
           title="What moved through the bank account — principal, purchases, sales and draws included">
           Cash flow
         </button>
-        <button className="btn" onClick={() => useStore.getState().setPage("staff")}
-          title="Property management, leasing and construction — capacity, the shortlist, and what the slip is costing you">
-          The desk · {(game.staff ?? []).length} on the payroll →
-        </button>
       </div>
 
       {tab === "balance" ? <BalanceSheet /> : tab === "pnl" ? <ProfitAndLoss /> : <IncomeStatementTab />}
@@ -122,12 +118,6 @@ export function BooksPage() {
         </div>
       )}
 
-      <div className="page-section">
-        <div className="page-section-head">The wire</div>
-        <div className="hint">Market and firm news now lives on its own desk — the last {(game.news ?? []).length} items, filterable by kind.</div>
-        <button className="btn" onClick={() => setPage("news")}>Open News →</button>
-      </div>
-
       {(() => {
         const peak = Math.max(0, ...(game.nwHistory ?? [0]));
         const peakAt = (game.nwHistory ?? []).lastIndexOf(peak);
@@ -142,11 +132,7 @@ export function BooksPage() {
           .slice(0, 3);
         if (!flows.length && !failed.length && !decadePrints.length && peak <= 0) return null;
         return (
-          <div className="page-section">
-            <div className="page-section-head">City census</div>
-            <div className="hint">
-              Who has been buying, who failed, and where your firm peaked — the campaign read that used to be scattered across Research and the game-over screen.
-            </div>
+          <Fold id="books:census" title="City census" summary="who has been buying, who failed, and where your firm peaked">
             {/* Four unlabelled lists in a row read as one list of unrelated
                 rows; each gets the caption the Waterfall above uses. */}
             {peak > 0 && <div className="wf-kicker">Your firm</div>}
@@ -198,42 +184,18 @@ export function BooksPage() {
               </div>
             )}
             <button className="btn" onClick={() => setPage("research")}>Open Research for the full prints →</button>
-          </div>
+          </Fold>
         );
       })()}
 
-      <div className="deals-grid">
-        <section className="page-section">
-          <div className="page-section-head">Dispositions</div>
-          <div className="mini-list">
-            {exits.map((e, i) => (
-              <div key={i} className="mini-row" style={{ cursor: "default" }}>
-                <span>{e.forced ? "⚠ " : ""}{e.address}</span>
-                <span className="mono">
-                  {usd(e.price)} · {e.gain >= 0 ? "+" : "−"}{usd(Math.abs(e.gain))} · held {((e.soldM - e.boughtM) / 12).toFixed(1)} yrs
-                </span>
-              </div>
-            ))}
-            {!exits.length && <div className="hint">No sales yet. The first exit is the education.</div>}
-          </div>
-        </section>
-        <section className="page-section">
-          <div className="page-section-head">Milestones · {achieved.length} of {MILESTONES.length}</div>
-          <div className="mini-list">
-            {achieved.map((m) => (
-              <div key={m.id} className="mini-row" style={{ cursor: "default" }}>
-                <span>◆ {m.label}</span>
-                <span className="mono">{monthLabel(game.milestones[m.id])}</span>
-              </div>
-            ))}
-            {pending.slice(0, 4).map((m) => (
-              <div key={m.id} className="mini-row mini-dim" style={{ cursor: "default" }}>
-                <span>◇ {m.label}</span>
-                <span className="mono dim">—</span>
-              </div>
-            ))}
-          </div>
-        </section>
+      {/* Dispositions and milestones were second copies: every exit is on
+          Portfolio's realized record and every milestone on The Record's
+          strip. The ledger points at them rather than repeating them. */}
+      <div className="hint" style={{ marginTop: 18 }}>
+        {exits.length ? `${exits.length} exit${exits.length === 1 ? "" : "s"} · ` : ""}
+        <button type="button" className="linkish" onClick={() => setPage("portfolio")}>the realized record →</button>
+        {" · "}{achieved.length} of {MILESTONES.length} milestones ·{" "}
+        <button type="button" className="linkish" onClick={() => setPage("firm")}>The Record →</button>
       </div>
     </div>
   );

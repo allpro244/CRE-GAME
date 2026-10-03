@@ -28,7 +28,7 @@ type Tone = "ok" | "thin" | "under" | "mute";
 interface Seg {
   bbl: string | null;    // null = the facility, which is the whole pool
   name: string;
-  kind: "mortgage" | "mezzanine" | "facility";
+  kind: "mortgage" | "mezzanine" | "facility" | "construction";
   bal: number;
   matM: number;
   d: number | null;      // coverage today, from the engine's own dscr
@@ -93,6 +93,14 @@ export function MaturityWall() {
         tone: toneOf(f, fm.dscr, game.month),
       });
     }
+    // CONSTRUCTION PAPER IS DEBT TOO. A job's loan is due when the building
+    // is a year past delivery — the takeout the Debt desk's old ladder always
+    // counted — and it has no operating coverage to quote until it opens.
+    for (const d of Object.values(game.developments ?? {})) {
+      if (!(d.loanBalance > 0)) continue;
+      const name = resolveRec(parcels, game, d.bbl)?.address ?? d.bbl;
+      put({ bbl: d.bbl, name, kind: "construction", bal: d.loanBalance, matM: d.deliverM + 12, d: null, tone: "mute" });
+    }
     for (const y of years) y.segs.sort((a, b) => a.matM - b.matM);
     const max = Math.max(1, ...years.map((y) => y.total));
     return { years, total, beyond, max, month: game.month };
@@ -114,11 +122,13 @@ export function MaturityWall() {
                 {y.total > 0 && (
                   <div className="wall-bar" style={{ width: `${Math.max(3, (y.total / wall.max) * 100)}%` }}>
                     {y.segs.map((s) => {
-                      const what = s.kind === "facility" ? s.name : `${s.name} · ${s.kind}`;
+                      const what = s.kind === "facility" ? s.name : `${s.name} · ${s.kind === "construction" ? "construction loan" : s.kind}`;
                       const cover = s.d !== null
                         ? `coverage ${s.d.toFixed(2)}x today`
                         : "no coverage to quote";
-                      const label = `${what} — ${usd(s.bal)} balloons ${monthLabel(s.matM)}, ${cover}. Open the debt desk.`;
+                      const label = s.kind === "construction"
+                        ? `${what} — ${usd(s.bal)} drawn, due at takeout around ${monthLabel(s.matM)}; no coverage until it opens. Open the debt desk.`
+                        : `${what} — ${usd(s.bal)} balloons ${monthLabel(s.matM)}, ${cover}. Open the debt desk.`;
                       return (
                         <button
                           key={`${s.bbl ?? "facility"}:${s.kind}`}

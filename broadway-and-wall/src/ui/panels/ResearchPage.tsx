@@ -10,7 +10,7 @@ import { CompsSheet } from "@/ui/panels/CompsSheet";
 import { TheStreet } from "@/ui/panels/StreetDesk";
 import { Owners } from "@/ui/panels/OwnersDesk";
 import { BuildingDatabase } from "@/ui/panels/MarketPage";
-import { creditWord, pendingRTab, clearPendingRTab, Big, Row } from "@/ui/panels/shared";
+import { pendingRTab, clearPendingRTab, Row } from "@/ui/panels/shared";
 import { resolveRec } from "@/engine/value";
 import { PersonCard } from "@/ui/PersonCard";
 import type { Person } from "@/engine/people";
@@ -64,28 +64,16 @@ export function ResearchPage() {
     ["people", "People"], ["street", "The street"], ["owners", "Owners"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
-      <div className="stat-strip">
-        <Big label="Base rate" value={pct(e.indexRate)}
-          title="Every loan in town prices off this benchmark: floating coupons reprice to it monthly, and new quotes are struck at this rate plus the lender's spread." />
-        <Big label="Phase" value={e.phase + (e.rumoredPhase ? " ⚠" : "")} />
-        <Big label="Cap · office" value={pct(e.capRate.office)} />
-        <Big label="Cap · multifamily" value={pct(e.capRate.multifamily)} />
-        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index, read the way the Economy page reads it. Its level is the town's own; the moves are what matter." />
-        <Big label="Cost index" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index — the Economy page's Build costs. Salaries and budgets are billed at it." />
-        <Big label="Credit" value={creditWord(e.creditIdx ?? 1)} bad={(e.creditIdx ?? 1) < 0.72} />
-        <Big label="Employment" value={((e.employIdx ?? 1) * 100).toFixed(0)} title="Jobs in town as an index, 100 = normal. It is the demand behind leasing: when it falls, letters stop arriving before rents move." />
-        <Big
-          label="Value vs replacement"
-          value={`${cityValueToReplacement(game).toFixed(2)}×`}
-          bad={cityValueToReplacement(game) < 0.95}
-        />
-      </div>
+      {/* The nine-tile strip that opened this page — base rate, phase, caps,
+          land, cost, credit, employment — was the Economy page's strip again,
+          and the top bar's Market readout a third time. Those numbers live on
+          City → Economy; Research opens on the evidence instead. */}
       {/* THE HINGE OF THE WHOLE DEVELOPMENT CYCLE, and it was nowhere. */}
       {(() => {
         const x = cityValueToReplacement(game);
         return (
           <div className="hint" style={{ marginTop: 6 }}>
-            Finished buildings trade at <strong>{x.toFixed(2)}×</strong> what it costs to put them up.{" "}
+            Finished buildings trade at <strong className={x < 0.95 ? "neg" : undefined}>{x.toFixed(2)}×</strong> what it costs to put them up.{" "}
             {x > 1.15
               ? "Above replacement cost, and comfortably — every developer in this city can see it, which is exactly how the next glut gets started. Build now and you will be delivering into their supply."
               : x > 1.0

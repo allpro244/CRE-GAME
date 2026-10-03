@@ -1,9 +1,6 @@
 import { useMemo } from "react";
-import { usd } from "@/ui/format";
-import { starterPicks } from "@/engine/standing";
 import { goalProgress, goalDef } from "@/engine/goals";
-import { spendable } from "@/engine/credit";
-import { useStore, type MapFilter } from "@/state/store";
+import { useStore } from "@/state/store";
 import { mapHudSnapshot } from "@/ui/mapHudData";
 import { developableSites } from "@/ui/developable";
 import { sf } from "@/ui/format";
@@ -54,8 +51,6 @@ export default function MapHud() {
   const focus = useStore((s) => s.focus);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
-  const mapFilter = useStore((s) => s.mapFilter);
-  const setMapFilter = useStore((s) => s.setMapFilter);
 
   const snap = useMemo(() => {
     if (!game || game.gameOver) return null;
@@ -68,13 +63,9 @@ export default function MapHud() {
   }, [game, parcels]);
   // BEFORE THE FIRST DEED, BUILDINGS — NOT DIRT. "Sites ready · pencils" from
   // month 0 pointed a newcomer at development, the hardest path in the game,
-  // before they owned anything. Until the first deed the block names the two
-  // best going-in yields they could buy outright instead.
+  // before they owned anything. Until the first deed the block stays quiet;
+  // the docket's "Start here" names the best yield they could buy outright.
   const firstDeed = !!game && Object.keys(game.holdings).length === 0 && (game.exits ?? []).length === 0;
-  const starters = useMemo(() => {
-    if (!game || !parcels || game.gameOver || !firstDeed) return [];
-    return starterPicks(game, parcels, spendable(game, parcels).total, 2);
-  }, [game, parcels, firstDeed]);
 
   // One row per tint slot, not per firm. A firm's slot is its position in
   // game.rivals with the dead still counted, because that is exactly how the
@@ -111,6 +102,11 @@ export default function MapHud() {
   }, [lens, game]);
 
   if (!snap) return null;
+  // Nothing about the city to say yet — no card at all, rather than a heading
+  // over an empty box.
+  const goalShown = !!game?.goal && !!goalProgress(game, parcels);
+  if (!legendRows && snap.deliveries.length === 0 && !goalShown
+    && (firstDeed || ready.length === 0) && snap.deliveredSf <= 0) return null;
 
   return (
     <aside className="map-hud" aria-label="City status">
@@ -231,23 +227,9 @@ export default function MapHud() {
         );
       })()}
 
-      {firstDeed && starters.length > 0 && (
-        <div className="map-hud-block">
-          <div className="map-hud-label">On the tape for you</div>
-          {starters.map((p) => (
-            <button
-              key={p.bbl}
-              type="button"
-              className="map-hud-row"
-              onClick={() => { focus(p.bbl, true); useStore.getState().openProperty(p.bbl, "summary"); }}
-              title={`${Math.round(p.occ * 100)}% let · ${usd(p.cash)} to buy outright`}
-            >
-              {parcels?.[p.bbl]?.address ?? p.bbl} · {p.cap.toFixed(1)}%
-            </button>
-          ))}
-        </div>
-      )}
-
+      {/* "On the tape for you" lived here as well as on the docket and on
+          Marketplace's "Where to start". The docket keeps it — that is the
+          list of what wants you — so the city card no longer repeats it. */}
       {!firstDeed && ready.length > 0 && (
         <div className="map-hud-block">
           <div className="map-hud-label">Sites ready</div>
@@ -271,38 +253,8 @@ export default function MapHud() {
         </div>
       )}
 
-      <div className="map-hud-filters" role="group" aria-label="Map emphasis">
-        {([
-          ["all", "City"],
-          ["owned", "Book"],
-          ["construction", "Cranes"],
-        ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={"map-hud-filter" + (mapFilter === id ? " on" : "")}
-            aria-pressed={mapFilter === id}
-            onClick={() => setMapFilter(id as MapFilter)}
-            title={
-              id === "all" ? "Show the whole city"
-                : id === "owned" ? "Emphasize your book (dim the rest)"
-                  : "Emphasize jobs under construction"
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        className="map-hud-row map-hud-lens"
-        aria-pressed={lens === "zoning"}
-        onClick={() => setLens("zoning")}
-        title="Shade lots by unbuilt zoning envelope"
-      >
-        Zoning lens →
-      </button>
+      {/* The City / Book / Cranes emphasis and the zoning lens button moved
+          to the map's own control strip (MapControls), with the other lenses. */}
     </aside>
   );
 }

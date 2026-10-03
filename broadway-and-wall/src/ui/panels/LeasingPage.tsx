@@ -13,6 +13,8 @@ import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
 import { LoiCard } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
+import Fold from "@/ui/Fold";
+import { Rollover } from "@/ui/rollups/Rollover";
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -291,14 +293,15 @@ export function LeasingPage() {
     );
   }
 
+  // THE DESK'S SHAPE: what the book says (the strip), what wants you (the
+  // letters), what the desk did, and then who holds the pen — a mandate set
+  // once and revisited rarely, so it folds to the one line that says who.
+  const penLine = game.agent ? "an outside agent holds the pen"
+    : game.teamLeasing && hasLeasingTeam(game) ? "your leasing desk holds the pen"
+    : game.renewalMgmt ? "you hold the pen · management has the renewals"
+    : "you hold the pen";
   return (
     <div>
-      <AgentBar />
-      <RenewalBar />
-      <DeskActivity />
-      <DeskLetters />
-      <PlanEditor />
-      <PlanDigest />
       <div className="stat-strip">
         <Big
           label="Portfolio occupancy"
@@ -317,6 +320,14 @@ export function LeasingPage() {
           title="Letters that still need you — listed above, and on Deals. Desk-covered paper is quiet."
         />
       </div>
+      <DeskLetters />
+      <DeskActivity />
+      <Fold id="leasing:mandate" title="Who works the book" summary={penLine}>
+        <AgentBar />
+        <RenewalBar />
+        <PlanEditor />
+        <PlanDigest />
+      </Fold>
 
       {/* WHAT YOUR RENT ROLL DOES FOR A LIVING.
           You can own twelve diversified buildings and still be sixty per cent
@@ -359,6 +370,9 @@ export function LeasingPage() {
         </div>
       )}
 
+      {/* Which YEAR the leases roll — the chart lived on Portfolio, but the
+          roll is this desk's business, so this is its home. */}
+      <Rollover />
       <HousePolicy />
 
       <LeasedFeeStrip />

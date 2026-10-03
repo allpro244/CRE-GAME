@@ -10,6 +10,9 @@ import "./ui/system/components.css";
 import "./ui/system/shell.css";
 import "./ui/system/pages.css";
 import "./ui/system/setup.css";
+// Layout for the decluttered shell (desk tabs, the map control strip). Kept
+// apart from the design system so a restyle there does not collide with it.
+import "./ui/declutter.css";
 import { applyTheme } from "./ui/theme";
 
 applyTheme();

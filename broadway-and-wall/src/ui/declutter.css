@@ -1,0 +1,142 @@
+/* THE DECLUTTERED SHELL — structure only. Colours, type and radii come from
+   the design-system tokens (ui/system/tokens.css), so a restyle there carries
+   through; this file only says where things sit. */
+
+/* ---------- desk tabs: the rooms of a multi-room desk ---------- */
+.app .desk-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  margin: -20px -32px 20px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.app .desk-tab {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 14px 9px;
+  font: 600 var(--fs-base)/1.2 var(--font-ui);
+  color: var(--text-3);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.app .desk-tab:hover { color: var(--text); }
+.app .desk-tab.on { color: var(--accent-strong); border-bottom-color: var(--accent-bright); cursor: default; }
+.app .desk-tab:focus-visible { outline: none; box-shadow: var(--ring); }
+.app .desk-tab-badge {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 600 var(--fs-2xs, 10.5px)/1 var(--font-ui);
+  color: var(--on-primary);
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+.app .desk-tab-warn { background: var(--neg); }
+@media (max-width: 1100px) {
+  .app .desk-tabs { margin-inline: -22px; padding-inline: 22px; }
+}
+
+/* ---------- the map's own control strip ---------- */
+.app .map-controls {
+  position: absolute;
+  bottom: 14px;
+  left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px)) / 2);
+  transform: translateX(-50%);
+  z-index: 23;
+  display: flex; align-items: center; gap: 6px;
+  max-width: calc(100vw - var(--rail-w, 0px) - 120px);
+  padding: 4px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-2);
+}
+.app .map-controls-carded {
+  /* the map card is 380px wide at 12px from the edge (340px under 1100px) */
+  left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px) - 404px) / 2);
+  max-width: calc(100vw - var(--rail-w, 0px) - 430px);
+}
+.app .map-controls-group { display: flex; gap: 2px; }
+.app .map-controls-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--border); }
+.app .map-controls-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 28px; padding: 0 10px;
+  font: 560 var(--fs-xs)/1 var(--font-ui);
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.app .map-controls-btn:hover { color: var(--text); background: var(--surface-3); }
+.app .map-controls-btn.on { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent-line); }
+.app .map-controls-btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.app .map-controls-ico { font-size: 13px; line-height: 1; }
+/* narrow windows: lens icons only, names in the tooltip */
+@media (max-width: 1100px) {
+  .app .map-controls-carded { left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px) - 364px) / 2); }
+  .app .map-controls-label { display: none; }
+  .app .map-controls-btn { padding: 0 8px; }
+}
+
+/* ---------- folds: detail sections that open and shut ---------- */
+.app .fold-head {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+}
+.app .fold-head::after {
+  content: "▸";
+  margin-left: auto;
+  padding-left: 12px;
+  font: 500 var(--fs-sm)/1 var(--font-ui);
+  color: var(--text-3);
+}
+.app .fold-open > .fold-head::after { content: "▾"; }
+.app .fold-head:hover { color: var(--accent-strong); }
+.app .fold-head:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-xs); }
+.app .fold-summary {
+  font: 500 var(--fs-sm)/1.3 var(--font-ui);
+  color: var(--text-3);
+}
+.app .fold:not(.fold-open) { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+
+/* ---------- a link to the desk that owns a figure ---------- */
+.app .linkish {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.app .linkish:hover { color: var(--accent-strong); text-decoration-color: currentColor; }
+.app .linkish:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-xs); }
+/* beside the card there is less map: lens names go to the tooltip sooner */
+@media (max-width: 1440px) {
+  .app .map-controls-carded .map-controls-label { display: none; }
+  .app .map-controls-carded .map-controls-btn { padding: 0 8px; }
+}
+
+/* ---------- a label that carries a glossary definition ---------- */
+.app .has-gloss {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+/* long explanations open on two lines, not three (see useHintFolds) */
+.app .page .hint.hint-fold { -webkit-line-clamp: 2; }

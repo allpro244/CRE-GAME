@@ -131,3 +131,25 @@ export function glossaryEntries(): { key: string; def: string }[] {
   return Object.entries(TERMS).map(([key, v]) => ({ key, def: v.def }))
     .sort((a, b) => a.key.localeCompare(b.key, undefined, { sensitivity: "base" }));
 }
+
+/**
+ * THE GLOSSARY, WHEREVER THE WORD IS. Thirteen hand-placed <Gloss> wrappers
+ * covered a game that prints DSCR, LTV, NOI and WALT on every desk. This finds
+ * a defined term inside a short label — acronyms matched as written, phrases
+ * in any case, whole words only — so a stat tile or a row can carry the
+ * definition as its tooltip without anyone wrapping it by hand. Labels with a
+ * tooltip of their own keep it.
+ */
+const GLOSS_ORDER = Object.keys(TERMS).sort((a, b) => b.length - a.length);
+const GLOSS_RE = new Map(GLOSS_ORDER.map((k) => {
+  const acronym = k === k.toUpperCase();
+  const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [k, new RegExp(`(^|[^A-Za-z])${esc}([^A-Za-z]|$)`, acronym ? "" : "i")] as const;
+}));
+export function glossFor(label: unknown): string | undefined {
+  if (typeof label !== "string" || label.length > 48) return undefined;
+  for (const k of GLOSS_ORDER) {
+    if (GLOSS_RE.get(k)!.test(label)) return `${k} — ${TERMS[k].def}`;
+  }
+  return undefined;
+}

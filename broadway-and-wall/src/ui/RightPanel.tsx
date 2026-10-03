@@ -1,7 +1,7 @@
 // The game's chrome: a glance card on the map, and firm desks as big rooms.
 // Detail pages are parchment sheets sized for underwriting — not a narrow
 // right-hand column that crams a rent roll into six hundred pixels.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import type { Page } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
@@ -25,7 +25,7 @@ import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
 } from "@/ui/panels/modals";
 
-import { PAGE_KEYS } from "@/ui/Shortcuts";
+import { DESKS, deskOf, deskLanding, rememberTab, tabCounts, visibleTabs, type Desk } from "@/ui/desks";
 
 export { liveBrokerCalls } from "@/ui/panels/broker";
 
@@ -39,6 +39,7 @@ export default function GamePanels() {
   const setPage = useStore((s) => s.setPage);
   const pageRef = useRef<HTMLDivElement>(null);
   useHintFolds(pageRef, page);
+  useEffect(() => { rememberTab(page); }, [page]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // The palette toggle fires even from inside an input — that is how every
@@ -81,10 +82,16 @@ export default function GamePanels() {
         else st.setMapOnly(!st.mapOnly);
         return;
       }
-      // Desk hotkeys, 1-9 — the list and the "?" card share PAGE_KEYS.
+      // Desk hotkeys, 1-6 — the rail, the "?" card and these keys share DESKS.
+      // Pressing a desk's key again closes it.
       if (!e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[1-9]$/.test(e.code) && !document.querySelector(".modal-backdrop")) {
-        const hit = PAGE_KEYS.find((k) => k.key === e.code.slice(5));
-        if (hit) { e.preventDefault(); setPage(page === hit.page ? "none" : hit.page); return; }
+        const hit = DESKS.find((d) => d.key === e.code.slice(5));
+        if (hit) {
+          e.preventDefault();
+          const g = useStore.getState().game;
+          setPage(deskOf(page)?.id === hit.id && page !== "property" ? "none" : deskLanding(hit, g ? tabCounts(g) : undefined, g));
+          return;
+        }
       }
       if (e.code === "KeyG" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -125,16 +132,13 @@ export default function GamePanels() {
     : page === "primer" ? "How this business works"
     : page === "match" ? "The Jev Match"
     : "The Marketplace";
-  const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" || page === "firm" ? "Assets"
-    : page === "deals" || page === "market" || page === "notes" ? "Acquire"
-    : page === "debt" || page === "books" ? "Capital"
-    : page === "economy" ? "Economy"
-    : page === "research" || page === "news" ? "World"
+  const desk = deskOf(page);
+  const kicker = desk ? desk.label
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
     : page === "match" ? "Street"
-    : "Acquire";
+    : "";
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
     : page === "books" ? "Cash movement, operating results and the record of the firm."
@@ -182,6 +186,9 @@ export default function GamePanels() {
               </div>
               <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
+            {/* The property file has its own tabs; the desk's would be a
+                second row above them with neither lit. */}
+            {desk && desk.tabs.length > 1 && page !== "property" && <DeskTabs desk={desk} page={page} />}
             <SectionNav page={page} pageRef={pageRef} />
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
@@ -216,6 +223,44 @@ export default function GamePanels() {
           z-index, leaving every control on it visible and dead */}
       {gameOver && page !== "saves" && <GameOverPage />}
     </>
+  );
+}
+
+/**
+ * THE DESK'S ROOMS. A desk with more than one room shows them as tabs under
+ * its title, each with the same badge the rail adds up — so a "2" on Market
+ * says, once inside, whether it is the Marketplace or the Notes desk that
+ * wants you.
+ */
+function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
+  const game = useStore((s) => s.game);
+  const setPage = useStore((s) => s.setPage);
+  const counts = useMemo(() => (game ? tabCounts(game) : {}), [game]);
+  const tabs = visibleTabs(desk, game, page);
+  if (tabs.length < 2) return null;
+  return (
+    <div className="desk-tabs" role="tablist" aria-label={`${desk.label} desk`}>
+      {tabs.map((t) => {
+        const on = t.page === page;
+        const n = counts[t.page] ?? 0;
+        const warn = t.page === "debt" && counts.debtWarn;
+        return (
+          <button
+            key={t.page}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            className={"desk-tab" + (on ? " on" : "")}
+            title={t.note}
+            onClick={() => { if (!on) setPage(t.page); }}
+          >
+            {t.label}
+            {n > 0 ? <span className="desk-tab-badge">{n}</span>
+              : warn ? <span className="desk-tab-badge desk-tab-warn">{counts.debtWarn === "swept" ? "⚠" : "!"}</span> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -361,11 +406,12 @@ function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HT
  *
  * Many desks carry a paragraph of method under their numbers — useful once,
  * then a wall the eye has to climb past every visit. A plain hint longer than
- * a few lines is clamped to three, and opens in place on a click. Hints with
- * controls in them are left alone, and the Primer (which is meant to be read)
- * never folds.
+ * about two lines at desk width is clamped to two, and opens in place on a
+ * click. Hints with controls in them are left alone, and the Primer (which is
+ * meant to be read) never folds. (It was 300 characters against a three-line
+ * clamp, which at desk width folded almost nothing.)
  */
-const FOLD_CHARS = 300;
+const FOLD_CHARS = 200;
 function useHintFolds(ref: React.RefObject<HTMLDivElement | null>, page: Page) {
   useEffect(() => {
     const root = ref.current;

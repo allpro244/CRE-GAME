@@ -186,7 +186,9 @@ export default function GamePanels() {
               </div>
               <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
-            {desk && desk.tabs.length > 1 && <DeskTabs desk={desk} page={page} />}
+            {/* The property file has its own tabs; the desk's would be a
+                second row above them with neither lit. */}
+            {desk && desk.tabs.length > 1 && page !== "property" && <DeskTabs desk={desk} page={page} />}
             <SectionNav page={page} pageRef={pageRef} />
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}

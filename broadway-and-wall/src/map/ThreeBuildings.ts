@@ -12617,6 +12617,63 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         T = next;
         if (!any) break;
       }
+      // AND NO NEEDLES. The pass above splits any edge long for its distance
+      // from the coast, and that is enough everywhere except at a re-entrant
+      // corner of the coastline: earcut fans long thin triangles out of the
+      // notch vertex, every one of their edges passes the length test, and
+      // depth interpolated straight across a needle is not the distance field
+      // it was sampled from. The shoal broke along the fan into a dark wedge
+      // running straight out to sea from the notch — in every wide shot of
+      // every island with a cove. So: bisect the longest edge of any thin
+      // triangle near the coast, edge-keyed like the pass above so the two
+      // triangles sharing that edge both split and nothing cracks.
+      for (let round = 0; round < 10 && T.length < 120000; round++) {
+        const want = new Set<string>();
+        const key = (a: number, b: number) => (a < b ? a + "_" + b : b + "_" + a);
+        for (const [a, b, c] of T) {
+          if (Math.min(dist[a], dist[b], dist[c]) > 3600) continue;
+          const lab = Math.hypot(xs[b] - xs[a], ys[b] - ys[a]);
+          const lbc = Math.hypot(xs[c] - xs[b], ys[c] - ys[b]);
+          const lca = Math.hypot(xs[a] - xs[c], ys[a] - ys[c]);
+          const L = Math.max(lab, lbc, lca);
+          if (L < 25) continue;
+          const area = Math.abs((xs[b] - xs[a]) * (ys[c] - ys[a]) - (xs[c] - xs[a]) * (ys[b] - ys[a])) / 2;
+          if (L * L < 3.5 * 2 * area) continue;          // L / altitude under 3.5: well shaped
+          want.add(L === lab ? key(a, b) : L === lbc ? key(b, c) : key(c, a));
+        }
+        if (!want.size) break;
+        const made = new Map<string, number>();
+        const edge = (a: number, b: number): number => {
+          const k = key(a, b);
+          if (!want.has(k)) return -1;
+          const hit = made.get(k);
+          if (hit !== undefined) return hit;
+          const mx = (xs[a] + xs[b]) / 2, my = (ys[a] + ys[b]) / 2;
+          const v = xs.length;
+          xs.push(mx); ys.push(my); dist.push(at(mx, my));
+          made.set(k, v);
+          return v;
+        };
+        const next: number[][] = [];
+        for (const [a, b, c] of T) {
+          const ab = edge(a, b), bc = edge(b, c), ca = edge(c, a);
+          const n = (ab >= 0 ? 1 : 0) + (bc >= 0 ? 1 : 0) + (ca >= 0 ? 1 : 0);
+          if (!n) { next.push([a, b, c]); continue; }
+          if (n === 3) {
+            next.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+          } else if (n === 1) {
+            if (ab >= 0) next.push([a, ab, c], [ab, b, c]);
+            else if (bc >= 0) next.push([b, bc, a], [bc, c, a]);
+            else next.push([c, ca, b], [ca, a, b]);
+          } else {
+            let p0 = a, q = b, r = c, m1 = ab, m2 = bc;
+            if (ab < 0) { p0 = b; q = c; r = a; m1 = bc; m2 = ca; }
+            else if (bc < 0) { p0 = c; q = a; r = b; m1 = ca; m2 = ab; }
+            next.push([m1, q, m2], [p0, m1, m2], [p0, m2, r]);
+          }
+        }
+        T = next;
+      }
       tris = T;
       pts.length = 0;
       for (let i = 0; i < xs.length; i++) pts.push(new THREE.Vector2(xs[i], ys[i]));

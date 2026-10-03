@@ -8154,7 +8154,15 @@ void main() {
       float fine = 1.0 - smoothstep(0.25, 0.8, fwidth(rp.x / 2.6) * 6.0);
       roof = mix(roof, vec3(0.80, 0.79, 0.74), line * inStall * fine * 0.85);
     }
-    else roof = vec3(0.455, 0.425, 0.370);   // gravel and packed dirt, a step under the footway
+    else {
+      // gravel and packed dirt, a step under the footway — and never one
+      // flat fill: an empty lot is tyre-packed dirt where the trucks turned,
+      // loose gravel where it was spread, and weeds wherever nobody drove
+      float wN = rnoise(wp * 0.07) * 0.6 + rnoise(wp * 0.23) * 0.4;
+      roof = mix(vec3(0.455, 0.425, 0.370), vec3(0.420, 0.360, 0.290), smoothstep(0.35, 0.60, rnoise(wp * 0.12 + 7.0)));
+      vec3 weed = seasonTurf(vec3(0.380, 0.420, 0.260));
+      roof = mix(roof, weed, smoothstep(0.52, 0.78, wN) * 0.75);
+    }
     roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel / scrub texture
   } else {
     int dk = int(max(vSeg.x, 0.0) + 0.5);

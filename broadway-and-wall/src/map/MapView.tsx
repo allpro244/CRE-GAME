@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
-import { composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
+import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
@@ -1298,6 +1298,12 @@ export default function MapView() {
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setMonth(gameMonth);
+    // the yards follow the leaf (style.ts blocksPaint) — same vigour ladder
+    // the 3D lawns and trees read off the month
+    const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
+    const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
+    const map = mapRef.current;
+    if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo]) as never);
   }, [gameMonth, mapReady]);
   useEffect(() => {
     if (!mapReady) return;

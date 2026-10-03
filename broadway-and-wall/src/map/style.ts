@@ -23,6 +23,30 @@ const EMPTY = { type: "FeatureCollection" as const, features: [] };
  * 59,100 is metres per pixel at zoom 0 on a 512 px tile (78,271.5) times
  * cos(41°), the latitude band every island here is generated in.
  */
+/**
+ * THE YARDS HAVE A SEASON. The block fill is what shows between and behind
+ * the buildings — rear yards, courts, the strip in front of a row — and in a
+ * real town from June to September that ground is mostly under leaf and
+ * grass. It was one grey-beige twelve months a year. `leaf` is the month's
+ * foliage vigour (the same ladder the 3D trees and lawns read), and the yard
+ * slides from its winter stone-and-dirt tone toward a dusty summer green;
+ * never to a park's lawn green, because a yard is walked on, parked on and
+ * half paved.
+ */
+const YARD_WINTER = { org: [0xc9, 0xbf, 0xa8], t: [[0xc4, 0xc0, 0xb2], [0xbf, 0xc1, 0xb4], [0xc8, 0xbf, 0xae], [0xbd, 0xc2, 0xb3], [0xc6, 0xbc, 0xb2]] };
+const YARD_SUMMER = { org: [0xb7, 0xb9, 0x98], t: [[0xb2, 0xb9, 0x9c], [0xab, 0xb7, 0x9b], [0xb6, 0xb7, 0x98], [0xa9, 0xb8, 0x9a], [0xb4, 0xb5, 0x9b]] };
+export function blocksPaint(leaf: number): unknown {
+  const k = Math.max(0, Math.min(1, leaf));
+  const mix = (a: number[], b: number[]) =>
+    "#" + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, "0")).join("");
+  const t = YARD_WINTER.t.map((w, i) => mix(w, YARD_SUMMER.t[i]));
+  return [
+    "case",
+    ["==", ["get", "org"], 1], mix(YARD_WINTER.org, YARD_SUMMER.org),
+    ["match", ["coalesce", ["get", "dt"], 0], 0, t[0], 1, t[1], 2, t[2], 3, t[3], 4, t[4], t[0]],
+  ];
+}
+
 export function metres(m: number, minPx = 0, sign = 1): unknown {
   const stops: number[] = [];
   for (const z of [10, 13, 14, 15, 16, 17, 18, 19, 20, 22]) {
@@ -558,13 +582,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "block"],
         paint: {
-          "fill-color": [
-            "case",
-            ["==", ["get", "org"], 1], "#c9bfa8",
-            ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#c4c0b2", 1, "#bfc1b4", 2, "#c8bfae", 3, "#bdc2b3", 4, "#c6bcb2",
-              "#c4c0b2"],
-          ] as never,
+          "fill-color": blocksPaint(0) as never,
         },
       },
       {

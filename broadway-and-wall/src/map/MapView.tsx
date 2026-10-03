@@ -331,11 +331,17 @@ export default function MapView() {
         Promise.resolve([city.buildings3d as BuildingVolume[], city.context as GeoJSON.FeatureCollection | null] as const)
           .then(([volumes, ctx]: readonly [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
-            const curbs: [number, number][][] = (ctx?.features ?? [])
+            const curbFeats = (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === "street"
                 && (f.properties?.cls === "grid" || f.properties?.cls === "lane")
-                && f.geometry.type === "LineString")
+                && f.geometry.type === "LineString");
+            const curbs: [number, number][][] = curbFeats
               .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
+            // per segment: the half-street and the footway width citygen measured
+            const curbMeta = curbFeats.map((f) => ({
+              hw: (f.properties?.hw ?? []) as number[],
+              sw: (f.properties?.sw ?? []) as number[],
+            }));
             // park & esplanade trees and pier piles come along as 3D dressing
             const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
@@ -354,6 +360,7 @@ export default function MapView() {
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
             const layer = new ThreeBuildings(volumes, frame.core, curbs, {
+              curbMeta,
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),

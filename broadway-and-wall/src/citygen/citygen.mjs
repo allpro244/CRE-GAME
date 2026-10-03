@@ -2086,6 +2086,8 @@ export function generateCity(cfg) {
   // the green so a waterfront inset cannot throw a pale line across the
   // water, and a cell that still chords a park cannot plant a kerb on the lawn.
   const streetFeatures = [];
+  /** Footway width for a half-street: a fifth of the street, 1.6-5 m. */
+  const swOf = (half) => Math.max(1.6, Math.min(5, half * 0.4));
   for (const b of drawn) {
     const r = b.inset;
     if (!r || r.length < 3) continue;
@@ -2093,22 +2095,28 @@ export function generateCity(cfg) {
       kind: "street", cls: b.u !== undefined ? "grid" : "lane", d: b.district,
       dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
     };
-    let run = [];
+    // and, per segment, the half-street this face fronts and the footway the
+    // sidewalk ring gives it — the renderer stands its trees, people, parked
+    // cars and traffic against the real kerb rather than at fixed offsets
+    let run = [], hw = [], sw = [];
     const flush = () => {
       if (run.length >= 2) {
         streetFeatures.push({
           type: "Feature",
           geometry: { type: "LineString", coordinates: run },
-          properties: { ...props },
+          properties: { ...props, hw, sw },
         });
       }
-      run = [];
+      run = []; hw = []; sw = [];
     };
     for (let i = 0; i < r.length; i++) {
       const a = r[i], c = r[(i + 1) % r.length];
       if (!edgeClear(a, c)) { flush(); continue; }
       if (!run.length) run.push(proj.toLL(a));
       run.push(proj.toLL(c));
+      const half = b.ring ? ringDist([(a[0] + c[0]) / 2, (a[1] + c[1]) / 2], b.ring) : 6;
+      hw.push(Math.round(half * 10) / 10);
+      sw.push(Math.round((half > 2.6 ? swOf(half) : 0) * 10) / 10);
     }
     flush();
   }
@@ -2127,7 +2135,6 @@ export function generateCity(cfg) {
   const sidewalkFeatures = [];
   const curbFeatures = [];
   const zebraFeatures = [];
-  const swOf = (half) => Math.max(1.6, Math.min(5, half * 0.4));
   for (const b of drawn) {
     const r = b.inset;
     const cell = b.ring;

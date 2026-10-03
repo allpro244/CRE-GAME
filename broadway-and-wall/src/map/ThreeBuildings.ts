@@ -8280,6 +8280,15 @@ void main() {
     float up = smoothstep(0.28, 0.80, n.z);
     float drift = 0.62 + 0.55 * rnoise(wp * 0.22) + 0.20 * rnoise(wp * 1.3);
     if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
+    // PAVING THE CITY CLEARS. A parking lot and a market square are ploughed
+    // the morning after a fall: what lies on them is a few banked windrows and
+    // a grey slush film, not the unbroken white of a roof nobody walks on.
+    // They were white fields with cars parked in them.
+    if ((s == 10 && vVar < 0.18) || (s == 13 && vU > 40.0)) {
+      float bank = smoothstep(0.72, 0.90, rnoise(wp * vec2(0.09, 0.6)));
+      drift *= 0.18 + 0.82 * bank;
+      roof *= mix(1.0, 0.86, SNOW);   // wet, darker
+    }
     roof = snowOn(roof, up, drift);
   }
   // ---- the pond, which is water and was never treated as any ---------------
@@ -8340,6 +8349,11 @@ void main() {
       roof = vec3(0.150, 0.250, 0.272);
       roof *= 0.92 + 0.16 * rnoise(wp * vec2(0.08, 0.35) + vec2(t * 0.25, 0.0));
     }
+    // A LAKE IS NOT A POND. The dark body is right for a pond you can see
+    // across in a few strides; out in the middle of a big one there is fetch
+    // for a ripple and depth for colour, and a 150 m lake drawn pond-black
+    // read as a hole in the park. Distance from the bank is the measure.
+    if (!river) roof = mix(roof, vec3(0.125, 0.205, 0.235), smoothstep(10.0, 45.0, vU) * 0.85);
     // the bank: silt, weed and the bottom showing through
     roof = mix(roof, river ? vec3(0.300, 0.330, 0.262) : vec3(0.232, 0.290, 0.212), rim * (river ? 0.55 : 0.72));
     roof = mix(roof, vec3(0.556, 0.688, 0.836), fr * (1.0 - rim * 0.55));
@@ -10240,6 +10254,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     private curbs: [number, number][][] = [],
     private ctxPoints: {
       trees?: [number, number][];
+      /** Parallel to `curbs`: per segment, half-street width and footway width (m). */
+      curbMeta?: { hw: number[]; sw: number[] }[];
       piles?: [number, number][];
       land?: [number, number][];
       // street furniture arrives with a baked bearing: a bench that does not
@@ -11378,7 +11394,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       });
     };
 
-    for (const curb of this.curbs) {
+    for (let ci = 0; ci < this.curbs.length; ci++) {
+      const curb = this.curbs[ci];
+      const meta = this.ctxPoints.curbMeta?.[ci];
       const ring = curb.map((p) => this.project(p));
       if (ring.length < 3) continue;
       let cx = 0, cy = 0;
@@ -11390,6 +11408,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const len = Math.hypot(dx, dy);
         if (len < 2 || len > 400) continue;
+        // THE KERB, MEASURED. Everything below used fixed offsets from the
+        // lot line — trees at 2.1-2.8 m, parked cars at 4.4 m, traffic at
+        // 7.2 m — which on a 9 m lane put the traffic over the centre line
+        // and the trees in the gutter, and on a boulevard parked the cars on
+        // the footway. citygen hands over this face's half-street (hw) and
+        // footway (sw); the furniture stands in the footway, the parked lane
+        // is the first 2.2 m of road past the kerb, and traffic runs in the
+        // middle of the near half.
+        const hw = meta?.hw?.[i] ?? 7.5;
+        const sw = meta?.sw?.[i] ?? 2.6;
+        const road = Math.max(0, hw - sw);
         // A sidewalk that still chords the green would plant people and
         // lamps on the lawn. Citygen drops those edges; this is the last
         // line if one still arrives.
@@ -11400,10 +11429,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }  // point outward
-          const off = 2.1 + rnd() * 0.7;
+          // tree pits and lamp standards stand in the footway, back from the kerb
+          const off = Math.max(0.6, sw - 0.75) + (rnd() - 0.5) * 0.3;
           const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28, ctx: 0 };
           if (inParkXY(item.x, item.y)) continue;
-          if (rnd() < 0.76) trees.push(item);
+          // a footway under two metres has no room for a tree pit
+          if (rnd() < 0.76 && sw >= 1.9) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
         }
         // PEOPLE. A city with cars but nobody in it reads as an evacuation.
@@ -11423,7 +11454,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
-          const off = 0.9 + rnd() * 1.1;             // on the pavement, not the road
+          const off = 0.35 + rnd() * Math.max(0.3, sw - 0.9);   // on the pavement, not the road
           const pxp = px + nx * off, pyp = py + ny * off;
           if (inParkXY(pxp, pyp)) continue;
           people.push({ x: pxp, y: pyp, s: 0.92 + rnd() * 0.2, rot: rnd() * 6.28 });
@@ -11432,13 +11463,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // parked cars along it — a building is abstract until there is
         // something four metres long standing next to it. They sit in the
         // parking lane, nose-to-tail, aligned with the frontage.
-        for (let d = rnd() * 6; d < len - 5; d += 5.4 + rnd() * 3.4) {
+        // no parking lane on a street too narrow to keep a running lane past it
+        for (let d = rnd() * 6; d < len - 5 && road >= 4.6; d += 5.4 + rnd() * 3.4) {
           if (rnd() > 0.62) continue;              // gaps: hydrants, drives, luck
           const t = d / len;
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
-          const cxp = px + nx * (4.4 + rnd() * 0.4), cyp = py + ny * (4.4 + rnd() * 0.4);
+          const park = sw + 1.15 + rnd() * 0.15;
+          const cxp = px + nx * park, cyp = py + ny * park;
           if (inParkXY(cxp, cyp)) continue;
           cars.push({
             x: cxp,
@@ -11461,7 +11494,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
           const walkStep = 5 + (1 - dn) * 23;
           for (let d = rnd() * walkStep; d < len; d += walkStep * (0.7 + rnd() * 0.6)) {
-            const off = 0.8 + rnd() * 1.3;
+            const off = 0.35 + rnd() * Math.max(0.3, sw - 0.9);
             const flip = rnd() < 0.5 ? 1 : -1;   // both directions on a pavement
             const wx = a[0] + ux * len * 0.5 + nx * off, wy = a[1] + uy * len * 0.5 + ny * off;
             if (inParkXY(wx, wy)) continue;
@@ -11477,8 +11510,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // other way), thicker downtown, always sparser than the parked lane
           const laneStep = 26 + (1 - dn) * 60;
           for (let d = rnd() * laneStep; d < len; d += laneStep * (0.7 + rnd() * 0.7)) {
-            const mx = a[0] + ux * len * 0.5 + nx * (7.2 + rnd() * 0.5);
-            const my = a[1] + uy * len * 0.5 + ny * (7.2 + rnd() * 0.5);
+            // the middle of the near half's running lane, clear of the parked one
+            const lane = sw + (road >= 4.6 ? 2.2 : 0) + Math.max(1.1, (road - (road >= 4.6 ? 2.2 : 0)) * 0.5) + (rnd() - 0.5) * 0.3;
+            const mx = a[0] + ux * len * 0.5 + nx * lane;
+            const my = a[1] + uy * len * 0.5 + ny * lane;
             if (inParkXY(mx, my)) continue;
             movers.push({
               x: mx,
@@ -12319,6 +12354,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const deck: number[] = [], deckN: number[] = [];
     const cope: number[] = [], copeNn: number[] = [];
     const SEG = 14;
+    const bridgeLamps: { x: number; y: number; z: number; rot: number }[] = [];
     for (const sp of spans) {
       const { cx, cy, ax, ay, len, wid, road, rw } = sp;
       const px = -ay, py = ax;
@@ -12369,6 +12405,33 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         tri(stone, stoneN, at(s, -hw, BED), at(s, hw, z), at(s, -hw, z), out);
       }
       void sp.canal;
+      // lamp standards on the parapet at the third points, arms over the deck:
+      // what tells you a crossing is a crossing after dark
+      if (len > 14) {
+        for (const s3 of [-len * 0.3, len * 0.3]) {
+          for (const side of [-1, 1]) {
+            const q = at(s3, side * (hw - PT * 0.5), zTop(s3));
+            bridgeLamps.push({ x: q[0], y: q[1], z: q[2], rot: Math.atan2(-py * side, -px * side) });
+          }
+        }
+      }
+    }
+    if (bridgeLamps.length) {
+      const mat = this.propMaterial(0x3f464b, true, 0, [0, 0], true);
+      (mat.uniforms.uGlowBox.value as THREE.Vector3).set(0.74, 4.28, 1);
+      const mesh = new THREE.InstancedMesh(lampGeom(), mat, bridgeLamps.length);
+      const m = new THREE.Matrix4();
+      const cols = new Float32Array(bridgeLamps.length * 3).fill(1);
+      bridgeLamps.forEach((l, i) => {
+        m.compose(new THREE.Vector3(l.x, l.y, l.z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, l.rot)),
+          new THREE.Vector3(0.85, 0.85, 0.85));
+        mesh.setMatrixAt(i, m);
+      });
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      this.finishInstances(mesh);
+      this.scene.add(mesh);
+      this.riverParts.push(mesh);
     }
     const addLit = (P: number[], N: number[], color: number) => {
       if (!P.length) return;

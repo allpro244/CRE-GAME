@@ -260,6 +260,13 @@ interface AppState {
   preferFps: boolean;
   setPreferFps: (v: boolean) => void;
   /**
+   * The real-geometry city renderer (map/real/RealCity.ts) instead of the
+   * classic shader-facade one. A preview, off by default; a preference of
+   * this browser, not save state. Flipping it rebuilds the map view.
+   */
+  realRender: boolean;
+  setRealRender: (v: boolean) => void;
+  /**
    * Map-only mode — hide firm page sheets so the skyline is the desk.
    * HUD, inbox, digest and decision cards stay. UI preference, not save state.
    */
@@ -723,6 +730,7 @@ export const useStore = create<AppState>((set, get) => ({
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
+  realRender: typeof localStorage !== "undefined" && localStorage.getItem("bw:render-real") === "on",
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,
@@ -1057,6 +1065,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPreferFps: (v) => {
     try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ preferFps: v });
+  },
+
+  setRealRender: (v) => {
+    try { localStorage.setItem("bw:render-real", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ realRender: v });
   },
 
   setMapOnly: (v) => {

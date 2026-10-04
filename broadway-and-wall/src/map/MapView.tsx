@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
+import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -274,6 +275,8 @@ export default function MapView() {
   const listedRef = useRef<Set<string>>(new Set());
   const assembledRef = useRef<Set<string>>(new Set());
   const threeRef = useRef<ThreeBuildings | null>(null);
+  // flipping the preview renderer rebuilds the map with the other 3D layer
+  const realRender = useStore((s) => s.realRender);
   const [mapReady, setMapReady] = useState(false);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -359,7 +362,10 @@ export default function MapView() {
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
-            const layer = new ThreeBuildings(volumes, frame.core, curbs, {
+            // The preview renderer answers the same calls (see RealCityLayer),
+            // so everything below treats either one as the 3D layer.
+            const Layer = (useStore.getState().realRender ? RealCityLayer : ThreeBuildings) as unknown as typeof ThreeBuildings;
+            const layer = new Layer(volumes, frame.core, curbs, {
               curbMeta,
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
@@ -503,9 +509,15 @@ export default function MapView() {
       disposed = true;
       mapRef.current?.remove();
       mapRef.current = null;
+      // A rebuilt map (new city, or the renderer switched) starts with no
+      // markers and no readiness: the label cache pointed at the old map's
+      // nodes, and every effect keyed on mapReady has to run again.
+      for (const m of labelsRef.current.values()) m.remove();
+      labelsRef.current.clear();
+      setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city]);
+  }, [city, realRender]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);

@@ -158,3 +158,45 @@ four towns) and `pnpm check` reports 0 of 39 metrics moved.
     - *The base*: masonry stands on a granite water table; a glass tower on a
       double-height lobby of dark glass; a shed comes straight down to the
       slab. Shopfronts keep their glass to the pavement.
+
+# SECOND PASS — what the first pass left
+
+A second look at the after images, four towns, four seasons and night.
+
+1. **Map names did not fade or stack.** The zoom fade wrote opacity on the
+   MapLibre marker element, and MapLibre rewrites that element's opacity on
+   every move for its own occlusion test, so the fade had never worked:
+   district names stood over the street at the dive, and a station named for
+   its road and a park walk of the same name said "Hartby Walk" twice, forty
+   pixels apart. The fade now writes the label's own inner span, and after
+   each move the labels are placed in priority order (district, station,
+   civic, park, water) and held back when they overlap one already placed or
+   repeat a name already showing nearby. The halo is a tight 1 px edge plus
+   the glow, the inks a step darker, and after dusk the names turn pale on a
+   dark halo instead of wearing a paper fog over the lit city.
+2. **Creeks went black at night.** The channel water was lit only by sun and
+   sky. It now carries the town's lights: warm streaks stretched along the
+   view bearing, strongest at the banks the lamps stand on, over a floor of
+   sky glow.
+3. **One autumn colour.** Every canopy turned the same gold at the same
+   moment. Each tree now turns by its own seed: about a quarter red, a quarter
+   orange, a third gold, the rest late turners still mostly green. In April
+   one tree in five — the ornamental pears and cherries — flowers white or
+   pale pink before the rest leaf out.
+4. **No weather in a fair sky.** Fair days now carry drifting cumulus
+   shadows: value noise in world metres, inside `sunVis`, so a wall, a roof,
+   a tree and the street under them share each patch. Gone under a closed
+   overcast, where there is no sun to cut a shadow out of.
+5. **Vacant lots in mid-town were blank slabs.** Two in five are now let as
+   contractors' yards or cash car parks, with a few cars loosely squared to
+   the frontage.
+6. **Canals and slips had nothing moored in them.** Launches and workboats
+   lie along the walls, never under a bridge, only where a fairway is left.
+7. **Cars were one body.** Saloons, a fifth tall utility bodies, and short
+   city cars. Parked cars and standing people shrink out past ~2 km, where
+   they were grain on the island view rather than objects.
+
+Looked at and left: roofs already carry a full plant kit by type and era, and
+there are already three tree species. A fine blue speckle remains on some
+tower faces in cast shadow at the street camera; it is not the shadow map
+(four times the bias leaves it unchanged), and it is not yet found.

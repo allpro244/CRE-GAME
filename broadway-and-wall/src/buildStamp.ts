@@ -17,6 +17,6 @@
 // download goes back to claiming an engine it is not. Move it HERE.
 export const BUILD_STAMP = {
   commit: "map-overhaul",
-  label: "streets-in-metres-creeks-in-channels-real-bridges",
+  label: "labels-night-water-seasons-clouds-moorings",
   rentBaseOffice: 35.5,
 } as const;

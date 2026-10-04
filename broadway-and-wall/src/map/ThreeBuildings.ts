@@ -2008,6 +2008,7 @@ varying vec3 vW;
 varying vec3 vC;
 varying vec3 vL;
 varying float vE;
+varying float vSeed;
 void main() {
   vL = position;
   vE = uGlowBox.z * step(uGlowBox.x, position.x) * step(uGlowBox.y, position.z);
@@ -2048,6 +2049,9 @@ void main() {
   vN = normalize(mat3(instanceMatrix) * normal);
   vW = (instanceMatrix * vec4(p, 1.0)).xyz;
   vC = instanceColor;
+  // one number per tree, off where it stands, so a canopy turns as one
+  vec3 iSeedO = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vSeed = fract(sin(dot(floor(iSeedO.xy * 2.0), vec2(12.9898, 78.233))) * 43758.5453);
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
 }`;
 
@@ -2079,6 +2083,7 @@ varying vec3 vW;
 varying vec3 vC;
 varying vec3 vL;
 varying float vE;
+varying float vSeed;
 void main() {
   vL = position;
   // class 2 on the face that points where the car is going, 3 on the one
@@ -2099,6 +2104,7 @@ void main() {
   vN = normalize(mat3(instanceMatrix) * normal);
   vW = wp.xyz;
   vC = instanceColor;
+  vSeed = 0.0;
   gl_Position = projectionMatrix * modelViewMatrix * wp;
 }`;
 
@@ -2109,12 +2115,14 @@ varying vec3 vW;
 varying vec3 vC;
 varying vec3 vL;
 varying float vE;
+varying float vSeed;
 void main() {
   vL = position;
   vE = 0.0;
   vN = normalize(normal);
   vW = position;
   vC = vec3(1.0);
+  vSeed = 0.0;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
@@ -2243,7 +2251,35 @@ void main() {
   gl_FragColor = vec4(vec3(1.0, 0.10, 0.05) * glow * on * night, 0.0);
 }`;
 
-const SHADOW_GLSL = /* glsl */ `
+const CLOUD_GLSL = /* glsl */ `
+// CLOUD SHADOWS. A fair-weather sky over a harbour town is never one even
+// sheet of sun: cumulus a kilometre up throw soft patches a few hundred
+// metres across that drift over the roofs with the wind. They are laid here,
+// inside the one function every lit surface already asks "does the sun reach
+// me", so a wall, a roof, a tree and the street under them all go into the
+// same patch together and nothing can disagree about where it is. uCloud.xy
+// is the wind's drift in metres, z the strength (zero when the sky is overcast
+// and there is no direct sun to interrupt), w the cover. Value noise in world
+// metres, so the patches belong to the ground rather than to the screen.
+uniform vec4 uCloud;
+float cloudHash(vec2 v) { return fract(sin(dot(v, vec2(127.1, 311.7))) * 43758.5453); }
+float cloudNoise(vec2 q) {
+  vec2 i = floor(q), f = fract(q);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(cloudHash(i), cloudHash(i + vec2(1.0, 0.0)), f.x),
+             mix(cloudHash(i + vec2(0.0, 1.0)), cloudHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float cloudK(vec3 p) {
+  if (uCloud.z < 0.001) return 1.0;
+  vec2 q = (p.xy + uCloud.xy) / 520.0;
+  float n = cloudNoise(q) * 0.58 + cloudNoise(q * 2.07 + 5.3) * 0.29 + cloudNoise(q * 4.41 + 1.7) * 0.13;
+  // the weighted octaves sum to a value with sd ~0.13 about 0.5, so w = 0.56
+  // shades about a third of the ground and is full shadow by +1 sd
+  return 1.0 - uCloud.z * smoothstep(uCloud.w, uCloud.w + 0.08, n);
+}
+`;
+
+const SHADOW_GLSL = CLOUD_GLSL + /* glsl */ `
 uniform sampler2D uShadow;
 uniform mat4 uSunVP;
 uniform float uShadowOn;
@@ -2346,7 +2382,9 @@ float shadowHash(vec2 v) {
 // dissolved the window grids for the same reason — paying for PCSS out there
 // is pure fill-rate. fwidth of the shadow coordinate says how many shadow
 // texels one screen pixel spans; past a couple, a hard tap is the same image.
-float sunVis(vec3 p, vec3 n) {
+float sunVisMap(vec3 p, vec3 n);
+float sunVis(vec3 p, vec3 n) { return sunVisMap(p, n) * cloudK(p); }
+float sunVisMap(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
   vec4 sc = uSunVP * vec4(p + n * (SHADOW_NORMAL_TX * uShadowTexelM), 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
@@ -7546,6 +7584,9 @@ void main() {
       // streaks: a soot run under each bay, heavier toward the street
       float run = hash(vec2(floor(vU / max(colW, 1.0)) + 7.0, vRand * 41.0));
       float streak = smoothstep(0.35, 1.0, run) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 18.0, vZ)));
+      // per-bay runs are a bay wide; once bays are a few pixels the stripes
+      // beat against the pixel grid, so they hand over to their mean (~1/3)
+      streak = mix(streak, 0.33 * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 18.0, vZ))), lod);
       col *= 1.0 - worn * (0.13 + 0.15 * streak);
       if (!glassy && lod < 0.6 && winMask > 0.5) {
         float board = step(hash(vec2(floor(u) + 3.1, floor(v) + vRand * 17.0)), max(0.0, worn - 0.62) * 0.9);
@@ -8311,6 +8352,7 @@ void main() {
   // normal, and everything else falls out of that. vU carries distance to the
   // pond's own bank, baked per vertex, so the rim goes green and opaque where
   // you can see the bottom and the middle holds the sky.
+  vec3 waterGlow = vec3(0.0);
   if (s == 14) {
     // FOUR TRAINS, DELIBERATELY UNCORRELATED. Three with similar bearings sum
     // into a corduroy of parallel ridges — the pond came out looking milled
@@ -8372,6 +8414,24 @@ void main() {
     // paper white and lose the ripple that makes it legible as water.
     roof += SUN_COL * (pow(sd, 30.0) * 0.03 + pow(sd, 260.0) * 0.14 + pow(sd, 900.0) * 0.38)
           * (1.0 - rim * 0.7);
+    // AFTER DARK A CREEK IS THE TOWN'S LIGHTS, NOT A CRACK. Everything above
+    // is lit by sun and sky, so at night the whole channel went to black and
+    // read as a hole a mile long. Still water in a lit town carries the lamps
+    // and windows of its banks as broken streaks running toward the eye: a
+    // warm noise stretched along the view bearing, strongest near the banks
+    // the lights stand on, and a floor of the sodium sky-glow every town
+    // throws up so the open middle is a deep blue-grey rather than nothing.
+    float dk = smoothstep(0.45, 0.95, uWeather.z);
+    if (dk > 0.001) {
+      vec2 along = normalize(Vp.xy + vec2(1e-4));
+      vec2 across = vec2(-along.y, along.x);
+      vec2 q = vec2(dot(wp, across) * 0.55, dot(wp, along) * 0.06 + t * 0.15);
+      float streak = smoothstep(0.52, 0.86, rnoise(q) * 0.7 + rnoise(q * 2.3 + 4.1) * 0.3);
+      float shore = 1.0 - smoothstep(0.0, river ? 7.0 : 14.0, vU);
+      float wob = 0.75 + 0.25 * sin(dot(pn.xy, vec2(9.0, 7.0)) * 6.0);
+      waterGlow = dk * (vec3(0.030, 0.040, 0.062)
+        + vec3(1.00, 0.70, 0.36) * streak * mix(0.05, 0.24, shore) * wob);
+    }
   }
 
   float vis = sunVis(vPos, n);
@@ -8379,7 +8439,7 @@ void main() {
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
-  vec3 outc = roof * light * vTint;
+  vec3 outc = roof * light * vTint + waterGlow;
 
   // ---- THE GAME'S STATE ON THE DECK (see STATE_GLSL) ------------------------
   // Only on decks that are flat: the edge-distance vU is a real distance on a
@@ -9144,6 +9204,7 @@ uniform float uReflectOn;
 // not a setting: everything this shader does in its far field has to arrive
 // here, or the world ends in a visible band.
 uniform vec3 uSeaFar;
+` + CLOUD_GLSL + /* glsl */ `
 ` + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
@@ -9338,7 +9399,10 @@ void main() {
   float spec  = pow(road, mix(220.0, 64.0, aloft));
   float sheen = pow(road, mix(24.0, 9.0, aloft));
   float glit  = pow(road, mix(800.0, 190.0, aloft));   // the hard points in the road
-  col += SUN_COL * (spec * mix(2.3, 1.35, aloft)
+  // Under a cloud the sea keeps its colour — it is mostly sky in a mirror —
+  // but the sun's road on it goes out, which is how a cloud shadow reads on
+  // water from the air.
+  col += SUN_COL * cloudK(vec3(vXY, 0.0)) * (spec * mix(2.3, 1.35, aloft)
                   + sheen * mix(0.26, 0.34, aloft)
                   + glit * mix(3.4, 1.2, aloft) * (0.5 + 0.9 * streak));
 
@@ -9497,6 +9561,7 @@ varying vec3 vW;
 varying vec3 vC;
 varying vec3 vL;
 varying float vE;
+varying float vSeed;
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
@@ -9523,10 +9588,32 @@ void main() {
   vec3 n = normalize(vN);
   vec3 base = uColor * vC;
   if (uFoliage > 0.5 && uFoliage < 1.5) {
+    vec3 leaf = base;
     base = seasonGreen(base);
+    // A STREET DOES NOT TURN ONE GOLD. Maples go scarlet, oaks hold green and
+    // then go russet, limes and planes go yellow — a New England October is
+    // a mixed planting turning at different rates, and every tree in town
+    // going the same shade at the same moment read as a filter rather than a
+    // season. vSeed is one number per tree: about a quarter go red, a quarter
+    // orange, a third the gold seasonGreen already makes, and the rest are
+    // late turners still mostly green.
+    float l0 = dot(leaf, vec3(0.299, 0.587, 0.114));
+    vec3 turnTo = vSeed < 0.26 ? l0 * vec3(1.86, 0.56, 0.32)
+                : vSeed < 0.52 ? l0 * vec3(1.74, 0.98, 0.36)
+                : vSeed < 0.86 ? base
+                : mix(leaf, base, 0.35);
+    base = mix(base, turnTo, clamp(AUTUMN * 1.1, 0.0, 1.0));
     // the twig mass: grey-brown and lighter than the bark it is made of,
     // because it is mostly sky seen through it
     base = mix(base, vec3(0.330, 0.300, 0.265), BARE * 0.85);
+    // AND APRIL IS NOT A SLOWER JUNE. The ornamental pears and cherries the
+    // streets are planted with flower before they leaf, white and pale pink,
+    // for the few weeks the rest of the canopy is still a grey net — which is
+    // exactly when the season table has bare twigs and vigour rising and no
+    // autumn. One tree in five.
+    float bloom = step(AUTUMN, 0.01) * clamp(4.0 * BARE * (1.0 - BARE), 0.0, 1.0)
+                * smoothstep(0.30, 0.50, VIGOUR) * step(0.80, vSeed);
+    base = mix(base, vSeed > 0.90 ? vec3(0.93, 0.79, 0.83) : vec3(0.92, 0.91, 0.86), bloom * 0.9);
   } else if (uFoliage > 1.5) {
     base = mix(base, base * vec3(0.82, 0.90, 0.94), (1.0 - VIGOUR) * 0.45);
   }
@@ -9751,6 +9838,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // walked and instanced along with the street planting
   private lotTrees: { x: number; y: number; s: number; rot: number }[] = [];
   private lotCars: { x: number; y: number; s: number; rot: number }[] = [];
+  /** Cloud-shadow drift (xy, metres), strength (z) and cover (w) — see cloudK. */
+  private cloudUni = { value: new THREE.Vector4(0, 0, 0, 0.6) };
   private sunVP = new THREE.Matrix4();
   private sunDirUni = { value: new THREE.Vector3(0.762, -0.541, 0.496) };
   private sunColUni = { value: new THREE.Vector3(1.26, 1.09, 0.82) };
@@ -10212,6 +10301,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.weatherUni.value.z = d;
     if (this.lampPools) this.lampPools.visible = d > 0.3;
     if (this.beaconMat) this.beaconMat.visible = d > 0.3;
+    // The DOM name labels carry a paper halo that reads as fog over a night
+    // city; the container class flips them to pale ink on a dark halo.
+    this.map?.getContainer()?.classList.toggle("bw-night", d > 0.5);
     this.sceneDirty++;
     if (!this.postOK || !this.brightMat) return;
     const night = smoothstep(0.35, 1.0, d);
@@ -10805,6 +10897,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           for (const p of scatterInRing(ring, n, rnd + 0.11)) {
             this.lotTrees.push({ x: p[0], y: p[1], s: 0.4 + ((p[0] * 3.1) % 1) * 0.25, rot: (p[1] * 1.7) % 6.28 });
           }
+          // A fenced hole in the middle of town is rarely left empty: about
+          // two in five get let by the month as a contractor's yard or a cash
+          // car park, which is what turns the big pale slab into a lot with
+          // something on it. A handful of cars, loosely squared to the long
+          // frontage, at a third of a striped lot's density. Off the lot's own
+          // hash, so it is fixed for the life of the hole.
+          const used = (rnd * 7.31) % 1 < 0.4;
+          if (used && m2 > 320) {
+            let bi = 0, bl = -1;
+            for (let i = 0; i < ring.length; i++) {
+              const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+              const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+              if (L > bl) { bl = L; bi = i; }
+            }
+            const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
+            const rot = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) + Math.PI / 2;
+            const inner = insetRing(ring, 2.0);
+            const nc = Math.min(24, Math.max(2, Math.round(m2 / 260)));
+            if (inner) for (const p of scatterInRing(inner, nc, rnd + 0.53)) {
+              this.lotCars.push({ x: p[0], y: p[1], s: 1, rot: rot + (((p[0] * 5.7 + p[1] * 2.3) % 1) - 0.5) * 0.5 });
+            }
+          }
         }
         if (v.b) {
           wallRanges.push({ bbl: v.b, r: { start: wallStart, count: W.pos.length / 3 - wallStart } });
@@ -11202,6 +11316,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
       uShadowSpan: { value: 5999 }, uShadowTexelM: { value: 4400 / 3072 },
+      uCloud: this.cloudUni,
       uTime: this.timeUni,
       // per-building state — see bidByKey
       uState: this.stateTexUni,
@@ -11551,14 +11666,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     ];
     const addCars = (items: Item[]) => {
       if (!items.length) return;
-      const mesh = new THREE.InstancedMesh(carGeom(), this.propMaterial(0xffffff), items.length);
+      // Shrunk out past ~2 km, like the roof furniture: from the whole-island
+      // camera a parked car is a fraction of a pixel and twenty thousand of
+      // them were grain on the streets, not cars.
+      const mesh = new THREE.InstancedMesh(carGeom(), this.propMaterial(0xffffff, true, 0, [1800, 2800]), items.length);
       const m = new THREE.Matrix4();
       const cols = new Float32Array(items.length * 3);
       items.forEach((p, i) => {
+        // Not one body. A 2000s kerb is mostly saloons, a fifth tall
+        // utility bodies and the rest short city cars — the length and roof
+        // line are what read from the air, so they vary; the width hardly
+        // does. carGeom runs along +X.
+        const body = rnd();
+        const len = body < 0.70 ? 0.97 + rnd() * 0.08 : body < 0.90 ? 1.05 : 0.86;
+        const tall = body < 0.70 ? 0.94 + rnd() * 0.12 : body < 0.90 ? 1.24 : 0.97;
+        const wid = body < 0.70 ? 1.0 : body < 0.90 ? 1.06 : 0.94;
         m.compose(
           new THREE.Vector3(p.x, p.y, 0),
           new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
-          new THREE.Vector3(p.s, p.s, p.s * (0.94 + rnd() * 0.16)),
+          new THREE.Vector3(p.s * len, p.s * wid, p.s * tall),
         );
         mesh.setMatrixAt(i, m);
         const c = CAR_COLORS[Math.floor(rnd() * CAR_COLORS.length) % CAR_COLORS.length];
@@ -11576,7 +11702,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     ];
     const addPeople = (items: Item[]) => {
       if (!items.length) return;
-      const mesh = new THREE.InstancedMesh(personGeom(), this.propMaterial(0xffffff), items.length);
+      const mesh = new THREE.InstancedMesh(personGeom(), this.propMaterial(0xffffff, true, 0, [1400, 2200]), items.length);
       const m = new THREE.Matrix4();
       const cols = new Float32Array(items.length * 3);
       items.forEach((p, i) => {
@@ -12445,6 +12571,64 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
       this.riverParts.push(mesh);
     }
+
+    // ---- what is tied up at the wall ----------------------------------------
+    // A dressed canal or a harbour slip with nothing moored in it read as a
+    // drainage cut. Launches and workboats lie along the wall, bow to stern,
+    // a fender's width off the stone — every fourteen metres or so, with gaps,
+    // never under a bridge, and only where the channel is wide enough to
+    // leave a fairway past them. Off a position hash, so the moorings are the
+    // same every load.
+    {
+      const boats: { x: number; y: number; z: number; rot: number; s: number; c: [number, number, number] }[] = [];
+      const HULL: [number, number, number][] = [
+        [0.90, 0.90, 0.88], [0.86, 0.85, 0.80], [0.16, 0.22, 0.34], [0.20, 0.32, 0.26], [0.52, 0.20, 0.17], [0.30, 0.30, 0.31],
+      ];
+      const h01 = (x: number, y: number) => { const v = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return v - Math.floor(v); };
+      water.forEach((w) => {
+        if (!w.canal) return;
+        const z = w.slip ? 0.0 : WATER_Z;
+        for (const e of bank) {
+          if (e.slip !== w.slip || !e.canal) continue;
+          const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
+          const L = Math.hypot(dx, dy);
+          if (L < 9) continue;
+          const ux = dx / L, uy = dy / L;
+          for (let d = 5; d < L - 5; d += 14) {
+            const px = e.a[0] + ux * d, py = e.a[1] + uy * d;
+            if (h01(px, py) > 0.5) continue;
+            const off = w.slip ? 2.2 : 1.7;
+            const cx = px + e.nx * off, cy = py + e.ny * off;
+            // a fairway: the far side of the boat plus a boat's beam still in water
+            if (!inPoly([cx, cy], w.ring) || !inPoly([px + e.nx * (off + 5.5), py + e.ny * (off + 5.5)], w.ring)) continue;
+            if (spans.some((sp) => Math.hypot(cx - sp.cx, cy - sp.cy) < Math.max(sp.len, sp.wid) * 0.5 + 7)) continue;
+            const k = h01(cy, cx);
+            boats.push({
+              x: cx, y: cy, z, rot: Math.atan2(uy, ux) + (k > 0.5 ? Math.PI : 0),
+              s: w.slip ? 1.25 + k * 0.5 : 0.85 + k * 0.3,
+              c: HULL[Math.floor(k * HULL.length) % HULL.length],
+            });
+          }
+        }
+      });
+      if (boats.length) {
+        const mat = this.propMaterial(0xffffff, true, 0, [1800, 2800]);
+        const mesh = new THREE.InstancedMesh(mooredBoatGeom(), mat, boats.length);
+        const m = new THREE.Matrix4();
+        const cols = new Float32Array(boats.length * 3);
+        boats.forEach((b, i) => {
+          m.compose(new THREE.Vector3(b.x, b.y, b.z),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, b.rot)),
+            new THREE.Vector3(b.s, b.s, b.s));
+          mesh.setMatrixAt(i, m);
+          cols[i * 3] = b.c[0]; cols[i * 3 + 1] = b.c[1]; cols[i * 3 + 2] = b.c[2];
+        });
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+        this.finishInstances(mesh);
+        this.scene.add(mesh);
+        this.riverParts.push(mesh);
+      }
+    }
     const addLit = (P: number[], N: number[], color: number) => {
       if (!P.length) return;
       const g = new THREE.BufferGeometry();
@@ -12722,6 +12906,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // parsed in linear-sRGB, which is three's way of saying "do not convert",
         // and MapLibre's #33719c arrives as #33719c.
         uSeaFar: { value: new THREE.Color().setStyle(OPEN_SEA, THREE.LinearSRGBColorSpace) },
+        uCloud: this.cloudUni,
       },
       side: THREE.DoubleSide,
     });
@@ -12894,6 +13079,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
         uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
+        uCloud: this.cloudUni,
       },
       side: THREE.DoubleSide,
     });
@@ -13144,7 +13330,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uniforms: {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
             uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
-            uSeason: this.seasonUni, uWeather: this.weatherUni,
+            uSeason: this.seasonUni, uWeather: this.weatherUni, uCloud: this.cloudUni,
           },
           transparent: true,
           depthWrite: false,
@@ -13161,6 +13347,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan }, uShadowTexelM: { value: this.shadowTexelM },
             uSeason: this.seasonUni, uCam: this.camUni,
             uSunDir: this.sunDirUni, uSunCol: this.sunColUni, uWeather: this.weatherUni,
+            uCloud: this.cloudUni,
           },
           transparent: true,
           depthWrite: false,
@@ -14403,6 +14590,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const cloud = Math.max(0, Math.min(1, Number.isFinite(overcast) ? overcast : 0));
     this.weatherUni.value.x = kind === "rain" ? p : 0;
     this.weatherUni.value.y = cloud;
+    // Broken cumulus on a fair day; none once the deck closes over, because a
+    // shadow needs a sun to be cut out of. Rain and snow fall from that deck.
+    // 0.42 is a cloud's own optical depth at the edge of fair weather — the
+    // sun through a cumulus is two-fifths down, not out — and the cover rises
+    // with the overcast so a hazy day carries more, larger patches.
+    const fair = kind === "clear" || kind === "overcast" ? 1 - smoothstep(0.45, 0.85, cloud) : 0;
+    this.cloudUni.value.z = 0.42 * fair;
+    this.cloudUni.value.w = 0.56 - 0.08 * Math.min(1, cloud / 0.6);
     // a dusting most snow months, a real cover only in a heavy fall — the
     // old floor put two-thirds cover on every roof in town at any flurry
     this.weatherSnow = kind === "snow" ? 0.16 + p * 0.56 : 0;
@@ -14489,6 +14684,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds || selAnim) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
+      // the wind: a steady 7 m/s out of the west-south-west
+      this.cloudUni.value.x = -this.timeUni.value * 6.4;
+      this.cloudUni.value.y = -this.timeUni.value * 2.6;
       // A crane's slew is its parked bearing plus two slow incommensurate
       // sines: it sweeps, hesitates, reverses — a driver working a load, not
       // a turntable. Deterministic in the clock, no per-frame rng, and one
@@ -14915,6 +15113,16 @@ function billboardGeom(): THREE.BufferGeometry {
   const legA = new THREE.BoxGeometry(0.24, 0.24, 1.5).translate(-2.9, 0, 0.75);
   const legB = new THREE.BoxGeometry(0.24, 0.24, 1.5).translate(2.9, 0, 0.75);
   return mergeGeoms([panel, legA, legB]);
+}
+
+// A small launch, bow along +X: a hull that rides 0.35 m out of the water
+// with its bow drawn in, a pale wheelhouse aft of midships. Instance colour
+// paints it all, so the cabin is a separate tone only by being lit from above.
+function mooredBoatGeom(): THREE.BufferGeometry {
+  const hull = new THREE.BoxGeometry(5.0, 1.9, 0.62).translate(-0.3, 0, 0.04);
+  const bow = new THREE.BoxGeometry(1.3, 1.25, 0.58).translate(2.75, 0, 0.08);
+  const cabin = new THREE.BoxGeometry(1.7, 1.35, 0.85).translate(-0.9, 0, 0.78);
+  return mergeGeoms([hull, bow, cabin]);
 }
 
 function carGeom(): THREE.BufferGeometry {

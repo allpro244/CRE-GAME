@@ -445,46 +445,61 @@ body {
 .gameover .btn { margin-top: 10px; }
 
 /* ---- map name labels (DOM markers) ---- */
+.map-label > span { transition: opacity 0.35s; }
 .map-label {
   pointer-events: none;
-  transition: opacity 0.35s;
   white-space: nowrap;
-  text-shadow: 0 0 4px rgba(244, 243, 239, 0.9), 0 0 8px rgba(244, 243, 239, 0.7);
+  /* A tight 1px halo first, so the letterform has an edge over a busy roof,
+     then the soft glow. Without the first a pale label over a pale wall had
+     no outline at all and simply dissolved. */
+  text-shadow: 0 0 1px rgba(250, 249, 244, 1), 0 0 2px rgba(250, 249, 244, 0.95),
+    0 0 5px rgba(244, 243, 239, 0.85), 0 0 10px rgba(244, 243, 239, 0.6);
 }
 .map-label-district {
   font-family: var(--serif);
   font-size: 13px; letter-spacing: 3px; font-weight: 600;
-  color: #8a8474;
+  color: #6e6858;
 }
 /* While the demand or land lens is up, the district names are most of the
    point of looking — MapView puts .bw-lens-hoods on the map container, and
    the labels come up bigger, darker, and at every zoom. The !important is
-   load-bearing: the zoom fade writes inline opacity on each marker, and this
+   load-bearing: the zoom fade writes inline opacity on each label span, and this
    is the one state that must win over it. */
+.bw-lens-hoods .map-label-district > span { opacity: 1 !important; }
 .bw-lens-hoods .map-label-district {
-  opacity: 1 !important;
   font-size: 16px; letter-spacing: 4px;
   color: #443f33;
   text-shadow: 0 1px 2px rgba(250, 249, 243, 0.95), 0 0 8px rgba(250, 249, 243, 0.9), 0 0 16px rgba(250, 249, 243, 0.75);
 }
 .map-label-park {
   font-family: var(--serif); font-style: italic;
-  font-size: 12px; color: #6d8a5f;
+  font-size: 12px; font-weight: 600; color: #4b6a3e;
 }
 .map-label-water {
   font-family: var(--serif); font-style: italic;
-  font-size: 13px; letter-spacing: 1.5px; color: #7d99ad;
-  text-shadow: none;
+  font-size: 13px; letter-spacing: 1.5px; color: #4f7590;
+  text-shadow: 0 0 1px rgba(232, 240, 244, 0.9), 0 0 4px rgba(232, 240, 244, 0.6);
 }
 .map-label-station {
   font-family: var(--serif);
   font-size: 11px; letter-spacing: 0.6px; font-weight: 600;
-  color: #4a5560;
+  color: #3a444e;
 }
 .map-label-civic {
   font-family: var(--serif); font-style: italic;
-  font-size: 11px; color: #5a6a48;
+  font-size: 11px; font-weight: 600; color: #475636;
 }
+
+/* After dark the paper halo becomes a fog over the lit city: the names go
+   pale on a dark halo instead. ThreeBuildings sets .bw-night on the map
+   container as the hour passes dusk. */
+.bw-night .map-label {
+  text-shadow: 0 0 1px rgba(12, 16, 26, 1), 0 0 3px rgba(12, 16, 26, 0.9), 0 0 8px rgba(12, 16, 26, 0.6);
+}
+.bw-night .map-label-district { color: #d8cfb8; }
+.bw-night .map-label-park, .bw-night .map-label-civic { color: #b9d1a4; }
+.bw-night .map-label-water { color: #9fc0d6; }
+.bw-night .map-label-station { color: #e4e0d4; }
 
 /* ---- hover tooltip ---- */
 .hover-tip {

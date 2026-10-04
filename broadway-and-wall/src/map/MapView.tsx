@@ -977,31 +977,71 @@ export default function MapView() {
       el.appendChild(span);
       live.set(key, new maplibregl.Marker({ element: el }).setLngLat(w.ll).addTo(map));
     }
+    // NAMES DO NOT STACK. A station named for its road and the road's second
+    // station both said "Harthy Walk" a hundred pixels apart, and a park
+    // label sat across a district name. Labels are DOM, so nothing in MapLibre
+    // collides them: after each move they are placed in priority order
+    // (district, station, civic, park, water) and one is held back when its
+    // box overlaps a label already placed, or when the same name is already
+    // showing close by. It re-runs on moveend, not every frame, so a pan
+    // never pays for it.
+    const RANK: Record<string, number> = { district: 0, station: 1, civic: 2, park: 3, water: 4 };
+    const kindOf = (el: HTMLElement) => el.className.includes("district") ? "district"
+      : el.className.includes("park") ? "park"
+      : el.className.includes("civic") ? "civic"
+      : el.className.includes("station") ? "station"
+      : "water";
+    // ON THE INNER SPAN, NOT THE MARKER. MapLibre's Marker owns its element's
+    // opacity — it rewrites it on every move for its own occlusion test — so
+    // the zoom fade written there was undone the next frame, and it had never
+    // worked: district names stood over the street at the dive. The span is
+    // ours, and fading it leaves MapLibre's write alone.
+    const setOp = (el: HTMLElement, o: string) => {
+      const sp = el.firstElementChild as HTMLElement | null;
+      if (sp && sp.style.opacity !== o) sp.style.opacity = o;
+    };
     const fade = () => {
       const z = map.getZoom();
       map.getContainer().style.setProperty("--bw-label-scale",
         String(Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12))));
+      const placed: { x0: number; y0: number; x1: number; y1: number; name: string; cx: number; cy: number }[] = [];
+      const cand: { el: HTMLElement; rank: number; m: maplibregl.Marker }[] = [];
       for (const m of live.values()) {
         const el = m.getElement();
-        const kind = el.className.includes("district") ? "district"
-          : el.className.includes("park") ? "park"
-          : el.className.includes("station") || el.className.includes("civic") ? "station"
-          : "water";
+        const kind = kindOf(el);
         const on =
           kind === "district" ? z >= 12.2 && z <= 15.6 :
           kind === "park" ? z >= 13.2 :
-          kind === "station" ? z >= 13.6 :
+          kind === "station" || kind === "civic" ? z >= 13.6 :
           z <= 14.5;
-        const o = on ? "1" : "0";
-        if (el.style.opacity !== o) el.style.opacity = o;
+        if (on) cand.push({ el, rank: RANK[kind], m });
+        else setOp(el, "0");
+      }
+      cand.sort((a, b) => a.rank - b.rank);
+      const scale = Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12));
+      for (const c of cand) {
+        const p = map.project(c.m.getLngLat());
+        // measured once: the text never changes, and reading layout for a
+        // hundred nodes on every zoom tick is how a label pass gets slow
+        if (!c.el.dataset.w && c.el.offsetWidth) { c.el.dataset.w = String(c.el.offsetWidth); c.el.dataset.h = String(c.el.offsetHeight); }
+        const w = (+(c.el.dataset.w ?? 0) || 60) * scale * 0.5 + 4, h = (+(c.el.dataset.h ?? 0) || 14) * scale * 0.5 + 2;
+        const box = { x0: p.x - w, y0: p.y - h, x1: p.x + w, y1: p.y + h, name: (c.el.textContent ?? "").toLowerCase(), cx: p.x, cy: p.y };
+        const clash = placed.some((q) =>
+          (box.x0 < q.x1 && box.x1 > q.x0 && box.y0 < q.y1 && box.y1 > q.y0) ||
+          (q.name === box.name && Math.hypot(q.cx - box.cx, q.cy - box.cy) < 320));
+        const o = clash ? "0" : "1";
+        if (!clash) placed.push(box);
+        setOp(c.el, o);
       }
     };
     map.on("zoom", fade);
+    map.on("moveend", fade);
     fade();
     return () => {
       // the zoom listener used to outlive its markers — every paintSig tick
       // left one more orphaned fade() walking a dead marker list
       map.off("zoom", fade);
+      map.off("moveend", fade);
     };
   }, [mapReady, city, paintSig, photoFrame]);
   // the markers themselves go only with the map

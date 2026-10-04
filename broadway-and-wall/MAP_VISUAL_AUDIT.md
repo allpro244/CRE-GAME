@@ -197,6 +197,25 @@ A second look at the after images, four towns, four seasons and night.
    they were grain on the island view rather than objects.
 
 Looked at and left: roofs already carry a full plant kit by type and era, and
-there are already three tree species. A fine blue speckle remains on some
-tower faces in cast shadow at the street camera; it is not the shadow map
-(four times the bias leaves it unchanged), and it is not yet found.
+there are already three tree species.
+
+# THIRD PASS
+
+1. **The tower speckle, found.** A fine blue-grey salt on tower faces at the
+   street camera, densest where a face runs away at a grazing angle. Not the
+   shadow map (four times the bias changed nothing), not the occlusion or
+   contact passes, not the interiors: a debug bisection of the wall shader
+   put it in the occupancy block. The vacant/let floor bands are rolled with
+   `hash()` off `vRand` — one number per building, identical at every vertex
+   — but an interpolated varying holds that value plus a few ulps of
+   rounding that differ pixel to pixel, and `sin(x) * 43758` turns ulps into
+   a different band, let or vacant, at every pixel. `vRand` and `vVar` are
+   now `flat` varyings (WebGL2), so every pixel gets the exact value the CPU
+   wrote: the noise is gone and every building keeps exactly its look.
+2. **Still water freezes.** Ponds and lakes are ice in the dead of winter —
+   pale, matte, snow-dusted, darker new ice out in the middle — read off the
+   season, not the day's snowfall. Running creeks stay open.
+3. **Landfill stands on a seawall.** A park laid past the coastline (the
+   Battery) was a lawn floating over the harbour with no edge. Each run of
+   its ring that lies over the water now gets a coping and a battered stone
+   face stepping down into the sea.

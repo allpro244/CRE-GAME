@@ -1597,7 +1597,25 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vU, vZ, vStyle, vTop, vFh, vEra;
+// FLAT, BECAUSE THEY ARE HASHED. vRand and vVar are one number per building,
+// the same at every vertex — and the shaders feed them straight into
+// hash(), which is sin(x) * 43758: an amplifier for the last bit of a float.
+// Interpolated, a face does not hold the value its vertices all carry; it
+// holds that value plus a few ulps of perspective-correct rounding that
+// differs pixel to pixel, and the hash turns those ulps into a different
+// answer on every pixel. The occupancy bands are rolled off vRand, so a
+// half-let tower came out as salt — a different floor let or vacant at
+// every pixel, blue-grey dots across whole faces, worst where the face runs
+// away at a grazing angle and the rounding is largest. Flat takes the
+// provoking vertex's value bit-for-bit, which is the value the CPU wrote, so
+// every building keeps exactly the look it had and only the noise goes.
+// (WebGL1 has no flat qualifier; there the old behaviour stands.)
+#if __VERSION__ >= 300
+flat varying float vRand, vVar;
+#else
+varying float vRand, vVar;
+#endif
 varying float vLit;
 varying float vRet;
 // x owned, y lens position (-1 no value, -2 not a lot), z highlight
@@ -2513,7 +2531,12 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vU, vZ, vStyle, vTop, vFh, vEra;
+#if __VERSION__ >= 300
+flat varying float vRand, vVar;   // flat: see the vertex shader
+#else
+varying float vRand, vVar;
+#endif
 varying float vLit;
 varying float vRet;
 uniform float uOpacity;
@@ -7914,7 +7937,12 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vU, vZ, vStyle, vTop, vFh, vEra;
+#if __VERSION__ >= 300
+flat varying float vRand, vVar;   // flat: see the vertex shader
+#else
+varying float vRand, vVar;
+#endif
 varying float vLit;
 varying float vRet;
 uniform float uOpacity;
@@ -8421,7 +8449,23 @@ void main() {
     // warm noise stretched along the view bearing, strongest near the banks
     // the lights stand on, and a floor of the sodium sky-glow every town
     // throws up so the open middle is a deep blue-grey rather than nothing.
-    float dk = smoothstep(0.45, 0.95, uWeather.z);
+    // STILL WATER FREEZES. A park pond or a lake in a New York January is
+    // ice — pale, matte, dusted with snow where the wind has left it — not
+    // the near-black open water the rest of the year carries. Running water
+    // stays open (the creeks keep their current). The cold is read off the
+    // season itself rather than the day's snowfall: full in the dead of
+    // winter when the canopy is bare and nothing grows, none once the year
+    // has turned, and not in a November that is still mid-fall.
+    float freeze = river ? 0.0
+      : smoothstep(0.80, 0.97, (1.0 - VIGOUR) * BARE) * (1.0 - step(0.6, AUTUMN));
+    if (freeze > 0.001) {
+      float ns = rnoise(wp * 0.045) * 0.65 + rnoise(wp * 0.21 + 3.0) * 0.35;
+      vec3 ice = mix(vec3(0.560, 0.640, 0.680), vec3(0.860, 0.880, 0.910), smoothstep(0.42, 0.66, ns));
+      // a darker skin of new ice out in the middle, where it froze last
+      ice = mix(ice, vec3(0.360, 0.440, 0.480), smoothstep(25.0, 60.0, vU) * 0.35 * (1.0 - smoothstep(0.42, 0.66, ns)));
+      roof = mix(roof, ice, freeze * 0.94);
+    }
+    float dk = smoothstep(0.45, 0.95, uWeather.z) * (1.0 - freeze * 0.85);
     if (dk > 0.001) {
       vec2 along = normalize(Vp.xy + vec2(1e-4));
       vec2 across = vec2(-along.y, along.x);
@@ -12178,6 +12222,74 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (flavour === "market") uOf = () => 50;
       fillRing(ring, 0.07, flavour === "market" ? S_PATH : S_LAWN, true, holes);
       uOf = null;
+    }
+
+    // A PARK MADE OF LANDFILL STANDS ON A SEAWALL. The Battery (and any park
+    // the generator lays partly past the coastline) was a lawn floating over
+    // the harbour at seven centimetres, with no edge at all — a sheet of
+    // paper on the water. Every run of its ring that lies out over the sea
+    // gets the dressed stone face it has in life, from below the waterline up
+    // to a coping lip, so it reads as made ground held back by a wall.
+    {
+      const land = this.landRing();
+      if (land && land.length >= 3) {
+        const L = land.map((v) => [v.x, v.y] as [number, number]);
+        const inLand = (x: number, y: number) => {
+          let inside = false;
+          for (let i = 0, j = L.length - 1; i < L.length; j = i++) {
+            const xi = L[i][0], yi = L[i][1], xj = L[j][0], yj = L[j][1];
+            if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+          }
+          return inside;
+        };
+        const P: number[] = [], N: number[] = [];
+        const quad = (a: number[], b: number[], c: number[], d: number[], n: number[]) => {
+          P.push(...a, ...b, ...c, ...a, ...c, ...d);
+          for (let k = 0; k < 6; k++) N.push(n[0], n[1], n[2]);
+        };
+        for (const p of parks) {
+          const ringLL = Array.isArray(p) && typeof p[0]?.[0] === "number"
+            ? p as [number, number][]
+            : (p as { ring: [number, number][] }).ring;
+          if (!ringLL || ringLL.length < 3) continue;
+          const r = ringLL.map((q) => this.project(q));
+          let a2 = 0;
+          for (let i = 0; i < r.length; i++) { const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length]; a2 += x1 * y2 - x2 * y1; }
+          const ccw = a2 > 0;
+          for (let i = 0; i < r.length; i++) {
+            const A = r[i], B = r[(i + 1) % r.length];
+            const dx = B[0] - A[0], dy = B[1] - A[1];
+            const len = Math.hypot(dx, dy);
+            if (len < 0.5) continue;
+            // outward normal of the park ring
+            let nx = dy / len, ny = -dx / len;
+            if (!ccw) { nx = -nx; ny = -ny; }
+            const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+            // only where the water is on the outside of this run
+            if (inLand(mx + nx * 2, my + ny * 2)) continue;
+            // The island stands flush with the sea in this renderer, so a
+            // vertical face would be a few centimetres of nothing from the
+            // game camera. A battered wall is what a harbour seawall is
+            // anyway: coping on top, then the face stepping out and down
+            // into the water, which from above reads as a band of stone
+            // between the lawn and the harbour.
+            const top = 0.26, lip = 0.7, run = 3.4, bot = -0.55;
+            const ox = nx * lip, oy = ny * lip;
+            quad([A[0], A[1], top], [B[0], B[1], top], [B[0] + ox, B[1] + oy, top], [A[0] + ox, A[1] + oy, top], [0, 0, 1]);
+            const fx = nx * (lip + run), fy = ny * (lip + run);
+            const sl = Math.hypot(run, top - bot);
+            quad([A[0] + ox, A[1] + oy, top], [B[0] + ox, B[1] + oy, top], [B[0] + fx, B[1] + fy, bot], [A[0] + fx, A[1] + fy, bot],
+              [nx * (top - bot) / sl, ny * (top - bot) / sl, run / sl]);
+          }
+        }
+        if (P.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+          g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+          g.computeBoundingSphere();
+          this.scene.add(new THREE.Mesh(g, this.propMaterial(0x8a8274, false)));
+        }
+      }
     }
 
     // The lawn is a real surface now, so it BURIES whatever MapLibre was

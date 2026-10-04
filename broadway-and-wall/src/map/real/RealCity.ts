@@ -404,6 +404,7 @@ export class RealCityLayer {
     this.families = makeFamilies(this.seed || 1);
     this.setupLights();
     this.buildCity();
+    this.buildGround();
     this.buildBridges();
     this.buildStreetLife();
     this.scene.add(this.dyn);
@@ -450,6 +451,12 @@ export class RealCityLayer {
     this.stepDusk();
     this.fitShadow(fx, fy, distM);
     this.renderer.resetState();
+    if (this.traffic && !this.paused && typeof document !== "undefined" && !document.hidden) {
+      const now = performance.now();
+      this.stepTraffic(now / 1000);
+      // ~30 fps for the traffic; MapLibre only paints on demand
+      if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
+    }
     this.renderer.render(this.scene, this.camera);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
@@ -774,6 +781,91 @@ export class RealCityLayer {
     this.instItems.clear();
   }
 
+  // ---- the ground: raised footways, kerbs, zebra crossings ----------------
+  // MapLibre still paints the asphalt and the yards. On top of it the
+  // footway is a real slab fifteen centimetres up, paved in flags, with a
+  // granite kerb face along the street edge, and every gridded corner gets
+  // painted zebra bars standing on the carriageway.
+  private buildGround() {
+    const c = this.ctx as {
+      sidewalks?: { ring: P2[]; holes: P2[][] }[]; kerbs?: P2[][]; zebras?: P2[][];
+    };
+    const H = 0.15;
+    const pave = new Buf(), kerb = new Buf();
+    const white = [1, 1, 1];
+    for (const sw of c.sidewalks ?? []) {
+      const ring = sw.ring.map((q) => this.project(q));
+      const holes = sw.holes.map((h) => h.map((q) => this.project(q)));
+      if (ring.length < 3) continue;
+      let tris: number[][] = [];
+      try {
+        tris = THREE.ShapeUtils.triangulateShape(
+          ring.map(([x, y]) => new THREE.Vector2(x, y)),
+          holes.map((h) => h.map(([x, y]) => new THREE.Vector2(x, y))),
+        );
+      } catch { continue; }
+      const all = [...ring, ...holes.flat()];
+      for (const t of tris) {
+        const p = t.map((i) => [all[i][0], all[i][1], H]);
+        // wound upward whichever way earcut returned it
+        const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        const q = cr >= 0 ? p : [p[0], p[2], p[1]];
+        for (const v of q) { pave.pos.push(v[0], v[1], v[2]); pave.nrm.push(0, 0, 1); pave.uv.push(v[0] / 1.5, v[1] / 1.5); pave.col.push(1, 1, 1); }
+      }
+    }
+    for (const line of c.kerbs ?? []) {
+      const pts = line.map((q) => this.project(q));
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.05) continue;
+        const n = [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0];
+        kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], n, [[0, 0], [L, 0], [L, 1], [0, 1]], white);
+      }
+    }
+    if (pave.count) {
+      const m = new THREE.Mesh(pave.geometry(), new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 }));
+      m.receiveShadow = true;
+      this.scene.add(m);
+    }
+    if (kerb.count) {
+      const m = new THREE.Mesh(kerb.geometry(), new THREE.MeshStandardMaterial({ color: 0x9a968f, roughness: 0.75, side: THREE.DoubleSide, envMapIntensity: 0.25 }));
+      m.receiveShadow = true;
+      this.scene.add(m);
+    }
+    // zebras: bars 0.5 m wide every 1.1 m along the crossing, each 3 m long
+    // in the direction the traffic runs
+    const bars: { x: number; y: number; r: number }[] = [];
+    for (const line of c.zebras ?? []) {
+      if (line.length < 2) continue;
+      const A = this.project(line[0]), B = this.project(line[line.length - 1]);
+      const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      if (L < 1.5) continue;
+      const ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
+      const r = Math.atan2(uy, ux);
+      for (let t = 0.45; t < L - 0.2; t += 1.1) bars.push({ x: A[0] + ux * t, y: A[1] + uy * t, r });
+    }
+    if (bars.length) {
+      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 3.0, 0.02), new THREE.MeshStandardMaterial({ color: 0xe9e6dc, roughness: 0.55 }), bars.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      bars.forEach((b, i) => { q.setFromEuler(e.set(0, 0, b.r)); mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(b.x, b.y, 0.035), q, new THREE.Vector3(1, 1, 1))); });
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    }
+  }
+
+  /** Concrete flags with a joint every 1.5 m and a little staining. */
+  private pavingTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 91;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#b9b4aa"; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 900; i++) { const v = 150 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 4},${v - 10},0.35)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
+    g.fillStyle = "rgba(70,66,60,0.55)"; g.fillRect(0, 0, 128, 2); g.fillRect(0, 0, 2, 128);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+
   // ---- bridges ------------------------------------------------------------
   // The generator lays each creek crossing as a dry gap in the water. Flood
   // the gap, then span it: a stone deck a metre up with parapets along the
@@ -841,14 +933,33 @@ export class RealCityLayer {
         const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
         const hw = hwA[i] ?? 6, sw = swA[i] ?? 2.5;
         const rot = Math.atan2(uy, ux);
+        // moving traffic on the wider streets: one car per ~45 m each way,
+        // in the running lane inside the parked row
+        if (hw >= 5 && L > 50) {
+          for (const side of [-1, 1]) {
+            const n = Math.max(1, Math.round(L / 45));
+            for (let k = 0; k < n; k++) {
+              if (rnd() < 0.35) continue;
+              const o = Math.min(hw - 3.2, Math.max(1.8, hw * 0.45));
+              // keep right: one side runs a→b, the other b→a
+              const fwd = side < 0;
+              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
+              this.movers.push({
+                x: sx + nx * o * side, y: sy + ny * o * side,
+                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5,
+                col: CAR[(rnd() * CAR.length) | 0],
+              });
+            }
+          }
+        }
         for (let t = 9; t < L - 9; t += 11) {
           for (const side of [-1, 1]) {
             const x = a[0] + ux * t, y = a[1] + uy * t;
             if (sw >= 2) {
               const o = hw + Math.max(0.8, sw * 0.45);
               const sz = 0.75 + rnd() * 0.3;
-              this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0, sz, rnd() * 6.28);
-              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0, sz, rnd() * 6.28, "", leafCol());
+              this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
+              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28, "", leafCol());
             }
             if (hw >= 5 && rnd() < 0.62) {
               const o = hw - 1.15;
@@ -857,7 +968,7 @@ export class RealCityLayer {
           }
           if (rnd() < 0.35 && sw >= 1.6) {
             const o = hw + 0.5;
-            this.putInst("lamp", a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, 0, 1, rot - Math.PI / 2);
+            this.putInst("lamp", a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, 0.15, 1, rot - Math.PI / 2);
           }
         }
       }
@@ -869,8 +980,34 @@ export class RealCityLayer {
       this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
     }
     this.flushInst();
+    if (this.movers.length) {
+      const { g, mat } = this.geomFor("car");
+      const mesh = new THREE.InstancedMesh(g, mat, this.movers.length);
+      this.movers.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
+      mesh.receiveShadow = true; mesh.frustumCulled = false;
+      this.traffic = mesh; this.scene.add(mesh);
+      this.stepTraffic(0);
+    }
     this.applyMonth();
   }
+
+  /** Drive every moving car to where it is at time t (seconds): a patrol along its own block face that wraps. */
+  private stepTraffic(t: number) {
+    const mesh = this.traffic;
+    if (!mesh) return;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+    this.movers.forEach((m, i) => {
+      const d = (m.ph + t * m.spd) % m.len;
+      p.set(m.x + m.ux * d, m.y + m.uy * d, 0.05);
+      q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
+      mesh.setMatrixAt(i, m4.compose(p, q, one));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+  private movers: { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[] }[] = [];
+  private traffic: THREE.InstancedMesh | null = null;
+  private paused = false;
+  private lastTick = 0;
 
   // ---- state on the buildings ---------------------------------------------
   private refreshDeed(bbl: string) {
@@ -894,6 +1031,13 @@ export class RealCityLayer {
       } else {
         let k = tint ? [tint[0], tint[1], tint[2]] : [1, 1, 1];
         if (!roof) {
+          const cn = this.cond.get(bbl);
+          if (cn !== undefined) {
+            const worn = 1 - smooth(0.28, 0.62, cn), fresh = smooth(0.74, 0.94, cn);
+            const dk = (1 - worn * 0.24) * (1 + fresh * 0.05);
+            // and greyer: pull the three channels toward their mean
+            k = [k[0] * dk * (1 - worn * 0.10), k[1] * dk, k[2] * dk * (1 + worn * 0.06)];
+          }
           // the selected building glows warm all over; yours are warmed a touch
           if (own) k = [k[0] * 1.08, k[1], k[2] * 0.86];
           if (sel) k = [k[0] * 1.3, k[1] * 1.18, k[2] * 0.82];
@@ -1128,7 +1272,18 @@ export class RealCityLayer {
   }
 
   // ---- calls this renderer accepts and has nothing to draw for (yet) -------
-  setCondition(_c: Map<string, number>) { /* condition reads in the classic renderer */ }
+  /**
+   * The engine's own condition index (read, never written): a neglected
+   * building is the same building under decades of soot — greyer and darker
+   * on every wall; a refit is a touch cleaner.
+   */
+  setCondition(c: Map<string, number>) {
+    const touched = new Set<string>([...this.cond.keys(), ...c.keys()]);
+    this.cond = new Map(c);
+    for (const b of touched) this.refreshDeed(b);
+    this.map?.triggerRepaint();
+  }
+  private cond = new Map<string, number>();
   setOccupancy(_o: Map<string, number>) { /* lit-room share is fixed per tile here */ }
   setRetail(_r: Map<string, number>) { /* shopfront state: classic renderer */ }
   setNotices(_b: string[]) { /* badges carry notices */ }
@@ -1146,7 +1301,7 @@ export class RealCityLayer {
       this.shadowSpan = 0;
     }
   }
-  setPaused(_on: boolean) { /* nothing animates on its own here */ }
+  setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {
     this.visibleOn = o > 0.01;
     this.map?.triggerRepaint();

@@ -10400,6 +10400,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       trees?: [number, number][];
       /** Parallel to `curbs`: per segment, half-street width and footway width (m). */
       curbMeta?: { hw: number[]; sw: number[] }[];
+      /** For the real-geometry preview only (RealCity); this layer ignores them. */
+      sidewalks?: { ring: [number, number][]; holes: [number, number][][] }[];
+      kerbs?: [number, number][][];
+      zebras?: [number, number][][];
       piles?: [number, number][];
       land?: [number, number][];
       // street furniture arrives with a baked bearing: a bench that does not

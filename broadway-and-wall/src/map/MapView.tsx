@@ -365,8 +365,26 @@ export default function MapView() {
             // The preview renderer answers the same calls (see RealCityLayer),
             // so everything below treats either one as the 3D layer.
             const Layer = (useStore.getState().realRender ? RealCityLayer : ThreeBuildings) as unknown as typeof ThreeBuildings;
+            const realOn = useStore.getState().realRender;
+            const linesOf = (kind: string): [number, number][][] => (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === kind && f.geometry.type === "LineString")
+              .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
             const layer = new Layer(volumes, frame.core, curbs, {
               curbMeta,
+              // the raised footways, kerbs and crossings the preview builds in 3D
+              ...(realOn ? {
+                sidewalks: (ctx?.features ?? [])
+                  .filter((f) => f.properties?.kind === "sidewalk" && f.geometry.type === "Polygon")
+                  .map((f) => {
+                    const c = (f.geometry as GeoJSON.Polygon).coordinates;
+                    return {
+                      ring: (c[0] as [number, number][]).slice(0, -1),
+                      holes: c.slice(1).map((h) => (h as [number, number][]).slice(0, -1)),
+                    };
+                  }),
+                kerbs: linesOf("curb"),
+                zebras: linesOf("zebra"),
+              } : {}),
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),

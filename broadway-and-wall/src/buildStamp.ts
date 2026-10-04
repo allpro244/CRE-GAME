@@ -16,7 +16,7 @@
 // stamped by editing VERSION.txt directly reverts on the next refresh and the
 // download goes back to claiming an engine it is not. Move it HERE.
 export const BUILD_STAMP = {
-  commit: "occupancy-identity",
-  label: "one-occupancy-and-the-ask-reads-the-roll",
+  commit: "map-overhaul",
+  label: "labels-night-water-seasons-clouds-moorings",
   rentBaseOffice: 35.5,
 } as const;

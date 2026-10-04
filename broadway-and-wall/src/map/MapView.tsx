@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
-import { composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
+import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
-import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
+import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -331,11 +331,17 @@ export default function MapView() {
         Promise.resolve([city.buildings3d as BuildingVolume[], city.context as GeoJSON.FeatureCollection | null] as const)
           .then(([volumes, ctx]: readonly [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
-            const curbs: [number, number][][] = (ctx?.features ?? [])
+            const curbFeats = (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === "street"
                 && (f.properties?.cls === "grid" || f.properties?.cls === "lane")
-                && f.geometry.type === "LineString")
+                && f.geometry.type === "LineString");
+            const curbs: [number, number][][] = curbFeats
               .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
+            // per segment: the half-street and the footway width citygen measured
+            const curbMeta = curbFeats.map((f) => ({
+              hw: (f.properties?.hw ?? []) as number[],
+              sw: (f.properties?.sw ?? []) as number[],
+            }));
             // park & esplanade trees and pier piles come along as 3D dressing
             const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
@@ -354,6 +360,7 @@ export default function MapView() {
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
             const layer = new ThreeBuildings(volumes, frame.core, curbs, {
+              curbMeta,
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
@@ -371,7 +378,24 @@ export default function MapView() {
                     flavour: String(f.properties?.flavour ?? "park"),
                   };
                 }),
-              ponds: [...ringsOf("pond"), ...ringsOf("stream")],
+              // park ponds stay level with the lawn; creeks and canals go
+              // into a channel of their own (ThreeBuildings.buildRiver)
+              ponds: ringsOf("pond"),
+              streams: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "stream" && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  water: String(f.properties?.water ?? "creek"),
+                })),
+              bridges: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "bridge" && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  deg: Number(f.properties?.deg ?? 0),
+                  w: Number(f.properties?.w ?? 16),
+                  rw: Number(f.properties?.rw ?? 0),
+                  cw: Number(f.properties?.cw ?? 0),
+                })),
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),
@@ -953,31 +977,71 @@ export default function MapView() {
       el.appendChild(span);
       live.set(key, new maplibregl.Marker({ element: el }).setLngLat(w.ll).addTo(map));
     }
+    // NAMES DO NOT STACK. A station named for its road and the road's second
+    // station both said "Harthy Walk" a hundred pixels apart, and a park
+    // label sat across a district name. Labels are DOM, so nothing in MapLibre
+    // collides them: after each move they are placed in priority order
+    // (district, station, civic, park, water) and one is held back when its
+    // box overlaps a label already placed, or when the same name is already
+    // showing close by. It re-runs on moveend, not every frame, so a pan
+    // never pays for it.
+    const RANK: Record<string, number> = { district: 0, station: 1, civic: 2, park: 3, water: 4 };
+    const kindOf = (el: HTMLElement) => el.className.includes("district") ? "district"
+      : el.className.includes("park") ? "park"
+      : el.className.includes("civic") ? "civic"
+      : el.className.includes("station") ? "station"
+      : "water";
+    // ON THE INNER SPAN, NOT THE MARKER. MapLibre's Marker owns its element's
+    // opacity — it rewrites it on every move for its own occlusion test — so
+    // the zoom fade written there was undone the next frame, and it had never
+    // worked: district names stood over the street at the dive. The span is
+    // ours, and fading it leaves MapLibre's write alone.
+    const setOp = (el: HTMLElement, o: string) => {
+      const sp = el.firstElementChild as HTMLElement | null;
+      if (sp && sp.style.opacity !== o) sp.style.opacity = o;
+    };
     const fade = () => {
       const z = map.getZoom();
       map.getContainer().style.setProperty("--bw-label-scale",
         String(Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12))));
+      const placed: { x0: number; y0: number; x1: number; y1: number; name: string; cx: number; cy: number }[] = [];
+      const cand: { el: HTMLElement; rank: number; m: maplibregl.Marker }[] = [];
       for (const m of live.values()) {
         const el = m.getElement();
-        const kind = el.className.includes("district") ? "district"
-          : el.className.includes("park") ? "park"
-          : el.className.includes("station") || el.className.includes("civic") ? "station"
-          : "water";
+        const kind = kindOf(el);
         const on =
           kind === "district" ? z >= 12.2 && z <= 15.6 :
           kind === "park" ? z >= 13.2 :
-          kind === "station" ? z >= 13.6 :
+          kind === "station" || kind === "civic" ? z >= 13.6 :
           z <= 14.5;
-        const o = on ? "1" : "0";
-        if (el.style.opacity !== o) el.style.opacity = o;
+        if (on) cand.push({ el, rank: RANK[kind], m });
+        else setOp(el, "0");
+      }
+      cand.sort((a, b) => a.rank - b.rank);
+      const scale = Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12));
+      for (const c of cand) {
+        const p = map.project(c.m.getLngLat());
+        // measured once: the text never changes, and reading layout for a
+        // hundred nodes on every zoom tick is how a label pass gets slow
+        if (!c.el.dataset.w && c.el.offsetWidth) { c.el.dataset.w = String(c.el.offsetWidth); c.el.dataset.h = String(c.el.offsetHeight); }
+        const w = (+(c.el.dataset.w ?? 0) || 60) * scale * 0.5 + 4, h = (+(c.el.dataset.h ?? 0) || 14) * scale * 0.5 + 2;
+        const box = { x0: p.x - w, y0: p.y - h, x1: p.x + w, y1: p.y + h, name: (c.el.textContent ?? "").toLowerCase(), cx: p.x, cy: p.y };
+        const clash = placed.some((q) =>
+          (box.x0 < q.x1 && box.x1 > q.x0 && box.y0 < q.y1 && box.y1 > q.y0) ||
+          (q.name === box.name && Math.hypot(q.cx - box.cx, q.cy - box.cy) < 320));
+        const o = clash ? "0" : "1";
+        if (!clash) placed.push(box);
+        setOp(c.el, o);
       }
     };
     map.on("zoom", fade);
+    map.on("moveend", fade);
     fade();
     return () => {
       // the zoom listener used to outlive its markers — every paintSig tick
       // left one more orphaned fade() walking a dead marker list
       map.off("zoom", fade);
+      map.off("moveend", fade);
     };
   }, [mapReady, city, paintSig, photoFrame]);
   // the markers themselves go only with the map
@@ -1101,10 +1165,14 @@ export default function MapView() {
     // ...and the shops separately, because a full office tower can still have
     // a dead ground floor, and the street knows the difference.
     const ret = new Map<string, number>();
+    // ...and the condition index every price reader in the engine uses: the
+    // holding's own where it is yours, the age-derived reading elsewhere.
+    const cond = new Map<string, number>();
     for (const bbl of layer.rangesByBBL.keys()) {
       const h = game.holdings[bbl];
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      cond.set(bbl, condIdxOf(rec, game.month, h?.condition, h));
       if (h) {
         const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
         occ.set(bbl, Math.max(0, Math.min(1, leased / Math.max(1, rec.bldgArea))));
@@ -1144,6 +1212,7 @@ export default function MapView() {
     }
     layer.setOccupancy(occ);
     layer.setRetail(ret);
+    layer.setCondition(cond);
     // the courthouse on the door: auction lots, noticed foreclosures, and
     // owned balloons inside eighteen months — cycle risk on the skyline.
     const notices = new Set<string>();
@@ -1269,6 +1338,12 @@ export default function MapView() {
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setMonth(gameMonth);
+    // the yards follow the leaf (style.ts blocksPaint) — same vigour ladder
+    // the 3D lawns and trees read off the month
+    const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
+    const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
+    const map = mapRef.current;
+    if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo]) as never);
   }, [gameMonth, mapReady]);
   useEffect(() => {
     if (!mapReady) return;

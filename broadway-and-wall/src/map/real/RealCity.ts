@@ -293,6 +293,20 @@ class Buf {
   tri(a: number[], b: number[], c: number[], n: number[], col: number[]) {
     for (const p of [a, b, c]) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(p[0] * 0.25, p[1] * 0.25); this.col.push(col[0], col[1], col[2]); }
   }
+  /** A planar polygon (fan), wound so its normal leans toward `want`. */
+  face(pts: number[][], want: number[], col: number[], uvOf: (p: number[]) => number[] = (p) => [p[0] * 0.25, p[1] * 0.25]) {
+    const ux = pts[1][0] - pts[0][0], uy = pts[1][1] - pts[0][1], uz = pts[1][2] - pts[0][2];
+    const vx = pts[2][0] - pts[0][0], vy = pts[2][1] - pts[0][1], vz = pts[2][2] - pts[0][2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+    if (nx * want[0] + ny * want[1] + nz * want[2] < 0) { pts = pts.slice().reverse(); nx = -nx; ny = -ny; nz = -nz; }
+    for (let i = 1; i + 1 < pts.length; i++) {
+      for (const p of [pts[0], pts[i], pts[i + 1]]) {
+        const t = uvOf(p);
+        this.pos.push(p[0], p[1], p[2]); this.nrm.push(nx, ny, nz); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]);
+      }
+    }
+  }
   geometry(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
@@ -496,7 +510,7 @@ export class RealCityLayer {
   }
 
   /** One volume: walls in its family, a roof, and its trim. */
-  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false) {
+  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false) {
     const fam = this.families[famKey];
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     const walls = (fk: string, za: number, zb: number, vOff: number, tn: number[]) => {
@@ -535,12 +549,32 @@ export class RealCityLayer {
     // roof
     const R = this.buf("roof");
     const r0 = R.count;
-    let tris: number[][] = [];
-    try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
     const rc = [0.92 + (seedK % 7) * 0.012, 0.92, 0.9];
-    for (const t of tris) {
-      const p = t.map((i) => [ring[i][0], ring[i][1], z1]);
-      R.tri(p[0], p[1], p[2], [0, 0, 1], rc);
+    if (pitched && ring.length === 4) {
+      // A GABLE. The ridge runs the long way, a rafter's rise above the eaves;
+      // the two gable ends are wall, in the building's own brick.
+      let li = 0, ll = -1;
+      for (let i = 0; i < 4; i++) { const a = ring[i], b = ring[(i + 1) % 4]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const short = Math.min(Math.hypot(C[0] - B[0], C[1] - B[1]), Math.hypot(A[0] - D[0], A[1] - D[1]));
+      const rise = Math.min(4.5, short * 0.42);
+      const M1 = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2, z1 + rise], M2 = [(D[0] + A[0]) / 2, (D[1] + A[1]) / 2, z1 + rise];
+      const out1 = [B[1] - A[1], -(B[0] - A[0]), 0.6], out2 = [D[1] - C[1], -(D[0] - C[0]), 0.6];
+      R.face([[A[0], A[1], z1], [B[0], B[1], z1], M1, M2], out1, rc);
+      R.face([[C[0], C[1], z1], [D[0], D[1], z1], M2, M1], out2, rc);
+      const Wg = this.buf("w:" + famKey);
+      const g0 = Wg.count;
+      const uvG = (p: number[]) => [(p[0] + p[1]) / fam.bayW * 0.7, p[2] / fam.floorH];
+      Wg.face([[B[0], B[1], z1], [C[0], C[1], z1], M1], [C[1] - B[1], -(C[0] - B[0]), 0], tint, uvG);
+      Wg.face([[D[0], D[1], z1], [A[0], A[1], z1], M2], [A[1] - D[1], -(A[0] - D[0]), 0], tint, uvG);
+      this.note(bbl, "w:" + famKey, g0);
+    } else {
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
+      for (const t of tris) {
+        const p = t.map((i) => [ring[i][0], ring[i][1], z1]);
+        R.tri(p[0], p[1], p[2], [0, 0, 1], rc);
+      }
     }
     this.note(bbl, "roof", r0);
 
@@ -563,7 +597,7 @@ export class RealCityLayer {
     };
     const white = [1, 1, 1];
     if (fam.masonry) {
-      if (crown && z1 - z0 > 4) {
+      if (crown && z1 - z0 > 4 && !pitched) {
         band(z1 - 0.75, 0.6, 0.55, white);              // the cornice
         band(z1 - 1.05, 0.3, 0.22, white);              // its bed moulding
       }
@@ -577,7 +611,7 @@ export class RealCityLayer {
     this.note(bbl, fam.glass ? "dark" : "trim", t0);
 
     // roof plant on the building's top volume
-    if (plant && crown) {
+    if (plant && crown && !pitched) {
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
@@ -617,7 +651,12 @@ export class RealCityLayer {
       const t = tints[Math.floor(hash01(k, this.seed) * tints.length)];
       const shop = v.c === "retail" || (fam === "brick" && hash01(k ^ 0x51ab, this.seed) < 0.5)
         || (fam === "stone" && hash01(k ^ 0x51ab, this.seed) < 0.3) || (fam === "modern" && v.c !== "industrial" && hash01(k ^ 0x51ab, this.seed) < 0.35);
-      this.addVolume(ring, v.z0, v.z1, fam, t, v.b, v.z1 >= top - 0.01 || v.x === 1, true, k, shop);
+      // old low brick houses keep a pitched roof: a row of 1890s three-storey
+      // walk-ups is a run of gables, not a run of flat decks
+      const isTop = v.z1 >= top - 0.01 || v.x === 1;
+      const pitched = isTop && fam === "brick" && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
+        && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
+      this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched);
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
@@ -629,6 +668,22 @@ export class RealCityLayer {
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 }));
     catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
     this.scene.add(catcher);
+    // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
+    // glossy veneer over it — the land cut out — gives the sun a road on the
+    // sea and the sky something to reflect in, and leaves the shoal colours
+    // underneath showing through.
+    const landLL = (this.ctx as { land?: P2[] }).land;
+    if (landLL && landLL.length >= 4) {
+      const land = landLL.map((q) => this.project(q));
+      const outer = new THREE.Shape([new THREE.Vector2(-30000, -30000), new THREE.Vector2(30000, -30000), new THREE.Vector2(30000, 30000), new THREE.Vector2(-30000, 30000)]);
+      const holePts = (ringArea(land) > 0 ? land.slice().reverse() : land).map(([x, y]) => new THREE.Vector2(x, y));
+      outer.holes.push(new THREE.Path(holePts));
+      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), new THREE.MeshStandardMaterial({
+        color: 0x14425e, roughness: 0.07, metalness: 0.0, transparent: true, opacity: 0.32, envMapIntensity: 1.4, depthWrite: false,
+      }));
+      sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
+      this.scene.add(sea);
+    }
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
     veil.position.z = 0.03; veil.renderOrder = -2;
     this.scene.add(veil);
@@ -1057,7 +1112,8 @@ export class RealCityLayer {
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
-    this.roofMat.color.setRGB(0.21 + this.snow * 0.42, 0.205 + this.snow * 0.43, 0.20 + this.snow * 0.46);
+    // a dusting, not a blanket: January opens every campaign
+    this.roofMat.color.setRGB(0.21 + this.snow * 0.22, 0.205 + this.snow * 0.23, 0.20 + this.snow * 0.26);
     for (const b of [...this.owned, ...this.selected]) this.refreshDeed(b);
     if (this.renderer) this.renderer.toneMappingExposure = 0.82 - night * 0.15;
     // MapLibre's ground knows nothing of the hour: a blue-black veil over it

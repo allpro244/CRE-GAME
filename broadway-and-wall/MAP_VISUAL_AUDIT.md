@@ -528,3 +528,16 @@ half-empty building looked like a full one.
   refit reads a touch brighter.
 
 `docs/map-overhaul/p12-lease-banners.jpg`.
+
+# THE COUNTRY PAST THE TOWN
+
+Young towns are mostly unbuilt fringe, and it read as a grid of flat beige
+lots. Out past the fringe line (demand under 38, residential lots included)
+an empty lot is now country: a third market gardens in rows along the long
+side (bare soil in winter, green through summer, gold at harvest), two in
+five hedged pastures, the rest fenced scrub with post-and-rail; gates are
+gaps in the boundary. Bigger holdings carry a clapboard farmhouse facing the
+road, a red barn behind it and a gravel track in. Everything hangs on the
+lot's deed, so it is cleared the day the lot is built on. Kerbside parking
+thins where demand is low, so a country road is not lined with cars.
+`docs/map-overhaul/p13-countryside.jpg`.

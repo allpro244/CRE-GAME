@@ -1388,12 +1388,13 @@ export class RealCityLayer {
     for (const v of this.volumes) if (v.b && !v.k) topZ.set(v.b, Math.max(topZ.get(v.b) ?? 0, v.z1));
     // VACANT LOTS. Downtown a hole in the street wall is a surface car park;
     // elsewhere it is a gravel yard. Residential lots stay as MapLibre's lawn.
-    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf();
+    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf(), lotCrop = new Buf();
     let ls = (this.seed * 4421) % 2147483646 + 1;
     const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
     const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
     for (const v of this.volumes) {
-      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62)) continue;
+      // a residential lot in town stays MapLibre's lawn; out on the fringe it is country like the rest
+      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62 && (v.ds ?? 50) >= 38)) continue;
       let ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();
@@ -1402,12 +1403,31 @@ export class RealCityLayer {
       // has reached, land nobody has built on yet is rough grass.
       const downtown = (v.ds ?? 50) >= 62;
       const outskirts = (v.ds ?? 50) < 38;   // the classic map's fringe line
-      const B = downtown ? lotPark : outskirts ? lotMeadow : lotGravel;
+      // THE COUNTRY PAST THE TOWN. Out on the fringe an empty lot is not a
+      // lawn: it is a market garden in rows, a hedged pasture, or a fenced
+      // scrub lot, and the bigger holdings carry a farmhouse and a barn and a
+      // track in from the road. All of it hangs on the lot's deed, so it is
+      // cleared the day somebody builds there.
+      const kk = keyOf(v.b || `${v.r[0][0]},${v.r[0][1]}`);
+      const roll = hash01(kk ^ 0xfa12, this.seed);
+      const farmKind = !outskirts ? "" : roll < 0.35 ? "crop" : roll < 0.75 ? "pasture" : "scrub";
+      const B = downtown ? lotPark : farmKind === "crop" ? lotCrop : outskirts ? lotMeadow : lotGravel;
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
-      for (const t of tris) {
-        for (const i of t) { B.pos.push(ring[i][0], ring[i][1], 0.03); B.nrm.push(0, 0, 1); B.uv.push(ring[i][0] / 5, ring[i][1] / 5); B.col.push(1, 1, 1); }
+      // crops run in rows along the lot's long side
+      let ld = [1, 0];
+      {
+        let ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; ld = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; } }
       }
+      for (const t of tris) {
+        for (const i of t) {
+          const [x, y] = ring[i];
+          const uv = farmKind === "crop" ? [(x * ld[0] + y * ld[1]) / 16, (-x * ld[1] + y * ld[0]) / 3.2] : [x / 5, y / 5];
+          B.pos.push(x, y, 0.03); B.nrm.push(0, 0, 1); B.uv.push(uv[0], uv[1]); B.col.push(1, 1, 1);
+        }
+      }
+      if (farmKind) this.dressFarm(ring, farmKind, kk, v.b || "", lotGravel);
       if (downtown) {
         // rows of parked cars squared to the longest side
         let li = 0, ll = -1;
@@ -1429,6 +1449,11 @@ export class RealCityLayer {
     if (lotMeadow.count) {
       const m = new THREE.Mesh(lotMeadow.geometry(), this.meadowMat);
       this.meadowMat.map = this.meadowTex();
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    if (lotCrop.count) {
+      this.cropMat.map = this.cropTex();
+      const m = new THREE.Mesh(lotCrop.geometry(), this.cropMat);
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotGravel.count) {
@@ -1570,6 +1595,8 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "hedge": return { g: merge([box(2.7, 1.1, 1.3, 0, 0, 0), box(2.3, 0.8, 0.35, 0, 0, 1.3)]), mat: new THREE.MeshStandardMaterial({ color: 0x3f5a32, roughness: 0.95, flatShading: true }) };
+      case "fence": return { g: merge([box(0.14, 0.14, 1.25, -1.45, 0, 0), box(3.0, 0.07, 0.1, 0, 0, 0.55), box(3.0, 0.07, 0.1, 0, 0, 1.05)]), mat: new THREE.MeshStandardMaterial({ color: 0x8c7a62, roughness: 0.9 }) };
       case "dormer": {
         // a slate-cheeked dormer: a small box with its own little gable
         const g = merge([box(1.3, 0.9, 1.5, 0, 0, 0), new THREE.ConeGeometry(0.95, 0.7, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 1.85)]);
@@ -1792,6 +1819,74 @@ export class RealCityLayer {
     return t;
   }
 
+  /** Hedges or fences round a fringe lot, and on the big ones a farmhouse, a barn and a track. */
+  private dressFarm(ring: P2[], kind: string, k: number, bbl: string, track: Buf) {
+    let rs = (k * 2246822519) % 2147483646 + 1;
+    const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+    const area = Math.abs(ringArea(ring));
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    // the boundary: a hedgerow round pasture and gardens, a post-and-rail
+    // fence round the scrub lots, gaps where the gate is
+    const item = kind === "scrub" ? "fence" : "hedge";
+    const step = item === "hedge" ? 2.5 : 3;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 4) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const nx = -uy, ny = ux;   // inward for a counter-clockwise ring
+      const gate = rnd() * L;
+      for (let t = step / 2; t < L - step / 2; t += step) {
+        if (Math.abs(t - gate) < 3.5 || rnd() < (item === "hedge" ? 0.08 : 0.04)) continue;
+        this.putInst(item, a[0] + ux * t + nx * 0.9, a[1] + uy * t + ny * 0.9, 0.03, item === "hedge" ? 0.85 + rnd() * 0.35 : 1, Math.atan2(uy, ux), bbl);
+      }
+    }
+    if (kind === "scrub" || area < 1200 || hash01(k ^ 0xba12, this.seed) > 0.6) return;
+    // a farmstead near the road side: the house facing the street, the barn behind
+    let li = 0, ll = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+    const A = ring[li], Bp = ring[(li + 1) % ring.length];
+    const ux = (Bp[0] - A[0]) / ll, uy = (Bp[1] - A[1]) / ll, nx = -uy, ny = ux;
+    const inside = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+    const rect = (t: number, d: number, w: number, h: number): P2[] => {
+      const ox = A[0] + ux * t + nx * d, oy = A[1] + uy * t + ny * d;
+      return [[ox, oy], [ox + ux * w, oy + uy * w], [ox + ux * w + nx * h, oy + uy * w + ny * h], [ox + nx * h, oy + ny * h]];
+    };
+    const fits = (r: P2[]) => r.every(([x, y]) => inside(x, y));
+    const t0 = ll * (0.25 + rnd() * 0.3);
+    const house = rect(t0, 6, 10, 8);
+    if (!fits(house)) return;
+    const HOUSE = [[1, 1, 1], [1.0, 0.95, 0.84], [0.78, 0.86, 0.74], [0.7, 0.8, 0.9]];
+    this.addVolume(house, 0, 6.2, "clapboard", HOUSE[(rnd() * HOUSE.length) | 0], bbl, true, false, k, false, true, "", 1890);
+    const barn = rect(t0 + 14, 14, 16, 11);
+    if (fits(barn)) this.addVolume(barn, 0, 7.5, "clapboard", [0.72, 0.36, 0.3], bbl, true, false, k ^ 0x5, false, true, "", 1890);
+    // the track in from the road to the yard
+    const tx = A[0] + ux * (t0 + 5) , ty = A[1] + uy * (t0 + 5);
+    const q = [[tx - ux * 1.6, ty - uy * 1.6], [tx + ux * 1.6, ty + uy * 1.6], [tx + ux * 1.6 + nx * 6, ty + uy * 1.6 + ny * 6], [tx - ux * 1.6 + nx * 6, ty - uy * 1.6 + ny * 6]];
+    for (const tri of [[0, 1, 2], [0, 2, 3]]) for (const i of tri) { track.pos.push(q[i][0], q[i][1], 0.045); track.nrm.push(0, 0, 1); track.uv.push(q[i][0] / 5, q[i][1] / 5); track.col.push(1, 1, 1); }
+    void cx; void cy;
+  }
+
+  private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  /** A market garden: rows of plants on furrowed soil, 16 m along by 3.2 m across a tile. */
+  private cropTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(256, 64);
+    let s = 997; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#8a7356"; g.fillRect(0, 0, 256, 64);
+    for (let i = 0; i < 900; i++) { const v = rnd(); g.fillStyle = `rgba(${110 + v * 40 | 0},${88 + v * 30 | 0},${62 + v * 20 | 0},0.5)`; g.fillRect(rnd() * 256, rnd() * 64, 2, 1.5); }
+    for (const row of [16, 48]) {
+      for (let x = 0; x < 256; x += 3) {
+        const v = rnd();
+        g.fillStyle = `rgb(${96 + v * 30 | 0},${132 + v * 30 | 0},${62 + v * 18 | 0})`;
+        g.beginPath(); g.arc(x + rnd() * 2, row + (rnd() - 0.5) * 4, 5 + rnd() * 3, 0, 6.28); g.fill();
+      }
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+
   /** Rough grass on unbuilt land: tussocks, a worn path, the odd bare patch. */
   private meadowTex(): THREE.CanvasTexture {
     const { c, g } = makeCanvas(128, 128);
@@ -1991,7 +2086,8 @@ export class RealCityLayer {
               this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
               this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28, "", leafCol());
             }
-            if (hw >= 5 && rnd() < 0.62) {
+            // kerbside parking fills where the demand is; a country road is clear
+            if (hw >= 5 && rnd() < 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) {
               const o = hw - 1.15;
               this.putInst("car", x + ux * 3 + nx * o * side, y + uy * 3 + ny * o * side, 0.05, 0.95 + rnd() * 0.12, rot + (side > 0 ? Math.PI : 0), "", CAR[(rnd() * CAR.length) | 0]);
             }
@@ -2388,6 +2484,9 @@ export class RealCityLayer {
     this.shadowSpan = 0;   // force a refit
     // the rough grass on unbuilt land: straw in winter, green by June
     const vig = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02][this.month];
+    // the gardens: bare soil in winter, green rows through summer, gold at harvest
+    const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
+    this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     const leaf = this.inst.get("crown");

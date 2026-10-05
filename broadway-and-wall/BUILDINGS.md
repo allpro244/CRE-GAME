@@ -1,5 +1,13 @@
 # BUILDINGS
 
+> **The classic renderer is retired (2026-10).** `src/map/ThreeBuildings.ts`,
+> `src/map/styles.ts` and their tools are gone; the only map is the 3D city in
+> `src/map/real/RealCity.ts` (facade families and their elevations, roofs,
+> crowns, the player's BuildingDesign, water, street life, haze). Read the
+> references to ThreeBuildings below as history. Current notes:
+> `MAP_VISUAL_AUDIT.md`.
+
+
 What the city is made of, who owns which file, and how to check that any of it
 is true. Companion to `ECONOMY.md`, which does the same job for the simulation,
 and to `GRAPHICS_HANDOFF.md`, which is the *brief* — scope, order of work, and

@@ -98,7 +98,7 @@ const HEIGHT_DISTRICTS = [1, 1.25, 1.5, 2, 2.5];
 // the deco families is quantised to a whole number of window bays.
 //
 // 2.4 m is the deco bay. It is `colW` in FRAG's S_ARTDECO branch (the `s == 6`
-// palette entry in ThreeBuildings.ts), and the two numbers have to agree or the
+// palette entry of the retired classic renderer), and the two numbers had to agree or the
 // piers stop lining up across the step. Moving one without the other is exactly
 // the silent drift this file's duplicated chamfer already warns about; a shared
 // constant would be better and the registry is not this module's to import.
@@ -107,7 +107,7 @@ const PIER_BAY = 2.4;
 const bays = (d) => Math.max(1, Math.round(d / PIER_BAY)) * PIER_BAY;
 
 // A FLOOR HAS TO BE WIDE ENOUGH TO BE A FLOOR — eleven metres, a corridor and
-// one bay. `MIN_PLATE_W` in ThreeBuildings.ts enforces that on everything the
+// one bay. `MIN_PLATE_W` in the retired classic renderer enforced that on everything the
 // player puts up, by SKIPPING a family whose volumes fall under it; the
 // generator has never enforced it at all, which is why the same family can draw
 // a stick on generated stock that it is forbidden from drawing on player stock.

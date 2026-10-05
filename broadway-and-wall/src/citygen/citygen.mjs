@@ -2989,6 +2989,9 @@ export function generateCity(cfg) {
     ]);
   }
 
+  // the boulevard's own trees, by reference, so the clean-up below can stop
+  // the rows where the boulevard meets a park (WHERE A BOULEVARD MEETS A PARK)
+  const alleeTrees = new Set();
   // AN ALLÉE DOWN THE BOULEVARD. The diagonal was the widest, barest strip in
   // town. Where the reservation carries a median (see THE MEDIAN above) the
   // two rows stand on the mall, which is where a boulevard's trees actually
@@ -3003,7 +3006,11 @@ export function generateCity(cfg) {
       for (const side of [-1, 1]) {
         const px = d.cx + ux * u + nx2 * side * off;
         const py = d.cy + uy * u + ny2 * side * off;
-        if (inRing([px, py], innerRing)) plant([px + rr(-1, 1), py + rr(-1, 1)]);
+        if (inRing([px, py], innerRing)) {
+          const pt = [px + rr(-1, 1), py + rr(-1, 1)];
+          plant(pt);
+          alleeTrees.add(pt);
+        }
       }
     }
   });
@@ -3026,7 +3033,10 @@ export function generateCity(cfg) {
       // of the water is a tree in the water once it has a canopy
       return inRing([pc[0] + (t2[0] - pc[0]) * 0.93, pc[1] + (t2[1] - pc[1]) * 0.93], pd);
     });
-    if (near || inWater(t2)) treeFeatures.splice(i, 1);
+    // A boulevard's rows stop where it meets a park: none on the frontage
+    // road round the green, none marching on across the lawn.
+    const onParkRoad = alleeTrees.has(t2) && PARKS_M.some((r) => inRing(t2, r) || distToRing(t2, r) < PARK_CLEAR + 4);
+    if (near || inWater(t2) || onParkRoad) treeFeatures.splice(i, 1);
   }
 
   // BENCHES, last, so the promenade counts as a walk. A bench model faces its
@@ -3221,9 +3231,46 @@ export function generateCity(cfg) {
   // segment. Each segment ends at a marked crossing: the flanking blocks'
   // own crosswalk bars reach across the carriageway at exactly these breaks.
   const medianFeaturesM = [];
+  // WHERE A BOULEVARD MEETS A PARK. A diagonal's reservation is cut straight
+  // across the town, and where it crossed a park its roadway and planted mall
+  // were painted on through the green — a road that ran into the lawn and
+  // vanished under it, an allée marching on across the grass. A boulevard
+  // meets a park the way it meets a circus: at the park's own frontage road.
+  // So the roadway stops at the frontage ring and the mall stops a little
+  // short of it, a nose of kerb the turning traffic swings round. Paint and
+  // context only; the reservation geometry and every lot are untouched.
+  const parkRes = (p, extra) => PARKS_M.some((r) => inRing(p, r) || distToRing(p, r) < PARK_CLEAR + extra);
+  // [u0, u1] stretches of a diagonal's centreline that lie in a park's reservation
+  const parkSpans = (D, at, extra) => {
+    const spans = [];
+    let open = null;
+    for (let u = -D.halfU; u <= D.halfU + 0.01; u += 1) {
+      const hit = parkRes(at(u, 0), extra);
+      if (hit && open === null) open = u;
+      if (!hit && open !== null) { spans.push([open, u]); open = null; }
+    }
+    if (open !== null) spans.push([open, D.halfU]);
+    return spans;
+  };
+  // what is left of [u0, u1] once the spans are taken out
+  const minusSpans = (u0, u1, spans) => {
+    let pieces = [[u0, u1]];
+    for (const [s0, s1] of spans) {
+      const next = [];
+      for (const [a, b] of pieces) {
+        if (s1 <= a || s0 >= b) { next.push([a, b]); continue; }
+        if (s0 > a) next.push([a, s0]);
+        if (s1 < b) next.push([s1, b]);
+      }
+      pieces = next;
+    }
+    return pieces.filter(([a, b]) => b - a >= 2);
+  };
   DIAG_AX.forEach((D, k) => {
     const nx2 = -D.uy, ny2 = D.ux;
     const at = (u, v) => [D.cx + D.ux * u + nx2 * v, D.cy + D.uy * u + ny2 * v];
+    const roadSpans = parkSpans(D, at, 0);
+    const mallSpans = parkSpans(D, at, 6);
     const cutsFrom = (ivs) => {
       const runs = [];
       for (const iv of ivs.slice().sort((p, q) => p[0] - q[0])) {
@@ -3260,8 +3307,10 @@ export function generateCity(cfg) {
     for (let c = 0; c + 1 < sideCuts.length; c++) {
       const u0 = sideCuts[c], u1 = sideCuts[c + 1];
       if (u1 - u0 < 2) continue;
-      for (const [v0, v1] of bands) {
-        apronPaintM.push([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)]);
+      for (const [a, b] of minusSpans(u0, u1, roadSpans)) {
+        for (const [v0, v1] of bands) {
+          apronPaintM.push([at(a, v0), at(b, v0), at(b, v1), at(a, v1)]);
+        }
       }
     }
     if (med) {
@@ -3269,7 +3318,10 @@ export function generateCity(cfg) {
       for (let c = 0; c + 1 < mallCuts.length; c++) {
         const u0 = mallCuts[c], u1 = mallCuts[c + 1];
         if (u1 - u0 < 6) continue;
-        medianFeaturesM.push([at(u0, -med / 2), at(u1, -med / 2), at(u1, med / 2), at(u0, med / 2)]);
+        for (const [a, b] of minusSpans(u0, u1, mallSpans)) {
+          if (b - a < 6) continue;
+          medianFeaturesM.push([at(a, -med / 2), at(b, -med / 2), at(b, med / 2), at(a, med / 2)]);
+        }
       }
     }
   });

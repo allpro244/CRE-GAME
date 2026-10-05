@@ -444,3 +444,170 @@ deck. Now:
   rectangular factory sheds.
 
 `docs/map-overhaul/p9-*.jpg`.
+
+# DESIGN YOUR OWN BUILDING
+
+The owner asked to see a new building before it is built and to control
+its look. The Build desk's Design tab now has a design picker:
+
+- **Facade:** fourteen styles, each with its four elevations shown as
+  swatches (painted from the same textures the city uses). Styles that do
+  not go that tall are greyed out — clapboard stops at 3 floors, brownstone
+  at 8, brick walk-ups at 14. "Fits the street" leaves it to the period and
+  place, as for every other building.
+- **Trim** paint, **roof** (flat, gable and hipped to 4 floors, mansard to
+  12) and, from 15 floors, a **crown** (flat top, setback, crown and mast,
+  spire, or the wedding-cake setbacks).
+- **The preview:** while the tab is open the scheme stands finished on its
+  lot in the 3D city, at its real height and footprint, among its real
+  neighbours, redrawn on every change. "See it on the map" closes the desk,
+  flies the camera to the lot and keeps the picker in a bar over the map;
+  "Back to the Build desk" returns with the choices kept in the draft.
+  Breaking ground takes the preview down and the crane goes up.
+- **Looks only.** The choice is carried draft → job → finished building
+  (`BuildingDesign` on DevDraft, Development and BuiltOverride) and nothing
+  priced reads it: `test/design.mjs`, now in `pnpm check`, runs the same
+  scheme with and without a design and finds the state identical month for
+  month apart from the design. What a building costs and how it wears is
+  still the build-quality dial.
+
+The classic map keeps its own styles and does not draw the preview.
+`docs/map-overhaul/p10-*.jpg`.
+
+# THE CLASSIC RENDERER IS RETIRED
+
+The owner's call: "Get rid of the previous map / rendering, we are switching
+over officially." The 3D city (`src/map/real/RealCity.ts`) is the only map:
+MapView constructs `RealCityLayer` directly, the Settings → Display toggle
+and the store's `realRender` are gone, and the city-context and player-item
+types it borrowed now live in `src/map/real/ctx.ts`. Deleted with the classic
+renderer (`ThreeBuildings.ts`, ~17,000 lines): its style registry
+(`styles.ts`), its skyline signature (`skylineSig`) and test, `test/plate.mjs`,
+and the probes and audits that bundled it (`tools/styleaudit.mjs`,
+`tools/styleboard.mjs`, `tools/probe/crownsweep.mjs`,
+`tools/probe/silhouette.mjs`; the `styles` and `plate` scripts). Two overlays
+the classic map drew on the buildings themselves — lit vacant floors after
+dark (moot: there is no night) and civic-works scaffolding — are not drawn;
+the economy, picking, lenses, badges and panels are unaffected.
+
+# STREETS AND PARKS MEET CLEANLY
+
+The owner: "make sure the streets and parks are not running into each other
+and all look clean." Measured on four towns first: where a diagonal
+boulevard crossed a park, 24-39% of the park lay under boulevard roadway or
+its planted mall — the road and the allée ran on across the lawn — and every
+park's lawn met its frontage road with no edge at all.
+
+- **A boulevard stops at the park's frontage road** (citygen, paint and
+  context only — reservations and lots untouched): the roadway is cut where
+  its centreline enters a park's reservation, the planted mall a further
+  6 m short, so the median ends in a kerb nose the traffic swings round, and
+  the allée trees that stood on the frontage ring or the lawn are dropped.
+  Overlap now 1-3% everywhere (the kerb seam).
+- **Every park has an edge**: the same 15 cm footway as the blocks, 2.6 m
+  wide, runs round the inside of each park with its kerb on the road side.
+- **One asphalt**: the park frontage ring was painted a lighter grey than
+  every other street and read as a patch; it is the street asphalt now.
+
+`docs/map-overhaul/p11-*.jpg`.
+
+# THE ECONOMY ON THE BUILDINGS
+
+With no night there were no dark floors to read vacancy off, so by day a
+half-empty building looked like a full one.
+
+- **Space to let advertises itself.** A building under 80% let hangs a red
+  FOR LEASE or yellow SPACE TO LET banner near the top of its longest wall
+  (about one building in six at the opening vacancy); under 55%, a second on
+  its next-longest wall. Read from the same occupancy the engine reports.
+- **Crowds follow the economy.** Twice the people and more cars are placed,
+  and each is on the street when its own draw is under activity x (0.3 + 0.9
+  x the demand of the ground it walks on): a thriving downtown throngs, a
+  district losing its tenants empties, and the whole town thins in a slump.
+- **Neglect shows.** Worn buildings go a third darker and much greyer; a
+  refit reads a touch brighter.
+
+`docs/map-overhaul/p12-lease-banners.jpg`.
+
+# THE COUNTRY PAST THE TOWN
+
+Young towns are mostly unbuilt fringe, and it read as a grid of flat beige
+lots. Out past the fringe line (demand under 38, residential lots included)
+an empty lot is now country: a third market gardens in rows along the long
+side (bare soil in winter, green through summer, gold at harvest), two in
+five hedged pastures, the rest fenced scrub with post-and-rail; gates are
+gaps in the boundary. Bigger holdings carry a clapboard farmhouse facing the
+road, a red barn behind it and a gravel track in. Everything hangs on the
+lot's deed, so it is cleared the day the lot is built on. Kerbside parking
+thins where demand is low, so a country road is not lined with cars.
+`docs/map-overhaul/p13-countryside.jpg`.
+
+# TREES WITH SPECIES
+
+Every tree was the same grey-green lump at about the same size. Now: five
+greens and the odd copper beech by tree; a third of the street trees are
+columnar (lindens and hornbeams pruned tall and narrow); park and open-ground
+trees range 0.8-1.8x in size; evergreens (a three-tier conifer) make a fifth
+of the trees in the parks, half in the cemeteries, and keep their needles in
+winter. Parks gain a clipped low hedge just inside the footway, open where a
+walk comes in, and flower beds round the fountain or column — bare earth
+November to March. `docs/map-overhaul/p14-*.jpg`.
+
+# BUILDING SITES GO UP IN STAGES
+
+A job was a grey box growing taller with a crane on it. Now every site —
+yours and the rivals' — has plywood hoarding round the lot from day one;
+under a fifth of the way it is a dug pit with an excavator; past that a
+frame rises floor by floor, rusted steel columns every 6 m and a concrete
+slab each storey, with the cladding following two floors behind (three
+early on), so the top of a rising tower is always open structure until the
+cladding closes it just before delivery. `docs/map-overhaul/p15-construction.jpg`.
+
+# A WORKING HARBOUR
+
+The quay was a grey line. Every 70-100 m along it a timber pier now runs
+out 30-44 m into the water on pilings, decked in boards across its width,
+boats moored down both sides; on a quay over 400 m long the pier nearest its
+middle ends in a clapboard ferry terminal with a ferry alongside. The water
+side is read off the land ring. The generator's ~1,500 seawall railing posts
+and its promenade benches — laid out, oriented, and never drawn by the 3D
+city — are drawn at last. `docs/map-overhaul/p16-waterfront.jpg`.
+
+# FAR TOWERS STAY CALM
+
+Past a few hundred metres a window is a pixel, and its relief and
+mirror-glass reflection aliased into shimmering stripes on the curtain
+walls. Every facade now fades its normal map out between 320 and 1,300 m
+from the eye, roughens its glass toward 0.62 and drops 60% of its metalness
+over the same range — what a camera actually resolves of a far tower.
+
+# WEATHER YOU CAN SEE
+
+The sky and the sun followed the weather; the ground did not. Now, from the
+month's weather (cityVisuals): overcast softens the building shadows to a
+smudge; rain turns the footways dark and glossy, lays a faint wet sheen over
+the ground that reflects the sky, and sends rain streaks falling round the
+view; snow drifts down as flakes, and the yards, lawns, parks, boulevard
+malls, footways, fields and rough grass whiten while the carriageways stay
+dark. The precipitation is a box of streaks that follows the camera and
+scales with the view. `docs/map-overhaul/p17-weather-*.jpg`.
+
+# GRAPHICS QUALITY
+
+Settings -> Display has a Graphics row: High (the default; everything above),
+Medium and Low. It replaces "prefer smoother frames", whose old "on" reads as
+Medium. Looks only — the city, its buildings and the game are identical.
+
+| | High | Medium | Low |
+|---|---|---|---|
+| pixel density | native | capped 1.25x | 1x |
+| shadow map | 4096 | 2048 | none cast |
+| walkers and cars | full | 60% | 30% |
+| lamps, cars stop drawing beyond | 2,600 m | 1,800 m | 1,100 m |
+| hedges, fences, railings, benches, flower beds, rooftop plant | always | culled with the lamps | culled with the lamps |
+| rain and snow streaks | yes | yes | no (wet and snowy ground stays) |
+
+Measured on the software renderer at a 2x display, Metropolis district view:
+a frame took 8.98 s on High, 5.54 s on Medium (-38%) and 3.67 s on Low
+(-59%). Absolute numbers are meaningless on a CPU rasteriser; the ratio is
+the point. `docs/map-overhaul/p18-graphics-{high,low}.jpg`.

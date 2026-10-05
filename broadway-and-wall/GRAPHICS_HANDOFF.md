@@ -1,5 +1,13 @@
 # GRAPHICS & BUILDING DESIGN — handoff
 
+> **The classic renderer is retired (2026-10).** `src/map/ThreeBuildings.ts`,
+> `src/map/styles.ts` and their tools are gone; the only map is the 3D city in
+> `src/map/real/RealCity.ts` (facade families and their elevations, roofs,
+> crowns, the player's BuildingDesign, water, street life, haze). Read the
+> references to ThreeBuildings below as history. Current notes:
+> `MAP_VISUAL_AUDIT.md`.
+
+
 The brief for a **pure presentation pass**: massing, façades, roofs and crowns,
 LOD, atmosphere. Not economy, not desk UI.
 

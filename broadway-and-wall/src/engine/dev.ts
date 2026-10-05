@@ -6,7 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
+import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
@@ -1200,7 +1200,7 @@ export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {
@@ -1321,6 +1321,8 @@ export function startDevelopment(
     signed: [],
     bts: plan.bts,
     events: 0,
+    // the look is the player's; nothing priced reads it
+    ...(custom?.design ? { design: { ...custom.design } } : {}),
   } satisfies Development;
   if (next.btsProspects?.[bbl]) delete next.btsProspects[bbl];
   if (next.holdings[bbl]?.btsOffer) delete next.holdings[bbl].btsOffer;
@@ -1927,7 +1929,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // Buildings you have put up. The city notices a developer.
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: d.coverage };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: d.coverage, ...(d.design ? { design: d.design } : {}) };
   const dBlock = demandModel(parcels).ofBbl.get(d.bbl);
   if (dBlock) nudgeBlockDemand(s, dBlock, Math.min(4, 1 + d.sf / 150_000));
   recordPropertyEvent(s, d.bbl, {

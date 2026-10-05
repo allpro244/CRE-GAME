@@ -1,7 +1,7 @@
 import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions } from "@/engine/types";
+import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
 import { newGame, advanceMonth, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
@@ -53,6 +53,9 @@ import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev }
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
+export type GraphicsQuality = "low" | "medium" | "high";
+/** A scheme being designed: drawn finished, on its lot, in the 3D city. */
+export interface DesignPreview { bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign }
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
@@ -258,14 +261,15 @@ interface AppState {
    * save state.
    */
   preferFps: boolean;
+  /** Graphics quality (Settings -> Display). preferFps is derived: anything below High. */
+  graphics: GraphicsQuality;
+  setGraphics: (q: GraphicsQuality) => void;
   setPreferFps: (v: boolean) => void;
   /**
    * The real-geometry city renderer (map/real/RealCity.ts) instead of the
    * classic shader-facade one. A preview, off by default; a preference of
    * this browser, not save state. Flipping it rebuilds the map view.
    */
-  realRender: boolean;
-  setRealRender: (v: boolean) => void;
   /**
    * Map-only mode — hide firm page sheets so the skyline is the desk.
    * HUD, inbox, digest and decision cards stay. UI preference, not save state.
@@ -309,7 +313,13 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off" }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign }, lender?: string, spec?: number) => void;
+  /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
+  designPreview: DesignPreview | null;
+  setDesignPreview: (p: DesignPreview | null) => void;
+  /** Stepped out of the Build desk to look at the scheme on the map (DesignPeekBar). */
+  designPeek: boolean;
+  setDesignPeek: (v: boolean) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
@@ -729,10 +739,24 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
-  preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
-  // THE 3D CITY IS THE DEFAULT (the owner's call). Only an explicit "off"
-  // from Settings → Display keeps the classic map.
-  realRender: (() => { try { return localStorage.getItem("bw:render-real") !== "off"; } catch { return true; } })(),
+  // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
+  graphics: (() => {
+    try {
+      const g = localStorage.getItem("bw:graphics");
+      if (g === "low" || g === "medium" || g === "high") return g;
+      return localStorage.getItem("bw:prefer-fps") === "on" ? "medium" : "high";
+    } catch { return "high"; }
+  })() as GraphicsQuality,
+  preferFps: (() => {
+    try {
+      const g = localStorage.getItem("bw:graphics");
+      return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
+    } catch { return false; }
+  })(),
+  designPreview: null,
+  setDesignPreview: (p) => set({ designPreview: p }),
+  designPeek: false,
+  setDesignPeek: (v) => set({ designPeek: v }),
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,
@@ -1068,11 +1092,11 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ preferFps: v });
   },
-
-  setRealRender: (v) => {
-    try { localStorage.setItem("bw:render-real", v ? "on" : "off"); } catch { /* private mode */ }
-    set({ realRender: v });
+  setGraphics: (q) => {
+    try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
+    set({ graphics: q, preferFps: q !== "high" });
   },
+
 
   setMapOnly: (v) => {
     try { localStorage.setItem("bw:map-only", v ? "on" : "off"); } catch { /* private mode */ }
@@ -1219,7 +1243,8 @@ export const useStore = create<AppState>((set, get) => ({
       const { devDraft: _drop, ...rest } = h;
       r.s = { ...r.s, holdings: { ...r.s.holdings, [bbl]: rest } };
     }
-    set({ game: r.s });
+    // the scheme on the desk is now a crane on the lot: take the preview down
+    set({ game: r.s, designPreview: null, designPeek: false });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
   },

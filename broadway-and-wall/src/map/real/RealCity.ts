@@ -1,27 +1,27 @@
 /**
- * THE REAL-GEOMETRY CITY — a second renderer for the same game.
+ * THE CITY — the game's 3D renderer.
  *
- * ThreeBuildings draws every facade in a fragment shader on plain boxes. This
- * layer builds the city the way the WebGPU street prototype did: walls with
- * world-scale facade textures (albedo, roughness/metalness, normal relief and
- * lit-window emission per family), real cornices, string courses and lobby
- * bases, roof plant, street trees and parked cars, all lit by stock
- * physically based materials, a soft shadow map and an environment for the
- * glass to reflect. It reads exactly the inputs ThreeBuildings reads and
- * answers the same calls MapView makes, so the game, picking (MapLibre's
- * parcel layer), labels, badges and every panel work unchanged.
- *
- * It is a PREVIEW behind `realRender` in the store (Settings → Display), off
- * by default. Nothing here is read by the engine; nothing here writes state.
+ * Builds the city as real geometry: walls with world-scale facade textures
+ * (albedo, roughness/metalness, normal relief and lit-window emission per
+ * family and elevation), real cornices, parapets, setbacks and crowns, roofs
+ * by material, roof plant, street trees, parked and moving cars, people,
+ * water in channels and a rippled harbour, all lit by stock physically based
+ * materials, a soft shadow map, aerial perspective and a sky for the glass to
+ * reflect. It replaced the classic shader-on-boxes renderer (ThreeBuildings,
+ * retired) as the only map. Picking (MapLibre's parcel layer), labels, badges
+ * and every panel are MapView's. Nothing here is read by the engine; nothing
+ * here writes state.
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
-import type { BuildingVolume, ThreeBuildings } from "../ThreeBuildings";
+import type { BuildingVolume } from "../volume";
+import type { BuildingDesign } from "@/engine/types";
+import type { CityCtx, PlayerItem } from "./ctx";
+export type { CityCtx, PlayerItem };
 
-type Ctx = ConstructorParameters<typeof ThreeBuildings>[3];
+type Ctx = CityCtx;
 type P2 = [number, number];
-type PlayerItem = Parameters<ThreeBuildings["setPlayerBuildings"]>[0][number];
 
 // ---- small helpers ---------------------------------------------------------
 
@@ -34,6 +34,25 @@ function keyOf(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
+}
+/** A counter-clockwise ring pulled in by d metres (mitred, capped); null if it collapses. */
+function insetRing(r: P2[], d: number): P2[] | null {
+  const n = r.length;
+  const out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const e1 = [c[0] - p[0], c[1] - p[1]], e2 = [q[0] - c[0], q[1] - c[1]];
+    const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+    // inward (left-hand) normals of the two edges meeting here
+    const n1 = [-e1[1] / l1, e1[0] / l1], n2 = [-e2[1] / l2, e2[0] / l2];
+    const mx = n1[0] + n2[0], my = n1[1] + n2[1];
+    const ml = Math.hypot(mx, my);
+    if (ml < 1e-6) { out.push([c[0] + n2[0] * d, c[1] + n2[1] * d]); continue; }
+    // the mitre: d / cos(half the turn) = 2d / |n1 + n2|, capped at 4d
+    const s = Math.min(d * 4, (d * 2) / ml);
+    out.push([c[0] + (mx / ml) * s, c[1] + (my / ml) * s]);
+  }
+  return ringArea(out) > 1 ? out : null;
 }
 function ringArea(r: P2[]): number {
   let a = 0;
@@ -58,6 +77,9 @@ interface Family {
 }
 
 const TILE = 128;
+/** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
+const FAR_PROPS = ["lamp", "car", "lotcar"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -270,9 +292,16 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way
       .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 3.5, vGz));")
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;");
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;")
+      // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
+      // and its relief and mirror-glass reflection alias into shimmering
+      // stripes. Fade the normal map out and rough the glass up with
+      // distance — what a camera sees of a far tower anyway.
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);")
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;")
+      .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -663,6 +692,70 @@ function addHaze(mat: THREE.Material) {
   mat.needsUpdate = true;
 }
 
+// ---- the player's design --------------------------------------------------
+// What the Build desk offers. The facade names are the elevations VARIANTS
+// paints, in order (#0 is the family's own); the paints are the trim colours
+// the generator already uses; nothing here is priced (BuildingDesign).
+export const TRIM_PAINTS: { name: string; rgb: number[] }[] = [
+  { name: "Stone", rgb: [1, 1, 1] },
+  { name: "Green", rgb: [0.42, 0.55, 0.45] },
+  { name: "Black", rgb: [0.3, 0.3, 0.32] },
+  { name: "Terracotta", rgb: [0.98, 0.66, 0.5] },
+  { name: "Grey", rgb: [0.8, 0.8, 0.8] },
+];
+export const FACADE_STYLES: { key: string; name: string; era: string; maxFloors: number; variants: string[] }[] = [
+  { key: "clapboard", name: "Clapboard", era: "timber, to 1950", maxFloors: 3, variants: ["Painted boards", "Wide boards, shutters", "Pedimented", "Paired sash, shutters"] },
+  { key: "brick", name: "Red brick", era: "walk-up, 1870-1930", maxFloors: 14, variants: ["Common red", "Italianate arches", "Federal, shuttered", "Painted, round-arched"] },
+  { key: "buff", name: "Buff brick", era: "1890-1940", maxFloors: 16, variants: ["Buff", "Pale, segmental", "Tan, paired", "Grey-buff, pedimented"] },
+  { key: "brownstone", name: "Brownstone", era: "row house, 1850-1900", maxFloors: 8, variants: ["Chocolate", "Light, arched", "Dark, pedimented", "Mauve, segmental"] },
+  { key: "stone", name: "Limestone", era: "Beaux-Arts, 1890-1930", maxFloors: 40, variants: ["Limestone", "White, arched", "Sandstone, pedimented", "Granite, paired"] },
+  { key: "deco", name: "Art deco", era: "1925-1940", maxFloors: 99, variants: ["Cream piers", "Pale, green spandrels", "Grey, bronze spandrels", "Terracotta pink"] },
+  { key: "decobrick", name: "Deco brick", era: "1925-1945", maxFloors: 99, variants: ["Tan", "Brown", "Light buff", "Red"] },
+  { key: "industrial", name: "Loft / warehouse", era: "1880-1950", maxFloors: 12, variants: ["Red factory", "Dark, segmental", "Buff", "Concrete frame"] },
+  { key: "modern", name: "Post-war panel", era: "1950-1990", maxFloors: 40, variants: ["Beige panel", "White, wide glass", "Tan, paired", "Brick and glass"] },
+  { key: "ribbon", name: "Ribbon windows", era: "International Style, 1955-1975", maxFloors: 99, variants: ["White bands", "Grey bands", "Black tower", "Tan bands"] },
+  { key: "grid", name: "Concrete grid", era: "1960-1980", maxFloors: 99, variants: ["Concrete", "White grid", "Deep-set, grey", "Brown brick grid"] },
+  { key: "glass", name: "Glass curtain wall", era: "1960-today", maxFloors: 99, variants: ["Blue-grey", "Dark", "Silver", "Green"] },
+  { key: "bronze", name: "Bronze glass", era: "1970-1990", maxFloors: 99, variants: ["Bronze", "Deep bronze", "Smoked grey", "Black glass"] },
+  { key: "blueglass", name: "Blue glass", era: "1990-today", maxFloors: 99, variants: ["Blue-green", "Deep blue", "Teal", "Silver-blue"] },
+];
+export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [
+  { key: "flat", name: "Flat", maxFloors: 999 },
+  { key: "gable", name: "Gable", maxFloors: 4 },
+  { key: "hip", name: "Hipped", maxFloors: 4 },
+  { key: "mansard", name: "Mansard", maxFloors: 12 },
+];
+export const CROWN_CHOICES: { key: NonNullable<BuildingDesign["crown"]>; name: string }[] = [
+  { key: "none", name: "Flat top" },
+  { key: "setback", name: "Setback" },
+  { key: "mast", name: "Crown and mast" },
+  { key: "spire", name: "Spire" },
+  { key: "cake", name: "Wedding cake" },
+];
+/** Crowns are offered from this many floors. */
+export const CROWN_MIN_FLOORS = 15;
+
+type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"] };
+
+let swatchCache: Record<string, string> | null = null;
+/** A small picture of every elevation, for the Build desk's facade picker. */
+export function facadeSwatches(): Record<string, string> {
+  if (swatchCache) return swatchCache;
+  const fams = makeFamilies(1);
+  const out: Record<string, string> = {};
+  for (const st of FACADE_STYLES) for (let v = 0; v < 4; v++) {
+    const key = v ? `${st.key}#${v}` : st.key;
+    const img = (fams[key]?.mat.map?.image ?? null) as HTMLCanvasElement | null;
+    if (!img || typeof img.toDataURL !== "function") continue;
+    const { c, g } = makeCanvas(96, 96);
+    g.drawImage(img, 0, 0, img.width, img.height, 0, 0, 96, 96);
+    out[key] = c.toDataURL("image/png");
+  }
+  for (const f of Object.values(fams)) { f.mat.map?.dispose(); f.mat.dispose(); }
+  swatchCache = out;
+  return out;
+}
+
 // ---- geometry accumulation -------------------------------------------------
 
 class Buf {
@@ -703,7 +796,7 @@ class Buf {
   }
 }
 
-interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[] }
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 
@@ -728,6 +821,8 @@ export class RealCityLayer {
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
+  private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
+  private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
@@ -755,6 +850,11 @@ export class RealCityLayer {
   private viewH = 900;
 
   private preferFps = false;
+  /** Graphics quality: how much of the city's small detail is drawn, how far. */
+  private quality: "low" | "medium" | "high" = "high";
+  private crowdK = 1;
+  private cullM = 2600;
+  private catcher: THREE.Mesh | null = null;
   private lotRingLL: Record<string, P2[]>;
   private visibleOn = true;
 
@@ -845,9 +945,13 @@ export class RealCityLayer {
     this.fitShadow(fx, fy, distM);
     // from the whole-island camera a person, a lamp or a car is a fraction of
     // a pixel: stop drawing them there rather than paying for grain
-    const far = distM > 2600, veryFar = distM > 4200;
+    // The graphics setting pulls that horizon in, and on Medium and Low takes
+    // the garden-scale furniture with it.
+    const far = distM > this.cullM, veryFar = distM > Math.max(4200, this.cullM * 1.6);
     for (const f of this.fleets) f.mesh.visible = f.list === this.boats ? !veryFar : !far;
-    for (const k of ["lamp", "car", "lotcar"]) { const m = this.inst.get(k); if (m) m.visible = !far; }
+    for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
+    const beds = this.inst.get("flowerbed");
+    if (beds) beds.visible = this.month >= 3 && this.month <= 9 && !(far && this.quality !== "high");
     this.renderer.resetState();
     if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
@@ -856,6 +960,7 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
       const tt = performance.now() / 1000;
@@ -907,7 +1012,7 @@ export class RealCityLayer {
 
   // ---- lights & shadow ---------------------------------------------------
   private setupLights() {
-    this.sun.castShadow = true;
+    this.sun.castShadow = this.quality !== "low";
     const sz = this.preferFps ? 2048 : 4096;
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
@@ -960,6 +1065,180 @@ export class RealCityLayer {
     return d;
   }
 
+  /**
+   * A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes in a
+   * spire; a glass tower carries a recessed mechanical crown and a mast; the
+   * International Style a plain penthouse; a stone office one setback. "auto"
+   * is the period's choice; the player's design can name one instead.
+   */
+  private towerTop(ring: P2[], z1: number, top: number, fam: string, t: number[], bbl: string, k: number,
+    kind: "auto" | "none" | "setback" | "spire" | "mast", ov?: VolumeOv) {
+    const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
+    if (kind === "none") return;
+    if (kind === "auto" && !(top > 60 && (glassy || fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "ribbon" || fam === "grid"))) return;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+    const deco = fam === "deco" || fam === "decobrick";
+    if (kind === "spire" || (kind === "auto" && deco)) {
+      this.addVolume(shrink(ring, 0.78), z1, z1 + 7, fam, t, bbl, false, false, k, false, false, "", 0, ov);
+      this.addVolume(shrink(ring, 0.56), z1 + 7, z1 + 12, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+      this.putInst("spire", cx, cy, z1 + 12, 1 + Math.max(0, top - 60) / 120, 0, bbl);
+    } else if (kind === "mast" || (kind === "auto" && glassy)) {
+      // a recessed mechanical crown; one in three steps back twice
+      const two = kind === "auto" && hash01(k ^ 0x5e7, this.seed) < 0.33;
+      this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, !two, false, k, false, false, "", 0, ov);
+      if (two) this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+      if (kind === "mast" || hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, z1 + (two ? 11 : 5), 1, 0, bbl);
+    } else if (kind === "auto" && (fam === "ribbon" || fam === "grid")) {
+      // the International Style keeps its plant in a plain penthouse box
+      this.addVolume(shrink(ring, 0.62), z1, z1 + 4.5, "plain", [0.9, 0.9, 0.9], bbl, true, true, k);
+    } else {
+      this.addVolume(shrink(ring, 0.8), z1, z1 + 6, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+    }
+    const d2 = this.deedOf(bbl); d2.height = Math.max(d2.height, z1 + 8);
+  }
+
+  /**
+   * A BUILDING SITE, BY STAGE. Plywood hoarding round the lot from the first
+   * day. Under a fifth of the way: a dug pit with an excavator in it. Past
+   * that: a frame rising floor by floor — columns and slabs — with the
+   * cladding following two floors behind it, so the top of a rising tower is
+   * always open steel and concrete, and the cladding closes the last of it
+   * just before delivery. Progress is the job's own (heightM / full height).
+   */
+  private buildSite(ring: P2[], it: PlayerItem, k: number, cx: number, cy: number) {
+    const FL = 3.55;
+    const full = Math.max(FL, it.floors * FL);
+    const h = Math.max(1, it.heightM);
+    const prog = Math.min(1, h / full);
+    // the hoarding, 1.5 m outside the footprint
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 2) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const ox = uy * 1.5, oy = -ux * 1.5;      // outward for a counter-clockwise ring
+      for (let t = 1.2; t < L; t += 2.44) this.putInst("hoard", a[0] + ux * t + ox, a[1] + uy * t + oy, 0.15, 1, Math.atan2(uy, ux), it.bbl);
+    }
+    const tri = (z: number, buf: string, col: number[]) => {
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { return; }
+      const B = this.buf(buf); const b0 = B.count;
+      for (const t of tris) B.tri([ring[t[0]][0], ring[t[0]][1], z], [ring[t[1]][0], ring[t[1]][1], z], [ring[t[2]][0], ring[t[2]][1], z], [0, 0, 1], col);
+      this.note(it.bbl, buf, b0);
+    };
+    if (prog < 0.2) {
+      tri(0.05, "trim", [0.62, 0.47, 0.33]);                   // the pit, raw earth
+      this.putInst("digger", cx, cy, 0.06, 1, hash01(k, 3) * 6.28, it.bbl);
+      return;
+    }
+    // the clad part, two floors (more early on) behind the frame
+    const lag = FL * (prog < 0.5 ? 3 : 2);
+    const clad = prog > 0.97 ? h : Math.max(0, h - lag);
+    if (clad > FL) this.addVolume(ring, 0, clad, "frame", [1, 1, 1], it.bbl, false, false, k);
+    // the open frame above it: a slab every floor, a column every 6 m round the edge
+    for (let z = Math.max(FL, Math.ceil(clad / FL) * FL); z <= h + 0.01; z += FL) tri(z, "trim", [0.82, 0.82, 0.8]);
+    if (h - clad > 0.5) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const n = Math.max(1, Math.round(L / 6));
+        for (let j = 0; j < n; j++) {
+          const t = j / n;
+          this.putInst("steel", a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, clad, 1, 0, it.bbl, undefined, (h - clad) / 3.55);
+        }
+      }
+    }
+  }
+
+  /**
+   * THE WORKING HARBOUR. The quay was a grey line on the map. Every ~80 m
+   * along it a timber pier now runs out into the water on pilings, boats
+   * moored down both sides; on a long quay the pier nearest its middle ends
+   * in a ferry terminal with a ferry alongside. Which side is water is read
+   * off the land ring. Railings along the seawalls and benches on the
+   * promenades are the generator's own (rails, benches), drawn at last.
+   */
+  private buildWaterfront() {
+    const c = this.ctx;
+    const landLL = c.land;
+    const land = landLL && landLL.length >= 4 ? landLL.map((q) => this.project(q)) : null;
+    const onLand = (x: number, y: number) => {
+      if (!land) return true;
+      let ins = false;
+      for (let i = 0, j = land.length - 1; i < land.length; j = i++) { const xi = land[i][0], yi = land[i][1], xj = land[j][0], yj = land[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; }
+      return ins;
+    };
+    let s = (this.seed * 6007) % 2147483646 + 1;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const deck = this.buf("pier"); const DZ = 1.1;
+    const HULL = [[0.92, 0.92, 0.9], [0.86, 0.85, 0.8], [0.16, 0.22, 0.34], [0.2, 0.32, 0.26], [0.52, 0.2, 0.17], [0.3, 0.3, 0.31]];
+    for (const line of c.quays ?? []) {
+      const pts = line.map((q) => this.project(q));
+      let total = 0; const segs: { a: P2; b: P2; L: number; s0: number }[] = [];
+      for (let i = 0; i + 1 < pts.length; i++) { const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); segs.push({ a: pts[i], b: pts[i + 1], L, s0: total }); total += L; }
+      const piers: { x: number; y: number; ox: number; oy: number; ux: number; uy: number; d: number }[] = [];
+      for (let d = 40; d < total - 30; d += 70 + rnd() * 30) {
+        const sg = segs.find((g) => d >= g.s0 && d < g.s0 + g.L);
+        if (!sg || sg.L < 1) continue;
+        const ux = (sg.b[0] - sg.a[0]) / sg.L, uy = (sg.b[1] - sg.a[1]) / sg.L;
+        const t = d - sg.s0, x = sg.a[0] + ux * t, y = sg.a[1] + uy * t;
+        // the water side
+        let ox = -uy, oy = ux;
+        if (onLand(x + ox * 25, y + oy * 25)) { ox = -ox; oy = -oy; }
+        if (onLand(x + ox * 25, y + oy * 25)) continue;
+        piers.push({ x, y, ox, oy, ux, uy, d });
+      }
+      const mid = total / 2;
+      const term = total > 400 && piers.length ? piers.reduce((p, q) => Math.abs(q.d - mid) < Math.abs(p.d - mid) ? q : p) : null;
+      for (const p of piers) {
+        const len = 30 + rnd() * 14, w = 7;
+        const corner = (along: number, across: number, z: number) => [p.x + p.ox * along + p.ux * across, p.y + p.oy * along + p.uy * across, z];
+        const A = corner(0, -w / 2, DZ), B = corner(0, w / 2, DZ), C = corner(len, w / 2, DZ), D = corner(len, -w / 2, DZ);
+        const d0 = deck.count;
+        // wound whichever way the pier points; the boards run across it
+        deck.face([A, B, C, D], [0, 0, 1], [1, 1, 1], (q) => [(q[0] * p.ux + q[1] * p.uy) / 3, (q[0] * p.ox + q[1] * p.oy) / 3]);
+        const mx = (A[0] + C[0]) / 2, my = (A[1] + C[1]) / 2;
+        for (const [P, Q] of [[B, C], [C, D], [D, A]] as number[][][]) {
+          // the fascia faces away from the deck's middle
+          const n = [(P[0] + Q[0]) / 2 - mx, (P[1] + Q[1]) / 2 - my, 0];
+          deck.face([P, Q, [Q[0], Q[1], DZ - 0.45], [P[0], P[1], DZ - 0.45]], n, [0.75, 0.75, 0.75]);
+        }
+        void d0;
+        for (let a = 2; a < len; a += 4) for (const side of [-1, 1]) {
+          const q = corner(a, side * (w / 2 - 0.3), 0);
+          this.putInst("pile", q[0], q[1], -1.6, 1, 0);
+        }
+        // boats along both sides
+        for (let a = 6; a < len - 4; a += 9) for (const side of [-1, 1]) {
+          if (rnd() < 0.45) continue;
+          const q = corner(a, side * (w / 2 + 2.6), 0);
+          this.putInst("hull", q[0], q[1], 0.05, 1.2 + rnd() * 0.7, Math.atan2(p.oy, p.ox), "", HULL[(rnd() * HULL.length) | 0]);
+        }
+        if (p === term) {
+          // the ferry terminal at the pier head, and a ferry alongside
+          const h0 = corner(len - 2, -6, 0), h1 = corner(len - 2, 6, 0), h2 = corner(len + 9, 6, 0), h3 = corner(len + 9, -6, 0);
+          const ring: P2[] = [[h0[0], h0[1]], [h1[0], h1[1]], [h2[0], h2[1]], [h3[0], h3[1]]];
+          const ccw = ringArea(ring) > 0 ? ring : ring.slice().reverse();
+          this.addVolume(ccw, DZ, DZ + 6.5, "clapboard", [0.9, 0.92, 0.95], "", true, false, keyOf("ferry-terminal"), false, true, "", 1905);
+          const f = corner(len + 4, 13, 0);
+          this.putInst("ferry", f[0], f[1], 0.05, 1, Math.atan2(p.uy, p.ux));
+        }
+      }
+    }
+    // railings and benches, as the generator laid them out
+    for (const r of c.rails ?? []) {
+      const [x, y] = this.project(r.p);
+      this.putInst("railing", x, y, 0.15, 1, (r.r * Math.PI) / 180);
+    }
+    for (const b of c.benches ?? []) {
+      const [x, y] = this.project(b.p);
+      this.putInst("bench", x, y, 0.15, 1, (b.r * Math.PI) / 180);
+    }
+  }
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
@@ -968,7 +1247,7 @@ export class RealCityLayer {
   }
 
   /** One volume: walls in its family, a roof, and its trim. */
-  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0) {
+  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0, ov?: VolumeOv) {
     const fam = this.families[famKey];
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     // THE MANSARD. A Second Empire walk-up finishes its top storey as a steep
@@ -977,12 +1256,13 @@ export class RealCityLayer {
     let ringC = [0, 0];
     for (const [x, y] of ring) { ringC[0] += x / ring.length; ringC[1] += y / ring.length; }
     let rad = 0; for (const [x, y] of ring) rad += Math.hypot(x - ringC[0], y - ringC[1]) / ring.length;
-    const mans = crown && plant && !pitched && year > 1855 && year < 1915 && rad > 5
+    const mans = ov?.roof ? ov.roof === "mansard" && crown && rad > 4 && z1 - z0 > 6
+      : crown && plant && !pitched && year > 1855 && year < 1915 && rad > 5
       && (famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "stone")
       && z1 - z0 > 9 && z1 < 34 && hash01(seedK ^ 0x3a5, 7) < 0.4;
     const zw = mans ? z1 - fam.floorH * 0.95 : z1;            // where the walls stop
     const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[]) => {
-      const fk = this.variantOf(fk0, seedK);
+      const fk = fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
       const W = this.buf(wallName);
@@ -1056,7 +1336,7 @@ export class RealCityLayer {
     // a SAWTOOTH: a factory roof of north lights, a pitch of sheet and a
     // vertical strip of glass, repeated down the long side. Rectangles only.
     let saw = false;
-    if (crown && plant && famKey === "industrial" && ring.length === 4 && z1 < 18 && Math.abs(ringArea(ring)) > 450 && hash01(seedK ^ 0x5a3, 11) < 0.55) {
+    if (!ov?.roof && crown && plant && famKey === "industrial" && ring.length === 4 && z1 < 18 && Math.abs(ringArea(ring)) > 450 && hash01(seedK ^ 0x5a3, 11) < 0.55) {
       const { A, B, C, D, ll } = longSide();
       const ad = [D[0] - A[0], D[1] - A[1]], bc = [C[0] - B[0], C[1] - B[1]];
       saw = Math.hypot(ad[0] - bc[0], ad[1] - bc[1]) < 1.0 && ll > 16;
@@ -1097,7 +1377,8 @@ export class RealCityLayer {
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(inner.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
       for (const t of tris) R.tri([inner[t[0]][0], inner[t[0]][1], z1], [inner[t[1]][0], inner[t[1]][1], z1], [inner[t[2]][0], inner[t[2]][1], z1], [0, 0, 1], rc);
-    } else if (pitched && ring.length === 4 && (famKey === "clapboard" ? hash01(seedK ^ 0x41b, 5) < 0.5 : hash01(seedK ^ 0x41b, 5) < 0.3)) {
+    } else if (pitched && ring.length === 4 && (ov?.roof ? ov.roof === "hip"
+      : famKey === "clapboard" ? hash01(seedK ^ 0x41b, 5) < 0.5 : hash01(seedK ^ 0x41b, 5) < 0.3)) {
       // A HIP: the same ridge, pulled in from both ends, every side a slope
       const { A, B, C, D, ll } = longSide();
       const short = Math.min(Math.hypot(C[0] - B[0], C[1] - B[1]), Math.hypot(A[0] - D[0], A[1] - D[1]));
@@ -1122,7 +1403,7 @@ export class RealCityLayer {
       const out1 = [B[1] - A[1], -(B[0] - A[0]), 0.6], out2 = [D[1] - C[1], -(D[0] - C[0]), 0.6];
       R.face([[A[0], A[1], z1], [B[0], B[1], z1], M1, M2], out1, rc);
       R.face([[C[0], C[1], z1], [D[0], D[1], z1], M2, M1], out2, rc);
-      const vk = this.variantOf(famKey, seedK);
+      const vk = ov?.variant ?? this.variantOf(famKey, seedK);
       const Wg = this.buf("w:" + vk);
       const g0 = Wg.count;
       const uvG = (p: number[]) => [(p[0] + p[1]) / fam.bayW * 0.7, p[2] / fam.floorH];
@@ -1160,8 +1441,9 @@ export class RealCityLayer {
     // a walk-up's cornice was as often galvanised iron painted dark green,
     // black or a terracotta red; and the cornice itself is deep and bracketed,
     // a modest band, a double course, or long since stripped off.
-    const TRIM = [[1, 1, 1], [1, 1, 1], [0.42, 0.55, 0.45], [0.3, 0.3, 0.32], [0.98, 0.66, 0.5], [0.8, 0.8, 0.8]];
-    const white = fam.masonry || famKey === "clapboard" ? TRIM[Math.floor(hash01(seedK ^ 0x71a, 5) * TRIM.length)] : [1, 1, 1];
+    const TRIM = [TRIM_PAINTS[0].rgb, ...TRIM_PAINTS.map((p) => p.rgb)];   // stone twice as likely
+    const white = ov?.trim !== undefined ? TRIM_PAINTS[ov.trim]?.rgb ?? [1, 1, 1]
+      : fam.masonry || famKey === "clapboard" ? TRIM[Math.floor(hash01(seedK ^ 0x71a, 5) * TRIM.length)] : [1, 1, 1];
     const corn = Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
     if (fam.masonry) {
       if (crown && zw - z0 > 4 && !pitched) {
@@ -1267,12 +1549,13 @@ export class RealCityLayer {
     for (const v of this.volumes) if (v.b && !v.k) topZ.set(v.b, Math.max(topZ.get(v.b) ?? 0, v.z1));
     // VACANT LOTS. Downtown a hole in the street wall is a surface car park;
     // elsewhere it is a gravel yard. Residential lots stay as MapLibre's lawn.
-    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf();
+    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf(), lotCrop = new Buf();
     let ls = (this.seed * 4421) % 2147483646 + 1;
     const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
     const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
     for (const v of this.volumes) {
-      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62)) continue;
+      // a residential lot in town stays MapLibre's lawn; out on the fringe it is country like the rest
+      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62 && (v.ds ?? 50) >= 38)) continue;
       let ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();
@@ -1281,12 +1564,31 @@ export class RealCityLayer {
       // has reached, land nobody has built on yet is rough grass.
       const downtown = (v.ds ?? 50) >= 62;
       const outskirts = (v.ds ?? 50) < 38;   // the classic map's fringe line
-      const B = downtown ? lotPark : outskirts ? lotMeadow : lotGravel;
+      // THE COUNTRY PAST THE TOWN. Out on the fringe an empty lot is not a
+      // lawn: it is a market garden in rows, a hedged pasture, or a fenced
+      // scrub lot, and the bigger holdings carry a farmhouse and a barn and a
+      // track in from the road. All of it hangs on the lot's deed, so it is
+      // cleared the day somebody builds there.
+      const kk = keyOf(v.b || `${v.r[0][0]},${v.r[0][1]}`);
+      const roll = hash01(kk ^ 0xfa12, this.seed);
+      const farmKind = !outskirts ? "" : roll < 0.35 ? "crop" : roll < 0.75 ? "pasture" : "scrub";
+      const B = downtown ? lotPark : farmKind === "crop" ? lotCrop : outskirts ? lotMeadow : lotGravel;
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
-      for (const t of tris) {
-        for (const i of t) { B.pos.push(ring[i][0], ring[i][1], 0.03); B.nrm.push(0, 0, 1); B.uv.push(ring[i][0] / 5, ring[i][1] / 5); B.col.push(1, 1, 1); }
+      // crops run in rows along the lot's long side
+      let ld = [1, 0];
+      {
+        let ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; ld = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; } }
       }
+      for (const t of tris) {
+        for (const i of t) {
+          const [x, y] = ring[i];
+          const uv = farmKind === "crop" ? [(x * ld[0] + y * ld[1]) / 16, (-x * ld[1] + y * ld[0]) / 3.2] : [x / 5, y / 5];
+          B.pos.push(x, y, 0.03); B.nrm.push(0, 0, 1); B.uv.push(uv[0], uv[1]); B.col.push(1, 1, 1);
+        }
+      }
+      if (farmKind) this.dressFarm(ring, farmKind, kk, v.b || "", lotGravel);
       if (downtown) {
         // rows of parked cars squared to the longest side
         let li = 0, ll = -1;
@@ -1308,6 +1610,11 @@ export class RealCityLayer {
     if (lotMeadow.count) {
       const m = new THREE.Mesh(lotMeadow.geometry(), this.meadowMat);
       this.meadowMat.map = this.meadowTex();
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    if (lotCrop.count) {
+      this.cropMat.map = this.cropTex();
+      const m = new THREE.Mesh(lotCrop.geometry(), this.cropMat);
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotGravel.count) {
@@ -1360,44 +1667,20 @@ export class RealCityLayer {
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
       // mast; a stone office takes one setback. Only on the building's own top.
-      const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
-      if (isTop && top > 60 && (glassy || fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "ribbon" || fam === "grid")) {
-        const ring0 = ring;
-        {
-        const ring = topRing.length ? topRing : ring0;
-        let cx = 0, cy = 0;
-        for (const [x, y] of ring) { cx += x; cy += y; }
-        cx /= ring.length; cy /= ring.length;
-        const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-        if (fam === "deco" || fam === "decobrick") {
-          this.addVolume(shrink(ring, 0.78), v.z1, v.z1 + 7, fam, t, v.b, false, false, k);
-          this.addVolume(shrink(ring, 0.56), v.z1 + 7, v.z1 + 12, fam, t, v.b, true, false, k);
-          this.putInst("spire", cx, cy, v.z1 + 12, 1 + (top - 60) / 120, 0, v.b);
-        } else if (glassy) {
-          // a recessed mechanical crown; one in three steps back twice
-          const two = hash01(k ^ 0x5e7, this.seed) < 0.33;
-          this.addVolume(shrink(ring, 0.86), v.z1, v.z1 + 5, fam, t, v.b, !two, false, k);
-          if (two) this.addVolume(shrink(ring, 0.62), v.z1 + 5, v.z1 + 11, fam, t, v.b, true, false, k);
-          if (hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, v.z1 + (two ? 11 : 5), 1, 0, v.b);
-        } else if (fam === "ribbon" || fam === "grid") {
-          // the International Style keeps its plant in a plain penthouse box
-          this.addVolume(shrink(ring, 0.62), v.z1, v.z1 + 4.5, "plain", [0.9, 0.9, 0.9], v.b, true, true, k);
-        } else {
-          this.addVolume(shrink(ring, 0.8), v.z1, v.z1 + 6, fam, t, v.b, true, false, k);
-        }
-        }
-        const d2 = this.deedOf(v.b); d2.height = Math.max(d2.height, v.z1 + 8);
-      }
+      if (isTop) this.towerTop(topRing.length ? topRing : ring, v.z1, top, fam, t, v.b, k, "auto");
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
     }
+    this.buildWaterfront();
     this.flushBufs();
     this.flushInst();
     // a shadow catcher over MapLibre's ground: transparent except where a
     // building or a tree stands between it and the sun
-    const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 }));
+    const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
     catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
+    catcher.visible = this.quality !== "low";
+    this.catcher = catcher;
     this.scene.add(catcher);
     // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
     // glossy veneer over it — the land cut out — gives the sun a road on the
@@ -1437,7 +1720,7 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
@@ -1476,6 +1759,28 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
+      case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
+      case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
+      case "steel": return { g: merge([box(0.45, 0.45, 3.55, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.6, metalness: 0.3 }) };
+      case "hoard": return { g: merge([box(2.42, 0.06, 2.4, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.9 }) };
+      case "digger": {
+        // an excavator: tracks, cab, boom
+        const g = merge([box(3.2, 2.6, 0.9, 0, 0, 0), box(2.2, 2.2, 1.6, 0, 0, 0.9), box(3.6, 0.5, 0.5, 2.4, 0, 2.2), box(0.5, 0.5, 2.2, 4.0, 0, 0.3)]);
+        return { g, mat: new THREE.MeshStandardMaterial({ color: 0xe0a21a, roughness: 0.6 }) };
+      }
+      case "pine": {
+        // a conifer: a short trunk and three tiers of needles
+        const cone = (r: number, h: number, z: number) => new THREE.ConeGeometry(r, h, 8).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
+        return { g: merge([cyl(0.22, 1.6, 0, 6), cone(2.3, 3.4, 1.4), cone(1.8, 3.0, 3.3), cone(1.15, 2.6, 5.1)]), mat: this.pineMat };
+      }
+      case "parkhedge": return { g: merge([box(2.6, 0.8, 0.85, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x46663a, roughness: 0.95 }) };
+      case "flowerbed": {
+        const g = new THREE.CylinderGeometry(1.7, 1.8, 0.3, 12).rotateX(Math.PI / 2).translate(0, 0, 0.15);
+        return { g: merge([g]), mat: this.bedMat, colored: true };
+      }
+      case "hedge": return { g: merge([box(2.7, 1.1, 1.3, 0, 0, 0), box(2.3, 0.8, 0.35, 0, 0, 1.3)]), mat: new THREE.MeshStandardMaterial({ color: 0x3f5a32, roughness: 0.95, flatShading: true }) };
+      case "fence": return { g: merge([box(0.14, 0.14, 1.25, -1.45, 0, 0), box(3.0, 0.07, 0.1, 0, 0, 0.55), box(3.0, 0.07, 0.1, 0, 0, 1.05)]), mat: new THREE.MeshStandardMaterial({ color: 0x8c7a62, roughness: 0.9 }) };
       case "dormer": {
         // a slate-cheeked dormer: a small box with its own little gable
         const g = merge([box(1.3, 0.9, 1.5, 0, 0, 0), new THREE.ConeGeometry(0.95, 0.7, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 1.85)]);
@@ -1601,6 +1906,41 @@ export class RealCityLayer {
         for (const v of q) { pave.pos.push(v[0], v[1], v[2]); pave.nrm.push(0, 0, 1); pave.uv.push(v[0] / 1.5, v[1] / 1.5); pave.col.push(1, 1, 1); }
       }
     }
+    // EVERY PARK HAS AN EDGE. Blocks stand on raised footways with a kerb; a
+    // park's lawn met the frontage road with nothing between them, a green
+    // field pasted on the asphalt. The same 15 cm footway, 2.6 m wide, runs
+    // round the inside of every park outline, with its kerb on the road side.
+    const parkKerbs: P2[][] = [];
+    for (const pk of (this.ctx.parks ?? []) as ({ ring: P2[] } | P2[])[]) {
+      const ringLL = Array.isArray(pk) ? pk : pk.ring;
+      if (!ringLL || ringLL.length < 3) continue;
+      let ring = ringLL.map((q) => this.project(q));
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      if (Math.abs(ringArea(ring)) < 120) continue;
+      const inner = insetRing(ring, 2.6);
+      if (!inner) continue;
+      let tris: number[][] = [];
+      try {
+        tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), [inner.map(([x, y]) => new THREE.Vector2(x, y))]);
+      } catch { continue; }
+      const all = [...ring, ...inner];
+      for (const t of tris) {
+        const p = t.map((i) => [all[i][0], all[i][1], H]);
+        const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        const q = cr >= 0 ? p : [p[0], p[2], p[1]];
+        for (const v of q) { pave.pos.push(v[0], v[1], v[2]); pave.nrm.push(0, 0, 1); pave.uv.push(v[0] / 1.5, v[1] / 1.5); pave.col.push(1, 1, 1); }
+      }
+      parkKerbs.push([...ring, ring[0]]);
+    }
+    for (const pts of parkKerbs) {
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.05) continue;
+        const n = [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0];
+        kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], n, [[0, 0], [L, 0], [L, 1], [0, 1]], white);
+      }
+    }
     for (const line of c.kerbs ?? []) {
       const pts = line.map((q) => this.project(q));
       for (let i = 0; i + 1 < pts.length; i++) {
@@ -1612,7 +1952,8 @@ export class RealCityLayer {
       }
     }
     if (pave.count) {
-      const m = new THREE.Mesh(pave.geometry(), new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 }));
+      this.paveMat = new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 });
+      const m = new THREE.Mesh(pave.geometry(), this.paveMat);
       m.receiveShadow = true;
       this.scene.add(m);
     }
@@ -1659,6 +2000,155 @@ export class RealCityLayer {
     g.fillStyle = "#8f8676"; g.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 2500; i++) { const v = 110 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 6},${v - 18},0.6)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
     for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${90 + rnd() * 30 | 0},${110 + rnd() * 30 | 0},${60},0.45)`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 3 + rnd() * 8, 0, 6.28); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+
+  /** Hedges or fences round a fringe lot, and on the big ones a farmhouse, a barn and a track. */
+  private dressFarm(ring: P2[], kind: string, k: number, bbl: string, track: Buf) {
+    let rs = (k * 2246822519) % 2147483646 + 1;
+    const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+    const area = Math.abs(ringArea(ring));
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    // the boundary: a hedgerow round pasture and gardens, a post-and-rail
+    // fence round the scrub lots, gaps where the gate is
+    const item = kind === "scrub" ? "fence" : "hedge";
+    const step = item === "hedge" ? 2.5 : 3;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 4) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const nx = -uy, ny = ux;   // inward for a counter-clockwise ring
+      const gate = rnd() * L;
+      for (let t = step / 2; t < L - step / 2; t += step) {
+        if (Math.abs(t - gate) < 3.5 || rnd() < (item === "hedge" ? 0.08 : 0.04)) continue;
+        this.putInst(item, a[0] + ux * t + nx * 0.9, a[1] + uy * t + ny * 0.9, 0.03, item === "hedge" ? 0.85 + rnd() * 0.35 : 1, Math.atan2(uy, ux), bbl);
+      }
+    }
+    if (kind === "scrub" || area < 1200 || hash01(k ^ 0xba12, this.seed) > 0.6) return;
+    // a farmstead near the road side: the house facing the street, the barn behind
+    let li = 0, ll = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+    const A = ring[li], Bp = ring[(li + 1) % ring.length];
+    const ux = (Bp[0] - A[0]) / ll, uy = (Bp[1] - A[1]) / ll, nx = -uy, ny = ux;
+    const inside = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+    const rect = (t: number, d: number, w: number, h: number): P2[] => {
+      const ox = A[0] + ux * t + nx * d, oy = A[1] + uy * t + ny * d;
+      return [[ox, oy], [ox + ux * w, oy + uy * w], [ox + ux * w + nx * h, oy + uy * w + ny * h], [ox + nx * h, oy + ny * h]];
+    };
+    const fits = (r: P2[]) => r.every(([x, y]) => inside(x, y));
+    const t0 = ll * (0.25 + rnd() * 0.3);
+    const house = rect(t0, 6, 10, 8);
+    if (!fits(house)) return;
+    const HOUSE = [[1, 1, 1], [1.0, 0.95, 0.84], [0.78, 0.86, 0.74], [0.7, 0.8, 0.9]];
+    this.addVolume(house, 0, 6.2, "clapboard", HOUSE[(rnd() * HOUSE.length) | 0], bbl, true, false, k, false, true, "", 1890);
+    const barn = rect(t0 + 14, 14, 16, 11);
+    if (fits(barn)) this.addVolume(barn, 0, 7.5, "clapboard", [0.72, 0.36, 0.3], bbl, true, false, k ^ 0x5, false, true, "", 1890);
+    // the track in from the road to the yard
+    const tx = A[0] + ux * (t0 + 5) , ty = A[1] + uy * (t0 + 5);
+    const q = [[tx - ux * 1.6, ty - uy * 1.6], [tx + ux * 1.6, ty + uy * 1.6], [tx + ux * 1.6 + nx * 6, ty + uy * 1.6 + ny * 6], [tx - ux * 1.6 + nx * 6, ty - uy * 1.6 + ny * 6]];
+    for (const tri of [[0, 1, 2], [0, 2, 3]]) for (const i of tri) { track.pos.push(q[i][0], q[i][1], 0.045); track.nrm.push(0, 0, 1); track.uv.push(q[i][0] / 5, q[i][1] / 5); track.col.push(1, 1, 1); }
+    void cx; void cy;
+  }
+
+  private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private paveMat: THREE.MeshStandardMaterial | null = null;
+  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
+  private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
+  private wetSheet: THREE.Mesh | null = null;
+  private precip: THREE.LineSegments | null = null;
+  private precipKind: "" | "rain" | "snow" = "";
+  private wet = 0;
+  /**
+   * WEATHER YOU CAN SEE. The sky and the sun already followed it; now the
+   * ground does. Overcast: shadows soften to a smudge. Rain: the streets and
+   * footways go dark and glossy (a sheet of wet sheen over the ground,
+   * reflecting the sky) and rain streaks fall round the view. Snow: flakes
+   * drift down, and the footways, fields and rough grass whiten with the
+   * yards and lawns MapLibre paints (MapView) — the carriageways stay dark.
+   */
+  private applyWeather() {
+    const oc = this.overcast;
+    this.catcherMat.opacity = 0.42 * (1 - oc * 0.72);
+    const snowG = this.snowGround;
+    if (this.paveMat) {
+      this.paveMat.roughness = 0.86 - this.wet * 0.55;
+      const k = 1 - this.wet * 0.28;
+      this.paveMat.color.setRGB(k + (1.25 - k) * snowG, k + (1.25 - k) * snowG, k + (1.28 - k) * snowG);
+    }
+    this.wetMat.opacity = this.wet * 0.18;
+    if (this.wetMat.opacity > 0 && !this.wetSheet) {
+      this.wetMat.envMap = this.skyEnv;
+      this.wetSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.wetMat);
+      this.wetSheet.position.z = 0.032; this.wetSheet.renderOrder = -2; this.wetSheet.receiveShadow = true;
+      this.scene.add(this.wetSheet);
+    }
+    if (this.wetSheet) this.wetSheet.visible = this.wetMat.opacity > 0.001;
+    // the falling stuff
+    const want = this.wet > 0 ? "rain" : snowG > 0 ? "snow" : "";
+    if (want !== this.precipKind) {
+      if (this.precip) { this.scene.remove(this.precip); this.precip.geometry.dispose(); this.precip = null; }
+      this.precipKind = want;
+      if (want) {
+        const N = 5000, B = 1, H = 2;
+        const pos = new Float32Array(N * 6);
+        let s2 = 12345; const rnd = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+        const len = want === "rain" ? 0.012 : 0.0015;
+        for (let i = 0; i < N; i++) {
+          const x = (rnd() * 2 - 1) * B, y = (rnd() * 2 - 1) * B, z = rnd() * H;
+          pos.set([x, y, z, x + len * 0.15, y, z + len], i * 6);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        const mat = new THREE.LineBasicMaterial({ color: want === "rain" ? 0xbfc8d2 : 0xffffff, transparent: true, opacity: want === "rain" ? 0.45 : 0.9, depthWrite: false });
+        this.precip = new THREE.LineSegments(g, mat);
+        this.precip.frustumCulled = false;
+        this.precip.visible = this.quality !== "low";
+        this.scene.add(this.precip);
+      }
+    }
+    // the fields and rough grass under snow
+    this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.cropMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.map?.triggerRepaint();
+  }
+  private snowGround = 0;
+  /** Each frame: the precipitation box follows the view and falls. */
+  private stepPrecip(fx: number, fy: number, distM: number, t: number) {
+    if (!this.precip) return;
+    const B = Math.max(160, Math.min(900, distM * 0.7)), H = Math.max(120, Math.min(600, distM * 0.45));
+    const spd = this.precipKind === "rain" ? 14 : 1.6;
+    const off = (t * spd) % H;
+    this.precip.scale.set(B, B, H);
+    this.precip.position.set(fx, fy, -off);
+  }
+  private pierMatC: THREE.MeshStandardMaterial | null = null;
+  /** Weathered timber decking, boards across the pier. */
+  private pierMat(): THREE.MeshStandardMaterial {
+    if (this.pierMatC) return this.pierMatC;
+    const { c, g } = makeCanvas(64, 64);
+    let s = 31; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let y = 0; y < 64; y += 8) { const v = 0.85 + rnd() * 0.2; g.fillStyle = `rgb(${128 * v | 0},${108 * v | 0},${84 * v | 0})`; g.fillRect(0, y, 64, 7); g.fillStyle = "rgba(40,30,20,0.6)"; g.fillRect(0, y + 7, 64, 1); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+    this.pierMatC = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
+    return this.pierMatC;
+  }
+  /** A market garden: rows of plants on furrowed soil, 16 m along by 3.2 m across a tile. */
+  private cropTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(256, 64);
+    let s = 997; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#8a7356"; g.fillRect(0, 0, 256, 64);
+    for (let i = 0; i < 900; i++) { const v = rnd(); g.fillStyle = `rgba(${110 + v * 40 | 0},${88 + v * 30 | 0},${62 + v * 20 | 0},0.5)`; g.fillRect(rnd() * 256, rnd() * 64, 2, 1.5); }
+    for (const row of [16, 48]) {
+      for (let x = 0; x < 256; x += 3) {
+        const v = rnd();
+        g.fillStyle = `rgb(${96 + v * 30 | 0},${132 + v * 30 | 0},${62 + v * 18 | 0})`;
+        g.beginPath(); g.arc(x + rnd() * 2, row + (rnd() - 0.5) * 4, 5 + rnd() * 3, 0, 6.28); g.fill();
+      }
+    }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
@@ -1822,16 +2312,15 @@ export class RealCityLayer {
         // people on the footway, a few per block face, at a walking pace
         if (sw >= 1.8) {
           for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 28));
+            const n = Math.max(1, Math.round(L / 14));
             for (let k = 0; k < n; k++) {
-              if (rnd() < 0.3) continue;
               const fwd = rnd() < 0.5;
               const o = hw + sw * (0.35 + rnd() * 0.3);
               const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
               this.walkers.push({
                 x: sx + nx * o * side, y: sy + ny * o * side,
                 ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5,
-                col: COAT[(rnd() * COAT.length) | 0],
+                col: COAT[(rnd() * COAT.length) | 0], draw: rnd(),
               });
             }
           }
@@ -1840,9 +2329,8 @@ export class RealCityLayer {
         // in the running lane inside the parked row
         if (hw >= 5 && L > 50) {
           for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 45));
+            const n = Math.max(1, Math.round(L / 30));
             for (let k = 0; k < n; k++) {
-              if (rnd() < 0.35) continue;
               const o = Math.min(hw - 3.2, Math.max(1.8, hw * 0.45));
               // keep right: one side runs a→b, the other b→a
               const fwd = side < 0;
@@ -1850,7 +2338,7 @@ export class RealCityLayer {
               this.movers.push({
                 x: sx + nx * o * side, y: sy + ny * o * side,
                 ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5,
-                col: CAR[(rnd() * CAR.length) | 0],
+                col: CAR[(rnd() * CAR.length) | 0], draw: rnd(),
               });
             }
           }
@@ -1861,10 +2349,14 @@ export class RealCityLayer {
             if (sw >= 2) {
               const o = hw + Math.max(0.8, sw * 0.45);
               const sz = 0.75 + rnd() * 0.3;
+              // a third of the street trees are columnar — lindens and hornbeams
+              // pruned tall and narrow, as a city plants them
+              const col = rnd() < 0.33;
               this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
-              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28, "", leafCol());
+              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
             }
-            if (hw >= 5 && rnd() < 0.62) {
+            // kerbside parking fills where the demand is; a country road is clear
+            if (hw >= 5 && rnd() < 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) {
               const o = hw - 1.15;
               this.putInst("car", x + ux * 3 + nx * o * side, y + uy * 3 + ny * o * side, 0.05, 0.95 + rnd() * 0.12, rot + (side > 0 ? Math.PI : 0), "", CAR[(rnd() * CAR.length) | 0]);
             }
@@ -1932,11 +2424,66 @@ export class RealCityLayer {
         });
       }
     }
+    // THE PARKS AND THE OPEN GROUND: big round canopies of every size, and
+    // evergreens — a fifth of the trees in the parks, half in the cemeteries
+    const parksP = ((this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? [])
+      .map((pk) => Array.isArray(pk) ? { ring: pk.map((q) => this.project(q)), flavour: "park" } : { ring: (pk.ring ?? []).map((q) => this.project(q)), flavour: pk.flavour ?? "park" })
+      .filter((pk) => pk.ring.length >= 3);
+    const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       const [x, y] = this.project(p);
-      const sz = 1.0 + rnd() * 0.6;
-      this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
-      this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      const pk = parksP.find((q) => inRingP(x, y, q.ring));
+      const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
+      const sz = 0.8 + rnd() * 1.0;
+      if (rnd() < pineP) {
+        this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
+      } else {
+        this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
+        this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      }
+    }
+    // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,
+    // open where a walk comes in, and flower beds round its fountain or column
+    const paths = ((this.ctx as { paths?: P2[][] }).paths ?? []).map((l) => l.map((q) => this.project(q)));
+    const nearPath = (x: number, y: number, d: number) => paths.some((l) => {
+      for (let i = 0; i + 1 < l.length; i++) {
+        const a = l[i], b = l[i + 1], vx = b[0] - a[0], vy = b[1] - a[1];
+        const L2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (y - a[1]) * vy) / L2));
+        if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < d) return true;
+      }
+      return false;
+    });
+    const BED = [[0.86, 0.22, 0.2], [0.95, 0.78, 0.2], [0.62, 0.36, 0.72], [0.95, 0.92, 0.88], [0.95, 0.5, 0.62]];
+    for (const pk of parksP) {
+      if (pk.flavour === "market" || pk.flavour === "battery") continue;
+      let ring = pk.ring;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      if (Math.abs(ringArea(ring)) < 900) continue;
+      const inner = insetRing(ring, 3.6);
+      if (!inner) continue;
+      for (let i = 0; i < inner.length; i++) {
+        const a = inner[i], b = inner[(i + 1) % inner.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 3) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        for (let t = 1.3; t < L - 1.3; t += 2.5) {
+          const x = a[0] + ux * t, y = a[1] + uy * t;
+          if (nearPath(x, y, 3.2)) continue;
+          this.putInst("parkhedge", x, y, 0.03, 0.75, Math.atan2(uy, ux));
+        }
+      }
+      let a2 = 0, cx = 0, cy = 0;
+      for (let i = 0; i < ring.length; i++) { const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length]; const cr = x1 * y2 - x2 * y1; a2 += cr; cx += (x1 + x2) * cr; cy += (y1 + y2) * cr; }
+      if (Math.abs(a2) < 1e-6) continue;
+      cx /= 3 * a2; cy /= 3 * a2;
+      const n = Math.abs(a2) / 2 > 9000 ? 8 : 6;
+      for (let j = 0; j < n; j++) {
+        const t = (j / n) * Math.PI * 2 + 0.3;
+        const x = cx + Math.cos(t) * 9, y = cy + Math.sin(t) * 9;
+        if (nearPath(x, y, 1.8)) continue;
+        this.putInst("flowerbed", x, y, 0.03, 1, t, "", BED[(rnd() * BED.length) | 0]);
+      }
     }
     this.flushInst();
     const fleet = (kind: string, list: Mover[], z: number) => {
@@ -1950,7 +2497,7 @@ export class RealCityLayer {
     fleet("car", this.movers, 0.05);
     fleet("person", this.walkers, 0.15);
     fleet("ferry", this.boats, 0.05);
-    this.stepTraffic(0);
+    this.applyCrowd();
     this.applyMonth();
   }
 
@@ -1959,6 +2506,7 @@ export class RealCityLayer {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
     for (const f of this.fleets) {
       f.list.forEach((m, i) => {
+        if (i >= f.mesh.count) return;
         const d = (m.ph + t * m.spd) % m.len;
         p.set(m.x + m.ux * d, m.y + m.uy * d, f.z);
         q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
@@ -2009,9 +2557,11 @@ export class RealCityLayer {
           const cn = this.cond.get(bbl);
           if (cn !== undefined) {
             const worn = 1 - smooth(0.28, 0.62, cn), fresh = smooth(0.74, 0.94, cn);
-            const dk = (1 - worn * 0.24) * (1 + fresh * 0.05);
+            const dk = (1 - worn * 0.34) * (1 + fresh * 0.08);
             // and greyer: pull the three channels toward their mean
-            k = [k[0] * dk * (1 - worn * 0.10), k[1] * dk, k[2] * dk * (1 + worn * 0.06)];
+            const mean = (k[0] + k[1] + k[2]) / 3;
+            const g2 = worn * 0.45;
+            k = [(k[0] + (mean - k[0]) * g2) * dk * (1 - worn * 0.06), (k[1] + (mean - k[1]) * g2) * dk, (k[2] + (mean - k[2]) * g2) * dk * (1 + worn * 0.04)];
           }
           // the selected building glows warm all over; yours are warmed a touch
           if (own) k = [k[0] * 1.08, k[1], k[2] * 0.86];
@@ -2111,9 +2661,28 @@ export class RealCityLayer {
     this.renderer && (this.renderer.shadowMap.needsUpdate = true);
   }
 
-  setPlayerBuildings(items: PlayerItem[]) {
-    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}`).join("|");
-    if (sig === this.dynSig) return;
+  /**
+   * THE SCHEME ON THE DESK, STANDING ON ITS LOT. While the player designs a
+   * building it is drawn finished, in its chosen look, where it will stand —
+   * among its real neighbours, at its real height — and redrawn on every
+   * change. Cleared when the desk closes or the ground breaks.
+   */
+  setPreview(item: PlayerItem | null) {
+    const sig = item ? JSON.stringify(item) : "";
+    if (sig === this.previewSig) return;
+    this.previewSig = sig;
+    this.preview = item;
+    this.setPlayerBuildings(this.lastItems, true);
+  }
+  private preview: PlayerItem | null = null;
+  private previewSig = "";
+  private lastItems: PlayerItem[] = [];
+
+  setPlayerBuildings(items0: PlayerItem[], force = false) {
+    this.lastItems = items0;
+    const items = this.preview ? [...items0.filter((i) => i.bbl !== this.preview!.bbl), this.preview] : items0;
+    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}:${i.design ? JSON.stringify(i.design) : ""}`).join("|");
+    if (sig === this.dynSig && !force) return;
     this.dynSig = sig;
     for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
     this.dynHeight.clear();
@@ -2133,10 +2702,44 @@ export class RealCityLayer {
       const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
       const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
       const h = Math.max(3, it.heightM);
-      const fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
+      let fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
       const k = keyOf(it.bbl);
+      // the developer's own design, where there is one (BuildingDesign)
+      const d = it.construction ? undefined : it.design;
+      let variant: string | undefined;
+      if (d?.facade) {
+        const base = d.facade.split("#")[0];
+        if (this.families[base]) { fam = base; variant = this.families[d.facade] ? d.facade : base; }
+      }
+      const ov: VolumeOv | undefined = d ? { variant, trim: d.trim, roof: d.roof } : undefined;
+      const pitched = !!d && (d.roof === "gable" || d.roof === "hip") && ring.length === 4;
       const tints = TINTS[fam];
-      this.addVolume(ring, 0, h, fam, tints[Math.floor(hash01(k, this.seed) * tints.length)], it.bbl, true, !it.construction, k, false, false, it.construction ? "" : it.cls);
+      const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];
+      const shop = it.cls === "retail" || it.cls === "mixed";
+      let topRing = ring;
+      if (it.construction) {
+        // a job site goes up in stages, not as a grey box (buildSite)
+        this.buildSite(ring, it, k, cx, cy);
+        this.dynHeight.set(it.bbl, h);
+        craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+        continue;
+      }
+      if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
+        // the wedding cake: a full-lot base, a terrace, a slim shaft
+        const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+        const h1 = h * 0.55, h2 = h * 0.82;
+        this.addVolume(ring, 0, h1, fam, tint, it.bbl, true, false, k, shop, false, it.cls, 0, ov);
+        this.addVolume(at(0.84), h1, h2, fam, tint, it.bbl, true, false, k, false, false, "", 0, ov);
+        topRing = at(0.68);
+        this.addVolume(topRing, h2, h, fam, tint, it.bbl, true, true, k, false, false, it.cls, 0, ov);
+      } else {
+        this.addVolume(ring, 0, h, fam, tint, it.bbl, true, !it.construction, k, !it.construction && shop, pitched, it.construction ? "" : it.cls, 0, ov);
+      }
+      if (!it.construction) {
+        // a crown the player named (towers only); otherwise the period's own
+        const kind = d?.crown && d.crown !== "cake" && it.floors >= CROWN_MIN_FLOORS ? d.crown : "auto";
+        this.towerTop(topRing, h, h, fam, tint, it.bbl, k, kind as "auto" | "none" | "setback" | "spire" | "mast", ov);
+      }
       this.dynHeight.set(it.bbl, h);
       if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
     }
@@ -2144,7 +2747,7 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = mesh.receiveShadow = true;
       this.dyn.add(mesh); dynMeshes.set(name, mesh);
@@ -2212,6 +2815,9 @@ export class RealCityLayer {
     this.shadowSpan = 0;   // force a refit
     // the rough grass on unbuilt land: straw in winter, green by June
     const vig = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02][this.month];
+    // the gardens: bare soil in winter, green rows through summer, gold at harvest
+    const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
+    this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     const leaf = this.inst.get("crown");
@@ -2220,9 +2826,12 @@ export class RealCityLayer {
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];
       this.leafMat.color.setRGB(1, 1, 1);
       const autumn = [[1.9, 0.62, 0.3], [1.8, 1.05, 0.36], [1.55, 1.25, 0.4], [0.9, 1.0, 0.8]];
+      // five greens and the odd copper beech, by tree
+      const PAL = [[0.30, 0.47, 0.20], [0.38, 0.53, 0.19], [0.22, 0.40, 0.22], [0.27, 0.42, 0.29], [0.34, 0.50, 0.24], [0.42, 0.26, 0.24]];
       for (let i = 0; i < leaf.count; i++) {
         const h = hash01(i, 77);
-        let c = new THREE.Color(0.30 + h * 0.08, 0.46 + h * 0.08, 0.20);
+        const pc = PAL[h < 0.04 ? 5 : Math.floor(hash01(i, 91) * 5)];
+        let c = new THREE.Color(pc[0] * (0.92 + h * 0.16), pc[1] * (0.92 + h * 0.16), pc[2]);
         if (turn > 0) { const a = autumn[Math.floor(h * 4)]; c.lerp(new THREE.Color(c.r * a[0], c.g * a[1], c.b * a[2]), turn); }
         if (bare > 0) c = c.lerp(new THREE.Color(0.30, 0.27, 0.24), bare * 0.85);
         leaf.setColorAt(i, c);
@@ -2230,13 +2839,23 @@ export class RealCityLayer {
       if (leaf.instanceColor) leaf.instanceColor.needsUpdate = true;
       leaf.scale.set(1, 1, 1);
     }
+    // the beds are bare earth November to March
+    const beds = this.inst.get("flowerbed");
+    if (beds) beds.visible = this.month >= 3 && this.month <= 9;
+    // evergreens keep their needles; a dusting of snow lightens them
+    this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
     this.applyLight();
+    this.applyWeather();
   }
 
   setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
     this.snow = kind === "snow" ? 0.3 + Math.max(0, Math.min(1, precipitation)) * 0.5 : 0;
     this.overcast = Math.max(0, Math.min(1, overcast || 0));
+    const pr = Math.max(0, Math.min(1, precipitation || 0));
+    this.wet = kind === "rain" ? 0.5 + pr * 0.5 : 0;
+    this.snowGround = kind === "snow" ? 0.35 + pr * 0.55 : 0;
     this.applyLight();
+    this.applyMonth();   // which re-applies the weather on top of the season
   }
   private overcast = 0;
 
@@ -2306,9 +2925,64 @@ export class RealCityLayer {
   setOccupancy(o: Map<string, number>) {
     this.occ = new Map(o);
     for (const d of [this.deeds, this.dynDeeds]) for (const [bbl, deed] of d) this.paintLit(bbl, deed);
+    this.paintBanners();
     this.map?.triggerRepaint();
   }
   private occ = new Map<string, number>();
+  private leaseMeshes: THREE.InstancedMesh[] = [];
+  /**
+   * EMPTY SPACE ADVERTISES ITSELF. With no night there are no dark floors to
+   * read vacancy off, so a building with space to let does what one does on
+   * a real street: hangs a banner. One under 80% let (a fifth of the space
+   * empty — about one building in six at a normal vacancy), two on its two
+   * longest walls under 55%; red FOR LEASE or yellow SPACE AVAILABLE by the
+   * building's own hash. Read from the same occupancy map the windows use.
+   */
+  private paintBanners() {
+    for (const m of this.leaseMeshes) { this.scene.remove(m); m.dispose(); }
+    this.leaseMeshes = [];
+    const spots: { x: number; y: number; z: number; r: number; w: number; kind: number }[][] = [[], []];
+    for (const deeds of [this.deeds, this.dynDeeds]) for (const [bbl, d] of deeds) {
+      const o = this.occ.get(bbl);
+      if (o === undefined || o >= 0.8 || !d.ring || d.height < 6) continue;
+      if (this.dynHeight.has(bbl) && deeds === this.deeds) continue;   // redeveloped: the new building speaks
+      let ring = d.ring;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      const edges = ring.map((a, i) => { const b = ring[(i + 1) % ring.length]; return { a, b, L: Math.hypot(b[0] - a[0], b[1] - a[1]) }; })
+        .filter((e) => e.L > 5).sort((p, q) => q.L - p.L);
+      const k = keyOf(bbl);
+      const kind = hash01(k ^ 0x1ea5e, this.seed) < 0.6 ? 0 : 1;
+      for (const e of edges.slice(0, o < 0.55 ? 2 : 1)) {
+        const nx = (e.b[1] - e.a[1]) / e.L, ny = -(e.b[0] - e.a[0]) / e.L;
+        const w = Math.max(5, Math.min(13, e.L * 0.7));
+        const t = 0.3 + 0.4 * hash01(k ^ 0x5a1, 7);
+        const z = Math.max(3.2, d.height - 2.4 - (d.height > 20 ? hash01(k, 9) * 6 : 0));
+        spots[kind].push({ x: e.a[0] + (e.b[0] - e.a[0]) * t + nx * 0.18, y: e.a[1] + (e.b[1] - e.a[1]) * t + ny * 0.18, z, r: Math.atan2(ny, nx) + Math.PI / 2, w, kind });
+      }
+    }
+    spots.forEach((list, kind) => {
+      if (!list.length) return;
+      const geo = new THREE.PlaneGeometry(1, 1).rotateX(Math.PI / 2);
+      const mesh = new THREE.InstancedMesh(geo, this.bannerMat(kind), list.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      list.forEach((b, i) => { q.setFromEuler(e.set(0, 0, b.r)); mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(b.w, 1, b.w * 0.24))); });
+      mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      this.scene.add(mesh); this.leaseMeshes.push(mesh);
+    });
+  }
+  private bannerMats: THREE.Material[] = [];
+  private bannerMat(kind: number): THREE.Material {
+    if (this.bannerMats[kind]) return this.bannerMats[kind];
+    const { c, g } = makeCanvas(512, 128);
+    g.fillStyle = kind === 0 ? "#b5121b" : "#f2c230"; g.fillRect(0, 0, 512, 128);
+    g.strokeStyle = kind === 0 ? "#f4f0e6" : "#1d1d1d"; g.lineWidth = 6; g.strokeRect(8, 8, 496, 112);
+    g.fillStyle = kind === 0 ? "#f8f5ee" : "#1d1d1d";
+    g.font = "bold 70px Arial, Helvetica, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(kind === 0 ? "FOR LEASE" : "SPACE TO LET", 256, 68);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    this.bannerMats[kind] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.2 });
+    return this.bannerMats[kind];
+  }
   private paintLit(bbl: string, d: Deed) {
     const o = this.occ.get(bbl);
     // the tile itself is ~55% lit rooms; full let reads ~1.6x that, empty near dark
@@ -2331,8 +3005,55 @@ export class RealCityLayer {
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }
-  setActivity(_a: number) { /* no animated walkers here */ }
-  setDemandMap(_m: Record<string, number>) { /* foot traffic: classic renderer */ }
+  /**
+   * CROWDS FOLLOW THE ECONOMY. Every person and car on the street carries a
+   * draw and the demand of the ground under it; it is on the street when
+   * draw < activity x (0.3 + 0.9 x local demand). A thriving downtown
+   * throngs, a district losing its tenants empties out, and the whole town
+   * thins in a slump (cityVisuals' activity, 0.38-1.05).
+   */
+  setActivity(a: number) {
+    this.activity = Math.max(0.2, Math.min(1.1, a));
+    this.applyCrowd();
+  }
+  private activity = 0.8;
+  setDemandMap(m: Record<string, number>) { this.demand = m; this.demandGrid = null; }
+  private demand: Record<string, number> = {};
+  private demandGrid: Map<string, number> | null = null;
+  /** Demand (0-1) near a point, from the lots' scores averaged on an 80 m grid. */
+  private demandAt(x: number, y: number): number {
+    if (!this.demandGrid) {
+      const sum = new Map<string, [number, number]>();
+      for (const [bbl, ringLL] of Object.entries(this.lotRingLL)) {
+        const sc = this.demand[bbl];
+        if (sc === undefined || !ringLL.length) continue;
+        let cx = 0, cy = 0;
+        for (const q of ringLL) { const [px, py] = this.project(q); cx += px; cy += py; }
+        cx /= ringLL.length; cy /= ringLL.length;
+        const key = `${Math.floor(cx / 80)},${Math.floor(cy / 80)}`;
+        const r = sum.get(key) ?? [0, 0]; r[0] += sc; r[1]++; sum.set(key, r);
+      }
+      this.demandGrid = new Map([...sum].map(([k, [a, n]]) => [k, a / n / 100]));
+    }
+    const gx = Math.floor(x / 80), gy = Math.floor(y / 80);
+    let acc = 0, n = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const v = this.demandGrid.get(`${gx + i},${gy + j}`); if (v !== undefined) { acc += v; n++; } }
+    return n ? acc / n : 0.5;
+  }
+  private applyCrowd() {
+    for (const f of this.fleets) {
+      if (f.list === this.boats) continue;
+      for (const m of f.list) if (m.dem === undefined) m.dem = this.demandAt(m.x, m.y);
+      const on = (m: Mover) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5)) * this.crowdK;
+      // the walkers on the street first, so the mesh can simply draw a prefix
+      f.list.sort((p, q) => Number(on(q)) - Number(on(p)));
+      f.list.forEach((m, i) => f.mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
+      if (f.mesh.instanceColor) f.mesh.instanceColor.needsUpdate = true;
+      f.mesh.count = f.list.filter(on).length;
+    }
+    this.stepTraffic(performance.now() / 1000);
+    this.map?.triggerRepaint();
+  }
   setPreferFps(on: boolean) {
     this.preferFps = on;
     const sz = on ? 2048 : 4096;
@@ -2342,6 +3063,23 @@ export class RealCityLayer {
       (this.sun.shadow as { map: THREE.WebGLRenderTarget | null }).map = null;
       this.shadowSpan = 0;
     }
+  }
+  /**
+   * Graphics quality. High is everything; Medium halves the shadow map, thins
+   * the crowds and stops drawing street furniture sooner; Low also drops cast
+   * shadows and the falling rain and snow. Looks only — nothing here reads the
+   * game state, and the city underneath is the same city.
+   */
+  setQuality(q: "low" | "medium" | "high") {
+    this.quality = q;
+    this.setPreferFps(q !== "high");
+    this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
+    this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
+    this.sun.castShadow = q !== "low";
+    if (this.catcher) this.catcher.visible = q !== "low";
+    if (this.precip) this.precip.visible = q !== "low";
+    if (this.fleets.length) this.applyCrowd();
+    this.map?.triggerRepaint();
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {

@@ -1080,6 +1080,59 @@ export class RealCityLayer {
     const d2 = this.deedOf(bbl); d2.height = Math.max(d2.height, z1 + 8);
   }
 
+  /**
+   * A BUILDING SITE, BY STAGE. Plywood hoarding round the lot from the first
+   * day. Under a fifth of the way: a dug pit with an excavator in it. Past
+   * that: a frame rising floor by floor — columns and slabs — with the
+   * cladding following two floors behind it, so the top of a rising tower is
+   * always open steel and concrete, and the cladding closes the last of it
+   * just before delivery. Progress is the job's own (heightM / full height).
+   */
+  private buildSite(ring: P2[], it: PlayerItem, k: number, cx: number, cy: number) {
+    const FL = 3.55;
+    const full = Math.max(FL, it.floors * FL);
+    const h = Math.max(1, it.heightM);
+    const prog = Math.min(1, h / full);
+    // the hoarding, 1.5 m outside the footprint
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 2) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const ox = uy * 1.5, oy = -ux * 1.5;      // outward for a counter-clockwise ring
+      for (let t = 1.2; t < L; t += 2.44) this.putInst("hoard", a[0] + ux * t + ox, a[1] + uy * t + oy, 0.15, 1, Math.atan2(uy, ux), it.bbl);
+    }
+    const tri = (z: number, buf: string, col: number[]) => {
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { return; }
+      const B = this.buf(buf); const b0 = B.count;
+      for (const t of tris) B.tri([ring[t[0]][0], ring[t[0]][1], z], [ring[t[1]][0], ring[t[1]][1], z], [ring[t[2]][0], ring[t[2]][1], z], [0, 0, 1], col);
+      this.note(it.bbl, buf, b0);
+    };
+    if (prog < 0.2) {
+      tri(0.05, "trim", [0.62, 0.47, 0.33]);                   // the pit, raw earth
+      this.putInst("digger", cx, cy, 0.06, 1, hash01(k, 3) * 6.28, it.bbl);
+      return;
+    }
+    // the clad part, two floors (more early on) behind the frame
+    const lag = FL * (prog < 0.5 ? 3 : 2);
+    const clad = prog > 0.97 ? h : Math.max(0, h - lag);
+    if (clad > FL) this.addVolume(ring, 0, clad, "frame", [1, 1, 1], it.bbl, false, false, k);
+    // the open frame above it: a slab every floor, a column every 6 m round the edge
+    for (let z = Math.max(FL, Math.ceil(clad / FL) * FL); z <= h + 0.01; z += FL) tri(z, "trim", [0.82, 0.82, 0.8]);
+    if (h - clad > 0.5) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const n = Math.max(1, Math.round(L / 6));
+        for (let j = 0; j < n; j++) {
+          const t = j / n;
+          this.putInst("steel", a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, clad, 1, 0, it.bbl, undefined, (h - clad) / 3.55);
+        }
+      }
+    }
+  }
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
@@ -1597,6 +1650,13 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "steel": return { g: merge([box(0.45, 0.45, 3.55, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.6, metalness: 0.3 }) };
+      case "hoard": return { g: merge([box(2.42, 0.06, 2.4, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.9 }) };
+      case "digger": {
+        // an excavator: tracks, cab, boom
+        const g = merge([box(3.2, 2.6, 0.9, 0, 0, 0), box(2.2, 2.2, 1.6, 0, 0, 0.9), box(3.6, 0.5, 0.5, 2.4, 0, 2.2), box(0.5, 0.5, 2.2, 4.0, 0, 0.3)]);
+        return { g, mat: new THREE.MeshStandardMaterial({ color: 0xe0a21a, roughness: 0.6 }) };
+      }
       case "pine": {
         // a conifer: a short trunk and three tiers of needles
         const cone = (r: number, h: number, z: number) => new THREE.ConeGeometry(r, h, 8).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
@@ -2463,6 +2523,13 @@ export class RealCityLayer {
       const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];
       const shop = it.cls === "retail" || it.cls === "mixed";
       let topRing = ring;
+      if (it.construction) {
+        // a job site goes up in stages, not as a grey box (buildSite)
+        this.buildSite(ring, it, k, cx, cy);
+        this.dynHeight.set(it.bbl, h);
+        craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+        continue;
+      }
       if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
         // the wedding cake: a full-lot base, a terrace, a slim shaft
         const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);

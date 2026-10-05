@@ -552,3 +552,13 @@ of the trees in the parks, half in the cemeteries, and keep their needles in
 winter. Parks gain a clipped low hedge just inside the footway, open where a
 walk comes in, and flower beds round the fountain or column — bare earth
 November to March. `docs/map-overhaul/p14-*.jpg`.
+
+# BUILDING SITES GO UP IN STAGES
+
+A job was a grey box growing taller with a crane on it. Now every site —
+yours and the rivals' — has plywood hoarding round the lot from day one;
+under a fifth of the way it is a dug pit with an excavator; past that a
+frame rises floor by floor, rusted steel columns every 6 m and a concrete
+slab each storey, with the cladding following two floors behind (three
+early on), so the top of a rising tower is always open structure until the
+cladding closes it just before delivery. `docs/map-overhaul/p15-construction.jpg`.

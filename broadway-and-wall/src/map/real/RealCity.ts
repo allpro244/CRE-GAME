@@ -318,6 +318,7 @@ class Buf {
   }
 }
 
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[] }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 
@@ -451,7 +452,7 @@ export class RealCityLayer {
     this.stepDusk();
     this.fitShadow(fx, fy, distM);
     this.renderer.resetState();
-    if (this.traffic && !this.paused && typeof document !== "undefined" && !document.hidden) {
+    if (this.fleets.length && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
       this.stepTraffic(now / 1000);
       // ~30 fps for the traffic; MapLibre only paints on demand
@@ -756,6 +757,11 @@ export class RealCityLayer {
         return { g: merge([body, cab]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }), colored: true };
       }
       case "lamp": return { g: merge([cyl(0.09, 6, 0, 6), box(1.4, 0.18, 0.14, 0.6, 0, 5.9)]), mat: new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4 }) };
+      case "person": return { g: merge([box(0.42, 0.3, 0.95, 0, 0, 0), box(0.46, 0.34, 0.6, 0, 0, 0.9), new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0, 1.68)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      case "fountain": return { g: merge([cyl(5.2, 0.55, 0, 24), cyl(1.1, 1.6, 0.55, 12), cyl(2.4, 0.3, 2.1, 16), cyl(0.5, 1.1, 2.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.7 }) };
+      case "basin": return { g: merge([cyl(4.6, 0.08, 0.5, 24), cyl(2.1, 0.06, 2.38, 16)]), mat: new THREE.MeshStandardMaterial({ color: 0x3b6f82, roughness: 0.08, metalness: 0.1, envMapIntensity: 1.3 }) };
+      case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
+      case "hull": return { g: merge([box(5.0, 1.9, 0.6, -0.3, 0, -0.25), box(1.3, 1.25, 0.55, 2.75, 0, -0.2), box(1.7, 1.35, 0.85, -0.9, 0, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), colored: true };
       default: return { g: box(1, 1, 1), mat: this.trimMat };
     }
   }
@@ -922,6 +928,7 @@ export class RealCityLayer {
     const meta = (this.ctx as { curbMeta?: { hw: number[]; sw: number[] }[] }).curbMeta ?? [];
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
     const leafCol = () => [0.32 + rnd() * 0.08, 0.46 + rnd() * 0.1, 0.20 + rnd() * 0.06];
+    const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
     this.curbs.forEach((line, li) => {
       const pts = line.map((p) => this.project(p));
       const hwA = meta[li]?.hw ?? [], swA = meta[li]?.sw ?? [];
@@ -933,6 +940,23 @@ export class RealCityLayer {
         const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
         const hw = hwA[i] ?? 6, sw = swA[i] ?? 2.5;
         const rot = Math.atan2(uy, ux);
+        // people on the footway, a few per block face, at a walking pace
+        if (sw >= 1.8) {
+          for (const side of [-1, 1]) {
+            const n = Math.max(1, Math.round(L / 28));
+            for (let k = 0; k < n; k++) {
+              if (rnd() < 0.3) continue;
+              const fwd = rnd() < 0.5;
+              const o = hw + sw * (0.35 + rnd() * 0.3);
+              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
+              this.walkers.push({
+                x: sx + nx * o * side, y: sy + ny * o * side,
+                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5,
+                col: COAT[(rnd() * COAT.length) | 0],
+              });
+            }
+          }
+        }
         // moving traffic on the wider streets: one car per ~45 m each way,
         // in the running lane inside the parked row
         if (hw >= 5 && L > 50) {
@@ -973,6 +997,41 @@ export class RealCityLayer {
         }
       }
     });
+    // what the park walks converge on: a column in the big parks, a fountain
+    // in the squares
+    for (const pk of (this.ctx as { parks?: { ring: P2[]; flavour?: string }[] }).parks ?? []) {
+      if (!pk.ring || pk.ring.length < 3) continue;
+      if (pk.flavour === "cemetery" || pk.flavour === "market" || pk.flavour === "battery") continue;
+      const r = pk.ring.map((q) => this.project(q));
+      let a2 = 0, cx = 0, cy = 0;
+      for (let i = 0; i < r.length; i++) { const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length]; const cr = x1 * y2 - x2 * y1; a2 += cr; cx += (x1 + x2) * cr; cy += (y1 + y2) * cr; }
+      if (Math.abs(a2) < 1e-6) continue;
+      const area = Math.abs(a2) / 2;
+      cx /= 3 * a2; cy /= 3 * a2;
+      if (area > 9000) this.putInst("column", cx, cy, 0.07, 1, 0);
+      else if (area > 1800) { this.putInst("fountain", cx, cy, 0.07, 1, 0); this.putInst("basin", cx, cy, 0.07, 1, 0); }
+    }
+    // launches tied up along canal and slip walls, every ~14 m with gaps
+    const HULL = [[0.92, 0.92, 0.9], [0.86, 0.85, 0.8], [0.16, 0.22, 0.34], [0.2, 0.32, 0.26], [0.52, 0.2, 0.17], [0.3, 0.3, 0.31]];
+    for (const st of (this.ctx as { streams?: { ring: P2[]; water: string }[] }).streams ?? []) {
+      if (st.water !== "slip" && st.water !== "canal") continue;
+      const r = st.ring.map((q) => this.project(q));
+      const ccw = ringArea(r) > 0;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 12) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        // inward normal of the water ring
+        const nx = ccw ? -uy : uy, ny = ccw ? ux : -ux;
+        for (let t = 6; t < L - 6; t += 14) {
+          if (rnd() < 0.45) continue;
+          const off = st.water === "slip" ? 2.4 : 1.8;
+          const s = st.water === "slip" ? 1.3 + rnd() * 0.5 : 0.9 + rnd() * 0.3;
+          this.putInst("hull", a[0] + ux * t + nx * off, a[1] + uy * t + ny * off, 0.05, s, Math.atan2(uy, ux) + (rnd() < 0.5 ? Math.PI : 0), "", HULL[(rnd() * HULL.length) | 0]);
+        }
+      }
+    }
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       const [x, y] = this.project(p);
       const sz = 1.0 + rnd() * 0.6;
@@ -980,32 +1039,36 @@ export class RealCityLayer {
       this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
     }
     this.flushInst();
-    if (this.movers.length) {
-      const { g, mat } = this.geomFor("car");
-      const mesh = new THREE.InstancedMesh(g, mat, this.movers.length);
-      this.movers.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
+    const fleet = (kind: string, list: Mover[], z: number) => {
+      if (!list.length) return;
+      const { g, mat } = this.geomFor(kind);
+      const mesh = new THREE.InstancedMesh(g, mat, list.length);
+      list.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
       mesh.receiveShadow = true; mesh.frustumCulled = false;
-      this.traffic = mesh; this.scene.add(mesh);
-      this.stepTraffic(0);
-    }
+      this.scene.add(mesh); this.fleets.push({ mesh, list, z });
+    };
+    fleet("car", this.movers, 0.05);
+    fleet("person", this.walkers, 0.15);
+    this.stepTraffic(0);
     this.applyMonth();
   }
 
-  /** Drive every moving car to where it is at time t (seconds): a patrol along its own block face that wraps. */
+  /** Move every car and walker to where it is at time t (seconds): a patrol along its own block face that wraps. */
   private stepTraffic(t: number) {
-    const mesh = this.traffic;
-    if (!mesh) return;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
-    this.movers.forEach((m, i) => {
-      const d = (m.ph + t * m.spd) % m.len;
-      p.set(m.x + m.ux * d, m.y + m.uy * d, 0.05);
-      q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
-      mesh.setMatrixAt(i, m4.compose(p, q, one));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
+    for (const f of this.fleets) {
+      f.list.forEach((m, i) => {
+        const d = (m.ph + t * m.spd) % m.len;
+        p.set(m.x + m.ux * d, m.y + m.uy * d, f.z);
+        q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
+        f.mesh.setMatrixAt(i, m4.compose(p, q, one));
+      });
+      f.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
-  private movers: { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[] }[] = [];
-  private traffic: THREE.InstancedMesh | null = null;
+  private movers: Mover[] = [];
+  private walkers: Mover[] = [];
+  private fleets: { mesh: THREE.InstancedMesh; list: Mover[]; z: number }[] = [];
   private paused = false;
   private lastTick = 0;
 

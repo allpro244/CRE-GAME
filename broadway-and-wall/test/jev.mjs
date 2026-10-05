@@ -210,9 +210,16 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
         const d0 = rival(s, r.id).debt;
         s = step(s);
         const e = (s.jevBooks?.[r.id] ?? []).find((x) => x.kind === "refi" && x.by === "jev");
-        check(!!e && e.debtDelta === e.cashDelta && e.amount > 1_000_000, `refi yes (0.9) takes the scripted room: +${e ? (e.amount / 1e6).toFixed(2) : "?"}M debt on ${r.name} (year ${y})`);
+        // The desks re-size at the table: room that was there when the firm
+        // was asked can be gone a step later (the engine logs "no longer
+        // eligible" and falls back — the right call). That refi was never
+        // taken, so keep walking for one that is.
+        const stale = !e && (s.jev?.log ?? []).some((l) => l.firmId === r.id && l.point === "refi" && l.path === "fallback" && /no longer eligible/.test(l.action ?? ""));
+        if (!stale) {
+          check(!!e && e.debtDelta === e.cashDelta && e.amount > 1_000_000, `refi yes (0.9) takes the scripted room: +${e ? (e.amount / 1e6).toFixed(2) : "?"}M debt on ${r.name} (year ${y})`);
+          refiDone = true;
+        }
         void d0;
-        refiDone = true;
       }
       if (!buildDone && b.ctx.build.length) {
         const o = b.ctx.build[0];

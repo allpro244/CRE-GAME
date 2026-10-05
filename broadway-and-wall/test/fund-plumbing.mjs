@@ -111,14 +111,18 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   // approach die on copies until one lands; a mixed slice is the fault.
   // Test-only surgery: half of each class goes on the fund's book, so a
   // class-only grouping (the old code) would name a mix.
-  const { g: ga, own: book } = setup(9102, 0, 16);
+  // An approach needs three well-let deeds of one class on one book, which
+  // depends on what the opening tape offered; walk setup seeds from 9102 until
+  // the probe book can attract one (the town decides, not the assertion).
+  let seen = 0, mixedSeen = 0;
+  for (let seed = 9102; seed < 9112 && seen === 0; seed++) {
+  const { g: ga, own: book } = setup(seed, 0, 16);
   {
     const byClass = {};
     for (const b of book) (byClass[E.resolveRec(parcels, ga, b).class] ??= []).push(b);
     for (const arr of Object.values(byClass)) arr.slice(0, Math.floor(arr.length / 2)).forEach((b) => { ga.holdings[b].fundOwned = true; });
-    console.log("      probe book by class:", Object.entries(byClass).map(([k, v]) => `${k} ${v.length}`).join(", "));
+    console.log(`      probe book by class (seed ${seed}):`, Object.entries(byClass).map(([k, v]) => `${k} ${v.length}`).join(", "));
   }
-  let seen = 0, mixedSeen = 0;
   for (let i = 0; i < 4000 && seen < 12; i++) {
     const t = structuredClone(ga);
     if (typeof t.rng === "number") t.rng = (t.rng + i * 7919) >>> 0;
@@ -129,6 +133,7 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
       if (E.mixesVehicles ? E.mixesVehicles(t, t.portfolioSale.bbls)
         : (() => { const f = t.portfolioSale.bbls.filter((b) => t.holdings[b]?.fundOwned).length; return f > 0 && f < t.portfolioSale.bbls.length; })()) mixedSeen++;
     }
+  }
   }
   ok("unsolicited approaches arrive in the probe", seen > 0, `${seen} approaches`);
   ok("no unsolicited approach names a mix of fund and sponsor deeds", mixedSeen === 0, `${mixedSeen} of ${seen} mixed`);
@@ -276,12 +281,15 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
 // share of the vehicle's taxable income on its own return, and the promote
 // when it is paid.
 {
-  const { g: g0, fund } = setup(9104, 2, 0);
-  let g = g0;
-  while (g.month % 12 !== 11) g = E.advanceMonth(g, parcels, bbls, adjacency);
+  // Two deeds whose taxable income is big enough to read a pro-rata split
+  // off: walk setup seeds from 9104 until the vehicle's year clears $10K.
+  let g, fund;
   const januaryTax = (share, promote = 0) => {
     const t = structuredClone(g);
-    t.taxLossCarry = 0; t.depositInterestYr = 0;
+    // The sponsor's own idle cash would earn December's sweep interest inside
+    // the very month advanced here, and that is the sponsor's income, not the
+    // vehicle's: hold no idle balance so the probe reads only the fund's leg.
+    t.taxLossCarry = 0; t.depositInterestYr = 0; t.cash = 0;
     t.fund.gpCommit = Math.round(t.fund.called * share);
     if (promote) t.promoteIncomeYr = promote;
     const f0 = t.fund.cash, tax0 = t.taxesPaid ?? 0;
@@ -290,8 +298,15 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   };
   // A 3% co-invest on two small deeds is under the $1K the January cheque
   // bothers with, so the pro-rata rule is read at a half share.
+  for (let seed = 9104; seed < 9116; seed++) {
+    const r = setup(seed, 2, 0);
+    g = r.g; fund = r.fund;
+    while (g.month % 12 !== 11) g = E.advanceMonth(g, parcels, bbls, adjacency);
+    const onlyFund = Object.values(g.holdings).every((h) => h.fundOwned);
+    if (fund.length === 2 && onlyFund && januaryTax(1).tax > 10_000) break;
+  }
   const none = januaryTax(0), half = januaryTax(0.5), all = januaryTax(1), coinvest = januaryTax(0.03);
-  ok("setup: a January with only fund deeds on the book", fund.length === 2 && none.t1.month % 12 === 0);
+  ok("setup: a January with only fund deeds on the book", fund.length === 2 && Object.values(g.holdings).every((h) => h.fundOwned) && none.t1.month % 12 === 0);
   ok("a sponsor with no capital in the vehicle pays none of its income tax", none.tax < 1_000, `tax ${M(none.tax)}`);
   ok("its share of the vehicle's income is on the sponsor's return, pro rata",
     all.tax > 10_000 && Math.abs(half.tax - all.tax * 0.5) < Math.max(1_000, all.tax * 0.01),

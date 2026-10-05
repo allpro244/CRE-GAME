@@ -434,9 +434,10 @@ export const DENSITY = {
 
 export function generateCity(cfg) {
   // Which street plan the old quarters use: 1 = per-cell splitting (every
-  // save made before plan 2 existed), 2 = streets first. Read from the config
+  // save made before plan 2 existed), 2 = streets first, 3 = streets first
+  // with vacancy by settlement order (WHERE A YOUNG TOWN IS EMPTY). Read from the config
   // so a save rebuilds the exact town it was played in.
-  const PLAN_V = cfg.planV ?? 2;
+  const PLAN_V = cfg.planV ?? 3;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
   // fabric with almost nothing over sixty metres, so the town you are handed
   // in month 0 has somewhere to go — the skyline is something the campaign
@@ -1607,6 +1608,63 @@ export function generateCity(cfg) {
     return name;
   };
 
+  // WHERE A YOUNG TOWN IS EMPTY (plan 3). Vacancy used to be rolled lot by
+  // lot against a mild edge gradient, and the young presets' multiplier
+  // (2-2.5x) pushed even downtown to half empty: the gaps were salt and
+  // pepper across the whole plat, the centre as holed as the outskirts. A
+  // town does not fill like that. It builds out from where it was founded
+  // and along its main streets; a neighbourhood platted later is emptier
+  // than one platted first; and the land nobody has got to yet comes in
+  // whole blocks, because a builder takes a block at a time.
+  //
+  // So every block gets a SETTLEMENT ORDER — distance from the founding
+  // point, how hot its ground is, how far from a corridor, a later-platted
+  // district's lag, a block's own luck — and a lot is vacant on a steep
+  // logistic past a FRONTIER. The frontier is solved, not tuned: it is placed
+  // so the town's expected vacant area equals what the old per-lot rule gave
+  // the same preset, so each density rung keeps exactly the share of empty
+  // ground the owner set for it and only WHERE it lies changes. Every weight
+  // below is a shape parameter chosen by eye on the plat (tools/plat-svg),
+  // not fitted to any economic outcome. Hashes, not rand(): the pre-pass must
+  // not move the stream the lot loop draws from.
+  const settleOf = new Map();
+  let settleFrontier = 0;
+  const SETTLE_W = 0.055;
+  // INFILL: even a settled core keeps its gaps — surface car parks, a burnt
+  // lot, an estate nobody has sold. American downtowns commonly carry a tenth
+  // or more of their land as surface parking; 8% is the floor here, which also
+  // keeps the player a handful of prime sites in the centre.
+  const SETTLE_INFILL = 0.08;
+  const settleP = (sc) => SETTLE_INFILL + (0.97 - SETTLE_INFILL) / (1 + Math.exp(-(sc - settleFrontier) / SETTLE_W));
+  if (PLAN_V >= 3) {
+    const h32 = (str) => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } x ^= x >>> 13; x = Math.imul(x, 0x5bd1e995); x ^= x >>> 15; return (x >>> 0) / 4294967296; };
+    const rows = [];
+    blocks.forEach((block, bi) => {
+      const st = block.inset;
+      if (block.circus || block.gore || !st) return;
+      const area = polygonArea([st]);
+      if (area < (block.flatiron ? 150 : 420)) return;
+      const bc = centroid(st);
+      const d = block.district;
+      const h = coreHeat(bc);
+      const corr = Math.min(1, corridorDist(bc) / 220);
+      const lag = (h32("district:" + d + ":" + cfg.seed) - 0.5) * 0.24;      // platted earlier or later
+      const luck = (h32("block:" + bi + ":" + cfg.seed) - 0.5) * 0.16;        // a builder got here, or not yet
+      const flav = (flavorOf(d).vac - 0.3) * 0.8;                              // industrial and new districts emptier
+      const sc = 0.45 * growthRing(bc) + 0.35 * (1 - h) + 0.12 * corr + lag + luck + flav;
+      settleOf.set(block, sc);
+      rows.push({ sc, area, p0: block.flatiron ? 0 : vacancyP(d, h) });
+    });
+    // place the frontier so the expected vacant area matches the old rule
+    const want = rows.reduce((a, r) => a + r.area * r.p0, 0);
+    let lo = -1, hi = 2;
+    for (let it = 0; it < 50; it++) {
+      settleFrontier = (lo + hi) / 2;
+      const got = rows.reduce((a, r) => a + r.area * settleP(r.sc), 0);
+      if (got > want) lo = settleFrontier; else hi = settleFrontier;
+    }
+  }
+
   for (const block of blocks) {
     const street = block.inset;
     // The circus plinth is monument ground and a gore is a traffic island —
@@ -1706,7 +1764,8 @@ export function generateCity(cfg) {
       // A flatiron never rolls vacancy — the wedge is iconic exactly because
       // it is built, and a triangular grass lot on the sharpest corner in
       // town is the confetti this rule exists to retire.
-      const vacant = block.flatiron ? false : rand() < vacancyP(d, h);
+      const vacant = block.flatiron ? false
+        : PLAN_V >= 3 ? rand() < settleP(settleOf.get(block) ?? 0.5) : rand() < vacancyP(d, h);
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 

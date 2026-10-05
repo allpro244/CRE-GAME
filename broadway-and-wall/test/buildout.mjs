@@ -2,6 +2,7 @@
 //
 //   node test/buildout.mjs                 every preset on the standard island
 //   BW_SEED=12345 node test/buildout.mjs   a different town
+//   BW_PLAN=2 node test/buildout.mjs       an older street plan (citygen CITY_PLAN)
 //
 // The notes in citygen/index.mjs quote a vacancy percentage and a floor count
 // for each preset. Those are claims about generated output and nothing was
@@ -44,7 +45,7 @@ console.log(
 const openings = {};
 
 for (const d of DEVELOPMENT) {
-  const built = makeCity(CITY, SEED, { size: SIZE, density: d.id });
+  const built = makeCity(CITY, SEED, { size: SIZE, density: d.id, planV: process.env.BW_PLAN ? Number(process.env.BW_PLAN) : undefined });
   const parcels = built.parcels;
   E.normalizeParcels(parcels);
   const bbls = Object.keys(parcels);

@@ -134,8 +134,16 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * the same opening demand, the first decade starts somewhat fewer projects.
  * That is the mechanism, not a fault to tune away: a denser town has less
  * pent-up demand. The baseline move is recorded in BASELINE.json.
+ *
+ * Plan 3 keeps plan 2's streets and moves WHERE the vacant lots are: by each
+ * block's settlement order (distance from the founding point, ground heat,
+ * corridor access, a later-platted district's lag, a block's luck) past a
+ * frontier solved so the preset's expected vacant area is unchanged — young
+ * towns empty on their outskirts and in late neighbourhoods, in whole blocks,
+ * instead of salt and pepper over the centre. See WHERE A YOUNG TOWN IS EMPTY
+ * in citygen.mjs.
  */
-export const CITY_PLAN = 2;
+export const CITY_PLAN = 3;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

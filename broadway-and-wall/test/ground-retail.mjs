@@ -19,7 +19,7 @@ let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? "FAIL" : "PASS"}`.replace(cond ? "FAIL" : "PASS", cond ? "PASS" : "FAIL") + `  ${msg}`); if (!cond) fails++; };
 const g = E.firstListings(E.newGame(550991, parcels, 400_000_000), parcels, bbls);
 // a vacant lot on a busy block: the street would put shops there on its own
-const lots = bbls.map((b) => ({ b, rec: parcels[b] })).filter((x) => x.rec.class === "land" && x.rec.lotArea >= 5000 && (x.rec.demandScore ?? 0) >= 60 && !g.holdings[x.b]).slice(0, 6);
+const lots = bbls.map((b) => ({ b, rec: parcels[b] })).filter((x) => x.rec.class === "land" && x.rec.lotArea >= 5000 && (x.rec.demandScore ?? 0) >= 60 && !g.holdings[x.b]);
 let tested = 0;
 for (const { b } of lots) {
   for (const use of ["office", "multifamily"]) {

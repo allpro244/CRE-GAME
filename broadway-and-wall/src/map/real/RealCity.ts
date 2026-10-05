@@ -85,6 +85,31 @@ function normalFromHeight(hc: HTMLCanvasElement, strength: number): THREE.Canvas
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 
+/** Wind ripples: a tileable height field of crossing wave trains, as normals. */
+function rippleNormal(): THREE.CanvasTexture {
+  const N = 256;
+  const { c, g } = makeCanvas(N, N);
+  const img = g.createImageData(N, N);
+  let s = 4243; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  // whole wave numbers only, so the tile wraps without a seam; most of the
+  // energy in one wind direction, a little cross-sea
+  const waves = Array.from({ length: 14 }, (_, i) => {
+    const main = i < 9;
+    const kx = main ? 2 + ((rnd() * 9) | 0) : ((rnd() * 7) | 0) - 3;
+    const ky = main ? ((rnd() * 7) | 0) - 3 : 2 + ((rnd() * 7) | 0);
+    return { kx, ky, a: (main ? 1 : 0.5) / Math.hypot(kx, ky, 1), p: rnd() * 6.283 };
+  });
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let h = 0;
+    for (const w of waves) h += w.a * Math.sin(((w.kx * x + w.ky * y) / N) * 6.283 + w.p);
+    const v = Math.max(0, Math.min(255, 128 + h * 70));
+    const i = (y * N + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return normalFromHeight(c, 3.0);
+}
+
 interface FamilySpec {
   key: string; bayW: number; floorH: number; masonry: boolean; glass: boolean;
   // window rectangle within the tile, as fractions
@@ -244,6 +269,9 @@ const glassWall = (g: CanvasRenderingContext2D, w: number, h: number) => {
   g.fillStyle = "#3d4a52"; g.fillRect(0, 0, w, h);
 };
 
+// a curtain wall's spandrel in another glass: bronze, or the blue-green of the 1990s
+const tintedGlassWall = (col: string) => (g: CanvasRenderingContext2D, w: number, h: number) => { g.fillStyle = col; g.fillRect(0, 0, w, h); };
+
 function makeFamilies(seed: number): Record<string, Family> {
   const F: FamilySpec[] = [
     { key: "brick", bayW: 2.7, floorH: 3.2, masonry: true, glass: false,
@@ -278,6 +306,28 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.30, x1: 0.70, y0: 0.10, y1: 0.92 }, wall: decoWall,
       glassCol: "#30404c", frameCol: "#1f2326", wallRough: 0.75, glassRough: 0.08, glassMetal: 0.2,
       mullions: [1, 3], reveal: 3.4 },
+    // THE TOWERS OF THE SECOND HALF OF THE CENTURY were not one glass box.
+    // 1960s International Style: ribbon windows between white aluminium
+    // spandrel bands, the floors reading as horizontal stripes.
+    { key: "ribbon", bayW: 1.6, floorH: 3.7, masonry: false, glass: false,
+      win: { x0: 0.0, x1: 1.0, y0: 0.42, y1: 0.95 }, wall: panelWall("#d9d7d0"),
+      glassCol: "#2b3943", frameCol: "#a3a8ab", wallRough: 0.45, glassRough: 0.06, glassMetal: 0.55,
+      mullions: [2, 1], reveal: 1.2 },
+    // 1960s-70s exposed concrete grid: deep square-ish punched windows
+    { key: "grid", bayW: 2.2, floorH: 3.6, masonry: false, glass: false,
+      win: { x0: 0.2, x1: 0.8, y0: 0.2, y1: 0.8 }, wall: panelWall("#b8b4ab"),
+      glassCol: "#2f3d47", frameCol: "#6b6a65", wallRough: 0.85, glassRough: 0.1, glassMetal: 0.3,
+      mullions: [1, 1], reveal: 4.4 },
+    // 1970s-80s bronze-tinted curtain wall with dark mullions
+    { key: "bronze", bayW: 1.5, floorH: 3.8, masonry: false, glass: true,
+      win: { x0: 0.06, x1: 0.94, y0: 0.18, y1: 0.98 }, wall: tintedGlassWall("#3e3229"),
+      glassCol: "#8a6c52", frameCol: "#4a3828", wallRough: 0.35, glassRough: 0.05, glassMetal: 0.85,
+      reveal: 1.4 },
+    // 1990s-2000s blue-green reflective glass, light silver frames
+    { key: "blueglass", bayW: 1.5, floorH: 4.0, masonry: false, glass: true,
+      win: { x0: 0.03, x1: 0.97, y0: 0.12, y1: 0.99 }, wall: tintedGlassWall("#2e4c5b"),
+      glassCol: "#6f9fb0", frameCol: "#9aaab2", wallRough: 0.3, glassRough: 0.05, glassMetal: 0.9,
+      reveal: 1.0 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -302,7 +352,13 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
   const oldBrick = () => roll < 0.55 ? "brick" : roll < 0.8 ? "buff" : "brownstone";
   if (cls === "industrial") return "industrial";
   if (cls === "office") {
-    if (year >= 1958) return h > 30 ? "glass" : "modern";
+    if (year >= 1958) {
+      if (h <= 30) return "modern";
+      // by when it went up: the ribbon and the grid, then bronze, then blue
+      if (year < 1973) return roll < 0.4 ? "ribbon" : roll < 0.65 ? "grid" : "glass";
+      if (year < 1988) return roll < 0.4 ? "bronze" : roll < 0.65 ? "glass" : roll < 0.82 ? "grid" : "ribbon";
+      return roll < 0.45 ? "glass" : roll < 0.85 ? "blueglass" : "bronze";
+    }
     if (year >= 1922 && h > 30) return roll < 0.6 ? "deco" : "stone";
     return h > 22 ? "stone" : oldBrick();
   }
@@ -311,7 +367,9 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
     // elevations belong to the mid- and high-rise slabs
     if (h < 26) return year < 1930 ? oldBrick() : roll < 0.75 ? "brick" : "buff";
     if (year < 1945) return h > 40 ? (roll < 0.5 ? "deco" : "stone") : oldBrick();
-    return year > 1995 && h > 40 ? "glass" : "modern";
+    if (year > 1995 && h > 40) return roll < 0.6 ? "glass" : "blueglass";
+    // the post-war slab blocks: panel, or a concrete grid
+    return year < 1985 && h > 30 && roll < 0.4 ? "grid" : "modern";
   }
   if (cls === "retail") return year < 1965 || h < 12 ? oldBrick() : "modern";
   return year < 1945 || h < 14 ? oldBrick() : "modern";
@@ -324,6 +382,10 @@ const TINTS: Record<string, [number, number, number][]> = {
   glass: [[1, 1, 1], [0.85, 0.95, 0.92], [1.05, 0.96, 0.84], [0.82, 0.86, 0.95]],
   modern: [[1, 1, 1], [0.93, 0.86, 0.78], [0.84, 0.86, 0.88], [1.0, 0.92, 0.82], [0.78, 0.76, 0.74], [0.95, 0.82, 0.72]],
   industrial: [[1, 1, 1], [0.9, 0.86, 0.82], [0.82, 0.78, 0.76]],
+  ribbon: [[1, 1, 1], [0.92, 0.93, 0.95], [1.0, 0.97, 0.92], [0.84, 0.85, 0.86]],
+  grid: [[1, 1, 1], [0.94, 0.92, 0.88], [0.86, 0.86, 0.86], [1.04, 1.0, 0.94]],
+  bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9]],
+  blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04]],
   frame: [[1, 1, 1]],
   plain: [[1, 1, 1]],
   shop: [[1, 1, 1]],
@@ -343,8 +405,8 @@ function roofTone(fam: string, cls: string, pitched: boolean, seedK: number): nu
   const j = 0.92 + ((seedK >>> 5) % 17) / 100;            // ±8% per building
   if (pitched) return r < 0.6 ? [0.48 * j, 0.47 * j, 0.5 * j] : [0.72 * j, 0.5 * j, 0.4 * j];
   if (fam === "industrial") return r < 0.5 ? [0.98 * j, 1.0 * j, 1.03 * j] : [0.55 * j, 0.53 * j, 0.52 * j];
-  if (fam === "glass") return r < 0.75 ? [1.32 * j, 1.33 * j, 1.34 * j] : [0.9 * j, 0.9 * j, 0.92 * j];
-  if (fam === "modern" || fam === "plain" || cls === "retail") {
+  if (fam === "glass" || fam === "bronze" || fam === "blueglass") return r < 0.75 ? [1.32 * j, 1.33 * j, 1.34 * j] : [0.9 * j, 0.9 * j, 0.92 * j];
+  if (fam === "modern" || fam === "plain" || fam === "ribbon" || fam === "grid" || cls === "retail") {
     if (r < 0.06 && fam === "modern") return [0.72 * j, 0.95 * j, 0.58 * j];  // a planted roof
     return r < 0.55 ? [1.25 * j, 1.25 * j, 1.24 * j] : [1.0 * j, 0.97 * j, 0.92 * j];
   }
@@ -593,6 +655,11 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.waves.length) {
+      // about half a metre a second downwind, a little across
+      const tt = performance.now() / 1000;
+      for (const w of this.waves) w.tex.offset.set((tt * 0.5) / w.tile, (tt * 0.12) / w.tile);
+    }
     this.renderer.render(this.scene, this.camera);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
@@ -602,6 +669,16 @@ export class RealCityLayer {
   // its cap several view-distances out, so a street view hazes the far
   // skyline and the island view keeps its far shore readable.
   private hazeSheet: THREE.Mesh | null = null;
+  // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
+  private waves: { tex: THREE.Texture; tile: number }[] = [];
+  private waveTex(uvPerMetre: number): THREE.Texture {
+    const base = this.waves[0]?.tex;
+    const t = base ? base.clone() : rippleNormal();
+    const TILE_M = 28;
+    t.repeat.set(1 / (TILE_M * uvPerMetre), 1 / (TILE_M * uvPerMetre));
+    this.waves.push({ tex: t, tile: TILE_M });
+    return t;
+  }
   private hazeFor(distM: number) {
     HAZE.hazeNear.value = distM * 0.35;
     HAZE.hazeFar.value = distM * 2.6 + 400;
@@ -858,7 +935,7 @@ export class RealCityLayer {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
       }
-      if ((famKey === "glass" || famKey === "modern" || famKey === "plain" || cls === "retail") && area > 200) {
+      if ((famKey === "glass" || famKey === "bronze" || famKey === "blueglass" || famKey === "ribbon" || famKey === "grid" || famKey === "modern" || famKey === "plain" || cls === "retail") && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
         for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
       }
@@ -955,7 +1032,8 @@ export class RealCityLayer {
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
       // mast; a stone office takes one setback. Only on the building's own top.
-      if (isTop && top > 60 && (fam === "glass" || fam === "deco" || fam === "stone")) {
+      const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
+      if (isTop && top > 60 && (glassy || fam === "deco" || fam === "stone" || fam === "ribbon" || fam === "grid")) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
         cx /= ring.length; cy /= ring.length;
@@ -964,9 +1042,15 @@ export class RealCityLayer {
           this.addVolume(shrink(ring, 0.78), v.z1, v.z1 + 7, fam, t, v.b, false, false, k);
           this.addVolume(shrink(ring, 0.56), v.z1 + 7, v.z1 + 12, fam, t, v.b, true, false, k);
           this.putInst("spire", cx, cy, v.z1 + 12, 1 + (top - 60) / 120, 0, v.b);
-        } else if (fam === "glass") {
-          this.addVolume(shrink(ring, 0.86), v.z1, v.z1 + 5, "glass", t, v.b, true, false, k);
-          if (hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, v.z1 + 5, 1, 0, v.b);
+        } else if (glassy) {
+          // a recessed mechanical crown; one in three steps back twice
+          const two = hash01(k ^ 0x5e7, this.seed) < 0.33;
+          this.addVolume(shrink(ring, 0.86), v.z1, v.z1 + 5, fam, t, v.b, !two, false, k);
+          if (two) this.addVolume(shrink(ring, 0.62), v.z1 + 5, v.z1 + 11, fam, t, v.b, true, false, k);
+          if (hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, v.z1 + (two ? 11 : 5), 1, 0, v.b);
+        } else if (fam === "ribbon" || fam === "grid") {
+          // the International Style keeps its plant in a plain penthouse box
+          this.addVolume(shrink(ring, 0.62), v.z1, v.z1 + 4.5, "plain", [0.9, 0.9, 0.9], v.b, true, true, k);
         } else {
           this.addVolume(shrink(ring, 0.8), v.z1, v.z1 + 6, fam, t, v.b, true, false, k);
         }
@@ -994,10 +1078,23 @@ export class RealCityLayer {
       const holePts = (ringArea(land) > 0 ? land.slice().reverse() : land).map(([x, y]) => new THREE.Vector2(x, y));
       outer.holes.push(new THREE.Path(holePts));
       const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), new THREE.MeshStandardMaterial({
-        color: 0x14425e, roughness: 0.07, metalness: 0.0, transparent: true, opacity: 0.32, envMapIntensity: 1.4, depthWrite: false,
+        color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
+        normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7),
       }));
       sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
       this.scene.add(sea);
+      // the park ponds take the same glossy, rippled skin
+      const ponds = (this.ctx as { ponds?: P2[][] }).ponds ?? [];
+      const shapes: THREE.Shape[] = [];
+      for (const pr of ponds) {
+        const r = pr.map((q) => this.project(q));
+        if (r.length >= 3) shapes.push(new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))));
+      }
+      if (shapes.length) {
+        const pm = new THREE.Mesh(new THREE.ShapeGeometry(shapes), sea.material);
+        pm.position.z = 0.025; pm.receiveShadow = true; pm.renderOrder = -3;
+        this.scene.add(pm);
+      }
     }
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
     veil.position.z = 0.03; veil.renderOrder = -2;
@@ -1290,7 +1387,7 @@ export class RealCityLayer {
         B.quad([b[0], b[1], BED], [a[0], a[1], BED], [a[0], a[1], TOP], [b[0], b[1], TOP], [nx, ny, 0], [[L, 0], [0, 0], [0, 1.7], [L, 1.7]], one);
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2 }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3) }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     this.scene.add(wm);
     for (const [buf, col, rough] of [[stone, 0xa69d8b, 0.75], [rubble, 0x7d776c, 0.95]] as [Buf, number, number][]) {
@@ -1348,7 +1445,7 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2 }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3) }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;

@@ -335,3 +335,22 @@ table rather than a city, and roofs were not the biggest of them:
   of floating over it.
 
 `docs/map-overhaul/p5-*-before-after.jpg`.
+
+# NO NIGHT; TOWERS BY ERA; WATER THAT MOVES
+
+- **No night.** The owner's call: "we don't need a night mode, that's
+  pointless." The dusk cycle that ran while Play was on and the blue-hour
+  photo frame are gone; the map is always the calibrated afternoon (MapView
+  pins `setDayPhase(0)` for both renderers). The month still moves the sun
+  and the seasons.
+- **Towers by era.** Every post-1958 office tower wore the one glass
+  elevation. Four more, assigned by when the tower went up: 1960s ribbon
+  windows between white aluminium spandrels and a plain penthouse box;
+  1960s-70s exposed concrete grids with deep punched windows (also on the
+  post-war apartment slabs); 1970s-80s bronze curtain walls; 1990s-2000s
+  blue-green reflective glass. Glass towers carry a recessed crown, and one
+  in three steps back twice before its mast.
+- **Water.** The harbour, the canals and the park ponds carry a tileable
+  ripple normal map (crossing wave trains, one dominant wind) drifting about
+  half a metre a second while the city animates, so the sea catches the sun
+  and the sky instead of lying flat. `docs/map-overhaul/p6-*.jpg`.

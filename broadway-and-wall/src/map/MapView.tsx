@@ -1379,33 +1379,15 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
-  // THE HOUR. The month owns the sun; this owns how much of it is left.
-  //
-  // Paused, the city sits in the calibrated afternoon every colour in the
-  // renderer was tuned under — that is the frame decisions are made on. While
-  // Play runs, the light breathes: a slow afternoon-to-dusk-and-back on a
-  // real-time cycle (half a minute, deliberately NOT the month clock, which
-  // turns once a second and would strobe), so the lit floors come on across
-  // the skyline and go off again while the months tick. The photo frame is
-  // the evening shot: blue hour, every let floor lit, lamps on.
-  const autoplay = useStore((s) => s.autoplay);
+  // THE HOUR. Always the calibrated afternoon every colour in the renderer
+  // was tuned under. There used to be a dusk cycle while Play ran and a
+  // blue-hour photo frame; the owner's call: "we don't need a night mode,
+  // that's pointless". Both renderers still accept setDayPhase; nothing
+  // drives it off zero. The month still owns the sun's angle and the season.
   useEffect(() => {
     if (!mapReady) return;
-    const layer = threeRef.current;
-    if (!layer) return;
-    if (photoFrame) { layer.setDayPhase(0.9); return; }
-    if (!autoplay) { layer.setDayPhase(0); return; }
-    const PERIOD_S = 36, PEAK = 0.84;
-    const t0 = performance.now();
-    const tick = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      const t = (performance.now() - t0) / 1000;
-      layer.setDayPhase(PEAK * 0.5 * (1 - Math.cos((2 * Math.PI * t) / PERIOD_S)));
-    };
-    tick();
-    const id = window.setInterval(tick, 400);
-    return () => window.clearInterval(id);
-  }, [autoplay, photoFrame, mapReady]);
+    threeRef.current?.setDayPhase(0);
+  }, [mapReady]);
   const preferFps = useStore((s) => s.preferFps);
   useEffect(() => {
     if (!mapReady) return;

@@ -687,8 +687,27 @@ export interface SaleInstructions {
   declineBelow?: number;
 }
 
+/**
+ * WHAT A NEW BUILDING LOOKS LIKE — the player's own choice on the Build desk's
+ * Design tab. Looks only: it is carried from the draft to the job to the
+ * finished building for the map to draw, and nothing in the economy reads it
+ * (what a building costs and how it ages is the build-quality dial, `spec`).
+ * Every field is optional; absent means "let the street decide", the same
+ * period-and-place choice the generator makes for every other building.
+ */
+export interface BuildingDesign {
+  /** facade elevation: a family key with its variant, e.g. "brick#2" */
+  facade?: string;
+  /** index into the renderer's trim paints (stone, green, black, terracotta, grey) */
+  trim?: number;
+  roof?: "flat" | "gable" | "hip" | "mansard";
+  /** how a tall building finishes */
+  crown?: "none" | "setback" | "spire" | "mast" | "cake";
+}
+
 export interface DevDraft {
   tab: DevDraftTab;
+  design?: BuildingDesign;
   use: DevUse;
   cov: number;
   floors: number;
@@ -725,6 +744,8 @@ export interface Development {
   bbl: string;
   /** what it is being built to, 0..1 with 0.5 as market standard */
   spec?: number;
+  /** the look the developer chose (see BuildingDesign); looks only */
+  design?: BuildingDesign;
   use: DevUse;
   mix: UseMix;
   sf: number;
@@ -841,6 +862,8 @@ export interface Development {
 // A delivered development overrides the static parcel record.
 export interface BuiltOverride {
   class: BuiltClass;
+  /** the look the developer chose (see BuildingDesign); absent on city-built stock */
+  design?: BuildingDesign;
   mix?: UseMix;
   bldgArea: number;
   floors: number;

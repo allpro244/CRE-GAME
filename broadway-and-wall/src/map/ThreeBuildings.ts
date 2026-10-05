@@ -13565,7 +13565,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * prove it is distinguishable from the family beside it, which is a different
    * question and one no counter can answer.
    */
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number }[]) {
+  // `design` is the player's chosen look (BuildingDesign); the 3D city
+  // (RealCityLayer) draws it, this classic renderer keeps its own styles.
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number; year?: number; design?: import("@/engine/types").BuildingDesign }[]) {
     const stockSig = playerSkylineLayerSig(items, false);
     const jobsSig = playerSkylineLayerSig(items, true);
     const rebuildStock = stockSig !== this.stockSig;

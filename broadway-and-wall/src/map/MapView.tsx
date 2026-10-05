@@ -8,7 +8,7 @@ import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
-import type { GameState } from "@/engine/types";
+import type { BuildingDesign, GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { ownerIndex } from "@/engine/ownership";
 import { holderOf } from "@/engine/owners";
@@ -1289,7 +1289,7 @@ export default function MapView() {
     // alone. Both of those are answers `styles.ts` already has, and it needs
     // the year to give them.
     const nowYear = START_YEAR + Math.floor(game.month / 12);
-    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number }[] = [];
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number; design?: BuildingDesign }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
@@ -1325,7 +1325,7 @@ export default function MapView() {
       // b.yearBuilt is the delivery year the engine stamped. A building keeps
       // the skin of the decade it went up in for the rest of the campaign;
       // it does not restyle itself as the years pass.
-      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov, year: b.yearBuilt || nowYear });
+      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov, year: b.yearBuilt || nowYear, design: b.design });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out
@@ -1343,7 +1343,7 @@ export default function MapView() {
     // height is in this string so a rising frame still updates; setPlayerBuildings
     // keeps finished stock on its own layer so that monthly growth does not
     // remesh every delivered tower.
-    const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "") + (i.fresh ? "f" : "")).join("|");
+    const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "") + (i.fresh ? "f" : "") + (i.design ? JSON.stringify(i.design) : "")).join("|");
     if (sig !== dynSigRef.current) {
       dynSigRef.current = sig;
       layer.setPlayerBuildings(items);
@@ -1379,6 +1379,21 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
+  // THE SCHEME ON THE DESK: while the Build desk's Design tab is open, the
+  // building is drawn finished on its lot in the look being chosen.
+  const designPreview = useStore((s) => s.designPreview);
+  useEffect(() => {
+    if (!mapReady) return;
+    const layer = threeRef.current as unknown as { setPreview?: (i: unknown) => void } | null;
+    if (!layer?.setPreview) return;
+    const p = designPreview;
+    const month = useStore.getState().game?.month ?? 0;
+    const FLOOR_M = 3.55;   // the storey the skyline effect below draws player stock at
+    layer.setPreview(p ? {
+      bbl: p.bbl, cls: p.use, heightM: p.floors * FLOOR_M, floors: p.floors, construction: false,
+      cov: p.cov, year: START_YEAR + Math.floor(month / 12), design: p.design,
+    } : null);
+  }, [designPreview, mapReady]);
   // THE HOUR. Always the calibrated afternoon every colour in the renderer
   // was tuned under. There used to be a dusk cycle while Play ran and a
   // blue-hour photo frame; the owner's call: "we don't need a night mode,

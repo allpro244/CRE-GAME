@@ -6,7 +6,8 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { Contract, DevUse } from "@/engine/types";
+import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
+import { DesignPicker } from "@/ui/panels/DesignPicker";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN } from "@/engine/value";
 
 // What a plan short of its hurdle is still worth over its cost. The required
@@ -227,18 +228,22 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // SHOPS AT GRADE ON YOUR OWN OFFICE OR APARTMENT BUILDING — your call, not
   // only the street's. See DevDraft.groundRetail and withStreetRetail.
   const [groundRetail, setGroundRetailRaw] = useState<"auto" | "on" | "off">(saved?.groundRetail ?? "auto");
+  // WHAT IT LOOKS LIKE — yours to choose, and drawn on the lot as you choose
+  // it. Looks only: nothing priced reads it (see BuildingDesign).
+  const [design, setDesignRaw] = useState<BuildingDesign>(saved?.design ?? {});
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail });
-  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design });
+  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
   };
   const setTab = touch(setTabRaw);
+  const setDesign = touch(setDesignRaw);
   const setUse = touch(setUseRaw);
   const setCov = touch(setCovRaw);
   const setFloors = touch(setFloorsRaw);
@@ -256,6 +261,23 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const cov = Math.min(covDial, covCap);
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
+  // the scheme stands on its lot in the 3D city while the desk is open on
+  // Design, and comes down when you leave the tab or the desk
+  useEffect(() => {
+    if (tab !== "design" || fl < 1) { useStore.getState().setDesignPreview(null); return; }
+    useStore.getState().setDesignPreview({ bbl, use, floors: fl, cov, design });
+  }, [tab, bbl, use, fl, cov, design]);
+  // leaving the desk takes the scheme down — unless you stepped out to look at it
+  useEffect(() => () => { if (!useStore.getState().designPeek) useStore.getState().setDesignPreview(null); }, []);
+  const peek = () => {
+    dirty.current = true;
+    useStore.getState().setDevDraft(bbl, { tab: "design", use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design });
+    useStore.getState().setDesignPeek(true);
+    useStore.getState().focus(bbl, true);
+    // unselected, so the lot's selection glow does not tint the scheme and the
+    // property card gives its side of the map to the design bar
+    useStore.getState().select(null);
+  };
   // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
   // whole retail allowance, so the ceiling on the shops dial falls as the
   // storeys rise — a quarter of an eight storey building, eight per cent of a
@@ -643,6 +665,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
 
       {tab === "design" && (
         <>
+          <DesignPicker design={design} onChange={setDesign} floors={fl} onPeek={peek} />
           <Slider
             label="Build quality"
             value={spec}
@@ -836,7 +859,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design }, plan.lender, spec)}
                   title={!canFund
                     ? `Equity short — needs ${usd(equityRequired)} all-in`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}

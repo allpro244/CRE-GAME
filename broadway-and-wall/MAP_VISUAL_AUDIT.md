@@ -444,3 +444,32 @@ deck. Now:
   rectangular factory sheds.
 
 `docs/map-overhaul/p9-*.jpg`.
+
+# DESIGN YOUR OWN BUILDING
+
+The owner asked to see a new building before it is built and to control
+its look. The Build desk's Design tab now has a design picker:
+
+- **Facade:** fourteen styles, each with its four elevations shown as
+  swatches (painted from the same textures the city uses). Styles that do
+  not go that tall are greyed out — clapboard stops at 3 floors, brownstone
+  at 8, brick walk-ups at 14. "Fits the street" leaves it to the period and
+  place, as for every other building.
+- **Trim** paint, **roof** (flat, gable and hipped to 4 floors, mansard to
+  12) and, from 15 floors, a **crown** (flat top, setback, crown and mast,
+  spire, or the wedding-cake setbacks).
+- **The preview:** while the tab is open the scheme stands finished on its
+  lot in the 3D city, at its real height and footprint, among its real
+  neighbours, redrawn on every change. "See it on the map" closes the desk,
+  flies the camera to the lot and keeps the picker in a bar over the map;
+  "Back to the Build desk" returns with the choices kept in the draft.
+  Breaking ground takes the preview down and the crane goes up.
+- **Looks only.** The choice is carried draft → job → finished building
+  (`BuildingDesign` on DevDraft, Development and BuiltOverride) and nothing
+  priced reads it: `test/design.mjs`, now in `pnpm check`, runs the same
+  scheme with and without a design and finds the state identical month for
+  month apart from the design. What a building costs and how it wears is
+  still the build-quality dial.
+
+The classic map keeps its own styles and does not draw the preview.
+`docs/map-overhaul/p10-*.jpg`.

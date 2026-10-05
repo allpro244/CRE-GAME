@@ -254,7 +254,7 @@ state, civic works and the sunk creek channel. Frame rate has not been
 measured on a GPU (this container has none); small props drop out past
 ~2.6 km of camera distance.
 
-# STREET PLAN 2 (built, not yet the default)
+# STREET PLAN 2 (the default for new towns)
 
 The old quarters of the generated towns were cut block by block
 (`splitCells`): every block split on its own at a jittered angle, so no street
@@ -268,9 +268,43 @@ Side by side (plan 1 left, plan 2 right) in `docs/map-overhaul/plan2-*.jpg`;
 
 It is wired end to end — `makeCity(…, { planV })`, `GameState.cityPlan`
 recorded on every new save, an old save rebuilt as plan 1, a plan mismatch
-forcing a town rebuild on load — but `CITY_PLAN` stays 1, and today's towns
-hash byte-identical. Measured on the reference town, plan 2's regular blocks
-carry 5-14% more floor area on the same lots, and that stock meets the same
-opening demand: the economy owed no construction starts for eight years where
-plan 1 builds from year one. Turning it on is an economy decision — the full
-report/stress tiers and a deliberate baseline move — not a map change.
+forcing a town rebuild on load — and `CITY_PLAN` is now 2, so every new run
+gets the new streets while every existing save keeps the town it was played
+in. The baseline moved 20 of 39 metrics on the single reference town, but a
+control that changed nothing except one extra draw from the city dice moved
+22 of 39 by as much or more, so that town's moves are draw noise. Across 12
+seeds the real effect is about +4% floor area on the same lots and 20-30%
+fewer construction starts in the first decade (the denser stock meets the
+same opening demand). `pnpm gate` passes.
+
+# ROOFSCAPES (real-geometry preview)
+
+From above — and this game is played from above — a city is mostly roof,
+and every flat roof was the same pale grey slab with one box on it. Now:
+
+- **What the roof is made of.** Pre-war masonry carries tar (dark) or gravel
+  (warm), with the odd later silver coat; post-war slabs and shops a paler
+  ballast or white membrane; glass towers white membrane; sheds galvanised
+  or dark sheet; gables slate or red-brown shingle; one modern roof in
+  sixteen is planted. Each building draws its own shade within its kind, so
+  a block reads as a patchwork. A roofing texture (strips with lapped seams,
+  patching, grit, 16 m a repeat) sits under the colour.
+- **Parapets.** Every flat crown is fenced by a knee-high wall with an inside
+  face and a coping — a metre behind a masonry cornice, half that on glass —
+  and it throws a thin shadow on the deck.
+- **Plant by what the building is.** Pre-war masonry and lofts between about
+  six and thirty storeys take a wooden water tank on legs (one, or two on a
+  big roof), because city mains only lift water about six storeys; stair
+  bulkheads sit near the middle; modern, glass and shop roofs carry up to
+  seven condensers by area; low sheds carry rows of skylights along their
+  long side. Everything is placed inside the footprint with a margin.
+
+Gold roofs (yours), lenses and snow still override the roof colour exactly as
+before; the colour variety lives in the roofs' base vertex colours.
+
+Cost, measured in this container's software renderer (SwiftShader, which
+pays for every triangle and pixel on the CPU) on the giant town: 6.0 s → 6.6 s
+a frame at the island view, 7.4 s → 8.0 s at district zoom, before the
+parapets' never-seen undersides were dropped. A GPU pays a small fraction of
+that; the classic renderer is untouched. Before/after in
+`docs/map-overhaul/p4-roofs-*.jpg`.

@@ -328,6 +328,43 @@ const TINTS: Record<string, [number, number, number][]> = {
   deco: [[1, 1, 1], [0.96, 0.93, 0.88], [0.9, 0.9, 0.92], [1.03, 0.99, 0.92]],
 };
 
+// WHAT A ROOF IS MADE OF. Pre-war masonry carries tar and gravel, dark and
+// warm; a post-war slab a paler ballast; the glass towers and new blocks a
+// white membrane; a shed galvanised sheet; a gable slate or asphalt shingle.
+// Each building draws its own shade within its kind, so a block of roofs
+// reads as a patchwork rather than one grey sheet. (Vertex colours: the roof
+// material's own colour — snow, season — multiplies them.)
+function roofTone(fam: string, cls: string, pitched: boolean, seedK: number): number[] {
+  const r = ((seedK * 2654435761) >>> 0) / 4294967296;
+  const j = 0.92 + ((seedK >>> 5) % 17) / 100;            // ±8% per building
+  if (pitched) return r < 0.6 ? [0.48 * j, 0.47 * j, 0.5 * j] : [0.72 * j, 0.5 * j, 0.4 * j];
+  if (fam === "industrial") return r < 0.5 ? [0.98 * j, 1.0 * j, 1.03 * j] : [0.55 * j, 0.53 * j, 0.52 * j];
+  if (fam === "glass") return r < 0.75 ? [1.32 * j, 1.33 * j, 1.34 * j] : [0.9 * j, 0.9 * j, 0.92 * j];
+  if (fam === "modern" || fam === "plain" || cls === "retail") {
+    if (r < 0.06 && fam === "modern") return [0.72 * j, 0.95 * j, 0.58 * j];  // a planted roof
+    return r < 0.55 ? [1.25 * j, 1.25 * j, 1.24 * j] : [1.0 * j, 0.97 * j, 0.92 * j];
+  }
+  // masonry: tar, gravel, or a later silver-painted coat
+  return r < 0.45 ? [0.46 * j, 0.44 * j, 0.42 * j] : r < 0.85 ? [0.86 * j, 0.79 * j, 0.68 * j] : [1.2 * j, 1.2 * j, 1.22 * j];
+}
+
+/** Roofing at 16 m a repeat: strips with lapped seams, patching, grit. */
+function roofTex(): THREE.CanvasTexture {
+  const { c, g } = makeCanvas(256, 256);
+  let s = 57; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  g.fillStyle = "#f2f2f2"; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 26; i++) {                           // patches and ponding stains
+    const v = 200 + rnd() * 50 | 0;
+    g.fillStyle = `rgba(${v},${v},${v - 4},0.35)`;
+    g.fillRect(rnd() * 256, rnd() * 256, 10 + rnd() * 50, 8 + rnd() * 30);
+  }
+  for (let i = 0; i < 5000; i++) { const v = 170 + rnd() * 85 | 0; g.fillStyle = `rgba(${v},${v},${v},0.5)`; g.fillRect(rnd() * 256, rnd() * 256, 1.5, 1.5); }
+  for (let y = 0; y < 256; y += 32) { g.fillStyle = "rgba(120,120,120,0.35)"; g.fillRect(0, y, 256, 1.5); g.fillStyle = "rgba(255,255,255,0.4)"; g.fillRect(0, y + 1.5, 256, 1); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.repeat.set(0.25, 0.25);
+  return t;
+}
+
 // ---- geometry accumulation -------------------------------------------------
 
 class Buf {
@@ -389,7 +426,7 @@ export class RealCityLayer {
   private families: Record<string, Family> = {};
   private trimMat = new THREE.MeshStandardMaterial({ color: 0xd8d0be, roughness: 0.75, vertexColors: true, envMapIntensity: 0.3 });
   private darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d30, roughness: 0.5, metalness: 0.4, vertexColors: true });
-  private roofMat = new THREE.MeshStandardMaterial({ color: 0x6b6862, roughness: 0.95, vertexColors: true, envMapIntensity: 0.15 });
+  private roofMat = new THREE.MeshStandardMaterial({ color: 0x6b6862, roughness: 0.95, vertexColors: true, envMapIntensity: 0.15, map: roofTex() });
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
@@ -642,7 +679,7 @@ export class RealCityLayer {
     // roof
     const R = this.buf("roof");
     const r0 = R.count;
-    const rc = [0.92 + (seedK % 7) * 0.012, 0.92, 0.9];
+    const rc = roofTone(famKey, cls, pitched, seedK);
     if (pitched && ring.length === 4) {
       // A GABLE. The ridge runs the long way, a rafter's rise above the eaves;
       // the two gable ends are wall, in the building's own brick.
@@ -701,18 +738,73 @@ export class RealCityLayer {
     } else if (crown) {
       band(z1 - 0.35, 0.35, 0.12, white);               // coping
     }
+    // A FLAT ROOF IS FENCED BY ITS PARAPET: a knee-high wall standing above
+    // the deck, its inside face toward the roof so the far side reads from
+    // above, and a coping on top. A masonry parapet sits behind its cornice.
+    if (crown && !pitched && z1 - z0 > 3.5) {
+      const ph = fam.masonry ? 1.0 : fam.glass ? 0.5 : 0.75;
+      const po = fam.masonry ? 0.18 : 0.1;
+      const q = [[0, 0], [1, 0], [1, 1], [0, 1]], zt = z1 + ph;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const L = Math.hypot(dx, dy);
+        if (L < 0.3) continue;
+        const nx = dy / L, ny = -dx / L;
+        const A = [a[0] + nx * po, a[1] + ny * po], B = [b[0] + nx * po, b[1] + ny * po];
+        // outside, coping, inside — its underside sits on the wall and is never seen
+        T.quad([A[0], A[1], z1], [B[0], B[1], z1], [B[0], B[1], zt], [A[0], A[1], zt], [nx, ny, 0], q, white);
+        T.quad([a[0], a[1], zt], [A[0], A[1], zt], [B[0], B[1], zt], [b[0], b[1], zt], [0, 0, 1], q, white);
+        T.quad([b[0], b[1], z1], [a[0], a[1], z1], [a[0], a[1], zt], [b[0], b[1], zt], [-nx, -ny, 0], q, [0.82, 0.82, 0.82]);
+      }
+    }
     this.note(bbl, fam.glass ? "dark" : "trim", t0);
 
-    // roof plant on the building's top volume
+    // ROOF PLANT on the building's top volume, by what the building is. A
+    // pre-war walk-up or loft over six storeys needs a wooden water tank on
+    // legs — city mains only lift water about that high — beside the stair
+    // bulkhead; a modern block carries condensers; a shed, rows of skylights.
     if (plant && crown && !pitched) {
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
       const area = Math.abs(ringArea(ring));
-      if (area > 160 && (seedK % 10) < 6) {
-        this.putInst("bulk", cx, cy, z1, 1, (seedK % 360) * Math.PI / 180, bbl);
-        if (famKey === "brick" && (seedK % 10) < 4) this.putInst("tank", cx + 3, cy + 2, z1, 1, 0, bbl);
-        if (famKey === "glass" || famKey === "modern") this.putInst("hvac", cx - 4, cy - 3, z1, 1, (seedK % 90) * Math.PI / 180, bbl);
+      let rs = (seedK * 7919) % 2147483646 + 1;
+      const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+      const inside = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+      // a spot on the deck: from the middle toward a corner, kept a margin in
+      const spot = (lo: number, hi: number): P2 | null => {
+        for (let k = 0; k < 6; k++) {
+          const v = ring[(rnd() * ring.length) | 0], f = lo + rnd() * (hi - lo);
+          const x = cx + (v[0] - cx) * f, y = cy + (v[1] - cy) * f;
+          if (inside(x, y) && inside(x + 2, y) && inside(x - 2, y) && inside(x, y + 2) && inside(x, y - 2)) return [x, y];
+        }
+        return null;
+      };
+      const rot = (seedK % 360) * Math.PI / 180;
+      const oldWalk = famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "industrial" || famKey === "stone";
+      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
+        const n = area > 900 && rnd() < 0.5 ? 2 : 1;
+        for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
+      }
+      if ((famKey === "glass" || famKey === "modern" || famKey === "plain" || cls === "retail") && area > 200) {
+        const n = Math.min(7, 1 + Math.floor(area / 650));
+        for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
+      }
+      if ((famKey === "industrial" || famKey === "plain") && z1 < 20 && area > 500) {
+        // skylights in rows along the long side
+        let li = 0, ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+        const A = ring[li], B = ring[(li + 1) % ring.length];
+        const ux = (B[0] - A[0]) / ll, uy = (B[1] - A[1]) / ll;
+        const ang = Math.atan2(uy, ux);
+        let made = 0;
+        for (let row = 4; row < 80 && made < 60; row += 7) for (let t = 4; t < ll - 4 && made < 60; t += 6) {
+          const x = A[0] + ux * t - uy * row, y = A[1] + uy * t + ux * row;
+          if (!inside(x, y) || !inside(x + ux * 2.5, y + uy * 2.5) || !inside(x - ux * 2.5, y - uy * 2.5)) continue;
+          this.putInst("skyl", x, y, z1, 1, ang, bbl); made++;
+        }
       }
     }
   }
@@ -885,6 +977,7 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
       case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
       case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
       case "trunk": return { g: merge([cyl(0.22, 3.2, 0, 6)]), mat: this.barkMat };

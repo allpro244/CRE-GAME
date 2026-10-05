@@ -418,3 +418,29 @@ classic map's own line) is now rough grass that turns with the season rather
 than gravel, and two-storey houses and shops from before 1950 are painted
 clapboard half the time, with a gable — the timber town before the brick
 one. `docs/map-overhaul/p8-*.jpg`.
+
+# FOUR TIMES THE BUILDINGS
+
+The owner: "a lot of them look the same." They did: a family was one painted
+texture, so every brick walk-up on the island wore the same brick, sash and
+lintel, every cornice was the same cream band, and every flat roof the same
+deck. Now:
+
+- **Four elevations a family** (17 families → 62 elevations, art-directed,
+  each true to its period): dark-red Italianate with segmental arches,
+  orange Federal brick with pediments and green shutters, painted brick with
+  round arches; white, sandstone and granite Beaux-Arts stone; green, black,
+  silver and deep-blue curtain walls; tan and buff deco; concrete, grey and
+  dark ribbon slabs; clapboard with shutters, wide boards or pediments. A
+  building draws one from a hash of its own deed, so it is stable.
+- **Window shapes:** round arches, segmental arches, paired lights, painted
+  shutters and pediments, drawn into the albedo, roughness, depth and night
+  maps alike so the reveal and the glow follow the shape.
+- **Trim:** cornices deep and bracketed, standard, doubled a floor down, or
+  stripped to a coping; painted stone, dark green, black, terracotta or grey.
+- **Roofs:** Second Empire mansards with dormers on walk-ups of 1855-1915,
+  the cornice dropped to the foot of the slate; hipped roofs on half the
+  clapboard houses and some brick ones; sawtooth north-light roofs on the
+  rectangular factory sheds.
+
+`docs/map-overhaul/p9-*.jpg`.

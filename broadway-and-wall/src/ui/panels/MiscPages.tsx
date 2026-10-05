@@ -201,8 +201,8 @@ export function SettingsPage() {
   const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
-  const preferFps = useStore((s) => s.preferFps);
-  const setPreferFps = useStore((s) => s.setPreferFps);
+  const graphics = useStore((s) => s.graphics);
+  const setGraphics = useStore((s) => s.setGraphics);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
     useStore.setState({ game: { ...st.game!, ...patch } });
@@ -283,14 +283,19 @@ export function SettingsPage() {
         label="Frame counter"
         detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
       />
-      <Toggle
-        on={preferFps}
-        set={setPreferFps}
-        label="Prefer smoother frames"
-        detail="For machines without a discrete GPU: trades a little sharpness for a steadier frame rate. The sim is unchanged."
-        more={"Off by default — a fast machine keeps native sharpness and the full photograph. On, it spends less fill rate on pixel density and "
-          + "multisampling so the map stays nearer sixty frames. Facades, occupancy and weather are unchanged either way."}
-      />
+      <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
+      <div className="btn-row">
+        {([
+          ["high", "High", "The full picture: sharp shadows, native pixel density, every prop and passer-by."],
+          ["medium", "Medium", "Softer shadows, capped pixel density, fewer people and cars; small props drop out sooner as you zoom out."],
+          ["low", "Low", "For laptops without a graphics card: no shadows, standard pixel density, a light crowd, small props only up close, no falling rain or snow."],
+        ] as const).map(([q, label, tip]) => (
+          <button key={q} type="button" className={"btn" + (graphics === q ? " btn-on" : "")} title={tip} onClick={() => setGraphics(q)}>{label}</button>
+        ))}
+      </div>
+      <div className="hint">
+        Looks only — the city, its numbers and your save are the same at every setting. If the map stutters, step down one.
+      </div>
       <div className="hint">
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.

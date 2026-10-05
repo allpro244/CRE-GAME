@@ -77,6 +77,9 @@ interface Family {
 }
 
 const TILE = 128;
+/** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
+const FAR_PROPS = ["lamp", "car", "lotcar"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -847,6 +850,11 @@ export class RealCityLayer {
   private viewH = 900;
 
   private preferFps = false;
+  /** Graphics quality: how much of the city's small detail is drawn, how far. */
+  private quality: "low" | "medium" | "high" = "high";
+  private crowdK = 1;
+  private cullM = 2600;
+  private catcher: THREE.Mesh | null = null;
   private lotRingLL: Record<string, P2[]>;
   private visibleOn = true;
 
@@ -937,9 +945,13 @@ export class RealCityLayer {
     this.fitShadow(fx, fy, distM);
     // from the whole-island camera a person, a lamp or a car is a fraction of
     // a pixel: stop drawing them there rather than paying for grain
-    const far = distM > 2600, veryFar = distM > 4200;
+    // The graphics setting pulls that horizon in, and on Medium and Low takes
+    // the garden-scale furniture with it.
+    const far = distM > this.cullM, veryFar = distM > Math.max(4200, this.cullM * 1.6);
     for (const f of this.fleets) f.mesh.visible = f.list === this.boats ? !veryFar : !far;
-    for (const k of ["lamp", "car", "lotcar"]) { const m = this.inst.get(k); if (m) m.visible = !far; }
+    for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
+    const beds = this.inst.get("flowerbed");
+    if (beds) beds.visible = this.month >= 3 && this.month <= 9 && !(far && this.quality !== "high");
     this.renderer.resetState();
     if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
@@ -1000,7 +1012,7 @@ export class RealCityLayer {
 
   // ---- lights & shadow ---------------------------------------------------
   private setupLights() {
-    this.sun.castShadow = true;
+    this.sun.castShadow = this.quality !== "low";
     const sz = this.preferFps ? 2048 : 4096;
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
@@ -1667,6 +1679,8 @@ export class RealCityLayer {
     // building or a tree stands between it and the sun
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
     catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
+    catcher.visible = this.quality !== "low";
+    this.catcher = catcher;
     this.scene.add(catcher);
     // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
     // glossy veneer over it — the land cut out — gives the sun a road on the
@@ -2092,6 +2106,7 @@ export class RealCityLayer {
         const mat = new THREE.LineBasicMaterial({ color: want === "rain" ? 0xbfc8d2 : 0xffffff, transparent: true, opacity: want === "rain" ? 0.45 : 0.9, depthWrite: false });
         this.precip = new THREE.LineSegments(g, mat);
         this.precip.frustumCulled = false;
+        this.precip.visible = this.quality !== "low";
         this.scene.add(this.precip);
       }
     }
@@ -3029,7 +3044,7 @@ export class RealCityLayer {
     for (const f of this.fleets) {
       if (f.list === this.boats) continue;
       for (const m of f.list) if (m.dem === undefined) m.dem = this.demandAt(m.x, m.y);
-      const on = (m: Mover) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5));
+      const on = (m: Mover) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5)) * this.crowdK;
       // the walkers on the street first, so the mesh can simply draw a prefix
       f.list.sort((p, q) => Number(on(q)) - Number(on(p)));
       f.list.forEach((m, i) => f.mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
@@ -3048,6 +3063,23 @@ export class RealCityLayer {
       (this.sun.shadow as { map: THREE.WebGLRenderTarget | null }).map = null;
       this.shadowSpan = 0;
     }
+  }
+  /**
+   * Graphics quality. High is everything; Medium halves the shadow map, thins
+   * the crowds and stops drawing street furniture sooner; Low also drops cast
+   * shadows and the falling rain and snow. Looks only — nothing here reads the
+   * game state, and the city underneath is the same city.
+   */
+  setQuality(q: "low" | "medium" | "high") {
+    this.quality = q;
+    this.setPreferFps(q !== "high");
+    this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
+    this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
+    this.sun.castShadow = q !== "low";
+    if (this.catcher) this.catcher.visible = q !== "low";
+    if (this.precip) this.precip.visible = q !== "low";
+    if (this.fleets.length) this.applyCrowd();
+    this.map?.triggerRepaint();
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {

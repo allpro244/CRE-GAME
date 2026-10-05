@@ -53,6 +53,7 @@ import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev }
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
+export type GraphicsQuality = "low" | "medium" | "high";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview { bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign }
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
@@ -260,6 +261,9 @@ interface AppState {
    * save state.
    */
   preferFps: boolean;
+  /** Graphics quality (Settings -> Display). preferFps is derived: anything below High. */
+  graphics: GraphicsQuality;
+  setGraphics: (q: GraphicsQuality) => void;
   setPreferFps: (v: boolean) => void;
   /**
    * The real-geometry city renderer (map/real/RealCity.ts) instead of the
@@ -735,7 +739,20 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
-  preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
+  // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
+  graphics: (() => {
+    try {
+      const g = localStorage.getItem("bw:graphics");
+      if (g === "low" || g === "medium" || g === "high") return g;
+      return localStorage.getItem("bw:prefer-fps") === "on" ? "medium" : "high";
+    } catch { return "high"; }
+  })() as GraphicsQuality,
+  preferFps: (() => {
+    try {
+      const g = localStorage.getItem("bw:graphics");
+      return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
+    } catch { return false; }
+  })(),
   designPreview: null,
   setDesignPreview: (p) => set({ designPreview: p }),
   designPeek: false,
@@ -1074,6 +1091,10 @@ export const useStore = create<AppState>((set, get) => ({
   setPreferFps: (v) => {
     try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ preferFps: v });
+  },
+  setGraphics: (q) => {
+    try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
+    set({ graphics: q, preferFps: q !== "high" });
   },
 
 

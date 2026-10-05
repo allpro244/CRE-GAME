@@ -70,6 +70,11 @@ function mapPaintSig(g: GameState | null | undefined): string {
  * constant, which is nothing subtle. Generated islands are all cut around
  * [-70.9, 41.1] so nothing moves for them, and the fallback keeps that.
  */
+/** Canvas pixel density per graphics setting: High is native, Medium caps a
+ *  retina screen at 1.25x, Low draws at 1x. */
+const ratioFor = (q: "low" | "medium" | "high", dpr: number) =>
+  q === "low" ? 1 : q === "medium" ? Math.min(dpr, 1.25) : dpr;
+
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
 // One colour per firm, in the order the street was founded, so a rival's book
@@ -297,11 +302,10 @@ export default function MapView() {
       // Only the width was ever read, and the height was assumed to be the
       // width — see fitZoom.
       const shot = framesOf(frame, el.current.clientWidth || 1280, el.current.clientHeight || 800);
-      // Native pixel density by default — a capable machine keeps the same
-      // sharpness it had before. Prefer-FPS is the only path that caps DPR,
-      // and only when the player asks for it on a weak GPU.
+      // Native pixel density on High (the default) — a capable machine keeps
+      // its sharpness. Medium and Low cap it, and only when the player asks.
       const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
-      const preferFps = useStore.getState().preferFps;
+      const graphics = useStore.getState().graphics;
       const map = new maplibregl.Map({
         container: el.current,
         style: composeStyle(base, city),
@@ -310,7 +314,7 @@ export default function MapView() {
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
-        pixelRatio: preferFps ? Math.min(dpr, 1.25) : dpr,
+        pixelRatio: ratioFor(graphics, dpr),
       });
       mapRef.current = map;
       // handle for automated playtests and screenshots
@@ -448,7 +452,7 @@ export default function MapView() {
                 layer.setDemandMap(dm);
               }
             }
-            layer.setPreferFps(useStore.getState().preferFps);
+            layer.setQuality(useStore.getState().graphics);
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
@@ -1403,11 +1407,11 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setDayPhase(0);
   }, [mapReady]);
-  const preferFps = useStore((s) => s.preferFps);
+  const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
-    threeRef.current?.setPreferFps(preferFps);
+    threeRef.current?.setQuality(graphics);
     // The pixel ratio is pinned explicitly, so MapLibre will NOT follow the
     // display on its own: browser zoom, or dragging the window to a screen of
     // a different density, left the canvas at the old ratio and the browser
@@ -1415,7 +1419,7 @@ export default function MapView() {
     let mq: MediaQueryList | null = null;
     const apply = () => {
       const dpr = window.devicePixelRatio || 1;
-      const want = preferFps ? Math.min(dpr, 1.25) : dpr;
+      const want = ratioFor(graphics, dpr);
       if (map && map.getPixelRatio() !== want) map.setPixelRatio(want);
       mq?.removeEventListener("change", apply);
       mq = window.matchMedia(`(resolution: ${dpr}dppx)`);
@@ -1423,7 +1427,7 @@ export default function MapView() {
     };
     apply();
     return () => mq?.removeEventListener("change", apply);
-  }, [preferFps, mapReady]);
+  }, [graphics, mapReady]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setWeather(

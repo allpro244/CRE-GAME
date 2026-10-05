@@ -591,3 +591,23 @@ view; snow drifts down as flakes, and the yards, lawns, parks, boulevard
 malls, footways, fields and rough grass whiten while the carriageways stay
 dark. The precipitation is a box of streaks that follows the camera and
 scales with the view. `docs/map-overhaul/p17-weather-*.jpg`.
+
+# GRAPHICS QUALITY
+
+Settings -> Display has a Graphics row: High (the default; everything above),
+Medium and Low. It replaces "prefer smoother frames", whose old "on" reads as
+Medium. Looks only — the city, its buildings and the game are identical.
+
+| | High | Medium | Low |
+|---|---|---|---|
+| pixel density | native | capped 1.25x | 1x |
+| shadow map | 4096 | 2048 | none cast |
+| walkers and cars | full | 60% | 30% |
+| lamps, cars stop drawing beyond | 2,600 m | 1,800 m | 1,100 m |
+| hedges, fences, railings, benches, flower beds, rooftop plant | always | culled with the lamps | culled with the lamps |
+| rain and snow streaks | yes | yes | no (wet and snowy ground stays) |
+
+Measured on the software renderer at a 2x display, Metropolis district view:
+a frame took 8.98 s on High, 5.54 s on Medium (-38%) and 3.67 s on Low
+(-59%). Absolute numbers are meaningless on a CPU rasteriser; the ratio is
+the point. `docs/map-overhaul/p18-graphics-{high,low}.jpg`.

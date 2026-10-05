@@ -457,6 +457,7 @@ export class RealCityLayer {
     this.setupLights();
     this.buildCity();
     this.buildGround();
+    this.buildChannels();
     this.buildBridges();
     this.buildStreetLife();
     this.scene.add(this.dyn);
@@ -1057,6 +1058,67 @@ export class RealCityLayer {
     return t;
   }
 
+  // ---- creeks and canals in a channel ------------------------------------
+  // The water lies 1.2 m below the street between banks: dressed stone for a
+  // canal, a rougher rubble face for a creek. MapLibre's ground is not in
+  // this layer's depth buffer, so the near bank would let the water show
+  // through it; every bank wall is drawn twice — once depth-only from behind,
+  // ahead of the water, to stand in for the ground at the lip — and once in
+  // colour facing the water. Harbour slips stay at sea level.
+  private buildChannels() {
+    const streams = ((this.ctx as { streams?: { ring: P2[]; water: string }[] }).streams ?? []).filter((s) => s.water !== "slip");
+    if (!streams.length) return;
+    const Z = RealCityLayer.WATER_Z, BED = Z - 0.4, TOP = 0.1;
+    const water = new Buf(), stone = new Buf(), rubble = new Buf();
+    const one = [1, 1, 1];
+    // every piece of water a bank must not wall off: the other streams, the
+    // flooded bridge gaps and the slips
+    const wet: P2[][] = [
+      ...((this.ctx as { streams?: { ring: P2[] }[] }).streams ?? []).map((x) => x.ring.map((q) => this.project(q))),
+      ...((this.ctx as { bridges?: { ring: P2[] }[] }).bridges ?? []).map((x) => x.ring.map((q) => this.project(q))),
+    ];
+    const inPoly = (x: number, y: number, P: P2[]) => {
+      let ins = false;
+      for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+        const xi = P[i][0], yi = P[i][1], xj = P[j][0], yj = P[j][1];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins;
+      }
+      return ins;
+    };
+    for (const st of streams) {
+      let r = st.ring.map((q) => this.project(q));
+      if (r.length < 3) continue;
+      if (ringArea(r) < 0) r = r.slice().reverse();
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(r.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
+      for (const t of tris) for (const i of t) { water.pos.push(r[i][0], r[i][1], Z); water.nrm.push(0, 0, 1); water.uv.push(r[i][0] / 6, r[i][1] / 6); water.col.push(1, 1, 1); }
+      const B = st.water === "canal" ? stone : rubble;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.05) continue;
+        // ring is counter-clockwise: the water is on the left, so the face looks inward
+        const nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+        const mx = (a[0] + b[0]) / 2 - nx * 0.6, my = (a[1] + b[1]) / 2 - ny * 0.6;
+        if (wet.some((P) => P.length >= 3 && inPoly(mx, my, P))) continue;   // water on both sides
+        B.quad([b[0], b[1], BED], [a[0], a[1], BED], [a[0], a[1], TOP], [b[0], b[1], TOP], [nx, ny, 0], [[L, 0], [0, 0], [0, 1.7], [L, 1.7]], one);
+      }
+    }
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2 }));
+    wm.receiveShadow = true; wm.renderOrder = -4;
+    this.scene.add(wm);
+    for (const [buf, col, rough] of [[stone, 0xa69d8b, 0.75], [rubble, 0x7d776c, 0.95]] as [Buf, number, number][]) {
+      if (!buf.count) continue;
+      const g = buf.geometry();
+      const depth = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.BackSide }));
+      depth.renderOrder = -5;
+      const face = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col, roughness: rough, side: THREE.FrontSide, envMapIntensity: 0.25 }));
+      face.receiveShadow = true; face.renderOrder = -4;
+      this.scene.add(depth, face);
+    }
+  }
+  static readonly WATER_Z = -1.2;
+
   // ---- bridges ------------------------------------------------------------
   // The generator lays each creek crossing as a dry gap in the water. Flood
   // the gap, then span it: a stone deck a metre up with parapets along the
@@ -1072,7 +1134,8 @@ export class RealCityLayer {
       if (ringArea(r) < 0) r = r.slice().reverse();
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(r.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
-      for (const t of tris) water.tri([r[t[0]][0], r[t[0]][1], 0.02], [r[t[1]][0], r[t[1]][1], 0.02], [r[t[2]][0], r[t[2]][1], 0.02], [0, 0, 1], wc);
+      const WZ = RealCityLayer.WATER_Z;
+      for (const t of tris) water.tri([r[t[0]][0], r[t[0]][1], WZ], [r[t[1]][0], r[t[1]][1], WZ], [r[t[2]][0], r[t[2]][1], WZ], [0, 0, 1], wc);
       const deck0 = 0.55, deck1 = 1.05, par = 1.9;
       for (const t of tris) {
         stone.tri([r[t[0]][0], r[t[0]][1], deck1], [r[t[1]][0], r[t[1]][1], deck1], [r[t[2]][0], r[t[2]][1], deck1], [0, 0, 1], sc);
@@ -1099,8 +1162,8 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x3f7f9a, roughness: 0.15, metalness: 0.1, vertexColors: true }));
-    wm.receiveShadow = true;
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2 }));
+    wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;
     this.scene.add(wm, sm);
@@ -1213,7 +1276,7 @@ export class RealCityLayer {
           if (rnd() < 0.45) continue;
           const off = st.water === "slip" ? 2.4 : 1.8;
           const s = st.water === "slip" ? 1.3 + rnd() * 0.5 : 0.9 + rnd() * 0.3;
-          this.putInst("hull", a[0] + ux * t + nx * off, a[1] + uy * t + ny * off, 0.05, s, Math.atan2(uy, ux) + (rnd() < 0.5 ? Math.PI : 0), "", HULL[(rnd() * HULL.length) | 0]);
+          this.putInst("hull", a[0] + ux * t + nx * off, a[1] + uy * t + ny * off, st.water === "slip" ? 0.05 : RealCityLayer.WATER_Z + 0.1, s, Math.atan2(uy, ux) + (rnd() < 0.5 ? Math.PI : 0), "", HULL[(rnd() * HULL.length) | 0]);
         }
       }
     }

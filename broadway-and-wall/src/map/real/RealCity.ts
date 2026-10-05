@@ -786,7 +786,7 @@ class Buf {
   }
 }
 
-interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[] }
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 
@@ -1951,16 +1951,15 @@ export class RealCityLayer {
         // people on the footway, a few per block face, at a walking pace
         if (sw >= 1.8) {
           for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 28));
+            const n = Math.max(1, Math.round(L / 14));
             for (let k = 0; k < n; k++) {
-              if (rnd() < 0.3) continue;
               const fwd = rnd() < 0.5;
               const o = hw + sw * (0.35 + rnd() * 0.3);
               const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
               this.walkers.push({
                 x: sx + nx * o * side, y: sy + ny * o * side,
                 ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5,
-                col: COAT[(rnd() * COAT.length) | 0],
+                col: COAT[(rnd() * COAT.length) | 0], draw: rnd(),
               });
             }
           }
@@ -1969,9 +1968,8 @@ export class RealCityLayer {
         // in the running lane inside the parked row
         if (hw >= 5 && L > 50) {
           for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 45));
+            const n = Math.max(1, Math.round(L / 30));
             for (let k = 0; k < n; k++) {
-              if (rnd() < 0.35) continue;
               const o = Math.min(hw - 3.2, Math.max(1.8, hw * 0.45));
               // keep right: one side runs a→b, the other b→a
               const fwd = side < 0;
@@ -1979,7 +1977,7 @@ export class RealCityLayer {
               this.movers.push({
                 x: sx + nx * o * side, y: sy + ny * o * side,
                 ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5,
-                col: CAR[(rnd() * CAR.length) | 0],
+                col: CAR[(rnd() * CAR.length) | 0], draw: rnd(),
               });
             }
           }
@@ -2079,7 +2077,7 @@ export class RealCityLayer {
     fleet("car", this.movers, 0.05);
     fleet("person", this.walkers, 0.15);
     fleet("ferry", this.boats, 0.05);
-    this.stepTraffic(0);
+    this.applyCrowd();
     this.applyMonth();
   }
 
@@ -2088,6 +2086,7 @@ export class RealCityLayer {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
     for (const f of this.fleets) {
       f.list.forEach((m, i) => {
+        if (i >= f.mesh.count) return;
         const d = (m.ph + t * m.spd) % m.len;
         p.set(m.x + m.ux * d, m.y + m.uy * d, f.z);
         q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
@@ -2138,9 +2137,11 @@ export class RealCityLayer {
           const cn = this.cond.get(bbl);
           if (cn !== undefined) {
             const worn = 1 - smooth(0.28, 0.62, cn), fresh = smooth(0.74, 0.94, cn);
-            const dk = (1 - worn * 0.24) * (1 + fresh * 0.05);
+            const dk = (1 - worn * 0.34) * (1 + fresh * 0.08);
             // and greyer: pull the three channels toward their mean
-            k = [k[0] * dk * (1 - worn * 0.10), k[1] * dk, k[2] * dk * (1 + worn * 0.06)];
+            const mean = (k[0] + k[1] + k[2]) / 3;
+            const g2 = worn * 0.45;
+            k = [(k[0] + (mean - k[0]) * g2) * dk * (1 - worn * 0.06), (k[1] + (mean - k[1]) * g2) * dk, (k[2] + (mean - k[2]) * g2) * dk * (1 + worn * 0.04)];
           }
           // the selected building glows warm all over; yours are warmed a touch
           if (own) k = [k[0] * 1.08, k[1], k[2] * 0.86];
@@ -2481,9 +2482,64 @@ export class RealCityLayer {
   setOccupancy(o: Map<string, number>) {
     this.occ = new Map(o);
     for (const d of [this.deeds, this.dynDeeds]) for (const [bbl, deed] of d) this.paintLit(bbl, deed);
+    this.paintBanners();
     this.map?.triggerRepaint();
   }
   private occ = new Map<string, number>();
+  private leaseMeshes: THREE.InstancedMesh[] = [];
+  /**
+   * EMPTY SPACE ADVERTISES ITSELF. With no night there are no dark floors to
+   * read vacancy off, so a building with space to let does what one does on
+   * a real street: hangs a banner. One under 80% let (a fifth of the space
+   * empty — about one building in six at a normal vacancy), two on its two
+   * longest walls under 55%; red FOR LEASE or yellow SPACE AVAILABLE by the
+   * building's own hash. Read from the same occupancy map the windows use.
+   */
+  private paintBanners() {
+    for (const m of this.leaseMeshes) { this.scene.remove(m); m.dispose(); }
+    this.leaseMeshes = [];
+    const spots: { x: number; y: number; z: number; r: number; w: number; kind: number }[][] = [[], []];
+    for (const deeds of [this.deeds, this.dynDeeds]) for (const [bbl, d] of deeds) {
+      const o = this.occ.get(bbl);
+      if (o === undefined || o >= 0.8 || !d.ring || d.height < 6) continue;
+      if (this.dynHeight.has(bbl) && deeds === this.deeds) continue;   // redeveloped: the new building speaks
+      let ring = d.ring;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      const edges = ring.map((a, i) => { const b = ring[(i + 1) % ring.length]; return { a, b, L: Math.hypot(b[0] - a[0], b[1] - a[1]) }; })
+        .filter((e) => e.L > 5).sort((p, q) => q.L - p.L);
+      const k = keyOf(bbl);
+      const kind = hash01(k ^ 0x1ea5e, this.seed) < 0.6 ? 0 : 1;
+      for (const e of edges.slice(0, o < 0.55 ? 2 : 1)) {
+        const nx = (e.b[1] - e.a[1]) / e.L, ny = -(e.b[0] - e.a[0]) / e.L;
+        const w = Math.max(5, Math.min(13, e.L * 0.7));
+        const t = 0.3 + 0.4 * hash01(k ^ 0x5a1, 7);
+        const z = Math.max(3.2, d.height - 2.4 - (d.height > 20 ? hash01(k, 9) * 6 : 0));
+        spots[kind].push({ x: e.a[0] + (e.b[0] - e.a[0]) * t + nx * 0.18, y: e.a[1] + (e.b[1] - e.a[1]) * t + ny * 0.18, z, r: Math.atan2(ny, nx) + Math.PI / 2, w, kind });
+      }
+    }
+    spots.forEach((list, kind) => {
+      if (!list.length) return;
+      const geo = new THREE.PlaneGeometry(1, 1).rotateX(Math.PI / 2);
+      const mesh = new THREE.InstancedMesh(geo, this.bannerMat(kind), list.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      list.forEach((b, i) => { q.setFromEuler(e.set(0, 0, b.r)); mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(b.w, 1, b.w * 0.24))); });
+      mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      this.scene.add(mesh); this.leaseMeshes.push(mesh);
+    });
+  }
+  private bannerMats: THREE.Material[] = [];
+  private bannerMat(kind: number): THREE.Material {
+    if (this.bannerMats[kind]) return this.bannerMats[kind];
+    const { c, g } = makeCanvas(512, 128);
+    g.fillStyle = kind === 0 ? "#b5121b" : "#f2c230"; g.fillRect(0, 0, 512, 128);
+    g.strokeStyle = kind === 0 ? "#f4f0e6" : "#1d1d1d"; g.lineWidth = 6; g.strokeRect(8, 8, 496, 112);
+    g.fillStyle = kind === 0 ? "#f8f5ee" : "#1d1d1d";
+    g.font = "bold 70px Arial, Helvetica, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(kind === 0 ? "FOR LEASE" : "SPACE TO LET", 256, 68);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    this.bannerMats[kind] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.2 });
+    return this.bannerMats[kind];
+  }
   private paintLit(bbl: string, d: Deed) {
     const o = this.occ.get(bbl);
     // the tile itself is ~55% lit rooms; full let reads ~1.6x that, empty near dark
@@ -2506,8 +2562,55 @@ export class RealCityLayer {
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }
-  setActivity(_a: number) { /* no animated walkers here */ }
-  setDemandMap(_m: Record<string, number>) { /* foot traffic: classic renderer */ }
+  /**
+   * CROWDS FOLLOW THE ECONOMY. Every person and car on the street carries a
+   * draw and the demand of the ground under it; it is on the street when
+   * draw < activity x (0.3 + 0.9 x local demand). A thriving downtown
+   * throngs, a district losing its tenants empties out, and the whole town
+   * thins in a slump (cityVisuals' activity, 0.38-1.05).
+   */
+  setActivity(a: number) {
+    this.activity = Math.max(0.2, Math.min(1.1, a));
+    this.applyCrowd();
+  }
+  private activity = 0.8;
+  setDemandMap(m: Record<string, number>) { this.demand = m; this.demandGrid = null; }
+  private demand: Record<string, number> = {};
+  private demandGrid: Map<string, number> | null = null;
+  /** Demand (0-1) near a point, from the lots' scores averaged on an 80 m grid. */
+  private demandAt(x: number, y: number): number {
+    if (!this.demandGrid) {
+      const sum = new Map<string, [number, number]>();
+      for (const [bbl, ringLL] of Object.entries(this.lotRingLL)) {
+        const sc = this.demand[bbl];
+        if (sc === undefined || !ringLL.length) continue;
+        let cx = 0, cy = 0;
+        for (const q of ringLL) { const [px, py] = this.project(q); cx += px; cy += py; }
+        cx /= ringLL.length; cy /= ringLL.length;
+        const key = `${Math.floor(cx / 80)},${Math.floor(cy / 80)}`;
+        const r = sum.get(key) ?? [0, 0]; r[0] += sc; r[1]++; sum.set(key, r);
+      }
+      this.demandGrid = new Map([...sum].map(([k, [a, n]]) => [k, a / n / 100]));
+    }
+    const gx = Math.floor(x / 80), gy = Math.floor(y / 80);
+    let acc = 0, n = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const v = this.demandGrid.get(`${gx + i},${gy + j}`); if (v !== undefined) { acc += v; n++; } }
+    return n ? acc / n : 0.5;
+  }
+  private applyCrowd() {
+    for (const f of this.fleets) {
+      if (f.list === this.boats) continue;
+      for (const m of f.list) if (m.dem === undefined) m.dem = this.demandAt(m.x, m.y);
+      const on = (m: Mover) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5));
+      // the walkers on the street first, so the mesh can simply draw a prefix
+      f.list.sort((p, q) => Number(on(q)) - Number(on(p)));
+      f.list.forEach((m, i) => f.mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
+      if (f.mesh.instanceColor) f.mesh.instanceColor.needsUpdate = true;
+      f.mesh.count = f.list.filter(on).length;
+    }
+    this.stepTraffic(performance.now() / 1000);
+    this.map?.triggerRepaint();
+  }
   setPreferFps(on: boolean) {
     this.preferFps = on;
     const sz = on ? 2048 : 4096;

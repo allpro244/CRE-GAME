@@ -510,3 +510,21 @@ park's lawn met its frontage road with no edge at all.
   every other street and read as a patch; it is the street asphalt now.
 
 `docs/map-overhaul/p11-*.jpg`.
+
+# THE ECONOMY ON THE BUILDINGS
+
+With no night there were no dark floors to read vacancy off, so by day a
+half-empty building looked like a full one.
+
+- **Space to let advertises itself.** A building under 80% let hangs a red
+  FOR LEASE or yellow SPACE TO LET banner near the top of its longest wall
+  (about one building in six at the opening vacancy); under 55%, a second on
+  its next-longest wall. Read from the same occupancy the engine reports.
+- **Crowds follow the economy.** Twice the people and more cars are placed,
+  and each is on the street when its own draw is under activity x (0.3 + 0.9
+  x the demand of the ground it walks on): a thriving downtown throngs, a
+  district losing its tenants empties, and the whole town thins in a slump.
+- **Neglect shows.** Worn buildings go a third darker and much greyer; a
+  refit reads a touch brighter.
+
+`docs/map-overhaul/p12-lease-banners.jpg`.

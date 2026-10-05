@@ -143,13 +143,20 @@ for (const era of ["postwar", "zirp", "volcker"]) {
 
 // ---------------------------------------------------------- 7. the clock
 {
-  const { g, p } = start(73303, { inherit: 2 });
+  // the first seed from 73303 whose inherited deeds include a let building —
+  // the tenant-notice check below needs a tenant to give notice
+  let seed7 = 73303, g, p;
+  for (;; seed7++) {
+    ({ g, p } = start(seed7, { inherit: 2 }));
+    if (Object.values(g.holdings).some((h) => h.tenants?.length && !h.groundLeased)) break;
+    if (seed7 > 73403) throw new Error("no inherited let building in 100 seeds");
+  }
   const li = g.listings[0];
   const watchNow = (s) => ({ ...s, watch: [li.bbl] });
   const stopStd = E.stopRule(g, p), stopMoney = E.stopRule({ ...g, clockStops: "money" }, p), stopAll = E.stopRule({ ...g, clockStops: "everything" }, p);
   check(stopStd(watchNow(g))?.key.startsWith("watch:") && !stopMoney(watchNow({ ...g, clockStops: "money" })),
     `"what can cost money" lets a watched listing wait; the standard clock stops for it`);
-  const h0 = Object.values(g.holdings)[0];
+  const h0 = Object.values(g.holdings).find((h) => h.tenants?.length && !h.groundLeased);
   const soft = structuredClone(g);
   const hs = soft.holdings[h0.bbl];
   if (hs.tenants[0]) hs.tenants[0].nonRenewM = soft.month;

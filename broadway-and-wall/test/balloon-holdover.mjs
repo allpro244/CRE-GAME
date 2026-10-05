@@ -24,10 +24,15 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 // A building with a bank loan, whose balloon lands in two months, on a firm
 // with no cash and an empty building, so the ladder cannot renew it and the
 // coupon is the only thing that clears.
-function setUp(seed) {
-  let g = E.firstListings(E.newGame(seed, parcels, 6_000_000), parcels, bbls);
-  for (let m = 0; m < 6; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
-  const li = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) })).filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000).sort((a, b) => b.l.ask - a.l.ask)[0];
+function setUp(seed0) {
+  // the first seed from seed0 whose tape carries a mid-size office: the test
+  // is about the balloon, not about which lots one opening happens to list
+  let g, li;
+  for (let seed = seed0; seed < seed0 + 40 && !li; seed++) {
+    g = E.firstListings(E.newGame(seed, parcels, 6_000_000), parcels, bbls);
+    for (let m = 0; m < 6; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
+    li = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) })).filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000).sort((a, b) => b.l.ask - a.l.ask)[0];
+  }
   if (!li) throw new Error("no office on the tape");
   const r = E.executePurchase(g, parcels, li.l.bbl, li.l.ask, "harbor", false, 1);
   if (r.err) throw new Error(r.err);

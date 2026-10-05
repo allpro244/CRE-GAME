@@ -436,7 +436,7 @@ export function generateCity(cfg) {
   // Which street plan the old quarters use: 1 = per-cell splitting (every
   // save made before plan 2 existed), 2 = streets first. Read from the config
   // so a save rebuilds the exact town it was played in.
-  const PLAN_V = cfg.planV ?? 1;
+  const PLAN_V = cfg.planV ?? 2;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
   // fabric with almost nothing over sixty metres, so the town you are handed
   // in month 0 has somewhere to go — the skyline is something the campaign

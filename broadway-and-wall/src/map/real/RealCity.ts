@@ -289,9 +289,16 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way
       .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 3.5, vGz));")
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;");
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;")
+      // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
+      // and its relief and mirror-glass reflection alias into shimmering
+      // stripes. Fade the normal map out and rough the glass up with
+      // distance — what a camera sees of a far tower anyway.
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);")
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;")
+      .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 

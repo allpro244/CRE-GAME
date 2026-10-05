@@ -572,3 +572,11 @@ middle ends in a clapboard ferry terminal with a ferry alongside. The water
 side is read off the land ring. The generator's ~1,500 seawall railing posts
 and its promenade benches — laid out, oriented, and never drawn by the 3D
 city — are drawn at last. `docs/map-overhaul/p16-waterfront.jpg`.
+
+# FAR TOWERS STAY CALM
+
+Past a few hundred metres a window is a pixel, and its relief and
+mirror-glass reflection aliased into shimmering stripes on the curtain
+walls. Every facade now fades its normal map out between 320 and 1,300 m
+from the eye, roughens its glass toward 0.62 and drops 60% of its metalness
+over the same range — what a camera actually resolves of a far tower.

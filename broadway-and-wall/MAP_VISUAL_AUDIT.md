@@ -489,3 +489,24 @@ and the probes and audits that bundled it (`tools/styleaudit.mjs`,
 the classic map drew on the buildings themselves — lit vacant floors after
 dark (moot: there is no night) and civic-works scaffolding — are not drawn;
 the economy, picking, lenses, badges and panels are unaffected.
+
+# STREETS AND PARKS MEET CLEANLY
+
+The owner: "make sure the streets and parks are not running into each other
+and all look clean." Measured on four towns first: where a diagonal
+boulevard crossed a park, 24-39% of the park lay under boulevard roadway or
+its planted mall — the road and the allée ran on across the lawn — and every
+park's lawn met its frontage road with no edge at all.
+
+- **A boulevard stops at the park's frontage road** (citygen, paint and
+  context only — reservations and lots untouched): the roadway is cut where
+  its centreline enters a park's reservation, the planted mall a further
+  6 m short, so the median ends in a kerb nose the traffic swings round, and
+  the allée trees that stood on the frontage ring or the lawn are dropped.
+  Overlap now 1-3% everywhere (the kerb seam).
+- **Every park has an edge**: the same 15 cm footway as the blocks, 2.6 m
+  wide, runs round the inside of each park with its kerb on the road side.
+- **One asphalt**: the park frontage ring was painted a lighter grey than
+  every other street and read as a patch; it is the street asphalt now.
+
+`docs/map-overhaul/p11-*.jpg`.

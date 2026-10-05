@@ -35,6 +35,25 @@ function keyOf(s: string): number {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
+/** A counter-clockwise ring pulled in by d metres (mitred, capped); null if it collapses. */
+function insetRing(r: P2[], d: number): P2[] | null {
+  const n = r.length;
+  const out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const e1 = [c[0] - p[0], c[1] - p[1]], e2 = [q[0] - c[0], q[1] - c[1]];
+    const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+    // inward (left-hand) normals of the two edges meeting here
+    const n1 = [-e1[1] / l1, e1[0] / l1], n2 = [-e2[1] / l2, e2[0] / l2];
+    const mx = n1[0] + n2[0], my = n1[1] + n2[1];
+    const ml = Math.hypot(mx, my);
+    if (ml < 1e-6) { out.push([c[0] + n2[0] * d, c[1] + n2[1] * d]); continue; }
+    // the mitre: d / cos(half the turn) = 2d / |n1 + n2|, capped at 4d
+    const s = Math.min(d * 4, (d * 2) / ml);
+    out.push([c[0] + (mx / ml) * s, c[1] + (my / ml) * s]);
+  }
+  return ringArea(out) > 1 ? out : null;
+}
 function ringArea(r: P2[]): number {
   let a = 0;
   for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; }
@@ -1674,6 +1693,41 @@ export class RealCityLayer {
         const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
         const q = cr >= 0 ? p : [p[0], p[2], p[1]];
         for (const v of q) { pave.pos.push(v[0], v[1], v[2]); pave.nrm.push(0, 0, 1); pave.uv.push(v[0] / 1.5, v[1] / 1.5); pave.col.push(1, 1, 1); }
+      }
+    }
+    // EVERY PARK HAS AN EDGE. Blocks stand on raised footways with a kerb; a
+    // park's lawn met the frontage road with nothing between them, a green
+    // field pasted on the asphalt. The same 15 cm footway, 2.6 m wide, runs
+    // round the inside of every park outline, with its kerb on the road side.
+    const parkKerbs: P2[][] = [];
+    for (const pk of (this.ctx.parks ?? []) as ({ ring: P2[] } | P2[])[]) {
+      const ringLL = Array.isArray(pk) ? pk : pk.ring;
+      if (!ringLL || ringLL.length < 3) continue;
+      let ring = ringLL.map((q) => this.project(q));
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      if (Math.abs(ringArea(ring)) < 120) continue;
+      const inner = insetRing(ring, 2.6);
+      if (!inner) continue;
+      let tris: number[][] = [];
+      try {
+        tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), [inner.map(([x, y]) => new THREE.Vector2(x, y))]);
+      } catch { continue; }
+      const all = [...ring, ...inner];
+      for (const t of tris) {
+        const p = t.map((i) => [all[i][0], all[i][1], H]);
+        const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        const q = cr >= 0 ? p : [p[0], p[2], p[1]];
+        for (const v of q) { pave.pos.push(v[0], v[1], v[2]); pave.nrm.push(0, 0, 1); pave.uv.push(v[0] / 1.5, v[1] / 1.5); pave.col.push(1, 1, 1); }
+      }
+      parkKerbs.push([...ring, ring[0]]);
+    }
+    for (const pts of parkKerbs) {
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.05) continue;
+        const n = [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0];
+        kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], n, [[0, 0], [L, 0], [L, 1], [0, 1]], white);
       }
     }
     for (const line of c.kerbs ?? []) {

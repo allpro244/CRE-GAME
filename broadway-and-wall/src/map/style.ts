@@ -464,7 +464,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "apron"],
-        paint: { "fill-color": "#86817a" },
+        // the same asphalt as every other street: in the 3D city a lighter
+        // frontage ring read as a patch, not a road (the park itself now has
+        // a raised footway and kerb round it to mark the edge)
+        paint: { "fill-color": "#55575a" },
       },
       {
         // THE MALL BETWEEN THE CARRIAGEWAYS. A grand boulevard is two roadways

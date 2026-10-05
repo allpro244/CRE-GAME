@@ -1133,6 +1133,92 @@ export class RealCityLayer {
     }
   }
 
+  /**
+   * THE WORKING HARBOUR. The quay was a grey line on the map. Every ~80 m
+   * along it a timber pier now runs out into the water on pilings, boats
+   * moored down both sides; on a long quay the pier nearest its middle ends
+   * in a ferry terminal with a ferry alongside. Which side is water is read
+   * off the land ring. Railings along the seawalls and benches on the
+   * promenades are the generator's own (rails, benches), drawn at last.
+   */
+  private buildWaterfront() {
+    const c = this.ctx;
+    const landLL = c.land;
+    const land = landLL && landLL.length >= 4 ? landLL.map((q) => this.project(q)) : null;
+    const onLand = (x: number, y: number) => {
+      if (!land) return true;
+      let ins = false;
+      for (let i = 0, j = land.length - 1; i < land.length; j = i++) { const xi = land[i][0], yi = land[i][1], xj = land[j][0], yj = land[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; }
+      return ins;
+    };
+    let s = (this.seed * 6007) % 2147483646 + 1;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const deck = this.buf("pier"); const DZ = 1.1;
+    const HULL = [[0.92, 0.92, 0.9], [0.86, 0.85, 0.8], [0.16, 0.22, 0.34], [0.2, 0.32, 0.26], [0.52, 0.2, 0.17], [0.3, 0.3, 0.31]];
+    for (const line of c.quays ?? []) {
+      const pts = line.map((q) => this.project(q));
+      let total = 0; const segs: { a: P2; b: P2; L: number; s0: number }[] = [];
+      for (let i = 0; i + 1 < pts.length; i++) { const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); segs.push({ a: pts[i], b: pts[i + 1], L, s0: total }); total += L; }
+      const piers: { x: number; y: number; ox: number; oy: number; ux: number; uy: number; d: number }[] = [];
+      for (let d = 40; d < total - 30; d += 70 + rnd() * 30) {
+        const sg = segs.find((g) => d >= g.s0 && d < g.s0 + g.L);
+        if (!sg || sg.L < 1) continue;
+        const ux = (sg.b[0] - sg.a[0]) / sg.L, uy = (sg.b[1] - sg.a[1]) / sg.L;
+        const t = d - sg.s0, x = sg.a[0] + ux * t, y = sg.a[1] + uy * t;
+        // the water side
+        let ox = -uy, oy = ux;
+        if (onLand(x + ox * 25, y + oy * 25)) { ox = -ox; oy = -oy; }
+        if (onLand(x + ox * 25, y + oy * 25)) continue;
+        piers.push({ x, y, ox, oy, ux, uy, d });
+      }
+      const mid = total / 2;
+      const term = total > 400 && piers.length ? piers.reduce((p, q) => Math.abs(q.d - mid) < Math.abs(p.d - mid) ? q : p) : null;
+      for (const p of piers) {
+        const len = 30 + rnd() * 14, w = 7;
+        const corner = (along: number, across: number, z: number) => [p.x + p.ox * along + p.ux * across, p.y + p.oy * along + p.uy * across, z];
+        const A = corner(0, -w / 2, DZ), B = corner(0, w / 2, DZ), C = corner(len, w / 2, DZ), D = corner(len, -w / 2, DZ);
+        const d0 = deck.count;
+        // wound whichever way the pier points; the boards run across it
+        deck.face([A, B, C, D], [0, 0, 1], [1, 1, 1], (q) => [(q[0] * p.ux + q[1] * p.uy) / 3, (q[0] * p.ox + q[1] * p.oy) / 3]);
+        const mx = (A[0] + C[0]) / 2, my = (A[1] + C[1]) / 2;
+        for (const [P, Q] of [[B, C], [C, D], [D, A]] as number[][][]) {
+          // the fascia faces away from the deck's middle
+          const n = [(P[0] + Q[0]) / 2 - mx, (P[1] + Q[1]) / 2 - my, 0];
+          deck.face([P, Q, [Q[0], Q[1], DZ - 0.45], [P[0], P[1], DZ - 0.45]], n, [0.75, 0.75, 0.75]);
+        }
+        void d0;
+        for (let a = 2; a < len; a += 4) for (const side of [-1, 1]) {
+          const q = corner(a, side * (w / 2 - 0.3), 0);
+          this.putInst("pile", q[0], q[1], -1.6, 1, 0);
+        }
+        // boats along both sides
+        for (let a = 6; a < len - 4; a += 9) for (const side of [-1, 1]) {
+          if (rnd() < 0.45) continue;
+          const q = corner(a, side * (w / 2 + 2.6), 0);
+          this.putInst("hull", q[0], q[1], 0.05, 1.2 + rnd() * 0.7, Math.atan2(p.oy, p.ox), "", HULL[(rnd() * HULL.length) | 0]);
+        }
+        if (p === term) {
+          // the ferry terminal at the pier head, and a ferry alongside
+          const h0 = corner(len - 2, -6, 0), h1 = corner(len - 2, 6, 0), h2 = corner(len + 9, 6, 0), h3 = corner(len + 9, -6, 0);
+          const ring: P2[] = [[h0[0], h0[1]], [h1[0], h1[1]], [h2[0], h2[1]], [h3[0], h3[1]]];
+          const ccw = ringArea(ring) > 0 ? ring : ring.slice().reverse();
+          this.addVolume(ccw, DZ, DZ + 6.5, "clapboard", [0.9, 0.92, 0.95], "", true, false, keyOf("ferry-terminal"), false, true, "", 1905);
+          const f = corner(len + 4, 13, 0);
+          this.putInst("ferry", f[0], f[1], 0.05, 1, Math.atan2(p.uy, p.ux));
+        }
+      }
+    }
+    // railings and benches, as the generator laid them out
+    for (const r of c.rails ?? []) {
+      const [x, y] = this.project(r.p);
+      this.putInst("railing", x, y, 0.15, 1, (r.r * Math.PI) / 180);
+    }
+    for (const b of c.benches ?? []) {
+      const [x, y] = this.project(b.p);
+      this.putInst("bench", x, y, 0.15, 1, (b.r * Math.PI) / 180);
+    }
+  }
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
@@ -1566,6 +1652,7 @@ export class RealCityLayer {
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
     }
+    this.buildWaterfront();
     this.flushBufs();
     this.flushInst();
     // a shadow catcher over MapLibre's ground: transparent except where a
@@ -1611,7 +1698,7 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
@@ -1650,6 +1737,9 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
+      case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
+      case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
       case "steel": return { g: merge([box(0.45, 0.45, 3.55, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.6, metalness: 0.3 }) };
       case "hoard": return { g: merge([box(2.42, 0.06, 2.4, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.9 }) };
       case "digger": {
@@ -1942,6 +2032,17 @@ export class RealCityLayer {
   }
 
   private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private pierMatC: THREE.MeshStandardMaterial | null = null;
+  /** Weathered timber decking, boards across the pier. */
+  private pierMat(): THREE.MeshStandardMaterial {
+    if (this.pierMatC) return this.pierMatC;
+    const { c, g } = makeCanvas(64, 64);
+    let s = 31; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let y = 0; y < 64; y += 8) { const v = 0.85 + rnd() * 0.2; g.fillStyle = `rgb(${128 * v | 0},${108 * v | 0},${84 * v | 0})`; g.fillRect(0, y, 64, 7); g.fillStyle = "rgba(40,30,20,0.6)"; g.fillRect(0, y + 7, 64, 1); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+    this.pierMatC = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
+    return this.pierMatC;
+  }
   /** A market garden: rows of plants on furrowed soil, 16 m along by 3.2 m across a tile. */
   private cropTex(): THREE.CanvasTexture {
     const { c, g } = makeCanvas(256, 64);
@@ -2553,7 +2654,7 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = mesh.receiveShadow = true;
       this.dyn.add(mesh); dynMeshes.set(name, mesh);

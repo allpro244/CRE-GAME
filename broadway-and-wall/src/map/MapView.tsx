@@ -378,6 +378,7 @@ export default function MapView() {
                 }),
               kerbs: linesOf("curb"),
               zebras: linesOf("zebra"),
+              quays: linesOf("quay"),
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),

@@ -562,3 +562,13 @@ frame rises floor by floor, rusted steel columns every 6 m and a concrete
 slab each storey, with the cladding following two floors behind (three
 early on), so the top of a rising tower is always open structure until the
 cladding closes it just before delivery. `docs/map-overhaul/p15-construction.jpg`.
+
+# A WORKING HARBOUR
+
+The quay was a grey line. Every 70-100 m along it a timber pier now runs
+out 30-44 m into the water on pilings, decked in boards across its width,
+boats moored down both sides; on a quay over 400 m long the pier nearest its
+middle ends in a clapboard ferry terminal with a ferry alongside. The water
+side is read off the land ring. The generator's ~1,500 seawall railing posts
+and its promenade benches — laid out, oriented, and never drawn by the 3D
+city — are drawn at last. `docs/map-overhaul/p16-waterfront.jpg`.

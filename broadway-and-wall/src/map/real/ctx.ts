@@ -13,6 +13,8 @@ export interface CityCtx {
   sidewalks?: { ring: [number, number][]; holes: [number, number][][] }[];
   kerbs?: [number, number][][];
   zebras?: [number, number][][];
+  /** The harbour's working edge, where the piers go out. */
+  quays?: [number, number][][];
   piles?: [number, number][];
   land?: [number, number][];
   benches?: Oriented[];

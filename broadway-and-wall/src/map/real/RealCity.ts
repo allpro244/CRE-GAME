@@ -343,6 +343,7 @@ export class RealCityLayer {
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
+  private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
   private deeds = new Map<string, Deed>();
@@ -457,7 +458,7 @@ export class RealCityLayer {
     for (const f of this.fleets) f.mesh.visible = f.list === this.boats ? !veryFar : !far;
     for (const k of ["lamp", "car", "lotcar"]) { const m = this.inst.get(k); if (m) m.visible = !far; }
     this.renderer.resetState();
-    if (this.fleets.length && !this.paused && typeof document !== "undefined" && !document.hidden) {
+    if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
       this.stepTraffic(now / 1000);
       // ~30 fps for the traffic; MapLibre only paints on demand
@@ -802,7 +803,7 @@ export class RealCityLayer {
         const cab = box(2.2, 1.62, 0.62, -0.2, 0, 1.0);
         return { g: merge([body, cab]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }), colored: true };
       }
-      case "lamp": return { g: merge([cyl(0.09, 6, 0, 6), box(1.4, 0.18, 0.14, 0.6, 0, 5.9)]), mat: new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4 }) };
+      case "lamp": return { g: merge([cyl(0.09, 6, 0, 6), box(1.4, 0.18, 0.14, 0.6, 0, 5.9)]), mat: this.lampMat };
       case "person": return { g: merge([box(0.42, 0.3, 0.95, 0, 0, 0), box(0.46, 0.34, 0.6, 0, 0, 0.9), new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0, 1.68)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
       case "fountain": return { g: merge([cyl(5.2, 0.55, 0, 24), cyl(1.1, 1.6, 0.55, 12), cyl(2.4, 0.3, 2.1, 16), cyl(0.5, 1.1, 2.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.7 }) };
       case "basin": return { g: merge([cyl(4.6, 0.08, 0.5, 24), cyl(2.1, 0.06, 2.38, 16)]), mat: new THREE.MeshStandardMaterial({ color: 0x3b6f82, roughness: 0.08, metalness: 0.1, envMapIntensity: 1.3 }) };
@@ -1161,7 +1162,17 @@ export class RealCityLayer {
       });
       f.mesh.instanceMatrix.needsUpdate = true;
     }
+    // a crane driver works a load: sweep, hesitate, reverse
+    if (this.cranes) {
+      this.cranes.at.forEach((c, i) => {
+        const r = c.r + 1.1 * Math.sin(t * 0.11 + c.r * 3) + 0.45 * Math.sin(t * 0.29 + c.r);
+        q.setFromEuler(e.set(0, 0, r));
+        this.cranes!.mesh.setMatrixAt(i, m4.compose(p.set(c.x, c.y, 0), q, one));
+      });
+      this.cranes.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
+  private cranes: { mesh: THREE.InstancedMesh; at: { x: number; y: number; r: number }[] } | null = null;
   private movers: Mover[] = [];
   private walkers: Mover[] = [];
   private boats: Mover[] = [];
@@ -1298,6 +1309,7 @@ export class RealCityLayer {
     const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems;
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map();
     const craneAt: { x: number; y: number; r: number }[] = [];
+    this.cranes = null;
     for (const it of items) {
       this.flattenStatic(saveDeeds, it.bbl);
       if (!(it.heightM > 0) || it.cls === "land") continue;
@@ -1332,6 +1344,7 @@ export class RealCityLayer {
       craneAt.forEach((c, i) => { q.setFromEuler(e.set(0, 0, c.r)); cm.setMatrixAt(i, m4.compose(new THREE.Vector3(c.x, c.y, 0), q, new THREE.Vector3(1, 1, 1))); });
       cm.castShadow = cm.receiveShadow = true;
       this.dyn.add(cm);
+      this.cranes = { mesh: cm, at: craneAt };
     }
     this.bindRanges(this.deeds, dynMeshes);
     this.dynDeeds = this.deeds;
@@ -1424,6 +1437,7 @@ export class RealCityLayer {
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
+    this.lampMat.emissiveIntensity = night * 2.2;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign

@@ -252,7 +252,7 @@ another. Grep before you add another.
   their place on the track; Draw/Repay no longer read "$0" when nothing is
   set; a gold halo (`bw-select-halo`) marks the selected lot from altitude;
   and the map's animation clock pauses under an open desk
-  (`ThreeBuildings.setPaused`) so a page and an Advance under it are not
+  (`RealCityLayer.setPaused`) so a page and an Advance under it are not
   sharing the GPU with walkers nobody can see.
 - **Shops at grade are the owner's call** (Sep 2026). `DevDraft.groundRetail`
   ("auto" | "on" | "off") on the develop desk's Programme tab for office and

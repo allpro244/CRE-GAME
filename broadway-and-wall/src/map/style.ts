@@ -855,7 +855,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         id: "bridges",
         type: "fill",
         source: "bw-context",
-        // retired: the 3D layer builds each crossing (ThreeBuildings.buildRiver)
+        // retired: the 3D layer builds each crossing (RealCityLayer.buildBridges)
         // and a flat grey slab under it read as a second, sunken deck
         filter: ["==", ["get", "kind"], "__retired_bridge"],
         paint: { "fill-color": "#67665f" },

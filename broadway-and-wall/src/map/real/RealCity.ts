@@ -1,28 +1,27 @@
 /**
- * THE REAL-GEOMETRY CITY — a second renderer for the same game.
+ * THE CITY — the game's 3D renderer.
  *
- * ThreeBuildings draws every facade in a fragment shader on plain boxes. This
- * layer builds the city the way the WebGPU street prototype did: walls with
- * world-scale facade textures (albedo, roughness/metalness, normal relief and
- * lit-window emission per family), real cornices, string courses and lobby
- * bases, roof plant, street trees and parked cars, all lit by stock
- * physically based materials, a soft shadow map and an environment for the
- * glass to reflect. It reads exactly the inputs ThreeBuildings reads and
- * answers the same calls MapView makes, so the game, picking (MapLibre's
- * parcel layer), labels, badges and every panel work unchanged.
- *
- * It is a PREVIEW behind `realRender` in the store (Settings → Display), off
- * by default. Nothing here is read by the engine; nothing here writes state.
+ * Builds the city as real geometry: walls with world-scale facade textures
+ * (albedo, roughness/metalness, normal relief and lit-window emission per
+ * family and elevation), real cornices, parapets, setbacks and crowns, roofs
+ * by material, roof plant, street trees, parked and moving cars, people,
+ * water in channels and a rippled harbour, all lit by stock physically based
+ * materials, a soft shadow map, aerial perspective and a sky for the glass to
+ * reflect. It replaced the classic shader-on-boxes renderer (ThreeBuildings,
+ * retired) as the only map. Picking (MapLibre's parcel layer), labels, badges
+ * and every panel are MapView's. Nothing here is read by the engine; nothing
+ * here writes state.
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
-import type { BuildingVolume, ThreeBuildings } from "../ThreeBuildings";
+import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
+import type { CityCtx, PlayerItem } from "./ctx";
+export type { CityCtx, PlayerItem };
 
-type Ctx = ConstructorParameters<typeof ThreeBuildings>[3];
+type Ctx = CityCtx;
 type P2 = [number, number];
-type PlayerItem = Parameters<ThreeBuildings["setPlayerBuildings"]>[0][number];
 
 // ---- small helpers ---------------------------------------------------------
 

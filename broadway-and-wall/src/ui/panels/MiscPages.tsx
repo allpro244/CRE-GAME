@@ -202,8 +202,6 @@ export function SettingsPage() {
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
   const preferFps = useStore((s) => s.preferFps);
-  const realRender = useStore((s) => s.realRender);
-  const setRealRender = useStore((s) => s.setRealRender);
   const setPreferFps = useStore((s) => s.setPreferFps);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
@@ -292,14 +290,6 @@ export function SettingsPage() {
         detail="For machines without a discrete GPU: trades a little sharpness for a steadier frame rate. The sim is unchanged."
         more={"Off by default — a fast machine keeps native sharpness and the full photograph. On, it spends less fill rate on pixel density and "
           + "multisampling so the map stays nearer sixty frames. Facades, occupancy and weather are unchanged either way."}
-      />
-      <Toggle
-        on={realRender}
-        set={setRealRender}
-        label="3D city"
-        detail="Draws the city with real building geometry — modelled cornices, windows set in the wall, glass that reflects, soft shadows, street trees and parked cars. The game, its numbers and your save are unchanged; switch it off to go back to the classic map."
-        more={"On by default. A few overlays the classic map draws on the buildings themselves (lit vacancies, civic works) are not in it yet; "
-          + "the lenses, your holdings and the selected building all are. It rebuilds the map when you flip it."}
       />
       <div className="hint">
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction

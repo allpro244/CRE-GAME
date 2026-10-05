@@ -266,8 +266,6 @@ interface AppState {
    * classic shader-facade one. A preview, off by default; a preference of
    * this browser, not save state. Flipping it rebuilds the map view.
    */
-  realRender: boolean;
-  setRealRender: (v: boolean) => void;
   /**
    * Map-only mode — hide firm page sheets so the skyline is the desk.
    * HUD, inbox, digest and decision cards stay. UI preference, not save state.
@@ -738,9 +736,6 @@ export const useStore = create<AppState>((set, get) => ({
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
-  // THE 3D CITY IS THE DEFAULT (the owner's call). Only an explicit "off"
-  // from Settings → Display keeps the classic map.
-  realRender: (() => { try { return localStorage.getItem("bw:render-real") !== "off"; } catch { return true; } })(),
   designPreview: null,
   setDesignPreview: (p) => set({ designPreview: p }),
   designPeek: false,
@@ -1081,10 +1076,6 @@ export const useStore = create<AppState>((set, get) => ({
     set({ preferFps: v });
   },
 
-  setRealRender: (v) => {
-    try { localStorage.setItem("bw:render-real", v ? "on" : "off"); } catch { /* private mode */ }
-    set({ realRender: v });
-  },
 
   setMapOnly: (v) => {
     try { localStorage.setItem("bw:map-only", v ? "on" : "off"); } catch { /* private mode */ }

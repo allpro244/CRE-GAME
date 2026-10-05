@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
-import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
+import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
@@ -274,9 +274,8 @@ export default function MapView() {
   const ownedRef = useRef<Set<string>>(new Set());
   const listedRef = useRef<Set<string>>(new Set());
   const assembledRef = useRef<Set<string>>(new Set());
-  const threeRef = useRef<ThreeBuildings | null>(null);
+  const threeRef = useRef<RealCityLayer | null>(null);
   // flipping the preview renderer rebuilds the map with the other 3D layer
-  const realRender = useStore((s) => s.realRender);
   const [mapReady, setMapReady] = useState(false);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -362,29 +361,23 @@ export default function MapView() {
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
-            // The preview renderer answers the same calls (see RealCityLayer),
-            // so everything below treats either one as the 3D layer.
-            const Layer = (useStore.getState().realRender ? RealCityLayer : ThreeBuildings) as unknown as typeof ThreeBuildings;
-            const realOn = useStore.getState().realRender;
             const linesOf = (kind: string): [number, number][][] => (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === kind && f.geometry.type === "LineString")
               .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
-            const layer = new Layer(volumes, frame.core, curbs, {
+            const layer = new RealCityLayer(volumes, frame.core, curbs, {
               curbMeta,
-              // the raised footways, kerbs and crossings the preview builds in 3D
-              ...(realOn ? {
-                sidewalks: (ctx?.features ?? [])
-                  .filter((f) => f.properties?.kind === "sidewalk" && f.geometry.type === "Polygon")
-                  .map((f) => {
-                    const c = (f.geometry as GeoJSON.Polygon).coordinates;
-                    return {
-                      ring: (c[0] as [number, number][]).slice(0, -1),
-                      holes: c.slice(1).map((h) => (h as [number, number][]).slice(0, -1)),
-                    };
-                  }),
-                kerbs: linesOf("curb"),
-                zebras: linesOf("zebra"),
-              } : {}),
+              // the raised footways, kerbs and crossings, built in 3D
+              sidewalks: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "sidewalk" && f.geometry.type === "Polygon")
+                .map((f) => {
+                  const c = (f.geometry as GeoJSON.Polygon).coordinates;
+                  return {
+                    ring: (c[0] as [number, number][]).slice(0, -1),
+                    holes: c.slice(1).map((h) => (h as [number, number][]).slice(0, -1)),
+                  };
+                }),
+              kerbs: linesOf("curb"),
+              zebras: linesOf("zebra"),
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
@@ -403,7 +396,7 @@ export default function MapView() {
                   };
                 }),
               // park ponds stay level with the lawn; creeks and canals go
-              // into a channel of their own (ThreeBuildings.buildRiver)
+              // into a channel of their own (RealCityLayer.buildChannels)
               ponds: ringsOf("pond"),
               streams: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "stream" && f.geometry.type === "Polygon")
@@ -428,7 +421,7 @@ export default function MapView() {
                 : undefined,
               // THE DEEDS. The renderer had every building's outline and not a
               // single lot's, so a redevelopment was drawn inside the footprint
-              // of whatever it replaced — see ThreeBuildings.parcelRings. The
+              // of whatever it replaced. The
               // geometry was already in the room: this is the same collection
               // MapLibre paints the parcel fill from.
               lots: (() => {
@@ -535,7 +528,7 @@ export default function MapView() {
       setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, realRender]);
+  }, [city]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -749,7 +742,7 @@ export default function MapView() {
     for (const bbl of ownedRef.current) if (!nowOwned.has(bbl)) setState(bbl, { owned: false });
     for (const bbl of nowOwned) if (!ownedRef.current.has(bbl)) setState(bbl, { owned: true });
     ownedRef.current = nowOwned;
-    // ...and on the buildings themselves: the gilt parapet (ThreeBuildings
+    // ...and on the buildings themselves: the gold roof (RealCityLayer
     // setOwned). Every deed of an assemblage you hold is yours, so the
     // folded children are gilded with their parent.
     //
@@ -1085,7 +1078,7 @@ export default function MapView() {
   // any building — brick, limestone, blue glass — into the same mustard slab
   // at exactly the moment the player had asked to look at it. The shader now
   // draws a gold rim, a gilt parapet and a slow scan up the facade instead
-  // (ThreeBuildings setHighlight), and the building keeps its own face.
+  // (RealCityLayer setHighlight), and the building keeps its own face.
   //
   // Its own effect, too: the tint pass below walks the whole owner index, and
   // it used to re-run on every mouse move because hover was one of its keys.
@@ -1286,8 +1279,8 @@ export default function MapView() {
     // like. The renderer used to guess — every building the player or a rival
     // put up was painted somewhere in a hard-coded 1992-2017 band, whatever
     // year the campaign was actually in — and it chose its facade off class
-    // alone. Both of those are answers `styles.ts` already has, and it needs
-    // the year to give them.
+    // alone. The renderer's familyFor answers both, and it needs the year to
+    // give them.
     const nowYear = START_YEAR + Math.floor(game.month / 12);
     const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number; design?: BuildingDesign }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
@@ -1449,7 +1442,7 @@ export default function MapView() {
   // demand was, the buildings the demand was FOR disappeared — and with them
   // every cue (height, age, what is already standing) that makes a heat map
   // mean anything. The layer now stays, desaturates its walls and paints the
-  // ROOFS with the same ramp the ground carries (ThreeBuildings.setLens), so
+  // ROOFS with the same ramp the ground carries (RealCityLayer.setLens), so
   // the heat map covers the whole city seen from above rather than the gaps
   // between its buildings.
   //
@@ -1464,7 +1457,6 @@ export default function MapView() {
     if (!map || !mapReady) return;
     const layer = threeRef.current;
     if (layer) {
-      if (!layer.visible) { layer.visible = true; map.triggerRepaint(); }
       // the flat extrusions are the no-mesh fallback only
       map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
     }

@@ -473,3 +473,19 @@ its look. The Build desk's Design tab now has a design picker:
 
 The classic map keeps its own styles and does not draw the preview.
 `docs/map-overhaul/p10-*.jpg`.
+
+# THE CLASSIC RENDERER IS RETIRED
+
+The owner's call: "Get rid of the previous map / rendering, we are switching
+over officially." The 3D city (`src/map/real/RealCity.ts`) is the only map:
+MapView constructs `RealCityLayer` directly, the Settings → Display toggle
+and the store's `realRender` are gone, and the city-context and player-item
+types it borrowed now live in `src/map/real/ctx.ts`. Deleted with the classic
+renderer (`ThreeBuildings.ts`, ~17,000 lines): its style registry
+(`styles.ts`), its skyline signature (`skylineSig`) and test, `test/plate.mjs`,
+and the probes and audits that bundled it (`tools/styleaudit.mjs`,
+`tools/styleboard.mjs`, `tools/probe/crownsweep.mjs`,
+`tools/probe/silhouette.mjs`; the `styles` and `plate` scripts). Two overlays
+the classic map drew on the buildings themselves — lit vacant floors after
+dark (moot: there is no night) and civic-works scaffolding — are not drawn;
+the economy, picking, lenses, badges and panels are unaffected.

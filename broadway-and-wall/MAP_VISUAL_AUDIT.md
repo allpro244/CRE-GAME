@@ -580,3 +580,14 @@ mirror-glass reflection aliased into shimmering stripes on the curtain
 walls. Every facade now fades its normal map out between 320 and 1,300 m
 from the eye, roughens its glass toward 0.62 and drops 60% of its metalness
 over the same range — what a camera actually resolves of a far tower.
+
+# WEATHER YOU CAN SEE
+
+The sky and the sun followed the weather; the ground did not. Now, from the
+month's weather (cityVisuals): overcast softens the building shadows to a
+smudge; rain turns the footways dark and glossy, lays a faint wet sheen over
+the ground that reflects the sky, and sends rain streaks falling round the
+view; snow drifts down as flakes, and the yards, lawns, parks, boulevard
+malls, footways, fields and rough grass whiten while the carriageways stay
+dark. The precipitation is a box of streaks that follows the camera and
+scales with the view. `docs/map-overhaul/p17-weather-*.jpg`.

@@ -948,6 +948,7 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
       const tt = performance.now() / 1000;
@@ -1664,7 +1665,7 @@ export class RealCityLayer {
     this.flushInst();
     // a shadow catcher over MapLibre's ground: transparent except where a
     // building or a tree stands between it and the sun
-    const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 }));
+    const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
     catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
     this.scene.add(catcher);
     // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
@@ -1937,7 +1938,8 @@ export class RealCityLayer {
       }
     }
     if (pave.count) {
-      const m = new THREE.Mesh(pave.geometry(), new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 }));
+      this.paveMat = new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 });
+      const m = new THREE.Mesh(pave.geometry(), this.paveMat);
       m.receiveShadow = true;
       this.scene.add(m);
     }
@@ -2039,6 +2041,75 @@ export class RealCityLayer {
   }
 
   private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private paveMat: THREE.MeshStandardMaterial | null = null;
+  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
+  private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
+  private wetSheet: THREE.Mesh | null = null;
+  private precip: THREE.LineSegments | null = null;
+  private precipKind: "" | "rain" | "snow" = "";
+  private wet = 0;
+  /**
+   * WEATHER YOU CAN SEE. The sky and the sun already followed it; now the
+   * ground does. Overcast: shadows soften to a smudge. Rain: the streets and
+   * footways go dark and glossy (a sheet of wet sheen over the ground,
+   * reflecting the sky) and rain streaks fall round the view. Snow: flakes
+   * drift down, and the footways, fields and rough grass whiten with the
+   * yards and lawns MapLibre paints (MapView) — the carriageways stay dark.
+   */
+  private applyWeather() {
+    const oc = this.overcast;
+    this.catcherMat.opacity = 0.42 * (1 - oc * 0.72);
+    const snowG = this.snowGround;
+    if (this.paveMat) {
+      this.paveMat.roughness = 0.86 - this.wet * 0.55;
+      const k = 1 - this.wet * 0.28;
+      this.paveMat.color.setRGB(k + (1.25 - k) * snowG, k + (1.25 - k) * snowG, k + (1.28 - k) * snowG);
+    }
+    this.wetMat.opacity = this.wet * 0.18;
+    if (this.wetMat.opacity > 0 && !this.wetSheet) {
+      this.wetMat.envMap = this.skyEnv;
+      this.wetSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.wetMat);
+      this.wetSheet.position.z = 0.032; this.wetSheet.renderOrder = -2; this.wetSheet.receiveShadow = true;
+      this.scene.add(this.wetSheet);
+    }
+    if (this.wetSheet) this.wetSheet.visible = this.wetMat.opacity > 0.001;
+    // the falling stuff
+    const want = this.wet > 0 ? "rain" : snowG > 0 ? "snow" : "";
+    if (want !== this.precipKind) {
+      if (this.precip) { this.scene.remove(this.precip); this.precip.geometry.dispose(); this.precip = null; }
+      this.precipKind = want;
+      if (want) {
+        const N = 5000, B = 1, H = 2;
+        const pos = new Float32Array(N * 6);
+        let s2 = 12345; const rnd = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+        const len = want === "rain" ? 0.012 : 0.0015;
+        for (let i = 0; i < N; i++) {
+          const x = (rnd() * 2 - 1) * B, y = (rnd() * 2 - 1) * B, z = rnd() * H;
+          pos.set([x, y, z, x + len * 0.15, y, z + len], i * 6);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        const mat = new THREE.LineBasicMaterial({ color: want === "rain" ? 0xbfc8d2 : 0xffffff, transparent: true, opacity: want === "rain" ? 0.45 : 0.9, depthWrite: false });
+        this.precip = new THREE.LineSegments(g, mat);
+        this.precip.frustumCulled = false;
+        this.scene.add(this.precip);
+      }
+    }
+    // the fields and rough grass under snow
+    this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.cropMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.map?.triggerRepaint();
+  }
+  private snowGround = 0;
+  /** Each frame: the precipitation box follows the view and falls. */
+  private stepPrecip(fx: number, fy: number, distM: number, t: number) {
+    if (!this.precip) return;
+    const B = Math.max(160, Math.min(900, distM * 0.7)), H = Math.max(120, Math.min(600, distM * 0.45));
+    const spd = this.precipKind === "rain" ? 14 : 1.6;
+    const off = (t * spd) % H;
+    this.precip.scale.set(B, B, H);
+    this.precip.position.set(fx, fy, -off);
+  }
   private pierMatC: THREE.MeshStandardMaterial | null = null;
   /** Weathered timber decking, boards across the pier. */
   private pierMat(): THREE.MeshStandardMaterial {
@@ -2759,12 +2830,17 @@ export class RealCityLayer {
     // evergreens keep their needles; a dusting of snow lightens them
     this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
     this.applyLight();
+    this.applyWeather();
   }
 
   setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
     this.snow = kind === "snow" ? 0.3 + Math.max(0, Math.min(1, precipitation)) * 0.5 : 0;
     this.overcast = Math.max(0, Math.min(1, overcast || 0));
+    const pr = Math.max(0, Math.min(1, precipitation || 0));
+    this.wet = kind === "rain" ? 0.5 + pr * 0.5 : 0;
+    this.snowGround = kind === "snow" ? 0.35 + pr * 0.55 : 0;
     this.applyLight();
+    this.applyMonth();   // which re-applies the weather on top of the season
   }
   private overcast = 0;
 

@@ -35,16 +35,25 @@ const EMPTY = { type: "FeatureCollection" as const, features: [] };
  */
 const YARD_WINTER = { org: [0xc9, 0xbf, 0xa8], t: [[0xc4, 0xc0, 0xb2], [0xbf, 0xc1, 0xb4], [0xc8, 0xbf, 0xae], [0xbd, 0xc2, 0xb3], [0xc6, 0xbc, 0xb2]] };
 const YARD_SUMMER = { org: [0xb7, 0xb9, 0x98], t: [[0xb2, 0xb9, 0x9c], [0xab, 0xb7, 0x9b], [0xb6, 0xb7, 0x98], [0xa9, 0xb8, 0x9a], [0xb4, 0xb5, 0x9b]] };
-export function blocksPaint(leaf: number): unknown {
+// lying snow: the yards and lawns go white, the asphalt stays dark
+const SNOW = [234, 238, 241];
+export function blocksPaint(leaf: number, snow = 0): unknown {
   const k = Math.max(0, Math.min(1, leaf));
+  const w = Math.max(0, Math.min(1, snow));
   const mix = (a: number[], b: number[]) =>
-    "#" + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, "0")).join("");
-  const t = YARD_WINTER.t.map((w, i) => mix(w, YARD_SUMMER.t[i]));
+    "#" + a.map((v, i) => { const c = v + (b[i] - v) * k; return Math.round(c + (SNOW[i] - c) * w).toString(16).padStart(2, "0"); }).join("");
+  const t = YARD_WINTER.t.map((w2, i) => mix(w2, YARD_SUMMER.t[i]));
   return [
     "case",
     ["==", ["get", "org"], 1], mix(YARD_WINTER.org, YARD_SUMMER.org),
     ["match", ["coalesce", ["get", "dt"], 0], 0, t[0], 1, t[1], 2, t[2], 3, t[3], 4, t[4], t[0]],
   ];
+}
+/** The park fill, snowed over by `snow` (0-1). */
+export function parksPaint(snow = 0): unknown {
+  const w = Math.max(0, Math.min(1, snow));
+  const c = (hex: string) => { const v = parseInt(hex.slice(1), 16); return "#" + [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x, i) => Math.round(x + (SNOW[i] - x) * w).toString(16).padStart(2, "0")).join(""); };
+  return ["match", ["coalesce", ["get", "flavour"], "park"], "cemetery", c("#8fa37a"), "battery", c("#c5c4a4"), "market", c("#cfc6b0"), c("#b7d29f")];
 }
 
 export function metres(m: number, minPx = 0, sign = 1): unknown {
@@ -743,13 +752,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
         paint: {
-          "fill-color": [
-            "match", ["coalesce", ["get", "flavour"], "park"],
-            "cemetery", "#8fa37a",
-            "battery", "#c5c4a4",
-            "market", "#cfc6b0",
-            "#b7d29f",
-          ],
+          "fill-color": parksPaint(0) as never,
         },
       },
       {

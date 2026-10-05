@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
-import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
+import { blocksPaint, parksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
@@ -1367,8 +1367,14 @@ export default function MapView() {
     const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
     const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
     const map = mapRef.current;
-    if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo]) as never);
-  }, [gameMonth, mapReady]);
+    const snowLying = cityVisual.weather === "snow" ? 0.35 + cityVisual.precipitation * 0.55 : 0;
+    if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo], snowLying) as never);
+    if (map?.getLayer("parks")) map.setPaintProperty("parks", "fill-color", parksPaint(snowLying) as never);
+    if (map?.getLayer("median")) {
+      const m0 = [0xa8, 0xbd, 0x93], sn = [234, 238, 241];
+      map.setPaintProperty("median", "fill-color", "#" + m0.map((v, i) => Math.round(v + (sn[i] - v) * snowLying).toString(16).padStart(2, "0")).join(""));
+    }
+  }, [gameMonth, mapReady, cityVisual.weather, cityVisual.precipitation]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);

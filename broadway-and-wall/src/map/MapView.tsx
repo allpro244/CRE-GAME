@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { blocksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
+import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -274,6 +275,8 @@ export default function MapView() {
   const listedRef = useRef<Set<string>>(new Set());
   const assembledRef = useRef<Set<string>>(new Set());
   const threeRef = useRef<ThreeBuildings | null>(null);
+  // flipping the preview renderer rebuilds the map with the other 3D layer
+  const realRender = useStore((s) => s.realRender);
   const [mapReady, setMapReady] = useState(false);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -359,8 +362,29 @@ export default function MapView() {
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
-            const layer = new ThreeBuildings(volumes, frame.core, curbs, {
+            // The preview renderer answers the same calls (see RealCityLayer),
+            // so everything below treats either one as the 3D layer.
+            const Layer = (useStore.getState().realRender ? RealCityLayer : ThreeBuildings) as unknown as typeof ThreeBuildings;
+            const realOn = useStore.getState().realRender;
+            const linesOf = (kind: string): [number, number][][] => (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === kind && f.geometry.type === "LineString")
+              .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
+            const layer = new Layer(volumes, frame.core, curbs, {
               curbMeta,
+              // the raised footways, kerbs and crossings the preview builds in 3D
+              ...(realOn ? {
+                sidewalks: (ctx?.features ?? [])
+                  .filter((f) => f.properties?.kind === "sidewalk" && f.geometry.type === "Polygon")
+                  .map((f) => {
+                    const c = (f.geometry as GeoJSON.Polygon).coordinates;
+                    return {
+                      ring: (c[0] as [number, number][]).slice(0, -1),
+                      holes: c.slice(1).map((h) => (h as [number, number][]).slice(0, -1)),
+                    };
+                  }),
+                kerbs: linesOf("curb"),
+                zebras: linesOf("zebra"),
+              } : {}),
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
@@ -503,9 +527,15 @@ export default function MapView() {
       disposed = true;
       mapRef.current?.remove();
       mapRef.current = null;
+      // A rebuilt map (new city, or the renderer switched) starts with no
+      // markers and no readiness: the label cache pointed at the old map's
+      // nodes, and every effect keyed on mapReady has to run again.
+      for (const m of labelsRef.current.values()) m.remove();
+      labelsRef.current.clear();
+      setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city]);
+  }, [city, realRender]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -1349,33 +1379,15 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
-  // THE HOUR. The month owns the sun; this owns how much of it is left.
-  //
-  // Paused, the city sits in the calibrated afternoon every colour in the
-  // renderer was tuned under — that is the frame decisions are made on. While
-  // Play runs, the light breathes: a slow afternoon-to-dusk-and-back on a
-  // real-time cycle (half a minute, deliberately NOT the month clock, which
-  // turns once a second and would strobe), so the lit floors come on across
-  // the skyline and go off again while the months tick. The photo frame is
-  // the evening shot: blue hour, every let floor lit, lamps on.
-  const autoplay = useStore((s) => s.autoplay);
+  // THE HOUR. Always the calibrated afternoon every colour in the renderer
+  // was tuned under. There used to be a dusk cycle while Play ran and a
+  // blue-hour photo frame; the owner's call: "we don't need a night mode,
+  // that's pointless". Both renderers still accept setDayPhase; nothing
+  // drives it off zero. The month still owns the sun's angle and the season.
   useEffect(() => {
     if (!mapReady) return;
-    const layer = threeRef.current;
-    if (!layer) return;
-    if (photoFrame) { layer.setDayPhase(0.9); return; }
-    if (!autoplay) { layer.setDayPhase(0); return; }
-    const PERIOD_S = 36, PEAK = 0.84;
-    const t0 = performance.now();
-    const tick = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      const t = (performance.now() - t0) / 1000;
-      layer.setDayPhase(PEAK * 0.5 * (1 - Math.cos((2 * Math.PI * t) / PERIOD_S)));
-    };
-    tick();
-    const id = window.setInterval(tick, 400);
-    return () => window.clearInterval(id);
-  }, [autoplay, photoFrame, mapReady]);
+    threeRef.current?.setDayPhase(0);
+  }, [mapReady]);
   const preferFps = useStore((s) => s.preferFps);
   useEffect(() => {
     if (!mapReady) return;

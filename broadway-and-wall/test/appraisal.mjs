@@ -102,8 +102,14 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
 
 // --- 4. the flats' income turns over, it does not jump ----------------------
 {
-  let g = E.firstListings(E.newGame(12007, parcels, 400_000_000), parcels, bbls);
-  const pick = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).find((x) => x.rec && x.rec.class === "multifamily" && x.rec.bldgArea > 0 && !x.li.distress && (x.li.occ ?? 0) > 0.9);
+  // the first seed (from 12007) whose opening market has a well-let block of
+  // flats on it: the test is about how that income turns over, not about
+  // which lots one particular opening happens to list
+  let g, pick;
+  for (let seed = 12007; seed < 12007 + 40 && !pick; seed++) {
+    g = E.firstListings(E.newGame(seed, parcels, 400_000_000), parcels, bbls);
+    pick = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).find((x) => x.rec && x.rec.class === "multifamily" && x.rec.bldgArea > 0 && !x.li.distress && (x.li.occ ?? 0) > 0.9);
+  }
   const r = E.executePurchase(g, parcels, pick.li.bbl, pick.li.ask, "cash", false, 1); g = r.s;
   const noi0 = E.holdingNOIYr(pick.rec, g.econ, g.holdings[pick.li.bbl], g.month);
   // a 10% market shock, then one month: the roll turns a twelfth

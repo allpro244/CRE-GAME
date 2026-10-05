@@ -120,6 +120,32 @@ export function randomSeed() {
 const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
 
 /**
+ * The generator's street plan for new towns. 1 cut the old quarters block by
+ * block; 2 lays their streets first (citygen.mjs streetsFirst) — continuous
+ * streets and four-sided blocks instead of a field of shards. A save records
+ * the plan its town was built with, and a save without one is a plan-1 town,
+ * so every campaign started before plan 2 rebuilds the streets it was played
+ * on.
+ *
+ * What plan 2 does to the economy, measured (12 seeds): regular blocks put
+ * the same lot area under ~4% more floor area on average — slightly larger,
+ * squarer plates draw a few more towers (the run-to-run spread from merely
+ * reshuffling the dice is about ±10%) — and with that extra stock meeting
+ * the same opening demand, the first decade starts somewhat fewer projects.
+ * That is the mechanism, not a fault to tune away: a denser town has less
+ * pent-up demand. The baseline move is recorded in BASELINE.json.
+ *
+ * Plan 3 keeps plan 2's streets and moves WHERE the vacant lots are: by each
+ * block's settlement order (distance from the founding point, ground heat,
+ * corridor access, a later-platted district's lag, a block's luck) past a
+ * frontier solved so the preset's expected vacant area is unchanged — young
+ * towns empty on their outskirts and in late neighbourhoods, in whole blocks,
+ * instead of salt and pepper over the centre. See WHERE A YOUNG TOWN IS EMPTY
+ * in citygen.mjs.
+ */
+export const CITY_PLAN = 3;
+
+/**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
  * output, which is what lets a save store six digits instead of two megabytes.
  */
@@ -141,7 +167,9 @@ export function makeCity(cityId, seed, opts) {
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId })
     : scaleCity(islandConfig(seed), SIZES[sizeId].k);
-  const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
+  // The street plan: the current one unless a save asks for the plan its
+  // town was cut with (see CITY_PLAN and GameState.cityPlan).
+  const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });
   const data = buildCityData({
     rawParcels: city.parcels,
     rawBuildings: city.buildings,

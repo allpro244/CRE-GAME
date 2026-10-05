@@ -197,6 +197,224 @@ A second look at the after images, four towns, four seasons and night.
    they were grain on the island view rather than objects.
 
 Looked at and left: roofs already carry a full plant kit by type and era, and
-there are already three tree species. A fine blue speckle remains on some
-tower faces in cast shadow at the street camera; it is not the shadow map
-(four times the bias leaves it unchanged), and it is not yet found.
+there are already three tree species.
+
+# THIRD PASS
+
+1. **The tower speckle, found.** A fine blue-grey salt on tower faces at the
+   street camera, densest where a face runs away at a grazing angle. Not the
+   shadow map (four times the bias changed nothing), not the occlusion or
+   contact passes, not the interiors: a debug bisection of the wall shader
+   put it in the occupancy block. The vacant/let floor bands are rolled with
+   `hash()` off `vRand` — one number per building, identical at every vertex
+   — but an interpolated varying holds that value plus a few ulps of
+   rounding that differ pixel to pixel, and `sin(x) * 43758` turns ulps into
+   a different band, let or vacant, at every pixel. `vRand` and `vVar` are
+   now `flat` varyings (WebGL2), so every pixel gets the exact value the CPU
+   wrote: the noise is gone and every building keeps exactly its look.
+2. **Still water freezes.** Ponds and lakes are ice in the dead of winter —
+   pale, matte, snow-dusted, darker new ice out in the middle — read off the
+   season, not the day's snowfall. Running creeks stay open.
+3. **Landfill stands on a seawall.** A park laid past the coastline (the
+   Battery) was a lawn floating over the harbour with no edge. Each run of
+   its ring that lies over the water now gets a coping and a battered stone
+   face stepping down into the sea.
+
+# THE REAL-GEOMETRY PREVIEW (src/map/real/RealCity.ts)
+
+A second renderer for the same game, off by default behind Settings →
+Display → "New 3D city (preview)" (`store.realRender`, localStorage
+`bw:render-real`). It answers every call MapView makes of ThreeBuildings, so
+picking, labels, badges, panels and the engine are untouched; turning it off
+puts the classic map back. What it draws:
+
+- **Buildings as geometry.** Walls carry world-scale facade textures per
+  family — brick, stone, glass curtain wall, modern panel, industrial,
+  shopfront storey, blank civic stone — with roughness/metalness, normal
+  relief for the window reveals and lit-room emission after dark. Cornices,
+  string courses, parapets and dark lobby bases are modelled; old low brick
+  rows take gabled roofs; roofs carry bulkheads, water tanks and plant.
+- **Light.** Stock PBR materials, a sun with a view-fitted soft shadow map,
+  sky fill and an environment for the glass, ACES tone mapping; seasons,
+  snow on roofs, dusk and night (a veil over MapLibre's ground, lit windows,
+  glowing street lamps).
+- **Ground.** Raised 15 cm footways in paving flags with granite kerb faces,
+  zebra bars at every gridded corner, car parks on downtown vacant lots and
+  gravel elsewhere, stone footbridges over the creek gaps, a glossy veneer
+  on the sea.
+- **Life.** Street and park trees by season, parked cars, moving traffic and
+  pedestrians, moored launches and offshore ferries, park fountains and
+  columns, tower cranes slewing over every development under way.
+- **The game on it.** Gold roofs on holdings, the selected building glowing,
+  lenses on the roofs, tints, condition as soot and greying, developments
+  and demolitions.
+
+Not yet in it: the classic map's lit-vacancy floor bands, retail shopfront
+state, civic works and the sunk creek channel. Frame rate has not been
+measured on a GPU (this container has none); small props drop out past
+~2.6 km of camera distance.
+
+# STREET PLAN 2 (the default for new towns)
+
+The old quarters of the generated towns were cut block by block
+(`splitCells`): every block split on its own at a jittered angle, so no street
+ran through a junction and the district edges left a field of wedges and
+triangles — "shattered glass" on the plat. Plan 2 (`streetsFirst`) lays the
+long streets across the whole district first, parallel to its longest
+boundary street, then cuts each strip crosswise: continuous streets,
+four-sided blocks, offset T-junctions where the lanes meet the high street.
+Side by side (plan 1 left, plan 2 right) in `docs/map-overhaul/plan2-*.jpg`;
+`node tools/plat-svg.mjs <seed> --plan 2` draws any seed.
+
+It is wired end to end — `makeCity(…, { planV })`, `GameState.cityPlan`
+recorded on every new save, an old save rebuilt as plan 1, a plan mismatch
+forcing a town rebuild on load — and `CITY_PLAN` is now 2, so every new run
+gets the new streets while every existing save keeps the town it was played
+in. The baseline moved 20 of 39 metrics on the single reference town, but a
+control that changed nothing except one extra draw from the city dice moved
+22 of 39 by as much or more, so that town's moves are draw noise. Across 12
+seeds the real effect is about +4% floor area on the same lots and 20-30%
+fewer construction starts in the first decade (the denser stock meets the
+same opening demand). `pnpm gate` passes.
+
+# ROOFSCAPES (real-geometry preview)
+
+From above — and this game is played from above — a city is mostly roof,
+and every flat roof was the same pale grey slab with one box on it. Now:
+
+- **What the roof is made of.** Pre-war masonry carries tar (dark) or gravel
+  (warm), with the odd later silver coat; post-war slabs and shops a paler
+  ballast or white membrane; glass towers white membrane; sheds galvanised
+  or dark sheet; gables slate or red-brown shingle; one modern roof in
+  sixteen is planted. Each building draws its own shade within its kind, so
+  a block reads as a patchwork. A roofing texture (strips with lapped seams,
+  patching, grit, 16 m a repeat) sits under the colour.
+- **Parapets.** Every flat crown is fenced by a knee-high wall with an inside
+  face and a coping — a metre behind a masonry cornice, half that on glass —
+  and it throws a thin shadow on the deck.
+- **Plant by what the building is.** Pre-war masonry and lofts between about
+  six and thirty storeys take a wooden water tank on legs (one, or two on a
+  big roof), because city mains only lift water about six storeys; stair
+  bulkheads sit near the middle; modern, glass and shop roofs carry up to
+  seven condensers by area; low sheds carry rows of skylights along their
+  long side. Everything is placed inside the footprint with a margin.
+
+Gold roofs (yours), lenses and snow still override the roof colour exactly as
+before; the colour variety lives in the roofs' base vertex colours.
+
+Cost, measured in this container's software renderer (SwiftShader, which
+pays for every triangle and pixel on the CPU) on the giant town: 6.0 s → 6.6 s
+a frame at the island view, 7.4 s → 8.0 s at district zoom, before the
+parapets' never-seen undersides were dropped. A GPU pays a small fraction of
+that; the classic renderer is untouched. Before/after in
+`docs/map-overhaul/p4-roofs-*.jpg`.
+
+# DEPTH, TREES AND GROUND (real-geometry preview)
+
+Looked at critically, three things kept the preview reading as a model on a
+table rather than a city, and roofs were not the biggest of them:
+
+- **No air.** A block four kilometres off was as crisp and contrasty as the
+  one at your feet; the classic renderer had aerial perspective and the real
+  one never got it. Every material now fades toward the haze colour with
+  distance from the eye — the same #bdd1e6 MapLibre fogs its ground and sky
+  to, mixed in display sRGB where that colour is defined — and a sheet over
+  MapLibre's ground carries the same fade so a far street hazes with the
+  buildings on it. The fade is scaled to the view (it starts at a third of
+  the camera distance and caps at about 55% two and a half distances out),
+  greys under overcast, warms at golden hour and turns to a blue-black murk
+  at night. Shadows thin out with distance rather than turning hazy.
+- **Crumpled-paper trees.** Flat-shaded icosahedra caught the sun facet by
+  facet. Crowns are now four lumps with normals leaning out from each lump's
+  centre, a little irregularity, and a canopy that darkens toward its
+  underside — soft, rounded trees for the same triangle budget class.
+- **Ground.** The footways were a new-concrete cream that outshone the
+  buildings; they are a step darker and cooler with weathering. The foot of
+  every wall darkens over its first 3.5 m, where the street and the
+  buildings opposite block the sky, so buildings stand on the ground instead
+  of floating over it.
+
+`docs/map-overhaul/p5-*-before-after.jpg`.
+
+# NO NIGHT; TOWERS BY ERA; WATER THAT MOVES
+
+- **No night.** The owner's call: "we don't need a night mode, that's
+  pointless." The dusk cycle that ran while Play was on and the blue-hour
+  photo frame are gone; the map is always the calibrated afternoon (MapView
+  pins `setDayPhase(0)` for both renderers). The month still moves the sun
+  and the seasons.
+- **Towers by era.** Every post-1958 office tower wore the one glass
+  elevation. Four more, assigned by when the tower went up: 1960s ribbon
+  windows between white aluminium spandrels and a plain penthouse box;
+  1960s-70s exposed concrete grids with deep punched windows (also on the
+  post-war apartment slabs); 1970s-80s bronze curtain walls; 1990s-2000s
+  blue-green reflective glass. Glass towers carry a recessed crown, and one
+  in three steps back twice before its mast.
+- **Water.** The harbour, the canals and the park ponds carry a tileable
+  ripple normal map (crossing wave trains, one dominant wind) drifting about
+  half a metre a second while the city animates, so the sea catches the sun
+  and the sky instead of lying flat. `docs/map-overhaul/p6-*.jpg`.
+
+# THE WEDDING CAKE
+
+The pre-war towers were straight extrusions in one cream-striped elevation,
+the most repeated thing downtown. Under the 1916 zoning resolution a tower
+could rise straight only so far before stepping back from the street, and the
+pre-war skyline is those setbacks. Three in four pre-war masonry towers over
+70 m now rise from a full-lot base to a terrace at half to two-thirds of their
+height, step in to 84%, again to 68% for the shaft, each terrace with its
+cornice and parapet, the crown or spire on the slim top — same height, same
+deed. A second 1920s-30s elevation joins the cream deco: tan brick with tall,
+narrow, vertically linked windows and dark spandrels (assigned 35/30/35 with
+deco and stone). `docs/map-overhaul/p7-setback-tower.jpg`.
+
+**What the glass sees.** The curtain walls and the water reflected a studio
+light box (RoomEnvironment). They now reflect a sky built for them — deep
+blue overhead paling to a warm horizon, a band of hazy city at eye level, the
+ground below, and the sun where the key light is — prefiltered once. Only the
+glass families, the ribbon windows and the water take it: given to every
+material it tinted the roofs and trees blue, because matte surfaces take
+their ambient light from the same map, so they keep the neutral light box.
+`docs/map-overhaul/p7-sky-glass.jpg`.
+
+# WHERE A YOUNG TOWN IS EMPTY (street plan 3)
+
+The owner's ask: in a younger town, the unbuilt parcels should be on certain
+outskirts and neighbourhoods, not an equal share in the middle of the city.
+Measured first: the old rule rolled each lot on its own against a mild edge
+gradient, and the young presets' vacancy multiplier (2-2.5x) left even
+downtown half empty — the gaps were salt and pepper over the whole plat.
+
+Plan 3 gives every block a settlement order (distance from the founding
+point, ground heat, corridor access, a later-platted district's lag, a
+block's luck) and makes a lot vacant on a steep curve past a frontier. The
+frontier is SOLVED, not tuned: placed so the town's expected vacant area
+equals what the old rule gave the same preset, so each density rung keeps the
+share of empty ground it had and only where it lies changes. A built core
+keeps an 8% infill floor — surface car parks and gaps, which American
+downtowns carry at least that much of — and that floor also leaves the player
+prime sites in the centre.
+
+Vacant share of lots by distance from the founding core, quartiles inner →
+outer (reference island, seed 7):
+
+| preset | plan 2 | plan 3 |
+|---|---|---|
+| landing | 48 / 52 / 75 / 83 % | 24 / 54 / 85 / 96 % |
+| village | 23 / 28 / 36 / 53 % | 8 / 27 / 42 / 84 % |
+| capital | 11 / 12 / 20 / 27 % | 3 / 5 / 15 / 57 % |
+
+What it costs the player, said plainly: large vacant lots on high-demand
+blocks (lot ≥ 5,000 sf, demand ≥ 60) fall on the reference town from 30 to 11
+(village), 51 to 12 (landing) and 12 to 9 (capital). That is the request — the
+dirt is now where the town has not reached — and the centre is no longer
+handed out free. The build-out ladder (`test/buildout.mjs`, `BW_PLAN=2` for
+the old plan) runs healthy at every preset on both plans; the young presets
+open with more jobs because their centres are built. Old saves keep the plan
+they were made with.
+
+In the 3D city, unbuilt land past the fringe line (demand under 38, the
+classic map's own line) is now rough grass that turns with the season rather
+than gravel, and two-storey houses and shops from before 1950 are painted
+clapboard half the time, with a gable — the timber town before the brick
+one. `docs/map-overhaul/p8-*.jpg`.

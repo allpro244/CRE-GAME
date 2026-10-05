@@ -183,8 +183,13 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
 
 // (a) REFI, BUILD, DISTRESS — found by walking a scripted run to where each is asked.
 {
-  let g = fresh();
+  // A build decision needs a city whose demand is owed new starts while a
+  // developer holds dirt and cash; how soon that happens is the luck of the
+  // opening, so walk a few openings rather than assume the first one has it.
   let refiDone = false, buildDone = false;
+  for (const gs of [12007, 4242, 550991, 91117]) {
+  if (refiDone && buildDone) break;
+  let g = fresh(gs);
   for (let y = 0; y < 14 && !(refiDone && buildDone); y++) {
     const probe = E.setJevFirms(g, { firms: g.rivals.filter((r) => r.failedM === undefined).map((r) => ({ id: r.id })) });
     // Street developers rarely hold both dirt and dry powder at once, so the
@@ -205,9 +210,16 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
         const d0 = rival(s, r.id).debt;
         s = step(s);
         const e = (s.jevBooks?.[r.id] ?? []).find((x) => x.kind === "refi" && x.by === "jev");
-        check(!!e && e.debtDelta === e.cashDelta && e.amount > 1_000_000, `refi yes (0.9) takes the scripted room: +${e ? (e.amount / 1e6).toFixed(2) : "?"}M debt on ${r.name} (year ${y})`);
+        // The desks re-size at the table: room that was there when the firm
+        // was asked can be gone a step later (the engine logs "no longer
+        // eligible" and falls back — the right call). That refi was never
+        // taken, so keep walking for one that is.
+        const stale = !e && (s.jev?.log ?? []).some((l) => l.firmId === r.id && l.point === "refi" && l.path === "fallback" && /no longer eligible/.test(l.action ?? ""));
+        if (!stale) {
+          check(!!e && e.debtDelta === e.cashDelta && e.amount > 1_000_000, `refi yes (0.9) takes the scripted room: +${e ? (e.amount / 1e6).toFixed(2) : "?"}M debt on ${r.name} (year ${y})`);
+          refiDone = true;
+        }
         void d0;
-        refiDone = true;
       }
       if (!buildDone && b.ctx.build.length) {
         const o = b.ctx.build[0];
@@ -226,6 +238,7 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
       }
     }
     for (let m = 0; m < 12; m++) g = step(g);
+  }
   }
   check(refiDone, "a refinancing decision was found and exercised");
   check(buildDone, "a build decision was found and exercised");

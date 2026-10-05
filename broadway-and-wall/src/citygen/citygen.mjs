@@ -433,6 +433,11 @@ export const DENSITY = {
 };
 
 export function generateCity(cfg) {
+  // Which street plan the old quarters use: 1 = per-cell splitting (every
+  // save made before plan 2 existed), 2 = streets first, 3 = streets first
+  // with vacancy by settlement order (WHERE A YOUNG TOWN IS EMPTY). Read from the config
+  // so a save rebuilds the exact town it was played in.
+  const PLAN_V = cfg.planV ?? 3;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
   // fabric with almost nothing over sixty metres, so the town you are handed
   // in month 0 has somewhere to go — the skyline is something the campaign
@@ -1075,6 +1080,78 @@ export function generateCity(cfg) {
     splitCells(b, targetArea, jitterDeg, minArea, out, depth + 1);
   }
 
+  // STREETS FIRST, THEN BLOCKS (plan version 2). An old town is organic, but
+  // its streets are not one-block stubs: a high street runs the length of the
+  // quarter, the lanes off it are continuous for a few blocks, and the blocks
+  // between them are rough quadrilaterals with their long side on the main
+  // street. Recursive per-cell splitting (v1, kept for old saves) cut every
+  // block on its own, so no street ran through a junction and the leaf edges
+  // left a field of wedges and triangles.
+  //
+  // So: lay the long streets across the WHOLE leaf first — gently non-parallel
+  // lines along its long axis, spaced about a block's depth apart — and only
+  // then cut each strip crosswise at its own spacing. A long street is one
+  // straight cut through every piece it crosses, so it is continuous by
+  // construction; the cross streets meet it in offset T-junctions, which is
+  // exactly what a London or Boston street plan does.
+  function streetsFirst(seed, d, out) {
+    const area = polygonArea([seed]);
+    const tgt = () => rr(d.cell[0], d.cell[1]);
+    if (area <= tgt() * 1.3) { out.push(seed); return; }
+    // The long streets run parallel to the quarter's longest boundary street,
+    // so the new lanes line up with the avenue the district fronts rather than
+    // with whatever diagonal its bounding box happens to have.
+    const longDir = longestEdgeAngle(seed);
+    const crossDir = longDir + Math.PI / 2;
+    // block depth: the short side of a 1:2 block of the target area
+    const depth = Math.sqrt(((d.cell[0] + d.cell[1]) / 2) / 1.7);
+    // a strip narrower than half a block's depth is a sliver, not a block
+    const wide = (r) => extentAlong(r, crossDir).span >= depth * 0.55;
+    const ext = extentAlong(seed, crossDir);
+    let strips = [seed];
+    // nearly parallel: over a long quarter even a few degrees of difference
+    // between neighbours closes the strip into a wedge
+    const jit = ((d.jitterDeg ?? 15) * 0.12 * Math.PI) / 180;
+    for (let t = ext.lo + depth * rr(0.8, 1.2); t < ext.hi - depth * 0.6; t += depth * rr(0.85, 1.25)) {
+      const pc = centroid(seed);
+      const cur = pc[0] * Math.cos(crossDir) + pc[1] * Math.sin(crossDir);
+      const p = [pc[0] + Math.cos(crossDir) * (t - cur), pc[1] + Math.sin(crossDir) * (t - cur)];
+      const ang = longDir + rr(-jit, jit);
+      const next = [];
+      for (const s of strips) {
+        const [a, b] = splitConvex(s, p, ang);
+        if (a && b && polygonArea([a]) >= 600 && polygonArea([b]) >= 600 && wide(a) && wide(b)) next.push(a, b);
+        else next.push(s);
+      }
+      strips = next;
+    }
+    // each strip cut crosswise into blocks of the target area, at its own
+    // spacing and with its own small skew
+    const cjit = ((d.jitterDeg ?? 15) * Math.PI) / 180;
+    for (const s of strips) {
+      let piece = s;
+      for (let guard = 0; guard < 40 && piece; guard++) {
+        const pa = polygonArea([piece]);
+        const want = tgt() * 0.8;
+        if (pa <= want * 1.45) { out.push(piece); piece = null; break; }
+        const e = extentAlong(piece, longDir);
+        const frac = Math.min(0.7, Math.max(0.04, want / pa));
+        const t = e.lo + e.span * frac;
+        const pc = centroid(piece);
+        const cur = pc[0] * Math.cos(longDir) + pc[1] * Math.sin(longDir);
+        const p = [pc[0] + Math.cos(longDir) * (t - cur), pc[1] + Math.sin(longDir) * (t - cur)];
+        const [a, b] = splitConvex(piece, p, crossDir + rr(-cjit, cjit));
+        if (!a || !b || polygonArea([a]) < 700 || polygonArea([b]) < 700) { out.push(piece); piece = null; break; }
+        // keep the end nearer the strip's start as a block, carry on with the rest
+        const ca = centroid(a), cb = centroid(b);
+        const ta = ca[0] * Math.cos(longDir) + ca[1] * Math.sin(longDir);
+        const tb = cb[0] * Math.cos(longDir) + cb[1] * Math.sin(longDir);
+        if (ta < tb) { out.push(a); piece = b; } else { out.push(b); piece = a; }
+      }
+      if (piece) out.push(piece);
+    }
+  }
+
   function organicDistrict(name, d) {
     const pad = 400;
     const box = [
@@ -1087,11 +1164,14 @@ export function generateCity(cfg) {
       seed = seed && cleanRing(seed);
       if (!seed) continue;
       const cells = [];
-      splitCells(seed, () => rr(d.cell[0], d.cell[1]), d.jitterDeg ?? 15, 1500, cells);
+      if (PLAN_V >= 2) streetsFirst(seed, d, cells);
+      else splitCells(seed, () => rr(d.cell[0], d.cell[1]), d.jitterDeg ?? 15, 1500, cells);
       for (const c of cells) {
         for (const cell of claimCell(c, [], KEEP)) {
           let ring = cell;
-          if (rand() < 0.28) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
+          // a cut-off corner is a junction that gave way to a square; v2 keeps
+          // it for one block in ten, not one in four
+          if (rand() < (PLAN_V >= 2 ? 0.10 : 0.28)) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
           pushBlock(ring, name, false, d.streetW, d.streetW, {});
         }
       }
@@ -1528,6 +1608,63 @@ export function generateCity(cfg) {
     return name;
   };
 
+  // WHERE A YOUNG TOWN IS EMPTY (plan 3). Vacancy used to be rolled lot by
+  // lot against a mild edge gradient, and the young presets' multiplier
+  // (2-2.5x) pushed even downtown to half empty: the gaps were salt and
+  // pepper across the whole plat, the centre as holed as the outskirts. A
+  // town does not fill like that. It builds out from where it was founded
+  // and along its main streets; a neighbourhood platted later is emptier
+  // than one platted first; and the land nobody has got to yet comes in
+  // whole blocks, because a builder takes a block at a time.
+  //
+  // So every block gets a SETTLEMENT ORDER — distance from the founding
+  // point, how hot its ground is, how far from a corridor, a later-platted
+  // district's lag, a block's own luck — and a lot is vacant on a steep
+  // logistic past a FRONTIER. The frontier is solved, not tuned: it is placed
+  // so the town's expected vacant area equals what the old per-lot rule gave
+  // the same preset, so each density rung keeps exactly the share of empty
+  // ground the owner set for it and only WHERE it lies changes. Every weight
+  // below is a shape parameter chosen by eye on the plat (tools/plat-svg),
+  // not fitted to any economic outcome. Hashes, not rand(): the pre-pass must
+  // not move the stream the lot loop draws from.
+  const settleOf = new Map();
+  let settleFrontier = 0;
+  const SETTLE_W = 0.055;
+  // INFILL: even a settled core keeps its gaps — surface car parks, a burnt
+  // lot, an estate nobody has sold. American downtowns commonly carry a tenth
+  // or more of their land as surface parking; 8% is the floor here, which also
+  // keeps the player a handful of prime sites in the centre.
+  const SETTLE_INFILL = 0.08;
+  const settleP = (sc) => SETTLE_INFILL + (0.97 - SETTLE_INFILL) / (1 + Math.exp(-(sc - settleFrontier) / SETTLE_W));
+  if (PLAN_V >= 3) {
+    const h32 = (str) => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } x ^= x >>> 13; x = Math.imul(x, 0x5bd1e995); x ^= x >>> 15; return (x >>> 0) / 4294967296; };
+    const rows = [];
+    blocks.forEach((block, bi) => {
+      const st = block.inset;
+      if (block.circus || block.gore || !st) return;
+      const area = polygonArea([st]);
+      if (area < (block.flatiron ? 150 : 420)) return;
+      const bc = centroid(st);
+      const d = block.district;
+      const h = coreHeat(bc);
+      const corr = Math.min(1, corridorDist(bc) / 220);
+      const lag = (h32("district:" + d + ":" + cfg.seed) - 0.5) * 0.24;      // platted earlier or later
+      const luck = (h32("block:" + bi + ":" + cfg.seed) - 0.5) * 0.16;        // a builder got here, or not yet
+      const flav = (flavorOf(d).vac - 0.3) * 0.8;                              // industrial and new districts emptier
+      const sc = 0.45 * growthRing(bc) + 0.35 * (1 - h) + 0.12 * corr + lag + luck + flav;
+      settleOf.set(block, sc);
+      rows.push({ sc, area, p0: block.flatiron ? 0 : vacancyP(d, h) });
+    });
+    // place the frontier so the expected vacant area matches the old rule
+    const want = rows.reduce((a, r) => a + r.area * r.p0, 0);
+    let lo = -1, hi = 2;
+    for (let it = 0; it < 50; it++) {
+      settleFrontier = (lo + hi) / 2;
+      const got = rows.reduce((a, r) => a + r.area * settleP(r.sc), 0);
+      if (got > want) lo = settleFrontier; else hi = settleFrontier;
+    }
+  }
+
   for (const block of blocks) {
     const street = block.inset;
     // The circus plinth is monument ground and a gore is a traffic island —
@@ -1627,7 +1764,8 @@ export function generateCity(cfg) {
       // A flatiron never rolls vacancy — the wedge is iconic exactly because
       // it is built, and a triangular grass lot on the sharpest corner in
       // town is the confetti this rule exists to retire.
-      const vacant = block.flatiron ? false : rand() < vacancyP(d, h);
+      const vacant = block.flatiron ? false
+        : PLAN_V >= 3 ? rand() < settleP(settleOf.get(block) ?? 0.5) : rand() < vacancyP(d, h);
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
       const bbl = 1000000000 + blockNo * 10000 + lotNo;
 

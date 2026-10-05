@@ -47,7 +47,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
@@ -259,6 +259,13 @@ interface AppState {
    */
   preferFps: boolean;
   setPreferFps: (v: boolean) => void;
+  /**
+   * The real-geometry city renderer (map/real/RealCity.ts) instead of the
+   * classic shader-facade one. A preview, off by default; a preference of
+   * this browser, not save state. Flipping it rebuilds the map view.
+   */
+  realRender: boolean;
+  setRealRender: (v: boolean) => void;
   /**
    * Map-only mode — hide firm page sheets so the skyline is the desk.
    * HUD, inbox, digest and decision cards stay. UI preference, not save state.
@@ -599,8 +606,8 @@ function painted(): Promise<void> {
  * has to test the save against the town BEFORE the map mounts on it — a map
  * built for a town the campaign does not fit is a worse failure than a refusal.
  */
-function buildTown(island: string, seed: number, size: string, dev: string) {
-  const built = makeCity(island, seed, { size, density: dev });
+function buildTown(island: string, seed: number, size: string, dev: string, plan?: number) {
+  const built = makeCity(island, seed, { size, density: dev, planV: plan });
   // Any record the pipeline still files as "mixed" becomes its dominant use
   // plus an explicit mix, once, at the door.
   const parcels = normalizeParcels(built.parcels as ParcelTable);
@@ -723,6 +730,9 @@ export const useStore = create<AppState>((set, get) => ({
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
+  // THE 3D CITY IS THE DEFAULT (the owner's call). Only an explicit "off"
+  // from Settings → Display keeps the classic map.
+  realRender: (() => { try { return localStorage.getItem("bw:render-real") !== "off"; } catch { return true; } })(),
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,
@@ -1057,6 +1067,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPreferFps: (v) => {
     try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ preferFps: v });
+  },
+
+  setRealRender: (v) => {
+    try { localStorage.setItem("bw:render-real", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ realRender: v });
   },
 
   setMapOnly: (v) => {
@@ -2177,6 +2192,8 @@ export const useStore = create<AppState>((set, get) => ({
     if (
       (savedSeed !== undefined && savedSeed !== here)
       || savedIsland !== hereIsland
+      // the same seed cut with a different street plan is a different town
+      || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2302,6 +2319,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;
+      g.cityPlan = CITY_PLAN;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2340,7 +2358,8 @@ export const useStore = create<AppState>((set, get) => ({
       setSeed(r.seed, r.island);
       setSize(r.size, r.island);
       setDev(r.dev);
-      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev);
+      // an old save is a plan-1 town: rebuild the streets it was played on
+      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

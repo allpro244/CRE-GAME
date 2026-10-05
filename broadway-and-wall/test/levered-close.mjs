@@ -15,7 +15,8 @@
 //   - a quoted principal is exactly the principal the deed carries after close;
 //   - no desk quotes a loan and then refuses at the table;
 //   - net worth across the close never RISES by more than rounding — a missing
-//     loan shows up as a gain the size of the principal;
+//     loan shows up as a gain the size of the principal (a distress listing,
+//     priced under appraisal on purpose, may rise by its discount and no more);
 //   - a leverage dial under the $100K minimum cheque quotes all cash;
 //   - a debt-financed take-private at a premium never makes net worth.
 //
@@ -68,7 +69,13 @@ for (const [label, s0] of [["clean sponsor", g], ["shut-out sponsor", marked]]) 
           if (mismatched <= 4) console.log(`    ${rec.address} ${p.id} lev ${lev}: quoted ${M(q.principal)}, deed carries ${M(written)}`);
         }
         const dNW = E.netWorth(r.s, parcels) - E.netWorth(s0, parcels);
-        if (dNW > 0.02 * l.ask) { pumped++; worst = Math.max(worst, dNW); }
+        // A MOTIVATED SELLER IS A REAL BARGAIN. A distress listing is priced
+        // under appraisal on purpose (sim.ts: "well under appraisal"), so
+        // buying it legitimately marks up by its discount — and by nothing
+        // more. A missing loan still shows as a gain the size of the
+        // principal on top of that. Every other closing keeps the flat rule.
+        const discount = l.distress ? Math.max(0, E.ownedHoldingValue(r.s, parcels, r.s.holdings[l.bbl]) - l.ask) : 0;
+        if (dNW > discount + 0.02 * l.ask) { pumped++; worst = Math.max(worst, dNW - discount); }
       }
     }
   }

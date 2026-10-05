@@ -168,12 +168,16 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nvarying float vLit;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;");
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;")
+      .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;")
+      // the street darkens the foot of every wall: bounce light from the sky
+      // is blocked by the pavement and the buildings across the way
+      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 3.5, vGz));")
       .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -365,6 +369,42 @@ function roofTex(): THREE.CanvasTexture {
   return t;
 }
 
+// AERIAL PERSPECTIVE. Air between the eye and a far building scatters sky
+// light into the view, so distance reads as a fade toward the haze colour —
+// the same #bdd1e6 the MapLibre sky fogs its ground to (style.ts skySpec), so
+// the far city dissolves into the air the sky is made of. Without it every
+// block is as crisp and contrasty a kilometre off as at the kerb, which is
+// what makes a city look like a model on a table. Mixed in after the colour
+// space conversion, in display sRGB, where the sky colour is defined.
+const HAZE = {
+  hazeCol: { value: new THREE.Color(0.742, 0.818, 0.9) },
+  hazeNear: { value: 300 },
+  hazeFar: { value: 4000 },
+  hazeCap: { value: 0.5 },
+};
+const hazed = new WeakSet<THREE.Material>();
+function addHaze(mat: THREE.Material) {
+  if (hazed.has(mat)) return;
+  hazed.add(mat);
+  const m = mat as THREE.Material & { isShadowMaterial?: boolean };
+  const k0 = mat.customProgramCacheKey();
+  const prev = mat.onBeforeCompile;
+  // a shadow catcher is all alpha: its shadows thin out with distance instead
+  const mix = m.isShadowMaterial ? "gl_FragColor.a *= 1.0 - hz;" : "gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeCol, hz);";
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, HAZE);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvHazeP = mvPosition.xyz;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;\nuniform vec3 hazeCol;\nuniform float hazeNear, hazeFar, hazeCap;")
+      .replace("#include <fog_fragment>", `{ float hz = smoothstep(hazeNear, hazeFar, length(vHazeP)) * hazeCap; ${mix} }\n#include <fog_fragment>`);
+  };
+  mat.customProgramCacheKey = () => k0 + "+haze" + (m.isShadowMaterial ? "s" : "");
+  mat.needsUpdate = true;
+}
+
 // ---- geometry accumulation -------------------------------------------------
 
 class Buf {
@@ -428,7 +468,7 @@ export class RealCityLayer {
   private darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d30, roughness: 0.5, metalness: 0.4, vertexColors: true });
   private roofMat = new THREE.MeshStandardMaterial({ color: 0x6b6862, roughness: 0.95, vertexColors: true, envMapIntensity: 0.15, map: roofTex() });
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
-  private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true, envMapIntensity: 0.2 });
+  private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
@@ -552,8 +592,38 @@ export class RealCityLayer {
       // ~30 fps for the traffic; MapLibre only paints on demand
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
+    this.hazeFor(distM);
     this.renderer.render(this.scene, this.camera);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
+  }
+
+  // ---- aerial perspective ------------------------------------------------
+  // Scaled to the view: the fade starts a little past the focus and reaches
+  // its cap several view-distances out, so a street view hazes the far
+  // skyline and the island view keeps its far shore readable.
+  private hazeSheet: THREE.Mesh | null = null;
+  private hazeFor(distM: number) {
+    HAZE.hazeNear.value = distM * 0.35;
+    HAZE.hazeFar.value = distM * 2.6 + 400;
+    if (!this.hazeSheet) {
+      // MapLibre's ground is not ours to shade: a sheet over it carries the
+      // same fade, so a far street hazes with the buildings standing on it
+      const mat = new THREE.ShaderMaterial({
+        uniforms: HAZE, transparent: true, depthWrite: false,
+        vertexShader: "varying vec3 vP; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }",
+        fragmentShader: "uniform vec3 hazeCol; uniform float hazeNear, hazeFar, hazeCap; varying vec3 vP; void main() { gl_FragColor = vec4(hazeCol, smoothstep(hazeNear, hazeFar, length(vP)) * hazeCap); }",
+      });
+      hazed.add(mat);
+      hazed.add(this.veil);
+      this.hazeSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 8, 8), mat);
+      this.hazeSheet.position.z = 0.035; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
+      this.scene.add(this.hazeSheet);
+    }
+    this.scene.traverse((o) => {
+      const mm = (o as THREE.Mesh).material;
+      if (!mm) return;
+      for (const x of Array.isArray(mm) ? mm : [mm]) if (!hazed.has(x)) addHaze(x);
+    });
   }
 
   // ---- lights & shadow ---------------------------------------------------
@@ -984,10 +1054,30 @@ export class RealCityLayer {
       case "crown": {
         // two lumps at one subdivision: 160 triangles a tree, which is the
         // budget a city of twenty thousand of them can afford
-        const a = new THREE.IcosahedronGeometry(2.4, 1).translate(0, 0, 4.7);
-        const b = new THREE.IcosahedronGeometry(1.7, 0).translate(0.9, 0.5, 5.7);
-        const c = new THREE.IcosahedronGeometry(1.6, 0).translate(-0.8, -0.6, 5.3);
-        return { g: merge([a, b, c]), mat: this.leafMat, colored: true };
+        // Shaded as soft lumps, not facets: each vertex's normal leans out from
+        // its lump's centre, and the foliage darkens toward the underside where
+        // the canopy shades itself — what turns crumpled paper into a tree.
+        const pos: number[] = [], nrm: number[] = [], col: number[] = [];
+        for (const [r, det, cx, cy, cz] of [[2.4, 1, 0, 0, 4.7], [1.8, 1, 0.9, 0.6, 5.8], [1.6, 0, -0.9, -0.6, 5.2], [1.4, 0, 0.2, -1.1, 4.4]] as number[][]) {
+          const g = new THREE.IcosahedronGeometry(r, det);   // already one vertex per corner
+          const P = g.getAttribute("position").array as Float32Array;
+          for (let i = 0; i < P.length; i += 3) {
+            // a little lumpiness so no two vertices sit on one perfect sphere
+            const w = 1 + 0.12 * Math.sin(P[i] * 3.1 + P[i + 1] * 2.3 + P[i + 2] * 1.7);
+            const x = P[i] * w, y = P[i + 1] * w, z = P[i + 2] * w;
+            const l = Math.hypot(x, y, z) || 1;
+            pos.push(x + cx, y + cy, z + cz);
+            nrm.push(x / l, y / l, z / l);
+            const up = Math.max(0, Math.min(1, (z / r + 1) / 2));   // 0 underneath, 1 on top
+            const k = 0.5 + 0.5 * up;
+            col.push(k, k, k * 0.96);
+          }
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+        g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        return { g, mat: this.leafMat, colored: true };
       }
       case "lotcar":
       case "car": {
@@ -1144,8 +1234,11 @@ export class RealCityLayer {
     const { c, g } = makeCanvas(128, 128);
     let s = 91;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#b9b4aa"; g.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 900; i++) { const v = 150 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 4},${v - 10},0.35)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
+    // weathered concrete, a step darker and cooler than new: a footway that
+    // outshines the buildings beside it pulls the eye to the gaps between them
+    g.fillStyle = "#a6a39c"; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 900; i++) { const v = 135 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 2},${v - 6},0.35)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
+    for (let i = 0; i < 14; i++) { g.fillStyle = `rgba(60,58,54,${0.05 + rnd() * 0.08})`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 4 + rnd() * 14, 0, 6.28); g.fill(); }
     g.fillStyle = "rgba(70,66,60,0.55)"; g.fillRect(0, 0, 128, 2); g.fillRect(0, 0, 2, 128);
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
@@ -1734,6 +1827,13 @@ export class RealCityLayer {
     // after dusk, a warm one as the sun goes down
     this.veil.color.setRGB(0.05 + golden * 0.35, 0.07 + golden * 0.16, 0.14);
     this.veil.opacity = night * 0.62 + golden * 0.08;
+    // the haze: sky blue by day (greyer overcast, warmer at golden hour),
+    // a blue-black murk at night
+    const oc = this.overcast;
+    const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
+    const nightC = [0.08, 0.1, 0.16];
+    HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
+    HAZE.hazeCap.value = (0.55 + oc * 0.2) * (1 - night * 0.35);
     this.map?.triggerRepaint();
   }
 

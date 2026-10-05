@@ -308,3 +308,30 @@ a frame at the island view, 7.4 s → 8.0 s at district zoom, before the
 parapets' never-seen undersides were dropped. A GPU pays a small fraction of
 that; the classic renderer is untouched. Before/after in
 `docs/map-overhaul/p4-roofs-*.jpg`.
+
+# DEPTH, TREES AND GROUND (real-geometry preview)
+
+Looked at critically, three things kept the preview reading as a model on a
+table rather than a city, and roofs were not the biggest of them:
+
+- **No air.** A block four kilometres off was as crisp and contrasty as the
+  one at your feet; the classic renderer had aerial perspective and the real
+  one never got it. Every material now fades toward the haze colour with
+  distance from the eye — the same #bdd1e6 MapLibre fogs its ground and sky
+  to, mixed in display sRGB where that colour is defined — and a sheet over
+  MapLibre's ground carries the same fade so a far street hazes with the
+  buildings on it. The fade is scaled to the view (it starts at a third of
+  the camera distance and caps at about 55% two and a half distances out),
+  greys under overcast, warms at golden hour and turns to a blue-black murk
+  at night. Shadows thin out with distance rather than turning hazy.
+- **Crumpled-paper trees.** Flat-shaded icosahedra caught the sun facet by
+  facet. Crowns are now four lumps with normals leaning out from each lump's
+  centre, a little irregularity, and a canopy that darkens toward its
+  underside — soft, rounded trees for the same triangle budget class.
+- **Ground.** The footways were a new-concrete cream that outshone the
+  buildings; they are a step darker and cooler with weathering. The foot of
+  every wall darkens over its first 3.5 m, where the street and the
+  buildings opposite block the sky, so buildings stand on the ground instead
+  of floating over it.
+
+`docs/map-overhaul/p5-*-before-after.jpg`.

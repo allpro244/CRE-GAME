@@ -451,6 +451,11 @@ export class RealCityLayer {
 
     this.stepDusk();
     this.fitShadow(fx, fy, distM);
+    // from the whole-island camera a person, a lamp or a car is a fraction of
+    // a pixel: stop drawing them there rather than paying for grain
+    const far = distM > 2600, veryFar = distM > 4200;
+    for (const f of this.fleets) f.mesh.visible = f.list === this.boats ? !veryFar : !far;
+    for (const k of ["lamp", "car", "lotcar"]) { const m = this.inst.get(k); if (m) m.visible = !far; }
     this.renderer.resetState();
     if (this.fleets.length && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
@@ -643,8 +648,48 @@ export class RealCityLayer {
     // the top volume per deed takes the cornice and the plant
     const topZ = new Map<string, number>();
     for (const v of this.volumes) if (v.b && !v.k) topZ.set(v.b, Math.max(topZ.get(v.b) ?? 0, v.z1));
+    // VACANT LOTS. Downtown a hole in the street wall is a surface car park;
+    // elsewhere it is a gravel yard. Residential lots stay as MapLibre's lawn.
+    const lotPark = new Buf(), lotGravel = new Buf();
+    let ls = (this.seed * 4421) % 2147483646 + 1;
+    const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
+    const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
     for (const v of this.volumes) {
-      if (v.k) continue;                                   // vacant lots: MapLibre's ground
+      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62)) continue;
+      let ring = v.r.map((p) => this.project(p));
+      if (ring.length < 3) continue;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      const downtown = (v.ds ?? 50) >= 62;
+      const B = downtown ? lotPark : lotGravel;
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
+      for (const t of tris) {
+        for (const i of t) { B.pos.push(ring[i][0], ring[i][1], 0.03); B.nrm.push(0, 0, 1); B.uv.push(ring[i][0] / 5, ring[i][1] / 5); B.col.push(1, 1, 1); }
+      }
+      if (downtown) {
+        // rows of parked cars squared to the longest side
+        let li = 0, ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+        const a = ring[li], b = ring[(li + 1) % ring.length];
+        const ux = (b[0] - a[0]) / ll, uy = (b[1] - a[1]) / ll, nx = -uy, ny = ux;
+        const inP = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+        for (let row = 3.5; row < 60; row += 6.2) for (let t = 2; t < ll - 2; t += 2.6) {
+          const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
+          if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
+          this.putInst("lotcar", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
+        }
+      }
+    }
+    if (lotPark.count) {
+      const m = new THREE.Mesh(lotPark.geometry(), new THREE.MeshStandardMaterial({ map: this.parkingTex(), roughness: 0.9, envMapIntensity: 0.2 }));
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    if (lotGravel.count) {
+      const m = new THREE.Mesh(lotGravel.geometry(), new THREE.MeshStandardMaterial({ map: this.gravelTex(), roughness: 1, envMapIntensity: 0.15 }));
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    for (const v of this.volumes) {
+      if (v.k) continue;                                   // vacant lots: dressed above
       const ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
       const k = keyOf(v.b || `${v.r[0][0]},${v.r[0][1]}`);
@@ -751,6 +796,7 @@ export class RealCityLayer {
         const c = new THREE.IcosahedronGeometry(1.6, 0).translate(-0.8, -0.6, 5.3);
         return { g: merge([a, b, c]), mat: this.leafMat, colored: true };
       }
+      case "lotcar":
       case "car": {
         const body = box(4.35, 1.78, 0.78, 0, 0, 0.22);
         const cab = box(2.2, 1.62, 0.62, -0.2, 0, 1.0);
@@ -865,6 +911,27 @@ export class RealCityLayer {
       mesh.receiveShadow = true;
       this.scene.add(mesh);
     }
+  }
+
+  /** Asphalt with white bay lines every 2.6 m (5 m tile). */
+  private parkingTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 17; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#45474b"; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 1500; i++) { const v = 55 + rnd() * 35 | 0; g.fillStyle = `rgba(${v},${v},${v + 3},0.5)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
+    g.fillStyle = "rgba(230,228,220,0.75)"; g.fillRect(0, 0, 3, 64);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+  /** Patchy gravel with weeds coming through. */
+  private gravelTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 29; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#8f8676"; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 2500; i++) { const v = 110 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 6},${v - 18},0.6)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${90 + rnd() * 30 | 0},${110 + rnd() * 30 | 0},${60},0.45)`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 3 + rnd() * 8, 0, 6.28); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
   }
 
   /** Concrete flags with a joint every 1.5 m and a little staining. */

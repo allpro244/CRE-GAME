@@ -219,3 +219,37 @@ there are already three tree species.
    Battery) was a lawn floating over the harbour with no edge. Each run of
    its ring that lies over the water now gets a coping and a battered stone
    face stepping down into the sea.
+
+# THE REAL-GEOMETRY PREVIEW (src/map/real/RealCity.ts)
+
+A second renderer for the same game, off by default behind Settings →
+Display → "New 3D city (preview)" (`store.realRender`, localStorage
+`bw:render-real`). It answers every call MapView makes of ThreeBuildings, so
+picking, labels, badges, panels and the engine are untouched; turning it off
+puts the classic map back. What it draws:
+
+- **Buildings as geometry.** Walls carry world-scale facade textures per
+  family — brick, stone, glass curtain wall, modern panel, industrial,
+  shopfront storey, blank civic stone — with roughness/metalness, normal
+  relief for the window reveals and lit-room emission after dark. Cornices,
+  string courses, parapets and dark lobby bases are modelled; old low brick
+  rows take gabled roofs; roofs carry bulkheads, water tanks and plant.
+- **Light.** Stock PBR materials, a sun with a view-fitted soft shadow map,
+  sky fill and an environment for the glass, ACES tone mapping; seasons,
+  snow on roofs, dusk and night (a veil over MapLibre's ground, lit windows,
+  glowing street lamps).
+- **Ground.** Raised 15 cm footways in paving flags with granite kerb faces,
+  zebra bars at every gridded corner, car parks on downtown vacant lots and
+  gravel elsewhere, stone footbridges over the creek gaps, a glossy veneer
+  on the sea.
+- **Life.** Street and park trees by season, parked cars, moving traffic and
+  pedestrians, moored launches and offshore ferries, park fountains and
+  columns, tower cranes slewing over every development under way.
+- **The game on it.** Gold roofs on holdings, the selected building glowing,
+  lenses on the roofs, tints, condition as soot and greying, developments
+  and demolitions.
+
+Not yet in it: the classic map's lit-vacancy floor bands, retail shopfront
+state, civic works and the sunk creek channel. Frame rate has not been
+measured on a GPU (this container has none); small props drop out past
+~2.6 km of camera distance.

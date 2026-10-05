@@ -153,6 +153,11 @@ interface FamilySpec {
   mullions?: [number, number]; // vertical, horizontal glazing bars per window
   reveal: number;    // normal-map relief strength
   noWin?: boolean;   // a blank wall: monuments, sheds, hulls
+  // the window's shape and dressing — what separates an Italianate walk-up
+  // from a Federal row house from a 1950s slab at a glance
+  winStyle?: "rect" | "arch" | "segment" | "pair";
+  lintel?: "flat" | "pediment" | "none";
+  shutter?: string;  // painted shutters either side
 }
 
 function buildFamily(spec: FamilySpec, seed: number): Family {
@@ -172,34 +177,67 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     const x0 = ox + spec.win.x0 * TILE, x1 = ox + spec.win.x1 * TILE;
     const y0 = oy + (1 - spec.win.y1) * TILE, y1 = oy + (1 - spec.win.y0) * TILE;
     const ww = x1 - x0, wh = y1 - y0;
+    const style = spec.winStyle ?? "rect";
+    // the openings in this bay: one, or a pair split by a narrow pier
+    const ops: [number, number][] = style === "pair"
+      ? [[x0, x0 + ww * 0.44], [x1 - ww * 0.44, x1]] : [[x0, x1]];
+    // the head of each opening: square, a full round arch, or a shallow segment
+    const rise = (a: number, b: number) => style === "arch" ? (b - a) / 2 : style === "segment" ? (b - a) * 0.18 : 0;
+    const shape = (g: CanvasRenderingContext2D, a: number, b: number, inset = 0) => {
+      const r = rise(a, b), ya = y0 + inset, yb = y1 - inset, xa = a + inset, xb = b - inset;
+      g.beginPath();
+      if (r > 0) {
+        const cx = (xa + xb) / 2, half = (xb - xa) / 2;
+        g.moveTo(xa, yb); g.lineTo(xa, ya + r);
+        if (style === "arch") g.arc(cx, ya + r, half, Math.PI, 0);
+        else g.quadraticCurveTo(cx, ya - r * 0.9, xb, ya + r);
+        g.lineTo(xb, yb); g.closePath();
+      } else g.rect(xa, ya, xb - xa, yb - ya);
+    };
+    if (spec.shutter) {
+      alb.g.fillStyle = spec.shutter;
+      const sw = ww * 0.32;
+      alb.g.fillRect(x0 - sw - 2, y0, sw, wh); alb.g.fillRect(x1 + 2, y0, sw, wh);
+      alb.g.fillStyle = "rgba(0,0,0,0.18)";
+      for (let yy = y0 + 4; yy < y1; yy += 6) { alb.g.fillRect(x0 - sw - 2, yy, sw, 1.5); alb.g.fillRect(x1 + 2, yy, sw, 1.5); }
+    }
     if (spec.trim) {
       alb.g.fillStyle = spec.trim;
-      alb.g.fillRect(x0 - 4, y0 - 9, ww + 8, 9);     // lintel
-      alb.g.fillRect(x0 - 3, y1, ww + 6, 5);          // sill
+      const lt = spec.lintel ?? "flat";
+      for (const [a, b] of ops) {
+        if (style === "arch" || style === "segment") {
+          // a ring of voussoirs round the head, keyed at the crown
+          alb.g.save(); shape(alb.g, a - 5, b + 5); alb.g.fill(); alb.g.restore();
+        } else if (lt === "flat") alb.g.fillRect(a - 4, y0 - 9, b - a + 8, 9);
+        if (lt === "pediment") {
+          alb.g.beginPath(); alb.g.moveTo(a - 7, y0 - 4); alb.g.lineTo((a + b) / 2, y0 - 20); alb.g.lineTo(b + 7, y0 - 4); alb.g.closePath(); alb.g.fill();
+        }
+        alb.g.fillRect(a - 3, y1, b - a + 6, 5);          // sill
+      }
     }
     // the glass: a vertical sky gradient with a per-pane brightness, so a
     // street of windows does not read as one sheet
     const k = 0.85 + rnd() * 0.3;
     const grad = alb.g.createLinearGradient(0, y0, 0, y1);
     grad.addColorStop(0, spec.glassCol); grad.addColorStop(1, shade(spec.glassCol, 0.62));
-    alb.g.globalAlpha = 1; alb.g.fillStyle = grad; alb.g.fillRect(x0, y0, ww, wh);
-    alb.g.fillStyle = `rgba(255,255,255,${(k - 0.85) * 0.25})`; alb.g.fillRect(x0, y0, ww, wh);
-    // frame and glazing bars
-    alb.g.strokeStyle = spec.frameCol; alb.g.lineWidth = 3; alb.g.strokeRect(x0 + 1, y0 + 1, ww - 2, wh - 2);
-    if (spec.mullions) {
-      alb.g.lineWidth = 2;
-      for (let i = 1; i < spec.mullions[0]; i++) { const x = x0 + (ww * i) / spec.mullions[0]; alb.g.beginPath(); alb.g.moveTo(x, y0); alb.g.lineTo(x, y1); alb.g.stroke(); }
-      for (let i = 1; i < spec.mullions[1]; i++) { const y = y0 + (wh * i) / spec.mullions[1]; alb.g.beginPath(); alb.g.moveTo(x0, y); alb.g.lineTo(x1, y); alb.g.stroke(); }
-    }
-    orm.g.fillStyle = `rgb(0,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
-    orm.g.fillRect(x0 + 2, y0 + 2, ww - 4, wh - 4);
-    // the reveal: glass sits back in the wall
-    hgt.g.fillStyle = "#3a3a3a"; hgt.g.fillRect(x0, y0, ww, wh);
-    // after dark about half the rooms are lit, warm and uneven
-    if (rnd() < 0.55) {
-      const lum = 0.55 + rnd() * 0.45;
-      emi.g.fillStyle = `rgb(${255 * lum | 0},${190 * lum | 0},${110 * lum | 0})`;
-      emi.g.fillRect(x0 + 2, y0 + 2, ww - 4, wh - 4);
+    const lit = rnd() < 0.55, lum = 0.55 + rnd() * 0.45;
+    for (const [a, b] of ops) {
+      alb.g.globalAlpha = 1; alb.g.fillStyle = grad; shape(alb.g, a, b); alb.g.fill();
+      alb.g.fillStyle = `rgba(255,255,255,${(k - 0.85) * 0.25})`; alb.g.fill();
+      // frame and glazing bars
+      alb.g.strokeStyle = spec.frameCol; alb.g.lineWidth = 3; shape(alb.g, a, b, 1); alb.g.stroke();
+      if (spec.mullions) {
+        const w2 = b - a;
+        alb.g.lineWidth = 2;
+        for (let i = 1; i < spec.mullions[0]; i++) { const x = a + (w2 * i) / spec.mullions[0]; alb.g.beginPath(); alb.g.moveTo(x, y0 + rise(a, b)); alb.g.lineTo(x, y1); alb.g.stroke(); }
+        for (let i = 1; i < spec.mullions[1]; i++) { const y = y0 + (wh * i) / spec.mullions[1]; alb.g.beginPath(); alb.g.moveTo(a, y); alb.g.lineTo(b, y); alb.g.stroke(); }
+      }
+      orm.g.fillStyle = `rgb(0,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
+      shape(orm.g, a, b, 2); orm.g.fill();
+      // the reveal: glass sits back in the wall
+      hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
+      // after dark about half the rooms are lit, warm and uneven
+      if (lit) { emi.g.fillStyle = `rgb(${255 * lum | 0},${190 * lum | 0},${110 * lum | 0})`; shape(emi.g, a, b, 2); emi.g.fill(); }
     }
   }
   const tex = (c: HTMLCanvasElement, srgb: boolean) => {
@@ -253,13 +291,14 @@ const brickWall = (base: [number, number, number]) => (g: CanvasRenderingContext
     g.fillRect(x + 1, y + 1, bw - 1.5, bh - 1.5);
   }
 };
-const stoneWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
-  g.fillStyle = "#b3a790"; g.fillRect(0, 0, w, h);
-  for (let y = 0, r = 0; y < h; y += 21, r++) for (let x = (r % 2) * 32; x < w; x += 64) {
+const stoneWallC = (c: [number, number, number], course = 21) => (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
+  g.fillStyle = `rgb(${c[0] * 0.9 | 0},${c[1] * 0.9 | 0},${c[2] * 0.87 | 0})`; g.fillRect(0, 0, w, h);
+  for (let y = 0, r = 0; y < h; y += course, r++) for (let x = (r % 2) * 32; x < w; x += 64) {
     const v = 0.94 + rnd() * 0.09;
-    g.fillStyle = `rgb(${196 * v | 0},${186 * v | 0},${166 * v | 0})`; g.fillRect(x + 1, y + 1, 62, 19);
+    g.fillStyle = `rgb(${c[0] * v | 0},${c[1] * v | 0},${c[2] * v | 0})`; g.fillRect(x + 1, y + 1, 62, course - 2);
   }
 };
+const stoneWall = stoneWallC([196, 186, 166]);
 const panelWall = (base: string) => (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
   g.fillStyle = base; g.fillRect(0, 0, w, h);
   g.strokeStyle = "rgba(0,0,0,0.12)"; g.lineWidth = 1.5;
@@ -267,23 +306,25 @@ const panelWall = (base: string) => (g: CanvasRenderingContext2D, w: number, h: 
   for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(0,0,0,${rnd() * 0.04})`; g.fillRect(rnd() * w, rnd() * h, 3, 3); }
 };
 // brownstone: dressed sandstone courses, chocolate-red
-const brownWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
-  g.fillStyle = "#5e4234"; g.fillRect(0, 0, w, h);
+const brownWallC = (c: [number, number, number]) => (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
+  g.fillStyle = `rgb(${c[0] * 0.73 | 0},${c[1] * 0.75 | 0},${c[2] * 0.76 | 0})`; g.fillRect(0, 0, w, h);
   for (let y = 0, r = 0; y < h; y += 16, r++) for (let x = (r % 2) * 24; x < w; x += 48) {
     const v = 0.9 + rnd() * 0.16;
-    g.fillStyle = `rgb(${128 * v | 0},${88 * v | 0},${68 * v | 0})`; g.fillRect(x + 1, y + 1, 46, 14);
+    g.fillStyle = `rgb(${c[0] * v | 0},${c[1] * v | 0},${c[2] * v | 0})`; g.fillRect(x + 1, y + 1, 46, 14);
   }
 };
+const brownWall = brownWallC([128, 88, 68]);
 // art deco: pale limestone with continuous piers rising between the windows
 // and dark spandrel panels under them — the vertical read of the 1930s tower
-const decoWall = (g: CanvasRenderingContext2D, w: number, h: number) => {
-  g.fillStyle = "#cbbfa7"; g.fillRect(0, 0, w, h);
+const decoWallC = (face: string, recess: string, pier: string) => (g: CanvasRenderingContext2D, w: number, h: number) => {
+  g.fillStyle = face; g.fillRect(0, 0, w, h);
   for (let bx = 0; bx < 2; bx++) {
     const ox = bx * TILE;
-    g.fillStyle = "#4c4a46"; g.fillRect(ox + TILE * 0.30, 0, TILE * 0.40, h);           // the recessed bay
-    g.fillStyle = "#ddd2bb"; g.fillRect(ox, 0, TILE * 0.10, h); g.fillRect(ox + TILE * 0.9, 0, TILE * 0.1, h);   // pier faces
+    g.fillStyle = recess; g.fillRect(ox + TILE * 0.30, 0, TILE * 0.40, h);           // the recessed bay
+    g.fillStyle = pier; g.fillRect(ox, 0, TILE * 0.10, h); g.fillRect(ox + TILE * 0.9, 0, TILE * 0.1, h);   // pier faces
   }
 };
+const decoWall = decoWallC("#cbbfa7", "#4c4a46", "#ddd2bb");
 // a shopfront storey: painted fascia and an awning band over each display window
 const AWN = ["#7a2f2a", "#2f4f3e", "#2c3d5a", "#8a6a2c", "#5a2f4a", "#3b3b3b"];
 const shopWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
@@ -302,16 +343,17 @@ const glassWall = (g: CanvasRenderingContext2D, w: number, h: number) => {
 };
 
 // painted clapboard: lapped horizontal boards, each casting a hairline shadow
-const clapWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
+const clapWallC = (board: number) => (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
   g.fillStyle = "#ece8de"; g.fillRect(0, 0, w, h);
-  for (let y = 0; y < h; y += 7) {
+  for (let y = 0; y < h; y += board) {
     const v = 0.97 + rnd() * 0.05;
-    g.fillStyle = `rgb(${236 * v | 0},${232 * v | 0},${222 * v | 0})`; g.fillRect(0, y + 1.5, w, 5.5);
+    g.fillStyle = `rgb(${236 * v | 0},${232 * v | 0},${222 * v | 0})`; g.fillRect(0, y + 1.5, w, board - 1.5);
     g.fillStyle = "rgba(60,55,45,0.28)"; g.fillRect(0, y, w, 1.5);
   }
   // corner boards at the tile edges
   g.fillStyle = "#f6f4ee"; g.fillRect(0, 0, 3, h); g.fillRect(w - 3, 0, 3, h);
 };
+const clapWall = clapWallC(7);
 // a curtain wall's spandrel in another glass: bronze, or the blue-green of the 1990s
 const tintedGlassWall = (col: string) => (g: CanvasRenderingContext2D, w: number, h: number) => { g.fillStyle = col; g.fillRect(0, 0, w, h); };
 
@@ -398,9 +440,101 @@ function makeFamilies(seed: number): Record<string, Family> {
       reveal: 2.4 },
   ];
   const out: Record<string, Family> = {};
-  F.forEach((f, i) => { out[f.key] = buildFamily(f, (seed * 31 + i * 977) % 2147483646 + 1); });
+  F.forEach((f, i) => {
+    out[f.key] = buildFamily(f, (seed * 31 + i * 977) % 2147483646 + 1);
+    // the family's other three elevations, keyed "brick#1".."brick#3"
+    (VARIANTS[f.key] ?? []).forEach((v, j) => {
+      const key = `${f.key}#${j + 1}`;
+      out[key] = { ...buildFamily({ ...f, ...v, key }, (seed * 31 + i * 977 + (j + 1) * 7919) % 2147483646 + 1), key: f.key };
+    });
+  });
   return out;
 }
+
+// FOUR ELEVATIONS A FAMILY. A family was one painted texture, so every
+// brick walk-up on the island wore the same brick, the same sash and the
+// same lintel. Each family now has three more, art-directed rather than
+// random and each true to its period: the Italianate segmental arch and the
+// Federal pediment and shutters on the walk-ups, white and sandstone and
+// granite on the Beaux-Arts stone, smoked, silver and green glass on the
+// curtain walls. A building draws one from a hash of its own deed.
+const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
+  brick: [
+    { wall: brickWall([130, 62, 48]), winStyle: "segment", trim: "#d9cdb5", frameCol: "#2a2a2a" },
+    { wall: brickWall([188, 112, 72]), lintel: "pediment", trim: "#e8e2d4", shutter: "#2f4a3a", frameCol: "#f0ece2" },
+    { wall: brickWall([205, 200, 190]), winStyle: "arch", trim: "#8a8478", frameCol: "#222222", glassCol: "#3a4a55" },
+  ],
+  buff: [
+    { wall: brickWall([218, 196, 150]), winStyle: "segment", trim: "#6e4a32" },
+    { wall: brickWall([176, 148, 108]), winStyle: "pair", trim: "#efe6d2", frameCol: "#2c2a26" },
+    { wall: brickWall([196, 170, 140]), lintel: "pediment", trim: "#5a4636", shutter: "#3a3f46" },
+  ],
+  brownstone: [
+    { wall: brownWallC([148, 104, 80]), winStyle: "arch", trim: "#5a3e30" },
+    { wall: brownWallC([110, 74, 60]), lintel: "pediment", trim: "#7b5a48", frameCol: "#d8d0c0" },
+    { wall: brownWallC([140, 96, 84]), winStyle: "segment", frameCol: "#2a2a2a" },
+  ],
+  stone: [
+    { wall: stoneWallC([212, 206, 190]), winStyle: "arch", frameCol: "#1e2226", mullions: [2, 3] },
+    { wall: stoneWallC([176, 160, 138]), lintel: "pediment", trim: "#e8e0cc" },
+    { wall: stoneWallC([160, 150, 140], 26), winStyle: "pair", frameCol: "#2b2e30" },
+  ],
+  deco: [
+    { wall: decoWallC("#d8cdb5", "#3b4248", "#e8dfcb") },
+    { wall: decoWallC("#b9b2a6", "#5a4b40", "#ccc5b8"), glassCol: "#3a3a33" },
+    { wall: decoWallC("#c9a98a", "#40352e", "#d8bc9c") },
+  ],
+  decobrick: [
+    { wall: brickWall([160, 120, 92]) },
+    { wall: brickWall([205, 175, 140]), trim: "#4a3e34" },
+    { wall: brickWall([150, 80, 60]), trim: "#d8ccb4" },
+  ],
+  industrial: [
+    { wall: brickWall([130, 72, 58]), winStyle: "segment", mullions: [6, 5] },
+    { wall: brickWall([170, 150, 120]), mullions: [4, 3], trim: "#7a6a58" },
+    { wall: panelWall("#9a9a94"), frameCol: "#4a4e52", mullions: [8, 4], trim: undefined },
+  ],
+  modern: [
+    { wall: panelWall("#d6d2c8"), win: { x0: 0.05, x1: 0.95, y0: 0.32, y1: 0.84 }, frameCol: "#33393e" },
+    { wall: panelWall("#a69a8a"), winStyle: "pair" },
+    { wall: brickWall([150, 86, 66]), win: { x0: 0.1, x1: 0.9, y0: 0.3, y1: 0.8 }, frameCol: "#d8d8d8" },
+  ],
+  ribbon: [
+    { wall: panelWall("#8a929a"), glassCol: "#22303a" },
+    { wall: panelWall("#3a3f44"), glassCol: "#4a6070", frameCol: "#20242a" },
+    { wall: panelWall("#c9b89a"), glassCol: "#3a3528" },
+  ],
+  grid: [
+    { wall: panelWall("#d4cfc4"), win: { x0: 0.14, x1: 0.86, y0: 0.2, y1: 0.8 } },
+    { wall: panelWall("#9c968c"), win: { x0: 0.2, x1: 0.8, y0: 0.3, y1: 0.75 } },
+    { wall: brickWall([120, 90, 75]), frameCol: "#2a2a2a" },
+  ],
+  glass: [
+    { wall: tintedGlassWall("#2a3540"), glassCol: "#5c7f94" },
+    { wall: tintedGlassWall("#465058"), glassCol: "#9fb4bf", frameCol: "#7a8890" },
+    { wall: tintedGlassWall("#253a3a"), glassCol: "#6a9a8f" },
+  ],
+  bronze: [
+    { wall: tintedGlassWall("#2a1f18"), glassCol: "#5e4a38" },
+    { wall: tintedGlassWall("#3a3a38"), glassCol: "#6e6a60", frameCol: "#2a2a28" },
+    { wall: tintedGlassWall("#1e2228"), glassCol: "#3e4c58", frameCol: "#15181c" },
+  ],
+  blueglass: [
+    { wall: tintedGlassWall("#244a64"), glassCol: "#4f8fb8" },
+    { wall: tintedGlassWall("#3a5a5a"), glassCol: "#7fb4ae" },
+    { wall: tintedGlassWall("#4a5a6a"), glassCol: "#a8c4d4", frameCol: "#c4ccd2" },
+  ],
+  clapboard: [
+    { wall: clapWallC(9), shutter: "#2f4a3a" },
+    { wall: clapWallC(6), lintel: "pediment" },
+    { wall: clapWallC(8), shutter: "#3a2a26", winStyle: "pair" },
+  ],
+  shop: [
+    { glassCol: "#4a6470", frameCol: "#1f2a24" },
+    { glassCol: "#607884", frameCol: "#5a2a26" },
+    { glassCol: "#55707e", frameCol: "#d8d0c0" },
+  ],
+};
 
 /** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
 function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
@@ -826,11 +960,29 @@ export class RealCityLayer {
     return d;
   }
 
+  /** Which of the family's four elevations this deed wears (stable per deed). */
+  private variantOf(fk: string, seedK: number): string {
+    const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
+    const key = n ? `${fk}#${n}` : fk;
+    return this.families[key] ? key : fk;
+  }
+
   /** One volume: walls in its family, a roof, and its trim. */
-  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "") {
+  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0) {
     const fam = this.families[famKey];
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
-    const walls = (fk: string, za: number, zb: number, vOff: number, tn: number[]) => {
+    // THE MANSARD. A Second Empire walk-up finishes its top storey as a steep
+    // slate roof with dormers rather than a wall — the "French flat" of the
+    // 1860s-1900s. The walls stop a storey short and the cornice sits there.
+    let ringC = [0, 0];
+    for (const [x, y] of ring) { ringC[0] += x / ring.length; ringC[1] += y / ring.length; }
+    let rad = 0; for (const [x, y] of ring) rad += Math.hypot(x - ringC[0], y - ringC[1]) / ring.length;
+    const mans = crown && plant && !pitched && year > 1855 && year < 1915 && rad > 5
+      && (famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "stone")
+      && z1 - z0 > 9 && z1 < 34 && hash01(seedK ^ 0x3a5, 7) < 0.4;
+    const zw = mans ? z1 - fam.floorH * 0.95 : z1;            // where the walls stop
+    const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[]) => {
+      const fk = this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
       const W = this.buf(wallName);
@@ -884,18 +1036,81 @@ export class RealCityLayer {
     // A trading ground floor is its own storey: display glass under awnings,
     // the upper floors' windows starting above it.
     const shopH = this.families.shop.floorH;
-    if (shop && z0 < 0.5 && z1 > shopH + 2.5) {
+    if (shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
-      walls(famKey, shopH, z1, shopH, tint);
+      walls(famKey, shopH, zw, shopH, tint);
     } else {
-      walls(famKey, z0, z1, 0, tint);
+      walls(famKey, z0, zw, 0, tint);
     }
 
     // roof
     const R = this.buf("roof");
     const r0 = R.count;
-    const rc = roofTone(famKey, cls, pitched, seedK);
-    if (pitched && ring.length === 4) {
+    const rc = roofTone(famKey, cls, pitched || mans, seedK);
+    // the long side of a four-sided footprint, for the gable, hip and sawtooth
+    const longSide = () => {
+      let li = 0, ll = -1;
+      for (let i = 0; i < 4; i++) { const a = ring[i], b = ring[(i + 1) % 4]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+      return { A: ring[li], B: ring[(li + 1) % 4], C: ring[(li + 2) % 4], D: ring[(li + 3) % 4], ll };
+    };
+    // a SAWTOOTH: a factory roof of north lights, a pitch of sheet and a
+    // vertical strip of glass, repeated down the long side. Rectangles only.
+    let saw = false;
+    if (crown && plant && famKey === "industrial" && ring.length === 4 && z1 < 18 && Math.abs(ringArea(ring)) > 450 && hash01(seedK ^ 0x5a3, 11) < 0.55) {
+      const { A, B, C, D, ll } = longSide();
+      const ad = [D[0] - A[0], D[1] - A[1]], bc = [C[0] - B[0], C[1] - B[1]];
+      saw = Math.hypot(ad[0] - bc[0], ad[1] - bc[1]) < 1.0 && ll > 16;
+      if (saw) {
+        const ux = (B[0] - A[0]) / ll, uy = (B[1] - A[1]) / ll;
+        const P = (t: number, sv: number, z: number) => [A[0] + ux * t + ad[0] * sv, A[1] + uy * t + ad[1] * sv, z];
+        const pitch = 7.5, hgt = 2.6;
+        const Dk = this.buf("dark"); const d0 = Dk.count;
+        for (let t0 = 0; t0 < ll - 0.5; t0 += pitch) {
+          const t1 = Math.min(ll, t0 + pitch);
+          R.face([P(t0, 0, z1), P(t0, 1, z1), P(t1, 1, z1 + hgt), P(t1, 0, z1 + hgt)], [-ux * 0.5, -uy * 0.5, 1], rc);
+          Dk.face([P(t1, 0, z1), P(t1, 1, z1), P(t1, 1, z1 + hgt), P(t1, 0, z1 + hgt)], [ux, uy, 0], [0.8, 0.9, 1.0]);
+          R.face([P(t0, 0, z1), P(t1, 0, z1), P(t1, 0, z1 + hgt)], [ad[1], -ad[0], 0], rc);
+          R.face([P(t0, 1, z1), P(t1, 1, z1), P(t1, 1, z1 + hgt)], [-ad[1], ad[0], 0], rc);
+        }
+        this.note(bbl, "dark", d0);
+      }
+    }
+    if (saw) {
+      // drawn above
+    } else if (mans) {
+      // the mansard: steep slate from the cornice to an inset deck, dormers on it
+      const k = Math.max(0.55, 1 - 1.4 / rad);
+      const inner = ring.map(([x, y]) => [ringC[0] + (x - ringC[0]) * k, ringC[1] + (y - ringC[1]) * k] as P2);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], ai = inner[i], bi = inner[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.3) continue;
+        R.face([[a[0], a[1], zw], [b[0], b[1], zw], [bi[0], bi[1], z1], [ai[0], ai[1], z1]], [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0.35], rc);
+        const n = Math.floor(L / 3.4);
+        for (let j = 0; j < n; j++) {
+          const t = (j + 0.5) / n;
+          const ex = a[0] + (b[0] - a[0]) * t, ey = a[1] + (b[1] - a[1]) * t;
+          const ix = ai[0] + (bi[0] - ai[0]) * t, iy = ai[1] + (bi[1] - ai[1]) * t;
+          this.putInst("dormer", ex + (ix - ex) * 0.45, ey + (iy - ey) * 0.45, zw + 0.35, 1, Math.atan2(b[1] - a[1], b[0] - a[0]), bbl);
+        }
+      }
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(inner.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
+      for (const t of tris) R.tri([inner[t[0]][0], inner[t[0]][1], z1], [inner[t[1]][0], inner[t[1]][1], z1], [inner[t[2]][0], inner[t[2]][1], z1], [0, 0, 1], rc);
+    } else if (pitched && ring.length === 4 && (famKey === "clapboard" ? hash01(seedK ^ 0x41b, 5) < 0.5 : hash01(seedK ^ 0x41b, 5) < 0.3)) {
+      // A HIP: the same ridge, pulled in from both ends, every side a slope
+      const { A, B, C, D, ll } = longSide();
+      const short = Math.min(Math.hypot(C[0] - B[0], C[1] - B[1]), Math.hypot(A[0] - D[0], A[1] - D[1]));
+      const rise = Math.min(4.0, short * 0.38);
+      const M1 = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2], M2 = [(D[0] + A[0]) / 2, (D[1] + A[1]) / 2];
+      const t = Math.min(0.45, (short / 2) / Math.max(ll, 1));
+      const H1 = [M1[0] + (M2[0] - M1[0]) * t, M1[1] + (M2[1] - M1[1]) * t, z1 + rise];
+      const H2 = [M2[0] + (M1[0] - M2[0]) * t, M2[1] + (M1[1] - M2[1]) * t, z1 + rise];
+      R.face([[A[0], A[1], z1], [B[0], B[1], z1], H1, H2], [B[1] - A[1], -(B[0] - A[0]), 0.6], rc);
+      R.face([[C[0], C[1], z1], [D[0], D[1], z1], H2, H1], [D[1] - C[1], -(D[0] - C[0]), 0.6], rc);
+      R.face([[B[0], B[1], z1], [C[0], C[1], z1], H1], [C[1] - B[1], -(C[0] - B[0]), 0.6], rc);
+      R.face([[D[0], D[1], z1], [A[0], A[1], z1], H2], [A[1] - D[1], -(A[0] - D[0]), 0.6], rc);
+    } else if (pitched && ring.length === 4) {
       // A GABLE. The ridge runs the long way, a rafter's rise above the eaves;
       // the two gable ends are wall, in the building's own brick.
       let li = 0, ll = -1;
@@ -907,12 +1122,13 @@ export class RealCityLayer {
       const out1 = [B[1] - A[1], -(B[0] - A[0]), 0.6], out2 = [D[1] - C[1], -(D[0] - C[0]), 0.6];
       R.face([[A[0], A[1], z1], [B[0], B[1], z1], M1, M2], out1, rc);
       R.face([[C[0], C[1], z1], [D[0], D[1], z1], M2, M1], out2, rc);
-      const Wg = this.buf("w:" + famKey);
+      const vk = this.variantOf(famKey, seedK);
+      const Wg = this.buf("w:" + vk);
       const g0 = Wg.count;
       const uvG = (p: number[]) => [(p[0] + p[1]) / fam.bayW * 0.7, p[2] / fam.floorH];
       Wg.face([[B[0], B[1], z1], [C[0], C[1], z1], M1], [C[1] - B[1], -(C[0] - B[0]), 0], tint, uvG);
       Wg.face([[D[0], D[1], z1], [A[0], A[1], z1], M2], [A[1] - D[1], -(A[0] - D[0]), 0], tint, uvG);
-      this.note(bbl, "w:" + famKey, g0);
+      this.note(bbl, "w:" + vk, g0);
     } else {
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
@@ -940,11 +1156,25 @@ export class RealCityLayer {
         T.quad([b[0], b[1], z], [B[0], B[1], z], [A[0], A[1], z], [a[0], a[1], z], [0, 0, -1], [[0, 0], [1, 0], [1, 1], [0, 1]], col);
       }
     };
-    const white = [1, 1, 1];
+    // THE TRIM IS PAINTED, AND NOT ALL THE SAME. Stone-coloured on most, but
+    // a walk-up's cornice was as often galvanised iron painted dark green,
+    // black or a terracotta red; and the cornice itself is deep and bracketed,
+    // a modest band, a double course, or long since stripped off.
+    const TRIM = [[1, 1, 1], [1, 1, 1], [0.42, 0.55, 0.45], [0.3, 0.3, 0.32], [0.98, 0.66, 0.5], [0.8, 0.8, 0.8]];
+    const white = fam.masonry || famKey === "clapboard" ? TRIM[Math.floor(hash01(seedK ^ 0x71a, 5) * TRIM.length)] : [1, 1, 1];
+    const corn = Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
     if (fam.masonry) {
-      if (crown && z1 - z0 > 4 && !pitched) {
-        band(z1 - 0.75, 0.6, 0.55, white);              // the cornice
-        band(z1 - 1.05, 0.3, 0.22, white);              // its bed moulding
+      if (crown && zw - z0 > 4 && !pitched) {
+        if (corn === 1 || mans) {
+          band(zw - 1.1, 0.95, 0.85, white);            // a deep bracketed cornice
+          band(zw - 1.45, 0.35, 0.3, white);
+        } else if (corn === 2) {
+          band(zw - 0.45, 0.4, 0.12, white);            // stripped back to a coping
+        } else {
+          band(zw - 0.75, 0.6, 0.55, white);            // the cornice
+          band(zw - 1.05, 0.3, 0.22, white);            // its bed moulding
+          if (corn === 3 && zw - z0 > fh * 3) band(zw - fh - 0.4, 0.3, 0.25, white);   // a second course a floor down
+        }
       }
       if (z0 < 0.5 && z1 > fh * 1.6) band(fh + 0.05, 0.28, 0.14, white);   // string course
     } else if (fam.glass) {
@@ -956,7 +1186,7 @@ export class RealCityLayer {
     // A FLAT ROOF IS FENCED BY ITS PARAPET: a knee-high wall standing above
     // the deck, its inside face toward the roof so the far side reads from
     // above, and a coping on top. A masonry parapet sits behind its cornice.
-    if (crown && !pitched && z1 - z0 > 3.5) {
+    if (crown && !pitched && !mans && !saw && z1 - z0 > 3.5) {
       const ph = fam.masonry ? 1.0 : fam.glass ? 0.5 : 0.75;
       const po = fam.masonry ? 0.18 : 0.1;
       const q = [[0, 0], [1, 0], [1, 1], [0, 1]], zt = z1 + ph;
@@ -979,7 +1209,7 @@ export class RealCityLayer {
     // pre-war walk-up or loft over six storeys needs a wooden water tank on
     // legs — city mains only lift water about that high — beside the stair
     // bulkhead; a modern block carries condensers; a shed, rows of skylights.
-    if (plant && crown && !pitched) {
+    if (plant && crown && !pitched && !mans && !saw) {
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
@@ -1125,7 +1355,7 @@ export class RealCityLayer {
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
       } else {
-        this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c);
+        this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c, v.y || 0);
       }
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
@@ -1246,6 +1476,11 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "dormer": {
+        // a slate-cheeked dormer: a small box with its own little gable
+        const g = merge([box(1.3, 0.9, 1.5, 0, 0, 0), new THREE.ConeGeometry(0.95, 0.7, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 1.85)]);
+        return { g, mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
+      }
       case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
       case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
       case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
@@ -1782,7 +2017,7 @@ export class RealCityLayer {
           if (own) k = [k[0] * 1.08, k[1], k[2] * 0.86];
           if (sel) k = [k[0] * 1.3, k[1] * 1.18, k[2] * 0.82];
           else if (hov) k = [k[0] * 1.12, k[1] * 1.12, k[2] * 1.12];
-          if (r.buf === "w:shop") {
+          if (r.buf.startsWith("w:shop")) {
             // kraft paper behind unlit glass: duller and browner the emptier
             const rt = this.ret.get(bbl);
             if (rt !== undefined) {

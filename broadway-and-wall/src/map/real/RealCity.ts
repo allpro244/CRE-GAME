@@ -328,6 +328,12 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.03, x1: 0.97, y0: 0.12, y1: 0.99 }, wall: tintedGlassWall("#2e4c5b"),
       glassCol: "#6f9fb0", frameCol: "#9aaab2", wallRough: 0.3, glassRough: 0.05, glassMetal: 0.9,
       reveal: 1.0 },
+    // the other 1920s-30s setback tower: tan brick with tall, narrow,
+    // vertically linked windows and dark spandrels between the piers
+    { key: "decobrick", bayW: 1.9, floorH: 3.6, masonry: true, glass: false,
+      win: { x0: 0.3, x1: 0.7, y0: 0.1, y1: 0.93 }, wall: brickWall([190, 156, 116]),
+      glassCol: "#2c3a44", frameCol: "#3a3029", wallRough: 0.85, glassRough: 0.1, glassMetal: 0.1,
+      trim: "#6a5a48", mullions: [1, 2], reveal: 3.0 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -359,14 +365,14 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
       if (year < 1988) return roll < 0.4 ? "bronze" : roll < 0.65 ? "glass" : roll < 0.82 ? "grid" : "ribbon";
       return roll < 0.45 ? "glass" : roll < 0.85 ? "blueglass" : "bronze";
     }
-    if (year >= 1922 && h > 30) return roll < 0.6 ? "deco" : "stone";
+    if (year >= 1922 && h > 30) return roll < 0.35 ? "deco" : roll < 0.65 ? "decobrick" : "stone";
     return h > 22 ? "stone" : oldBrick();
   }
   if (cls === "multifamily") {
     // low-rise apartments of every era are mostly brick; the panel and glass
     // elevations belong to the mid- and high-rise slabs
     if (h < 26) return year < 1930 ? oldBrick() : roll < 0.75 ? "brick" : "buff";
-    if (year < 1945) return h > 40 ? (roll < 0.5 ? "deco" : "stone") : oldBrick();
+    if (year < 1945) return h > 40 ? (roll < 0.3 ? "deco" : roll < 0.65 ? "decobrick" : "stone") : oldBrick();
     if (year > 1995 && h > 40) return roll < 0.6 ? "glass" : "blueglass";
     // the post-war slab blocks: panel, or a concrete grid
     return year < 1985 && h > 30 && roll < 0.4 ? "grid" : "modern";
@@ -391,6 +397,7 @@ const TINTS: Record<string, [number, number, number][]> = {
   shop: [[1, 1, 1]],
   buff: [[1, 1, 1], [0.95, 0.92, 0.86], [1.04, 1.0, 0.92], [0.9, 0.86, 0.8]],
   brownstone: [[1, 1, 1], [0.9, 0.86, 0.84], [1.06, 1.0, 0.95]],
+  decobrick: [[1, 1, 1], [0.94, 0.88, 0.82], [1.06, 1.0, 0.9], [0.86, 0.78, 0.72]],
   deco: [[1, 1, 1], [0.96, 0.93, 0.88], [0.9, 0.9, 0.92], [1.03, 0.99, 0.92]],
 };
 
@@ -929,7 +936,7 @@ export class RealCityLayer {
         return null;
       };
       const rot = (seedK % 360) * Math.PI / 180;
-      const oldWalk = famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "industrial" || famKey === "stone";
+      const oldWalk = famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "industrial" || famKey === "stone" || famKey === "decobrick";
       if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
@@ -1028,17 +1035,41 @@ export class RealCityLayer {
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
       const pitched = isTop && fam === "brick" && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
-      this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c);
+      // THE WEDDING CAKE. Under the 1916 zoning resolution a tower could rise
+      // straight only so far before it had to step back from the street, and
+      // the pre-war skyline is those setbacks: a full-lot base, one or two
+      // terraces, a slimmer shaft. Three in four of the pre-war masonry
+      // towers step back; the tiers keep the volume's own height and wear
+      // cornices on their terraces.
+      const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
+        && (fam === "deco" || fam === "decobrick" || fam === "stone") && hash01(k ^ 0x1916, this.seed) < 0.75;
+      let topRing = ring;
+      if (preWarTower) {
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        cx /= ring.length; cy /= ring.length;
+        const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+        const h1 = v.z1 * (0.5 + 0.15 * hash01(k ^ 0x51, this.seed)), h2 = v.z1 * 0.82;
+        this.addVolume(ring, v.z0, h1, fam, t, v.b, true, false, k, shop, false, v.c);
+        this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
+        topRing = at(0.68);
+        this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
+      } else {
+        this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c);
+      }
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
       // mast; a stone office takes one setback. Only on the building's own top.
       const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
-      if (isTop && top > 60 && (glassy || fam === "deco" || fam === "stone" || fam === "ribbon" || fam === "grid")) {
+      if (isTop && top > 60 && (glassy || fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "ribbon" || fam === "grid")) {
+        const ring0 = ring;
+        {
+        const ring = topRing.length ? topRing : ring0;
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
         cx /= ring.length; cy /= ring.length;
         const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-        if (fam === "deco") {
+        if (fam === "deco" || fam === "decobrick") {
           this.addVolume(shrink(ring, 0.78), v.z1, v.z1 + 7, fam, t, v.b, false, false, k);
           this.addVolume(shrink(ring, 0.56), v.z1 + 7, v.z1 + 12, fam, t, v.b, true, false, k);
           this.putInst("spire", cx, cy, v.z1 + 12, 1 + (top - 60) / 120, 0, v.b);
@@ -1053,6 +1084,7 @@ export class RealCityLayer {
           this.addVolume(shrink(ring, 0.62), v.z1, v.z1 + 4.5, "plain", [0.9, 0.9, 0.9], v.b, true, true, k);
         } else {
           this.addVolume(shrink(ring, 0.8), v.z1, v.z1 + 6, fam, t, v.b, true, false, k);
+        }
         }
         const d2 = this.deedOf(v.b); d2.height = Math.max(d2.height, v.z1 + 8);
       }

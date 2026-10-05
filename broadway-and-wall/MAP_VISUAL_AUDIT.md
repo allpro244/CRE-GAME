@@ -354,3 +354,16 @@ table rather than a city, and roofs were not the biggest of them:
   ripple normal map (crossing wave trains, one dominant wind) drifting about
   half a metre a second while the city animates, so the sea catches the sun
   and the sky instead of lying flat. `docs/map-overhaul/p6-*.jpg`.
+
+# THE WEDDING CAKE
+
+The pre-war towers were straight extrusions in one cream-striped elevation,
+the most repeated thing downtown. Under the 1916 zoning resolution a tower
+could rise straight only so far before stepping back from the street, and the
+pre-war skyline is those setbacks. Three in four pre-war masonry towers over
+70 m now rise from a full-lot base to a terrace at half to two-thirds of their
+height, step in to 84%, again to 68% for the shaft, each terrace with its
+cornice and parapet, the crown or spire on the slim top — same height, same
+deed. A second 1920s-30s elevation joins the cream deco: tan brick with tall,
+narrow, vertically linked windows and dark spandrels (assigned 35/30/35 with
+deco and stone). `docs/map-overhaul/p7-setback-tower.jpg`.

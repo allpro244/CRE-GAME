@@ -367,3 +367,12 @@ cornice and parapet, the crown or spire on the slim top — same height, same
 deed. A second 1920s-30s elevation joins the cream deco: tan brick with tall,
 narrow, vertically linked windows and dark spandrels (assigned 35/30/35 with
 deco and stone). `docs/map-overhaul/p7-setback-tower.jpg`.
+
+**What the glass sees.** The curtain walls and the water reflected a studio
+light box (RoomEnvironment). They now reflect a sky built for them — deep
+blue overhead paling to a warm horizon, a band of hazy city at eye level, the
+ground below, and the sun where the key light is — prefiltered once. Only the
+glass families, the ribbon windows and the water take it: given to every
+material it tinted the roofs and trees blue, because matte surfaces take
+their ambient light from the same map, so they keep the neutral light box.
+`docs/map-overhaul/p7-sky-glass.jpg`.

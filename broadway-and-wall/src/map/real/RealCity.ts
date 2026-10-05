@@ -15,8 +15,8 @@
  * by default. Nothing here is read by the engine; nothing here writes state.
  */
 import * as THREE from "three";
-import maplibregl from "maplibre-gl";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import maplibregl from "maplibre-gl";
 import type { BuildingVolume, ThreeBuildings } from "../ThreeBuildings";
 
 type Ctx = ConstructorParameters<typeof ThreeBuildings>[3];
@@ -108,6 +108,38 @@ function rippleNormal(): THREE.CanvasTexture {
   }
   g.putImageData(img, 0, 0);
   return normalFromHeight(c, 3.0);
+}
+
+/**
+ * WHAT THE GLASS SEES. A studio light box made every curtain wall reflect a
+ * photographer's softboxes; a city's glass reflects the sky — deep blue
+ * overhead, paling to a warm haze at the horizon — the hazy blocks across
+ * the street, and the low sun. Built once as a little scene and prefiltered
+ * (PMREM) for every material's reflections and ambient light. Up is +z.
+ */
+function skyEnvironment(): THREE.Scene {
+  const sc = new THREE.Scene();
+  const geo = new THREE.SphereGeometry(100, 48, 24);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    vertexShader: "varying vec3 vD; void main() { vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `varying vec3 vD;
+      void main() {
+        float z = vD.z;
+        vec3 zenith = vec3(0.16, 0.34, 0.66), horizon = vec3(0.86, 0.88, 0.86), city = vec3(0.42, 0.42, 0.42), ground = vec3(0.24, 0.23, 0.22);
+        vec3 c = z > 0.0 ? mix(horizon, zenith, pow(clamp(z, 0.0, 1.0), 0.55))
+                         : mix(city, ground, clamp(-z * 3.0, 0.0, 1.0));
+        // a band of hazy buildings just below and above the horizon
+        c = mix(c, city * 1.15, smoothstep(0.08, 0.0, abs(z - 0.02)) * 0.6);
+        gl_FragColor = vec4(c * 1.6, 1.0);
+      }`,
+  });
+  sc.add(new THREE.Mesh(geo, mat));
+  // the sun as a small bright disc where the key light comes from
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 12, 9) }));
+  sun.position.set(0.45, -0.55, 0.7).normalize().multiplyScalar(90);   // the light's default sunDir
+  sc.add(sun);
+  return sc;
 }
 
 interface FamilySpec {
@@ -596,10 +628,14 @@ export class RealCityLayer {
     this.camera.matrixAutoUpdate = false;
     this.scene.matrixWorldAutoUpdate = true;
     const pm = new THREE.PMREMGenerator(this.renderer);
+    // matte surfaces take their ambient light from a neutral light box; the
+    // glass and the water reflect the sky (skyEnvironment)
     this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.03).texture;
+    this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();
     this.families = makeFamilies(this.seed || 1);
+    for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv;
     this.setupLights();
     this.buildCity();
     this.buildGround();
@@ -676,6 +712,7 @@ export class RealCityLayer {
   // its cap several view-distances out, so a street view hazes the far
   // skyline and the island view keeps its far shore readable.
   private hazeSheet: THREE.Mesh | null = null;
+  private skyEnv: THREE.Texture | null = null;
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];
   private waveTex(uvPerMetre: number): THREE.Texture {
@@ -1111,7 +1148,7 @@ export class RealCityLayer {
       outer.holes.push(new THREE.Path(holePts));
       const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), new THREE.MeshStandardMaterial({
         color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
-        normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7),
+        normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
       }));
       sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
       this.scene.add(sea);
@@ -1419,7 +1456,7 @@ export class RealCityLayer {
         B.quad([b[0], b[1], BED], [a[0], a[1], BED], [a[0], a[1], TOP], [b[0], b[1], TOP], [nx, ny, 0], [[L, 0], [0, 0], [0, 1.7], [L, 1.7]], one);
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3) }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     this.scene.add(wm);
     for (const [buf, col, rough] of [[stone, 0xa69d8b, 0.75], [rubble, 0x7d776c, 0.95]] as [Buf, number, number][]) {
@@ -1477,7 +1514,7 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3) }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;

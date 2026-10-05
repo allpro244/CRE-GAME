@@ -762,6 +762,13 @@ export class RealCityLayer {
       case "basin": return { g: merge([cyl(4.6, 0.08, 0.5, 24), cyl(2.1, 0.06, 2.38, 16)]), mat: new THREE.MeshStandardMaterial({ color: 0x3b6f82, roughness: 0.08, metalness: 0.1, envMapIntensity: 1.3 }) };
       case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
       case "hull": return { g: merge([box(5.0, 1.9, 0.6, -0.3, 0, -0.25), box(1.3, 1.25, 0.55, 2.75, 0, -0.2), box(1.7, 1.35, 0.85, -0.9, 0, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), colored: true };
+      case "ferry": return { g: merge([box(16, 5, 1.6, 0, 0, -0.6), box(4, 3.6, 1.4, 6.8, 0, -0.5), box(9, 4.2, 2.4, -1, 0, 1.0), box(6, 3.6, 1.6, -1.5, 0, 3.4), box(1.2, 1.2, 2.2, -3.5, 0, 5.0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), colored: true };
+      case "crane": {
+        // a tower crane: lattice mast as a slim box, slewing jib and counter-jib, cab and counterweight
+        const H = 46;
+        return { g: merge([box(1.6, 1.6, H), box(26, 1.0, 1.0, 9, 0, H), box(10, 1.0, 1.0, -7, 0, H), box(3.2, 1.8, 2.0, -10, 0, H - 2.0), box(1.8, 1.8, 2.2, 0.8, 0, H - 2.4), box(0.9, 0.9, 4, 0, 0, H + 1)]),
+          mat: new THREE.MeshStandardMaterial({ color: 0xd9a821, roughness: 0.55, metalness: 0.3 }) };
+      }
       default: return { g: box(1, 1, 1), mat: this.trimMat };
     }
   }
@@ -1032,6 +1039,27 @@ export class RealCityLayer {
         }
       }
     }
+    // the harbour traffic: launches and a ferry or two running parallel to
+    // the shore a couple of hundred metres out
+    const landLL2 = (this.ctx as { land?: P2[] }).land;
+    if (landLL2 && landLL2.length >= 4) {
+      const land = landLL2.map((q) => this.project(q));
+      const ccw = ringArea(land) > 0;
+      for (let i = 0; i < land.length; i++) {
+        const a = land[i], b = land[(i + 1) % land.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 220 || rnd() < 0.4) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        const ox = ccw ? uy : -uy, oy = ccw ? -ux : ux;        // outward, into the water
+        const off = 140 + rnd() * 260;
+        const fwd = rnd() < 0.5;
+        this.boats.push({
+          x: (fwd ? a[0] : b[0]) + ox * off, y: (fwd ? a[1] : b[1]) + oy * off,
+          ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 4 + rnd() * 4,
+          col: HULL[(rnd() * HULL.length) | 0],
+        });
+      }
+    }
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       const [x, y] = this.project(p);
       const sz = 1.0 + rnd() * 0.6;
@@ -1049,6 +1077,7 @@ export class RealCityLayer {
     };
     fleet("car", this.movers, 0.05);
     fleet("person", this.walkers, 0.15);
+    fleet("ferry", this.boats, 0.05);
     this.stepTraffic(0);
     this.applyMonth();
   }
@@ -1068,6 +1097,7 @@ export class RealCityLayer {
   }
   private movers: Mover[] = [];
   private walkers: Mover[] = [];
+  private boats: Mover[] = [];
   private fleets: { mesh: THREE.InstancedMesh; list: Mover[]; z: number }[] = [];
   private paused = false;
   private lastTick = 0;
@@ -1195,11 +1225,12 @@ export class RealCityLayer {
     const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}`).join("|");
     if (sig === this.dynSig) return;
     this.dynSig = sig;
-    for (const c of [...this.dyn.children]) { this.dyn.remove(c); (c as THREE.Mesh).geometry?.dispose(); }
+    for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
     this.dynHeight.clear();
     // the new stock is built into its own small set of buffers
     const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems;
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map();
+    const craneAt: { x: number; y: number; r: number }[] = [];
     for (const it of items) {
       this.flattenStatic(saveDeeds, it.bbl);
       if (!(it.heightM > 0) || it.cls === "land") continue;
@@ -1216,6 +1247,7 @@ export class RealCityLayer {
       const tints = TINTS[fam];
       this.addVolume(ring, 0, h, fam, tints[Math.floor(hash01(k, this.seed) * tints.length)], it.bbl, true, !it.construction, k);
       this.dynHeight.set(it.bbl, h);
+      if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
     }
     const dynMeshes = new Map<string, THREE.Mesh>();
     for (const [name, b] of this.bufs) {
@@ -1225,6 +1257,14 @@ export class RealCityLayer {
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = mesh.receiveShadow = true;
       this.dyn.add(mesh); dynMeshes.set(name, mesh);
+    }
+    if (craneAt.length) {
+      const { g, mat } = this.geomFor("crane");
+      const cm = new THREE.InstancedMesh(g, mat, craneAt.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      craneAt.forEach((c, i) => { q.setFromEuler(e.set(0, 0, c.r)); cm.setMatrixAt(i, m4.compose(new THREE.Vector3(c.x, c.y, 0), q, new THREE.Vector3(1, 1, 1))); });
+      cm.castShadow = cm.receiveShadow = true;
+      this.dyn.add(cm);
     }
     this.bindRanges(this.deeds, dynMeshes);
     this.dynDeeds = this.deeds;

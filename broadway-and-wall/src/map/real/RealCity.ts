@@ -811,6 +811,8 @@ export class RealCityLayer {
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
+  private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
+  private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
@@ -1595,6 +1597,16 @@ export class RealCityLayer {
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "pine": {
+        // a conifer: a short trunk and three tiers of needles
+        const cone = (r: number, h: number, z: number) => new THREE.ConeGeometry(r, h, 8).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
+        return { g: merge([cyl(0.22, 1.6, 0, 6), cone(2.3, 3.4, 1.4), cone(1.8, 3.0, 3.3), cone(1.15, 2.6, 5.1)]), mat: this.pineMat };
+      }
+      case "parkhedge": return { g: merge([box(2.6, 0.8, 0.85, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x46663a, roughness: 0.95 }) };
+      case "flowerbed": {
+        const g = new THREE.CylinderGeometry(1.7, 1.8, 0.3, 12).rotateX(Math.PI / 2).translate(0, 0, 0.15);
+        return { g: merge([g]), mat: this.bedMat, colored: true };
+      }
       case "hedge": return { g: merge([box(2.7, 1.1, 1.3, 0, 0, 0), box(2.3, 0.8, 0.35, 0, 0, 1.3)]), mat: new THREE.MeshStandardMaterial({ color: 0x3f5a32, roughness: 0.95, flatShading: true }) };
       case "fence": return { g: merge([box(0.14, 0.14, 1.25, -1.45, 0, 0), box(3.0, 0.07, 0.1, 0, 0, 0.55), box(3.0, 0.07, 0.1, 0, 0, 1.05)]), mat: new THREE.MeshStandardMaterial({ color: 0x8c7a62, roughness: 0.9 }) };
       case "dormer": {
@@ -2083,8 +2095,11 @@ export class RealCityLayer {
             if (sw >= 2) {
               const o = hw + Math.max(0.8, sw * 0.45);
               const sz = 0.75 + rnd() * 0.3;
+              // a third of the street trees are columnar — lindens and hornbeams
+              // pruned tall and narrow, as a city plants them
+              const col = rnd() < 0.33;
               this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
-              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28, "", leafCol());
+              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
             }
             // kerbside parking fills where the demand is; a country road is clear
             if (hw >= 5 && rnd() < 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) {
@@ -2155,11 +2170,66 @@ export class RealCityLayer {
         });
       }
     }
+    // THE PARKS AND THE OPEN GROUND: big round canopies of every size, and
+    // evergreens — a fifth of the trees in the parks, half in the cemeteries
+    const parksP = ((this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? [])
+      .map((pk) => Array.isArray(pk) ? { ring: pk.map((q) => this.project(q)), flavour: "park" } : { ring: (pk.ring ?? []).map((q) => this.project(q)), flavour: pk.flavour ?? "park" })
+      .filter((pk) => pk.ring.length >= 3);
+    const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       const [x, y] = this.project(p);
-      const sz = 1.0 + rnd() * 0.6;
-      this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
-      this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      const pk = parksP.find((q) => inRingP(x, y, q.ring));
+      const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
+      const sz = 0.8 + rnd() * 1.0;
+      if (rnd() < pineP) {
+        this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
+      } else {
+        this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
+        this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      }
+    }
+    // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,
+    // open where a walk comes in, and flower beds round its fountain or column
+    const paths = ((this.ctx as { paths?: P2[][] }).paths ?? []).map((l) => l.map((q) => this.project(q)));
+    const nearPath = (x: number, y: number, d: number) => paths.some((l) => {
+      for (let i = 0; i + 1 < l.length; i++) {
+        const a = l[i], b = l[i + 1], vx = b[0] - a[0], vy = b[1] - a[1];
+        const L2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (y - a[1]) * vy) / L2));
+        if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < d) return true;
+      }
+      return false;
+    });
+    const BED = [[0.86, 0.22, 0.2], [0.95, 0.78, 0.2], [0.62, 0.36, 0.72], [0.95, 0.92, 0.88], [0.95, 0.5, 0.62]];
+    for (const pk of parksP) {
+      if (pk.flavour === "market" || pk.flavour === "battery") continue;
+      let ring = pk.ring;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      if (Math.abs(ringArea(ring)) < 900) continue;
+      const inner = insetRing(ring, 3.6);
+      if (!inner) continue;
+      for (let i = 0; i < inner.length; i++) {
+        const a = inner[i], b = inner[(i + 1) % inner.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 3) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        for (let t = 1.3; t < L - 1.3; t += 2.5) {
+          const x = a[0] + ux * t, y = a[1] + uy * t;
+          if (nearPath(x, y, 3.2)) continue;
+          this.putInst("parkhedge", x, y, 0.03, 0.75, Math.atan2(uy, ux));
+        }
+      }
+      let a2 = 0, cx = 0, cy = 0;
+      for (let i = 0; i < ring.length; i++) { const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length]; const cr = x1 * y2 - x2 * y1; a2 += cr; cx += (x1 + x2) * cr; cy += (y1 + y2) * cr; }
+      if (Math.abs(a2) < 1e-6) continue;
+      cx /= 3 * a2; cy /= 3 * a2;
+      const n = Math.abs(a2) / 2 > 9000 ? 8 : 6;
+      for (let j = 0; j < n; j++) {
+        const t = (j / n) * Math.PI * 2 + 0.3;
+        const x = cx + Math.cos(t) * 9, y = cy + Math.sin(t) * 9;
+        if (nearPath(x, y, 1.8)) continue;
+        this.putInst("flowerbed", x, y, 0.03, 1, t, "", BED[(rnd() * BED.length) | 0]);
+      }
     }
     this.flushInst();
     const fleet = (kind: string, list: Mover[], z: number) => {
@@ -2495,9 +2565,12 @@ export class RealCityLayer {
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];
       this.leafMat.color.setRGB(1, 1, 1);
       const autumn = [[1.9, 0.62, 0.3], [1.8, 1.05, 0.36], [1.55, 1.25, 0.4], [0.9, 1.0, 0.8]];
+      // five greens and the odd copper beech, by tree
+      const PAL = [[0.30, 0.47, 0.20], [0.38, 0.53, 0.19], [0.22, 0.40, 0.22], [0.27, 0.42, 0.29], [0.34, 0.50, 0.24], [0.42, 0.26, 0.24]];
       for (let i = 0; i < leaf.count; i++) {
         const h = hash01(i, 77);
-        let c = new THREE.Color(0.30 + h * 0.08, 0.46 + h * 0.08, 0.20);
+        const pc = PAL[h < 0.04 ? 5 : Math.floor(hash01(i, 91) * 5)];
+        let c = new THREE.Color(pc[0] * (0.92 + h * 0.16), pc[1] * (0.92 + h * 0.16), pc[2]);
         if (turn > 0) { const a = autumn[Math.floor(h * 4)]; c.lerp(new THREE.Color(c.r * a[0], c.g * a[1], c.b * a[2]), turn); }
         if (bare > 0) c = c.lerp(new THREE.Color(0.30, 0.27, 0.24), bare * 0.85);
         leaf.setColorAt(i, c);
@@ -2505,6 +2578,11 @@ export class RealCityLayer {
       if (leaf.instanceColor) leaf.instanceColor.needsUpdate = true;
       leaf.scale.set(1, 1, 1);
     }
+    // the beds are bare earth November to March
+    const beds = this.inst.get("flowerbed");
+    if (beds) beds.visible = this.month >= 3 && this.month <= 9;
+    // evergreens keep their needles; a dusting of snow lightens them
+    this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
     this.applyLight();
   }
 

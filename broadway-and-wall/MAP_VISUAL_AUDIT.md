@@ -541,3 +541,14 @@ road, a red barn behind it and a gravel track in. Everything hangs on the
 lot's deed, so it is cleared the day the lot is built on. Kerbside parking
 thins where demand is low, so a country road is not lined with cars.
 `docs/map-overhaul/p13-countryside.jpg`.
+
+# TREES WITH SPECIES
+
+Every tree was the same grey-green lump at about the same size. Now: five
+greens and the odd copper beech by tree; a third of the street trees are
+columnar (lindens and hornbeams pruned tall and narrow); park and open-ground
+trees range 0.8-1.8x in size; evergreens (a three-tier conifer) make a fifth
+of the trees in the parks, half in the cemeteries, and keep their needles in
+winter. Parks gain a clipped low hedge just inside the footway, open where a
+walk comes in, and flower beds round the fountain or column — bare earth
+November to March. `docs/map-overhaul/p14-*.jpg`.

@@ -301,6 +301,17 @@ const glassWall = (g: CanvasRenderingContext2D, w: number, h: number) => {
   g.fillStyle = "#3d4a52"; g.fillRect(0, 0, w, h);
 };
 
+// painted clapboard: lapped horizontal boards, each casting a hairline shadow
+const clapWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
+  g.fillStyle = "#ece8de"; g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 7) {
+    const v = 0.97 + rnd() * 0.05;
+    g.fillStyle = `rgb(${236 * v | 0},${232 * v | 0},${222 * v | 0})`; g.fillRect(0, y + 1.5, w, 5.5);
+    g.fillStyle = "rgba(60,55,45,0.28)"; g.fillRect(0, y, w, 1.5);
+  }
+  // corner boards at the tile edges
+  g.fillStyle = "#f6f4ee"; g.fillRect(0, 0, 3, h); g.fillRect(w - 3, 0, 3, h);
+};
 // a curtain wall's spandrel in another glass: bronze, or the blue-green of the 1990s
 const tintedGlassWall = (col: string) => (g: CanvasRenderingContext2D, w: number, h: number) => { g.fillStyle = col; g.fillRect(0, 0, w, h); };
 
@@ -366,6 +377,13 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.3, x1: 0.7, y0: 0.1, y1: 0.93 }, wall: brickWall([190, 156, 116]),
       glassCol: "#2c3a44", frameCol: "#3a3029", wallRough: 0.85, glassRough: 0.1, glassMetal: 0.1,
       trim: "#6a5a48", mullions: [1, 2], reveal: 3.0 },
+    // THE TIMBER TOWN. Before brick, the first streets of a young town were
+    // wood: one- and two-storey clapboard houses and shops, painted, with
+    // white-trimmed sash windows and a gable.
+    { key: "clapboard", bayW: 2.8, floorH: 3.0, masonry: false, glass: false,
+      win: { x0: 0.32, x1: 0.68, y0: 0.26, y1: 0.80 }, wall: clapWall,
+      glassCol: "#34444e", frameCol: "#f4f1ea", wallRough: 0.8, glassRough: 0.12, glassMetal: 0.0,
+      trim: "#f4f1ea", mullions: [1, 2], reveal: 1.6 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -386,6 +404,9 @@ function makeFamilies(seed: number): Record<string, Family> {
 
 /** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
 function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
+  // a house or a shop of two storeys from before 1950 is, as often as not,
+  // timber — wood frame stayed the American small building until the 1950s
+  if (h <= 8.5 && year < 1950 && (cls === "multifamily" || cls === "retail") && ((roll * 7.13) % 1) < 0.5) return "clapboard";
   // a low pre-war masonry building is one of three brick traditions
   const oldBrick = () => roll < 0.55 ? "brick" : roll < 0.8 ? "buff" : "brownstone";
   if (cls === "industrial") return "industrial";
@@ -425,6 +446,8 @@ const TINTS: Record<string, [number, number, number][]> = {
   bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9]],
   blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04]],
   frame: [[1, 1, 1]],
+  // white, cream, butter, sage, slate blue, barn red, grey
+  clapboard: [[1, 1, 1], [1.0, 0.96, 0.86], [1.0, 0.93, 0.7], [0.78, 0.86, 0.74], [0.7, 0.8, 0.9], [0.72, 0.36, 0.3], [0.8, 0.8, 0.8]],
   plain: [[1, 1, 1]],
   shop: [[1, 1, 1]],
   buff: [[1, 1, 1], [0.95, 0.92, 0.86], [1.04, 1.0, 0.92], [0.9, 0.86, 0.8]],
@@ -571,6 +594,7 @@ export class RealCityLayer {
   private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
+  private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -1013,7 +1037,7 @@ export class RealCityLayer {
     for (const v of this.volumes) if (v.b && !v.k) topZ.set(v.b, Math.max(topZ.get(v.b) ?? 0, v.z1));
     // VACANT LOTS. Downtown a hole in the street wall is a surface car park;
     // elsewhere it is a gravel yard. Residential lots stay as MapLibre's lawn.
-    const lotPark = new Buf(), lotGravel = new Buf();
+    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf();
     let ls = (this.seed * 4421) % 2147483646 + 1;
     const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
     const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
@@ -1022,8 +1046,12 @@ export class RealCityLayer {
       let ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      // THREE KINDS OF EMPTY. Downtown a hole in the street wall is a surface
+      // car park; in the working middle a gravel yard; out past where the town
+      // has reached, land nobody has built on yet is rough grass.
       const downtown = (v.ds ?? 50) >= 62;
-      const B = downtown ? lotPark : lotGravel;
+      const outskirts = (v.ds ?? 50) < 38;   // the classic map's fringe line
+      const B = downtown ? lotPark : outskirts ? lotMeadow : lotGravel;
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
       for (const t of tris) {
@@ -1045,6 +1073,11 @@ export class RealCityLayer {
     }
     if (lotPark.count) {
       const m = new THREE.Mesh(lotPark.geometry(), new THREE.MeshStandardMaterial({ map: this.parkingTex(), roughness: 0.9, envMapIntensity: 0.2 }));
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    if (lotMeadow.count) {
+      const m = new THREE.Mesh(lotMeadow.geometry(), this.meadowMat);
+      this.meadowMat.map = this.meadowTex();
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotGravel.count) {
@@ -1070,7 +1103,7 @@ export class RealCityLayer {
       // old low brick houses keep a pitched roof: a row of 1890s three-storey
       // walk-ups is a run of gables, not a run of flat decks
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
-      const pitched = isTop && fam === "brick" && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
+      const pitched = isTop && (fam === "brick" || fam === "clapboard") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
       // THE WEDDING CAKE. Under the 1916 zoning resolution a tower could rise
       // straight only so far before it had to step back from the street, and
@@ -1391,6 +1424,17 @@ export class RealCityLayer {
     g.fillStyle = "#8f8676"; g.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 2500; i++) { const v = 110 + rnd() * 60 | 0; g.fillStyle = `rgba(${v},${v - 6},${v - 18},0.6)`; g.fillRect(rnd() * 128, rnd() * 128, 2, 2); }
     for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${90 + rnd() * 30 | 0},${110 + rnd() * 30 | 0},${60},0.45)`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 3 + rnd() * 8, 0, 6.28); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+
+  /** Rough grass on unbuilt land: tussocks, a worn path, the odd bare patch. */
+  private meadowTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 613; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#9a9c78"; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 40; i++) { const v = rnd(); g.fillStyle = `rgba(${150 + v * 30 | 0},${140 + v * 20 | 0},${100},0.35)`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 4 + rnd() * 10, 0, 6.28); g.fill(); }
+    for (let i = 0; i < 1800; i++) { const v = rnd(); g.fillStyle = `rgba(${90 + v * 50 | 0},${105 + v * 45 | 0},${60 + v * 20 | 0},0.55)`; g.fillRect(rnd() * 128, rnd() * 128, 1.5, 2.5); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
@@ -1931,6 +1975,9 @@ export class RealCityLayer {
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
     this.shadowSpan = 0;   // force a refit
+    // the rough grass on unbuilt land: straw in winter, green by June
+    const vig = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02][this.month];
+    this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     const leaf = this.inst.get("crown");
     if (leaf) {

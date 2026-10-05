@@ -376,3 +376,45 @@ glass families, the ribbon windows and the water take it: given to every
 material it tinted the roofs and trees blue, because matte surfaces take
 their ambient light from the same map, so they keep the neutral light box.
 `docs/map-overhaul/p7-sky-glass.jpg`.
+
+# WHERE A YOUNG TOWN IS EMPTY (street plan 3)
+
+The owner's ask: in a younger town, the unbuilt parcels should be on certain
+outskirts and neighbourhoods, not an equal share in the middle of the city.
+Measured first: the old rule rolled each lot on its own against a mild edge
+gradient, and the young presets' vacancy multiplier (2-2.5x) left even
+downtown half empty — the gaps were salt and pepper over the whole plat.
+
+Plan 3 gives every block a settlement order (distance from the founding
+point, ground heat, corridor access, a later-platted district's lag, a
+block's luck) and makes a lot vacant on a steep curve past a frontier. The
+frontier is SOLVED, not tuned: placed so the town's expected vacant area
+equals what the old rule gave the same preset, so each density rung keeps the
+share of empty ground it had and only where it lies changes. A built core
+keeps an 8% infill floor — surface car parks and gaps, which American
+downtowns carry at least that much of — and that floor also leaves the player
+prime sites in the centre.
+
+Vacant share of lots by distance from the founding core, quartiles inner →
+outer (reference island, seed 7):
+
+| preset | plan 2 | plan 3 |
+|---|---|---|
+| landing | 48 / 52 / 75 / 83 % | 24 / 54 / 85 / 96 % |
+| village | 23 / 28 / 36 / 53 % | 8 / 27 / 42 / 84 % |
+| capital | 11 / 12 / 20 / 27 % | 3 / 5 / 15 / 57 % |
+
+What it costs the player, said plainly: large vacant lots on high-demand
+blocks (lot ≥ 5,000 sf, demand ≥ 60) fall on the reference town from 30 to 11
+(village), 51 to 12 (landing) and 12 to 9 (capital). That is the request — the
+dirt is now where the town has not reached — and the centre is no longer
+handed out free. The build-out ladder (`test/buildout.mjs`, `BW_PLAN=2` for
+the old plan) runs healthy at every preset on both plans; the young presets
+open with more jobs because their centres are built. Old saves keep the plan
+they were made with.
+
+In the 3D city, unbuilt land past the fringe line (demand under 38, the
+classic map's own line) is now rough grass that turns with the season rather
+than gravel, and two-storey houses and shops from before 1950 are painted
+clapboard half the time, with a gable — the timber town before the brick
+one. `docs/map-overhaul/p8-*.jpg`.

@@ -730,7 +730,9 @@ export const useStore = create<AppState>((set, get) => ({
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
-  realRender: typeof localStorage !== "undefined" && localStorage.getItem("bw:render-real") === "on",
+  // THE 3D CITY IS THE DEFAULT (the owner's call). Only an explicit "off"
+  // from Settings → Display keeps the classic map.
+  realRender: (() => { try { return localStorage.getItem("bw:render-real") !== "off"; } catch { return true; } })(),
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,

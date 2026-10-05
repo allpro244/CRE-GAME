@@ -296,9 +296,9 @@ export function SettingsPage() {
       <Toggle
         on={realRender}
         set={setRealRender}
-        label="New 3D city (preview)"
+        label="3D city"
         detail="Draws the city with real building geometry — modelled cornices, windows set in the wall, glass that reflects, soft shadows, street trees and parked cars. The game, its numbers and your save are unchanged; switch it off to go back to the classic map."
-        more={"A preview of the next renderer. Some overlays the classic map draws on the buildings themselves (condition weathering, lit vacancies, civic works) are not in it yet; "
+        more={"On by default. A few overlays the classic map draws on the buildings themselves (lit vacancies, civic works) are not in it yet; "
           + "the lenses, your holdings and the selected building all are. It rebuilds the map when you flip it."}
       />
       <div className="hint">

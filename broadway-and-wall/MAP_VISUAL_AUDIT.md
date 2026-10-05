@@ -253,3 +253,24 @@ Not yet in it: the classic map's lit-vacancy floor bands, retail shopfront
 state, civic works and the sunk creek channel. Frame rate has not been
 measured on a GPU (this container has none); small props drop out past
 ~2.6 km of camera distance.
+
+# STREET PLAN 2 (built, not yet the default)
+
+The old quarters of the generated towns were cut block by block
+(`splitCells`): every block split on its own at a jittered angle, so no street
+ran through a junction and the district edges left a field of wedges and
+triangles — "shattered glass" on the plat. Plan 2 (`streetsFirst`) lays the
+long streets across the whole district first, parallel to its longest
+boundary street, then cuts each strip crosswise: continuous streets,
+four-sided blocks, offset T-junctions where the lanes meet the high street.
+Side by side (plan 1 left, plan 2 right) in `docs/map-overhaul/plan2-*.jpg`;
+`node tools/plat-svg.mjs <seed> --plan 2` draws any seed.
+
+It is wired end to end — `makeCity(…, { planV })`, `GameState.cityPlan`
+recorded on every new save, an old save rebuilt as plan 1, a plan mismatch
+forcing a town rebuild on load — but `CITY_PLAN` stays 1, and today's towns
+hash byte-identical. Measured on the reference town, plan 2's regular blocks
+carry 5-14% more floor area on the same lots, and that stock meets the same
+opening demand: the economy owed no construction starts for eight years where
+plan 1 builds from year one. Turning it on is an economy decision — the full
+report/stress tiers and a deliberate baseline move — not a map change.

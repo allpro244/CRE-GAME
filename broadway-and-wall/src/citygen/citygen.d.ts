@@ -30,7 +30,9 @@ declare module "@/citygen/index.mjs" {
     };
   }
 
-  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string }): GeneratedCity;
+  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number }): GeneratedCity;
+  /** The street plan new towns are cut with (see GameState.cityPlan). */
+  export const CITY_PLAN: number;
   export function sizeList(): { id: string; k: number; name: string; note: string }[];
   export function developmentList(): { id: string; name: string; note: string }[];
   export const DEFAULT_DEVELOPMENT: string;

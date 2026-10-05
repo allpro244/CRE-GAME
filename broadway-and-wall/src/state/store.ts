@@ -47,7 +47,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
@@ -606,8 +606,8 @@ function painted(): Promise<void> {
  * has to test the save against the town BEFORE the map mounts on it — a map
  * built for a town the campaign does not fit is a worse failure than a refusal.
  */
-function buildTown(island: string, seed: number, size: string, dev: string) {
-  const built = makeCity(island, seed, { size, density: dev });
+function buildTown(island: string, seed: number, size: string, dev: string, plan?: number) {
+  const built = makeCity(island, seed, { size, density: dev, planV: plan });
   // Any record the pipeline still files as "mixed" becomes its dominant use
   // plus an explicit mix, once, at the door.
   const parcels = normalizeParcels(built.parcels as ParcelTable);
@@ -2190,6 +2190,8 @@ export const useStore = create<AppState>((set, get) => ({
     if (
       (savedSeed !== undefined && savedSeed !== here)
       || savedIsland !== hereIsland
+      // the same seed cut with a different street plan is a different town
+      || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2315,6 +2317,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;
+      g.cityPlan = CITY_PLAN;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2353,7 +2356,8 @@ export const useStore = create<AppState>((set, get) => ({
       setSeed(r.seed, r.island);
       setSize(r.size, r.island);
       setDev(r.dev);
-      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev);
+      // an old save is a plan-1 town: rebuild the streets it was played on
+      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

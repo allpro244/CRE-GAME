@@ -2537,6 +2537,13 @@ export interface GameState {
    * with different deeds. Absent means the standard opening.
    */
   cityDev?: string;
+  /**
+   * Which street plan the generator cut this town with (citygen CITY_PLAN).
+   * Fourth part of the address. Absent on every save made before plan 2, and
+   * absent means plan 1 — so an old campaign rebuilds the exact streets and
+   * deeds it was played on.
+   */
+  cityPlan?: number;
   rng: number;
   /**
    * Named RNG streams so a change in how often leasing rolls the dice does not

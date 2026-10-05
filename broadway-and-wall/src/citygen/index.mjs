@@ -120,6 +120,22 @@ export function randomSeed() {
 const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
 
 /**
+ * The generator's street plan for new towns. 1 cuts the old quarters block by
+ * block; 2 lays their streets first (citygen.mjs streetsFirst) — continuous
+ * streets and four-sided blocks instead of a field of shards. A save records
+ * the plan its town was built with, and a save without one is a plan-1 town.
+ *
+ * STILL 1, AND WHY. Plan 2 is the better plat, but it is not a free change:
+ * regular blocks carry 5-14% more floor area on the same lots (fewer wasted
+ * wedges), and on the reference town that extra stock meets the same opening
+ * demand — the economy owed no starts at all for eight years where plan 1
+ * starts building in year one. Switching it on is an economy decision that
+ * needs the full report/stress tiers and a deliberate baseline move, not a
+ * map tweak. `node tools/plat-svg.mjs <seed> --plan 2` draws it.
+ */
+export const CITY_PLAN = 1;
+
+/**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
  * output, which is what lets a save store six digits instead of two megabytes.
  */
@@ -141,7 +157,9 @@ export function makeCity(cityId, seed, opts) {
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId })
     : scaleCity(islandConfig(seed), SIZES[sizeId].k);
-  const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
+  // The street plan: the current one unless a save asks for the plan its
+  // town was cut with (see CITY_PLAN and GameState.cityPlan).
+  const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });
   const data = buildCityData({
     rawParcels: city.parcels,
     rawBuildings: city.buildings,

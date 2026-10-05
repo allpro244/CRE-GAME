@@ -433,6 +433,10 @@ export const DENSITY = {
 };
 
 export function generateCity(cfg) {
+  // Which street plan the old quarters use: 1 = per-cell splitting (every
+  // save made before plan 2 existed), 2 = streets first. Read from the config
+  // so a save rebuilds the exact town it was played in.
+  const PLAN_V = cfg.planV ?? 1;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
   // fabric with almost nothing over sixty metres, so the town you are handed
   // in month 0 has somewhere to go — the skyline is something the campaign
@@ -1075,6 +1079,78 @@ export function generateCity(cfg) {
     splitCells(b, targetArea, jitterDeg, minArea, out, depth + 1);
   }
 
+  // STREETS FIRST, THEN BLOCKS (plan version 2). An old town is organic, but
+  // its streets are not one-block stubs: a high street runs the length of the
+  // quarter, the lanes off it are continuous for a few blocks, and the blocks
+  // between them are rough quadrilaterals with their long side on the main
+  // street. Recursive per-cell splitting (v1, kept for old saves) cut every
+  // block on its own, so no street ran through a junction and the leaf edges
+  // left a field of wedges and triangles.
+  //
+  // So: lay the long streets across the WHOLE leaf first — gently non-parallel
+  // lines along its long axis, spaced about a block's depth apart — and only
+  // then cut each strip crosswise at its own spacing. A long street is one
+  // straight cut through every piece it crosses, so it is continuous by
+  // construction; the cross streets meet it in offset T-junctions, which is
+  // exactly what a London or Boston street plan does.
+  function streetsFirst(seed, d, out) {
+    const area = polygonArea([seed]);
+    const tgt = () => rr(d.cell[0], d.cell[1]);
+    if (area <= tgt() * 1.3) { out.push(seed); return; }
+    // The long streets run parallel to the quarter's longest boundary street,
+    // so the new lanes line up with the avenue the district fronts rather than
+    // with whatever diagonal its bounding box happens to have.
+    const longDir = longestEdgeAngle(seed);
+    const crossDir = longDir + Math.PI / 2;
+    // block depth: the short side of a 1:2 block of the target area
+    const depth = Math.sqrt(((d.cell[0] + d.cell[1]) / 2) / 1.7);
+    // a strip narrower than half a block's depth is a sliver, not a block
+    const wide = (r) => extentAlong(r, crossDir).span >= depth * 0.55;
+    const ext = extentAlong(seed, crossDir);
+    let strips = [seed];
+    // nearly parallel: over a long quarter even a few degrees of difference
+    // between neighbours closes the strip into a wedge
+    const jit = ((d.jitterDeg ?? 15) * 0.12 * Math.PI) / 180;
+    for (let t = ext.lo + depth * rr(0.8, 1.2); t < ext.hi - depth * 0.6; t += depth * rr(0.85, 1.25)) {
+      const pc = centroid(seed);
+      const cur = pc[0] * Math.cos(crossDir) + pc[1] * Math.sin(crossDir);
+      const p = [pc[0] + Math.cos(crossDir) * (t - cur), pc[1] + Math.sin(crossDir) * (t - cur)];
+      const ang = longDir + rr(-jit, jit);
+      const next = [];
+      for (const s of strips) {
+        const [a, b] = splitConvex(s, p, ang);
+        if (a && b && polygonArea([a]) >= 600 && polygonArea([b]) >= 600 && wide(a) && wide(b)) next.push(a, b);
+        else next.push(s);
+      }
+      strips = next;
+    }
+    // each strip cut crosswise into blocks of the target area, at its own
+    // spacing and with its own small skew
+    const cjit = ((d.jitterDeg ?? 15) * Math.PI) / 180;
+    for (const s of strips) {
+      let piece = s;
+      for (let guard = 0; guard < 40 && piece; guard++) {
+        const pa = polygonArea([piece]);
+        const want = tgt() * 0.8;
+        if (pa <= want * 1.45) { out.push(piece); piece = null; break; }
+        const e = extentAlong(piece, longDir);
+        const frac = Math.min(0.7, Math.max(0.04, want / pa));
+        const t = e.lo + e.span * frac;
+        const pc = centroid(piece);
+        const cur = pc[0] * Math.cos(longDir) + pc[1] * Math.sin(longDir);
+        const p = [pc[0] + Math.cos(longDir) * (t - cur), pc[1] + Math.sin(longDir) * (t - cur)];
+        const [a, b] = splitConvex(piece, p, crossDir + rr(-cjit, cjit));
+        if (!a || !b || polygonArea([a]) < 700 || polygonArea([b]) < 700) { out.push(piece); piece = null; break; }
+        // keep the end nearer the strip's start as a block, carry on with the rest
+        const ca = centroid(a), cb = centroid(b);
+        const ta = ca[0] * Math.cos(longDir) + ca[1] * Math.sin(longDir);
+        const tb = cb[0] * Math.cos(longDir) + cb[1] * Math.sin(longDir);
+        if (ta < tb) { out.push(a); piece = b; } else { out.push(b); piece = a; }
+      }
+      if (piece) out.push(piece);
+    }
+  }
+
   function organicDistrict(name, d) {
     const pad = 400;
     const box = [
@@ -1087,11 +1163,14 @@ export function generateCity(cfg) {
       seed = seed && cleanRing(seed);
       if (!seed) continue;
       const cells = [];
-      splitCells(seed, () => rr(d.cell[0], d.cell[1]), d.jitterDeg ?? 15, 1500, cells);
+      if (PLAN_V >= 2) streetsFirst(seed, d, cells);
+      else splitCells(seed, () => rr(d.cell[0], d.cell[1]), d.jitterDeg ?? 15, 1500, cells);
       for (const c of cells) {
         for (const cell of claimCell(c, [], KEEP)) {
           let ring = cell;
-          if (rand() < 0.28) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
+          // a cut-off corner is a junction that gave way to a square; v2 keeps
+          // it for one block in ten, not one in four
+          if (rand() < (PLAN_V >= 2 ? 0.10 : 0.28)) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
           pushBlock(ring, name, false, d.streetW, d.streetW, {});
         }
       }

@@ -789,6 +789,26 @@ export class RealCityLayer {
       const pitched = isTop && fam === "brick" && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
       this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c);
+      // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
+      // in a spire; a glass tower carries a recessed mechanical crown and a
+      // mast; a stone office takes one setback. Only on the building's own top.
+      if (isTop && top > 60 && (fam === "glass" || fam === "deco" || fam === "stone")) {
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        cx /= ring.length; cy /= ring.length;
+        const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+        if (fam === "deco") {
+          this.addVolume(shrink(ring, 0.78), v.z1, v.z1 + 7, fam, t, v.b, false, false, k);
+          this.addVolume(shrink(ring, 0.56), v.z1 + 7, v.z1 + 12, fam, t, v.b, true, false, k);
+          this.putInst("spire", cx, cy, v.z1 + 12, 1 + (top - 60) / 120, 0, v.b);
+        } else if (fam === "glass") {
+          this.addVolume(shrink(ring, 0.86), v.z1, v.z1 + 5, "glass", t, v.b, true, false, k);
+          if (hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, v.z1 + 5, 1, 0, v.b);
+        } else {
+          this.addVolume(shrink(ring, 0.8), v.z1, v.z1 + 6, fam, t, v.b, true, false, k);
+        }
+        const d2 = this.deedOf(v.b); d2.height = Math.max(d2.height, v.z1 + 8);
+      }
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
@@ -888,6 +908,9 @@ export class RealCityLayer {
       case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
       case "hull": return { g: merge([box(5.0, 1.9, 0.6, -0.3, 0, -0.25), box(1.3, 1.25, 0.55, 2.75, 0, -0.2), box(1.7, 1.35, 0.85, -0.9, 0, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), colored: true };
       case "ferry": return { g: merge([box(16, 5, 1.6, 0, 0, -0.6), box(4, 3.6, 1.4, 6.8, 0, -0.5), box(9, 4.2, 2.4, -1, 0, 1.0), box(6, 3.6, 1.6, -1.5, 0, 3.4), box(1.2, 1.2, 2.2, -3.5, 0, 5.0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), colored: true };
+      case "spire": return { g: merge([box(3.0, 3.0, 4.0), box(1.8, 1.8, 4.0, 0, 0, 4.0), new THREE.ConeGeometry(0.9, 12, 8).rotateX(Math.PI / 2).translate(0, 0, 14)]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xbfc4c6, roughness: 0.3, metalness: 0.8 }) };
+      case "mast": return { g: merge([cyl(0.35, 18, 0, 8), cyl(0.12, 10, 18, 6)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9fa3, roughness: 0.4, metalness: 0.7 }) };
       case "fesc": {
         // one flight of a fire escape: a grated landing, its railing, and the
         // stair down to the landing below (local x along the wall, +y out)
@@ -1300,6 +1323,14 @@ export class RealCityLayer {
           if (own) k = [k[0] * 1.08, k[1], k[2] * 0.86];
           if (sel) k = [k[0] * 1.3, k[1] * 1.18, k[2] * 0.82];
           else if (hov) k = [k[0] * 1.12, k[1] * 1.12, k[2] * 1.12];
+          if (r.buf === "w:shop") {
+            // kraft paper behind unlit glass: duller and browner the emptier
+            const rt = this.ret.get(bbl);
+            if (rt !== undefined) {
+              const dead = 1 - Math.max(0, Math.min(1, rt));
+              k = [k[0] * (1 - dead * 0.18), k[1] * (1 - dead * 0.24), k[2] * (1 - dead * 0.36)];
+            }
+          }
           for (let i = 0; i < r.count * 3; i++) arr[r.start * 3 + i] = base[i] * k[i % 3];
         } else if (own || sel) {
           // YOURS WEAR A GOLD ROOF, whatever the roof or the weather: the
@@ -1585,7 +1616,14 @@ export class RealCityLayer {
       a.addUpdateRange(r.start, r.count); a.needsUpdate = true;
     }
   }
-  setRetail(_r: Map<string, number>) { /* shopfront state: classic renderer */ }
+  /** Let share of each building's shopfronts (read only): a dead frontage is papered over and dark. */
+  setRetail(r: Map<string, number>) {
+    const touched = new Set<string>([...this.ret.keys(), ...r.keys()]);
+    this.ret = new Map(r);
+    for (const b of touched) this.refreshDeed(b);
+    this.map?.triggerRepaint();
+  }
+  private ret = new Map<string, number>();
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }

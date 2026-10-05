@@ -162,6 +162,18 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     // diffuse share only washes them out
     envMapIntensity: spec.glassMetal > 0.5 ? 0.8 : 0.3,
   });
+  // The window glow is a texture shared by every building in the family; the
+  // per-vertex `lit` scales it, so an empty building goes dark at night and a
+  // full one blazes.
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float lit;\nvarying float vLit;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vLit;")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;");
+  };
+  mat.customProgramCacheKey = () => "bw-real-facade-lit";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -192,6 +204,24 @@ const panelWall = (base: string) => (g: CanvasRenderingContext2D, w: number, h: 
   g.strokeStyle = "rgba(0,0,0,0.12)"; g.lineWidth = 1.5;
   for (let y = 0; y < h; y += TILE / 2) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
   for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(0,0,0,${rnd() * 0.04})`; g.fillRect(rnd() * w, rnd() * h, 3, 3); }
+};
+// brownstone: dressed sandstone courses, chocolate-red
+const brownWall = (g: CanvasRenderingContext2D, w: number, h: number, rnd: () => number) => {
+  g.fillStyle = "#5e4234"; g.fillRect(0, 0, w, h);
+  for (let y = 0, r = 0; y < h; y += 16, r++) for (let x = (r % 2) * 24; x < w; x += 48) {
+    const v = 0.9 + rnd() * 0.16;
+    g.fillStyle = `rgb(${128 * v | 0},${88 * v | 0},${68 * v | 0})`; g.fillRect(x + 1, y + 1, 46, 14);
+  }
+};
+// art deco: pale limestone with continuous piers rising between the windows
+// and dark spandrel panels under them — the vertical read of the 1930s tower
+const decoWall = (g: CanvasRenderingContext2D, w: number, h: number) => {
+  g.fillStyle = "#cbbfa7"; g.fillRect(0, 0, w, h);
+  for (let bx = 0; bx < 2; bx++) {
+    const ox = bx * TILE;
+    g.fillStyle = "#4c4a46"; g.fillRect(ox + TILE * 0.30, 0, TILE * 0.40, h);           // the recessed bay
+    g.fillStyle = "#ddd2bb"; g.fillRect(ox, 0, TILE * 0.10, h); g.fillRect(ox + TILE * 0.9, 0, TILE * 0.1, h);   // pier faces
+  }
 };
 // a shopfront storey: painted fascia and an awning band over each display window
 const AWN = ["#7a2f2a", "#2f4f3e", "#2c3d5a", "#8a6a2c", "#5a2f4a", "#3b3b3b"];
@@ -232,6 +262,18 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.16, x1: 0.84, y0: 0.20, y1: 0.86 }, wall: brickWall([150, 82, 60]),
       glassCol: "#54646a", frameCol: "#2b2e30", wallRough: 0.9, glassRough: 0.2, glassMetal: 0.2,
       trim: "#9a8e7c", mullions: [6, 4], reveal: 2.6 },
+    { key: "buff", bayW: 2.6, floorH: 3.2, masonry: true, glass: false,
+      win: { x0: 0.28, x1: 0.72, y0: 0.24, y1: 0.80 }, wall: brickWall([206, 172, 120]),
+      glassCol: "#3c5160", frameCol: "#3a2e24", wallRough: 0.88, glassRough: 0.12, glassMetal: 0.0,
+      trim: "#8f4a32", mullions: [1, 2], reveal: 3.2 },
+    { key: "brownstone", bayW: 3.0, floorH: 3.6, masonry: true, glass: false,
+      win: { x0: 0.26, x1: 0.74, y0: 0.20, y1: 0.84 }, wall: brownWall,
+      glassCol: "#37495a", frameCol: "#e6dfcf", wallRough: 0.82, glassRough: 0.1, glassMetal: 0.0,
+      trim: "#6b4a3a", mullions: [1, 2], reveal: 3.8 },
+    { key: "deco", bayW: 1.8, floorH: 3.7, masonry: true, glass: false,
+      win: { x0: 0.30, x1: 0.70, y0: 0.10, y1: 0.92 }, wall: decoWall,
+      glassCol: "#30404c", frameCol: "#1f2326", wallRough: 0.75, glassRough: 0.08, glassMetal: 0.2,
+      mullions: [1, 3], reveal: 3.4 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -250,22 +292,25 @@ function makeFamilies(seed: number): Record<string, Family> {
   return out;
 }
 
-/** Which elevation a building wears: by what it is, when it went up and how tall. */
-function familyFor(cls: string, year: number, h: number): string {
+/** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
+function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
+  // a low pre-war masonry building is one of three brick traditions
+  const oldBrick = () => roll < 0.55 ? "brick" : roll < 0.8 ? "buff" : "brownstone";
   if (cls === "industrial") return "industrial";
   if (cls === "office") {
     if (year >= 1958) return h > 30 ? "glass" : "modern";
-    return h > 22 ? "stone" : "brick";
+    if (year >= 1922 && h > 30) return roll < 0.6 ? "deco" : "stone";
+    return h > 22 ? "stone" : oldBrick();
   }
   if (cls === "multifamily") {
     // low-rise apartments of every era are mostly brick; the panel and glass
     // elevations belong to the mid- and high-rise slabs
-    if (h < 26) return "brick";
-    if (year < 1945) return h > 40 ? "stone" : "brick";
+    if (h < 26) return year < 1930 ? oldBrick() : roll < 0.75 ? "brick" : "buff";
+    if (year < 1945) return h > 40 ? (roll < 0.5 ? "deco" : "stone") : oldBrick();
     return year > 1995 && h > 40 ? "glass" : "modern";
   }
-  if (cls === "retail") return year < 1965 || h < 12 ? "brick" : "modern";
-  return year < 1945 || h < 14 ? "brick" : "modern";
+  if (cls === "retail") return year < 1965 || h < 12 ? oldBrick() : "modern";
+  return year < 1945 || h < 14 ? oldBrick() : "modern";
 }
 
 // per-building wall tints within a family: brick hues, stone creams, glass casts
@@ -278,6 +323,9 @@ const TINTS: Record<string, [number, number, number][]> = {
   frame: [[1, 1, 1]],
   plain: [[1, 1, 1]],
   shop: [[1, 1, 1]],
+  buff: [[1, 1, 1], [0.95, 0.92, 0.86], [1.04, 1.0, 0.92], [0.9, 0.86, 0.8]],
+  brownstone: [[1, 1, 1], [0.9, 0.86, 0.84], [1.06, 1.0, 0.95]],
+  deco: [[1, 1, 1], [0.96, 0.93, 0.88], [0.9, 0.9, 0.92], [1.03, 0.99, 0.92]],
 };
 
 // ---- geometry accumulation -------------------------------------------------
@@ -313,6 +361,8 @@ class Buf {
     g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    // how many of this building's rooms are lit after dark (see setOccupancy)
+    g.setAttribute("lit", new THREE.Float32BufferAttribute(new Float32Array(this.count).fill(1), 1));
     g.computeBoundingSphere();
     return g;
   }
@@ -524,7 +574,7 @@ export class RealCityLayer {
   }
 
   /** One volume: walls in its family, a roof, and its trim. */
-  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false) {
+  private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "") {
     const fam = this.families[famKey];
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     const walls = (fk: string, za: number, zb: number, vOff: number, tn: number[]) => {
@@ -549,6 +599,34 @@ export class RealCityLayer {
       }
       this.note(bbl, wallName, w0);
     };
+    // ---- what hangs on the street front ------------------------------------
+    // Fire escapes zig-zag down the old brick walk-ups; balconies stack up
+    // the modern apartment slabs. Both on the longest wall, which is the
+    // street front far more often than not.
+    if (cls === "multifamily" && z0 < 0.5 && plant) {
+      let li = 0, ll = -1;
+      for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+      const A = ring[li], B = ring[(li + 1) % ring.length];
+      const ux = (B[0] - A[0]) / ll, uy = (B[1] - A[1]) / ll, nx = uy, ny = -ux;
+      const rot = Math.atan2(uy, ux);
+      const f = this.families[famKey];
+      const floors = Math.floor((z1 - z0) / f.floorH);
+      const roll = (seedK % 1000) / 1000;
+      if ((famKey === "brick" || famKey === "buff" || famKey === "brownstone") && z1 > 8 && z1 < 34 && ll > 7 && roll < 0.6) {
+        const t = ll * (0.3 + 0.4 * ((seedK >> 3) % 100) / 100);
+        for (let fl = 1; fl < floors; fl++) {
+          this.putInst("fesc", A[0] + ux * t + nx * 0.6, A[1] + uy * t + ny * 0.6, z0 + fl * f.floorH + 0.05, 1, rot + (fl % 2 ? Math.PI : 0), bbl, undefined, f.floorH / 3.2);
+        }
+      } else if (famKey === "modern" && z1 < 48 && ll > 9 && roll < 0.65) {
+        const bays = Math.max(1, Math.round(ll / f.bayW));
+        for (let bi = 1; bi < bays; bi += 2) {
+          const t = (bi + 0.5) * (ll / bays);
+          for (let fl = 1; fl < floors; fl++) {
+            this.putInst("balc", A[0] + ux * t, A[1] + uy * t, z0 + fl * f.floorH, 1, rot, bbl);
+          }
+        }
+      }
+    }
     const fh = fam.floorH;
     // A trading ground floor is its own storey: display glass under awnings,
     // the upper floors' windows starting above it.
@@ -638,11 +716,11 @@ export class RealCityLayer {
     }
   }
 
-  private instItems = new Map<string, { x: number; y: number; z: number; s: number; r: number; bbl: string; col?: number[] }[]>();
-  private putInst(kind: string, x: number, y: number, z: number, s: number, r: number, bbl = "", col?: number[]) {
+  private instItems = new Map<string, { x: number; y: number; z: number; s: number; r: number; bbl: string; col?: number[]; sz?: number }[]>();
+  private putInst(kind: string, x: number, y: number, z: number, s: number, r: number, bbl = "", col?: number[], sz?: number) {
     let l = this.instItems.get(kind);
     if (!l) { l = []; this.instItems.set(kind, l); }
-    l.push({ x, y, z, s, r, bbl, col });
+    l.push({ x, y, z, s, r, bbl, col, sz });
   }
 
   private buildCity() {
@@ -700,7 +778,7 @@ export class RealCityLayer {
         continue;
       }
       const top = topZ.get(v.b) ?? v.z1;
-      const fam = familyFor(v.c, v.y || 1950, top);
+      const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed));
       const tints = TINTS[fam];
       const t = tints[Math.floor(hash01(k, this.seed) * tints.length)];
       const shop = v.c === "retail" || (fam === "brick" && hash01(k ^ 0x51ab, this.seed) < 0.5)
@@ -710,7 +788,7 @@ export class RealCityLayer {
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
       const pitched = isTop && fam === "brick" && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
-      this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched);
+      this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c);
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
@@ -810,6 +888,15 @@ export class RealCityLayer {
       case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
       case "hull": return { g: merge([box(5.0, 1.9, 0.6, -0.3, 0, -0.25), box(1.3, 1.25, 0.55, 2.75, 0, -0.2), box(1.7, 1.35, 0.85, -0.9, 0, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), colored: true };
       case "ferry": return { g: merge([box(16, 5, 1.6, 0, 0, -0.6), box(4, 3.6, 1.4, 6.8, 0, -0.5), box(9, 4.2, 2.4, -1, 0, 1.0), box(6, 3.6, 1.6, -1.5, 0, 3.4), box(1.2, 1.2, 2.2, -3.5, 0, 5.0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), colored: true };
+      case "fesc": {
+        // one flight of a fire escape: a grated landing, its railing, and the
+        // stair down to the landing below (local x along the wall, +y out)
+        const stair = new THREE.BoxGeometry(3.6, 0.7, 0.08).rotateY(-Math.atan2(3.2, 3.0)).translate(0, 0.45, -1.6);
+        return { g: merge([box(3.4, 1.0, 0.08, 0, 0.5, 0), box(3.4, 0.05, 0.9, 0, 1.0, 0.08), box(0.05, 1.0, 0.9, -1.7, 0.5, 0.08), box(0.05, 1.0, 0.9, 1.7, 0.5, 0.08), stair]),
+          mat: new THREE.MeshStandardMaterial({ color: 0x1e2022, roughness: 0.6, metalness: 0.5 }) };
+      }
+      case "balc": return { g: merge([box(2.2, 1.3, 0.16, 0, 0.65, 0), box(2.2, 0.04, 1.0, 0, 1.28, 0.16), box(0.04, 1.3, 1.0, -1.1, 0.65, 0.16), box(0.04, 1.3, 1.0, 1.1, 0.65, 0.16)]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.6, metalness: 0.1 }) };
       case "crane": {
         // a tower crane: lattice mast as a slim box, slewing jib and counter-jib, cab and counterweight
         const H = 46;
@@ -830,7 +917,7 @@ export class RealCityLayer {
       const mesh = new THREE.InstancedMesh(g, mat, items.length);
       items.forEach((it, i) => {
         q.setFromEuler(e.set(0, 0, it.r));
-        mesh.setMatrixAt(i, m4.compose(p.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s)));
+        mesh.setMatrixAt(i, m4.compose(p.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1))));
         if (colored) mesh.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
         if (it.bbl) this.deedOf(it.bbl).inst.push({ mesh: kind, i });
       });
@@ -1321,10 +1408,10 @@ export class RealCityLayer {
       const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
       const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
       const h = Math.max(3, it.heightM);
-      const fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h);
+      const fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
       const k = keyOf(it.bbl);
       const tints = TINTS[fam];
-      this.addVolume(ring, 0, h, fam, tints[Math.floor(hash01(k, this.seed) * tints.length)], it.bbl, true, !it.construction, k);
+      this.addVolume(ring, 0, h, fam, tints[Math.floor(hash01(k, this.seed) * tints.length)], it.bbl, true, !it.construction, k, false, false, it.construction ? "" : it.cls);
       this.dynHeight.set(it.bbl, h);
       if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
     }
@@ -1346,10 +1433,22 @@ export class RealCityLayer {
       this.dyn.add(cm);
       this.cranes = { mesh: cm, at: craneAt };
     }
+    // the new buildings' own plant, fire escapes and balconies
+    {
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pv = new THREE.Vector3();
+      for (const [kind, list] of this.instItems) {
+        if (!list.length) continue;
+        const { g, mat } = this.geomFor(kind);
+        const im = new THREE.InstancedMesh(g, mat, list.length);
+        list.forEach((it, i) => { q.setFromEuler(e.set(0, 0, it.r)); im.setMatrixAt(i, m4.compose(pv.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1)))); });
+        im.castShadow = im.receiveShadow = true;
+        this.dyn.add(im);
+      }
+    }
     this.bindRanges(this.deeds, dynMeshes);
     this.dynDeeds = this.deeds;
     this.bufs = saveBufs; this.deeds = saveDeeds; this.instItems = saveInst;
-    for (const b of this.dynDeeds.keys()) this.refreshDeed(b);
+    for (const [b, d] of this.dynDeeds) { this.refreshDeed(b); this.paintLit(b, d); }
     if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
     this.map?.triggerRepaint();
   }
@@ -1468,7 +1567,24 @@ export class RealCityLayer {
     this.map?.triggerRepaint();
   }
   private cond = new Map<string, number>();
-  setOccupancy(_o: Map<string, number>) { /* lit-room share is fixed per tile here */ }
+  /** Share of each building that is let (read only): sets how much of it is lit after dark. */
+  setOccupancy(o: Map<string, number>) {
+    this.occ = new Map(o);
+    for (const d of [this.deeds, this.dynDeeds]) for (const [bbl, deed] of d) this.paintLit(bbl, deed);
+    this.map?.triggerRepaint();
+  }
+  private occ = new Map<string, number>();
+  private paintLit(bbl: string, d: Deed) {
+    const o = this.occ.get(bbl);
+    // the tile itself is ~55% lit rooms; full let reads ~1.6x that, empty near dark
+    const k = o === undefined ? 1 : 0.08 + 1.5 * Math.max(0, Math.min(1, o));
+    for (const r of d.ranges) {
+      if (!r.mesh || !r.buf.startsWith("w:")) continue;
+      const a = r.mesh.geometry.getAttribute("lit") as THREE.BufferAttribute;
+      (a.array as Float32Array).fill(k, r.start, r.start + r.count);
+      a.addUpdateRange(r.start, r.count); a.needsUpdate = true;
+    }
+  }
   setRetail(_r: Map<string, number>) { /* shopfront state: classic renderer */ }
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }

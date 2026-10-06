@@ -79,6 +79,8 @@ interface Family {
 const TILE = 128;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
 const FAR_PROPS = ["lamp", "car", "lotcar"];
+/** The families a tower can wear above its lobby. */
+const TOWER_FAMS = new Set(["glass", "blueglass", "bronze", "ribbon", "grid", "blackglass", "greenglass", "silverglass", "fins", "precast", "pomo", "modern"]);
 /** Shop trades: canopy and fascia colours. Looks only. */
 interface Trade { awn: number[]; sign: number[] }
 const T = (awn: number[], sign: number[]): Trade => ({ awn, sign });
@@ -464,6 +466,32 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.32, x1: 0.68, y0: 0.26, y1: 0.80 }, wall: clapWall,
       glassCol: "#34444e", frameCol: "#f4f1ea", wallRough: 0.8, glassRough: 0.12, glassMetal: 0.0,
       trim: "#f4f1ea", mullions: [1, 2], reveal: 1.6 },
+    // MORE OF THE SKYLINE'S VOCABULARY. The 1958 dark tower of bronze
+    // I-beams and smoked glass; the 1980s mirror and emerald curtain walls;
+    // the 2000s vertical fin; the 1980s white precast slab and the
+    // postmodern granite tower with its banded windows.
+    { key: "blackglass", bayW: 1.45, floorH: 3.8, masonry: false, glass: true,
+      win: { x0: 0.07, x1: 0.93, y0: 0.16, y1: 0.98 }, wall: tintedGlassWall("#17191c"),
+      glassCol: "#3a3f44", frameCol: "#4a3a2a", wallRough: 0.35, glassRough: 0.05, glassMetal: 0.85, reveal: 1.6 },
+    { key: "greenglass", bayW: 1.5, floorH: 3.9, masonry: false, glass: true,
+      win: { x0: 0.04, x1: 0.96, y0: 0.14, y1: 0.99 }, wall: tintedGlassWall("#1d3a33"),
+      glassCol: "#5f9e8c", frameCol: "#8aa69c", wallRough: 0.3, glassRough: 0.05, glassMetal: 0.9, reveal: 1.0 },
+    { key: "silverglass", bayW: 1.5, floorH: 4.0, masonry: false, glass: true,
+      win: { x0: 0.03, x1: 0.97, y0: 0.12, y1: 0.99 }, wall: tintedGlassWall("#5a6168"),
+      glassCol: "#c3ccd3", frameCol: "#d4d8dc", wallRough: 0.3, glassRough: 0.04, glassMetal: 0.95, reveal: 0.9 },
+    { key: "fins", bayW: 1.25, floorH: 4.0, masonry: false, glass: true,
+      win: { x0: 0.14, x1: 0.86, y0: 0.06, y1: 0.99 }, wall: panelWall("#cdd1d4"),
+      glassCol: "#4f6e7e", frameCol: "#c9cdd0", wallRough: 0.45, glassRough: 0.05, glassMetal: 0.8, reveal: 2.4 },
+    { key: "precast", bayW: 2.0, floorH: 3.7, masonry: false, glass: false,
+      win: { x0: 0.18, x1: 0.82, y0: 0.28, y1: 0.80 }, wall: panelWall("#e6e2da"),
+      glassCol: "#3b4c58", frameCol: "#9aa0a4", wallRough: 0.7, glassRough: 0.08, glassMetal: 0.35, mullions: [1, 1], reveal: 3.6 },
+    { key: "pomo", bayW: 2.2, floorH: 3.8, masonry: true, glass: false,
+      win: { x0: 0.12, x1: 0.88, y0: 0.30, y1: 0.86 }, wall: stoneWallC([196, 158, 146], 24),
+      glassCol: "#2f4656", frameCol: "#2a2a2a", wallRough: 0.6, glassRough: 0.06, glassMetal: 0.5, trim: "#ece4d4", mullions: [2, 1], reveal: 2.6 },
+    // a tower's double-height glass lobby
+    { key: "lobby", bayW: 3.0, floorH: 6.5, masonry: false, glass: false,
+      win: { x0: 0.05, x1: 0.95, y0: 0.03, y1: 0.90 }, wall: panelWall("#3a3e42"),
+      glassCol: "#5d7380", frameCol: "#202428", wallRough: 0.5, glassRough: 0.05, glassMetal: 0.5, mullions: [2, 1], reveal: 1.6 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -562,6 +590,41 @@ const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
     { wall: tintedGlassWall("#3a5a5a"), glassCol: "#7fb4ae" },
     { wall: tintedGlassWall("#4a5a6a"), glassCol: "#a8c4d4", frameCol: "#c4ccd2" },
   ],
+  blackglass: [
+    { wall: tintedGlassWall("#101214"), glassCol: "#2a2e33", frameCol: "#1a1a1a" },
+    { wall: tintedGlassWall("#1c2420"), glassCol: "#34423c", frameCol: "#5a4a32" },
+    { wall: tintedGlassWall("#1a1d26"), glassCol: "#3a4252", frameCol: "#2e3036" },
+  ],
+  greenglass: [
+    { wall: tintedGlassWall("#1a4440"), glassCol: "#58a8a0" },
+    { wall: tintedGlassWall("#2a4a30"), glassCol: "#7aa880", frameCol: "#a8b8a8" },
+    { wall: tintedGlassWall("#164038"), glassCol: "#3e8a7a", frameCol: "#2a3a36" },
+  ],
+  silverglass: [
+    { wall: tintedGlassWall("#4a5058"), glassCol: "#a8b4bf", frameCol: "#e2e4e6" },
+    { wall: tintedGlassWall("#666a6e"), glassCol: "#d8d8d2", frameCol: "#bfc2c4" },
+    { wall: tintedGlassWall("#505a64"), glassCol: "#b4c4d4", frameCol: "#8a949c" },
+  ],
+  fins: [
+    { wall: panelWall("#2e3236"), glassCol: "#5e7c8a", frameCol: "#2a2e32" },
+    { wall: panelWall("#8a6a4a"), glassCol: "#6a6458", frameCol: "#7a5c40" },
+    { wall: panelWall("#f0efe9"), glassCol: "#86a2b0", frameCol: "#f2f2ee", win: { x0: 0.2, x1: 0.8, y0: 0.06, y1: 0.99 } },
+  ],
+  precast: [
+    { wall: panelWall("#d8c8b8"), glassCol: "#334450" },
+    { wall: panelWall("#c9b4a6"), win: { x0: 0.14, x1: 0.86, y0: 0.32, y1: 0.78 }, frameCol: "#5a5450" },
+    { wall: panelWall("#b8bcbf"), winStyle: "pair", frameCol: "#3a3e42" },
+  ],
+  pomo: [
+    { wall: stoneWallC([150, 160, 150], 24), glassCol: "#2c4a44", trim: "#d8d4c8" },
+    { wall: stoneWallC([150, 92, 84], 24), winStyle: "arch", frameCol: "#1e1e1e" },
+    { wall: stoneWallC([214, 200, 176], 24), glassCol: "#3a5a6a", trim: "#8a6a50" },
+  ],
+  lobby: [
+    { wall: stoneWallC([206, 198, 182]), frameCol: "#2a2a2a" },
+    { wall: panelWall("#5a4a3a"), frameCol: "#6a5236", glassCol: "#6a7a80" },
+    { wall: panelWall("#d8dadc"), frameCol: "#c0c4c8", glassCol: "#7a96a6" },
+  ],
   clapboard: [
     { wall: clapWallC(9), shutter: "#2f4a3a" },
     { wall: clapWallC(6), lintel: "pediment" },
@@ -573,6 +636,59 @@ const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
     { glassCol: "#55707e", frameCol: "#d8d0c0" },
   ],
 };
+
+// THREE MORE ELEVATIONS for the families that make up most of the city, so
+// a block of walk-ups is seven builders' work rather than four. Each still
+// true to its period. (The Build desk offers the first four; the street
+// draws from all of them.)
+const MORE_VARIANTS: Record<string, Partial<FamilySpec>[]> = {
+  brick: [
+    { wall: brickWall([112, 54, 44]), lintel: "pediment", trim: "#cfc3ad", frameCol: "#f0ece2" },
+    { wall: brickWall([176, 88, 60]), winStyle: "pair", trim: "#3a3a3a", frameCol: "#2a2a2a" },
+    { wall: brickWall([150, 110, 96]), winStyle: "arch", shutter: "#5a2a26", frameCol: "#e8e2d4" },
+  ],
+  buff: [
+    { wall: brickWall([228, 210, 170]), winStyle: "arch", trim: "#5a4636", frameCol: "#2a2a2a" },
+    { wall: brickWall([186, 160, 112]), shutter: "#2f4a3a", frameCol: "#efe6d2" },
+    { wall: brickWall([200, 184, 160]), winStyle: "pair", trim: "#8f4a32" },
+  ],
+  brownstone: [
+    { wall: brownWallC([126, 88, 66]), winStyle: "pair", frameCol: "#2a2a2a" },
+    { wall: brownWallC([160, 116, 92]), lintel: "pediment", shutter: "#2a3a2e" },
+    { wall: brownWallC([98, 70, 58]), winStyle: "arch", frameCol: "#e6dfcf", trim: "#4a3428" },
+  ],
+  stone: [
+    { wall: stoneWallC([226, 220, 206]), winStyle: "segment", frameCol: "#2a2e30" },
+    { wall: stoneWallC([190, 170, 140]), winStyle: "arch", trim: "#f4eedc" },
+    { wall: stoneWallC([140, 136, 132], 28), lintel: "pediment", frameCol: "#1e2226" },
+  ],
+  modern: [
+    { wall: panelWall("#e8e4dc"), winStyle: "pair", frameCol: "#2a3036" },
+    { wall: panelWall("#8a8e90"), win: { x0: 0.12, x1: 0.88, y0: 0.3, y1: 0.86 }, frameCol: "#d8d8d8" },
+    { wall: brickWall([190, 160, 120]), win: { x0: 0.14, x1: 0.86, y0: 0.28, y1: 0.82 }, frameCol: "#2a2a2a" },
+  ],
+  clapboard: [
+    { wall: clapWallC(7), lintel: "pediment", shutter: "#5a2a26" },
+    { wall: clapWallC(10), winStyle: "segment" },
+    { wall: clapWallC(8), shutter: "#2a3a4a", lintel: "pediment" },
+  ],
+  industrial: [
+    { wall: brickWall([110, 60, 50]), winStyle: "arch", mullions: [6, 4] },
+    { wall: panelWall("#b8b2a6"), mullions: [10, 4], frameCol: "#3a3e42" },
+    { wall: brickWall([196, 176, 140]), winStyle: "segment", mullions: [5, 4], trim: "#5a4a3a" },
+  ],
+  grid: [
+    { wall: panelWall("#c4b8a4"), win: { x0: 0.24, x1: 0.76, y0: 0.24, y1: 0.76 } },
+    { wall: panelWall("#a8aeb2"), win: { x0: 0.16, x1: 0.84, y0: 0.18, y1: 0.86 }, frameCol: "#2a2a2a" },
+    { wall: panelWall("#d8c8b0"), winStyle: "pair" },
+  ],
+  precast: [
+    { wall: panelWall("#cfd4d6"), win: { x0: 0.1, x1: 0.9, y0: 0.3, y1: 0.8 }, frameCol: "#2a3e4a" },
+    { wall: panelWall("#d6b89a"), glassCol: "#2e3e48" },
+    { wall: panelWall("#9aa4a8"), win: { x0: 0.2, x1: 0.8, y0: 0.22, y1: 0.84 }, frameCol: "#d0d0d0" },
+  ],
+};
+for (const [k, v] of Object.entries(MORE_VARIANTS)) VARIANTS[k] = [...(VARIANTS[k] ?? []), ...v];
 
 /** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
 /**
@@ -593,6 +709,13 @@ const DISTRICT_MASONRY: { w: [number, number, number]; clap: number }[] = [
   { w: [0.60, 0.25, 0.15], clap: 0.85 },   // the timber-frame quarter
   { w: [0.55, 0.25, 0.20], clap: 0.50 },   // mixed, as it was
 ];
+/** A weighted draw: roll in [0,1) against [key, weight] pairs (weights need not sum to one). */
+function pick(roll: number, w: [string, number][]): string {
+  const tot = w.reduce((a, [, x]) => a + x, 0);
+  let acc = 0;
+  for (const [k, x] of w) { acc += x / tot; if (roll < acc) return k; }
+  return w[w.length - 1][0];
+}
 function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 4): string {
   const dm = DISTRICT_MASONRY[((district % 5) + 5) % 5];
   // a house or a shop of two storeys from before 1950 is, as often as not,
@@ -603,11 +726,13 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 
   if (cls === "industrial") return "industrial";
   if (cls === "office") {
     if (year >= 1958) {
-      if (h <= 30) return "modern";
-      // by when it went up: the ribbon and the grid, then bronze, then blue
-      if (year < 1973) return roll < 0.4 ? "ribbon" : roll < 0.65 ? "grid" : "glass";
-      if (year < 1988) return roll < 0.4 ? "bronze" : roll < 0.65 ? "glass" : roll < 0.82 ? "grid" : "ribbon";
-      return roll < 0.45 ? "glass" : roll < 0.85 ? "blueglass" : "bronze";
+      if (h <= 30) return pick(roll, year < 1980 ? [["modern", 0.7], ["precast", 0.3]] : [["modern", 0.45], ["precast", 0.25], ["fins", 0.15], ["glass", 0.15]]);
+      // by when it went up: the ribbon, the grid and the dark tower; then
+      // bronze, mirror, white precast and postmodern granite; then blue,
+      // emerald, silver and the fin
+      if (year < 1973) return pick(roll, [["ribbon", 0.28], ["grid", 0.16], ["blackglass", 0.24], ["glass", 0.16], ["precast", 0.08], ["bronze", 0.08]]);
+      if (year < 1988) return pick(roll, [["bronze", 0.17], ["blackglass", 0.12], ["glass", 0.12], ["grid", 0.07], ["ribbon", 0.07], ["precast", 0.1], ["pomo", 0.17], ["silverglass", 0.14], ["greenglass", 0.04]]);
+      return pick(roll, [["glass", 0.18], ["blueglass", 0.16], ["greenglass", 0.14], ["silverglass", 0.14], ["fins", 0.16], ["pomo", year < 1998 ? 0.12 : 0.02], ["bronze", 0.05], ["precast", 0.05]]);
     }
     if (year >= 1922 && h > 30) return roll < 0.35 ? "deco" : roll < 0.65 ? "decobrick" : "stone";
     return h > 22 ? "stone" : oldBrick();
@@ -617,9 +742,11 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 
     // elevations belong to the mid- and high-rise slabs
     if (h < 26) return year < 1930 ? oldBrick() : roll < 0.75 ? "brick" : "buff";
     if (year < 1945) return h > 40 ? (roll < 0.3 ? "deco" : roll < 0.65 ? "decobrick" : "stone") : oldBrick();
-    if (year > 1995 && h > 40) return roll < 0.6 ? "glass" : "blueglass";
-    // the post-war slab blocks: panel, or a concrete grid
-    return year < 1985 && h > 30 && roll < 0.4 ? "grid" : "modern";
+    if (year > 1995 && h > 40) return pick(roll, [["glass", 0.3], ["blueglass", 0.18], ["fins", 0.2], ["greenglass", 0.12], ["silverglass", 0.12], ["precast", 0.08]]);
+    // the post-war slab blocks: panel, a concrete grid, or white precast
+    // (the post-war apartment tower was as often brick-clad as concrete)
+    if (h > 30) return pick(roll, year < 1985 ? [["grid", 0.18], ["modern", 0.22], ["precast", 0.14], ["brick", 0.2], ["buff", 0.18], ["ribbon", 0.08]] : [["modern", 0.3], ["precast", 0.25], ["pomo", 0.2], ["buff", 0.12], ["silverglass", 0.13]]);
+    return "modern";
   }
   if (cls === "retail") return year < 1965 || h < 12 ? oldBrick() : "modern";
   return year < 1945 || h < 14 ? oldBrick() : "modern";
@@ -629,13 +756,20 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 
 const TINTS: Record<string, [number, number, number][]> = {
   brick: [[1, 1, 1], [0.86, 0.80, 0.78], [1.06, 0.96, 0.86], [0.78, 0.66, 0.62], [1.1, 1.0, 0.92], [0.92, 0.9, 0.94]],
   stone: [[1, 1, 1], [0.96, 0.94, 0.9], [1.02, 0.98, 0.92], [0.9, 0.9, 0.9]],
-  glass: [[1, 1, 1], [0.85, 0.95, 0.92], [1.05, 0.96, 0.84], [0.82, 0.86, 0.95]],
+  glass: [[1, 1, 1], [0.85, 0.95, 0.92], [1.05, 0.96, 0.84], [0.82, 0.86, 0.95], [0.7, 0.74, 0.8], [1.1, 1.08, 1.04], [0.8, 0.92, 1.0], [0.92, 0.88, 0.8]],
+  blackglass: [[1, 1, 1], [1.2, 1.1, 0.95], [0.9, 1.0, 1.1], [1.3, 1.3, 1.3]],
+  greenglass: [[1, 1, 1], [0.86, 1.0, 1.08], [1.08, 1.04, 0.88], [0.8, 0.86, 0.84]],
+  silverglass: [[1, 1, 1], [0.94, 0.96, 1.04], [1.04, 1.0, 0.94], [0.84, 0.86, 0.9]],
+  fins: [[1, 1, 1], [0.9, 0.9, 0.92], [1.04, 1.0, 0.94], [0.82, 0.84, 0.86]],
+  precast: [[1, 1, 1], [0.96, 0.92, 0.86], [0.92, 0.94, 0.96], [1.02, 0.96, 0.9], [0.88, 0.86, 0.84]],
+  pomo: [[1, 1, 1], [0.94, 0.9, 0.88], [1.04, 1.0, 0.96], [0.9, 0.94, 0.92]],
+  lobby: [[1, 1, 1]],
   modern: [[1, 1, 1], [0.93, 0.86, 0.78], [0.84, 0.86, 0.88], [1.0, 0.92, 0.82], [0.78, 0.76, 0.74], [0.95, 0.82, 0.72]],
   industrial: [[1, 1, 1], [0.9, 0.86, 0.82], [0.82, 0.78, 0.76]],
-  ribbon: [[1, 1, 1], [0.92, 0.93, 0.95], [1.0, 0.97, 0.92], [0.84, 0.85, 0.86]],
-  grid: [[1, 1, 1], [0.94, 0.92, 0.88], [0.86, 0.86, 0.86], [1.04, 1.0, 0.94]],
-  bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9]],
-  blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04]],
+  ribbon: [[1, 1, 1], [0.92, 0.93, 0.95], [1.0, 0.97, 0.92], [0.84, 0.85, 0.86], [0.72, 0.74, 0.78]],
+  grid: [[1, 1, 1], [0.94, 0.92, 0.88], [0.86, 0.86, 0.86], [1.04, 1.0, 0.94], [0.96, 0.9, 0.84]],
+  bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9], [1.16, 1.04, 0.86], [0.8, 0.78, 0.76]],
+  blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04], [0.76, 0.86, 1.0], [1.06, 1.06, 1.08]],
   frame: [[1, 1, 1]],
   // white, cream, butter, sage, slate blue, barn red, grey
   clapboard: [[1, 1, 1], [1.0, 0.96, 0.86], [1.0, 0.93, 0.7], [0.78, 0.86, 0.74], [0.7, 0.8, 0.9], [0.72, 0.36, 0.3], [0.8, 0.8, 0.8]],
@@ -746,6 +880,12 @@ export const FACADE_STYLES: { key: string; name: string; era: string; maxFloors:
   { key: "glass", name: "Glass curtain wall", era: "1960-today", maxFloors: 99, variants: ["Blue-grey", "Dark", "Silver", "Green"] },
   { key: "bronze", name: "Bronze glass", era: "1970-1990", maxFloors: 99, variants: ["Bronze", "Deep bronze", "Smoked grey", "Black glass"] },
   { key: "blueglass", name: "Blue glass", era: "1990-today", maxFloors: 99, variants: ["Blue-green", "Deep blue", "Teal", "Silver-blue"] },
+  { key: "blackglass", name: "Dark tower", era: "1958-1975", maxFloors: 99, variants: ["Bronze I-beams", "Jet", "Green-black", "Blue-black"] },
+  { key: "greenglass", name: "Emerald glass", era: "1985-today", maxFloors: 99, variants: ["Emerald", "Aqua", "Sea green", "Deep green"] },
+  { key: "silverglass", name: "Mirror glass", era: "1980-today", maxFloors: 99, variants: ["Silver", "Steel", "Champagne", "Ice blue"] },
+  { key: "fins", name: "Vertical fins", era: "2000-today", maxFloors: 99, variants: ["Aluminium fins", "Black fins", "Bronze fins", "White fins"] },
+  { key: "precast", name: "White precast", era: "1975-2000", maxFloors: 60, variants: ["White", "Sand", "Rose", "Grey, paired"] },
+  { key: "pomo", name: "Postmodern granite", era: "1982-1998", maxFloors: 80, variants: ["Rose granite", "Green granite", "Red, arched", "Beige"] },
 ];
 export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [
   { key: "flat", name: "Flat", maxFloors: 999 },
@@ -785,6 +925,41 @@ export function facadeSwatches(): Record<string, string> {
 }
 
 // ---- geometry accumulation -------------------------------------------------
+
+/** Cut (or round) each convex corner of a counter-clockwise ring by frac of its shorter edge, at most maxM metres. */
+function chamferRing(r: P2[], frac: number, maxM: number, round: boolean): P2[] {
+  const n = r.length, out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+    const cross = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+    if (cross <= 0 || l1 < 1 || l2 < 1) { out.push(c); continue; }
+    const d = Math.min(maxM, frac * Math.min(l1, l2));
+    const a: P2 = [c[0] - ((c[0] - p[0]) / l1) * d, c[1] - ((c[1] - p[1]) / l1) * d];
+    const b: P2 = [c[0] + ((q[0] - c[0]) / l2) * d, c[1] + ((q[1] - c[1]) / l2) * d];
+    if (!round) { out.push(a, b); continue; }
+    // a quadratic curve from a to b with the corner as its control point
+    for (let k = 0; k <= 4; k++) {
+      const t = k / 4, u = 1 - t;
+      out.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
+    }
+  }
+  return out;
+}
+/** A square re-entrant notch d metres into each convex corner of a counter-clockwise ring. */
+function notchRing(r: P2[], d: number): P2[] {
+  const n = r.length, out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+    const cross = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+    if (cross <= 0 || l1 < d * 3 || l2 < d * 3) { out.push(c); continue; }
+    const u1: P2 = [(c[0] - p[0]) / l1, (c[1] - p[1]) / l1], u2: P2 = [(q[0] - c[0]) / l2, (q[1] - c[1]) / l2];
+    const a: P2 = [c[0] - u1[0] * d, c[1] - u1[1] * d];
+    out.push(a, [a[0] + u2[0] * d, a[1] + u2[1] * d], [c[0] + u2[0] * d, c[1] + u2[1] * d]);
+  }
+  return out;
+}
 
 /** Polygons (with optional holes) in a coarse grid, for point-in-polygon queries. */
 class PolyGrid {
@@ -1129,6 +1304,170 @@ export class RealCityLayer {
   }
 
   /**
+   * A LONG BLOCK IS A ROW OF BUILDINGS. A frontage of 80 m and more on one
+   * deed was drawn as one prism in one elevation, which from the air is a
+   * quarter-mile of identical windows. In life that frontage is a run of
+   * separate houses or lofts built at different times: each 18-40 m piece
+   * here takes its own elevation, paint and parapet height from the
+   * district's palette. Same deed, same footprint and roughly the same
+   * height; looks only. Returns false (and draws nothing) when the volume
+   * is not a long four-sided block.
+   */
+  private rowOf(ring0: P2[], v: BuildingVolume, fam: string, k: number, shop: boolean, tall = false): boolean {
+    // drop the in-line vertices a long frontage collects, then it must be four-sided
+    const ring = ring0.filter((c, i) => {
+      const p = ring0[(i + ring0.length - 1) % ring0.length], q = ring0[(i + 1) % ring0.length];
+      const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      const cr = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+      return l1 > 0.3 && l2 > 0.3 && Math.abs(cr) / (l1 * l2) > 0.03;
+    });
+    if (ring.length < 4) return false;
+    // the long axis: the direction of the ring's longest side
+    let li = 0, lmax = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > lmax) { lmax = L; li = i; } }
+    const ux = (ring[(li + 1) % ring.length][0] - ring[li][0]) / lmax, uy = (ring[(li + 1) % ring.length][1] - ring[li][1]) / lmax;
+    let t0 = Infinity, t1 = -Infinity;
+    for (const [x, y] of ring) { const t = x * ux + y * uy; t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
+    const ll = t1 - t0;
+    // a tall block only when it is absurdly long: a 600 m slab is a row of towers
+    if (ll < (tall ? 160 : 80)) return false;
+    // one slice of the ring between two cuts across the long axis (Sutherland-Hodgman, two half-planes)
+    const clip = (r: P2[], t: number, keepAbove: boolean): P2[] => {
+      const out: P2[] = [];
+      const side = (p: P2) => (p[0] * ux + p[1] * uy - t) * (keepAbove ? 1 : -1);
+      for (let i = 0; i < r.length; i++) {
+        const p = r[i], q = r[(i + 1) % r.length], sp = side(p), sq = side(q);
+        if (sp >= 0) out.push(p);
+        if ((sp >= 0) !== (sq >= 0)) { const f = sp / (sp - sq); out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+      }
+      return out;
+    };
+    const cuts = [0];
+    let at = 0, i = 0;
+    const step = tall ? 32 : 18, spread = tall ? 26 : 22;
+    while (at < ll - step) { at += step + spread * hash01(k ^ (0x9e1 + i++), this.seed); cuts.push(Math.min(1, at / ll)); }
+    if (cuts[cuts.length - 1] < 1) cuts[cuts.length - 1] = 1;
+    const fh = this.families[fam]?.floorH ?? 3.4;
+    for (let j = 0; j + 1 < cuts.length; j++) {
+      const kj = (k * 31 + j * 7919) >>> 0;
+      const r = clip(clip(ring, t0 + cuts[j] * ll, true), t0 + cuts[j + 1] * ll, false);
+      if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
+      const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4);
+      const fk = f2 === "industrial" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
+      const tints = TINTS[fk] ?? [[1, 1, 1]];
+      const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
+      // a storey up or down now and then, never below two floors
+      const dz = tall ? -(v.z1 - v.z0) * 0.4 * hash01(kj ^ 0x5f, this.seed)
+        : hash01(kj ^ 0x5d, this.seed) < 0.35 ? (hash01(kj ^ 0x5e, this.seed) < 0.5 ? -fh : fh) : 0;
+      const z1 = Math.max(v.z0 + 2 * fh, v.z1 + dz);
+      if (tall && TOWER_FAMS.has(fk)) {
+        const tr = this.massing(r, v.z0, z1, fk, tn, v.b, kj, shop, v.c, v.y || 0);
+        this.towerTop(tr, z1, z1, fk, tn, v.b, kj, "auto");
+      } else {
+        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || (fk === "brick" && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
+      }
+      const d = this.deedOf(v.b); d.height = Math.max(d.height, z1);
+    }
+    this.lookSig.set(v.b, `${fam}|row${cuts.length - 1}`);
+    return true;
+  }
+
+  /** What each tower ended up as — family#elevation | massing | crown | tint — for the variety audit. */
+  lookSig = new Map<string, string>();
+  /** family | height | year | use of every building's top volume, for the variety audit. */
+  famOf = new Map<string, string>();
+  /**
+   * NO TWO TOWERS THE SAME SHAPE. A post-war tower was an extruded footprint
+   * here, so the skyline was a forest of one prism in different paint. Now
+   * each draws a massing from the period's real repertoire, by hash of its
+   * deed: the plain slab; a tower on a podium (the plaza-and-base of the
+   * 1960s-80s); stepped tiers; a slow taper; chamfered or rounded corners;
+   * notched, re-entrant corners; twin tops of unequal height off a shared
+   * base — and combinations. Mid-rise buildings (24-40 m) take the gentler
+   * ones. The height and footprint are the building's own; only the shape of
+   * the volume within them changes. Looks only.
+   */
+  private massing(ring0: P2[], z0: number, H: number, fam: string, t: number[], bbl: string, k: number, shop: boolean, cls: string, year: number): P2[] {
+    if (ringArea(ring0) < 0) ring0 = ring0.slice().reverse();
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; }
+    let rad = Infinity;
+    for (let i = 0; i < ring0.length; i++) {
+      const a = ring0[i], b = ring0[(i + 1) % ring0.length];
+      rad = Math.min(rad, Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
+    const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+    const inset = (r: P2[], d: number) => insetRing(r, d) ?? shrink(r, 0.82);
+    const simple = ring0.length <= 8 && rad > 7;
+    const quad = ring0.length === 4 && rad > 10;
+    const tall = H >= 40;
+    const h = (n: number) => hash01(k ^ n, this.seed);
+    type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers";
+    const opts: [M, number][] = tall
+      ? [["straight", 0.1], ["podium", 0.15], ["tiers", 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
+         ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0]]
+      : [["straight", 0.4], ["podium", 0.2], ["chamfer", simple ? 0.15 : 0], ["round", simple ? 0.1 : 0], ["notch", quad ? 0.08 : 0], ["tiers", 0.1]];
+    const m = pick(h(0x6a55), opts) as M;
+    let ring = ring0;
+    if (m === "chamfer" || m === "podium+chamfer") ring = chamferRing(ring, 0.12 + 0.12 * h(0x1c), 7, false);
+    if (m === "round" || m === "round+tiers") ring = chamferRing(ring, 0.18 + 0.1 * h(0x1d), 9, true);
+    if (m === "notch") ring = notchRing(ring, Math.min(5, rad * (0.12 + 0.08 * h(0x1e))));
+    const vol = (r: P2[], za: number, zb: number, top: boolean, sh = false, fk = fam) =>
+      this.addVolume(r, za, zb, fk, t, bbl, true, top, k, sh, false, top || sh ? cls : "", year);
+    let topRing = ring;
+    const podiumH = Math.min(24, Math.max(8, H * (0.12 + 0.08 * h(0x2a))));
+    const podFam = (fam === "glass" || fam === "blueglass" || fam === "greenglass" || fam === "silverglass" || fam === "fins")
+      ? pick(h(0x2b), [["precast", 0.35], ["pomo", 0.25], [fam, 0.4]]) : fam;
+    if (m === "podium" || m === "podium+chamfer" || m === "podium+tiers") {
+      vol(m === "podium+chamfer" ? ring0 : ring, z0, podiumH, false, shop, podFam);
+      topRing = inset(ring, 3 + 4 * h(0x2c));
+      if (m === "podium+tiers") {
+        const z1 = podiumH + (H - podiumH) * (0.6 + 0.15 * h(0x2d));
+        vol(topRing, podiumH, z1, false);
+        topRing = inset(topRing, 2.5 + 2 * h(0x2e));
+        vol(topRing, z1, H, true);
+      } else vol(topRing, podiumH, H, true);
+    } else if (m === "tiers" || m === "round+tiers") {
+      const n = 2 + Math.floor(h(0x3a) * 3);   // two to four tiers
+      let za = z0, r = ring;
+      for (let i = 0; i < n; i++) {
+        const zb = i === n - 1 ? H : z0 + (H - z0) * (0.45 + (0.5 * (i + 1)) / n) * (0.9 + 0.1 * h(0x3b + i));
+        vol(r, za, Math.min(H, zb), i === n - 1, i === 0 && shop);
+        za = Math.min(H, zb); topRing = r;
+        r = inset(r, 2 + 2.5 * h(0x3f + i));
+      }
+    } else if (m === "taper") {
+      const n = 7;
+      let za = z0;
+      for (let i = 0; i < n; i++) {
+        const zb = z0 + ((H - z0) * (i + 1)) / n;
+        const r = shrink(ring, 1 - 0.3 * (i / (n - 1)));
+        vol(r, za, zb, i === n - 1, i === 0 && shop);
+        za = zb; topRing = r;
+      }
+    } else if (m === "twin") {
+      // a shared base, then two towers of unequal height with a slot between
+      const base = H * (0.35 + 0.2 * h(0x4a));
+      vol(ring, z0, base, false, shop);
+      let li = 0, ll = -1;
+      for (let i = 0; i < 4; i++) { const a = ring[i], b = ring[(i + 1) % 4]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const lerp = (p: P2, q: P2, f: number): P2 => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+      const g = 0.06 + 0.06 * h(0x4b);
+      const t1: P2[] = [A, lerp(A, B, 0.5 - g), lerp(D, C, 0.5 - g), D];
+      const t2: P2[] = [lerp(A, B, 0.5 + g), B, C, lerp(D, C, 0.5 + g)];
+      const h2 = base + (H - base) * (0.7 + 0.15 * h(0x4c));
+      vol(t1, base, H, true);
+      vol(t2, base, h2, true);
+      topRing = t1;
+    } else {
+      vol(ring, z0, H, true, shop);
+    }
+    this.lookSig.set(bbl, `${this.variantOf(fam, k)}|${m}`);
+    return topRing;
+  }
+
+  /**
    * A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes in a
    * spire; a glass tower carries a recessed mechanical crown and a mast; the
    * International Style a plain penthouse; a stone office one setback. "auto"
@@ -1136,14 +1475,70 @@ export class RealCityLayer {
    */
   private towerTop(ring: P2[], z1: number, top: number, fam: string, t: number[], bbl: string, k: number,
     kind: "auto" | "none" | "setback" | "spire" | "mast", ov?: VolumeOv) {
-    const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
+    const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass" || fam === "blackglass" || fam === "greenglass" || fam === "silverglass" || fam === "fins";
     if (kind === "none") return;
-    if (kind === "auto" && !(top > 60 && (glassy || fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "ribbon" || fam === "grid"))) return;
+    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fam === "deco" || fam === "decobrick" || fam === "stone"))) return;
     let cx = 0, cy = 0;
     for (const [x, y] of ring) { cx += x; cy += y; }
     cx /= ring.length; cy /= ring.length;
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
     const deco = fam === "deco" || fam === "decobrick";
+    let rad = 0; for (const [x, y] of ring) rad = Math.max(rad, Math.hypot(x - cx, y - cy));
+    // the bearing of the ring's longest side, so a cap squares up with the walls
+    let li = 0, ll = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+    const bear = Math.atan2(ring[(li + 1) % ring.length][1] - ring[li][1], ring[(li + 1) % ring.length][0] - ring[li][0]);
+    const note = (c: string) => { const sg = this.lookSig.get(bbl); if (sg && !sg.includes("|c:")) this.lookSig.set(bbl, `${sg}|c:${c}`); };
+    // THE CROWNS OF THE LATER SKYLINE. Not every glass tower ends in a
+    // plant box and a mast: a pyramid cap, a stepped crown, a lantern of
+    // glass, a frame of fins carried up past the roof, a helipad, a sloped
+    // top. By hash, among the ones its family would have worn.
+    if (kind === "auto" && !deco && fam !== "stone" && TOWER_FAMS.has(fam)) {
+      const opts: [string, number][] = glassy
+        ? [["mech", 0.18], ["mech2", 0.12], ["pyramid", 0.12], ["stepped", 0.12], ["lantern", 0.12], ["fins", 0.12], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0]]
+        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["pyramid", fam === "pomo" ? 0.25 : 0.05], ["flat", 0.15]];
+      const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
+      note(c);
+      const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
+      if (c === "mech" || c === "mech2") {
+        this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, c === "mech", false, k, false, false, "", 0, ov);
+        if (c === "mech2") this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+        mastTop(z1 + (c === "mech2" ? 11 : 5));
+      } else if (c === "pyramid" && rad <= 22) {
+        // copper gone green, slate, dark bronze, or (rarely) bright steel
+        const hgt = Math.min(24, rad * (0.6 + 0.5 * hash01(k ^ 0x7c1, this.seed)));
+        const PY = [[0.36, 0.5, 0.44], [0.3, 0.32, 0.36], [0.34, 0.27, 0.2], [0.42, 0.44, 0.47], [0.62, 0.64, 0.66]];
+        const pc = fam === "pomo" ? PY[0] : PY[Math.floor(hash01(k ^ 0x7c3, this.seed) * PY.length)];
+        this.putInst("pyramid", cx, cy, z1, rad * 0.95, bear + Math.PI / 4, bbl, pc, hgt / (rad * 0.95));
+      } else if (c === "pyramid") {
+        this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+      } else if (c === "stepped") {
+        let r = ring, z = z1;
+        for (let i = 0; i < 3; i++) { r = shrink(r, 0.8); this.addVolume(r, z, z + 3.4, fam, t, bbl, true, false, k, false, false, "", 0, ov); z += 3.4; }
+        mastTop(z);
+      } else if (c === "lantern") {
+        this.addVolume(shrink(ring, 0.72), z1, z1 + 9, glassy ? "silverglass" : "glass", [1, 1, 1], bbl, true, false, k, false, false, "", 0, ov);
+        this.putInst("mast", cx, cy, z1 + 9, 1.2, 0, bbl);
+      } else if (c === "fins") {
+        const fh = 6 + 5 * hash01(k ^ 0x7c2, this.seed);
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i], b = ring[(i + 1) % ring.length];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const n = Math.max(1, Math.round(L / 2.6)), r2 = Math.atan2(b[1] - a[1], b[0] - a[0]);
+          for (let j = 0; j <= n; j++) this.putInst("fin", a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n, z1, 1, r2, bbl, undefined, fh);
+        }
+      } else if (c === "helipad") {
+        this.addVolume(shrink(ring, 0.8), z1, z1 + 3.5, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+        this.putInst("helipad", cx, cy, z1 + 3.55, 1, bear, bbl);
+      } else if (c === "gable") {
+        this.addVolume(shrink(ring, 0.94), z1, z1 + Math.min(14, rad * 0.6), fam, t, bbl, true, false, k, false, true, "", 0, ov);
+      } else if (c === "penthouse") {
+        this.addVolume(shrink(ring, 0.62), z1, z1 + 4.5, "plain", [0.9, 0.9, 0.9], bbl, true, true, k);
+      }
+      const d2 = this.deedOf(bbl); d2.height = Math.max(d2.height, z1 + 8);
+      return;
+    }
+    note(deco ? "spire" : "setback");
     if (kind === "spire" || (kind === "auto" && deco)) {
       this.addVolume(shrink(ring, 0.78), z1, z1 + 7, fam, t, bbl, false, false, k, false, false, "", 0, ov);
       this.addVolume(shrink(ring, 0.56), z1 + 7, z1 + 12, fam, t, bbl, true, false, k, false, false, "", 0, ov);
@@ -1453,7 +1848,7 @@ export class RealCityLayer {
 
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
-    const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
+    const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * (1 + (VARIANTS[fk.split("#")[0]]?.length ?? 3)));
     const key = n ? `${fk}#${n}` : fk;
     return this.families[key] ? key : fk;
   }
@@ -1532,6 +1927,11 @@ export class RealCityLayer {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
       walls(famKey, shopH, zw, shopH, tint);
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
+    } else if (TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
+      // a tower stands on a double-height glass lobby
+      const lh = this.families.lobby.floorH;
+      walls("lobby", z0, lh, 0, [1, 1, 1]);
+      walls(famKey, lh, zw, lh, tint);
     } else {
       walls(famKey, z0, zw, 0, tint);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
@@ -1848,6 +2248,7 @@ export class RealCityLayer {
       }
       const top = topZ.get(v.b) ?? v.z1;
       const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed), v.t ?? 4);
+      if (v.z1 >= top - 0.01 && v.b) this.famOf.set(v.b, `${fam}|${Math.round(top)}|${v.y || 0}|${v.c}`);
       const tints = TINTS[fam];
       // a district's buildings mostly share a batch of the same brick or paint
       const tr = hash01(k, this.seed);
@@ -1878,6 +2279,10 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
+      } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
+        // drawn as a row of houses (rowOf)
+      } else if (isTop && v.z0 < 0.5 && !pitched && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
+        topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else {
         this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c, v.y || 0);
       }
@@ -1986,6 +2391,11 @@ export class RealCityLayer {
       // a loading dock: a raised apron, a roll-up door, a canopy over it
       case "dock": return { g: merge([box(4.2, 1.4, 1.15, 0, -0.7, 0), box(3.6, 0.07, 3.6, 0, -0.04, 1.15), box(4.8, 2.0, 0.12, 0, -1.0, 5.0),
         box(0.25, 0.25, 0.5, -1.6, -1.45, 0.45), box(0.25, 0.25, 0.5, 1.6, -1.45, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x6a6c6c, roughness: 0.75, metalness: 0.2 }) };
+      // a four-sided cap: unit half-width, unit height, scaled to the roof
+      case "pyramid": return { g: merge([new THREE.ConeGeometry(Math.SQRT2, 1, 4, 1).rotateX(Math.PI / 2).translate(0, 0, 0.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.25 }), colored: true };
+      // a crown fin: a slim blade carried up past the roof, height via sz
+      case "fin": return { g: merge([box(0.35, 0.9, 1, 0, -0.2, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.4, metalness: 0.6 }) };
+      case "helipad": return { g: merge([cyl(8, 0.25, 0, 20), box(1.0, 6, 0.06, -2, 0, 0.25), box(1.0, 6, 0.06, 2, 0, 0.25), box(3, 1.0, 0.06, 0, 0, 0.25)]), mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };

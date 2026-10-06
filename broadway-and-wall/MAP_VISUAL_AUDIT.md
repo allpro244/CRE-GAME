@@ -678,3 +678,37 @@ cars clear of walls.
 `node tools/ground-audit.mjs` (dev server running, playwright-core
 installed) repeats the measurement and exits 1 on any misplaced prop.
 `docs/map-overhaul/p22-ground-{before,after,district}.jpg`.
+
+# A SKYLINE OF DIFFERENT TOWERS
+
+Reported from play: most buildings look alike, only a few kinds. Measured:
+every post-war tower was its footprint extruded straight up, in one of 8
+families x 4 elevations, ending in one of three caps; the low-rise families
+had four elevations each; and a frontage of hundreds of metres on one deed
+was one prism in one elevation.
+
+- **Massing.** Each tower draws a shape from the period's repertoire, by
+  hash of its deed: plain slab, tower on a podium (the podium often in
+  precast or granite under a glass shaft), two to four stepped tiers, a
+  seven-step taper, chamfered or rounded corners, notched corners, twin tops
+  of unequal height off a shared base, and combinations. Mid-rise blocks
+  (24-40 m) take the gentler ones. Height and footprint are unchanged.
+- **Crowns.** Plant box, two-step plant box, pyramid cap (copper green,
+  slate, dark bronze, steel), stepped crown, glass lantern with mast, a
+  frame of fins carried past the roof, helipad, gable, penthouse — by family.
+- **Facades.** Six new tower families, each with four elevations: the
+  1958-75 dark tower of bronze I-beams, mirror glass, emerald glass,
+  vertical fins, 1980s white precast, postmodern granite. Era-weighted.
+  Post-war apartment towers can now be red or buff brick, as so many were.
+  Towers stand on a double-height glass lobby. Glass tints widened.
+- **Low-rise.** Brick, buff, brownstone, limestone, post-war panel,
+  clapboard, loft, grid and precast each gain three more elevations (seven
+  each). The Build desk still offers the first four.
+- **Long blocks are rows.** A frontage of 80 m or more on one deed is cut
+  across its long axis into 18-40 m houses, each with its own elevation,
+  paint and parapet a storey up or down; a block over 160 m that is tall
+  becomes a row of towers.
+
+Metropolis (seed 2): 95 post-war towers over 45 m now wear 94 distinct
+family-elevation/massing/crown combinations. `docs/map-overhaul/p23-*.jpg`.
+Looks only.

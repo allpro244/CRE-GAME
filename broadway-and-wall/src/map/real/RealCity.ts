@@ -78,7 +78,9 @@ interface Family {
 
 const TILE = 128;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
-const FAR_PROPS = ["lamp", "car", "lotcar"];
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
+/** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
+const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 /** The families a tower can wear above its lobby. */
 const TOWER_FAMS = new Set(["glass", "blueglass", "bronze", "ribbon", "grid", "blackglass", "greenglass", "silverglass", "fins", "precast", "pomo", "modern"]);
 /** Shop trades: canopy and fascia colours. Looks only. */
@@ -929,6 +931,83 @@ export function facadeSwatches(): Record<string, string> {
 
 // ---- geometry accumulation -------------------------------------------------
 
+/** Parts with fixed vertex colours, merged into one non-indexed geometry. */
+function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
+  const pos: number[] = [], nrm: number[] = [], col: number[] = [];
+  for (const [g0, c] of parts) {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    if (!g.getAttribute("normal")) g.computeVertexNormals();
+    const P = g.getAttribute("position").array as Float32Array, N = g.getAttribute("normal").array as Float32Array;
+    for (let i = 0; i < P.length; i += 3) { pos.push(P[i], P[i + 1], P[i + 2]); nrm.push(N[i], N[i + 1], N[i + 2]); col.push(c[0], c[1], c[2]); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+/** A side profile (x along the car, z up) extruded across its width w, centred. */
+function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z)));
+  return new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, w / 2, 0);
+}
+const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGeometry {
+  const parts: [THREE.BufferGeometry, number[]][] = [];
+  const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
+  const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
+  if (kind === "sedan" || kind === "taxi") {
+    const L = 2.3;
+    parts.push([profile([[-L, 0.3], [L, 0.3], [L, 0.72], [L - 0.15, 0.82], [1.15, 0.92], [-1.55, 0.95], [-L + 0.05, 0.86], [-L, 0.72]], 1.78), PAINT]);
+    parts.push([profile([[1.15, 0.92], [0.45, 1.38], [-0.95, 1.4], [-1.6, 0.95]], 1.6), GLASS]);
+    box(1.3, 1.46, 0.06, -0.25, 0, 1.36, PAINT);
+    for (const x of [1.45, -1.4]) for (const y of [-0.8, 0.8]) wheel(x, y, 0.32);
+    box(0.06, 0.4, 0.14, L + 0.02, -0.6, 0.62, HEAD); box(0.06, 0.4, 0.14, L + 0.02, 0.6, 0.62, HEAD);
+    box(0.06, 0.36, 0.12, -L - 0.02, -0.62, 0.66, TAIL); box(0.06, 0.36, 0.12, -L - 0.02, 0.62, 0.66, TAIL);
+    box(0.1, 1.8, 0.12, L - 0.02, 0, 0.36, TRIMC); box(0.1, 1.8, 0.12, -L + 0.02, 0, 0.36, TRIMC);
+    if (kind === "taxi") box(0.5, 0.24, 0.2, -0.25, 0, 1.42, [1.1, 1.1, 1.0]);
+  } else if (kind === "suv") {
+    const L = 2.4;
+    parts.push([profile([[-L, 0.38], [L, 0.38], [L, 0.95], [1.5, 1.08], [-L, 1.12]], 1.9), PAINT]);
+    parts.push([profile([[1.5, 1.08], [0.9, 1.68], [-L + 0.15, 1.7], [-L, 1.12]], 1.76), GLASS]);
+    box(3.0, 1.8, 0.07, -0.75, 0, 1.68, PAINT);
+    for (const x of [1.55, -1.5]) for (const y of [-0.85, 0.85]) wheel(x, y, 0.38);
+    box(0.06, 0.42, 0.16, L + 0.02, -0.62, 0.82, HEAD); box(0.06, 0.42, 0.16, L + 0.02, 0.62, 0.82, HEAD);
+    box(0.06, 0.2, 0.36, -L - 0.02, -0.78, 0.8, TAIL); box(0.06, 0.2, 0.36, -L - 0.02, 0.78, 0.8, TAIL);
+    box(0.12, 1.92, 0.2, L - 0.02, 0, 0.42, TRIMC);
+  } else if (kind === "van") {
+    const L = 2.6;
+    parts.push([profile([[-L, 0.35], [L, 0.35], [L, 1.0], [1.9, 1.25], [1.5, 2.3], [-L, 2.3]], 2.0), PAINT]);
+    parts.push([profile([[1.86, 1.3], [1.52, 2.12], [1.0, 2.12], [1.0, 1.3]], 2.02), GLASS]);
+    for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
+    box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
+    box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else {
+    // the city bus: a long box on small wheels, a band of glass down each side
+    const L = 6;
+    box(12, 2.55, 2.75, 0, 0, 0.35, PAINT);
+    box(10.2, 2.57, 1.05, -0.6, 0, 1.6, GLASS);
+    box(0.06, 2.3, 1.5, L + 0.01, 0, 1.25, GLASS);
+    box(3, 2.2, 0.3, -2, 0, 3.1, [0.75, 0.75, 0.75]);
+    for (const x of [4.3, -3.3]) for (const y of [-1.05, 1.05]) wheel(x, y, 0.5);
+    box(0.06, 0.4, 0.2, L + 0.03, -0.9, 0.7, HEAD); box(0.06, 0.4, 0.2, L + 0.03, 0.9, 0.7, HEAD);
+  }
+  return mergeColored(parts);
+}
+function person(): THREE.BufferGeometry {
+  const SKIN = [0.62, 0.48, 0.4], HAIR = [0.22, 0.2, 0.2], LEG = [0.32, 0.33, 0.36], SHOE = [0.12, 0.12, 0.12];
+  const b = (w: number, d: number, h: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
+  return mergeColored([
+    [b(0.13, 0.15, 0.82, 0, -0.09, 0.06), LEG], [b(0.13, 0.15, 0.82, 0, 0.09, 0.06), LEG],
+    [b(0.24, 0.13, 0.07, 0.04, -0.09, 0), SHOE], [b(0.24, 0.13, 0.07, 0.04, 0.09, 0), SHOE],
+    [b(0.24, 0.42, 0.62, 0, 0, 0.86), PAINT],
+    [b(0.11, 0.1, 0.6, 0, -0.27, 0.86), PAINT], [b(0.11, 0.1, 0.6, 0, 0.27, 0.86), PAINT],
+    [b(0.08, 0.12, 0.1, 0, 0, 1.48), SKIN],
+    [new THREE.SphereGeometry(0.11, 10, 8).translate(0, 0, 1.64), SKIN],
+    [new THREE.SphereGeometry(0.115, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0, 1.65), HAIR],
+  ]);
+}
+
 /** Cut (or round) each convex corner of a counter-clockwise ring by frac of its shorter edge, at most maxM metres. */
 function chamferRing(r: P2[], frac: number, maxM: number, round: boolean): P2[] {
   const n = r.length, out: P2[] = [];
@@ -1039,7 +1118,7 @@ class Buf {
   }
 }
 
-interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number }
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 
@@ -1929,6 +2008,11 @@ export class RealCityLayer {
     }
     this.note(bbl, "contact", c0);
   }
+  private vehMat: THREE.MeshStandardMaterial | null = null;
+  private vehicleMat() {
+    if (!this.vehMat) this.vehMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+    return this.vehMat;
+  }
   private contactMat = (() => {
     const m = new THREE.MeshBasicMaterial({ color: 0x0c0f14, transparent: true, depthWrite: false, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     // the vertex colour's red channel is the shade's opacity
@@ -2315,7 +2399,7 @@ export class RealCityLayer {
           const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
           if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
           if (!this.clearOfBuildings(x, y, 2.6)) continue;
-          this.putInst("lotcar", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
+          this.putInst(lrnd() < 0.62 ? "lotcar" : "lotsuv", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
         }
       }
     }
@@ -2560,14 +2644,22 @@ export class RealCityLayer {
         g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
         return { g, mat: this.leafMat, colored: true };
       }
+      // REAL CARS. A shaped body (bonnet, windscreen, roof, boot) in the
+      // instance's paint, dark glass, black tyres, light lenses: the paint is
+      // the instance colour and every other part a fixed vertex colour that the
+      // paint multiplies, so the glass stays glass. Sizes are real: a sedan
+      // 4.6 x 1.8 m, an SUV 4.8 x 1.9 x 1.75, a van 5.2 x 2.0 x 2.3, a city bus
+      // 12 x 2.55 x 3.1.
       case "lotcar":
-      case "car": {
-        const body = box(4.35, 1.78, 0.78, 0, 0, 0.22);
-        const cab = box(2.2, 1.62, 0.62, -0.2, 0, 1.0);
-        return { g: merge([body, cab]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }), colored: true };
-      }
-      case "lamp": return { g: merge([cyl(0.09, 6, 0, 6), box(1.4, 0.18, 0.14, 0.6, 0, 5.9)]), mat: this.lampMat };
-      case "person": return { g: merge([box(0.42, 0.3, 0.95, 0, 0, 0), box(0.46, 0.34, 0.6, 0, 0, 0.9), new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0, 1.68)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      case "car": return { g: vehicle("sedan"), mat: this.vehicleMat(), colored: true };
+      case "lotsuv":
+      case "suv": return { g: vehicle("suv"), mat: this.vehicleMat(), colored: true };
+      case "van": return { g: vehicle("van"), mat: this.vehicleMat(), colored: true };
+      case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
+      case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
+      // A PERSON: legs, coat, arms, head with hair — coat in the instance
+      // colour, trousers and hair darker. 1.75 m.
+      case "person": return { g: person(), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
       case "fountain": return { g: merge([cyl(5.2, 0.55, 0, 24), cyl(1.1, 1.6, 0.55, 12), cyl(2.4, 0.3, 2.1, 16), cyl(0.5, 1.1, 2.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.7 }) };
       case "basin": return { g: merge([cyl(4.6, 0.08, 0.5, 24), cyl(2.1, 0.06, 2.38, 16)]), mat: new THREE.MeshStandardMaterial({ color: 0x3b6f82, roughness: 0.08, metalness: 0.1, envMapIntensity: 1.3 }) };
       case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
@@ -3095,7 +3187,9 @@ export class RealCityLayer {
           for (let k = 0; k < n; k++) {
             const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
             if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
-            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5, col: CAR[(rnd() * CAR.length) | 0], draw: rnd() });
+            const vk = rnd();
+            const kind = L > 160 && vk < 0.04 ? "bus" : vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.88 ? "van" : "taxi";
+            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: (kind === "bus" ? 4.5 : 6) + rnd() * 5, col: kind === "taxi" ? TAXI : kind === "bus" ? BUS : CAR[(rnd() * CAR.length) | 0], draw: rnd(), kind });
           }
         }
         // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
@@ -3105,7 +3199,9 @@ export class RealCityLayer {
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
           if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
-          this.putInst("car", x, y, 0.05, 0.95 + rnd() * 0.12, rot + (rnd() < 0.5 ? 0 : Math.PI), "", CAR[(rnd() * CAR.length) | 0]);
+          const vk = rnd(), dt = this.demandAt(x, y);
+          const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
+          this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
         }
       }
     }
@@ -3248,7 +3344,7 @@ export class RealCityLayer {
       mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.scene.add(mesh); this.fleets.push({ mesh, list, z });
     };
-    fleet("car", this.movers, 0.05);
+    for (const kind of ["car", "suv", "van", "taxi", "bus"]) fleet(kind, this.movers.filter((m) => (m.kind ?? "car") === kind), 0.05);
     fleet("person", this.walkers, 0.15);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();

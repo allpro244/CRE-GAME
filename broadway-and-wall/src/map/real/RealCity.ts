@@ -2622,7 +2622,7 @@ export class RealCityLayer {
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
-      if (name === "contact") mesh.renderOrder = 2;
+      if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     this.bindRanges(this.deeds, this.meshes);
@@ -4281,6 +4281,8 @@ export class RealCityLayer {
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low";
     if (this.catcher) this.catcher.visible = q !== "low";
+    // the ground contact shade is transparent overdraw under every building
+    const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
     this.map?.triggerRepaint();

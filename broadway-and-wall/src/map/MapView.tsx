@@ -1656,19 +1656,20 @@ export default function MapView() {
   // with the labels — the effect re-runs on toggle, so it detaches cleanly and
   // a tip left showing at the moment of the switch is wiped.
   const tipRef = useRef<HTMLDivElement>(null);
+  const hoverCardOn = useStore((s) => s.hoverCard);
   useEffect(() => {
     const map = mapRef.current;
     const tip = tipRef.current;
     if (!map || !mapReady || !tip) return;
-    if (photoFrame) {
+    if (photoFrame || !hoverCardOn) {
       tip.style.display = "none";
       return;
     }
     const container = map.getContainer();
     let tipKey = "";
     const onMove = (e: MouseEvent) => {
-      const { hoveredBBL, parcels: table, selectedBBL, game: g } = useStore.getState();
-      const rec = hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
+      const { hoveredBBL, parcels: table, selectedBBL, game: g, hoverCard } = useStore.getState();
+      const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
       // One card per lot and month: the same numbers the property panel
       // prints, read off the same functions, so the glance and the click agree.
@@ -1689,7 +1690,7 @@ export default function MapView() {
       container.removeEventListener("mousemove", onMove);
       container.removeEventListener("mouseleave", onLeave);
     };
-  }, [mapReady, photoFrame]);
+  }, [mapReady, photoFrame, hoverCardOn]);
 
   return (
     <>

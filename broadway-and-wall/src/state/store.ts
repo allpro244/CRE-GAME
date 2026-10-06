@@ -231,6 +231,9 @@ interface AppState {
    */
   popupsOff: boolean;
   setPopupsOff: (v: boolean) => void;
+  /** The hover card on the map (a building's numbers under the pointer). A browser preference, on by default. */
+  hoverCard: boolean;
+  setHoverCard: (v: boolean) => void;
   /**
    * SILENCE EVERYTHING, INCLUDING THE FAILURES.
    *
@@ -737,6 +740,7 @@ export const useStore = create<AppState>((set, get) => ({
   auctionOpen: false,
   loiFocusId: null,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
+  hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
@@ -1073,6 +1077,10 @@ export const useStore = create<AppState>((set, get) => ({
     return { ok: true, msg: r.msg };
   },
 
+  setHoverCard: (v) => {
+    try { localStorage.setItem("bw:hovercard", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ hoverCard: v });
+  },
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });

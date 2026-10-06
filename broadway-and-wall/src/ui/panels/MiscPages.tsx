@@ -195,6 +195,8 @@ function ThemePicker() {
 export function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
+  const hoverCard = useStore((s) => s.hoverCard);
+  const setHoverCard = useStore((s) => s.setHoverCard);
   const [sound, setSound] = useState(soundOn());
   const setPopupsOff = useStore((s) => s.setPopupsOff);
   const alertsOff = useStore((s) => s.alertsOff);
@@ -277,6 +279,12 @@ export function SettingsPage() {
       />
       {/* the two renderer switches were filed under Interruptions */}
       <div className="page-section">Display</div>
+      <Toggle
+        on={hoverCard}
+        set={setHoverCard}
+        label="Hover card"
+        detail="Point at a building on the map to see its owner, occupancy, rent, value and asking price. Off, the map stays clean and a click still opens the building. Also on the map's bottom strip as Stats."
+      />
       <Toggle
         on={fpsOn}
         set={setFpsOn}

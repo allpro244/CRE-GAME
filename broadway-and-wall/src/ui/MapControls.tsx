@@ -34,6 +34,8 @@ export default function MapControls() {
   // With a building selected its card takes the right-hand column; the strip
   // centres on the map that is left rather than running under the card.
   const carded = useStore((s) => !!s.selectedBBL);
+  const hoverCard = useStore((s) => s.hoverCard);
+  const setHoverCard = useStore((s) => s.setHoverCard);
   // A desk covers the map; its controls go with it.
   if (page !== "none" && !mapOnly) return null;
   return (
@@ -67,6 +69,19 @@ export default function MapControls() {
             <span className="map-controls-label">{l.label}</span>
           </button>
         ))}
+      </div>
+      <span className="map-controls-sep" aria-hidden="true" />
+      <div className="map-controls-group" role="group" aria-label="Hover card">
+        <button
+          type="button"
+          className={"map-controls-btn" + (hoverCard ? " on" : "")}
+          aria-pressed={hoverCard}
+          onClick={() => setHoverCard(!hoverCard)}
+          title={hoverCard ? "Hover card on — point at a building for its numbers. Click to turn off." : "Hover card off — click to show a building's numbers when you point at it."}
+        >
+          <span className="map-controls-ico" aria-hidden="true">▤</span>
+          <span className="map-controls-label">Stats</span>
+        </button>
       </div>
     </div>
   );

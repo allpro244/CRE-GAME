@@ -611,3 +611,104 @@ Measured on the software renderer at a 2x display, Metropolis district view:
 a frame took 8.98 s on High, 5.54 s on Medium (-38%) and 3.67 s on Low
 (-59%). Absolute numbers are meaningless on a CPU rasteriser; the ratio is
 the point. `docs/map-overhaul/p18-graphics-{high,low}.jpg`.
+
+# POINT AT A BUILDING
+
+The pointer picks what it is over in 3D: a ray walked down from the eye
+stops at the first lot whose building stands taller than the ray there
+(about 3-4 ms on the software renderer), so pointing at a tower picks the
+tower, not the street behind it; clicks use the same pick. The hover card
+shows use, floors, size, year, owner, occupancy, market rent, appraisal,
+asking price when listed, and demand — read off the property panel's own
+functions. Occupancy says "mkt est." unless a rent roll has been shown, as
+the panel does. `docs/map-overhaul/p19-hover-card.jpg`.
+
+# SHOPFRONTS BY TRADE
+
+Every street-facing bay of a shop storey (a wall whose far side is no one's
+lot) gets a canopy and fascia in a trade's colours: cafe, grocer, bank,
+pharmacy, diner, hardware, bakery, boutique, with downtown stone and glass
+leaning to banks and boutiques. The trade is looks only: market buildings
+have no tenant roll to read it from. Which bays are boarded with plywood is
+live: round((1 - retail let share) x bays), the same number that already
+papers the glass. `docs/map-overhaul/p20-shopfronts.jpg`.
+
+# NEIGHBOURHOODS HAVE A MATERIAL
+
+Old low-rise buildings used to pick red brick, buff brick or brownstone per
+lot at random. Each district now leans on one tradition, keyed by its tone
+family (the same hash of the district name the pavement uses): brownstone
+rows, red brick, buff brick, a timber-frame quarter, or mixed. Most
+buildings in a district also share a batch of the same brick or paint.
+Brownstone rows (and half the brick walk-ups) climb to their doors up
+stoops, one per house front; the works quarter's sheds get loading docks
+with canopies. `docs/map-overhaul/p21-*.jpg`.
+
+# EVERY PROP ON ITS GROUND
+
+Reported from play: cars on the footway, trees in the road and inside
+buildings, and "weird white stairs". Measured, not guessed: a ground
+classifier (`groundAt`: building footprint, footway with its holes, park,
+open ground — boulevard mall and esplanade — lot, else road) over every
+instanced prop, three towns:
+
+| | before (town, seed 4) | after (all three towns) |
+|---|---|---|
+| street trees on the footway | 74 of 6,254 | all |
+| trees in the road or a building | 4,639 | 0 |
+| parked cars on the carriageway | 1,092 of 2,060 | all |
+| lamps on the footway | 33 of 1,229 | all |
+
+The cause was the placement, not the town: street furniture was laid by
+offset from the grid/lane street centre lines with the generator's
+half-width, which matches the drawn street on a straight grid block and
+nothing else, and missed the diagonals, avenues and irregular streets
+entirely. Trees, lamps, walkers, kerbside cars and moving traffic are now
+laid along the drawn footway's own kerb edge (`dressFootways`) and every one
+is checked against the ground: a tree on the footway with its crown clear of
+every wall, a lamp on the footway, a parked car wholly on the carriageway
+with a running lane left beside it, traffic on a lane that stays on the
+road. The generator's own trees are kept on lawns, yards, malls and the
+esplanade; 374 boulevard-row trees that landed in the asphalt are dropped
+(the footway rows line those streets now). Stoops only on a low brownstone
+or brick house whose front stands at the footway, in the house's own stone;
+canopies never over the carriageway or into a neighbour's wall; car-park
+cars clear of walls.
+
+`node tools/ground-audit.mjs` (dev server running, playwright-core
+installed) repeats the measurement and exits 1 on any misplaced prop.
+`docs/map-overhaul/p22-ground-{before,after,district}.jpg`.
+
+# A SKYLINE OF DIFFERENT TOWERS
+
+Reported from play: most buildings look alike, only a few kinds. Measured:
+every post-war tower was its footprint extruded straight up, in one of 8
+families x 4 elevations, ending in one of three caps; the low-rise families
+had four elevations each; and a frontage of hundreds of metres on one deed
+was one prism in one elevation.
+
+- **Massing.** Each tower draws a shape from the period's repertoire, by
+  hash of its deed: plain slab, tower on a podium (the podium often in
+  precast or granite under a glass shaft), two to four stepped tiers, a
+  seven-step taper, chamfered or rounded corners, notched corners, twin tops
+  of unequal height off a shared base, and combinations. Mid-rise blocks
+  (24-40 m) take the gentler ones. Height and footprint are unchanged.
+- **Crowns.** Plant box, two-step plant box, pyramid cap (copper green,
+  slate, dark bronze, steel), stepped crown, glass lantern with mast, a
+  frame of fins carried past the roof, helipad, gable, penthouse — by family.
+- **Facades.** Six new tower families, each with four elevations: the
+  1958-75 dark tower of bronze I-beams, mirror glass, emerald glass,
+  vertical fins, 1980s white precast, postmodern granite. Era-weighted.
+  Post-war apartment towers can now be red or buff brick, as so many were.
+  Towers stand on a double-height glass lobby. Glass tints widened.
+- **Low-rise.** Brick, buff, brownstone, limestone, post-war panel,
+  clapboard, loft, grid and precast each gain three more elevations (seven
+  each). The Build desk still offers the first four.
+- **Long blocks are rows.** A frontage of 80 m or more on one deed is cut
+  across its long axis into 18-40 m houses, each with its own elevation,
+  paint and parapet a storey up or down; a block over 160 m that is tall
+  becomes a row of towers.
+
+Metropolis (seed 2): 95 post-war towers over 45 m now wear 94 distinct
+family-elevation/massing/crown combinations. `docs/map-overhaul/p23-*.jpg`.
+Looks only.

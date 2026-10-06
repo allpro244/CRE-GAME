@@ -79,7 +79,18 @@ interface Family {
 const TILE = 128;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
 const FAR_PROPS = ["lamp", "car", "lotcar"];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "pile", "bulk", "hvac", "tank", "skyl"];
+/** The families a tower can wear above its lobby. */
+const TOWER_FAMS = new Set(["glass", "blueglass", "bronze", "ribbon", "grid", "blackglass", "greenglass", "silverglass", "fins", "precast", "pomo", "modern"]);
+/** Shop trades: canopy and fascia colours. Looks only. */
+interface Trade { awn: number[]; sign: number[] }
+const T = (awn: number[], sign: number[]): Trade => ({ awn, sign });
+const CAFE = T([0.55, 0.13, 0.12], [0.14, 0.11, 0.09]), GROCER = T([0.18, 0.42, 0.22], [0.94, 0.92, 0.85]);
+const BANK = T([0.12, 0.18, 0.35], [0.80, 0.70, 0.42]), APPAREL = T([0.08, 0.08, 0.09], [0.92, 0.92, 0.90]);
+const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.12, 0.22], [0.86, 0.72, 0.40]);
+const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
+const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
+const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -455,6 +466,32 @@ function makeFamilies(seed: number): Record<string, Family> {
       win: { x0: 0.32, x1: 0.68, y0: 0.26, y1: 0.80 }, wall: clapWall,
       glassCol: "#34444e", frameCol: "#f4f1ea", wallRough: 0.8, glassRough: 0.12, glassMetal: 0.0,
       trim: "#f4f1ea", mullions: [1, 2], reveal: 1.6 },
+    // MORE OF THE SKYLINE'S VOCABULARY. The 1958 dark tower of bronze
+    // I-beams and smoked glass; the 1980s mirror and emerald curtain walls;
+    // the 2000s vertical fin; the 1980s white precast slab and the
+    // postmodern granite tower with its banded windows.
+    { key: "blackglass", bayW: 1.45, floorH: 3.8, masonry: false, glass: true,
+      win: { x0: 0.07, x1: 0.93, y0: 0.16, y1: 0.98 }, wall: tintedGlassWall("#17191c"),
+      glassCol: "#3a3f44", frameCol: "#4a3a2a", wallRough: 0.35, glassRough: 0.05, glassMetal: 0.85, reveal: 1.6 },
+    { key: "greenglass", bayW: 1.5, floorH: 3.9, masonry: false, glass: true,
+      win: { x0: 0.04, x1: 0.96, y0: 0.14, y1: 0.99 }, wall: tintedGlassWall("#1d3a33"),
+      glassCol: "#5f9e8c", frameCol: "#8aa69c", wallRough: 0.3, glassRough: 0.05, glassMetal: 0.9, reveal: 1.0 },
+    { key: "silverglass", bayW: 1.5, floorH: 4.0, masonry: false, glass: true,
+      win: { x0: 0.03, x1: 0.97, y0: 0.12, y1: 0.99 }, wall: tintedGlassWall("#5a6168"),
+      glassCol: "#c3ccd3", frameCol: "#d4d8dc", wallRough: 0.3, glassRough: 0.04, glassMetal: 0.95, reveal: 0.9 },
+    { key: "fins", bayW: 1.25, floorH: 4.0, masonry: false, glass: true,
+      win: { x0: 0.14, x1: 0.86, y0: 0.06, y1: 0.99 }, wall: panelWall("#cdd1d4"),
+      glassCol: "#4f6e7e", frameCol: "#c9cdd0", wallRough: 0.45, glassRough: 0.05, glassMetal: 0.8, reveal: 2.4 },
+    { key: "precast", bayW: 2.0, floorH: 3.7, masonry: false, glass: false,
+      win: { x0: 0.18, x1: 0.82, y0: 0.28, y1: 0.80 }, wall: panelWall("#e6e2da"),
+      glassCol: "#3b4c58", frameCol: "#9aa0a4", wallRough: 0.7, glassRough: 0.08, glassMetal: 0.35, mullions: [1, 1], reveal: 3.6 },
+    { key: "pomo", bayW: 2.2, floorH: 3.8, masonry: true, glass: false,
+      win: { x0: 0.12, x1: 0.88, y0: 0.30, y1: 0.86 }, wall: stoneWallC([196, 158, 146], 24),
+      glassCol: "#2f4656", frameCol: "#2a2a2a", wallRough: 0.6, glassRough: 0.06, glassMetal: 0.5, trim: "#ece4d4", mullions: [2, 1], reveal: 2.6 },
+    // a tower's double-height glass lobby
+    { key: "lobby", bayW: 3.0, floorH: 6.5, masonry: false, glass: false,
+      win: { x0: 0.05, x1: 0.95, y0: 0.03, y1: 0.90 }, wall: panelWall("#3a3e42"),
+      glassCol: "#5d7380", frameCol: "#202428", wallRough: 0.5, glassRough: 0.05, glassMetal: 0.5, mullions: [2, 1], reveal: 1.6 },
     { key: "shop", bayW: 3.4, floorH: 4.2, masonry: false, glass: false,
       win: { x0: 0.06, x1: 0.94, y0: 0.04, y1: 0.66 }, wall: shopWall,
       glassCol: "#5d7380", frameCol: "#2a2622", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3,
@@ -553,6 +590,41 @@ const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
     { wall: tintedGlassWall("#3a5a5a"), glassCol: "#7fb4ae" },
     { wall: tintedGlassWall("#4a5a6a"), glassCol: "#a8c4d4", frameCol: "#c4ccd2" },
   ],
+  blackglass: [
+    { wall: tintedGlassWall("#101214"), glassCol: "#2a2e33", frameCol: "#1a1a1a" },
+    { wall: tintedGlassWall("#1c2420"), glassCol: "#34423c", frameCol: "#5a4a32" },
+    { wall: tintedGlassWall("#1a1d26"), glassCol: "#3a4252", frameCol: "#2e3036" },
+  ],
+  greenglass: [
+    { wall: tintedGlassWall("#1a4440"), glassCol: "#58a8a0" },
+    { wall: tintedGlassWall("#2a4a30"), glassCol: "#7aa880", frameCol: "#a8b8a8" },
+    { wall: tintedGlassWall("#164038"), glassCol: "#3e8a7a", frameCol: "#2a3a36" },
+  ],
+  silverglass: [
+    { wall: tintedGlassWall("#4a5058"), glassCol: "#a8b4bf", frameCol: "#e2e4e6" },
+    { wall: tintedGlassWall("#666a6e"), glassCol: "#d8d8d2", frameCol: "#bfc2c4" },
+    { wall: tintedGlassWall("#505a64"), glassCol: "#b4c4d4", frameCol: "#8a949c" },
+  ],
+  fins: [
+    { wall: panelWall("#2e3236"), glassCol: "#5e7c8a", frameCol: "#2a2e32" },
+    { wall: panelWall("#8a6a4a"), glassCol: "#6a6458", frameCol: "#7a5c40" },
+    { wall: panelWall("#f0efe9"), glassCol: "#86a2b0", frameCol: "#f2f2ee", win: { x0: 0.2, x1: 0.8, y0: 0.06, y1: 0.99 } },
+  ],
+  precast: [
+    { wall: panelWall("#d8c8b8"), glassCol: "#334450" },
+    { wall: panelWall("#c9b4a6"), win: { x0: 0.14, x1: 0.86, y0: 0.32, y1: 0.78 }, frameCol: "#5a5450" },
+    { wall: panelWall("#b8bcbf"), winStyle: "pair", frameCol: "#3a3e42" },
+  ],
+  pomo: [
+    { wall: stoneWallC([150, 160, 150], 24), glassCol: "#2c4a44", trim: "#d8d4c8" },
+    { wall: stoneWallC([150, 92, 84], 24), winStyle: "arch", frameCol: "#1e1e1e" },
+    { wall: stoneWallC([214, 200, 176], 24), glassCol: "#3a5a6a", trim: "#8a6a50" },
+  ],
+  lobby: [
+    { wall: stoneWallC([206, 198, 182]), frameCol: "#2a2a2a" },
+    { wall: panelWall("#5a4a3a"), frameCol: "#6a5236", glassCol: "#6a7a80" },
+    { wall: panelWall("#d8dadc"), frameCol: "#c0c4c8", glassCol: "#7a96a6" },
+  ],
   clapboard: [
     { wall: clapWallC(9), shutter: "#2f4a3a" },
     { wall: clapWallC(6), lintel: "pediment" },
@@ -565,21 +637,102 @@ const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
   ],
 };
 
+// THREE MORE ELEVATIONS for the families that make up most of the city, so
+// a block of walk-ups is seven builders' work rather than four. Each still
+// true to its period. (The Build desk offers the first four; the street
+// draws from all of them.)
+const MORE_VARIANTS: Record<string, Partial<FamilySpec>[]> = {
+  brick: [
+    { wall: brickWall([112, 54, 44]), lintel: "pediment", trim: "#cfc3ad", frameCol: "#f0ece2" },
+    { wall: brickWall([176, 88, 60]), winStyle: "pair", trim: "#3a3a3a", frameCol: "#2a2a2a" },
+    { wall: brickWall([150, 110, 96]), winStyle: "arch", shutter: "#5a2a26", frameCol: "#e8e2d4" },
+  ],
+  buff: [
+    { wall: brickWall([228, 210, 170]), winStyle: "arch", trim: "#5a4636", frameCol: "#2a2a2a" },
+    { wall: brickWall([186, 160, 112]), shutter: "#2f4a3a", frameCol: "#efe6d2" },
+    { wall: brickWall([200, 184, 160]), winStyle: "pair", trim: "#8f4a32" },
+  ],
+  brownstone: [
+    { wall: brownWallC([126, 88, 66]), winStyle: "pair", frameCol: "#2a2a2a" },
+    { wall: brownWallC([160, 116, 92]), lintel: "pediment", shutter: "#2a3a2e" },
+    { wall: brownWallC([98, 70, 58]), winStyle: "arch", frameCol: "#e6dfcf", trim: "#4a3428" },
+  ],
+  stone: [
+    { wall: stoneWallC([226, 220, 206]), winStyle: "segment", frameCol: "#2a2e30" },
+    { wall: stoneWallC([190, 170, 140]), winStyle: "arch", trim: "#f4eedc" },
+    { wall: stoneWallC([140, 136, 132], 28), lintel: "pediment", frameCol: "#1e2226" },
+  ],
+  modern: [
+    { wall: panelWall("#e8e4dc"), winStyle: "pair", frameCol: "#2a3036" },
+    { wall: panelWall("#8a8e90"), win: { x0: 0.12, x1: 0.88, y0: 0.3, y1: 0.86 }, frameCol: "#d8d8d8" },
+    { wall: brickWall([190, 160, 120]), win: { x0: 0.14, x1: 0.86, y0: 0.28, y1: 0.82 }, frameCol: "#2a2a2a" },
+  ],
+  clapboard: [
+    { wall: clapWallC(7), lintel: "pediment", shutter: "#5a2a26" },
+    { wall: clapWallC(10), winStyle: "segment" },
+    { wall: clapWallC(8), shutter: "#2a3a4a", lintel: "pediment" },
+  ],
+  industrial: [
+    { wall: brickWall([110, 60, 50]), winStyle: "arch", mullions: [6, 4] },
+    { wall: panelWall("#b8b2a6"), mullions: [10, 4], frameCol: "#3a3e42" },
+    { wall: brickWall([196, 176, 140]), winStyle: "segment", mullions: [5, 4], trim: "#5a4a3a" },
+  ],
+  grid: [
+    { wall: panelWall("#c4b8a4"), win: { x0: 0.24, x1: 0.76, y0: 0.24, y1: 0.76 } },
+    { wall: panelWall("#a8aeb2"), win: { x0: 0.16, x1: 0.84, y0: 0.18, y1: 0.86 }, frameCol: "#2a2a2a" },
+    { wall: panelWall("#d8c8b0"), winStyle: "pair" },
+  ],
+  precast: [
+    { wall: panelWall("#cfd4d6"), win: { x0: 0.1, x1: 0.9, y0: 0.3, y1: 0.8 }, frameCol: "#2a3e4a" },
+    { wall: panelWall("#d6b89a"), glassCol: "#2e3e48" },
+    { wall: panelWall("#9aa4a8"), win: { x0: 0.2, x1: 0.8, y0: 0.22, y1: 0.84 }, frameCol: "#d0d0d0" },
+  ],
+};
+for (const [k, v] of Object.entries(MORE_VARIANTS)) VARIANTS[k] = [...(VARIANTS[k] ?? []), ...v];
+
 /** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
-function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
+/**
+ * NEIGHBOURHOODS HAVE A MATERIAL. A city's old districts were each put up by
+ * a handful of builders out of whatever the nearest kiln or quarry sold, so a
+ * street of brownstones is a street of brownstones and the buff-brick quarter
+ * is buff brick, not a random draw per lot. Keyed by the district's tone
+ * family (BuildingVolume.t, the same FNV of the district name the ground's
+ * pavement reads), each district leans hard on one tradition: brownstone
+ * rows, red brick, buff brick, a timber-frame quarter, and one mixed. Weights
+ * are [brick, buff, brownstone] and the share of small pre-1950 buildings
+ * that are clapboard. Looks only.
+ */
+const DISTRICT_MASONRY: { w: [number, number, number]; clap: number }[] = [
+  { w: [0.12, 0.08, 0.80], clap: 0.15 },   // the brownstone rows
+  { w: [0.82, 0.08, 0.10], clap: 0.30 },   // red brick
+  { w: [0.18, 0.72, 0.10], clap: 0.30 },   // buff brick
+  { w: [0.60, 0.25, 0.15], clap: 0.85 },   // the timber-frame quarter
+  { w: [0.55, 0.25, 0.20], clap: 0.50 },   // mixed, as it was
+];
+/** A weighted draw: roll in [0,1) against [key, weight] pairs (weights need not sum to one). */
+function pick(roll: number, w: [string, number][]): string {
+  const tot = w.reduce((a, [, x]) => a + x, 0);
+  let acc = 0;
+  for (const [k, x] of w) { acc += x / tot; if (roll < acc) return k; }
+  return w[w.length - 1][0];
+}
+function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 4): string {
+  const dm = DISTRICT_MASONRY[((district % 5) + 5) % 5];
   // a house or a shop of two storeys from before 1950 is, as often as not,
   // timber — wood frame stayed the American small building until the 1950s
-  if (h <= 8.5 && year < 1950 && (cls === "multifamily" || cls === "retail") && ((roll * 7.13) % 1) < 0.5) return "clapboard";
-  // a low pre-war masonry building is one of three brick traditions
-  const oldBrick = () => roll < 0.55 ? "brick" : roll < 0.8 ? "buff" : "brownstone";
+  if (h <= 8.5 && year < 1950 && (cls === "multifamily" || cls === "retail") && ((roll * 7.13) % 1) < dm.clap) return "clapboard";
+  // a low pre-war masonry building is one of three brick traditions, by district
+  const oldBrick = () => roll < dm.w[0] ? "brick" : roll < dm.w[0] + dm.w[1] ? "buff" : "brownstone";
   if (cls === "industrial") return "industrial";
   if (cls === "office") {
     if (year >= 1958) {
-      if (h <= 30) return "modern";
-      // by when it went up: the ribbon and the grid, then bronze, then blue
-      if (year < 1973) return roll < 0.4 ? "ribbon" : roll < 0.65 ? "grid" : "glass";
-      if (year < 1988) return roll < 0.4 ? "bronze" : roll < 0.65 ? "glass" : roll < 0.82 ? "grid" : "ribbon";
-      return roll < 0.45 ? "glass" : roll < 0.85 ? "blueglass" : "bronze";
+      if (h <= 30) return pick(roll, year < 1980 ? [["modern", 0.7], ["precast", 0.3]] : [["modern", 0.45], ["precast", 0.25], ["fins", 0.15], ["glass", 0.15]]);
+      // by when it went up: the ribbon, the grid and the dark tower; then
+      // bronze, mirror, white precast and postmodern granite; then blue,
+      // emerald, silver and the fin
+      if (year < 1973) return pick(roll, [["ribbon", 0.28], ["grid", 0.16], ["blackglass", 0.24], ["glass", 0.16], ["precast", 0.08], ["bronze", 0.08]]);
+      if (year < 1988) return pick(roll, [["bronze", 0.17], ["blackglass", 0.12], ["glass", 0.12], ["grid", 0.07], ["ribbon", 0.07], ["precast", 0.1], ["pomo", 0.17], ["silverglass", 0.14], ["greenglass", 0.04]]);
+      return pick(roll, [["glass", 0.18], ["blueglass", 0.16], ["greenglass", 0.14], ["silverglass", 0.14], ["fins", 0.16], ["pomo", year < 1998 ? 0.12 : 0.02], ["bronze", 0.05], ["precast", 0.05]]);
     }
     if (year >= 1922 && h > 30) return roll < 0.35 ? "deco" : roll < 0.65 ? "decobrick" : "stone";
     return h > 22 ? "stone" : oldBrick();
@@ -589,9 +742,11 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
     // elevations belong to the mid- and high-rise slabs
     if (h < 26) return year < 1930 ? oldBrick() : roll < 0.75 ? "brick" : "buff";
     if (year < 1945) return h > 40 ? (roll < 0.3 ? "deco" : roll < 0.65 ? "decobrick" : "stone") : oldBrick();
-    if (year > 1995 && h > 40) return roll < 0.6 ? "glass" : "blueglass";
-    // the post-war slab blocks: panel, or a concrete grid
-    return year < 1985 && h > 30 && roll < 0.4 ? "grid" : "modern";
+    if (year > 1995 && h > 40) return pick(roll, [["glass", 0.3], ["blueglass", 0.18], ["fins", 0.2], ["greenglass", 0.12], ["silverglass", 0.12], ["precast", 0.08]]);
+    // the post-war slab blocks: panel, a concrete grid, or white precast
+    // (the post-war apartment tower was as often brick-clad as concrete)
+    if (h > 30) return pick(roll, year < 1985 ? [["grid", 0.18], ["modern", 0.22], ["precast", 0.14], ["brick", 0.2], ["buff", 0.18], ["ribbon", 0.08]] : [["modern", 0.3], ["precast", 0.25], ["pomo", 0.2], ["buff", 0.12], ["silverglass", 0.13]]);
+    return "modern";
   }
   if (cls === "retail") return year < 1965 || h < 12 ? oldBrick() : "modern";
   return year < 1945 || h < 14 ? oldBrick() : "modern";
@@ -601,13 +756,20 @@ function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
 const TINTS: Record<string, [number, number, number][]> = {
   brick: [[1, 1, 1], [0.86, 0.80, 0.78], [1.06, 0.96, 0.86], [0.78, 0.66, 0.62], [1.1, 1.0, 0.92], [0.92, 0.9, 0.94]],
   stone: [[1, 1, 1], [0.96, 0.94, 0.9], [1.02, 0.98, 0.92], [0.9, 0.9, 0.9]],
-  glass: [[1, 1, 1], [0.85, 0.95, 0.92], [1.05, 0.96, 0.84], [0.82, 0.86, 0.95]],
+  glass: [[1, 1, 1], [0.85, 0.95, 0.92], [1.05, 0.96, 0.84], [0.82, 0.86, 0.95], [0.7, 0.74, 0.8], [1.1, 1.08, 1.04], [0.8, 0.92, 1.0], [0.92, 0.88, 0.8]],
+  blackglass: [[1, 1, 1], [1.2, 1.1, 0.95], [0.9, 1.0, 1.1], [1.3, 1.3, 1.3]],
+  greenglass: [[1, 1, 1], [0.86, 1.0, 1.08], [1.08, 1.04, 0.88], [0.8, 0.86, 0.84]],
+  silverglass: [[1, 1, 1], [0.94, 0.96, 1.04], [1.04, 1.0, 0.94], [0.84, 0.86, 0.9]],
+  fins: [[1, 1, 1], [0.9, 0.9, 0.92], [1.04, 1.0, 0.94], [0.82, 0.84, 0.86]],
+  precast: [[1, 1, 1], [0.96, 0.92, 0.86], [0.92, 0.94, 0.96], [1.02, 0.96, 0.9], [0.88, 0.86, 0.84]],
+  pomo: [[1, 1, 1], [0.94, 0.9, 0.88], [1.04, 1.0, 0.96], [0.9, 0.94, 0.92]],
+  lobby: [[1, 1, 1]],
   modern: [[1, 1, 1], [0.93, 0.86, 0.78], [0.84, 0.86, 0.88], [1.0, 0.92, 0.82], [0.78, 0.76, 0.74], [0.95, 0.82, 0.72]],
   industrial: [[1, 1, 1], [0.9, 0.86, 0.82], [0.82, 0.78, 0.76]],
-  ribbon: [[1, 1, 1], [0.92, 0.93, 0.95], [1.0, 0.97, 0.92], [0.84, 0.85, 0.86]],
-  grid: [[1, 1, 1], [0.94, 0.92, 0.88], [0.86, 0.86, 0.86], [1.04, 1.0, 0.94]],
-  bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9]],
-  blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04]],
+  ribbon: [[1, 1, 1], [0.92, 0.93, 0.95], [1.0, 0.97, 0.92], [0.84, 0.85, 0.86], [0.72, 0.74, 0.78]],
+  grid: [[1, 1, 1], [0.94, 0.92, 0.88], [0.86, 0.86, 0.86], [1.04, 1.0, 0.94], [0.96, 0.9, 0.84]],
+  bronze: [[1, 1, 1], [0.9, 0.86, 0.8], [1.08, 1.0, 0.9], [1.16, 1.04, 0.86], [0.8, 0.78, 0.76]],
+  blueglass: [[1, 1, 1], [0.86, 0.98, 0.94], [0.9, 0.94, 1.04], [0.76, 0.86, 1.0], [1.06, 1.06, 1.08]],
   frame: [[1, 1, 1]],
   // white, cream, butter, sage, slate blue, barn red, grey
   clapboard: [[1, 1, 1], [1.0, 0.96, 0.86], [1.0, 0.93, 0.7], [0.78, 0.86, 0.74], [0.7, 0.8, 0.9], [0.72, 0.36, 0.3], [0.8, 0.8, 0.8]],
@@ -718,6 +880,12 @@ export const FACADE_STYLES: { key: string; name: string; era: string; maxFloors:
   { key: "glass", name: "Glass curtain wall", era: "1960-today", maxFloors: 99, variants: ["Blue-grey", "Dark", "Silver", "Green"] },
   { key: "bronze", name: "Bronze glass", era: "1970-1990", maxFloors: 99, variants: ["Bronze", "Deep bronze", "Smoked grey", "Black glass"] },
   { key: "blueglass", name: "Blue glass", era: "1990-today", maxFloors: 99, variants: ["Blue-green", "Deep blue", "Teal", "Silver-blue"] },
+  { key: "blackglass", name: "Dark tower", era: "1958-1975", maxFloors: 99, variants: ["Bronze I-beams", "Jet", "Green-black", "Blue-black"] },
+  { key: "greenglass", name: "Emerald glass", era: "1985-today", maxFloors: 99, variants: ["Emerald", "Aqua", "Sea green", "Deep green"] },
+  { key: "silverglass", name: "Mirror glass", era: "1980-today", maxFloors: 99, variants: ["Silver", "Steel", "Champagne", "Ice blue"] },
+  { key: "fins", name: "Vertical fins", era: "2000-today", maxFloors: 99, variants: ["Aluminium fins", "Black fins", "Bronze fins", "White fins"] },
+  { key: "precast", name: "White precast", era: "1975-2000", maxFloors: 60, variants: ["White", "Sand", "Rose", "Grey, paired"] },
+  { key: "pomo", name: "Postmodern granite", era: "1982-1998", maxFloors: 80, variants: ["Rose granite", "Green granite", "Red, arched", "Beige"] },
 ];
 export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [
   { key: "flat", name: "Flat", maxFloors: 999 },
@@ -757,6 +925,75 @@ export function facadeSwatches(): Record<string, string> {
 }
 
 // ---- geometry accumulation -------------------------------------------------
+
+/** Cut (or round) each convex corner of a counter-clockwise ring by frac of its shorter edge, at most maxM metres. */
+function chamferRing(r: P2[], frac: number, maxM: number, round: boolean): P2[] {
+  const n = r.length, out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+    const cross = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+    if (cross <= 0 || l1 < 1 || l2 < 1) { out.push(c); continue; }
+    const d = Math.min(maxM, frac * Math.min(l1, l2));
+    const a: P2 = [c[0] - ((c[0] - p[0]) / l1) * d, c[1] - ((c[1] - p[1]) / l1) * d];
+    const b: P2 = [c[0] + ((q[0] - c[0]) / l2) * d, c[1] + ((q[1] - c[1]) / l2) * d];
+    if (!round) { out.push(a, b); continue; }
+    // a quadratic curve from a to b with the corner as its control point
+    for (let k = 0; k <= 4; k++) {
+      const t = k / 4, u = 1 - t;
+      out.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
+    }
+  }
+  return out;
+}
+/** A square re-entrant notch d metres into each convex corner of a counter-clockwise ring. */
+function notchRing(r: P2[], d: number): P2[] {
+  const n = r.length, out: P2[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[(i + n - 1) % n], c = r[i], q = r[(i + 1) % n];
+    const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+    const cross = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+    if (cross <= 0 || l1 < d * 3 || l2 < d * 3) { out.push(c); continue; }
+    const u1: P2 = [(c[0] - p[0]) / l1, (c[1] - p[1]) / l1], u2: P2 = [(q[0] - c[0]) / l2, (q[1] - c[1]) / l2];
+    const a: P2 = [c[0] - u1[0] * d, c[1] - u1[1] * d];
+    out.push(a, [a[0] + u2[0] * d, a[1] + u2[1] * d], [c[0] + u2[0] * d, c[1] + u2[1] * d]);
+  }
+  return out;
+}
+
+/** Polygons (with optional holes) in a coarse grid, for point-in-polygon queries. */
+class PolyGrid {
+  private g = new Map<number, { r: P2[]; h: P2[][]; x0: number; y0: number; x1: number; y1: number }[]>();
+  constructor(private C: number) {}
+  add(r: P2[], h: P2[][] = []) {
+    if (r.length < 3) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const e = { r, h, x0, y0, x1, y1 }, C = this.C;
+    for (let cx = Math.floor(x0 / C); cx <= Math.floor(x1 / C); cx++)
+      for (let cy = Math.floor(y0 / C); cy <= Math.floor(y1 / C); cy++) {
+        const k = cx * 100003 + cy;
+        let a = this.g.get(k); if (!a) this.g.set(k, (a = [])); a.push(e);
+      }
+  }
+  hit(x: number, y: number): boolean {
+    const cell = this.g.get(Math.floor(x / this.C) * 100003 + Math.floor(y / this.C));
+    if (!cell) return false;
+    for (const e of cell) {
+      if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+      if (PolyGrid.inRing(e.r, x, y) && !e.h.some((h) => PolyGrid.inRing(h, x, y))) return true;
+    }
+    return false;
+  }
+  static inRing(r: P2[], x: number, y: number) {
+    let inside = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+    }
+    return inside;
+  }
+}
 
 class Buf {
   pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = [];
@@ -861,7 +1098,7 @@ export class RealCityLayer {
   constructor(
     private volumes: BuildingVolume[],
     private center: [number, number],
-    private curbs: [number, number][][],
+    _curbs: [number, number][][],   // street centre lines: furniture now reads the drawn footways instead
     private ctx: Ctx,
     private seed: number,
   ) {
@@ -896,6 +1133,7 @@ export class RealCityLayer {
     for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv;
     this.setupLights();
     this.buildCity();
+    this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
     this.buildGround();
     this.buildChannels();
     this.buildBridges();
@@ -1066,6 +1304,170 @@ export class RealCityLayer {
   }
 
   /**
+   * A LONG BLOCK IS A ROW OF BUILDINGS. A frontage of 80 m and more on one
+   * deed was drawn as one prism in one elevation, which from the air is a
+   * quarter-mile of identical windows. In life that frontage is a run of
+   * separate houses or lofts built at different times: each 18-40 m piece
+   * here takes its own elevation, paint and parapet height from the
+   * district's palette. Same deed, same footprint and roughly the same
+   * height; looks only. Returns false (and draws nothing) when the volume
+   * is not a long four-sided block.
+   */
+  private rowOf(ring0: P2[], v: BuildingVolume, fam: string, k: number, shop: boolean, tall = false): boolean {
+    // drop the in-line vertices a long frontage collects, then it must be four-sided
+    const ring = ring0.filter((c, i) => {
+      const p = ring0[(i + ring0.length - 1) % ring0.length], q = ring0[(i + 1) % ring0.length];
+      const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      const cr = (c[0] - p[0]) * (q[1] - c[1]) - (c[1] - p[1]) * (q[0] - c[0]);
+      return l1 > 0.3 && l2 > 0.3 && Math.abs(cr) / (l1 * l2) > 0.03;
+    });
+    if (ring.length < 4) return false;
+    // the long axis: the direction of the ring's longest side
+    let li = 0, lmax = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > lmax) { lmax = L; li = i; } }
+    const ux = (ring[(li + 1) % ring.length][0] - ring[li][0]) / lmax, uy = (ring[(li + 1) % ring.length][1] - ring[li][1]) / lmax;
+    let t0 = Infinity, t1 = -Infinity;
+    for (const [x, y] of ring) { const t = x * ux + y * uy; t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
+    const ll = t1 - t0;
+    // a tall block only when it is absurdly long: a 600 m slab is a row of towers
+    if (ll < (tall ? 160 : 80)) return false;
+    // one slice of the ring between two cuts across the long axis (Sutherland-Hodgman, two half-planes)
+    const clip = (r: P2[], t: number, keepAbove: boolean): P2[] => {
+      const out: P2[] = [];
+      const side = (p: P2) => (p[0] * ux + p[1] * uy - t) * (keepAbove ? 1 : -1);
+      for (let i = 0; i < r.length; i++) {
+        const p = r[i], q = r[(i + 1) % r.length], sp = side(p), sq = side(q);
+        if (sp >= 0) out.push(p);
+        if ((sp >= 0) !== (sq >= 0)) { const f = sp / (sp - sq); out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+      }
+      return out;
+    };
+    const cuts = [0];
+    let at = 0, i = 0;
+    const step = tall ? 32 : 18, spread = tall ? 26 : 22;
+    while (at < ll - step) { at += step + spread * hash01(k ^ (0x9e1 + i++), this.seed); cuts.push(Math.min(1, at / ll)); }
+    if (cuts[cuts.length - 1] < 1) cuts[cuts.length - 1] = 1;
+    const fh = this.families[fam]?.floorH ?? 3.4;
+    for (let j = 0; j + 1 < cuts.length; j++) {
+      const kj = (k * 31 + j * 7919) >>> 0;
+      const r = clip(clip(ring, t0 + cuts[j] * ll, true), t0 + cuts[j + 1] * ll, false);
+      if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
+      const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4);
+      const fk = f2 === "industrial" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
+      const tints = TINTS[fk] ?? [[1, 1, 1]];
+      const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
+      // a storey up or down now and then, never below two floors
+      const dz = tall ? -(v.z1 - v.z0) * 0.4 * hash01(kj ^ 0x5f, this.seed)
+        : hash01(kj ^ 0x5d, this.seed) < 0.35 ? (hash01(kj ^ 0x5e, this.seed) < 0.5 ? -fh : fh) : 0;
+      const z1 = Math.max(v.z0 + 2 * fh, v.z1 + dz);
+      if (tall && TOWER_FAMS.has(fk)) {
+        const tr = this.massing(r, v.z0, z1, fk, tn, v.b, kj, shop, v.c, v.y || 0);
+        this.towerTop(tr, z1, z1, fk, tn, v.b, kj, "auto");
+      } else {
+        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || (fk === "brick" && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
+      }
+      const d = this.deedOf(v.b); d.height = Math.max(d.height, z1);
+    }
+    this.lookSig.set(v.b, `${fam}|row${cuts.length - 1}`);
+    return true;
+  }
+
+  /** What each tower ended up as — family#elevation | massing | crown | tint — for the variety audit. */
+  lookSig = new Map<string, string>();
+  /** family | height | year | use of every building's top volume, for the variety audit. */
+  famOf = new Map<string, string>();
+  /**
+   * NO TWO TOWERS THE SAME SHAPE. A post-war tower was an extruded footprint
+   * here, so the skyline was a forest of one prism in different paint. Now
+   * each draws a massing from the period's real repertoire, by hash of its
+   * deed: the plain slab; a tower on a podium (the plaza-and-base of the
+   * 1960s-80s); stepped tiers; a slow taper; chamfered or rounded corners;
+   * notched, re-entrant corners; twin tops of unequal height off a shared
+   * base — and combinations. Mid-rise buildings (24-40 m) take the gentler
+   * ones. The height and footprint are the building's own; only the shape of
+   * the volume within them changes. Looks only.
+   */
+  private massing(ring0: P2[], z0: number, H: number, fam: string, t: number[], bbl: string, k: number, shop: boolean, cls: string, year: number): P2[] {
+    if (ringArea(ring0) < 0) ring0 = ring0.slice().reverse();
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; }
+    let rad = Infinity;
+    for (let i = 0; i < ring0.length; i++) {
+      const a = ring0[i], b = ring0[(i + 1) % ring0.length];
+      rad = Math.min(rad, Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
+    const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+    const inset = (r: P2[], d: number) => insetRing(r, d) ?? shrink(r, 0.82);
+    const simple = ring0.length <= 8 && rad > 7;
+    const quad = ring0.length === 4 && rad > 10;
+    const tall = H >= 40;
+    const h = (n: number) => hash01(k ^ n, this.seed);
+    type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers";
+    const opts: [M, number][] = tall
+      ? [["straight", 0.1], ["podium", 0.15], ["tiers", 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
+         ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0]]
+      : [["straight", 0.4], ["podium", 0.2], ["chamfer", simple ? 0.15 : 0], ["round", simple ? 0.1 : 0], ["notch", quad ? 0.08 : 0], ["tiers", 0.1]];
+    const m = pick(h(0x6a55), opts) as M;
+    let ring = ring0;
+    if (m === "chamfer" || m === "podium+chamfer") ring = chamferRing(ring, 0.12 + 0.12 * h(0x1c), 7, false);
+    if (m === "round" || m === "round+tiers") ring = chamferRing(ring, 0.18 + 0.1 * h(0x1d), 9, true);
+    if (m === "notch") ring = notchRing(ring, Math.min(5, rad * (0.12 + 0.08 * h(0x1e))));
+    const vol = (r: P2[], za: number, zb: number, top: boolean, sh = false, fk = fam) =>
+      this.addVolume(r, za, zb, fk, t, bbl, true, top, k, sh, false, top || sh ? cls : "", year);
+    let topRing = ring;
+    const podiumH = Math.min(24, Math.max(8, H * (0.12 + 0.08 * h(0x2a))));
+    const podFam = (fam === "glass" || fam === "blueglass" || fam === "greenglass" || fam === "silverglass" || fam === "fins")
+      ? pick(h(0x2b), [["precast", 0.35], ["pomo", 0.25], [fam, 0.4]]) : fam;
+    if (m === "podium" || m === "podium+chamfer" || m === "podium+tiers") {
+      vol(m === "podium+chamfer" ? ring0 : ring, z0, podiumH, false, shop, podFam);
+      topRing = inset(ring, 3 + 4 * h(0x2c));
+      if (m === "podium+tiers") {
+        const z1 = podiumH + (H - podiumH) * (0.6 + 0.15 * h(0x2d));
+        vol(topRing, podiumH, z1, false);
+        topRing = inset(topRing, 2.5 + 2 * h(0x2e));
+        vol(topRing, z1, H, true);
+      } else vol(topRing, podiumH, H, true);
+    } else if (m === "tiers" || m === "round+tiers") {
+      const n = 2 + Math.floor(h(0x3a) * 3);   // two to four tiers
+      let za = z0, r = ring;
+      for (let i = 0; i < n; i++) {
+        const zb = i === n - 1 ? H : z0 + (H - z0) * (0.45 + (0.5 * (i + 1)) / n) * (0.9 + 0.1 * h(0x3b + i));
+        vol(r, za, Math.min(H, zb), i === n - 1, i === 0 && shop);
+        za = Math.min(H, zb); topRing = r;
+        r = inset(r, 2 + 2.5 * h(0x3f + i));
+      }
+    } else if (m === "taper") {
+      const n = 7;
+      let za = z0;
+      for (let i = 0; i < n; i++) {
+        const zb = z0 + ((H - z0) * (i + 1)) / n;
+        const r = shrink(ring, 1 - 0.3 * (i / (n - 1)));
+        vol(r, za, zb, i === n - 1, i === 0 && shop);
+        za = zb; topRing = r;
+      }
+    } else if (m === "twin") {
+      // a shared base, then two towers of unequal height with a slot between
+      const base = H * (0.35 + 0.2 * h(0x4a));
+      vol(ring, z0, base, false, shop);
+      let li = 0, ll = -1;
+      for (let i = 0; i < 4; i++) { const a = ring[i], b = ring[(i + 1) % 4]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const lerp = (p: P2, q: P2, f: number): P2 => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+      const g = 0.06 + 0.06 * h(0x4b);
+      const t1: P2[] = [A, lerp(A, B, 0.5 - g), lerp(D, C, 0.5 - g), D];
+      const t2: P2[] = [lerp(A, B, 0.5 + g), B, C, lerp(D, C, 0.5 + g)];
+      const h2 = base + (H - base) * (0.7 + 0.15 * h(0x4c));
+      vol(t1, base, H, true);
+      vol(t2, base, h2, true);
+      topRing = t1;
+    } else {
+      vol(ring, z0, H, true, shop);
+    }
+    this.lookSig.set(bbl, `${this.variantOf(fam, k)}|${m}`);
+    return topRing;
+  }
+
+  /**
    * A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes in a
    * spire; a glass tower carries a recessed mechanical crown and a mast; the
    * International Style a plain penthouse; a stone office one setback. "auto"
@@ -1073,14 +1475,70 @@ export class RealCityLayer {
    */
   private towerTop(ring: P2[], z1: number, top: number, fam: string, t: number[], bbl: string, k: number,
     kind: "auto" | "none" | "setback" | "spire" | "mast", ov?: VolumeOv) {
-    const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass";
+    const glassy = fam === "glass" || fam === "bronze" || fam === "blueglass" || fam === "blackglass" || fam === "greenglass" || fam === "silverglass" || fam === "fins";
     if (kind === "none") return;
-    if (kind === "auto" && !(top > 60 && (glassy || fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "ribbon" || fam === "grid"))) return;
+    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fam === "deco" || fam === "decobrick" || fam === "stone"))) return;
     let cx = 0, cy = 0;
     for (const [x, y] of ring) { cx += x; cy += y; }
     cx /= ring.length; cy /= ring.length;
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
     const deco = fam === "deco" || fam === "decobrick";
+    let rad = 0; for (const [x, y] of ring) rad = Math.max(rad, Math.hypot(x - cx, y - cy));
+    // the bearing of the ring's longest side, so a cap squares up with the walls
+    let li = 0, ll = -1;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+    const bear = Math.atan2(ring[(li + 1) % ring.length][1] - ring[li][1], ring[(li + 1) % ring.length][0] - ring[li][0]);
+    const note = (c: string) => { const sg = this.lookSig.get(bbl); if (sg && !sg.includes("|c:")) this.lookSig.set(bbl, `${sg}|c:${c}`); };
+    // THE CROWNS OF THE LATER SKYLINE. Not every glass tower ends in a
+    // plant box and a mast: a pyramid cap, a stepped crown, a lantern of
+    // glass, a frame of fins carried up past the roof, a helipad, a sloped
+    // top. By hash, among the ones its family would have worn.
+    if (kind === "auto" && !deco && fam !== "stone" && TOWER_FAMS.has(fam)) {
+      const opts: [string, number][] = glassy
+        ? [["mech", 0.18], ["mech2", 0.12], ["pyramid", 0.12], ["stepped", 0.12], ["lantern", 0.12], ["fins", 0.12], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0]]
+        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["pyramid", fam === "pomo" ? 0.25 : 0.05], ["flat", 0.15]];
+      const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
+      note(c);
+      const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
+      if (c === "mech" || c === "mech2") {
+        this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, c === "mech", false, k, false, false, "", 0, ov);
+        if (c === "mech2") this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+        mastTop(z1 + (c === "mech2" ? 11 : 5));
+      } else if (c === "pyramid" && rad <= 22) {
+        // copper gone green, slate, dark bronze, or (rarely) bright steel
+        const hgt = Math.min(24, rad * (0.6 + 0.5 * hash01(k ^ 0x7c1, this.seed)));
+        const PY = [[0.36, 0.5, 0.44], [0.3, 0.32, 0.36], [0.34, 0.27, 0.2], [0.42, 0.44, 0.47], [0.62, 0.64, 0.66]];
+        const pc = fam === "pomo" ? PY[0] : PY[Math.floor(hash01(k ^ 0x7c3, this.seed) * PY.length)];
+        this.putInst("pyramid", cx, cy, z1, rad * 0.95, bear + Math.PI / 4, bbl, pc, hgt / (rad * 0.95));
+      } else if (c === "pyramid") {
+        this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+      } else if (c === "stepped") {
+        let r = ring, z = z1;
+        for (let i = 0; i < 3; i++) { r = shrink(r, 0.8); this.addVolume(r, z, z + 3.4, fam, t, bbl, true, false, k, false, false, "", 0, ov); z += 3.4; }
+        mastTop(z);
+      } else if (c === "lantern") {
+        this.addVolume(shrink(ring, 0.72), z1, z1 + 9, glassy ? "silverglass" : "glass", [1, 1, 1], bbl, true, false, k, false, false, "", 0, ov);
+        this.putInst("mast", cx, cy, z1 + 9, 1.2, 0, bbl);
+      } else if (c === "fins") {
+        const fh = 6 + 5 * hash01(k ^ 0x7c2, this.seed);
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i], b = ring[(i + 1) % ring.length];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const n = Math.max(1, Math.round(L / 2.6)), r2 = Math.atan2(b[1] - a[1], b[0] - a[0]);
+          for (let j = 0; j <= n; j++) this.putInst("fin", a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n, z1, 1, r2, bbl, undefined, fh);
+        }
+      } else if (c === "helipad") {
+        this.addVolume(shrink(ring, 0.8), z1, z1 + 3.5, fam, t, bbl, true, false, k, false, false, "", 0, ov);
+        this.putInst("helipad", cx, cy, z1 + 3.55, 1, bear, bbl);
+      } else if (c === "gable") {
+        this.addVolume(shrink(ring, 0.94), z1, z1 + Math.min(14, rad * 0.6), fam, t, bbl, true, false, k, false, true, "", 0, ov);
+      } else if (c === "penthouse") {
+        this.addVolume(shrink(ring, 0.62), z1, z1 + 4.5, "plain", [0.9, 0.9, 0.9], bbl, true, true, k);
+      }
+      const d2 = this.deedOf(bbl); d2.height = Math.max(d2.height, z1 + 8);
+      return;
+    }
+    note(deco ? "spire" : "setback");
     if (kind === "spire" || (kind === "auto" && deco)) {
       this.addVolume(shrink(ring, 0.78), z1, z1 + 7, fam, t, bbl, false, false, k, false, false, "", 0, ov);
       this.addVolume(shrink(ring, 0.56), z1 + 7, z1 + 12, fam, t, bbl, true, false, k, false, false, "", 0, ov);
@@ -1239,9 +1697,158 @@ export class RealCityLayer {
     }
   }
 
+  /**
+   * SHOPFRONTS BY TRADE. Every street-facing ground-floor bay of a shop
+   * storey gets a canopy and a fascia sign in the colours of what trades
+   * there — a cafe, a grocer, a bank, a pharmacy — and a plywood hoarding
+   * for when it is empty. Which bays are boarded is read live from the
+   * building's let share of retail (setRetail), the same number that papers
+   * over the glass; which trade a bay belongs to is looks only (the market's
+   * buildings carry no tenant roll), drawn by hash so it is stable, with
+   * downtown stone and glass leaning to banks and boutiques and the brick
+   * streets to grocers, cafes and hardware.
+   */
+  private shopBays(ring: P2[], bbl: string, seedK: number, shopH: number, famKey: string) {
+    const BAY = 5.5;
+    const uptown = famKey === "stone" || famKey === "modern" || famKey === "glass" || famKey === "deco";
+    const trades = uptown ? SHOP_TRADES_UPTOWN : SHOP_TRADES_STREET;
+    const sz = shopH / 4.4;
+    let bayN = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < BAY) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const nx = uy, ny = -ux;                          // outward, counter-clockwise ring
+      // only a wall that fronts a street: six metres out is nobody's lot
+      const mx = (a[0] + b[0]) / 2 + nx * 6, my = (a[1] + b[1]) / 2 + ny * 6;
+      if (this.lotAt2D(mx, my)) continue;
+      const n = Math.floor(L / BAY), r = Math.atan2(uy, ux);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) * (L / n);
+        const x = a[0] + ux * t, y = a[1] + uy * t;
+        // a canopy hangs over a forecourt or the footway, not into a
+        // neighbour's wall and not out over the carriageway
+        const under = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+        if (under === "bld" || under === "road") continue;
+        const tr = trades[Math.floor(hash01(seedK ^ (bayN * 0x9e37 + 0x51), 13) * trades.length)];
+        this.putInst("awning", x, y, 0, 1, r, bbl, tr.awn, sz);
+        this.putInst("shopsign", x, y, 0, 1, r, bbl, tr.sign, sz);
+        this.putInst("boards", x, y, 0, 1, r, bbl, undefined, sz);
+        bayN++;
+      }
+    }
+  }
+  /** The walls of a ring that front a street: six metres out is nobody's lot. */
+  private streetEdges(ring: P2[], minL: number) {
+    const out: { a: P2; ux: number; uy: number; L: number; r: number }[] = [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < minL) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      if (this.lotAt2D((a[0] + b[0]) / 2 + uy * 6, (a[1] + b[1]) / 2 - ux * 6)) continue;
+      out.push({ a, ux, uy, L, r: Math.atan2(uy, ux) });
+    }
+    return out;
+  }
+  /**
+   * WHAT THE STREET FRONT SAYS. The brownstone and brick rows climb to their
+   * doors up a stoop, one to a house; the works quarter's sheds face the road
+   * with loading docks. Read off the building's own family and use.
+   */
+  private streetDress(ring: P2[], bbl: string, famKey: string, cls: string, seedK: number, z1: number) {
+    // A STOOP IS A ROW HOUSE'S. Only a low brownstone or brick walk-up, and
+    // only on a front that stands at the footway — a stoop out in a forecourt
+    // is a staircase to nowhere. It comes up in the house's own stone.
+    if (cls === "multifamily" && z1 <= 16 && (famKey === "brownstone" || famKey === "brick")) {
+      if (famKey !== "brownstone" && hash01(seedK ^ 0x570f, 9) < 0.5) return;
+      for (const e of this.streetEdges(ring, 5)) {
+        const nx = e.uy, ny = -e.ux;
+        const n = Math.max(1, Math.floor(e.L / 6.2));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) * (e.L / n);
+          const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+          const foot = this.groundAt(x + nx * 2.9, y + ny * 2.9), beyond = this.groundAt(x + nx * 4.5, y + ny * 4.5);
+          const step = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+          if (step === "bld" || foot === "bld" || foot === "road" || (beyond !== "walk" && beyond !== "road")) continue;
+          this.putInst("stoop", x, y, 0, 1, e.r, bbl, famKey === "brownstone" ? [0.36, 0.24, 0.19] : [0.42, 0.38, 0.35]);
+        }
+      }
+    } else if (cls === "industrial") {
+      for (const e of this.streetEdges(ring, 10)) {
+        const n = Math.min(4, Math.floor(e.L / 12));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) * (e.L / n);
+          const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+          // the apron and canopy need open yard or road in front of them
+          const f = this.groundAt(x + e.uy * 2.6, y - e.ux * 2.6);
+          if (f === "bld" || f === "walk") continue;
+          this.putInst("dock", x, y, 0, 1, e.r, bbl);
+        }
+      }
+    }
+  }
+  private lotAt2D(x: number, y: number): boolean {
+    const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
+    const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
+    if (!cell) return false;
+    for (const e of cell) {
+      if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+      const r = e.ring;
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+  /** Shop bays per deed: canopy, sign and hoarding, by instanced mesh and index. */
+  private bays = new Map<string, { awn: [THREE.InstancedMesh, number]; sign: [THREE.InstancedMesh, number]; board: [THREE.InstancedMesh, number]; m: THREE.Matrix4[]; o: number; st: boolean }[]>();
+  private registerBays(meshes: Map<string, THREE.InstancedMesh>, items: Map<string, { bbl: string }[]>, st: boolean) {
+    const by = new Map<string, Record<string, number[]>>();
+    for (const kind of ["awning", "shopsign", "boards"]) {
+      (items.get(kind) ?? []).forEach((it, i) => {
+        if (!it.bbl) return;
+        let r = by.get(it.bbl); if (!r) by.set(it.bbl, (r = { awning: [], shopsign: [], boards: [] }));
+        r[kind].push(i);
+      });
+    }
+    const A = meshes.get("awning"), S = meshes.get("shopsign"), B = meshes.get("boards");
+    if (!A || !S || !B) return;
+    for (const [bbl, r] of by) {
+      const list = r.awning.map((ai, k) => {
+        const m = [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()];
+        A.getMatrixAt(ai, m[0]); S.getMatrixAt(r.shopsign[k], m[1]); B.getMatrixAt(r.boards[k], m[2]);
+        return { awn: [A, ai] as [THREE.InstancedMesh, number], sign: [S, r.shopsign[k]] as [THREE.InstancedMesh, number], board: [B, r.boards[k]] as [THREE.InstancedMesh, number], m, o: hash01(k * 7919 + bbl.length, 5), st };
+      });
+      // a building's empties fall on a stable set of bays: lowest draw first
+      list.sort((p, q) => p.o - q.o);
+      this.bays.set(bbl, list);
+    }
+  }
+  /** Board up as many bays as the building's retail is empty; open the rest. */
+  private applyBays(bbl: string) {
+    const list = this.bays.get(bbl);
+    if (!list) return;
+    const flat = list[0]?.st && this.flattened.has(bbl);
+    const rt = this.ret.get(bbl);
+    const dead = rt === undefined ? 0 : Math.round((1 - Math.max(0, Math.min(1, rt))) * list.length);
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    list.forEach((b, i) => {
+      const shut = i < dead;
+      b.awn[0].setMatrixAt(b.awn[1], flat || shut ? zero : b.m[0]);
+      b.sign[0].setMatrixAt(b.sign[1], flat || shut ? zero : b.m[1]);
+      b.board[0].setMatrixAt(b.board[1], flat || !shut ? zero : b.m[2]);
+      b.awn[0].instanceMatrix.needsUpdate = b.sign[0].instanceMatrix.needsUpdate = b.board[0].instanceMatrix.needsUpdate = true;
+    });
+  }
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
-    const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
+    const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * (1 + (VARIANTS[fk.split("#")[0]]?.length ?? 3)));
     const key = n ? `${fk}#${n}` : fk;
     return this.families[key] ? key : fk;
   }
@@ -1319,8 +1926,15 @@ export class RealCityLayer {
     if (shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
       walls(famKey, shopH, zw, shopH, tint);
+      if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
+    } else if (TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
+      // a tower stands on a double-height glass lobby
+      const lh = this.families.lobby.floorH;
+      walls("lobby", z0, lh, 0, [1, 1, 1]);
+      walls(famKey, lh, zw, lh, tint);
     } else {
       walls(famKey, z0, zw, 0, tint);
+      if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
     }
 
     // roof
@@ -1599,6 +2213,7 @@ export class RealCityLayer {
         for (let row = 3.5; row < 60; row += 6.2) for (let t = 2; t < ll - 2; t += 2.6) {
           const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
           if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
+          if (!this.clearOfBuildings(x, y, 2.6)) continue;
           this.putInst("lotcar", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
         }
       }
@@ -1632,9 +2247,12 @@ export class RealCityLayer {
         continue;
       }
       const top = topZ.get(v.b) ?? v.z1;
-      const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed));
+      const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed), v.t ?? 4);
+      if (v.z1 >= top - 0.01 && v.b) this.famOf.set(v.b, `${fam}|${Math.round(top)}|${v.y || 0}|${v.c}`);
       const tints = TINTS[fam];
-      const t = tints[Math.floor(hash01(k, this.seed) * tints.length)];
+      // a district's buildings mostly share a batch of the same brick or paint
+      const tr = hash01(k, this.seed);
+      const t = tints[tr < 0.55 ? ((v.t ?? 0) * 3 + 1) % tints.length : Math.floor(((tr - 0.55) / 0.45) * tints.length)];
       const shop = v.c === "retail" || (fam === "brick" && hash01(k ^ 0x51ab, this.seed) < 0.5)
         || (fam === "stone" && hash01(k ^ 0x51ab, this.seed) < 0.3) || (fam === "modern" && v.c !== "industrial" && hash01(k ^ 0x51ab, this.seed) < 0.35);
       // old low brick houses keep a pitched roof: a row of 1890s three-storey
@@ -1661,6 +2279,10 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
+      } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
+        // drawn as a row of houses (rowOf)
+      } else if (isTop && v.z0 < 0.5 && !pitched && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
+        topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else {
         this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c, v.y || 0);
       }
@@ -1758,6 +2380,24 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // the shop bay, facing local -y (out of a counter-clockwise wall)
+      case "awning": {
+        const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
+        return { g: merge([canopy, box(4.6, 0.05, 0.32, 0, -1.42, 2.42)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      }
+      // a stoop: three flights of brownstone up to a dark door, facing local -y
+      case "stoop": return { g: merge([box(1.9, 2.6, 0.45, 0, -1.3, 0), box(1.9, 1.75, 0.45, 0, -0.88, 0.45), box(1.9, 0.9, 0.45, 0, -0.45, 0.9),
+        box(0.14, 2.6, 0.95, -1.0, -1.3, 0.35), box(0.14, 2.6, 0.95, 1.0, -1.3, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      // a loading dock: a raised apron, a roll-up door, a canopy over it
+      case "dock": return { g: merge([box(4.2, 1.4, 1.15, 0, -0.7, 0), box(3.6, 0.07, 3.6, 0, -0.04, 1.15), box(4.8, 2.0, 0.12, 0, -1.0, 5.0),
+        box(0.25, 0.25, 0.5, -1.6, -1.45, 0.45), box(0.25, 0.25, 0.5, 1.6, -1.45, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x6a6c6c, roughness: 0.75, metalness: 0.2 }) };
+      // a four-sided cap: unit half-width, unit height, scaled to the roof
+      case "pyramid": return { g: merge([new THREE.ConeGeometry(Math.SQRT2, 1, 4, 1).rotateX(Math.PI / 2).translate(0, 0, 0.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.25 }), colored: true };
+      // a crown fin: a slim blade carried up past the roof, height via sz
+      case "fin": return { g: merge([box(0.35, 0.9, 1, 0, -0.2, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.4, metalness: 0.6 }) };
+      case "helipad": return { g: merge([cyl(8, 0.25, 0, 20), box(1.0, 6, 0.06, -2, 0, 0.25), box(1.0, 6, 0.06, 2, 0, 0.25), box(3, 1.0, 0.06, 0, 0, 0.25)]), mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
+      case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
+      case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
@@ -1871,6 +2511,8 @@ export class RealCityLayer {
       mesh.frustumCulled = false;
       this.scene.add(mesh); this.inst.set(kind, mesh);
     }
+    this.registerBays(this.inst, this.instItems, true);
+    for (const b of this.bays.keys()) this.applyBays(b);
     this.instItems.clear();
   }
 
@@ -2290,84 +2932,91 @@ export class RealCityLayer {
     this.scene.add(wm, sm);
   }
 
+  /**
+   * THE FOOTWAY'S FURNITURE, FROM THE FOOTWAY. Street trees, lamps, the
+   * people walking and the cars parked at the kerb are laid along the drawn
+   * footway's own kerb edge, not offset from a street's centre line, so they
+   * stand where the pavement and the carriageway actually are. Each one is
+   * then checked against the ground (groundAt): a tree must stand on the
+   * footway with its crown clear of every wall, a lamp on the footway, a
+   * parked car wholly on the carriageway with a running lane beside it.
+   */
+  private dressFootways(rnd: () => number, leafCol: () => number[], CAR: number[][], COAT: number[][]) {
+    const c = this.ctx as { sidewalks?: { ring: P2[]; holes: P2[][] }[] };
+    for (const sw of c.sidewalks ?? []) {
+      let ring = sw.ring.map((q) => this.project(q));
+      if (ring.length < 3) continue;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();   // counter-clockwise: the band is on the left
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 14) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        const ix = -uy, iy = ux;                   // into the footway
+        const rot = Math.atan2(uy, ux);
+        // how wide the footway is here, probed at the edge's middle
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        let w = 0;
+        while (w < 8 && this.groundAt(mx + ix * (w + 0.25), my + iy * (w + 0.25)) === "walk") w += 0.5;
+        if (w < 1) continue;                       // a sliver, or the band is on the other side
+        const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
+        // people, a few per block face, at a walking pace along the middle of the footway
+        if (w >= 1.5) {
+          const n = Math.max(1, Math.round(L / 16));
+          for (let k = 0; k < n; k++) {
+            const fwd = rnd() < 0.5;
+            const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
+            this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
+          }
+        }
+        // street trees in the kerb strip; a footway under two metres has none
+        if (w >= 2) {
+          const off = Math.min(1.1, w * 0.3);
+          for (let t = 7; t < L - 7; t += 11) {
+            const [x, y] = at(t, off);
+            const sz = 0.72 + rnd() * 0.3;
+            const col = rnd() < 0.33;
+            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
+            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
+          }
+        }
+        // lamps at the kerb, between the trees
+        for (let t = 12; t < L - 6; t += 27) {
+          const [x, y] = at(t, 0.45);
+          if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+        }
+        // moving traffic in the lane outside the parked row, kerb on its right
+        // (the footway is left of this edge, so the kerb lane runs against it)
+        if (L > 40) {
+          const n = Math.max(1, Math.round(L / 34));
+          for (let k = 0; k < n; k++) {
+            const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
+            if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
+            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5, col: CAR[(rnd() * CAR.length) | 0], draw: rnd() });
+          }
+        }
+        // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
+        // only where a running lane is left beside it
+        for (let t = 9; t < L - 9; t += 6.5) {
+          const [x, y] = at(t, -1.25);
+          if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
+          const [lx, ly] = at(t, -5.2);
+          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
+          this.putInst("car", x, y, 0.05, 0.95 + rnd() * 0.12, rot + (rnd() < 0.5 ? 0 : Math.PI), "", CAR[(rnd() * CAR.length) | 0]);
+        }
+      }
+    }
+  }
+
   // ---- street life --------------------------------------------------------
   private buildStreetLife() {
     let s = (this.seed * 7919) % 2147483646 + 1;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    const meta = (this.ctx as { curbMeta?: { hw: number[]; sw: number[] }[] }).curbMeta ?? [];
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
     const leafCol = () => [0.32 + rnd() * 0.08, 0.46 + rnd() * 0.1, 0.20 + rnd() * 0.06];
     const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
-    this.curbs.forEach((line, li) => {
-      const pts = line.map((p) => this.project(p));
-      const hwA = meta[li]?.hw ?? [], swA = meta[li]?.sw ?? [];
-      for (let i = 0; i + 1 < pts.length; i++) {
-        const a = pts[i], b = pts[i + 1];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const L = Math.hypot(dx, dy);
-        if (L < 20) continue;
-        const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
-        const hw = hwA[i] ?? 6, sw = swA[i] ?? 2.5;
-        const rot = Math.atan2(uy, ux);
-        // people on the footway, a few per block face, at a walking pace
-        if (sw >= 1.8) {
-          for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 14));
-            for (let k = 0; k < n; k++) {
-              const fwd = rnd() < 0.5;
-              const o = hw + sw * (0.35 + rnd() * 0.3);
-              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
-              this.walkers.push({
-                x: sx + nx * o * side, y: sy + ny * o * side,
-                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5,
-                col: COAT[(rnd() * COAT.length) | 0], draw: rnd(),
-              });
-            }
-          }
-        }
-        // moving traffic on the wider streets: one car per ~45 m each way,
-        // in the running lane inside the parked row
-        if (hw >= 5 && L > 50) {
-          for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 30));
-            for (let k = 0; k < n; k++) {
-              const o = Math.min(hw - 3.2, Math.max(1.8, hw * 0.45));
-              // keep right: one side runs a→b, the other b→a
-              const fwd = side < 0;
-              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
-              this.movers.push({
-                x: sx + nx * o * side, y: sy + ny * o * side,
-                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5,
-                col: CAR[(rnd() * CAR.length) | 0], draw: rnd(),
-              });
-            }
-          }
-        }
-        for (let t = 9; t < L - 9; t += 11) {
-          for (const side of [-1, 1]) {
-            const x = a[0] + ux * t, y = a[1] + uy * t;
-            if (sw >= 2) {
-              const o = hw + Math.max(0.8, sw * 0.45);
-              const sz = 0.75 + rnd() * 0.3;
-              // a third of the street trees are columnar — lindens and hornbeams
-              // pruned tall and narrow, as a city plants them
-              const col = rnd() < 0.33;
-              this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
-              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
-            }
-            // kerbside parking fills where the demand is; a country road is clear
-            if (hw >= 5 && rnd() < 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) {
-              const o = hw - 1.15;
-              this.putInst("car", x + ux * 3 + nx * o * side, y + uy * 3 + ny * o * side, 0.05, 0.95 + rnd() * 0.12, rot + (side > 0 ? Math.PI : 0), "", CAR[(rnd() * CAR.length) | 0]);
-            }
-          }
-          if (rnd() < 0.35 && sw >= 1.6) {
-            const o = hw + 0.5;
-            this.putInst("lamp", a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, 0.15, 1, rot - Math.PI / 2);
-          }
-        }
-      }
-    });
+    this.dressFootways(rnd, leafCol, CAR, COAT);
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
     for (const pk of (this.ctx as { parks?: { ring: P2[]; flavour?: string }[] }).parks ?? []) {
@@ -2435,6 +3084,9 @@ export class RealCityLayer {
       const pk = parksP.find((q) => inRingP(x, y, q.ring));
       const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
       const sz = 0.8 + rnd() * 1.0;
+      // a tree stands on a lawn, a yard or a footway — never in the
+      // carriageway, and never with its crown through a wall
+      if (this.groundAt(x, y) === "road" || !this.clearOfBuildings(x, y, 2.2 * sz)) continue;
       if (rnd() < pineP) {
         this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
       } else {
@@ -2686,6 +3338,7 @@ export class RealCityLayer {
     this.dynSig = sig;
     for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
     this.dynHeight.clear();
+    this.pickGrid = null;
     // the new stock is built into its own small set of buffers
     const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems;
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map();
@@ -2764,14 +3417,23 @@ export class RealCityLayer {
     // the new buildings' own plant, fire escapes and balconies
     {
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pv = new THREE.Vector3();
+      const dynInst = new Map<string, THREE.InstancedMesh>();
       for (const [kind, list] of this.instItems) {
         if (!list.length) continue;
-        const { g, mat } = this.geomFor(kind);
+        const { g, mat, colored } = this.geomFor(kind);
         const im = new THREE.InstancedMesh(g, mat, list.length);
-        list.forEach((it, i) => { q.setFromEuler(e.set(0, 0, it.r)); im.setMatrixAt(i, m4.compose(pv.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1)))); });
+        list.forEach((it, i) => {
+          q.setFromEuler(e.set(0, 0, it.r)); im.setMatrixAt(i, m4.compose(pv.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1))));
+          if (colored) im.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
+        });
         im.castShadow = im.receiveShadow = true;
-        this.dyn.add(im);
+        this.dyn.add(im); dynInst.set(kind, im);
       }
+      for (const b of this.dynBays) this.bays.delete(b);
+      const before = new Set(this.bays.keys());
+      this.registerBays(dynInst, this.instItems, false);
+      for (const b of this.bays.keys()) this.applyBays(b);
+      this.dynBays = [...this.bays.keys()].filter((b) => !before.has(b));
     }
     this.bindRanges(this.deeds, dynMeshes);
     this.dynDeeds = this.deeds;
@@ -2785,6 +3447,170 @@ export class RealCityLayer {
     const keep = this.deeds; this.deeds = deeds;
     this.flatten(bbl);
     this.deeds = keep;
+  }
+
+  // ---- what ground is this? -----------------------------------------------
+  // THE GROUND TRUTH every prop is checked against. A tree belongs on a
+  // footway, a lawn or a yard, never in a carriageway or inside a wall; a
+  // parked car belongs on the carriageway or in a car park, never on the
+  // footway. The street furniture used to be placed by offset from a street's
+  // centre line, which is right on a straight block and wrong at every
+  // junction, bend and odd-width street. Now each placement is tested against
+  // the polygons themselves: building footprints, footways (with their
+  // holes), parks and lots. Anything else is road.
+  private groundIx: {
+    bld: PolyGrid; walk: PolyGrid; park: PolyGrid; open: PolyGrid;
+  } | null = null;
+  private groundIndex() {
+    if (this.groundIx) return this.groundIx;
+    const bld = new PolyGrid(30), walk = new PolyGrid(40), park = new PolyGrid(60), open = new PolyGrid(60);
+    for (const pg of (this.ctx as { opens?: P2[][][] }).opens ?? []) {
+      if (pg[0]?.length >= 3) open.add(pg[0].map((q) => this.project(q)), pg.slice(1).map((h) => h.map((q) => this.project(q))));
+    }
+    for (const v of this.volumes) {
+      if (v.d || v.k || !v.b || v.z0 > 0.5) continue;
+      bld.add(v.r.map((q) => this.project(q)));
+    }
+    const c = this.ctx as { sidewalks?: { ring: P2[]; holes: P2[][] }[]; parks?: ({ ring: P2[] } | P2[])[] };
+    for (const sw of c.sidewalks ?? []) walk.add(sw.ring.map((q) => this.project(q)), sw.holes.map((h) => h.map((q) => this.project(q))));
+    for (const pk of c.parks ?? []) {
+      const r = Array.isArray(pk) ? pk : pk.ring;
+      if (r && r.length >= 3) park.add(r.map((q) => this.project(q)));
+    }
+    this.groundIx = { bld, walk, park, open };
+    return this.groundIx;
+  }
+  /** building | walk | park | open | lot | road */
+  groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {
+    const g = this.groundIndex();
+    if (g.bld.hit(x, y)) return "bld";
+    if (g.walk.hit(x, y)) return "walk";
+    if (g.park.hit(x, y)) return "park";
+    if (g.open.hit(x, y)) return "open";
+    if (this.lotAt2D(x, y)) return "lot";
+    return "road";
+  }
+  /** Is a circle of radius r at (x, y) clear of every building? (centre and eight points on the rim) */
+  private clearOfBuildings(x: number, y: number, r: number) {
+    const g = this.groundIndex();
+    if (g.bld.hit(x, y)) return false;
+    for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; if (g.bld.hit(x + Math.cos(a) * r, y + Math.sin(a) * r)) return false; }
+    return true;
+  }
+  /** Every corner of a w x l footprint at (x, y), bearing r, on one of the allowed grounds. */
+  private footprintOn(x: number, y: number, r: number, w: number, l: number, ok: string[]) {
+    const ux = Math.cos(r), uy = Math.sin(r);
+    for (const [a, b] of [[0, 0], [l / 2, w / 2], [l / 2, -w / 2], [-l / 2, w / 2], [-l / 2, -w / 2]]) {
+      if (!ok.includes(this.groundAt(x + ux * a - uy * b, y + uy * a + ux * b))) return false;
+    }
+    return true;
+  }
+  /** For the harness: where each placed prop actually stands, by kind. */
+  auditGround(kinds = ["trunk", "pine", "car", "lotcar", "lamp", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
+    const out: Record<string, Record<string, number>> = {};
+    const e = new THREE.Matrix4();
+    for (const k of kinds) {
+      const m = this.inst.get(k);
+      if (!m) continue;
+      const row: Record<string, number> = {};
+      for (let i = 0; i < m.count; i++) {
+        m.getMatrixAt(i, e);
+        const el = e.elements;
+        if (el[0] === 0 && el[1] === 0 && el[5] === 0) continue;   // hidden
+        // wall-mounted kinds: where they stand is a pace out from the wall
+        let px = el[12], py = el[13];
+        if (k === "stoop" || k === "dock" || k === "awning") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
+        const gk = this.groundAt(px, py);
+        row[gk] = (row[gk] ?? 0) + 1;
+      }
+      out[k] = row;
+    }
+    return out;
+  }
+
+  // ---- picking -------------------------------------------------------------
+  // WHAT IS UNDER THE POINTER, IN 3D. The flat parcel layer answers with the
+  // lot whose FOOTPRINT is under the cursor, which from a pitched camera is
+  // the street behind a tower, not the tower you are pointing at. This walks
+  // the pointer's ray down from the eye and stops at the first lot whose
+  // building stands taller than the ray at that spot — or, failing that, the
+  // lot the ray lands on.
+  private pickGrid: Map<number, { bbl: string; ring: P2[]; x0: number; y0: number; x1: number; y1: number }[]> | null = null;
+  private static PICK_CELL = 60;
+  private pickMax = 0;
+  private pickTop() { return this.pickMax; }
+  private pickIndex() {
+    if (this.pickGrid) return this.pickGrid;
+    const g = new Map<number, { bbl: string; ring: P2[]; x0: number; y0: number; x1: number; y1: number }[]>();
+    const C = RealCityLayer.PICK_CELL;
+    const bbls = new Set<string>([...Object.keys(this.lotRingLL), ...this.deeds.keys(), ...this.dynDeeds.keys()]);
+    for (const bbl of bbls) {
+      const ring = this.lotRing(bbl);
+      if (!ring || ring.length < 3) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const e = { bbl, ring, x0, y0, x1, y1 };
+      for (let cx = Math.floor(x0 / C); cx <= Math.floor(x1 / C); cx++)
+        for (let cy = Math.floor(y0 / C); cy <= Math.floor(y1 / C); cy++) {
+          const k = cx * 100003 + cy;
+          let a = g.get(k); if (!a) g.set(k, (a = [])); a.push(e);
+        }
+    }
+    let m = 0;
+    for (const d of this.deeds.values()) m = Math.max(m, d.height);
+    for (const v of this.dynHeight.values()) m = Math.max(m, v);
+    this.pickMax = m + 1;
+    this.pickGrid = g;
+    return g;
+  }
+  /** The lot under a pointer at (px, py) CSS pixels in the map container, building first. */
+  pickAt(px: number, py: number): string | null {
+    const el = this.map?.getContainer();
+    if (!el) return null;
+    const w = el.clientWidth || 1, h = el.clientHeight || 1;
+    const nx = (px / w) * 2 - 1, ny = 1 - (py / h) * 2;
+    const toWorld = (z: number) => new THREE.Vector3(nx, ny, z).applyMatrix4(this.camera.projectionMatrixInverse).applyMatrix4(this.camera.matrix);
+    const a = toWorld(-1), b = toWorld(1);
+    if (![a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) return null;
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    if (len <= 0) return null;
+    dir.divideScalar(len);
+    // start at the eye, not the near plane
+    const o = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix);
+    if (dir.z >= 0) return null;   // pointing at the sky
+    const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
+    const inRing = (r: P2[], x: number, y: number) => {
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    const lotAt = (x: number, y: number, z: number | null) => {
+      const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
+      if (!cell) return null;
+      for (const e of cell) {
+        if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+        if (z !== null) {
+          const ht = this.dynHeight.get(e.bbl) ?? (this.flattened.has(e.bbl) ? 0 : this.deeds.get(e.bbl)?.height ?? 0);
+          if (ht < z) continue;
+        }
+        if (inRing(e.ring, x, y)) return e.bbl;
+      }
+      return null;
+    };
+    // walk until the ray reaches the ground; finer near the eye
+    const tGround = -o.z / dir.z;
+    const p = new THREE.Vector3();
+    for (let t = 0, n = 0; t < tGround && n < 4000; n++) {
+      p.copy(o).addScaledVector(dir, t);
+      if (p.z < this.pickTop()) { const hit = lotAt(p.x, p.y, p.z); if (hit) return hit; }
+      t += Math.max(1.5, t * 0.003);
+    }
+    p.copy(o).addScaledVector(dir, tGround);
+    return lotAt(p.x, p.y, null);
   }
 
   buildingFrame(bbl: string): { radius: number; height: number } | null {
@@ -2998,10 +3824,11 @@ export class RealCityLayer {
   setRetail(r: Map<string, number>) {
     const touched = new Set<string>([...this.ret.keys(), ...r.keys()]);
     this.ret = new Map(r);
-    for (const b of touched) this.refreshDeed(b);
+    for (const b of touched) { this.refreshDeed(b); this.applyBays(b); }
     this.map?.triggerRepaint();
   }
   private ret = new Map<string, number>();
+  private dynBays: string[] = [];
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }

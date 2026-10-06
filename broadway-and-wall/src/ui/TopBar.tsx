@@ -87,15 +87,6 @@ function BackButton() {
   );
 }
 
-// The era's headline, cut to fit an 92px tile. Long form is in the tooltip.
-const ERA_SHORT: Record<string, string> = {
-  postwar: "long boom",
-  greatinflation: "inflation",
-  volcker: "dear money",
-  disinflation: "disinflation",
-  zirp: "cheap money",
-};
-
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
   // Icons-only rail. Until the player chooses, it follows the window: labels
@@ -340,12 +331,6 @@ export default function TopBar() {
               wide
               w={118}
               keep
-              // The calendar is a count of months; the era is the decade the
-              // money behaves like. A 17% base rate under "Jan 2000" is not a
-              // fault, and the tooltip is where the screen says so.
-              title={game.econ.eraLabel
-                ? `${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""} The calendar counts your years; the era is the decade the money behaves like.`
-                : undefined}
             />
             <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={88} keep
               title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${line > 0 && !(game.loc?.balance) ? ` Undrawn credit line ${usd(line)} on top — draw it on Capital → Debt.` : ""}`} />
@@ -479,7 +464,7 @@ export default function TopBar() {
                 full picture is a click away on City → Economy. */}
             <span className="vital-pair">
               <Stat
-                label={game.econ.eraLabel ? `Market · ${ERA_SHORT[game.econ.eraKey ?? ""] ?? game.econ.eraLabel}` : "Market"}
+                label="Market"
                 value={`${game.econ.phase} · ${pct(game.econ.indexRate)}`}
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={2}
@@ -487,13 +472,12 @@ export default function TopBar() {
                 w={150}
                 onClick={() => setPage("economy")}
                 title={[
-                  `City cycle: ${game.econ.phase}. Base rate ${pct(game.econ.indexRate)} — the benchmark every loan in town prices off; floating loans reprice to it monthly (through the cap strike, if you bought one).`,
+                  `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is the term premium: what certainty costs.`,
                   vacDpp === null
                     ? "Office vacancy change appears after the first year of tape."
                     : vacDpp >= 2
                       ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago — the soft-market tell. In simulated centuries, real rents were lower three years later ~93% of the time.`
                       : `Office vacancy vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp. Rising ≥2 pp is the soft-market tell.`,
-                  game.econ.eraLabel ? `Era: ${game.econ.eraLabel} — ${game.econ.eraBlurb ?? ""}` : "",
                   "Click for the Economy.",
                 ].filter(Boolean).join(" ")}
               />

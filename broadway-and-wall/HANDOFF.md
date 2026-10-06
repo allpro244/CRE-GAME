@@ -1102,3 +1102,58 @@ buildings genuinely sign nothing for years — open question, not fixed here.
 
 Tests: `quiet-clock`, `tray`, `sheet-review` (in check); `agent-desk`,
 `agent-mandate`, `plan-desk`, `plan-ui` rewritten for the two dials.
+
+## 12. THE ECONOMY IS NOT A SETTING; FLOATING PAPER (Oct 2026)
+
+**No economy on the start screen.** Owner: "random every single time with no
+hint". `normalizeSetup` forces `era: "random"` and `credit: "drawn"`; the era
+and credit sections and the four era presets are gone from `GameSetup.tsx`.
+The store deals the town from the setup seed and the RUN from a fresh random
+seed (`startRun`), so a shared seed is the same map in an unseen economy; the
+firm keeps the name the setup page showed. `econ.eraLabel/eraBlurb` are no
+longer written (the era key stays for the engine's own readers), the opening
+news states only the rate and the credit window, and the top bar, Economy
+page and saves list never name the era.
+
+**The bank opens at its own rule** (`applyEra`, regime.ts). The opening policy
+rate was drawn from the era's historical range independently of the inflation,
+unemployment and r* drawn for the same economy, so the first meetings walked it
+toward the rule: 47 of 60 openings saw the loan index fall >50bp in two years,
+and every era fell on average. It now opens at the Taylor rule market.ts reads
+(no supply shock, the bank's u* at the truth, no Volcker restore term — that is
+the regime change, and an inflation era opens before it), offset ±0.5 point by
+the era draw's position in its range. `Era.overshoot` keeps the morning-after
+era at its drawn rate: that era IS the bank sitting above its rule. Measured
+over 80 openings: falls 32, rises 23 at two years; 31 / 36 at five. The first
+year still tilts to cuts in the long-expansion and disinflation eras (−0.3 to
+−0.4 pt mean) as opening unemployment drifts up; not chased further. Baseline
+regenerated: on 12 paired seeds no standing metric moved past |t| 1.5 — the
+6-seed shift is the re-roll.
+
+**Floating paper on stabilised buildings.** `Econ.shortIndex` = policy + a
+money-market spread (0.15, up to +0.75 when the credit window shuts;
+`shortIndexFor` in regime.ts). Every floating loan prices (`quote`) and resets
+(tickLoan) off it, caps are struck against it, and floaters are SIZED at the
+stressed rate (rate + 1, the cap strike). New desks: `harborFloat` and
+`savingsFloat` (bank floaters: 5 yr, recourse, prepay at par, spread 0.8–1.0
+over the same bank's fixed sheet) and `agencyArm` (Meridian's agency desk:
+apartments only via `LoanProduct.classes`, non-recourse, 10 yr, cap required,
+does not close in a crunch). Old saves: `migrateFloatingBench` re-bases each
+floating loan's spread and cap strike by today's index gap, so the coupon does
+not move on load. Not built: a term structure with expectations in the loan
+index — fixed paper still prices off policy + term premium, so the
+fixed/floating gap is the term premium alone. Test: `test/floating.mjs`.
+
+**Found on the re-roll, fixed rather than re-seeded.**
+- *A rival's listing conveyed a different building from the one it priced.*
+  Rivals strike the ask on `conveyedValue(..., assetGrade(r, rec))`; the
+  listing sweep then stamped the anonymous age-derived grade, so a worn
+  walk-up asked $409K and marked $498K the day it closed (levered-close,
+  seed 7919). `stampListing` takes the grade and the sweep passes
+  `gradeOf(s, rec)` for any listing with a `sellerId` — one answer.
+- *An empty-book firm sat at negative equity outside arrears* (rival-husks):
+  the loan call left cash at exactly 0 and reset `stressMs`. `settleEmptyBook`
+  now starts the stress clock when debt survives the sweep, and the arrears
+  test reads `calledShort` as well as `cash < 0`.
+- `test/buybox.mjs`'s land-pencils fixture searches seeds 777 / 12007 /
+  550991 — the criterion is unchanged, the re-roll moved which lot pencils.

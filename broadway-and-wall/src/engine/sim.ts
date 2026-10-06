@@ -29,7 +29,7 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
-import { initRivals, tickRivals, fundJobs } from "./rivals";
+import { initRivals, tickRivals, fundJobs, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -272,14 +272,14 @@ export function newGame(
   // and nothing on screen said why — the owner read it as the rate being
   // wrong. It is not wrong; it is a different decade wearing this year's
   // date, and the player is owed the sentence.
-  if (s.econ.eraLabel) {
-    s.news.push({
-      q: 0,
-      kind: "info",
-      text: `${s.econ.eraLabel}. ${s.econ.eraBlurb ?? ""} Money opens at ${s.econ.indexRate.toFixed(2)}% `
-        + `with the credit window ${Math.round((s.econ.creditIdx ?? 1) * 100)}% open; the calendar says ${monthLabel(0)}, the market says which decade it is.`,
-    });
-  }
+  // The facts only — what money costs and how open the desks are. Which
+  // decade the economy behaves like is for the player to read off the tape;
+  // the owner asked for no hint of it (Oct 2026).
+  s.news.push({
+    q: 0,
+    kind: "info",
+    text: `Money opens at ${s.econ.indexRate.toFixed(2)}% with the credit window ${Math.round((s.econ.creditIdx ?? 1) * 100)}% open.`,
+  });
   return s;
 }
 
@@ -360,7 +360,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       continue;
     }
     const r = resolveRec(parcels, s, li.bbl);
-    if (r) stampListing(s, r, li);
+    if (r) stampListing(s, r, li, li.sellerId ? gradeOf(s, r) : undefined);
   }
   const ASK_FLOOR = 0.70;
   // ...AND A SELLER WHOSE BUILDING HAS APPRECIATED TAKES IT OFF THE MARKET.

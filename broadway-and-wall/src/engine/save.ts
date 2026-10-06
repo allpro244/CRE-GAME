@@ -4,6 +4,7 @@ import type { Credit, GameState, PlanRow } from "./types";
 import { clearStyleOverrides, ensurePeople } from "./people";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
+import { shortIndexOf } from "./market";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -205,6 +206,26 @@ function migratePlanRows(state: GameState): void {
 type LeasingPlanAny = { sheet: Record<string, unknown> & { byBbl?: Record<string, unknown> } };
 const STARTER_ROW_FALLBACK = { targetNePct: 0.92, patienceM: 12 };
 
+/**
+ * FLOATING PAPER MOVES TO THE SHORT INDEX (Oct 2026). A loan written before
+ * the short index existed reset on the loan index. The contract is what it
+ * was: re-base its spread and its cap strike by today's gap between the two
+ * indexes, so the coupon the borrower pays this month does not move on load.
+ */
+function migrateFloatingBench(state: GameState): void {
+  const e = state.econ;
+  if (!e) return;
+  const gap = e.indexRate - shortIndexOf(e);
+  for (const h of Object.values(state.holdings ?? {})) {
+    const l = h.loan;
+    if (!l || !(l.floating ?? l.product === "float") || l.bench === "short") continue;
+    l.spread = +((l.spread ?? 0) + gap).toFixed(2);
+    if (l.cap) l.cap = { ...l.cap, strike: +(l.cap.strike - gap).toFixed(2) };
+    l.bench = "short";
+  }
+  if (e.shortIndex === undefined) e.shortIndex = shortIndexOf(e);
+}
+
 function migrateLegacyMandateDials(state: GameState): void {
   const raw = state as GameState & {
     agentFloor?: number;
@@ -264,6 +285,7 @@ export function migrateSaveState(state: GameState): GameState {
   // Phase 5: leftover mandate dials seed a starter sheet once, then drop.
   migrateLegacyMandateDials(state);
   migratePlanRows(state);
+  migrateFloatingBench(state);
   if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

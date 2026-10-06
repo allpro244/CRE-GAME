@@ -6,8 +6,8 @@ import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 import {
-  DEFAULT_SETUP, PRESETS, CREDIT_OPTIONS, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
-  eraOptions, type GameSetup, type CreditChoice, type FieldChoice, type HomeChoice,
+  DEFAULT_SETUP, PRESETS, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
+  type GameSetup, type CreditChoice, type FieldChoice, type HomeChoice,
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
@@ -56,19 +56,14 @@ function saveCustom(list: CustomPreset[]) {
 const SECTIONS = [
   { id: "presets", label: "Presets" },
   { id: "city", label: "City" },
-  { id: "era", label: "Era & money" },
   { id: "firm", label: "Starting firm" },
   { id: "competition", label: "Competition" },
-  { id: "world", label: "Historical settings" },
   { id: "goal", label: "Goal" },
   { id: "clock", label: "The clock" },
   { id: "seed", label: "Seed" },
   { id: "sandbox", label: "Sandbox" },
 ] as const;
 
-const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
-const range = (r: [number, number], f: (x: number) => string) => `${f(r[0])}–${f(r[1])}`;
-const PHASE_WORD: Record<string, string> = { expansion: "expansion", peak: "peak", recession: "contraction", recovery: "trough & recovery", depression: "depression" };
 
 export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const phase = useStore((s) => s.phase);
@@ -81,7 +76,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const cities = cityList();
   const sizes = sizeList();
   const devs = developmentList();
-  const eras = eraOptions();
 
   const fresh = (): Draft => {
     const island = currentCity();
@@ -124,8 +118,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       size: isWritten ? pick(extentList()).id : pick(sizes).id,
       dev: pick(devs).id,
       cash0: pick(START_CASH_CHOICES),
-      era: pick(["random", ...eras.map((e) => e.key)]),
-      credit: pick(CREDIT_OPTIONS).id,
       field: pick(FIELDS).id,
       inherit: pick([0, 0, 2, 3, 4] as const),
       home: pick(HOME_OPTIONS).id,
@@ -170,7 +162,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   }, [active]);
   const go = (id: string) => document.getElementById(`setup-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  const eraSel = eras.find((e) => e.key === d.era);
   const islandWord = cityName(d.island, d.seed) || cities.find((c) => c.id === d.island)?.name || "the island";
   const firmPlaceholder = generateFirmName(d.seed).name;
   const sizeName = isWritten ? extentList().find((e) => e.id === d.size)?.name : sizes.find((s) => s.id === d.size)?.name;
@@ -179,13 +170,11 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
   const summary = useMemo(() => {
     const bits = [
-      eraSel ? eraSel.label : "a seeded era",
-      d.credit !== "drawn" ? (d.credit === "loose" ? "easing credit" : "tightening credit") : null,
       d.field !== "standard" ? "before the opportunity funds" : null,
       d.inherit ? `${d.inherit} family buildings` : null,
     ].filter(Boolean);
     return bits.join(" · ");
-  }, [eraSel, d.credit, d.field, d.inherit]);
+  }, [d.field, d.inherit]);
 
   const breakGround = () => {
     pendingGoal.id = d.sandbox ? null : d.goal;
@@ -212,8 +201,8 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
             <div className="setup-kicker">New campaign</div>
             <div className="start-title">Game setup</div>
             <div className="start-sub">
-              Which world you play in. Nothing on this page is a difficulty setting — every choice is a position the
-              market has actually opened from, and the defaults are the standard game.
+              Which town you play in and the firm you bring to it. Nothing on this page is a difficulty setting, and the
+              economy is not on it at all — it is drawn fresh every game.
             </div>
           </div>
           {onBack && <button type="button" className="setup-back" onClick={onBack}>◂ Back</button>}
@@ -283,35 +272,9 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
             </div>
           </section>
 
-          {/* -------------------------------------------------------------- era */}
-          <section id="setup-era" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">2</span>Starting era &amp; monetary regime</h2>
-            <p className="setup-lede">
-              The five positions the American property market has actually opened from (regime.ts). Each sets what money
-              costs, what inflation is doing, how much space is empty and where in the cycle the city stands — together,
-              because they move together. The cycle phase follows the era: a 14% policy rate does not coexist with an expansion.
-            </p>
-            <div className="setup-cards setup-eras">
-              <button type="button" className={"setup-card" + (d.era === "random" ? " on" : "")} aria-pressed={d.era === "random"} onClick={() => up({ era: "random" })}>
-                <strong>Drawn from the seed</strong>
-                <span>The standard game: weighted by how much of the last century each era describes — 30% a long expansion, 26% a disinflation, 20% after a crash, 13% inflation, 11% the morning after.</span>
-              </button>
-              {eras.map((e) => (
-                <button key={e.key} type="button" className={"setup-card" + (d.era === e.key ? " on" : "")} aria-pressed={d.era === e.key} onClick={() => up({ era: e.key })}>
-                  <strong>{e.label}</strong>
-                  <span>{e.blurb}</span>
-                  <span className="setup-facts mono">
-                    policy {range(e.policy, (x) => x.toFixed(1) + "%")} · inflation {range(e.infl, (x) => pct(x))}<br />
-                    credit window {range(e.creditIdx, (x) => Math.round(x * 100) + "%")} open · opens in {PHASE_WORD[e.phase] ?? e.phase}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
           {/* ------------------------------------------------------------- firm */}
           <section id="setup-firm" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">3</span>Starting firm</h2>
+            <h2 className="setup-h"><span className="setup-n">2</span>Starting firm</h2>
             <div className="start-cols setup-cols2">
               <div className="start-col">
                 <div className="start-col-head">capital</div>
@@ -358,7 +321,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
           {/* ------------------------------------------------------ competition */}
           <section id="setup-competition" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">4</span>Competition</h2>
+            <h2 className="setup-h"><span className="setup-n">3</span>Competition</h2>
             <p className="setup-lede">
               Which generation of capital owns the town on day one. How MANY firms the town supports is an output, not a
               setting: funds are raised in good years and fail in bad ones, and the roster is sized to the map.
@@ -400,40 +363,9 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
             </div>
           </section>
 
-          {/* ------------------------------------------------------------ world */}
-          <section id="setup-world" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">5</span>Historical settings</h2>
-            <p className="setup-lede">Not difficulty: each is a real position inside the era you chose.</p>
-            <div className="start-cols setup-cols2">
-              <div className="start-col">
-                <div className="start-col-head">opening credit climate</div>
-                {CREDIT_OPTIONS.map((c) => opt(d.credit === c.id, () => up({ credit: c.id }), c.label,
-                  <>{c.note}{eraSel && c.id !== "drawn" ? ` In ${eraSel.label.toLowerCase()}: the window opens ${Math.round((c.id === "loose" ? eraSel.creditIdx[1] : eraSel.creditIdx[0]) * 100)}% open.` : ""}</>, c.id))}
-                <div className="start-opt-note" style={{ padding: "6px 9px" }}>
-                  In the two crunch eras the desks are shut at both ends of the band — tightening shows up as a dearer
-                  loan, not a smaller one. In a long expansion it moves the advance itself.
-                </div>
-              </div>
-              <div className="start-col">
-                <div className="start-col-head">fixed at their historical rates</div>
-                <div className="setup-fixed">
-                  <strong>Shocks</strong>
-                  <span>Level events — a trade leaving town, a use class restructured — arrive at the rates counted off the real
-                    record: a trade event about once in 22 years, a use-class event once in 30. Some careers see one, some nine.
-                    That spread is the draw; turning the rate down would be a dial, so it is not offered.</span>
-                </div>
-                <div className="setup-fixed">
-                  <strong>Zoning</strong>
-                  <span>The city rezones districts on its own reading of scarcity, and you can file for a variance. There is one
-                    planning process in the engine, not a permissive and a restrictive one to choose between.</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
           {/* ------------------------------------------------------------- goal */}
           <section id="setup-goal" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">6</span>Goal</h2>
+            <h2 className="setup-h"><span className="setup-n">4</span>Goal</h2>
             <p className="setup-lede">A target and a deadline, read off numbers the game already keeps. None is a hundred years with no finish line.</p>
             <div className="start-goals">
               <button type="button" className={"start-goal" + (d.goal === null ? " start-goal-on" : "")} onClick={() => up({ goal: null })} disabled={d.sandbox}>
@@ -450,7 +382,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
           {/* ------------------------------------------------------------ clock */}
           <section id="setup-clock" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">7</span>How the clock runs</h2>
+            <h2 className="setup-h"><span className="setup-n">5</span>How the clock runs</h2>
             <p className="setup-lede">What stops Yr, Skip and Play. All of it stays on the docket either way, and all of it can be changed in Settings.</p>
             <div className="start-cols setup-cols2">
               <div className="start-col">
@@ -475,10 +407,11 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
           {/* ------------------------------------------------------------- seed */}
           <section id="setup-seed" className="setup-sec">
-            <h2 className="setup-h"><span className="setup-n">8</span>Seed</h2>
+            <h2 className="setup-h"><span className="setup-n">6</span>Seed</h2>
             <p className="setup-lede">
-              The seed deals the town and every draw after it. The same seed with the same choices is the same world —
-              share it, or replay it.
+              The seed deals the town — its streets, its stock, its owners. Share it to play the same map. The economy is
+              not on this page and not in the seed: what money costs, where the cycle stands and which way it goes next are
+              drawn fresh every game, and the market tells you as you play.
             </p>
             <div className="start-col setup-seed">
               <div className="setup-row">
@@ -503,7 +436,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
           {/* ---------------------------------------------------------- sandbox */}
           <section id="setup-sandbox" className="setup-sec setup-sandbox">
-            <h2 className="setup-h"><span className="setup-n">9</span>Sandbox</h2>
+            <h2 className="setup-h"><span className="setup-n">7</span>Sandbox</h2>
             <div className={"setup-sandbox-box" + (d.sandbox ? " on" : "")}>
               <label className="setup-check">
                 <input type="checkbox" checked={d.sandbox} onChange={(e) => up({ sandbox: e.target.checked, ...(e.target.checked ? { goal: null } : {}) })} />

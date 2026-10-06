@@ -4,7 +4,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
-import { applyEra, driftInflTarget, CAP_RAIL } from "./regime";
+import { applyEra, driftInflTarget, CAP_RAIL, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
 
@@ -452,6 +452,14 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
 // meant the two most consequential rate environments in modern history were
 // both outside what this game could express.
 const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
+
+/** The short index, for a save that predates it. */
+export { shortIndexFor };
+export function shortIndexOf(e: { shortIndex?: number; indexRate: number; creditIdx?: number; nat?: { policy?: number } }): number {
+  if (e.shortIndex !== undefined) return e.shortIndex;
+  if (e.nat?.policy !== undefined) return shortIndexFor(e.nat.policy, e.creditIdx ?? 1);
+  return Math.max(0.05, e.indexRate - 1.40);
+}
 
 
 /**
@@ -1203,9 +1211,11 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   {
     // The setup page may name the era and the opening credit position inside
     // it (setup.ts); absent, the seed draws both exactly as it always has.
-    const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>,
-      s.setup ? { eraKey: s.setup.era !== "random" ? s.setup.era : undefined, credit: s.setup.credit !== "drawn" ? s.setup.credit : undefined } : undefined);
-    econ.eraKey = era.key; econ.eraLabel = era.label; econ.eraBlurb = era.blurb;
+    // Always drawn off the seed. The era is kept on the economy for the
+    // engine's own readers (deposit insurance, eraOf) and never labelled:
+    // the player reads the economy from what it does, not from a name.
+    const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
+    econ.eraKey = era.key;
   }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
   //
@@ -1816,6 +1826,7 @@ export function tickEcon(s: GameState) {
       n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30),
       0.2, 4.5);
     e.indexRate = clamp(n.policy + n.termPrem, RATE_FLOOR, RATE_CEIL);
+    e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);
     // the era, for anything that still reads it — now an OUTPUT of the nation
     e.rateRegime = clamp(n.policy + premBase, RATE_FLOOR, RATE_CEIL);
   }

@@ -351,6 +351,8 @@ export interface Loan {
   origValue?: number;
   product: string;
   floating?: boolean;
+  /** Floating paper: which index it resets on. "short" since Oct 2026; absent on older saves until migrated. */
+  bench?: "short";
   points?: number;
   recourse?: boolean;         // a personal guarantee: a deficiency follows you
   prepay?: "open" | "stepdown" | "yieldmaint";
@@ -1413,7 +1415,17 @@ export interface EconHistoryPoint {
 }
 
 export interface Econ {
+  /** The LOAN INDEX: policy + term premium — what fixed paper prices off. */
   indexRate: number;
+  /**
+   * THE SHORT INDEX: the policy rate plus a money-market spread that widens
+   * when credit is frightened (the SOFR/LIBOR leg). Floating paper prices and
+   * reprices off this, not off the loan index, because a floater has no term
+   * to charge a term premium for — that premium is the price of the fixed
+   * rate's certainty, and the gap between the two is the whole fixed-versus-
+   * floating decision. See market.ts (set beside indexRate) and debt.ts.
+   */
+  shortIndex?: number;
   /**
    * THE CITY, NOT THE ASSET CLASSES.
    *

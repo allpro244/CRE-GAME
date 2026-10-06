@@ -145,23 +145,19 @@ export interface SetupPreset {
  * was asked for in the gauntlet and is not in it — see the header.
  */
 export const PRESETS: SetupPreset[] = [
-  { id: "standard", label: "The standard game", note: "A seeded era, today's street, $2.5M and nothing else.", setup: { ...DEFAULT_SETUP, cash0: 2_500_000 } },
-  { id: "1975", label: "1975: inflation", note: "The Great Inflation, the street before the opportunity funds. A mortgage costs more every quarter you wait.",
-    setup: { era: "greatinflation", credit: "drawn", field: "prefunds", inherit: 0, sandbox: false } },
-  { id: "2009", label: "2009: pick up the pieces", note: "After the crash, credit at the tight end of the band, half the town changing hands at the courthouse.",
-    setup: { era: "zirp", credit: "tight", field: "standard", inherit: 0, sandbox: false } },
-  { id: "calm", label: "Calm decades", note: "A long postwar expansion with easing credit. Calm is the money, not the swans: level events still arrive at their historical rate.",
-    setup: { era: "postwar", credit: "loose", field: "prefunds", inherit: 0, sandbox: false } },
-  { id: "gauntlet", label: "Gauntlet: 1981, tight credit", note: "The morning after Volcker at the tight end of the band, with $1M. Shock frequency is historical — it is not a setting.",
-    setup: { era: "volcker", credit: "tight", field: "standard", inherit: 0, sandbox: false, cash0: 1_000_000 } },
-  { id: "family", label: "The family firm", note: "Three of the family's buildings in the middle ring, with the family's light leverage, in a seeded era.",
+  { id: "standard", label: "The standard game", note: "Today's street, $2.5M and nothing else.", setup: { ...DEFAULT_SETUP, cash0: 2_500_000 } },
+  { id: "family", label: "The family firm", note: "Three of the family's buildings in the middle ring, with the family's light leverage.",
     setup: { era: "random", credit: "drawn", field: "standard", inherit: 3, home: "middle", sandbox: false } },
 ];
 
 export function normalizeSetup(p: Partial<GameSetup> | undefined): GameSetup {
   const s = { ...DEFAULT_SETUP, ...(p ?? {}) } as GameSetup;
-  if (s.era !== "random" && !ERAS.some((e) => e.key === s.era)) s.era = "random";
-  if (!CREDIT_OPTIONS.some((c) => c.id === s.credit)) s.credit = "drawn";
+  // THE ECONOMY IS NOT A SETTING (owner, Oct 2026): "I want that to be random
+  // every single time with no hint on it". The era and the credit climate
+  // are always drawn; a setup that names either — an old preset, an old
+  // save's record — is read as the draw.
+  s.era = "random";
+  s.credit = "drawn";
   if (!FIELDS.some((f) => f.id === s.field)) s.field = "standard";
   if (![0, 2, 3, 4].includes(s.inherit)) s.inherit = 0;
   if (!HOME_OPTIONS.some((h) => h.id === s.home)) s.home = "any";
@@ -189,9 +185,8 @@ export function isDefaultWorld(s: GameSetup | undefined): boolean {
 export function describeSetup(s: GameSetup | undefined, eraKey?: string): string {
   if (!s) return "";
   const bits: string[] = [];
-  const era = ERAS.find((e) => e.key === (s.era !== "random" ? s.era : eraKey));
-  if (era) bits.push(s.era === "random" ? `${era.label} (drawn)` : era.label);
-  if (s.credit !== "drawn") bits.push(s.credit === "loose" ? "easing credit" : "tightening credit");
+  // The economy is never named — not on the saves list, not on the record.
+  void eraKey;
   if (s.field !== "standard") bits.push(FIELDS.find((f) => f.id === s.field)?.label.toLowerCase() ?? s.field);
   if (s.inherit) bits.push(`${s.inherit} family buildings`);
   if (s.sandbox) bits.push("SANDBOX");

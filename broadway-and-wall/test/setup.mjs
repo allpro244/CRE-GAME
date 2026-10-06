@@ -45,35 +45,38 @@ for (const seed of [550991, 12007]) {
     `seed ${seed}: ${YEARS} years, hash ${hash(a)} == ${hash(b)}${diverged >= 0 ? ` — DIVERGED at month ${diverged}` : ""} (over: ${a.gameOver ? "yes" : "no"})`);
 }
 
-// ------------------------------------------------------------------ 2. era
-for (const era of E.eraOptions()) {
-  const { g } = start(550991, { era: era.key });
-  check(g.econ.eraKey === era.key && g.econ.phase === era.phase,
-    `era ${era.key}: econ.eraKey ${g.econ.eraKey}, opens in ${g.econ.phase}, policy ${g.econ.nat.policy.toFixed(2)}% in [${era.policy.join(", ")}]`);
-}
+// ----------------------------------------------- 2-3. the economy is not a setting
+// Owner, Oct 2026: the economy random every single time, with no hint. A setup
+// that names an era or a credit climate (an old preset, an old save) draws
+// exactly as the seed would have — and the opening news names no era.
 {
-  const seeded = start(550991).g.econ.eraKey;
-  const { g } = start(550991, { era: "random" });
-  check(g.econ.eraKey === seeded, `era random draws off the seed as before (${seeded})`);
+  const seeded = start(550991).g;
+  for (const era of E.eraOptions()) {
+    const { g } = start(550991, { era: era.key, credit: "tight" });
+    check(g.econ.eraKey === seeded.econ.eraKey && g.econ.creditIdx === seeded.econ.creditIdx && g.econ.nat.policy === seeded.econ.nat.policy,
+      `a setup naming ${era.key}/tight is ignored — the seed draws ${seeded.econ.eraKey}, credit ${seeded.econ.creditIdx}`);
+  }
+  check(!seeded.econ.eraLabel && !seeded.econ.eraBlurb, "the economy carries no era label for the screen");
+  const labels = E.eraOptions().map((e) => e.label.toLowerCase());
+  check(!seeded.news.some((n) => labels.some((l) => n.text.toLowerCase().includes(l))), "no opening news line names the era");
 }
-
-// --------------------------------------------------------------- 3. credit
-for (const era of ["postwar", "zirp", "volcker"]) {
-  const t = start(12007, { era, credit: "tight" }).g, l = start(12007, { era, credit: "loose" }).g;
-  const e = E.eraOptions().find((x) => x.key === era);
-  const sv = E.productById("savings");
-  const ltvT = E.statedLtv(t, sv).ltv, ltvL = E.statedLtv(l, sv).ltv;
-  check(t.econ.creditIdx === e.creditIdx[0] && l.econ.creditIdx === e.creditIdx[1],
-    `${era}: tight opens at the bottom of the era's band (${t.econ.creditIdx}), loose at the top (${l.econ.creditIdx})`);
-  // WHAT THE DESK ACTUALLY WRITES on the same $3M building at a 9% yield (so
-  // coverage does not bind): the sheet (statedLtv) saturates at "shut" in a
-  // crunch era, the advance factor and the window still separate the two.
-  const adv = (g) => E.quote(g, sv, 3e6, 270_000, "office", false, undefined, "standard").principal / 3e6;
-  check(E.underwritingStandards(t) <= E.underwritingStandards(l) && ltvT <= ltvL && (era === "postwar" ? adv(t) < adv(l) : adv(t) <= adv(l)),
-    `${era}: tight → ${era === "postwar" ? "lower" : "no higher (a crunch era is shut at both ends of its band)"} advance at start (written ${(adv(t) * 100).toFixed(1)}% vs ${(adv(l) * 100).toFixed(1)}%; sheet ${(ltvT * 100).toFixed(1)}% vs ${(ltvL * 100).toFixed(1)}%; standards ${E.standardsWord(E.underwritingStandards(t))} vs ${E.standardsWord(E.underwritingStandards(l))})`);
-  check(t.econ.indexRate > l.econ.indexRate, `${era}: and the loan index follows the term premium (${t.econ.indexRate}% vs ${l.econ.indexRate}%)`);
-  check(t.econ.nat.policy === l.econ.nat.policy && t.econ.cityVac.office === l.econ.cityVac.office,
-    `${era}: nothing else in the era moves (policy ${t.econ.nat.policy.toFixed(2)}%, office vac ${(t.econ.cityVac.office * 100).toFixed(1)}%)`);
+// THE BANK OPENS AT ITS OWN RULE. The opening rate is not a correction
+// waiting to happen: outside the morning-after era (the deliberate
+// overshoot), over 40 openings the first meeting moves the policy rate by a
+// small step in either direction, and it is not always down.
+{
+  let up = 0, down = 0, big = 0;
+  for (let i = 1; i <= 40; i++) {
+    let { g, p } = start(i * 7919);
+    if (g.econ.eraKey === "volcker") continue;
+    const p0 = g.econ.nat.policy;
+    for (let m = 0; m < 12; m++) g = E.advanceMonth(g, p, bbls, adjacency);
+    const dp = g.econ.nat.policy - p0;
+    if (dp > 0.2) up++; else if (dp < -0.2) down++;
+    if (Math.abs(dp) > 3) big++;
+  }
+  check(up > 0 && down > 0 && up >= Math.round(down / 3), `first-year policy moves go both ways (up ${up}, down ${down})`);
+  check(big <= 3, `a first-year move over 3 points is rare outside the morning-after era (${big})`);
 }
 
 // ---------------------------------------------------------------- 4. field
@@ -170,8 +173,8 @@ for (const era of ["postwar", "zirp", "volcker"]) {
 {
   const { g } = start(550991, { firmName: "Heines Capital Partners" });
   check(g.firm.name === "Heines Capital Partners" && g.firm.short === "Heines", `firm name ${g.firm.name} (${g.firm.short} in the paper)`);
-  check(E.normalizeSetup({ era: "nonsense", credit: "x", inherit: 7 }).era === "random", `an unknown era normalises to random`);
-  check(E.describeSetup(E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 2 })).includes("After the crash"), `the record line names the era`);
+  check(E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 7 }).era === "random", `any named era normalises to random`);
+  check(!/after the crash|inflation|expansion|disinflation|morning/i.test(E.describeSetup(E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 2 }), "zirp")), `the record line never names the era`);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");

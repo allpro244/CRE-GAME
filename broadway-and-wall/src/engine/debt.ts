@@ -15,7 +15,7 @@ import {
   isVacantLandLoanCollateral,
 } from "./value";
 import { walt } from "./leasing";
-import { INDUSTRY_LABEL } from "./market";
+import { INDUSTRY_LABEL, shortIndexOf } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
@@ -56,6 +56,8 @@ export interface LoanProduct {
   minLoan?: number;    // below this they do not underwrite anything
   maxLoan?: number;    // above this is past the desk's hold size
   minCondition?: "good" | "standard";  // the life company does not finance tired buildings
+  /** Only these asset classes — the agency program lends on apartments and nothing else. */
+  classes?: string[];
   window?: boolean;    // a desk that CLOSES with the cycle instead of tightening
 }
 
@@ -166,6 +168,49 @@ export const PRODUCTS: LoanProduct[] = [
     ltv: 0.75, spread: 1.90, floating: false, ioM: 60, amortYears: 30, termM: 120,
     uwDscr: 1.20, debtYield: 0.08, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 108,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 10_000_000, window: true,
+  },
+  /**
+   * FLOATING PAPER ON STABILISED BUILDINGS — the bank floater and the agency
+   * ARM. Floating is not only bridge money: a bank's balance-sheet CRE book is
+   * mostly floating (SOFR plus a spread, often swapped), and the agencies run
+   * floating-rate programs for apartments. What the borrower buys is the
+   * short index instead of the loan index — no term premium (see
+   * Econ.shortIndex) — and the freedom to leave: bank floaters prepay at par.
+   * What they pay for it is the rate risk, which the desk prices in three real
+   * ways: the spread is wider than the same bank's fixed sheet (2.35 over the
+   * short index against 1.55 over the loan index at First Harbor; bank
+   * floating spreads ran 75-100bp over their fixed sheets through the 2010s),
+   * the loan is SIZED at the cap strike rather than today's coupon (every
+   * floating desk underwrites the stressed rate — see sizeRest), and the
+   * agency requires a cap at closing. Spreads are calibrated to those
+   * observed gaps, not to make floating win or lose: whether it pays is the
+   * path of the policy rate, which is the point of the choice.
+   */
+  {
+    id: "harborFloat", label: "First Harbor Bank · 5 yr floating, 25-yr am", lender: "First Harbor Bank",
+    blurb: "The hometown bank's floater: the short index plus a spread, prepay at par, recourse. Cheaper when rates fall, dearer when they don't.",
+    ltv: 0.68, spread: 2.35, floating: true, ioM: 12, amortYears: 25, termM: 60,
+    uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "open", prepayM: 0,
+    minDSCR: 1.15, maxLTV: 0.82, maxLoan: 6_000_000,
+  },
+  {
+    id: "savingsFloat", label: "Alden Savings & Trust · 5 yr floating, 30-yr am", lender: "Alden Savings & Trust",
+    blurb: "The regional's floater. Bigger checks off the short index, open to prepay, the same tight covenant — and the same rate risk.",
+    ltv: 0.70, spread: 2.45, floating: true, ioM: 24, amortYears: 30, termM: 60,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "open", prepayM: 0,
+    minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
+  },
+  {
+    // Written through Meridian's licensed agency desk (a DUS/Optigo seller-
+    // servicer is a bank's agency shop, not the agency itself) and sold on.
+    // Unlike the conduit it does not close in a crunch: the agencies are the
+    // apartment market's lender of last resort, which is why they wrote most
+    // of the multifamily paper in 2009-10.
+    id: "agencyArm", label: "Meridian agency ARM · 10 yr floating, apartments", lender: "Meridian Street Capital",
+    blurb: "Agency floating money for apartments only: non-recourse, ten years, a cap at closing, 1% to leave after year one.",
+    ltv: 0.75, spread: 2.10, floating: true, ioM: 12, amortYears: 30, termM: 120,
+    uwDscr: 1.25, debtYield: 0.075, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 12,
+    minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
   },
   {
     id: "cordage", label: "Cordage Debt Partners · 3 yr, floating IO", lender: "Cordage Debt Partners",
@@ -877,7 +922,9 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const qualityAdd = product.minCondition === "standard" && condition === "standard" ? 0.25 : 0;
   // and a guarantor worth three times the paper is worth a tenth of a point on recourse paper
   const strongName = !street && guarantor && product.recourse && guarantor.nw >= 3 * product.ltv * price ? 0.10 : 0;
-  const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
+  // Fixed paper prices off the loan index; floating off the short index.
+  const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
+  const ratePct = +(bench + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel + qualityAdd - strongName).toFixed(2);
   const adv = advanceFactor(s, product.lender, crunchEase);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
@@ -909,6 +956,10 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   })();
   // a desk that is not in the market for this deal quotes nothing at all
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
+  // a program that lends on one asset class writes nothing on another
+  if (product.classes && klass && !product.classes.includes(klass)) {
+    return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: `${product.label.split(" · ")[0]} lends on ${product.classes.join(", ")} only` };
+  }
   // A HOLD SIZE IS A LIMIT ON ONE ASSET. The street's books are spread across
   // desks and are not one asset, so the size tests are skipped for them.
   // Hold dollars scale with island area (k²) — the $6M/$25M constants were
@@ -999,9 +1050,16 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   const loose = Math.max(0, st), shut = Math.max(0, -st);
   // DSCR gate: size the loan so underwriting NOI covers debt service
   const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.15 * shut - 0.07 * loose);
-  const i = ratePct / 100;
+  // A FLOATER IS SIZED AT THE STRESSED RATE. Every floating desk underwrites
+  // coverage at the rate the loan could reach, not the one it starts at —
+  // in practice the cap strike, which here is a point over the index at
+  // closing (originate). Sizing at today's coupon would hand a floating
+  // borrower more proceeds than a fixed one for the same building, which is
+  // not a product anyone writes.
+  const uwRate = product.floating ? ratePct + 1.0 : ratePct;
+  const i = uwRate / 100;
   const byDscrIO = maxAnnualDS / i;
-  const qp = monthlyPayment(1, ratePct, product.amortYears) * 12; // annual DS per $1
+  const qp = monthlyPayment(1, uwRate, product.amortYears) * 12; // annual DS per $1
   const byDscrAmort = maxAnnualDS / qp;
   const byDscr = product.ioM >= 12 ? Math.min(byDscrIO, byDscrAmort * 1.08) : byDscrAmort;
   // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
@@ -1077,10 +1135,11 @@ export function originate(
   // premium is a real cost of choosing the cheaper coupon, and it comes out of
   // the same equity cheque — which is the honest way to compare a floater to a
   // fixed loan rather than pretending the coupon is the whole story.
-  const capStrike = product.floating ? +(s.econ.indexRate + 1.0).toFixed(2) : undefined;
+  const capStrike = product.floating ? +(shortIndexOf(s.econ) + 1.0).toFixed(2) : undefined;
   const loanOut: Loan = {
     product: product.id,
     floating: product.floating,
+    ...(product.floating ? { bench: "short" as const } : {}),
     cap: capStrike !== undefined ? { strike: capStrike, expiresM: s.month + Math.min(product.termM, CAP_TERM_M) } : undefined,
     capPremium: capStrike !== undefined ? Math.round(qd.principal * 0.0125) : undefined,
     points: product.points,
@@ -1178,7 +1237,8 @@ export function tickLoan(
       delete loan.cap;
       s.news.unshift({ q, kind: "info", text: `The rate cap at ${rec.address} expired — you're floating naked again.` });
     }
-    const effIndex = loan.cap ? Math.min(s.econ.indexRate, loan.cap.strike) : s.econ.indexRate;
+    const idx = loan.bench === "short" ? shortIndexOf(s.econ) : s.econ.indexRate;
+    const effIndex = loan.cap ? Math.min(idx, loan.cap.strike) : idx;
     loan.ratePct = +(effIndex + loan.spread).toFixed(2);
   }
   // The payment is re-cut every month, and it has to be: a loan that leaves
@@ -1700,7 +1760,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
         + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
     };
   }
-  const strike = +(next.econ.indexRate + 0.5).toFixed(2);
+  const strike = +((h.loan.bench === "short" ? shortIndexOf(next.econ) : next.econ.indexRate) + 0.5).toFixed(2);
   fundAndBook(next, parcels, cost, "debtSvc", { bbl });
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({

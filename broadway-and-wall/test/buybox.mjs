@@ -43,18 +43,25 @@ if (found) {
 // LAND THAT PENCILS — a lot is in a land box only when its ask plus closing sits
 // inside a builder's residual; the same test the Marketplace chip reads.
 {
-  let gl = E.firstListings(E.newGame(777, parcels, 40_000_000), parcels, bbls);
+  // Searched across three economies: whether dirt pencils in a given twenty
+  // years is the cycle's call (one seed's draw found none after the opening
+  // policy rate moved to the bank's rule, Oct 2026), and the test is about
+  // the box, not about one town's land market.
   let yes = null, no = null;
-  for (let m = 0; m < 240 && !(yes && no); m++) {
-    gl = E.advanceMonth(gl, parcels, bbls, adjacency);
-    if (gl.gameOver) gl = { ...gl, gameOver: null, cash: 40_000_000 };
-    for (const li of gl.listings) {
-      const rec = E.resolveRec(parcels, gl, li.bbl);
-      if (rec?.class !== "land" || !(rec.lotArea > 0)) continue;
-      const p = E.landPencils(rec, gl.econ, li.ask);
-      if (p.pencils && !yes) yes = { g: gl, li };
-      if (!p.pencils && !no) no = { g: gl, li };
+  for (const seed of [777, 12007, 550991]) {
+    let gl = E.firstListings(E.newGame(seed, parcels, 40_000_000), parcels, bbls);
+    for (let m = 0; m < 240 && !(yes && no); m++) {
+      gl = E.advanceMonth(gl, parcels, bbls, adjacency);
+      if (gl.gameOver) gl = { ...gl, gameOver: null, cash: 40_000_000 };
+      for (const li of gl.listings) {
+        const rec = E.resolveRec(parcels, gl, li.bbl);
+        if (rec?.class !== "land" || !(rec.lotArea > 0)) continue;
+        const p = E.landPencils(rec, gl.econ, li.ask);
+        if (p.pencils && !yes) yes = { g: gl, li };
+        if (!p.pencils && !no) no = { g: gl, li };
+      }
     }
+    if (yes && no) break;
   }
   check(!!yes && !!no, `the tape shows lots that pencil and lots that do not (${!!yes} / ${!!no})`);
   const box = { land: true };

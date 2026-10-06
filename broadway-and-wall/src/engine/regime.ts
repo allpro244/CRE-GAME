@@ -86,6 +86,12 @@ export interface Era {
   creditIdx: [number, number];
   phase: Econ["phase"];
   weight: number;
+  /**
+   * The morning after a Great Inflation is the one opening where the bank is
+   * deliberately ABOVE its own rule — the overshoot is the policy (see the
+   * restore term in market.ts). Every other era opens where the rule sits.
+   */
+  overshoot?: boolean;
 }
 
 /**
@@ -158,7 +164,7 @@ export const ERAS: Era[] = [
     infl: [0.030, 0.065], policy: [10.0, 16.0], neutralReal: [0.020, 0.030],
     credibility: [0.40, 0.62], inflTarget: [0.025, 0.040], unemp: [0.078, 0.105],
     vac: [1.25, 1.75], rent: [0.62, 0.82], capBump: [2.0, 3.6], creditIdx: [0.48, 0.68],
-    phase: "recession", weight: 11,
+    phase: "recession", weight: 11, overshoot: true,
   },
   {
     key: "disinflation", label: "The long disinflation",
@@ -237,6 +243,36 @@ export function applyEra(econ: Econ, seed: number, natural: Record<string, numbe
   nat.neutralAnchor = Math.max(0.004, Math.min(0.032, nat.neutralReal + d(-0.004, 0.004)));
   nat.unemp = d(...era.unemp);
   nat.inflTarget = d(...era.inflTarget);
+
+  // THE BANK OPENS WHERE ITS OWN RULE SITS. The policy rate used to be drawn
+  // from the era's historical range independently of the inflation,
+  // unemployment and neutral rate drawn for the same economy — so on the
+  // first meeting the reaction function in market.ts saw a rate it would
+  // never have set and walked it toward its own answer. Measured over sixty
+  // openings: the loan index fell more than 50bp in the first two years in
+  // 47, rose in 8, and fell on average in every era, the long expansion
+  // included. That is not a cycle, it is a correction of the opening, and a
+  // player learns it in two games ("it always starts high and comes down").
+  //
+  // A central bank on the opening day had been setting this rate all along
+  // against this economy, so it sits at the rule — the same rule, the same
+  // inputs the first meeting reads (no supply shock, trend inflation equal to
+  // the print, the bank's belief about full employment at the truth) — off it
+  // by where in the committee's cycle the town opens: the era draw's position
+  // in its own range, mapped to half a point either side (two ordinary
+  // meetings). What comes next is decided by how the economy moves, which is
+  // the point. The morning-after era keeps its drawn rate: that era IS the
+  // bank sitting far above its rule on purpose.
+  if (!era.overshoot) {
+    const uStar = 0.048;   // market.ts — the same constant the rule reads
+    // Without the restore (Volcker) premium: that term is the regime change
+    // itself, and an inflation era opens BEFORE it — "the bank has lost the
+    // argument". If its credibility is low enough the first meetings add it,
+    // and rates climb, which is that era's story told in play.
+    const want = 100 * (nat.neutralReal + infl + 0.5 * (infl - nat.inflTarget) + 0.5 * (-2.0 * (nat.unemp - uStar)));
+    const pos = (policy - era.policy[0]) / Math.max(1e-9, era.policy[1] - era.policy[0]);
+    nat.policy = +Math.max(0.25, Math.min(22, want + (pos - 0.5))).toFixed(2);
+  }
   econ.unemployment = nat.unemp;
   econ.phase = era.phase;
 
@@ -275,6 +311,7 @@ export function applyEra(econ: Econ, seed: number, natural: Record<string, numbe
   // starting position, it is two starting positions in one economy.
   const termPrem = 1.55 + 1.85 * Math.max(0, 1 - econ.creditIdx);
   econ.indexRate = +Math.max(0.75, Math.min(22, nat.policy + termPrem)).toFixed(2);
+  econ.shortIndex = shortIndexFor(nat.policy, econ.creditIdx);
   econ.rateEma = econ.indexRate;
   econ.rateRegime = econ.indexRate;
   return era;
@@ -306,6 +343,20 @@ export function driftInflTarget(econ: Econ, rnd: number) {
     n.inflTarget + drag * ((n.inflExp ?? n.infl ?? 0.02) - n.inflTarget)
     + anchor * (0.02 - n.inflTarget)
     + (rnd - 0.5) * 0.00035));
+}
+
+/**
+ * THE SHORT INDEX, from the policy rate. A money-market benchmark sits a
+ * little over the policy rate — 10-25bp in calm years (SOFR/LIBOR against
+ * fed funds) — and blows out when banks stop trusting each other: three-month
+ * LIBOR ran 3.6 points over the funds rate in October 2008. 0.15 calm and up
+ * to 0.75 more at a shut window is that range; it moves with the same
+ * creditIdx the loan index's term premium reads, so the two indexes agree
+ * about how frightened the market is. No noise of its own: a short benchmark
+ * follows the committee, it does not trade like a ten-year.
+ */
+export function shortIndexFor(policy: number, creditIdx: number): number {
+  return +Math.max(0.05, Math.min(23, policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
 }
 
 export function eraOf(s: GameState): Era | null {

@@ -533,13 +533,22 @@ export function conveyedDeed(
   return { value: holdingValue(rec, s.econ, vessel, s.month), vessel };
 }
 
-export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): Listing {
+export function stampListing(
+  s: GameState, rec: ParcelRecord, li: Listing,
+  // A FIRM'S LISTING CONVEYS THE FIRM'S GRADE. A rival strikes its ask on
+  // `conveyedValue(..., assetGrade(r, rec))` — how hard it has run the plant —
+  // and stamping the anonymous age-derived grade here handed the buyer a
+  // better building than the one that was priced: a worn walk-up asked $409K
+  // on the worn roll and marked $498K the day it closed as a standard one.
+  // Same arithmetic as conveyedDeed, so the ask and the deed are one answer.
+  grade?: Condition,
+): Listing {
   if (rec.class === "land" || !rec.bldgArea || li.roll) return li;
   const distress = !!li.distress;
   // The grade the deed will convey: today's grade, less the notch a distressed
   // building takes at the closing. See executePurchase.
-  const idx = Math.max(0.30, initialCondIdx(rec, s.month) - (distress ? 0.10 : 0));
-  const cond = condGrade(idx);
+  const idx = Math.max(0.30, initialCondIdx(rec, s.month, grade) - (distress ? 0.10 : 0));
+  const cond = grade && !distress ? grade : condGrade(idx);
   const vessel = { bbl: li.bbl, boughtM: s.month, costBasis: li.ask, assessed: assetValue(rec, s.econ, cond), loan: null,
     condition: cond, condIdx: idx, tenants: [], cfHistory: [] } as unknown as Holding;
   genRentRoll(s, rec, vessel, distress, false);   // no closing, no settlement

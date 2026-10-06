@@ -3436,7 +3436,19 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
     // covenant — money that was owed this month and did not go out. That is
     // the only thing that starts a clock in this business.
-    if (r.cash < 0) {
+    //
+    // AND SO IS A CALLED LOAN THE ACCOUNT COULD NOT CLEAR. When the last
+    // building goes, the lender calls what is left (settleEmptyBook) and the
+    // account is swept to zero against it. A balance of exactly zero with the
+    // call still unpaid read here as "current", reset the arrears clock to
+    // nothing, and gave an insolvent shell a fresh calendar: measured, a firm
+    // six months in arrears sold its last deed, kept $590K owed with no cash
+    // and no income, and sat on the street at negative equity with its clock
+    // at zero (test/rival-husks.mjs, seed 22, month 81). The call is a
+    // payment demanded and not made; the clock keeps running.
+    const calledShort = !r.bbls.length && r.debt > 0 && r.cash <= 0
+      && !(s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
+    if (r.cash < 0 || calledShort) {
       r.stressMs = (r.stressMs ?? 0) + 1;
       // 1. RING THE INVESTORS FIRST, because a protective call is cheaper than
       //    anything else on this list and it is what actually happens. A
@@ -3857,11 +3869,18 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
  * building leaves by. See test/rival-husks.mjs for the before and after.
  */
 function settleEmptyBook(s: GameState, r: Rival) {
-  if (r.bbls.length || !(r.debt > 0) || !(r.cash > 0)) return;
+  if (r.bbls.length || !(r.debt > 0)) return;
   if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return;
-  const repay = Math.min(r.debt, r.cash);
-  r.debt -= repay;
-  r.cash -= repay;
+  if (r.cash > 0) {
+    const repay = Math.min(r.debt, r.cash);
+    r.debt -= repay;
+    r.cash -= repay;
+  }
+  // A CALL THE ACCOUNT COULD NOT CLEAR IS A MISSED PAYMENT, THIS MONTH. The
+  // arrears check in tickRivals may already have run for the month (it reads
+  // a firm with sale proceeds in the bank as current), so the clock starts
+  // here, where the payment was demanded and not made — not a month later.
+  if (r.debt > 0) r.stressMs = Math.max(1, r.stressMs ?? 0);
 }
 
 /**

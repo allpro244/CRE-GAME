@@ -132,7 +132,7 @@ export default function StartMenu() {
         <div className="start-foot-sum">
           <span className="start-foot-town">{resume ? "Or cut a new town" : "Cut a town and break ground"}</span>
           <span className="start-foot-note">
-            The setup page chooses the island, the decade, the firm and the clock. Its defaults are the standard game.
+            The setup page chooses the island, the firm and the clock. The economy is drawn fresh every game.
             {resume ? " Named saves stay on the Saves page." : ""}
             {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
           </span>

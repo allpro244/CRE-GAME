@@ -43,6 +43,7 @@ import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import { usdSigned } from "@/ui/format";
 import { periodRecap, firmTier } from "@/engine/standing";
+import { generateFirmName } from "@/engine/firm";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
@@ -2384,7 +2385,15 @@ export const useStore = create<AppState>((set, get) => ({
       const setup: Partial<GameSetup> = {
         ...(setupIn ?? {}), island, size, dev, cash0: money, goal: pendingGoal.id,
       };
-      const g = seedRunWithJev(firstListings(newGame(seed, parcels, money, setup), parcels, Object.keys(parcels)), parcels);
+      // THE TOWN AND THE ECONOMY ARE DEALT SEPARATELY. The seed above deals
+      // the map; the run's own seed — which the era, the credit climate and
+      // every market draw read — is fresh every game, so a shared or
+      // replayed seed is the same town in a world nobody has seen (owner,
+      // Oct 2026: the economy random every single time). The firm keeps the
+      // name the setup page showed for this seed.
+      if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
+      const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
+      const g = seedRunWithJev(firstListings(newGame(runSeed, parcels, money, setup), parcels, Object.keys(parcels)), parcels);
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

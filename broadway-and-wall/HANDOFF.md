@@ -1040,3 +1040,65 @@ Harnesses: `pnpm desk-vs-principal`, `pnpm demise`, `pnpm plan-desk`,
 Phase 1 and Phase 5 are the two sanctioned `pnpm baseline` re-rolls. Phase 5
 moved no standing number. Do not add world-stream draws. `pAccept` and
 `drawRequirementSf` stay on `rng(s)`. See `PHASE6_MEASUREMENT.md`.
+
+## 11. QUIETER CLOCK, TWO-DIAL SHEET, YOUR OWN PEN (Oct 2026)
+
+Source: `PLAYTHROUGH_2026-10-06.md` (one $1M, fifty-year playthrough;
+`tools/play1m.mjs`, `NEW=1` replays it with the tools below). Three commits.
+
+**The clock stops for decisions, not notices.**
+- `balloonLadder` (debt.ts) is the maturity ladder lifted out, pure. A
+  balloon any desk would renew is a soft notice naming lender and coupon; one
+  that would not renew still stops (`balloon:<bbl>:far|near:rolls|gap`; the
+  forecast is in the key so a flip stops the clock). `renewed:` is soft.
+- A bid you take is `offer.contract`; it closes itself on its date through
+  `acceptSaleOffer` in `applySaleInstructions`, held only if closing leaves you
+  short. Late bidders do not reopen it (their draws are kept).
+- `ti-book` is soft: it summarises letters already on the desk.
+- `suggestBuyBox` (buybox.ts) — the docket offers the box your book implies
+  when first looks ring with no box set. Docket folds 2+ sweeps / rolling
+  loans into one row.
+
+**The sheet is two dials** (`PlanRow`): `targetNePct` (the least net effective
+signed) and `patienceM` (months dark before meeting the street). The desk asks
+`max(street, target)` where the street is `marketClearingPct` (effective/face
+index), keeps the tenant's package and solves the rent (`planCounterTerms`,
+`rentForNe`). No package or term filters. Guardrails off by default:
+`maxCashPerDeal` (TI turns into rent), `minCredit` + `minCreditSf`. Old rows
+migrate in `save.ts` (`migratePlanRows`). Plan options: `lineForFitOut`
+(revolver authority — the cash-only treasury test is still the default and the
+comment on `agentCanFund` still argues why), `tourRule` (`best` default: better
+NE wins, dead heats within 2 pts on different credit are referred), `reliefRule`
+(`applyReliefRule`, after `tickLeasing`), `seededFrom`. `Holding.principalSigns`
+pins a building to the principal. `seedPlanFromRecord` briefs a desk from
+`GameState.principalSigned` (two years, median NE per use, ≥3 deals).
+
+**Your own pen:** `previewTray` / `clearTrayAgainstPlan` run `clearAgainstPlan`
+for the principal (`PRINCIPAL_PEN`): principal fee, no desk authority, no desk
+scorecard; exceptions keep `docketReason`. `principalPlan` is the posted sheet
+or `starterPlan()` — deliberately NOT the record (it would ratchet with the
+street). `sheetReview` stops the clock once a quarter when a held class's
+number is ≥3 pts off the street.
+
+**Vacancy clock:** `signLoi` restarts `darkMs`, as `tickLeasing` always said.
+Desk ledgers score NE on the market at decision time (signing lifts the stale
+markdown). It barely moved "months dark at arrival" (median 56): those
+buildings genuinely sign nothing for years — open question, not fixed here.
+
+**Measured, do not tune:**
+- `pnpm concessions` (new probe): free rent and second-gen TI sit inside or
+  under broker-survey bands; the "generous" feel was letters opening at 67% NE
+  on long-dark space. TI was NOT cut; the fit-out-age / as-is idea was not
+  built because it would raise TI, not lower it, and no measured second-gen
+  tour had a fit-out under five years old.
+- desk-vs-principal, 5 seeds × 10y: default desk NE 95.8% → 99.2%, NOI
+  $8.81M → $9.07M; player-equivalent sheet NOI $7.46M → $8.69M.
+- plan-desk: target and floor monotone; patience above the street on an empty
+  book buys no rent — reported in the harness, not asserted.
+- 50-year replay, old tools → new: balloon stops 224 → 65, refinancings
+  942 → 140, sale decisions 621 → 464; ~2.5 letters handled per leasing
+  decision (was 1.0), 14% of letters answered by hand.
+- `pnpm check` green, 0 of 39 baseline metrics moved; `pnpm gate` green.
+
+Tests: `quiet-clock`, `tray`, `sheet-review` (in check); `agent-desk`,
+`agent-mandate`, `plan-desk`, `plan-ui` rewritten for the two dials.

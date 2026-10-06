@@ -1826,7 +1826,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       const n = committed >= 1_000_000
         ? `$${(committed / 1_000_000).toFixed(2)}M`
         : `$${Math.round(committed / 1000)}K`;
+      // A SUMMARY OF LETTERS ALREADY ON THE DESK IS NOT A SECOND DECISION.
+      // Every letter it counts either needs the principal (and stopped the
+      // clock on its own) or is a desk's, which refers anything that would
+      // breach this same reserve. It stays on the docket as a warning; it
+      // stopped the clock 23 times in a fifty-year replay for nothing new.
       out.push({
+        soft: true,
         key: "ti-book",
         label: `Open lease signing costs ${n} would breach the cash reserve`,
       });

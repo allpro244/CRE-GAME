@@ -246,6 +246,50 @@ while you hold only cash gives the player no reason to look at the tape.
 
 ---
 
+## What was built from this (same day)
+
+Everything in this report except the late-game portfolio channel was built.
+`HANDOFF.md` §11 has the engine detail. The replay is `NEW=1 node
+tools/play1m.mjs`: it plays the same opening the same way, but uses the new
+tools. It posts a number of 97% with 12 months' patience, clears its tray,
+applies a relief rule, lets loans that will roll do so, lets contracts close,
+and takes the buy box its book implies. Its world diverges from the first
+run after the first different decision, so compare the chores, not the
+fortunes.
+
+| fifty years | old tools | new tools |
+|---|---|---|
+| balloon clock stops | 224 | 65 |
+| refinancings done by hand | 942 | 140 at a balloon, 188 chosen cash-outs |
+| sale decisions | 621 | 464 |
+| first-look stops | 124 | 75 |
+| letters, renewals and asks handled | ~500 | ~1,580 |
+| …leasing decisions taken | ~500 (one per letter) | 628 (406 tray passes, 222 by hand) |
+| net worth / street | $835M, 2nd of 22 | $1.07B, 1st of 21 |
+
+The new run ended bigger, but that is mostly a different 50 years, not a
+feature. The leasing line is the one that answers the question. It handled
+three times the letters for about a quarter more clicks, and only about one
+letter in seven needed an individual answer: competing tenants, expansions,
+the treasury, and a tenant's final under the number.
+
+**What the probe said about concessions.** The worry was that tenants ask
+for more free rent and fit-out than real life, especially on second-generation
+space. Measured on four towns over twenty years (`pnpm concessions`), that
+does not hold:
+
+- Free rent opens at 0.2, 0.5 and 0.9–1.2 months per year of term in tight,
+  balanced and glutted markets. That is inside or under the broker-survey
+  bands.
+- Second-generation office TI opens at a median of $1.5–1.8/sf a year of
+  term, deflated. That is under the $3–6 band for a tired fit-out.
+
+What does run hot is the opening rent: a median of 77% of asking (67% net
+effective), because most letters arrive at buildings with space that has sat
+for years. So TI was not cut. The vacancy clock now restarts on a signing,
+as its own comment always said, but that barely moved the measurement.
+Why so much space sits dark in tight markets is a separate open question.
+
 ## Caveats
 
 - One seed, one city, one strategy. The 834× is not a balance claim.

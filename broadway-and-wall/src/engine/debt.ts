@@ -1380,7 +1380,7 @@ export function tickLoan(
   // month underneath it.
   if (q >= loan.maturityM && !s.workouts?.[h.bbl]) {
     const coll = debtCollateral(s, parcels, h, rec);
-    const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
+    const { value, noi, quoteClass, hair, stab } = coll;
     // Walk DOWN the desk, not off a cliff. A maturing loan is refinanced by
     // whoever will write it: the agency first, then the bank, and if neither
     // will, hard money at hard-money prices. That last one is not a rescue —
@@ -1399,43 +1399,7 @@ export function tickLoan(
     // tell the difference between "the market will not renew this" and "the
     // ladder did not ask". A maturing performing loan is renewed by whoever will
     // write it, and a borrower takes the cheapest of them.
-    const ladder = (vacantDirt ? ["land"] : ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"])
-      .map(productById)
-      .filter((p) => productOpen(s, p) && windowOpen(s, p)
-        // A desk that cannot close on this building must not be chosen as its
-        // renewal: the life company only writes well-kept product, and
-        // `originate` refuses at the table after the ladder has already picked.
-        && conditionOk(p, h.condition));
-    const fee = Math.round(loan.balance * REFI_FEE);
-    const sized = ladder.map((p) => {
-      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
-      return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
-    });
-    // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
-    // "clears" only when this desk's advance, coverage, debt-yield and hold
-    // tests size the WHOLE outstanding balance plus the fee — `quote` is that
-    // test and nothing here goes around it. Among the desks that clear, take the
-    // lowest coupon: that is what "renew with whoever writes a normal loan"
-    // means, and it is why this is realistic while a lender renewing paper that
-    // fails coverage would not be. When none clears, carry the BIGGEST cheque
-    // anybody will write, because that is the number the gap is measured
-    // against and the number the borrower is told.
-    // ON THE BALANCE, NOT THE BALANCE PLUS THE FEE — the same fault the facility
-    // had, in the same shape. The fee is funded separately a few lines below by
-    // `fundCashNeed`, so a desk that can advance the outstanding balance CAN
-    // renew this loan; asking it to advance the fee as well refuses the roll on
-    // any building whose debt was sized off the same underwriting, and drops it
-    // into retire-or-workout for want of one per cent.
-    const clears = sized.filter((x) => x.qd.principal >= loan.balance);
-    const pick = clears.length
-      ? clears.reduce((a, b) => (b.qd.ratePct < a.qd.ratePct ? b : a))
-      : sized.length
-        ? sized.reduce((a, b) => (b.qd.principal > a.qd.principal ? b : a))
-        : null;
-    // No desk open at all is still an answer: a zero-proceeds quote, which walks
-    // straight into the gap-cheque and workout branches below.
-    const product = pick?.p ?? PRODUCTS[0];
-    const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab, h.condition), principal: 0 };
+    const { fee, product, qd } = balloonLadder(s, parcels, h, rec, loan.balance);
     let renewed = false;
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
@@ -1903,6 +1867,61 @@ export function debtCollateral(
     ? stabViewFor(rec, s.econ, h.condition, value, h.condIdx)
     : undefined;
   return { value, noi, vacantDirt, quoteClass, hair, stab };
+}
+
+/**
+ * WHO RENEWS THIS BALLOON, AND AT WHAT. The ladder the monthly tick walks at
+ * maturity, lifted out so the docket can ask the same question a year early:
+ * "if nothing changes, does this roll on its own?". Pure — `quote` draws no
+ * dice — so reading it from attentionItems moves no stream.
+ *
+ * `clears` is the tick's own test (a desk sizes the whole balance; the fee is
+ * funded separately). The forecast is at TODAY's value and income: a building
+ * that loses a tenant between notice and maturity can stop clearing, and the
+ * docket key carries the answer so that flip stops the clock when it happens.
+ */
+export function balloonLadder(
+  s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord, balance: number,
+) {
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+    const ladder = (vacantDirt ? ["land"] : ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"])
+      .map(productById)
+      .filter((p) => productOpen(s, p) && windowOpen(s, p)
+        // A desk that cannot close on this building must not be chosen as its
+        // renewal: the life company only writes well-kept product, and
+        // `originate` refuses at the table after the ladder has already picked.
+        && conditionOk(p, h.condition));
+    const fee = Math.round(balance * REFI_FEE);
+    const sized = ladder.map((p) => {
+      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
+      return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
+    });
+    // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
+    // "clears" only when this desk's advance, coverage, debt-yield and hold
+    // tests size the WHOLE outstanding balance plus the fee — `quote` is that
+    // test and nothing here goes around it. Among the desks that clear, take the
+    // lowest coupon: that is what "renew with whoever writes a normal loan"
+    // means, and it is why this is realistic while a lender renewing paper that
+    // fails coverage would not be. When none clears, carry the BIGGEST cheque
+    // anybody will write, because that is the number the gap is measured
+    // against and the number the borrower is told.
+    // ON THE BALANCE, NOT THE BALANCE PLUS THE FEE — the same fault the facility
+    // had, in the same shape. The fee is funded separately a few lines below by
+    // `fundCashNeed`, so a desk that can advance the outstanding balance CAN
+    // renew this loan; asking it to advance the fee as well refuses the roll on
+    // any building whose debt was sized off the same underwriting, and drops it
+    // into retire-or-workout for want of one per cent.
+    const clears = sized.filter((x) => x.qd.principal >= balance);
+    const pick = clears.length
+      ? clears.reduce((a, b) => (b.qd.ratePct < a.qd.ratePct ? b : a))
+      : sized.length
+        ? sized.reduce((a, b) => (b.qd.principal > a.qd.principal ? b : a))
+        : null;
+    // No desk open at all is still an answer: a zero-proceeds quote, which walks
+    // straight into the gap-cheque and workout branches below.
+    const product = pick?.p ?? PRODUCTS[0];
+    const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab, h.condition), principal: 0 };
+  return { ladder, fee, pick, product, qd, clears: qd.principal >= balance + fee, value, noi, vacantDirt, quoteClass, hair, stab };
 }
 
 export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {

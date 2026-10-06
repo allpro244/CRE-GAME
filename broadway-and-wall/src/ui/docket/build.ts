@@ -21,6 +21,7 @@ import { planIsLive, loiSigningCost, vacantSf } from "@/engine/leasing";
 import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { positiveLeverage, starterPick } from "@/engine/standing";
 import { fundableNow } from "@/engine/credit";
+import { buyBoxSet, suggestBuyBox } from "@/engine/buybox";
 import { usd } from "@/ui/format";
 import type { Page } from "@/state/store";
 
@@ -41,6 +42,8 @@ export interface DocketItem {
   more?: number;
   /** Plan-desk exception — Sign / Counter / Decline on the rail. */
   leaseId?: number;
+  /** A one-click fix the row offers — the rail's Apply button. */
+  apply?: { label: string; buyBox?: import("@/engine/buybox").BuyBox };
 }
 
 /** How many rows the rail shows before folding the rest into a tail line. */
@@ -81,7 +84,9 @@ function urgentKey(key: string): boolean {
   const head = key.split(":")[0];
   if (head === "sweep" || head === "facility-sweep" || head === "workout") return true;
   if (head === "cash" || head === "cash-runway" || head === "line-over") return true;
-  if (head === "balloon" || head === "facility-balloon") return key.endsWith(":near");
+  // A loan that will roll on its own is a notice, not an emergency.
+  if (head === "balloon") return key.includes(":near") && key.endsWith(":gap");
+  if (head === "facility-balloon") return key.endsWith(":near");
   return false;
 }
 
@@ -105,7 +110,19 @@ export function buildDocket(
   // (a) The standing conditions — everything the engine itself says needs the
   // principal. The label is the engine's, verbatim; Open routes through the
   // same key openAttention already understands.
+  // FOLDED ROWS. A covenant sweep sits on the desk for as long as the breach
+  // lasts, and a loan that renews on its own sits there for a year — measured
+  // over fifty years of a hundred-deed book, sweep rows appeared 1,454 times
+  // at clock stops, one per building per stop. Each is still a fact worth
+  // seeing; a dozen copies of the same fact is a wall. Two or more fold into
+  // one line that names them. A NEW sweep still stops the clock on its own
+  // (attentionItems keys it per deed) — folding is only what the desk shows.
+  const sweeps: { bbl: string; label: string; key: string }[] = [];
+  const rolls: { bbl: string; label: string; key: string }[] = [];
   for (const a of attentionItems(game, parcels)) {
+    const head = a.key.split(":")[0];
+    if (head === "sweep") { sweeps.push({ bbl: a.key.split(":")[1], label: a.label, key: a.key }); continue; }
+    if (head === "balloon" && a.key.endsWith(":rolls")) { rolls.push({ bbl: a.key.split(":")[1], label: a.label, key: a.key }); continue; }
     const leaseId = a.key.startsWith("loi:") ? Number(a.key.slice(4)) : undefined;
     const letter = leaseId !== undefined ? game.lois.find((l) => l.id === leaseId) : undefined;
     items.push({
@@ -124,6 +141,26 @@ export function buildDocket(
       page: letter ? "deals" : undefined,
     });
   }
+
+  const fold = (
+    rows: { bbl: string; label: string; key: string }[], key: string, title: (n: number) => string, urgent: boolean,
+  ) => {
+    if (rows.length === 1) {
+      const r = rows[0];
+      items.push({ key: r.key, cat: "capital", urgent: urgentKey(r.key) || undefined, title: r.label, attnKey: r.key, bbl: r.bbl });
+    } else if (rows.length > 1) {
+      items.push({
+        key: `${key}:${rows.map((r) => r.bbl).sort().join(",")}`,
+        cat: "capital",
+        urgent: urgent || undefined,
+        title: title(rows.length),
+        sub: rows.map((r) => addr(r.bbl)).join(" · "),
+        page: "debt",
+      });
+    }
+  };
+  fold(sweeps, "sweep-fold", (n) => `${n} buildings in covenant sweep — cash flow is going to the lenders`, true);
+  fold(rolls, "rolls-fold", (n) => `${n} loans come due this year and renew on their own — refinance or sell only if you want to`, false);
 
   // (b) The watchlist the attention list does not carry yet. Attention starts
   // shouting at twelve months; a borrower who starts working a refinancing a
@@ -286,6 +323,24 @@ export function buildDocket(
           bbl: pl.best.bbl,
         });
       }
+    }
+  }
+
+  // (e2) FIRST LOOKS WITH NO BOX. Every broker's first look you could
+  // afford stops the clock as it lapses until you say what you buy. Offer
+  // the box your own book implies, one click, instead of a blank form.
+  if (parcels && !buyBoxSet(game.buyBox) && live.some((it) => it.key.startsWith("early-look:") || it.key.startsWith("broker:"))) {
+    const box = suggestBuyBox(game, parcels);
+    const key = `buybox-offer:${Math.floor(month / 12)}`;
+    if (box && !((snooze[key] ?? -1) > month)) {
+      live.push({
+        key,
+        cat: "deals",
+        title: "Brokers are ringing with first looks on anything you can afford — tell them what you buy",
+        sub: `from your book: ${(box.uses ?? []).join(", ")} · up to ${usd(box.maxAsk ?? 0)} · ${box.minCap ?? 0}%+ going-in`,
+        apply: { label: "Set box", buyBox: box },
+        page: "market",
+      });
     }
   }
 

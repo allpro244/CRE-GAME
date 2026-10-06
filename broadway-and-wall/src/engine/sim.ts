@@ -16,7 +16,7 @@ import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
-import { tickLoan, productById, stackPayoff } from "./debt";
+import { tickLoan, productById, stackPayoff, balloonLadder } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
@@ -1476,7 +1476,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     });
   }
   for (const h of Object.values(s.holdings)) {
-    if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}`, lastM: h.sale.offer.expiresM });
+    // A papered contract closes itself (applySaleInstructions): on the
+    // docket, not a stop — unless it was held for the owner's signature.
+    if (h.sale?.offer?.contract && !h.sale.offer.held) {
+      out.push({ soft: true, key: `contract-close:${h.bbl}:${h.sale.offer.price}`, label: `${addr(h.bbl)} under contract at ${money(h.sale.offer.price)} — closes ${monthLabel(h.sale.offer.expiresM)}` });
+    } else if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}`, lastM: h.sale.offer.expiresM });
     // A marketed bid list is the same kind of decision as a quiet offer — it
     // expires, and Year/Skip used to run straight past it because only
     // `sale.offer` was on this list.
@@ -1539,13 +1543,38 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // income building takes six to nine months from decision to deed. The date
     // has been known since the day the loan closed; there is no reason to sit
     // on it.
+    //
+    // A BALLOON THAT WILL ROLL ON ITS OWN IS NOT A DECISION. At maturity the
+    // tick renews a performing loan with the cheapest desk that sizes the
+    // whole balance (debt.ts, the ladder) — the standing instruction every
+    // treasurer gives. Measured over a fifty-year $1M playthrough: 942
+    // refinancings and 224 clock stops, almost all of them loans any desk
+    // would have rolled. So the notice still sits on the docket, saying who
+    // will renew it and at what, but it stops the clock only when today's
+    // market would NOT renew the whole balance — the one case where doing
+    // nothing costs a cheque or a workout. The forecast is in the key, so a
+    // loan that stops clearing between notice and maturity stops the clock
+    // the month it flips.
     if (h.loan && h.loan.maturityM - s.month <= 12 && h.loan.maturityM > s.month) {
       const mo = h.loan.maturityM - s.month;
-      out.push({
-        key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}`,
-        // named: three buildings maturing together were three identical rows
-        label: `${addr(h.bbl)}: balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
-      });
+      const rec = parcels ? resolveRec(parcels, s, h.bbl) : null;
+      const roll = rec && parcels && !s.workouts?.[h.bbl]
+        ? balloonLadder(s, parcels, h, rec, h.loan.balance)
+        : null;
+      const due = `${addr(h.bbl)}: balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`;
+      out.push(roll?.clears
+        ? {
+          soft: true,
+          key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}:rolls`,
+          label: `${due}. Renews on its own with ${roll.product.lender} at ~${roll.qd.ratePct.toFixed(2)}% unless you refinance or sell`,
+        }
+        : {
+          key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}:gap`,
+          // named: three buildings maturing together were three identical rows
+          label: roll
+            ? `${due}. Today's market renews ${money(roll.qd.principal)} of ${money(h.loan.balance)} — act before it comes due`
+            : due,
+        });
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: `${addr(h.bbl)}: covenant breach — cash flow swept` });
     // MISSED PAYMENTS, FROM THE FIRST ONE. The arrears clock runs three months
@@ -1565,7 +1594,9 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
     // liability against a building — announced once, in the month it happened.
     if (h.loan && (h.loan as { renewedM?: number }).renewedM === s.month) {
+      // Already done, nothing to decide: on the docket, not a stop.
       out.push({
+        soft: true,
         key: `renewed:${h.bbl}:${s.month}`,
         label: `${addr(h.bbl)} balloon renewed with ${productById(h.loan.product).lender} at `
           + `${h.loan.ratePct.toFixed(2)}% — matures ${monthLabel(h.loan.maturityM)}`,

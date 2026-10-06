@@ -2622,11 +2622,11 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
     });
     return { s: next, msg: "They retraded you." };
   }
-  ns.offer = { price: b.price, expiresM: next.month + 2, from: b.name };
+  ns.offer = { price: b.price, expiresM: next.month + 2, from: b.name, contract: true };
   delete ns.bids;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${b.name} is under contract at ${rec?.address ?? bbl} for ${money(b.price)}, clean. Close it.`,
+    text: `${b.name} is under contract at ${rec?.address ?? bbl} for ${money(b.price)}, clean. It closes ${monthLabel(next.month + 2)} — nothing for you to do unless you want to close early or roll it into a 1031.`,
   });
   return { s: next, msg: "Under contract." };
 }
@@ -2987,6 +2987,36 @@ export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
     const h = s.holdings[bbl];
     const sale = h?.sale;
     const offer = sale?.offer;
+    // A CLEAN CONTRACT CLOSES ON ITS DATE. Taking a bid used to put the deed
+    // under contract and then ask the owner to accept the same price again
+    // two months later — and if they forgot, the buyer walked. Measured over a
+    // fifty-year playthrough that was a second decision on every marketed
+    // sale with nothing in it to decide. A papered deal closes at the table;
+    // the owner's signature is needed only when the closing would leave them
+    // short (the same test the standing instruction uses below).
+    if (sale && offer?.contract && !offer.held && s.month === offer.expiresM) {
+      const address = resolveRec(parcels, s, bbl)?.address ?? bbl;
+      const r = acceptSaleOffer(s, parcels, bbl, false);
+      const fundShort = !!(r.s.fund && s.fund && r.s.fund.cash < 0 && r.s.fund.cash < s.fund.cash);
+      const cashShort = r.s.cash < 0 && r.s.cash < s.cash;
+      if (r.err || fundShort || cashShort) {
+        offer.held = true;
+        offer.expiresM = s.month + 1;
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `The ${money(offer.price)} sale of ${address} is ready to close, but `
+            + (r.err ? r.err : "after the payoff and the tax it would leave you short")
+            + ` — it needs your signature by ${monthLabel(s.month + 1)}.`,
+        });
+        continue;
+      }
+      adoptState(s, r.s);
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `Closed: ${address} to ${offer.from ?? "the buyer"} for ${money(offer.price)}, on the contract you signed.`,
+      });
+      continue;
+    }
     const ins = sale?.instructions;
     if (!sale || !offer || !ins || sale.unsolicited || sale.bids?.length) continue;
     if (s.month > offer.expiresM) continue;
@@ -3459,7 +3489,9 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       const value = ownedHoldingValue(s, parcels, h);
       if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s, "sales") < 0.12) {
         const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06, "sales")));
-        if (bumped > sale.offer.price) {
+        // A signed contract is not re-opened by a late bidder. The draws
+        // above still happen so the sales stream does not move.
+        if (bumped > sale.offer.price && !sale.offer.contract) {
           sale.offer = { price: bumped, expiresM: s.month + 2 };
           s.news.unshift({
             q: s.month, kind: "deal",

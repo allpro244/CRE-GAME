@@ -140,6 +140,11 @@ export default function Docket() {
                     <button type="button" className="year-rail-go" title="Turn the letter away"
                       onClick={() => useStore.getState().respondLoi(it.leaseId!, "decline")}>Decline</button>
                   </span>
+                ) : it.apply ? (
+                  <button type="button" className="year-rail-go" title={it.sub}
+                    onClick={() => { if (it.apply?.buyBox) useStore.getState().setBuyBox(it.apply.buyBox); }}>
+                    {it.apply.label}
+                  </button>
                 ) : (it.attnKey || it.bbl || it.page) ? (
                   <button type="button" className="year-rail-go" onClick={() => openItem(it)}>
                     Open

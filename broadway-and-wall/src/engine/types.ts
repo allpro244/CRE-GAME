@@ -631,7 +631,14 @@ export interface Holding {
     callM?: number;                    // when offers are due
     bids?: Bid[];                      // the list, once they are in
     round?: number;                    // 0 first round, 1 best and final
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean };
+    /**
+     * `contract`: you took this buyer's bid and they did not retrade — the
+     * deal is papered and `expiresM` is the closing date. It closes itself
+     * that month (applySaleInstructions) unless closing would leave the
+     * account short, in which case it is `held` for your signature. You can
+     * still close early, or elect a 1031, from the card.
+     */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean; contract?: boolean };
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;

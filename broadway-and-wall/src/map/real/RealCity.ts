@@ -92,7 +92,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1918,6 +1918,34 @@ export class RealCityLayer {
       }
     }
   }
+  /**
+   * THE FRONT DOOR. An apartment house or an office building has an entrance
+   * on its main street front: a door in a stone surround, and above it on
+   * an apartment house of six floors or more a fabric marquee (the dark
+   * green, burgundy, navy or black of the city's canopies); on a tower a
+   * steel-and-glass canopy over the lobby doors. One per building, on its
+   * longest street-facing wall. Row houses keep their stoops instead.
+   */
+  private entrance(ring: P2[], bbl: string, famKey: string, cls: string, seedK: number, z1: number, tower: boolean) {
+    if (cls !== "multifamily" && cls !== "office" && cls !== "mixed") return;
+    if (famKey === "industrial" || famKey === "plain" || famKey === "clapboard" || famKey === "brownstone") return;
+    if (z1 < 9) return;
+    const edges = this.streetEdges(ring, 8);
+    if (!edges.length) return;
+    const e = edges.reduce((a, b) => (b.L > a.L ? b : a));
+    const t = e.L * (0.35 + 0.3 * hash01(seedK ^ 0xd00, 5));
+    const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+    const nx = e.uy, ny = -e.ux;
+    // the doorstep must open on a footway or a forecourt, not a neighbour's wall or the road
+    const front = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+    if (front === "bld" || front === "road") return;
+    this.putInst("door", x, y, 0.15, 1, e.r, bbl);
+    if (tower) this.putInst("entcanopy", x, y, 0, 1, e.r, bbl);
+    else if (cls === "multifamily" && z1 >= 18) {
+      const MC = [[0.16, 0.26, 0.2], [0.36, 0.12, 0.14], [0.14, 0.17, 0.28], [0.1, 0.1, 0.11]];
+      this.putInst("marquee", x, y, 0, 1, e.r, bbl, MC[Math.floor(hash01(seedK ^ 0xd01, 5) * MC.length)]);
+    }
+  }
   private lotAt2D(x: number, y: number): boolean {
     const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
     const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
@@ -2162,9 +2190,11 @@ export class RealCityLayer {
       const lh = this.families.lobby.floorH;
       walls("lobby", z0, lh, 0, [1, 1, 1]);
       walls(famKey, lh, zw, lh, tint);
+      if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, true);
     } else {
       walls(famKey, z0, zw, 0, tint);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
+      if (bbl && z0 < 0.5) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
     }
 
     // roof
@@ -2643,6 +2673,15 @@ export class RealCityLayer {
         [box(0.04, 1.4, 2.2, -1.88, 0, 0.25), [0.55, 0.65, 0.7]], [box(0.04, 1.4, 2.2, 1.88, 0, 0.25), [0.55, 0.65, 0.7]],
         [box(0.08, 0.08, 2.45, -1.86, 0.72, 0), [0.25, 0.27, 0.28]], [box(0.08, 0.08, 2.45, 1.86, 0.72, 0), [0.25, 0.27, 0.28]], [box(2.6, 0.4, 0.08, 0, 0.45, 0.48), [0.35, 0.3, 0.26]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.3, vertexColors: true, transparent: true, opacity: 0.92 }) };
+      // a front door in a stone surround, facing local -y (out of the wall)
+      case "door": return { g: mergeColored([[box(2.4, 0.18, 3.1, 0, -0.06, 0), [0.78, 0.74, 0.66]], [box(1.7, 0.08, 2.6, 0, -0.16, 0.05), [0.16, 0.12, 0.1]], [box(1.6, 0.4, 0.15, 0, -0.35, 0), [0.6, 0.58, 0.55]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      // the apartment marquee: a fabric box over the door, 2.4 m out
+      case "marquee": return { g: merge([box(2.2, 2.4, 0.5, 0, -1.2, 3.2)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      // a tower's entrance canopy: a thin steel-edged glass plate on two rods
+      case "entcanopy": return { g: mergeColored([[box(6.0, 2.6, 0.18, 0, -1.3, 4.4), [0.62, 0.66, 0.7]], [box(6.1, 0.06, 0.3, 0, -2.6, 4.3), [0.3, 0.32, 0.34]],
+        [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(-2.4, -1.3, 5.6), [0.3, 0.32, 0.34]], [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(2.4, -1.3, 5.6), [0.3, 0.32, 0.34]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5, vertexColors: true }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
@@ -3825,7 +3864,7 @@ export class RealCityLayer {
     return { volumes, floating, deeds };
   }
   /** For the harness: where each placed prop actually stands, by kind. */
-  auditGround(kinds = ["trunk", "pine", "car", "suv", "van", "taxi", "lotcar", "lotsuv", "lamp", "hydrant", "bin", "shelter", "signal", "sigpost", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
+  auditGround(kinds = ["trunk", "pine", "car", "suv", "van", "taxi", "lotcar", "lotsuv", "lamp", "hydrant", "bin", "shelter", "signal", "sigpost", "door", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
     const out: Record<string, Record<string, number>> = {};
     const e = new THREE.Matrix4();
     for (const k of kinds) {
@@ -3838,7 +3877,7 @@ export class RealCityLayer {
         if (el[0] === 0 && el[1] === 0 && el[5] === 0) continue;   // hidden
         // wall-mounted kinds: where they stand is a pace out from the wall
         let px = el[12], py = el[13];
-        if (k === "stoop" || k === "dock" || k === "awning") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
+        if (k === "stoop" || k === "dock" || k === "awning" || k === "door") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
         const gk = this.groundAt(px, py);
         row[gk] = (row[gk] ?? 0) + 1;
       }

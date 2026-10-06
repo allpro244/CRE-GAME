@@ -20,7 +20,7 @@ const OK = {
   trunk: ["walk", "park", "open", "lot"], pine: ["walk", "park", "open", "lot"],
   car: ["road"], suv: ["road"], van: ["road"], taxi: ["road"], lotcar: ["lot"], lotsuv: ["lot"], lamp: ["walk"],
   hydrant: ["walk"], bin: ["walk"], shelter: ["walk"], signal: ["walk"], sigpost: ["walk"],
-  stoop: ["walk", "lot"], dock: ["lot", "road"], awning: ["walk", "lot"],
+  door: ["walk", "lot", "open", "park"], door: ["walk", "lot", "open", "park"], stoop: ["walk", "lot"], dock: ["lot", "road"], awning: ["walk", "lot"],
 };
 let bad = 0;
 for (const t of towns) {

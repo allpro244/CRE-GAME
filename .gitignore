@@ -5,3 +5,4 @@ bundle.html
 
 # agent worktrees — never part of the repo
 .claude/worktrees/
+node_modules

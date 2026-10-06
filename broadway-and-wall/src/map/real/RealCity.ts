@@ -78,7 +78,9 @@ interface Family {
 
 const TILE = 128;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
-const FAR_PROPS = ["lamp", "car", "lotcar"];
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
+/** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
+const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 /** The families a tower can wear above its lobby. */
 const TOWER_FAMS = new Set(["glass", "blueglass", "bronze", "ribbon", "grid", "blackglass", "greenglass", "silverglass", "fins", "precast", "pomo", "modern"]);
 /** Shop trades: canopy and fascia colours. Looks only. */
@@ -193,6 +195,35 @@ interface FamilySpec {
   shutter?: string;  // painted shutters either side
 }
 
+/**
+ * NO TWO WINDOWS ALIKE. The facade texture repeats every two bays and two
+ * floors, so a wall was the same four windows tiled. Each pane (marked in
+ * the ORM map's red channel) now draws its own state from a hash of its cell:
+ * under a third with a blind down to some height, a sixth with curtains
+ * drawn to the sides, the rest bare glass a little lighter or darker and a
+ * little rougher or smoother — what any street elevation looks like.
+ */
+const WINDOW_VARIATION = `
+float winM = texelRoughness.r;
+vec2 bayC = vMapUv * 2.0;
+vec2 cellC = floor(bayC);
+float wh1 = fract(sin(dot(cellC + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+float wh2 = fract(wh1 * 17.31 + 0.137);
+vec2 fC = fract(bayC);
+float tW = clamp((fC.y - (1.0 - uWin.w)) / max(uWin.w - uWin.z, 0.01), 0.0, 1.0);
+float xW = clamp((fC.x - uWin.x) / max(uWin.y - uWin.x, 0.01), 0.0, 1.0);
+float blindK = step(wh1, 0.3) * step(1.0 - tW, 0.2 + 0.7 * wh2);
+float curtK = step(0.3, wh1) * step(wh1, 0.46) * (step(xW, 0.24 + 0.12 * wh2) + step(0.76 - 0.12 * wh2, xW));
+float winShade = clamp(blindK + curtK, 0.0, 1.0);
+vec3 blindCol = mix(vec3(0.74, 0.7, 0.62), vec3(0.58, 0.57, 0.55), wh2);
+vec3 curtCol = mix(vec3(0.62, 0.5, 0.42), vec3(0.5, 0.52, 0.5), wh2);
+vec3 paneCol = diffuseColor.rgb * (0.82 + 0.36 * wh2);
+paneCol = mix(paneCol, blindCol * 0.42, blindK);
+paneCol = mix(paneCol, curtCol * 0.4, curtK * (1.0 - blindK));
+diffuseColor.rgb = mix(diffuseColor.rgb, paneCol, winM * (1.0 - farK * 0.7));
+roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * 0.14, 0.02, 1.0), 0.85, winShade), winM);
+`;
+
 function buildFamily(spec: FamilySpec, seed: number): Family {
   let s = seed;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -265,7 +296,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
         for (let i = 1; i < spec.mullions[0]; i++) { const x = a + (w2 * i) / spec.mullions[0]; alb.g.beginPath(); alb.g.moveTo(x, y0 + rise(a, b)); alb.g.lineTo(x, y1); alb.g.stroke(); }
         for (let i = 1; i < spec.mullions[1]; i++) { const y = y0 + (wh * i) / spec.mullions[1]; alb.g.beginPath(); alb.g.moveTo(a, y); alb.g.lineTo(b, y); alb.g.stroke(); }
       }
-      orm.g.fillStyle = `rgb(0,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
+      // red marks the pane, for the per-window variation in the shader
+      orm.g.fillStyle = `rgb(255,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
       shape(orm.g, a, b, 2); orm.g.fill();
       // the reveal: glass sits back in the wall
       hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
@@ -293,26 +325,33 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   // The window glow is a texture shared by every building in the family; the
   // per-vertex `lit` scales it, so an empty building goes dark at night and a
   // full one blazes.
+  const winU = new THREE.Vector4(spec.win.x0, spec.win.x1, spec.win.y0, spec.win.y1);
+  const seedU = new THREE.Vector2((seed % 997) / 7.3, (seed % 613) / 5.1);
   mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWin = { value: winU };
+    sh.uniforms.uSeed = { value: seedU };
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float lit;\nvarying float vLit;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;")
+      .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nvarying float vLit;\nvarying float vAoH;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nuniform vec4 uWin;\nuniform vec2 uSeed;")
       // the street darkens the foot of every wall: bounce light from the sky
-      // is blocked by the pavement and the buildings across the way
-      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 3.5, vGz));")
+      // is blocked by the pavement and the buildings across the way. How far
+      // up it climbs is the street's own: a few metres on an open avenue,
+      // most of the way up the lower floors in a canyon of towers (vAoH).
+      // The first metre is darkest, where wall meets pavement.
+      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
       .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);")
-      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;")
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION)
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -926,6 +965,83 @@ export function facadeSwatches(): Record<string, string> {
 
 // ---- geometry accumulation -------------------------------------------------
 
+/** Parts with fixed vertex colours, merged into one non-indexed geometry. */
+function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
+  const pos: number[] = [], nrm: number[] = [], col: number[] = [];
+  for (const [g0, c] of parts) {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    if (!g.getAttribute("normal")) g.computeVertexNormals();
+    const P = g.getAttribute("position").array as Float32Array, N = g.getAttribute("normal").array as Float32Array;
+    for (let i = 0; i < P.length; i += 3) { pos.push(P[i], P[i + 1], P[i + 2]); nrm.push(N[i], N[i + 1], N[i + 2]); col.push(c[0], c[1], c[2]); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+/** A side profile (x along the car, z up) extruded across its width w, centred. */
+function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z)));
+  return new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, w / 2, 0);
+}
+const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGeometry {
+  const parts: [THREE.BufferGeometry, number[]][] = [];
+  const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
+  const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
+  if (kind === "sedan" || kind === "taxi") {
+    const L = 2.3;
+    parts.push([profile([[-L, 0.3], [L, 0.3], [L, 0.72], [L - 0.15, 0.82], [1.15, 0.92], [-1.55, 0.95], [-L + 0.05, 0.86], [-L, 0.72]], 1.78), PAINT]);
+    parts.push([profile([[1.15, 0.92], [0.45, 1.38], [-0.95, 1.4], [-1.6, 0.95]], 1.6), GLASS]);
+    box(1.3, 1.46, 0.06, -0.25, 0, 1.36, PAINT);
+    for (const x of [1.45, -1.4]) for (const y of [-0.8, 0.8]) wheel(x, y, 0.32);
+    box(0.06, 0.4, 0.14, L + 0.02, -0.6, 0.62, HEAD); box(0.06, 0.4, 0.14, L + 0.02, 0.6, 0.62, HEAD);
+    box(0.06, 0.36, 0.12, -L - 0.02, -0.62, 0.66, TAIL); box(0.06, 0.36, 0.12, -L - 0.02, 0.62, 0.66, TAIL);
+    box(0.1, 1.8, 0.12, L - 0.02, 0, 0.36, TRIMC); box(0.1, 1.8, 0.12, -L + 0.02, 0, 0.36, TRIMC);
+    if (kind === "taxi") box(0.5, 0.24, 0.2, -0.25, 0, 1.42, [1.1, 1.1, 1.0]);
+  } else if (kind === "suv") {
+    const L = 2.4;
+    parts.push([profile([[-L, 0.38], [L, 0.38], [L, 0.95], [1.5, 1.08], [-L, 1.12]], 1.9), PAINT]);
+    parts.push([profile([[1.5, 1.08], [0.9, 1.68], [-L + 0.15, 1.7], [-L, 1.12]], 1.76), GLASS]);
+    box(3.0, 1.8, 0.07, -0.75, 0, 1.68, PAINT);
+    for (const x of [1.55, -1.5]) for (const y of [-0.85, 0.85]) wheel(x, y, 0.38);
+    box(0.06, 0.42, 0.16, L + 0.02, -0.62, 0.82, HEAD); box(0.06, 0.42, 0.16, L + 0.02, 0.62, 0.82, HEAD);
+    box(0.06, 0.2, 0.36, -L - 0.02, -0.78, 0.8, TAIL); box(0.06, 0.2, 0.36, -L - 0.02, 0.78, 0.8, TAIL);
+    box(0.12, 1.92, 0.2, L - 0.02, 0, 0.42, TRIMC);
+  } else if (kind === "van") {
+    const L = 2.6;
+    parts.push([profile([[-L, 0.35], [L, 0.35], [L, 1.0], [1.9, 1.25], [1.5, 2.3], [-L, 2.3]], 2.0), PAINT]);
+    parts.push([profile([[1.86, 1.3], [1.52, 2.12], [1.0, 2.12], [1.0, 1.3]], 2.02), GLASS]);
+    for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
+    box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
+    box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else {
+    // the city bus: a long box on small wheels, a band of glass down each side
+    const L = 6;
+    box(12, 2.55, 2.75, 0, 0, 0.35, PAINT);
+    box(10.2, 2.57, 1.05, -0.6, 0, 1.6, GLASS);
+    box(0.06, 2.3, 1.5, L + 0.01, 0, 1.25, GLASS);
+    box(3, 2.2, 0.3, -2, 0, 3.1, [0.75, 0.75, 0.75]);
+    for (const x of [4.3, -3.3]) for (const y of [-1.05, 1.05]) wheel(x, y, 0.5);
+    box(0.06, 0.4, 0.2, L + 0.03, -0.9, 0.7, HEAD); box(0.06, 0.4, 0.2, L + 0.03, 0.9, 0.7, HEAD);
+  }
+  return mergeColored(parts);
+}
+function person(): THREE.BufferGeometry {
+  const SKIN = [0.62, 0.48, 0.4], HAIR = [0.22, 0.2, 0.2], LEG = [0.32, 0.33, 0.36], SHOE = [0.12, 0.12, 0.12];
+  const b = (w: number, d: number, h: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
+  return mergeColored([
+    [b(0.13, 0.15, 0.82, 0, -0.09, 0.06), LEG], [b(0.13, 0.15, 0.82, 0, 0.09, 0.06), LEG],
+    [b(0.24, 0.13, 0.07, 0.04, -0.09, 0), SHOE], [b(0.24, 0.13, 0.07, 0.04, 0.09, 0), SHOE],
+    [b(0.24, 0.42, 0.62, 0, 0, 0.86), PAINT],
+    [b(0.11, 0.1, 0.6, 0, -0.27, 0.86), PAINT], [b(0.11, 0.1, 0.6, 0, 0.27, 0.86), PAINT],
+    [b(0.08, 0.12, 0.1, 0, 0, 1.48), SKIN],
+    [new THREE.SphereGeometry(0.11, 10, 8).translate(0, 0, 1.64), SKIN],
+    [new THREE.SphereGeometry(0.115, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0, 1.65), HAIR],
+  ]);
+}
+
 /** Cut (or round) each convex corner of a counter-clockwise ring by frac of its shorter edge, at most maxM metres. */
 function chamferRing(r: P2[], frac: number, maxM: number, round: boolean): P2[] {
   const n = r.length, out: P2[] = [];
@@ -996,15 +1112,17 @@ class PolyGrid {
 }
 
 class Buf {
-  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = [];
+  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = []; ao: number[] = [];
+  /** how high (m) the street's shade climbs the walls written next (see the facade shader) */
+  aoH = 3.5;
   get count() { return this.pos.length / 3; }
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], uvs: number[][], col: number[]) {
     for (const [p, t] of [[a, uvs[0]], [b, uvs[1]], [c, uvs[2]], [a, uvs[0]], [c, uvs[2]], [d, uvs[3]]] as [number[], number[]][]) {
-      this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]);
+      this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH);
     }
   }
   tri(a: number[], b: number[], c: number[], n: number[], col: number[]) {
-    for (const p of [a, b, c]) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(p[0] * 0.25, p[1] * 0.25); this.col.push(col[0], col[1], col[2]); }
+    for (const p of [a, b, c]) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(p[0] * 0.25, p[1] * 0.25); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH); }
   }
   /** A planar polygon (fan), wound so its normal leans toward `want`. */
   face(pts: number[][], want: number[], col: number[], uvOf: (p: number[]) => number[] = (p) => [p[0] * 0.25, p[1] * 0.25]) {
@@ -1016,7 +1134,7 @@ class Buf {
     for (let i = 1; i + 1 < pts.length; i++) {
       for (const p of [pts[0], pts[i], pts[i + 1]]) {
         const t = uvOf(p);
-        this.pos.push(p[0], p[1], p[2]); this.nrm.push(nx, ny, nz); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]);
+        this.pos.push(p[0], p[1], p[2]); this.nrm.push(nx, ny, nz); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH);
       }
     }
   }
@@ -1026,6 +1144,7 @@ class Buf {
     g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute("aoh", new THREE.Float32BufferAttribute(this.ao.length === this.count ? this.ao : new Array(this.count).fill(3.5), 1));
     // how many of this building's rooms are lit after dark (see setOccupancy)
     g.setAttribute("lit", new THREE.Float32BufferAttribute(new Float32Array(this.count).fill(1), 1));
     g.computeBoundingSphere();
@@ -1033,7 +1152,7 @@ class Buf {
   }
 }
 
-interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number }
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 
@@ -1846,6 +1965,98 @@ export class RealCityLayer {
     });
   }
 
+  // ---- ambient shade ---------------------------------------------------------
+  // HOW DEEP A STREET IS. Mean building height on a 60 m grid, from the
+  // volumes themselves; the shade at the foot of a wall climbs about a third
+  // of the way up its neighbours (an avenue of walk-ups: ~4 m; a canyon of
+  // towers: ~25 m). Calibrated by eye against street photographs, not a
+  // measured constant.
+  private canyonGrid: Map<number, number> | null = null;
+  private canyonAt(x: number, y: number): number {
+    if (!this.canyonGrid) {
+      const sum = new Map<number, number>(), n = new Map<number, number>(), C = 60;
+      for (const v of this.volumes) {
+        if (v.d || v.k || !v.b || v.z0 > 0.5) continue;
+        const [px, py] = this.project(v.r[0]);
+        const key = Math.floor(px / C) * 100003 + Math.floor(py / C);
+        sum.set(key, (sum.get(key) ?? 0) + v.z1); n.set(key, (n.get(key) ?? 0) + 1);
+      }
+      this.canyonGrid = new Map();
+      for (const [k2, sm] of sum) this.canyonGrid.set(k2, sm / (n.get(k2) ?? 1));
+    }
+    const C = 60, cx = Math.floor(x / C), cy = Math.floor(y / C);
+    let acc = 0, cnt = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const h = this.canyonGrid.get((cx + i) * 100003 + (cy + j));
+      if (h !== undefined) { acc += h; cnt++; }
+    }
+    const mean = cnt ? acc / cnt : 10;
+    return Math.min(26, Math.max(3.5, mean * 0.35));
+  }
+  /** 1 for a wall that looks out on open ground; darker the closer another building stands in front of it. */
+  private facing(a: P2, b: P2, n: number[]): number {
+    const g = this.groundIndex();
+    let k = 1;
+    for (const f of [0.3, 0.7]) {
+      const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f;
+      if (g.bld.hit(x + n[0] * 3, y + n[1] * 3)) k = Math.min(k, 0.72);
+      else if (g.bld.hit(x + n[0] * 7, y + n[1] * 7)) k = Math.min(k, 0.84);
+      else if (g.bld.hit(x + n[0] * 12, y + n[1] * 12)) k = Math.min(k, 0.93);
+    }
+    return k;
+  }
+  /**
+   * WHERE A BUILDING MEETS THE GROUND. A soft dark band on the ground round
+   * every footprint, darkest at the wall, gone two to four metres out (wider
+   * for a taller building): the contact shade sky light leaves at the foot of
+   * any wall, which is what seats a building on its street instead of
+   * pasting it on. Drawn just above the footway slab, never casting.
+   */
+  private contactShadow(ring0: P2[], bbl: string, z1: number) {
+    const ring = ringArea(ring0) < 0 ? ring0.slice().reverse() : ring0;
+    const B = this.buf("contact"), c0 = B.count;
+    const w = Math.min(4, 1.8 + z1 * 0.025), Z = 0.17, A = 0.36;
+    const n = ring.length;
+    const nOf = (i: number) => { const a = ring[i], b = ring[(i + 1) % n]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[1] - a[1]) / L, -(b[0] - a[0]) / L]; };
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.2) continue;
+      const [nx, ny] = nOf(i);
+      B.quad([a[0], a[1], Z], [b[0], b[1], Z], [b[0] + nx * w, b[1] + ny * w, Z], [a[0] + nx * w, a[1] + ny * w, Z], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [A, 0, 0]);
+      // fix the far edge to transparent: the quad's last two vertices carry alpha 0
+      const end = B.col.length;
+      for (const vi of [2, 4, 5]) B.col[end - (6 - vi) * 3] = 0;
+      // the convex corner after this edge: a fan between the two bands
+      const [mx, my] = nOf((i + 1) % n);
+      const cr = nx * my - ny * mx;
+      if (cr > 0.01) {   // convex: the outward normal turns counter-clockwise
+        for (let s2 = 0; s2 < 3; s2++) {
+          const t1 = s2 / 3, t2 = (s2 + 1) / 3;
+          const d1 = [nx + (mx - nx) * t1, ny + (my - ny) * t1], d2 = [nx + (mx - nx) * t2, ny + (my - ny) * t2];
+          const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
+          B.tri([b[0], b[1], Z], [b[0] + (d1[0] / l1) * w, b[1] + (d1[1] / l1) * w, Z], [b[0] + (d2[0] / l2) * w, b[1] + (d2[1] / l2) * w, Z], [0, 0, 1], [A, 0, 0]);
+          const e2 = B.col.length;
+          B.col[e2 - 6] = 0; B.col[e2 - 3] = 0;
+        }
+      }
+    }
+    this.note(bbl, "contact", c0);
+  }
+  private vehMat: THREE.MeshStandardMaterial | null = null;
+  private vehicleMat() {
+    if (!this.vehMat) this.vehMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+    return this.vehMat;
+  }
+  private contactMat = (() => {
+    const m = new THREE.MeshBasicMaterial({ color: 0x0c0f14, transparent: true, depthWrite: false, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // the vertex colour's red channel is the shade's opacity
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "diffuseColor.a *= vColor.r;");
+    };
+    m.customProgramCacheKey = () => "bw-contact";
+    return m;
+  })();
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * (1 + (VARIANTS[fk.split("#")[0]]?.length ?? 3)));
@@ -1875,20 +2086,27 @@ export class RealCityLayer {
       const W = this.buf(wallName);
       const w0 = W.count;
       let uRun = 0;
+      const canyon = this.canyonAt(ringC[0], ringC[1]);
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const L = Math.hypot(dx, dy);
         if (L < 0.05) continue;
         const n = [dy / L, -dx / L, 0];
+        // A WALL THAT FACES A WALL is in shade all day: a light well, an
+        // alley, a courtyard. Probe out from the middle of the wall.
+        const close = bbl ? this.facing(a, b, n) : 1;
+        const tE = close < 1 ? [tn[0] * close, tn[1] * close, tn[2] * close] : tn;
+        W.aoH = za < 0.5 ? canyon * (close < 1 ? 1.4 : 1) : 3.5;
         // whole bays per run, so every corner falls between two windows
         const bays = Math.max(1, Math.round(L / f.bayW));
         const u0 = uRun, u1 = uRun + bays;
         uRun = u1;
         const v0 = (za - vOff) / f.floorH, v1 = (zb - vOff) / f.floorH;
         W.quad([a[0], a[1], za], [b[0], b[1], za], [b[0], b[1], zb], [a[0], a[1], zb], n,
-          [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tn);
+          [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tE);
       }
+      W.aoH = 3.5;
       this.note(bbl, wallName, w0);
     };
     // ---- what hangs on the street front ------------------------------------
@@ -1919,6 +2137,7 @@ export class RealCityLayer {
         }
       }
     }
+    if (z0 < 0.5 && bbl) this.contactShadow(ring, bbl, z1);
     const fh = fam.floorH;
     // A trading ground floor is its own storey: display glass under awnings,
     // the upper floors' windows starting above it.
@@ -2214,7 +2433,7 @@ export class RealCityLayer {
           const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
           if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
           if (!this.clearOfBuildings(x, y, 2.6)) continue;
-          this.putInst("lotcar", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
+          this.putInst(lrnd() < 0.62 ? "lotcar" : "lotsuv", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
         }
       }
     }
@@ -2342,11 +2561,12 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
-      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
+      if (name === "contact") mesh.renderOrder = 2;
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     this.bindRanges(this.deeds, this.meshes);
@@ -2458,14 +2678,22 @@ export class RealCityLayer {
         g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
         return { g, mat: this.leafMat, colored: true };
       }
+      // REAL CARS. A shaped body (bonnet, windscreen, roof, boot) in the
+      // instance's paint, dark glass, black tyres, light lenses: the paint is
+      // the instance colour and every other part a fixed vertex colour that the
+      // paint multiplies, so the glass stays glass. Sizes are real: a sedan
+      // 4.6 x 1.8 m, an SUV 4.8 x 1.9 x 1.75, a van 5.2 x 2.0 x 2.3, a city bus
+      // 12 x 2.55 x 3.1.
       case "lotcar":
-      case "car": {
-        const body = box(4.35, 1.78, 0.78, 0, 0, 0.22);
-        const cab = box(2.2, 1.62, 0.62, -0.2, 0, 1.0);
-        return { g: merge([body, cab]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }), colored: true };
-      }
-      case "lamp": return { g: merge([cyl(0.09, 6, 0, 6), box(1.4, 0.18, 0.14, 0.6, 0, 5.9)]), mat: this.lampMat };
-      case "person": return { g: merge([box(0.42, 0.3, 0.95, 0, 0, 0), box(0.46, 0.34, 0.6, 0, 0, 0.9), new THREE.SphereGeometry(0.13, 8, 6).translate(0, 0, 1.68)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      case "car": return { g: vehicle("sedan"), mat: this.vehicleMat(), colored: true };
+      case "lotsuv":
+      case "suv": return { g: vehicle("suv"), mat: this.vehicleMat(), colored: true };
+      case "van": return { g: vehicle("van"), mat: this.vehicleMat(), colored: true };
+      case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
+      case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
+      // A PERSON: legs, coat, arms, head with hair — coat in the instance
+      // colour, trousers and hair darker. 1.75 m.
+      case "person": return { g: person(), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
       case "fountain": return { g: merge([cyl(5.2, 0.55, 0, 24), cyl(1.1, 1.6, 0.55, 12), cyl(2.4, 0.3, 2.1, 16), cyl(0.5, 1.1, 2.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.7 }) };
       case "basin": return { g: merge([cyl(4.6, 0.08, 0.5, 24), cyl(2.1, 0.06, 2.38, 16)]), mat: new THREE.MeshStandardMaterial({ color: 0x3b6f82, roughness: 0.08, metalness: 0.1, envMapIntensity: 1.3 }) };
       case "column": return { g: merge([box(7, 7, 1.2), box(4.4, 4.4, 2.4, 0, 0, 1.2), cyl(0.95, 14, 3.6, 16), box(2.4, 2.4, 0.8, 0, 0, 17.6), cyl(0.5, 2.2, 18.4, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.65 }) };
@@ -2993,7 +3221,9 @@ export class RealCityLayer {
           for (let k = 0; k < n; k++) {
             const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
             if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
-            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5, col: CAR[(rnd() * CAR.length) | 0], draw: rnd() });
+            const vk = rnd();
+            const kind = L > 160 && vk < 0.04 ? "bus" : vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.88 ? "van" : "taxi";
+            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: (kind === "bus" ? 4.5 : 6) + rnd() * 5, col: kind === "taxi" ? TAXI : kind === "bus" ? BUS : CAR[(rnd() * CAR.length) | 0], draw: rnd(), kind });
           }
         }
         // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
@@ -3003,7 +3233,9 @@ export class RealCityLayer {
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
           if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
-          this.putInst("car", x, y, 0.05, 0.95 + rnd() * 0.12, rot + (rnd() < 0.5 ? 0 : Math.PI), "", CAR[(rnd() * CAR.length) | 0]);
+          const vk = rnd(), dt = this.demandAt(x, y);
+          const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
+          this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
         }
       }
     }
@@ -3146,7 +3378,7 @@ export class RealCityLayer {
       mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.scene.add(mesh); this.fleets.push({ mesh, list, z });
     };
-    fleet("car", this.movers, 0.05);
+    for (const kind of ["car", "suv", "van", "taxi", "bus"]) fleet(kind, this.movers.filter((m) => (m.kind ?? "car") === kind), 0.05);
     fleet("person", this.walkers, 0.15);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();
@@ -3194,7 +3426,7 @@ export class RealCityLayer {
     const lv = this.lens?.get(bbl);
     const tint = this.tints.get(bbl);
     for (const r of d.ranges) {
-      if (!r.mesh || !r.base) continue;
+      if (!r.mesh || !r.base || r.buf === "contact") continue;
       const col = r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
       const arr = col.array as Float32Array;
       const base = r.base;
@@ -3300,6 +3532,8 @@ export class RealCityLayer {
       const pa = r.mesh?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
       if (!pa) continue;
       const arr = pa.array as Float32Array;
+      // a demolished building's ground shade goes with it: collapse the band to a point
+      if (r.buf === "contact") { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
       for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.01);
       pa.addUpdateRange(r.start * 3, r.count * 3); pa.needsUpdate = true;
     }
@@ -3400,9 +3634,10 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const mesh = new THREE.Mesh(b.geometry(), mat);
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = mesh.receiveShadow = name !== "contact";
+      if (name === "contact") mesh.renderOrder = 2;
       this.dyn.add(mesh); dynMeshes.set(name, mesh);
     }
     if (craneAt.length) {

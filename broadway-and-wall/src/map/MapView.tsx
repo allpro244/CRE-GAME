@@ -7,7 +7,7 @@ import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
-import { monthLabel, START_YEAR } from "@/engine/types";
+import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { ownerIndex } from "@/engine/ownership";
@@ -15,6 +15,7 @@ import { holderOf } from "@/engine/owners";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 import Badges from "./Badges";
+import { esc, tipHtml } from "./hoverCard";
 import EventPops from "./EventPops";
 
 /**
@@ -468,29 +469,35 @@ export default function MapView() {
         // the cinematic fly-in
         map.flyTo({ ...shot.core, duration: 5500, essential: true });
 
-        map.on("mousemove", "bw-parcel-fill", (e) => {
-          const f = e.features?.[0];
-          const bbl = f?.properties?.bbl as string | undefined;
-          if (!bbl || bbl === hoveredRef.current) return;
+        // WHAT IS UNDER THE POINTER. The 3D city answers first — from a
+        // pitched camera the flat parcel under the cursor is the street behind
+        // the tower you are pointing at — and the flat layer is the fallback
+        // while the 3D layer is still loading.
+        const pickAt = (pt: { x: number; y: number }): string | null => {
+          const three = threeRef.current;
+          if (three) return three.pickAt(pt.x, pt.y);
+          const fs = map.queryRenderedFeatures(
+            [[pt.x - 8, pt.y - 8], [pt.x + 8, pt.y + 8]], { layers: ["bw-parcel-fill"] });
+          return (fs[0]?.properties?.bbl as string | undefined) ?? null;
+        };
+        let pending: { x: number; y: number } | null = null;
+        const setHovered = (bbl: string | null) => {
+          if (bbl === hoveredRef.current) return;
           if (hoveredRef.current) setState(hoveredRef.current, { hover: false });
           hoveredRef.current = bbl;
-          setState(bbl, { hover: true });
+          if (bbl) setState(bbl, { hover: true });
           hover(bbl);
-          map.getCanvas().style.cursor = "pointer";
+          map.getCanvas().style.cursor = bbl ? "pointer" : "";
+        };
+        map.on("mousemove", (e) => {
+          // one pick per frame, however fast the mouse moves
+          if (!pending) requestAnimationFrame(() => { const pt = pending; pending = null; if (pt) setHovered(pickAt(pt)); });
+          pending = { x: e.point.x, y: e.point.y };
         });
-        map.on("mouseleave", "bw-parcel-fill", () => {
-          if (hoveredRef.current) setState(hoveredRef.current, { hover: false });
-          hoveredRef.current = null;
-          hover(null);
-          map.getCanvas().style.cursor = "";
-        });
+        map.on("mouseout", () => { pending = null; setHovered(null); });
+        map.on("dragstart", () => { pending = null; setHovered(null); });
         map.on("click", (e) => {
-          const box: [[number, number], [number, number]] = [
-            [e.point.x - 8, e.point.y - 8],
-            [e.point.x + 8, e.point.y + 8],
-          ];
-          const fs = map.queryRenderedFeatures(box, { layers: ["bw-parcel-fill"] });
-          const bbl = (fs[0]?.properties?.bbl as string | undefined) ?? null;
+          const bbl = pickAt(e.point);
           // Map is the index: select the lot AND put the camera on it. Empty
           // clicks clear the glance card. Closing firm pages (`page: none`)
           // keeps the docked parcel card visible for the selection.
@@ -1658,31 +1665,22 @@ export default function MapView() {
       return;
     }
     const container = map.getContainer();
+    let tipKey = "";
     const onMove = (e: MouseEvent) => {
       const { hoveredBBL, parcels: table, selectedBBL, game: g } = useStore.getState();
       const rec = hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
-      const dmd = Math.round(Math.max(2, Math.min(100, rec.demandScore + (g?.blockD?.[rec.block] ?? 0))));
-      // A SITE WITH A CRANE ON IT IS NOT A VACANT LOT. The parcel stays class
-      // "land" until the day it delivers, so a job eighteen months into
-      // construction read as bare dirt on the one label you get without
-      // clicking. The panel already flags it; the map did not.
-      const job = g?.developments?.[rec.bbl];
-      const cityJob = !job ? (g?.cityJobs ?? []).find((j) => j.bbl === rec.bbl) : undefined;
-      tip.textContent = job
-        ? `${rec.address} · UNDER CONSTRUCTION · ${Math.round(job.sf).toLocaleString()} sf of ${job.use}`
-          + `, ${job.floors} fl · opens ${monthLabel(job.deliverM)}`
-        : cityJob
-        ? `${rec.address} · CRANE · ${Math.round(cityJob.sf).toLocaleString()} sf of ${cityJob.use}`
-          + `, ${cityJob.floors} fl · ${cityJob.orphaned ? "stalled" : `due ${monthLabel(cityJob.deliverM)}`}`
-          + (cityJob.firmId ? ` · ${g?.rivals.find((r) => r.id === cityJob.firmId)?.name ?? "a rival"}` : " · the city")
-        : rec.class === "land"
-        ? `${rec.address} · vacant · ${rec.lotArea.toLocaleString()} sf lot · demand ${dmd}`
-        : `${rec.address} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · demand ${dmd}`;
+      // One card per lot and month: the same numbers the property panel
+      // prints, read off the same functions, so the glance and the click agree.
+      const key = `${rec.bbl}|${g?.month}|${g?.holdings?.[rec.bbl] ? 1 : 0}|${g?.listings?.length}`;
+      if (key !== tipKey) { tipKey = key; tip.innerHTML = g ? tipHtml(g, table!, rec) : esc(rec.address); }
       tip.style.display = "block";
       const r = container.getBoundingClientRect();
-      tip.style.left = e.clientX - r.left + 14 + "px";
-      tip.style.top = e.clientY - r.top + 16 + "px";
+      // keep the card on the map: flip it left / up near the far edges
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = (x + 14 + tw > r.width ? x - 14 - tw : x + 14) + "px";
+      tip.style.top = (y + 16 + th > r.height ? y - 12 - th : y + 16) + "px";
     };
     const onLeave = () => { tip.style.display = "none"; };
     container.addEventListener("mousemove", onMove);

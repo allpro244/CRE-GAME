@@ -2500,3 +2500,12 @@ html, body, #root { overflow-x: hidden; }
 .start-goal-on { border-color: var(--gold); background: rgba(176,127,30,0.18); }
 .goal-bar { margin-top: 6px; height: 6px; border-radius: 3px; background: rgba(43,37,26,0.1); overflow: hidden; }
 .goal-bar span { display: block; height: 100%; background: linear-gradient(90deg, #b07f1e, #d8a94a); }
+
+/* the hover card: a building's numbers before the click */
+.hover-tip { min-width: 210px; max-width: 300px; padding: 7px 10px 6px; line-height: 1.45; }
+.hover-tip .ht-addr { font-weight: 700; font-size: 12.5px; }
+.hover-tip .ht-sub { opacity: 0.72; margin-bottom: 4px; font-size: 11px; }
+.hover-tip .ht-row { display: flex; justify-content: space-between; gap: 14px; }
+.hover-tip .ht-row span { opacity: 0.72; }
+.hover-tip .ht-row.bad b { color: var(--bad, #b0432f); }
+.hover-tip .ht-row.sale b { color: var(--accent, #9a6a12); }

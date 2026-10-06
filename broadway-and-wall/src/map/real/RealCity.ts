@@ -2686,6 +2686,7 @@ export class RealCityLayer {
     this.dynSig = sig;
     for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
     this.dynHeight.clear();
+    this.pickGrid = null;
     // the new stock is built into its own small set of buffers
     const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems;
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map();
@@ -2785,6 +2786,91 @@ export class RealCityLayer {
     const keep = this.deeds; this.deeds = deeds;
     this.flatten(bbl);
     this.deeds = keep;
+  }
+
+  // ---- picking -------------------------------------------------------------
+  // WHAT IS UNDER THE POINTER, IN 3D. The flat parcel layer answers with the
+  // lot whose FOOTPRINT is under the cursor, which from a pitched camera is
+  // the street behind a tower, not the tower you are pointing at. This walks
+  // the pointer's ray down from the eye and stops at the first lot whose
+  // building stands taller than the ray at that spot — or, failing that, the
+  // lot the ray lands on.
+  private pickGrid: Map<number, { bbl: string; ring: P2[]; x0: number; y0: number; x1: number; y1: number }[]> | null = null;
+  private static PICK_CELL = 60;
+  private pickMax = 0;
+  private pickTop() { return this.pickMax; }
+  private pickIndex() {
+    if (this.pickGrid) return this.pickGrid;
+    const g = new Map<number, { bbl: string; ring: P2[]; x0: number; y0: number; x1: number; y1: number }[]>();
+    const C = RealCityLayer.PICK_CELL;
+    const bbls = new Set<string>([...Object.keys(this.lotRingLL), ...this.deeds.keys(), ...this.dynDeeds.keys()]);
+    for (const bbl of bbls) {
+      const ring = this.lotRing(bbl);
+      if (!ring || ring.length < 3) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const e = { bbl, ring, x0, y0, x1, y1 };
+      for (let cx = Math.floor(x0 / C); cx <= Math.floor(x1 / C); cx++)
+        for (let cy = Math.floor(y0 / C); cy <= Math.floor(y1 / C); cy++) {
+          const k = cx * 100003 + cy;
+          let a = g.get(k); if (!a) g.set(k, (a = [])); a.push(e);
+        }
+    }
+    let m = 0;
+    for (const d of this.deeds.values()) m = Math.max(m, d.height);
+    for (const v of this.dynHeight.values()) m = Math.max(m, v);
+    this.pickMax = m + 1;
+    this.pickGrid = g;
+    return g;
+  }
+  /** The lot under a pointer at (px, py) CSS pixels in the map container, building first. */
+  pickAt(px: number, py: number): string | null {
+    const el = this.map?.getContainer();
+    if (!el) return null;
+    const w = el.clientWidth || 1, h = el.clientHeight || 1;
+    const nx = (px / w) * 2 - 1, ny = 1 - (py / h) * 2;
+    const toWorld = (z: number) => new THREE.Vector3(nx, ny, z).applyMatrix4(this.camera.projectionMatrixInverse).applyMatrix4(this.camera.matrix);
+    const a = toWorld(-1), b = toWorld(1);
+    if (![a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) return null;
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    if (len <= 0) return null;
+    dir.divideScalar(len);
+    // start at the eye, not the near plane
+    const o = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix);
+    if (dir.z >= 0) return null;   // pointing at the sky
+    const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
+    const inRing = (r: P2[], x: number, y: number) => {
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    const lotAt = (x: number, y: number, z: number | null) => {
+      const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
+      if (!cell) return null;
+      for (const e of cell) {
+        if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+        if (z !== null) {
+          const ht = this.dynHeight.get(e.bbl) ?? (this.flattened.has(e.bbl) ? 0 : this.deeds.get(e.bbl)?.height ?? 0);
+          if (ht < z) continue;
+        }
+        if (inRing(e.ring, x, y)) return e.bbl;
+      }
+      return null;
+    };
+    // walk until the ray reaches the ground; finer near the eye
+    const tGround = -o.z / dir.z;
+    const p = new THREE.Vector3();
+    for (let t = 0, n = 0; t < tGround && n < 4000; n++) {
+      p.copy(o).addScaledVector(dir, t);
+      if (p.z < this.pickTop()) { const hit = lotAt(p.x, p.y, p.z); if (hit) return hit; }
+      t += Math.max(1.5, t * 0.003);
+    }
+    p.copy(o).addScaledVector(dir, tGround);
+    return lotAt(p.x, p.y, null);
   }
 
   buildingFrame(bbl: string): { radius: number; height: number } | null {

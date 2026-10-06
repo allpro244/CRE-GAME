@@ -1,4 +1,5 @@
-// GROUND AUDIT — does every prop in the 3D city stand on the right ground?
+// GROUND AUDIT — does every prop in the 3D city stand on the right ground,
+// and does every raised part of a building stand on the building?
 //
 //   pnpm dev --port 5176 &   then   node tools/ground-audit.mjs [url] ["island,size,dev,seed;..."]
 //
@@ -17,8 +18,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ["--use-angle
 // where each kind may stand
 const OK = {
   trunk: ["walk", "park", "open", "lot"], pine: ["walk", "park", "open", "lot"],
-  car: ["road"], lotcar: ["lot"], lamp: ["walk"],
-  stoop: ["walk", "lot"], dock: ["lot", "road"], awning: ["walk", "lot"],
+  car: ["road"], suv: ["road"], van: ["road"], taxi: ["road"], lotcar: ["lot"], lotsuv: ["lot"], lamp: ["walk"],
+  hydrant: ["walk"], bin: ["walk"], shelter: ["walk"], signal: ["walk"], sigpost: ["walk"],
+  door: ["walk", "lot", "open", "park"], door: ["walk", "lot", "open", "park"], stoop: ["walk", "lot"], dock: ["lot", "road"], awning: ["walk", "lot"],
 };
 let bad = 0;
 for (const t of towns) {
@@ -36,7 +38,10 @@ for (const t of towns) {
   }
   await page.waitForFunction(() => window.__three && window.__map && window.__map.loaded(), null, { timeout: 0 });
   const r = await page.evaluate(() => window.__three.auditGround());
+  const fl = await page.evaluate(() => window.__three.auditFloating());
   console.log(t);
+  console.log("   floating  ", JSON.stringify(fl), fl.floating ? `  <- ${fl.floating} floating` : "");
+  bad += fl.floating;
   for (const [k, row] of Object.entries(r)) {
     const wrong = OK[k] ? Object.entries(row).filter(([g]) => !OK[k].includes(g)).reduce((a, [, n]) => a + n, 0) : 0;
     bad += wrong;

@@ -712,3 +712,43 @@ was one prism in one elevation.
 Metropolis (seed 2): 95 post-war towers over 45 m now wear 94 distinct
 family-elevation/massing/crown combinations. `docs/map-overhaul/p23-*.jpg`.
 Looks only.
+
+# THE REALISM PASS
+
+The brief: make it look much better without anything odd — so nothing new
+invented for effect, only what is in a photograph of a real city, at real
+sizes and colours, and every piece checked.
+
+- **Contact and ambient shade.** The shade at the foot of a wall climbs a
+  third of the neighbouring height (3.5 m on an avenue of walk-ups, up to
+  26 m among towers); walls facing another building 3/7/12 m away sit
+  28/16/7% darker; every footprint stands in a soft ground band 2-4 m wide.
+  `p24-shade.jpg`.
+- **Vehicles and people.** Sedans, SUVs, vans, taxis and buses as shaped
+  bodies at real sizes, with glass, tyres and lamps; people with legs,
+  coats, arms and hair. `p24-vehicles.jpg`.
+- **Windows.** Each pane draws its own state: blinds at some height,
+  curtains, or bare glass a little lighter or darker. `p24-windows.jpg`.
+- **Ground.** A faint grain on the asphalt (aggregate, cracks, patches) and
+  mottling on the yards from zoom 15, made at runtime.
+- **Street hardware.** Signals at crossings, hydrants, litter bins, bus
+  shelters — all on the footway.
+- **Trees.** Crowns of seven clusters with dappled light and a forked trunk,
+  in a cleaner green. `p24-trees-hardware.jpg`.
+- **Entrances.** A door in a stone surround on the main street wall of
+  apartment and office buildings; marquees on apartment houses of six
+  floors or more; glass canopies on towers. `p24-entrance.jpg`.
+- **Roofs.** Decks with planters, solar rows on newer low roofs, the odd
+  dish. `p24-roofs.jpg`.
+
+**The guard.** `tools/ground-audit.mjs` checks every instanced prop stands
+on its ground and, new in this pass, that nothing floats (every raised
+volume stands on a lower volume of its own deed). It caught a 390 m
+penthouse bar floating over a split row of towers, and a stepped tier off
+a triangular footprint; both fixed. All three test towns: 0 misplaced,
+0 floating.
+
+**The cost**, on the software renderer at 2x, Metropolis district view,
+against the tower-variety baseline: +26% frame time on High, +39% on
+Medium, +26% on Low. Low (which now also drops the ground contact shade)
+still renders faster than the old Medium.

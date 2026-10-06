@@ -92,7 +92,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1469,14 +1469,17 @@ export class RealCityLayer {
     const fh = this.families[fam]?.floorH ?? 3.4;
     for (let j = 0; j + 1 < cuts.length; j++) {
       const kj = (k * 31 + j * 7919) >>> 0;
-      const r = clip(clip(ring, t0 + cuts[j] * ll, true), t0 + cuts[j + 1] * ll, false);
+      // a row of towers stands apart: an 8 m slot between neighbours, so a
+      // 600 m frontage reads as towers along a street, not one wall
+      const gap = tall ? 4 : 0;
+      const r = clip(clip(ring, t0 + cuts[j] * ll + gap, true), t0 + cuts[j + 1] * ll - gap, false);
       if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
       const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4);
       const fk = f2 === "industrial" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
       const tints = TINTS[fk] ?? [[1, 1, 1]];
       const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
       // a storey up or down now and then, never below two floors
-      const dz = tall ? -(v.z1 - v.z0) * 0.4 * hash01(kj ^ 0x5f, this.seed)
+      const dz = tall ? -(v.z1 - v.z0) * 0.55 * hash01(kj ^ 0x5f, this.seed)
         : hash01(kj ^ 0x5d, this.seed) < 0.35 ? (hash01(kj ^ 0x5e, this.seed) < 0.5 ? -fh : fh) : 0;
       const z1 = Math.max(v.z0 + 2 * fh, v.z1 + dz);
       if (tall && TOWER_FAMS.has(fk)) {
@@ -1516,7 +1519,14 @@ export class RealCityLayer {
       rad = Math.min(rad, Math.hypot(b[0] - a[0], b[1] - a[1]));
     }
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-    const inset = (r: P2[], d: number) => insetRing(r, d) ?? shrink(r, 0.82);
+    // an upper tier must stand inside the one below: an inset that leaves the
+    // parent (a sharp triangle's mitres do) shrinks about the parent's own centre instead
+    const inset = (r: P2[], d: number): P2[] => {
+      const q = insetRing(r, d);
+      if (q && ringArea(q) > 0 && q.every(([x, y]) => PolyGrid.inRing(r, x, y))) return q;
+      let px = 0, py = 0; for (const [x, y] of r) { px += x / r.length; py += y / r.length; }
+      return r.map(([x, y]) => [px + (x - px) * 0.82, py + (y - py) * 0.82] as P2);
+    };
     const simple = ring0.length <= 8 && rad > 7;
     const quad = ring0.length === 4 && rad > 10;
     const tall = H >= 40;
@@ -1908,6 +1918,34 @@ export class RealCityLayer {
       }
     }
   }
+  /**
+   * THE FRONT DOOR. An apartment house or an office building has an entrance
+   * on its main street front: a door in a stone surround, and above it on
+   * an apartment house of six floors or more a fabric marquee (the dark
+   * green, burgundy, navy or black of the city's canopies); on a tower a
+   * steel-and-glass canopy over the lobby doors. One per building, on its
+   * longest street-facing wall. Row houses keep their stoops instead.
+   */
+  private entrance(ring: P2[], bbl: string, famKey: string, cls: string, seedK: number, z1: number, tower: boolean) {
+    if (cls !== "multifamily" && cls !== "office" && cls !== "mixed") return;
+    if (famKey === "industrial" || famKey === "plain" || famKey === "clapboard" || famKey === "brownstone") return;
+    if (z1 < 9) return;
+    const edges = this.streetEdges(ring, 8);
+    if (!edges.length) return;
+    const e = edges.reduce((a, b) => (b.L > a.L ? b : a));
+    const t = e.L * (0.35 + 0.3 * hash01(seedK ^ 0xd00, 5));
+    const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+    const nx = e.uy, ny = -e.ux;
+    // the doorstep must open on a footway or a forecourt, not a neighbour's wall or the road
+    const front = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+    if (front === "bld" || front === "road") return;
+    this.putInst("door", x, y, 0.15, 1, e.r, bbl);
+    if (tower) this.putInst("entcanopy", x, y, 0, 1, e.r, bbl);
+    else if (cls === "multifamily" && z1 >= 18) {
+      const MC = [[0.16, 0.26, 0.2], [0.36, 0.12, 0.14], [0.14, 0.17, 0.28], [0.1, 0.1, 0.11]];
+      this.putInst("marquee", x, y, 0, 1, e.r, bbl, MC[Math.floor(hash01(seedK ^ 0xd01, 5) * MC.length)]);
+    }
+  }
   private lotAt2D(x: number, y: number): boolean {
     const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
     const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
@@ -2067,6 +2105,7 @@ export class RealCityLayer {
   /** One volume: walls in its family, a roof, and its trim. */
   private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0, ov?: VolumeOv) {
     const fam = this.families[famKey];
+    if (bbl) { let l = this.volLog.get(bbl); if (!l) this.volLog.set(bbl, (l = [])); l.push({ r: ring, z0, z1 }); }
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     // THE MANSARD. A Second Empire walk-up finishes its top storey as a steep
     // slate roof with dormers rather than a wall — the "French flat" of the
@@ -2151,9 +2190,11 @@ export class RealCityLayer {
       const lh = this.families.lobby.floorH;
       walls("lobby", z0, lh, 0, [1, 1, 1]);
       walls(famKey, lh, zw, lh, tint);
+      if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, true);
     } else {
       walls(famKey, z0, zw, 0, tint);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
+      if (bbl && z0 < 0.5) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
     }
 
     // roof
@@ -2348,7 +2389,18 @@ export class RealCityLayer {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
       }
-      if ((famKey === "glass" || famKey === "bronze" || famKey === "blueglass" || famKey === "ribbon" || famKey === "grid" || famKey === "modern" || famKey === "plain" || cls === "retail") && area > 200) {
+      // WHAT ELSE IS ON A ROOF. A deck of boards with planters on an
+      // apartment block (a third of those under 60 m); solar panels in tilted
+      // rows on a newer low building; the odd satellite dish on a walk-up.
+      if (cls === "multifamily" && z1 < 60 && area > 220 && famKey !== "industrial" && rnd() < 0.33) {
+        const q = spot(0.15, 0.45); if (q) this.putInst("roofdeck", q[0], q[1], z1, 1, rot, bbl);
+      }
+      if (year >= 1990 && z1 < 26 && area > 300 && (TOWER_FAMS.has(famKey) || cls === "retail" || cls === "industrial") && rnd() < 0.4) {
+        const n = Math.min(8, 2 + Math.floor(area / 400));
+        for (let i = 0; i < n; i++) { const q = spot(0.2, 0.75); if (q) this.putInst("solar", q[0], q[1], z1, 1, rot, bbl); }
+      }
+      if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
+      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail") && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
         for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
       }
@@ -2488,6 +2540,7 @@ export class RealCityLayer {
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
         && (fam === "deco" || fam === "decobrick" || fam === "stone") && hash01(k ^ 0x1916, this.seed) < 0.75;
       let topRing = ring;
+      let rowDone = false;
       if (preWarTower) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
@@ -2499,7 +2552,10 @@ export class RealCityLayer {
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
       } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
-        // drawn as a row of houses (rowOf)
+        // drawn as a row of houses (rowOf), each with its own top: the
+        // building-wide crown below would float a footprint-long penthouse
+        // over the row at the original height
+        rowDone = true;
       } else if (isTop && v.z0 < 0.5 && !pitched && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
         topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else {
@@ -2508,7 +2564,7 @@ export class RealCityLayer {
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
       // mast; a stone office takes one setback. Only on the building's own top.
-      if (isTop) this.towerTop(topRing.length ? topRing : ring, v.z1, top, fam, t, v.b, k, "auto");
+      if (isTop && !rowDone) this.towerTop(topRing.length ? topRing : ring, v.z1, top, fam, t, v.b, k, "auto");
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;
@@ -2566,7 +2622,7 @@ export class RealCityLayer {
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
-      if (name === "contact") mesh.renderOrder = 2;
+      if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     this.bindRanges(this.deeds, this.meshes);
@@ -2616,6 +2672,35 @@ export class RealCityLayer {
       // a crown fin: a slim blade carried up past the roof, height via sz
       case "fin": return { g: merge([box(0.35, 0.9, 1, 0, -0.2, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.4, metalness: 0.6 }) };
       case "helipad": return { g: merge([cyl(8, 0.25, 0, 20), box(1.0, 6, 0.06, -2, 0, 0.25), box(1.0, 6, 0.06, 2, 0, 0.25), box(3, 1.0, 0.06, 0, 0, 0.25)]), mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
+      // street hardware, at real sizes; local +x points over the road
+      case "signal": return { g: mergeColored([[cyl(0.1, 6.0, 0, 8), [0.2, 0.22, 0.22]], [box(4.6, 0.14, 0.16, 2.3, 0, 5.6), [0.2, 0.22, 0.22]],
+        [box(0.32, 0.34, 1.0, 3.2, 0, 4.7), [0.1, 0.1, 0.08]], [box(0.32, 0.34, 1.0, 4.4, 0, 4.7), [0.1, 0.1, 0.08]], [box(0.26, 0.3, 0.6, 0.2, 0, 2.6), [0.1, 0.1, 0.08]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
+      case "sigpost": return { g: mergeColored([[cyl(0.08, 3.2, 0, 8), [0.2, 0.22, 0.22]], [box(0.3, 0.32, 0.9, 0.18, 0, 2.3), [0.1, 0.1, 0.08]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
+      case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
+      case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
+      case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
+        [box(0.04, 1.4, 2.2, -1.88, 0, 0.25), [0.55, 0.65, 0.7]], [box(0.04, 1.4, 2.2, 1.88, 0, 0.25), [0.55, 0.65, 0.7]],
+        [box(0.08, 0.08, 2.45, -1.86, 0.72, 0), [0.25, 0.27, 0.28]], [box(0.08, 0.08, 2.45, 1.86, 0.72, 0), [0.25, 0.27, 0.28]], [box(2.6, 0.4, 0.08, 0, 0.45, 0.48), [0.35, 0.3, 0.26]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.3, vertexColors: true, transparent: true, opacity: 0.92 }) };
+      // a front door in a stone surround, facing local -y (out of the wall)
+      case "door": return { g: mergeColored([[box(2.4, 0.18, 3.1, 0, -0.06, 0), [0.78, 0.74, 0.66]], [box(1.7, 0.08, 2.6, 0, -0.16, 0.05), [0.16, 0.12, 0.1]], [box(1.6, 0.4, 0.15, 0, -0.35, 0), [0.6, 0.58, 0.55]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      // the apartment marquee: a fabric box over the door, 2.4 m out
+      case "marquee": return { g: merge([box(2.2, 2.4, 0.5, 0, -1.2, 3.2)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      // a tower's entrance canopy: a thin steel-edged glass plate on two rods
+      case "entcanopy": return { g: mergeColored([[box(6.0, 2.6, 0.18, 0, -1.3, 4.4), [0.62, 0.66, 0.7]], [box(6.1, 0.06, 0.3, 0, -2.6, 4.3), [0.3, 0.32, 0.34]],
+        [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(-2.4, -1.3, 5.6), [0.3, 0.32, 0.34]], [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(2.4, -1.3, 5.6), [0.3, 0.32, 0.34]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5, vertexColors: true }) };
+      // a roof deck: boards, a rail of planters along one side, two chairs
+      case "roofdeck": return { g: mergeColored([[box(7, 4.5, 0.14, 0, 0, 0.05), [0.4, 0.29, 0.2]], [box(7, 0.6, 0.55, 0, 2.0, 0.19), [0.4, 0.34, 0.3]],
+        [box(6.6, 0.45, 0.35, 0, 2.0, 0.74), [0.26, 0.42, 0.2]], [box(0.6, 0.6, 0.45, -2.5, -1.2, 0.19), [0.3, 0.3, 0.32]], [box(0.6, 0.6, 0.45, -1.6, -1.2, 0.19), [0.3, 0.3, 0.32]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }) };
+      // a solar panel, 2 x 1 m, tilted 25 degrees on a low frame
+      case "solar": return { g: mergeColored([[new THREE.BoxGeometry(2.0, 1.05, 0.05).rotateX(0.44).translate(0, 0, 0.55), [0.12, 0.16, 0.26]], [box(1.9, 0.08, 0.5, 0, 0.35, 0), [0.6, 0.62, 0.64]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.5, vertexColors: true }) };
+      case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
@@ -2649,7 +2734,10 @@ export class RealCityLayer {
       case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
       case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
       case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
-      case "trunk": return { g: merge([cyl(0.22, 3.2, 0, 6)]), mat: this.barkMat };
+      // the trunk forks below the crown: two limbs leaning out
+      case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
+        new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),
+        new THREE.CylinderGeometry(0.07, 0.12, 1.6, 5).rotateX(Math.PI / 2).rotateY(-0.6).rotateZ(1.9).translate(-0.35, 0.3, 3.6)]), mat: this.barkMat };
       case "crown": {
         // two lumps at one subdivision: 160 triangles a tree, which is the
         // budget a city of twenty thousand of them can afford
@@ -2657,8 +2745,16 @@ export class RealCityLayer {
         // its lump's centre, and the foliage darkens toward the underside where
         // the canopy shades itself — what turns crumpled paper into a tree.
         const pos: number[] = [], nrm: number[] = [], col: number[] = [];
-        for (const [r, det, cx, cy, cz] of [[2.4, 1, 0, 0, 4.7], [1.8, 1, 0.9, 0.6, 5.8], [1.6, 0, -0.9, -0.6, 5.2], [1.4, 0, 0.2, -1.1, 4.4]] as number[][]) {
+        // A CANOPY OF CLUSTERS. Two big masses and five smaller clusters set
+        // round and above them, so the crown has a broken, leafy outline with
+        // sky through it rather than one blob; each vertex carries a little
+        // dapple of light and shade, and the crown's top a warmer, lighter
+        // green where the sun comes through. ~260 triangles.
+        let dap = 0;
+        for (const [r, det, cx, cy, cz] of [[2.2, 1, 0, 0, 4.6], [1.7, 1, 0.7, 0.5, 5.9], [1.15, 0, -1.5, -0.4, 4.9], [1.05, 0, 1.6, -0.7, 4.5], [1.0, 0, -0.6, 1.5, 5.0], [0.95, 0, 0.3, -1.6, 5.6], [0.9, 0, -0.9, -0.9, 6.3]] as number[][]) {
           const g = new THREE.IcosahedronGeometry(r, det);   // already one vertex per corner
+          // each cluster its own light: one dapple per cluster, so the surface stays smooth
+          const d = 0.86 + 0.28 * (((Math.sin(++dap * 12.9898) * 43758.5453) % 1 + 1) % 1);
           const P = g.getAttribute("position").array as Float32Array;
           for (let i = 0; i < P.length; i += 3) {
             // a little lumpiness so no two vertices sit on one perfect sphere
@@ -2668,8 +2764,9 @@ export class RealCityLayer {
             pos.push(x + cx, y + cy, z + cz);
             nrm.push(x / l, y / l, z / l);
             const up = Math.max(0, Math.min(1, (z / r + 1) / 2));   // 0 underneath, 1 on top
-            const k = 0.5 + 0.5 * up;
-            col.push(k, k, k * 0.96);
+            const k = (0.46 + 0.54 * up) * d;
+            // the sunlit top runs a touch warmer and lighter
+            col.push(k * (1 + 0.08 * up), k * (1 + 0.04 * up), k * 0.94);
           }
         }
         const g = new THREE.BufferGeometry();
@@ -2842,6 +2939,14 @@ export class RealCityLayer {
       if (L < 1.5) continue;
       const ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
       const r = Math.atan2(uy, ux);
+      // TRAFFIC SIGNALS where a crossing meets the kerb: a mast arm reaching
+      // over a wide street from one side, a plain post with a head on the
+      // other (and on a narrow street, posts both sides). On the footway only.
+      for (const [P, d, arm] of [[A, -1, L > 9], [B, 1, false]] as [P2, number, boolean][]) {
+        const x = P[0] + ux * d * 1.1, y = P[1] + uy * d * 1.1;
+        if (this.groundAt(x, y) !== "walk") continue;
+        this.putInst(arm ? "signal" : "sigpost", x, y, 0.15, 1, d < 0 ? r : r + Math.PI);
+      }
       for (let t = 0.45; t < L - 0.2; t += 1.1) bars.push({ x: A[0] + ux * t, y: A[1] + uy * t, r });
     }
     if (bars.length) {
@@ -3209,6 +3314,21 @@ export class RealCityLayer {
             this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
           }
         }
+        // THE KERB'S HARDWARE: a hydrant every ~77 m, a litter bin by the
+        // corner, and on a long busy avenue with a wide footway a bus shelter
+        // at the back of the pavement. Each between the trees, on the footway.
+        for (let t = 23.5; t < L - 6; t += 77) {
+          const [x, y] = at(t, 0.55);
+          if (this.groundAt(x, y) === "walk") this.putInst("hydrant", x, y, 0.15, 1, rot);
+        }
+        if (L > 30) {
+          const [x, y] = at(4, 0.6);
+          if (this.groundAt(x, y) === "walk" && this.clearOfBuildings(x, y, 0.6)) this.putInst("bin", x, y, 0.15, 1, rot);
+        }
+        if (L > 100 && w >= 3.0) {
+          const [x, y] = at(L / 2, w - 1.0);
+          if (this.demandAt(x, y) > 0.4 && this.footprintOn(x, y, rot, 1.5, 3.8, ["walk"]) && this.clearOfBuildings(x, y, 2.2)) this.putInst("shelter", x, y, 0.15, 1, rot);
+        }
         // lamps at the kerb, between the trees
         for (let t = 12; t < L - 6; t += 27) {
           const [x, y] = at(t, 0.45);
@@ -3246,7 +3366,8 @@ export class RealCityLayer {
     let s = (this.seed * 7919) % 2147483646 + 1;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
-    const leafCol = () => [0.32 + rnd() * 0.08, 0.46 + rnd() * 0.1, 0.20 + rnd() * 0.06];
+    // a street tree is a deeper, cleaner green than the grey-olive it was
+    const leafCol = () => [0.24 + rnd() * 0.08, 0.42 + rnd() * 0.1, 0.13 + rnd() * 0.05];
     const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
     this.dressFootways(rnd, leafCol, CAR, COAT);
     // what the park walks converge on: a column in the big parks, a fountain
@@ -3740,8 +3861,29 @@ export class RealCityLayer {
     }
     return true;
   }
+  /** Every volume drawn, by deed — for the floating-geometry audit. */
+  private volLog = new Map<string, { r: P2[]; z0: number; z1: number }[]>();
+  /**
+   * NOTHING FLOATS. Every raised volume (a tier, a crown, a penthouse) must
+   * stand on a lower volume of the same deed: its centre inside a footprint
+   * whose top reaches its base. Returns the deeds that break that, so the
+   * harness can fail on a floating penthouse before a player sees one.
+   */
+  auditFloating(): { volumes: number; floating: number; deeds: string[] } {
+    let volumes = 0, floating = 0; const deeds: string[] = [];
+    for (const [bbl, list] of this.volLog) {
+      for (const v of list) {
+        volumes++;
+        if (v.z0 < 0.6) continue;
+        let cx = 0, cy = 0; for (const [x, y] of v.r) { cx += x / v.r.length; cy += y / v.r.length; }
+        const ok = list.some((u) => u !== v && u.z0 < v.z0 && u.z1 >= v.z0 - 0.6 && PolyGrid.inRing(u.r, cx, cy));
+        if (!ok) { floating++; if (deeds.length < 20 && !deeds.includes(bbl)) deeds.push(bbl); }
+      }
+    }
+    return { volumes, floating, deeds };
+  }
   /** For the harness: where each placed prop actually stands, by kind. */
-  auditGround(kinds = ["trunk", "pine", "car", "lotcar", "lamp", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
+  auditGround(kinds = ["trunk", "pine", "car", "suv", "van", "taxi", "lotcar", "lotsuv", "lamp", "hydrant", "bin", "shelter", "signal", "sigpost", "door", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
     const out: Record<string, Record<string, number>> = {};
     const e = new THREE.Matrix4();
     for (const k of kinds) {
@@ -3754,7 +3896,7 @@ export class RealCityLayer {
         if (el[0] === 0 && el[1] === 0 && el[5] === 0) continue;   // hidden
         // wall-mounted kinds: where they stand is a pace out from the wall
         let px = el[12], py = el[13];
-        if (k === "stoop" || k === "dock" || k === "awning") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
+        if (k === "stoop" || k === "dock" || k === "awning" || k === "door") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
         const gk = this.groundAt(px, py);
         row[gk] = (row[gk] ?? 0) + 1;
       }
@@ -4139,6 +4281,8 @@ export class RealCityLayer {
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low";
     if (this.catcher) this.catcher.visible = q !== "low";
+    // the ground contact shade is transparent overdraw under every building
+    const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
     this.map?.triggerRepaint();

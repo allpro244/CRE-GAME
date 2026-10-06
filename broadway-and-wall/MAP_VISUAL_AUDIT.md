@@ -752,3 +752,12 @@ a triangular footprint; both fixed. All three test towns: 0 misplaced,
 against the tower-variety baseline: +26% frame time on High, +39% on
 Medium, +26% on Low. Low (which now also drops the ground contact shade)
 still renders faster than the old Medium.
+
+# REMOVED: PYRAMID CAPS AND LEASE BANNERS
+
+Reported from play. The pyramid crown was sized from the roof's widest
+radius, so on most towers it overhung the walls like a lampshade — a cone
+on a building. It is gone; those towers draw from the other crowns. The
+FOR LEASE / SPACE TO LET banners are gone entirely, at the owner's request;
+vacancy still shows in the papered shopfronts and boarded bays, the
+thinner crowds, and the hover card.

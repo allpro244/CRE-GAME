@@ -2661,7 +2661,10 @@ export class RealCityLayer {
       case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
       case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
       case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
-      case "trunk": return { g: merge([cyl(0.22, 3.2, 0, 6)]), mat: this.barkMat };
+      // the trunk forks below the crown: two limbs leaning out
+      case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
+        new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),
+        new THREE.CylinderGeometry(0.07, 0.12, 1.6, 5).rotateX(Math.PI / 2).rotateY(-0.6).rotateZ(1.9).translate(-0.35, 0.3, 3.6)]), mat: this.barkMat };
       case "crown": {
         // two lumps at one subdivision: 160 triangles a tree, which is the
         // budget a city of twenty thousand of them can afford
@@ -2669,8 +2672,16 @@ export class RealCityLayer {
         // its lump's centre, and the foliage darkens toward the underside where
         // the canopy shades itself — what turns crumpled paper into a tree.
         const pos: number[] = [], nrm: number[] = [], col: number[] = [];
-        for (const [r, det, cx, cy, cz] of [[2.4, 1, 0, 0, 4.7], [1.8, 1, 0.9, 0.6, 5.8], [1.6, 0, -0.9, -0.6, 5.2], [1.4, 0, 0.2, -1.1, 4.4]] as number[][]) {
+        // A CANOPY OF CLUSTERS. Two big masses and five smaller clusters set
+        // round and above them, so the crown has a broken, leafy outline with
+        // sky through it rather than one blob; each vertex carries a little
+        // dapple of light and shade, and the crown's top a warmer, lighter
+        // green where the sun comes through. ~260 triangles.
+        let dap = 0;
+        for (const [r, det, cx, cy, cz] of [[2.2, 1, 0, 0, 4.6], [1.7, 1, 0.7, 0.5, 5.9], [1.15, 0, -1.5, -0.4, 4.9], [1.05, 0, 1.6, -0.7, 4.5], [1.0, 0, -0.6, 1.5, 5.0], [0.95, 0, 0.3, -1.6, 5.6], [0.9, 0, -0.9, -0.9, 6.3]] as number[][]) {
           const g = new THREE.IcosahedronGeometry(r, det);   // already one vertex per corner
+          // each cluster its own light: one dapple per cluster, so the surface stays smooth
+          const d = 0.86 + 0.28 * (((Math.sin(++dap * 12.9898) * 43758.5453) % 1 + 1) % 1);
           const P = g.getAttribute("position").array as Float32Array;
           for (let i = 0; i < P.length; i += 3) {
             // a little lumpiness so no two vertices sit on one perfect sphere
@@ -2680,8 +2691,9 @@ export class RealCityLayer {
             pos.push(x + cx, y + cy, z + cz);
             nrm.push(x / l, y / l, z / l);
             const up = Math.max(0, Math.min(1, (z / r + 1) / 2));   // 0 underneath, 1 on top
-            const k = 0.5 + 0.5 * up;
-            col.push(k, k, k * 0.96);
+            const k = (0.46 + 0.54 * up) * d;
+            // the sunlit top runs a touch warmer and lighter
+            col.push(k * (1 + 0.08 * up), k * (1 + 0.04 * up), k * 0.94);
           }
         }
         const g = new THREE.BufferGeometry();
@@ -3281,7 +3293,8 @@ export class RealCityLayer {
     let s = (this.seed * 7919) % 2147483646 + 1;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
-    const leafCol = () => [0.32 + rnd() * 0.08, 0.46 + rnd() * 0.1, 0.20 + rnd() * 0.06];
+    // a street tree is a deeper, cleaner green than the grey-olive it was
+    const leafCol = () => [0.24 + rnd() * 0.08, 0.42 + rnd() * 0.1, 0.13 + rnd() * 0.05];
     const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
     this.dressFootways(rnd, leafCol, CAR, COAT);
     // what the park walks converge on: a column in the big parks, a fountain

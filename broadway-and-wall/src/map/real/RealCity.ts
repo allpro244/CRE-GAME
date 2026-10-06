@@ -195,6 +195,35 @@ interface FamilySpec {
   shutter?: string;  // painted shutters either side
 }
 
+/**
+ * NO TWO WINDOWS ALIKE. The facade texture repeats every two bays and two
+ * floors, so a wall was the same four windows tiled. Each pane (marked in
+ * the ORM map's red channel) now draws its own state from a hash of its cell:
+ * under a third with a blind down to some height, a sixth with curtains
+ * drawn to the sides, the rest bare glass a little lighter or darker and a
+ * little rougher or smoother — what any street elevation looks like.
+ */
+const WINDOW_VARIATION = `
+float winM = texelRoughness.r;
+vec2 bayC = vMapUv * 2.0;
+vec2 cellC = floor(bayC);
+float wh1 = fract(sin(dot(cellC + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+float wh2 = fract(wh1 * 17.31 + 0.137);
+vec2 fC = fract(bayC);
+float tW = clamp((fC.y - (1.0 - uWin.w)) / max(uWin.w - uWin.z, 0.01), 0.0, 1.0);
+float xW = clamp((fC.x - uWin.x) / max(uWin.y - uWin.x, 0.01), 0.0, 1.0);
+float blindK = step(wh1, 0.3) * step(1.0 - tW, 0.2 + 0.7 * wh2);
+float curtK = step(0.3, wh1) * step(wh1, 0.46) * (step(xW, 0.24 + 0.12 * wh2) + step(0.76 - 0.12 * wh2, xW));
+float winShade = clamp(blindK + curtK, 0.0, 1.0);
+vec3 blindCol = mix(vec3(0.74, 0.7, 0.62), vec3(0.58, 0.57, 0.55), wh2);
+vec3 curtCol = mix(vec3(0.62, 0.5, 0.42), vec3(0.5, 0.52, 0.5), wh2);
+vec3 paneCol = diffuseColor.rgb * (0.82 + 0.36 * wh2);
+paneCol = mix(paneCol, blindCol * 0.42, blindK);
+paneCol = mix(paneCol, curtCol * 0.4, curtK * (1.0 - blindK));
+diffuseColor.rgb = mix(diffuseColor.rgb, paneCol, winM * (1.0 - farK * 0.7));
+roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * 0.14, 0.02, 1.0), 0.85, winShade), winM);
+`;
+
 function buildFamily(spec: FamilySpec, seed: number): Family {
   let s = seed;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -267,7 +296,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
         for (let i = 1; i < spec.mullions[0]; i++) { const x = a + (w2 * i) / spec.mullions[0]; alb.g.beginPath(); alb.g.moveTo(x, y0 + rise(a, b)); alb.g.lineTo(x, y1); alb.g.stroke(); }
         for (let i = 1; i < spec.mullions[1]; i++) { const y = y0 + (wh * i) / spec.mullions[1]; alb.g.beginPath(); alb.g.moveTo(a, y); alb.g.lineTo(b, y); alb.g.stroke(); }
       }
-      orm.g.fillStyle = `rgb(0,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
+      // red marks the pane, for the per-window variation in the shader
+      orm.g.fillStyle = `rgb(255,${Math.round(spec.glassRough * 255)},${Math.round(spec.glassMetal * 255)})`;
       shape(orm.g, a, b, 2); orm.g.fill();
       // the reveal: glass sits back in the wall
       hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
@@ -295,13 +325,17 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   // The window glow is a texture shared by every building in the family; the
   // per-vertex `lit` scales it, so an empty building goes dark at night and a
   // full one blazes.
+  const winU = new THREE.Vector4(spec.win.x0, spec.win.x1, spec.win.y0, spec.win.y1);
+  const seedU = new THREE.Vector2((seed % 997) / 7.3, (seed % 613) / 5.1);
   mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWin = { value: winU };
+    sh.uniforms.uSeed = { value: seedU };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nvarying float vLit;\nvarying float vAoH;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nuniform vec4 uWin;\nuniform vec2 uSeed;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
@@ -313,11 +347,11 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);")
-      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;")
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION)
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 

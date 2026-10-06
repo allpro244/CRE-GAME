@@ -17,7 +17,8 @@ const browser = await chromium.launch({ executablePath: exe, args: ["--use-angle
 // where each kind may stand
 const OK = {
   trunk: ["walk", "park", "open", "lot"], pine: ["walk", "park", "open", "lot"],
-  car: ["road"], lotcar: ["lot"], lamp: ["walk"],
+  car: ["road"], suv: ["road"], van: ["road"], taxi: ["road"], lotcar: ["lot"], lotsuv: ["lot"], lamp: ["walk"],
+  hydrant: ["walk"], bin: ["walk"], shelter: ["walk"], signal: ["walk"], sigpost: ["walk"],
   stoop: ["walk", "lot"], dock: ["lot", "road"], awning: ["walk", "lot"],
 };
 let bad = 0;

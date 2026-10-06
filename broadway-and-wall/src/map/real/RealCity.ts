@@ -92,7 +92,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -2389,7 +2389,18 @@ export class RealCityLayer {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
       }
-      if ((famKey === "glass" || famKey === "bronze" || famKey === "blueglass" || famKey === "ribbon" || famKey === "grid" || famKey === "modern" || famKey === "plain" || cls === "retail") && area > 200) {
+      // WHAT ELSE IS ON A ROOF. A deck of boards with planters on an
+      // apartment block (a third of those under 60 m); solar panels in tilted
+      // rows on a newer low building; the odd satellite dish on a walk-up.
+      if (cls === "multifamily" && z1 < 60 && area > 220 && famKey !== "industrial" && rnd() < 0.33) {
+        const q = spot(0.15, 0.45); if (q) this.putInst("roofdeck", q[0], q[1], z1, 1, rot, bbl);
+      }
+      if (year >= 1990 && z1 < 26 && area > 300 && (TOWER_FAMS.has(famKey) || cls === "retail" || cls === "industrial") && rnd() < 0.4) {
+        const n = Math.min(8, 2 + Math.floor(area / 400));
+        for (let i = 0; i < n; i++) { const q = spot(0.2, 0.75); if (q) this.putInst("solar", q[0], q[1], z1, 1, rot, bbl); }
+      }
+      if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
+      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail") && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
         for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
       }
@@ -2682,6 +2693,14 @@ export class RealCityLayer {
       case "entcanopy": return { g: mergeColored([[box(6.0, 2.6, 0.18, 0, -1.3, 4.4), [0.62, 0.66, 0.7]], [box(6.1, 0.06, 0.3, 0, -2.6, 4.3), [0.3, 0.32, 0.34]],
         [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(-2.4, -1.3, 5.6), [0.3, 0.32, 0.34]], [new THREE.CylinderGeometry(0.03, 0.03, 2.9, 4).rotateX(1.1).translate(2.4, -1.3, 5.6), [0.3, 0.32, 0.34]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5, vertexColors: true }) };
+      // a roof deck: boards, a rail of planters along one side, two chairs
+      case "roofdeck": return { g: mergeColored([[box(7, 4.5, 0.14, 0, 0, 0.05), [0.4, 0.29, 0.2]], [box(7, 0.6, 0.55, 0, 2.0, 0.19), [0.4, 0.34, 0.3]],
+        [box(6.6, 0.45, 0.35, 0, 2.0, 0.74), [0.26, 0.42, 0.2]], [box(0.6, 0.6, 0.45, -2.5, -1.2, 0.19), [0.3, 0.3, 0.32]], [box(0.6, 0.6, 0.45, -1.6, -1.2, 0.19), [0.3, 0.3, 0.32]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }) };
+      // a solar panel, 2 x 1 m, tilted 25 degrees on a low frame
+      case "solar": return { g: mergeColored([[new THREE.BoxGeometry(2.0, 1.05, 0.05).rotateX(0.44).translate(0, 0, 0.55), [0.12, 0.16, 0.26]], [box(1.9, 0.08, 0.5, 0, 0.35, 0), [0.6, 0.62, 0.64]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.5, vertexColors: true }) };
+      case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };

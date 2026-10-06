@@ -1469,14 +1469,17 @@ export class RealCityLayer {
     const fh = this.families[fam]?.floorH ?? 3.4;
     for (let j = 0; j + 1 < cuts.length; j++) {
       const kj = (k * 31 + j * 7919) >>> 0;
-      const r = clip(clip(ring, t0 + cuts[j] * ll, true), t0 + cuts[j + 1] * ll, false);
+      // a row of towers stands apart: an 8 m slot between neighbours, so a
+      // 600 m frontage reads as towers along a street, not one wall
+      const gap = tall ? 4 : 0;
+      const r = clip(clip(ring, t0 + cuts[j] * ll + gap, true), t0 + cuts[j + 1] * ll - gap, false);
       if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
       const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4);
       const fk = f2 === "industrial" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
       const tints = TINTS[fk] ?? [[1, 1, 1]];
       const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
       // a storey up or down now and then, never below two floors
-      const dz = tall ? -(v.z1 - v.z0) * 0.4 * hash01(kj ^ 0x5f, this.seed)
+      const dz = tall ? -(v.z1 - v.z0) * 0.55 * hash01(kj ^ 0x5f, this.seed)
         : hash01(kj ^ 0x5d, this.seed) < 0.35 ? (hash01(kj ^ 0x5e, this.seed) < 0.5 ? -fh : fh) : 0;
       const z1 = Math.max(v.z0 + 2 * fh, v.z1 + dz);
       if (tall && TOWER_FAMS.has(fk)) {
@@ -2488,6 +2491,7 @@ export class RealCityLayer {
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
         && (fam === "deco" || fam === "decobrick" || fam === "stone") && hash01(k ^ 0x1916, this.seed) < 0.75;
       let topRing = ring;
+      let rowDone = false;
       if (preWarTower) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
@@ -2499,7 +2503,10 @@ export class RealCityLayer {
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
       } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
-        // drawn as a row of houses (rowOf)
+        // drawn as a row of houses (rowOf), each with its own top: the
+        // building-wide crown below would float a footprint-long penthouse
+        // over the row at the original height
+        rowDone = true;
       } else if (isTop && v.z0 < 0.5 && !pitched && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
         topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else {
@@ -2508,7 +2515,7 @@ export class RealCityLayer {
       // A TOWER ENDS IN SOMETHING. A deco tower steps back twice and finishes
       // in a spire; a glass tower carries a recessed mechanical crown and a
       // mast; a stone office takes one setback. Only on the building's own top.
-      if (isTop) this.towerTop(topRing.length ? topRing : ring, v.z1, top, fam, t, v.b, k, "auto");
+      if (isTop && !rowDone) this.towerTop(topRing.length ? topRing : ring, v.z1, top, fam, t, v.b, k, "auto");
       const d = this.deedOf(v.b);
       d.height = Math.max(d.height, v.z1);
       if (!d.ring) d.ring = ring;

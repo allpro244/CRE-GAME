@@ -79,7 +79,16 @@ interface Family {
 const TILE = 128;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
 const FAR_PROPS = ["lamp", "car", "lotcar"];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "pile", "bulk", "hvac", "tank", "skyl"];
+/** Shop trades: canopy and fascia colours. Looks only. */
+interface Trade { awn: number[]; sign: number[] }
+const T = (awn: number[], sign: number[]): Trade => ({ awn, sign });
+const CAFE = T([0.55, 0.13, 0.12], [0.14, 0.11, 0.09]), GROCER = T([0.18, 0.42, 0.22], [0.94, 0.92, 0.85]);
+const BANK = T([0.12, 0.18, 0.35], [0.80, 0.70, 0.42]), APPAREL = T([0.08, 0.08, 0.09], [0.92, 0.92, 0.90]);
+const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.12, 0.22], [0.86, 0.72, 0.40]);
+const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
+const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
+const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -896,6 +905,7 @@ export class RealCityLayer {
     for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv;
     this.setupLights();
     this.buildCity();
+    this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
     this.buildGround();
     this.buildChannels();
     this.buildBridges();
@@ -1239,6 +1249,101 @@ export class RealCityLayer {
     }
   }
 
+  /**
+   * SHOPFRONTS BY TRADE. Every street-facing ground-floor bay of a shop
+   * storey gets a canopy and a fascia sign in the colours of what trades
+   * there — a cafe, a grocer, a bank, a pharmacy — and a plywood hoarding
+   * for when it is empty. Which bays are boarded is read live from the
+   * building's let share of retail (setRetail), the same number that papers
+   * over the glass; which trade a bay belongs to is looks only (the market's
+   * buildings carry no tenant roll), drawn by hash so it is stable, with
+   * downtown stone and glass leaning to banks and boutiques and the brick
+   * streets to grocers, cafes and hardware.
+   */
+  private shopBays(ring: P2[], bbl: string, seedK: number, shopH: number, famKey: string) {
+    const BAY = 5.5;
+    const uptown = famKey === "stone" || famKey === "modern" || famKey === "glass" || famKey === "deco";
+    const trades = uptown ? SHOP_TRADES_UPTOWN : SHOP_TRADES_STREET;
+    const sz = shopH / 4.4;
+    let bayN = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < BAY) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const nx = uy, ny = -ux;                          // outward, counter-clockwise ring
+      // only a wall that fronts a street: six metres out is nobody's lot
+      const mx = (a[0] + b[0]) / 2 + nx * 6, my = (a[1] + b[1]) / 2 + ny * 6;
+      if (this.lotAt2D(mx, my)) continue;
+      const n = Math.floor(L / BAY), r = Math.atan2(uy, ux);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) * (L / n);
+        const x = a[0] + ux * t, y = a[1] + uy * t;
+        const tr = trades[Math.floor(hash01(seedK ^ (bayN * 0x9e37 + 0x51), 13) * trades.length)];
+        this.putInst("awning", x, y, 0, 1, r, bbl, tr.awn, sz);
+        this.putInst("shopsign", x, y, 0, 1, r, bbl, tr.sign, sz);
+        this.putInst("boards", x, y, 0, 1, r, bbl, undefined, sz);
+        bayN++;
+      }
+    }
+  }
+  private lotAt2D(x: number, y: number): boolean {
+    const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
+    const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
+    if (!cell) return false;
+    for (const e of cell) {
+      if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+      const r = e.ring;
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+  /** Shop bays per deed: canopy, sign and hoarding, by instanced mesh and index. */
+  private bays = new Map<string, { awn: [THREE.InstancedMesh, number]; sign: [THREE.InstancedMesh, number]; board: [THREE.InstancedMesh, number]; m: THREE.Matrix4[]; o: number; st: boolean }[]>();
+  private registerBays(meshes: Map<string, THREE.InstancedMesh>, items: Map<string, { bbl: string }[]>, st: boolean) {
+    const by = new Map<string, Record<string, number[]>>();
+    for (const kind of ["awning", "shopsign", "boards"]) {
+      (items.get(kind) ?? []).forEach((it, i) => {
+        if (!it.bbl) return;
+        let r = by.get(it.bbl); if (!r) by.set(it.bbl, (r = { awning: [], shopsign: [], boards: [] }));
+        r[kind].push(i);
+      });
+    }
+    const A = meshes.get("awning"), S = meshes.get("shopsign"), B = meshes.get("boards");
+    if (!A || !S || !B) return;
+    for (const [bbl, r] of by) {
+      const list = r.awning.map((ai, k) => {
+        const m = [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()];
+        A.getMatrixAt(ai, m[0]); S.getMatrixAt(r.shopsign[k], m[1]); B.getMatrixAt(r.boards[k], m[2]);
+        return { awn: [A, ai] as [THREE.InstancedMesh, number], sign: [S, r.shopsign[k]] as [THREE.InstancedMesh, number], board: [B, r.boards[k]] as [THREE.InstancedMesh, number], m, o: hash01(k * 7919 + bbl.length, 5), st };
+      });
+      // a building's empties fall on a stable set of bays: lowest draw first
+      list.sort((p, q) => p.o - q.o);
+      this.bays.set(bbl, list);
+    }
+  }
+  /** Board up as many bays as the building's retail is empty; open the rest. */
+  private applyBays(bbl: string) {
+    const list = this.bays.get(bbl);
+    if (!list) return;
+    const flat = list[0]?.st && this.flattened.has(bbl);
+    const rt = this.ret.get(bbl);
+    const dead = rt === undefined ? 0 : Math.round((1 - Math.max(0, Math.min(1, rt))) * list.length);
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    list.forEach((b, i) => {
+      const shut = i < dead;
+      b.awn[0].setMatrixAt(b.awn[1], flat || shut ? zero : b.m[0]);
+      b.sign[0].setMatrixAt(b.sign[1], flat || shut ? zero : b.m[1]);
+      b.board[0].setMatrixAt(b.board[1], flat || !shut ? zero : b.m[2]);
+      b.awn[0].instanceMatrix.needsUpdate = b.sign[0].instanceMatrix.needsUpdate = b.board[0].instanceMatrix.needsUpdate = true;
+    });
+  }
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * 4);
@@ -1319,6 +1424,7 @@ export class RealCityLayer {
     if (shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
       walls(famKey, shopH, zw, shopH, tint);
+      if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
     } else {
       walls(famKey, z0, zw, 0, tint);
     }
@@ -1758,6 +1864,13 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // the shop bay, facing local -y (out of a counter-clockwise wall)
+      case "awning": {
+        const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
+        return { g: merge([canopy, box(4.6, 0.05, 0.32, 0, -1.42, 2.42)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      }
+      case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
+      case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
@@ -1871,6 +1984,8 @@ export class RealCityLayer {
       mesh.frustumCulled = false;
       this.scene.add(mesh); this.inst.set(kind, mesh);
     }
+    this.registerBays(this.inst, this.instItems, true);
+    for (const b of this.bays.keys()) this.applyBays(b);
     this.instItems.clear();
   }
 
@@ -2765,14 +2880,23 @@ export class RealCityLayer {
     // the new buildings' own plant, fire escapes and balconies
     {
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pv = new THREE.Vector3();
+      const dynInst = new Map<string, THREE.InstancedMesh>();
       for (const [kind, list] of this.instItems) {
         if (!list.length) continue;
-        const { g, mat } = this.geomFor(kind);
+        const { g, mat, colored } = this.geomFor(kind);
         const im = new THREE.InstancedMesh(g, mat, list.length);
-        list.forEach((it, i) => { q.setFromEuler(e.set(0, 0, it.r)); im.setMatrixAt(i, m4.compose(pv.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1)))); });
+        list.forEach((it, i) => {
+          q.setFromEuler(e.set(0, 0, it.r)); im.setMatrixAt(i, m4.compose(pv.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s * (it.sz ?? 1))));
+          if (colored) im.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
+        });
         im.castShadow = im.receiveShadow = true;
-        this.dyn.add(im);
+        this.dyn.add(im); dynInst.set(kind, im);
       }
+      for (const b of this.dynBays) this.bays.delete(b);
+      const before = new Set(this.bays.keys());
+      this.registerBays(dynInst, this.instItems, false);
+      for (const b of this.bays.keys()) this.applyBays(b);
+      this.dynBays = [...this.bays.keys()].filter((b) => !before.has(b));
     }
     this.bindRanges(this.deeds, dynMeshes);
     this.dynDeeds = this.deeds;
@@ -3084,10 +3208,11 @@ export class RealCityLayer {
   setRetail(r: Map<string, number>) {
     const touched = new Set<string>([...this.ret.keys(), ...r.keys()]);
     this.ret = new Map(r);
-    for (const b of touched) this.refreshDeed(b);
+    for (const b of touched) { this.refreshDeed(b); this.applyBays(b); }
     this.map?.triggerRepaint();
   }
   private ret = new Map<string, number>();
+  private dynBays: string[] = [];
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }

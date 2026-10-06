@@ -38,11 +38,11 @@ ok("ensureLeasingPlan posts a sheet for a desk", !!g.leasingPlan && E.planIsLive
 ok("leaseDocketLois lists referred exceptions",
   E.leaseDocketLois(g).length === 1 && E.leaseDocketLois(g)[0].id === 7);
 
-E.patchPlanRow(g, "office", { quotePct: 1.12, holdM: 24 });
-ok("patchPlanRow writes quotePct above par",
-  Math.abs(g.leasingPlan.sheet.office.quotePct - 1.12) < 1e-9
-  && g.leasingPlan.sheet.office.holdM === 24,
-  `quote=${g.leasingPlan.sheet.office.quotePct} hold=${g.leasingPlan.sheet.office.holdM}`);
+E.patchPlanRow(g, "office", { targetNePct: 1.12, patienceM: 24 });
+ok("patchPlanRow writes a number above par",
+  Math.abs(g.leasingPlan.sheet.office.targetNePct - 1.12) < 1e-9
+  && g.leasingPlan.sheet.office.patienceM === 24,
+  `target=${g.leasingPlan.sheet.office.targetNePct} patience=${g.leasingPlan.sheet.office.patienceM}`);
 
 E.patchPlanRow(g, { bbl: "x" }, { holdBlocks: [{ floorLo: 8, floorHi: 12 }] });
 ok("per-building holdBlocks override",

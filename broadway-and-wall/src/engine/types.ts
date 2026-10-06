@@ -594,6 +594,13 @@ export interface Holding {
    */
   darkMs?: number;
   /**
+   * "I SIGN HERE." Letters on this building come to the principal whoever
+   * holds the pen on the rest of the book — the trophy tower, the building
+   * in lease-up. The firm-wide pen is all or nothing; this is how a
+   * principal keeps the leases that matter and hands over the forty shops.
+   */
+  principalSigns?: boolean;
+  /**
    * STOP LETTING IT.
    *
    * You cannot knock a building down with people in it, and you cannot empty
@@ -2448,35 +2455,53 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
  * versus model market and is NOT capped at par; the cost of a high sheet is
  * time-on-market, priced by the same indifference model as a counter.
  */
+/**
+ * ONE ROW OF THE LEASING SHEET — two dials and some optional guardrails.
+ *
+ * The sheet used to be seven sliders per asset type (ask, floor, TI cap,
+ * free-rent cap, hold, step, lowest ask) plus a term band and a credit
+ * floor, and most of them were FILTERS: a tenant who wanted $60 of fit-out
+ * against a $40 cap was docketed or chopped, a five-year term against a
+ * three-to-fifteen band came back to the principal, whatever it was worth.
+ * The owner's read: "it feels like you're cutting out potential prospects".
+ * It was. The tenant decides on net effective (`tenantCounterOutcome`), not
+ * on the shape of the package, so a mandate written in package caps turned
+ * away deals the market would have done.
+ *
+ * A mandate in life is written in economics: the least you will take, and
+ * how long you will wait for it. The desk restructures any letter to get
+ * there — more fit-out is paid for in rent, not refused (`planCounterTerms`).
+ * Nobody is turned away for the shape of their ask, only for price.
+ */
 export interface PlanRow {
-  /** Ask versus current model market, e.g. 1.08. No cap at par. */
-  quotePct: number;
-  /** Extra on quotePct by block shape. The market already prices shape via
+  /**
+   * THE ONE NUMBER: the least net effective the desk signs, as a share of
+   * the letter's market (face after free rent, less the allowance amortised
+   * over the term, plus what the bump is worth — `loiMandateScore`). The
+   * desk asks what the street is signing or this, whichever is higher.
+   */
+  targetNePct: number;
+  /**
+   * Months a space may sit dark (`Holding.darkMs`) at the target before the
+   * desk meets the market — asks and signs at what the street is signing
+   * this month (`marketClearingPct`, the effective/face index), if that is
+   * under the target. Zero meets the market as soon as space is dark.
+   */
+  patienceM: number;
+  /**
+   * GUARDRAILS, off when absent or zero. Treasury, not pricing: the most
+   * cash one signing may take (fit-out + commission + demising) — over it,
+   * the desk converts allowance into rent ("they build it") rather than
+   * refusing the tenant.
+   */
+  maxCashPerDeal?: number;
+  /** Decline covenants weaker than this… */
+  minCredit?: Credit;
+  /** …only on deals at least this big (0 or absent: every size). */
+  minCreditSf?: number;
+  /** Extra on the target by block shape. The market already prices shape via
    *  `blockShapeMult`; this is the player's further hold. */
   bandAdj?: { fullFloor?: number; remnant?: number };
-  maxTiPsf: number;
-  maxFreeM: number;
-  minBumpPct: number;
-  termLoM: number;
-  termHiM: number;
-  minCredit: Credit;
-  /** Hold the posted ask for this many vacant months (`Holding.darkMs`),
-   *  then step quote down `stepPct` per quarter, never below `floorPct`. */
-  holdM: number;
-  stepPct: number;
-  floorPct: number;
-  /**
-   * THE LEAST THE DESK MAY SIGN, net effective, as a share of the letter's
-   * market: face after free rent, less the allowance amortised over the
-   * term, plus what the bump is worth. `quotePct`/`floorPct` govern what the
-   * desk ASKS; this governs what it may accept. Free months and fit-out come
-   * out of the counter before rent does; a letter that cannot reach it is
-   * docketed with the reason. Absent on rows written before it existed —
-   * `neFloorOf` reads `floorPct` then, which is what the old "walk-away
-   * floor" label promised and the old code enforced only on a tenant's
-   * final.
-   */
-  minNePct?: number;
   /** Floors kept whole for a block user. A letter that breaks one dockets. */
   holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
 }
@@ -2500,9 +2525,57 @@ export interface LeasingPlan {
   sheet: Partial<Record<BuiltClass, PlanRow>> & { byBbl?: Record<string, PlanRow> };
   /** Total lease value ($) the desk may sign without the principal. */
   authority: number;
+  /**
+   * HOW MUCH OF THE REVOLVER THE DESK MAY DRAW to fund a signing, $. Absent
+   * or zero: cash only, the treasury control `agentCanFund` describes. A
+   * desk does not get to lever the firm on its own say-so — but a principal
+   * can write that authority into the mandate once, and then a good lease is
+   * not referred back for want of a $16K cheque while the line sits undrawn.
+   * Measured: 35% of all referrals in the $1M fifty-year playthrough.
+   */
+  lineForFitOut?: number;
+  /**
+   * WHEN TWO TENANTS WANT THE SAME SPACE. "best" (default): the desk signs
+   * whichever nets more over the sheet, and refers only a genuine dead heat
+   * — within two points and on different covenants, which is judgement, not
+   * arithmetic. "mine": every competing tour comes to the principal.
+   * Measured: 46% of all referrals were competing tours.
+   */
+  tourRule?: "best" | "mine";
+  /**
+   * WHERE THE STARTING SHEET CAME FROM, for the one-line note on the
+   * Leasing page: the principal's own signings, or the default brief.
+   */
+  seededFrom?: { m: number; deals: number } | "default";
+  /**
+   * A STANDING ANSWER TO RENT-RELIEF LETTERS. In the fifty-year playthrough
+   * the same rule answered 122 of them by hand: grant when the tenant's own
+   * market is soft (re-letting would cost more than the cut), decline when it
+   * is tight. An asset manager writes that down once. Applies to relief
+   * letters only — a surrender (giveback) is a programming decision and stays
+   * with the principal, as does anything the rule does not cover when
+   * `otherwise` is "mine".
+   */
+  reliefRule?: {
+    /** Grant when city vacancy for the tenant's use is at or over this share. */
+    grantIfVacOver: number;
+    /** …and the tenant's covenant is at least this. */
+    minCredit: Credit;
+    /** …and the cut is no deeper than this share of the rent they pay. */
+    maxCutPct: number;
+    /** What the rule does with a letter it will not grant. */
+    otherwise: "decline" | "mine";
+  };
 }
 
 export interface GameState {
+  /**
+   * The principal's own recent signings — month, use, net effective as a
+   * share of market. Read once, when a desk first takes the pen, to write the
+   * desk's sheet from what the principal has actually been signing
+   * (`seedPlanFromRecord`). Two years, at most sixty rows.
+   */
+  principalSigned?: { m: number; use: BuiltClass; ne: number }[];
   /** Which desk the firm banks with. See bankOf in lenders.ts. */
   bankId?: string;
   /**

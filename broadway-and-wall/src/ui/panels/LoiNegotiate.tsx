@@ -86,7 +86,7 @@ type Counter = {
  */
 export function LoiCounterDraft({
   loi, market, feeRate, fundShort,
-  onSend, onBack,
+  onSend, onBack, initial,
 }: {
   loi: LOI;
   market: number;
@@ -95,12 +95,14 @@ export function LoiCounterDraft({
   fundShort: boolean;
   onSend: (c: Counter) => void;
   onBack: () => void;
+  /** Open the dials somewhere other than the default — "Counter to my terms". */
+  initial?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; termM?: number };
 }) {
-  const [cRent, setCRent] = useState(+(loi.rentPsf * 1.05).toFixed(2));
-  const [cTi, setCTi] = useState(loi.tiPsf);
-  const [cFree, setCFree] = useState(loi.freeM);
-  const [cBump, setCBump] = useState(bumpOf(loi));
-  const [cTerm, setCTerm] = useState(loi.termM);
+  const [cRent, setCRent] = useState(+(initial?.rentPsf ?? loi.rentPsf * 1.05).toFixed(2));
+  const [cTi, setCTi] = useState(initial?.tiPsf ?? loi.tiPsf);
+  const [cFree, setCFree] = useState(initial?.freeM ?? loi.freeM);
+  const [cBump, setCBump] = useState(initial?.bumpPct ?? bumpOf(loi));
+  const [cTerm, setCTerm] = useState(initial?.termM ?? loi.termM);
   const openTerm = loi.openTermM ?? loi.termM;
   // EVERYTHING ON THIS CARD IS STRUCK OVER THE TERM ON THE DIAL, not the term
   // they walked in with. The allowance cap, the free-rent cap, net effective and

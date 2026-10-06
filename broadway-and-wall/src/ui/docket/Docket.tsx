@@ -142,7 +142,10 @@ export default function Docket() {
                   </span>
                 ) : it.apply ? (
                   <button type="button" className="year-rail-go" title={it.sub}
-                    onClick={() => { if (it.apply?.buyBox) useStore.getState().setBuyBox(it.apply.buyBox); }}>
+                    onClick={() => {
+                      if (it.apply?.buyBox) useStore.getState().setBuyBox(it.apply.buyBox);
+                      for (const r of it.apply?.planRows ?? []) useStore.getState().setPlanRow(r.use, { targetNePct: r.targetNePct });
+                    }}>
                     {it.apply.label}
                   </button>
                 ) : (it.attnKey || it.bbl || it.page) ? (

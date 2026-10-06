@@ -80,7 +80,7 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
   if (head === "auction") return { page: "market", auction: true };
   if (head === "line-over" || head === "cash-runway") return { page: "debt" };
   if (head === "cash") return { page: "books" };
-  if (head === "ti-book") return { page: "leasing" };
+  if (head === "ti-book" || head === "sheet-review") return { page: "leasing" };
   if (head === "over") return { page: "saves" };
   return { page: "deals" };
 }

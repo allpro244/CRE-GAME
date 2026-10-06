@@ -168,6 +168,43 @@ const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
  * leftover numbers (quote = the old sign line; package from the TI-months
  * cap), then drop the fields so they cannot come back.
  */
+/**
+ * THE SEVEN-SLIDER SHEET BECOMES TWO DIALS. Rows written before the sheet was
+ * rewritten (PLAYTHROUGH_2026-10-06.md) carried quotePct / floorPct / holdM /
+ * stepPct / minNePct / maxTiPsf / maxFreeM / term band / minCredit. The least
+ * the old row would sign — minNePct, else floorPct — is the target; its hold
+ * is the patience; a credit floor survives as the guardrail. The package caps
+ * and the term band are dropped on purpose: they were filters, and the desk
+ * now restructures rather than refuses.
+ */
+function migratePlanRows(state: GameState): void {
+  const plan = state.leasingPlan as (LeasingPlanAny | undefined);
+  if (!plan?.sheet) return;
+  const fix = (r: Record<string, unknown> | undefined): PlanRow | undefined => {
+    if (!r) return undefined;
+    if (typeof r.targetNePct === "number") return r as unknown as PlanRow;
+    const num = (k: string) => (typeof r[k] === "number" && Number.isFinite(r[k] as number) ? r[k] as number : undefined);
+    const row: PlanRow = {
+      targetNePct: num("minNePct") ?? num("floorPct") ?? num("quotePct") ?? STARTER_ROW_FALLBACK.targetNePct,
+      patienceM: Math.max(0, num("holdM") ?? STARTER_ROW_FALLBACK.patienceM),
+    };
+    const mc = num("minCredit");
+    if (mc === 1 || mc === 2) row.minCredit = mc as Credit;
+    if (r.bandAdj) row.bandAdj = r.bandAdj as PlanRow["bandAdj"];
+    if (r.holdBlocks) row.holdBlocks = r.holdBlocks as PlanRow["holdBlocks"];
+    return row;
+  };
+  for (const k of Object.keys(plan.sheet)) {
+    if (k === "byBbl") continue;
+    plan.sheet[k] = fix(plan.sheet[k] as Record<string, unknown>);
+  }
+  if (plan.sheet.byBbl) {
+    for (const b of Object.keys(plan.sheet.byBbl)) plan.sheet.byBbl[b] = fix(plan.sheet.byBbl[b] as Record<string, unknown>)!;
+  }
+}
+type LeasingPlanAny = { sheet: Record<string, unknown> & { byBbl?: Record<string, unknown> } };
+const STARTER_ROW_FALLBACK = { targetNePct: 0.92, patienceM: 12 };
+
 function migrateLegacyMandateDials(state: GameState): void {
   const raw = state as GameState & {
     agentFloor?: number;
@@ -184,21 +221,11 @@ function migrateLegacyMandateDials(state: GameState): void {
       ? 9
       : Math.min(18, Math.max(0, raw.agentMaxTiMonths));
     const credit: Credit = raw.agentMinCredit === 1 || raw.agentMinCredit === 2 ? raw.agentMinCredit : 0;
-    const row: PlanRow = {
-      quotePct: floor,
-      maxTiPsf: Math.max(20, Math.round(tiMonths * 80 / 12)),
-      maxFreeM: Math.min(12, Math.max(3, Math.round(tiMonths * 0.7))),
-      minBumpPct: 2.5,
-      termLoM: 36,
-      termHiM: 180,
-      minCredit: credit,
-      holdM: 0,
-      stepPct: 0.02,
-      floorPct: floor,
-      // The old dial's floor was the promise "never sign under this"; the
-      // engine enforced it only on a tenant's final. It is the signing floor now.
-      minNePct: floor,
-    };
+    // The old dial's floor was the promise "never sign under this". It is the
+    // target now; the old desk stepped down from the first dark month, which
+    // is patience zero.
+    const row: PlanRow = { targetNePct: floor, patienceM: 0, ...(credit ? { minCredit: credit } : {}) };
+    void tiMonths;
     state.leasingPlan = starterPlan(row);
   }
   delete raw.agentFloor;
@@ -236,6 +263,7 @@ export function migrateSaveState(state: GameState): GameState {
   // index, no RNG. Do not bump SAVE_VERSION for this.
   // Phase 5: leftover mandate dials seed a starter sheet once, then drop.
   migrateLegacyMandateDials(state);
+  migratePlanRows(state);
   if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

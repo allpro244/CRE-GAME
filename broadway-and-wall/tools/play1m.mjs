@@ -14,6 +14,10 @@ const SEED = Number(process.env.SEED ?? 4242);
 const YEARS = Number(process.env.YEARS ?? 50);
 // DELEGATE: "auto" (my judgement mid-run), "never", or "agent"/"team" from day 1
 const DELEGATE = process.env.DELEGATE ?? "auto";
+// NEW=1 plays with the October 2026 tools: a posted number and "clear the
+// tray", a relief rule, balloons left to roll, contracts left to close, the
+// buy box the book implies, and the quarter's review followed. No desk.
+const NEW = process.env.NEW === "1";
 const K = (n) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${(n / 1e3).toFixed(0)}K`);
 const out = (...a) => console.log(...a);
 
@@ -38,7 +42,47 @@ const dc = (k) => { DC[k] = (DC[k] ?? 0) + 1; bump("dc:" + k); };
 function headOf(key) { return key.split(":")[0]; }
 
 // ---------------------------------------------------------------- leasing, by hand
+function answerLettersNew() {
+  if (!g.leasingPlan) {
+    // Post my number once: what I was signing by hand (97% NE), a year's
+    // patience, and the relief rule I was applying by hand.
+    g = structuredClone(g);
+    E.patchPlanRow(g, "office", { targetNePct: 0.97, patienceM: 12 });
+    E.patchPlanRow(g, "retail", { targetNePct: 0.97, patienceM: 12 });
+    E.patchPlanRow(g, "industrial", { targetNePct: 0.97, patienceM: 12 });
+    E.patchPlanOptions(g, { reliefRule: { grantIfVacOver: 0.11, minCredit: 0, maxCutPct: 0.2, otherwise: "decline" } });
+    J("POSTED my number: 97% NE, 12 months' patience; relief by rule");
+  }
+  const waiting = g.lois.filter((l) => E.loiNeedsPrincipal(g, l));
+  if (waiting.length) {
+    const r = E.clearTrayAgainstPlan(g, parcels);
+    g = r.s; bump("decisions"); dc("tray"); bump("trayPasses");
+    bump("lettersAnswered", r.signed + r.countered + r.passed);
+  }
+  // what the tray left with me: answer by hand, as before
+  let guard = 0;
+  while (guard++ < 50) {
+    const mine = g.lois.filter((l) => E.loiNeedsPrincipal(g, l) && !l._seen);
+    if (!mine.length) break;
+    const loi = mine[0];
+    const rec = E.resolveRec(parcels, g, loi.bbl); const h = g.holdings[loi.bbl];
+    if (!rec || !h) { loi._seen = true; continue; }
+    const mk = E.managedRentPsfYr(rec, g.econ, h, loi.use);
+    const ne = E.loiMandateScore(loi, mk);
+    const r = E.respondLOI(g, parcels, loi.id, ne >= 0.86 ? "accept" : "pass");
+    bump("decisions"); dc(loi.kind === "renewal" ? "renewal" : "letter");
+    if (!r.err) g = r.s; else { const l = g.lois.find((x) => x.id === loi.id); if (l) l._seen = true; }
+  }
+  for (const a of [...(g.asks ?? [])]) {
+    // only surrenders reach me now
+    const r = E.answerAsk(g, parcels, a.id, "grant");
+    bump("decisions"); bump("asksAnswered"); dc("ask");
+    if (!r.err) g = r.s;
+  }
+}
+
 function answerLetters() {
+  if (NEW) return answerLettersNew();
   // what I would actually do sat at the Deals desk: read every letter, take the
   // good ones, counter the workable ones to market, let the junk go
   let guard = 0;
@@ -199,7 +243,8 @@ function manageBook() {
     if (occ < 0.8 && !h.broker && g.cash > reserve()) { const r = E.setBroker(g, parcels, h.bbl, true); if (r?.s && !r.err) { g = r.s; bump("decisions"); dc("broker"); } }
     if (occ > 0.93 && h.broker) { const r = E.setBroker(g, parcels, h.bbl, false); if (r?.s && !r.err) { g = r.s; bump("decisions"); dc("broker"); } }
     // refinance: balloon inside a year, or a big cash-out at a better coupon
-    const mat = h.loan && h.loan.maturityM - g.month <= 12;
+    const rolls = NEW && E.attentionItems(g, parcels).some((a) => a.key.startsWith(`balloon:${h.bbl}:`) && a.key.endsWith(":rolls"));
+    const mat = h.loan && h.loan.maturityM - g.month <= 12 && !rolls;
     if (mat || (g.month - (h.refiM ?? h.boughtM) > 48 && yr() % 2 === 0)) {
       const { quotes, payoff } = E.refiQuotes(g, parcels, h.bbl);
       const live = quotes.filter((x) => x.available && x.maxProceeds > 0)
@@ -233,7 +278,9 @@ function manageBook() {
     }
     if (h.sale) {
       const s = h.sale;
-      if (s.offer) {
+      if (s.offer && NEW && s.offer.contract && !s.offer.held) {
+        // papered — it closes itself
+      } else if (s.offer) {
         bump("decisions"); dc("sale");
         if (s.offer.price >= s.ask * 0.94) { const r = E.acceptSaleOffer(g, parcels, h.bbl); if (!r.err) { g = r.s; bump("sold"); J(`SOLD ${rec.address} ${K(s.offer.price)}`); continue; } }
         else if (!s.offer.countered) { const r = E.counterSale(g, parcels, h.bbl, Math.round(s.ask * 0.98)); if (r?.s && !r.err) g = r.s; }
@@ -259,6 +306,13 @@ function rollingLeasingLoad() {
   return (a.lettersAnswered ?? 0) + (a.renewalsAnswered ?? 0) + (a.asksAnswered ?? 0);
 }
 function maybeDelegate() {
+  if (NEW) {
+    if (!g.buyBox && Object.keys(g.holdings).length >= 3) {
+      const box = E.suggestBuyBox(g, parcels);
+      if (box) { g = { ...g, buyBox: box }; bump("decisions"); dc("buybox"); J(`SET BUY BOX from the book: ${JSON.stringify(box)}`); }
+    }
+    return;
+  }
   if (DELEGATE === "never") return;
   const load = rollingLeasingLoad();
   const stopsLastYr = Y[yr() - 1]?.stops ?? 0;
@@ -338,6 +392,10 @@ while (g.month < YEARS * 12 && !g.gameOver) {
     for (const it2 of items) { const h2 = headOf(it2.key); DK[h2] = (DK[h2] ?? 0) + 1; bump("dk:" + h2); }
     // a stop where nothing on the docket is a decision I can take now
     if (hd === "lease-roll") bump("leaseRollStops");
+    if (NEW && hd === "sheet-review") {
+      for (const r of E.sheetReview(g, parcels)) E.patchPlanRow(g, r.use, { targetNePct: r.suggest });
+      bump("decisions"); dc("review");
+    }
   }
 }
 

@@ -17,7 +17,7 @@ import { monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { attentionItems, MILESTONES } from "@/engine/sim";
 import { netWorth, resolveRec } from "@/engine/value";
-import { planIsLive, loiSigningCost, vacantSf } from "@/engine/leasing";
+import { planIsLive, loiSigningCost, vacantSf, sheetReview } from "@/engine/leasing";
 import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { positiveLeverage, starterPick } from "@/engine/standing";
 import { fundableNow } from "@/engine/credit";
@@ -43,7 +43,7 @@ export interface DocketItem {
   /** Plan-desk exception — Sign / Counter / Decline on the rail. */
   leaseId?: number;
   /** A one-click fix the row offers — the rail's Apply button. */
-  apply?: { label: string; buyBox?: import("@/engine/buybox").BuyBox };
+  apply?: { label: string; buyBox?: import("@/engine/buybox").BuyBox; planRows?: { use: import("@/engine/types").BuiltClass; targetNePct: number }[] };
 }
 
 /** How many rows the rail shows before folding the rest into a tail line. */
@@ -123,6 +123,15 @@ export function buildDocket(
     const head = a.key.split(":")[0];
     if (head === "sweep") { sweeps.push({ bbl: a.key.split(":")[1], label: a.label, key: a.key }); continue; }
     if (head === "balloon" && a.key.endsWith(":rolls")) { rolls.push({ bbl: a.key.split(":")[1], label: a.label, key: a.key }); continue; }
+    if (head === "sheet-review" && parcels) {
+      const rev = sheetReview(game, parcels);
+      items.push({
+        key: a.key, cat: "assets", title: a.label, attnKey: a.key, page: "leasing",
+        sub: rev.map((r) => `move ${r.use} to ${(r.suggest * 100).toFixed(0)}%`).join(" · ") + " — or Later to hold",
+        apply: { label: "Move to the street", planRows: rev.map((r) => ({ use: r.use, targetNePct: r.suggest })) },
+      });
+      continue;
+    }
     const leaseId = a.key.startsWith("loi:") ? Number(a.key.slice(4)) : undefined;
     const letter = leaseId !== undefined ? game.lois.find((l) => l.id === leaseId) : undefined;
     items.push({

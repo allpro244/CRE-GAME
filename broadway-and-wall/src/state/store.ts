@@ -12,7 +12,7 @@ import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMark
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
-  patchPlanRow, setPlanAuthority as writePlanAuthority, type LOIAction,
+  patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
@@ -220,6 +220,8 @@ interface AppState {
   bidBlind: (bbl: string, bid: number) => void;
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; termM?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
+  /** Run every letter on your desk against your own terms in one pass. */
+  clearTray: (skip?: number[]) => void;
   /** Answer a tenant's mid-lease relief letter. */
   answerAsk: (id: number, action: "grant" | "decline") => void;
   /**
@@ -402,6 +404,10 @@ interface AppState {
   setSignOwnAll: (on: boolean) => void;
   setPlanRow: (key: import("@/engine/types").BuiltClass | { bbl: string }, patch: Partial<import("@/engine/types").PlanRow>) => void;
   setPlanAuthority: (n: number) => void;
+  /** Sheet-wide options: revolver authority for fit-out, tour rule. */
+  setPlanOptions: (patch: Partial<Pick<import("@/engine/types").LeasingPlan, "lineForFitOut" | "tourRule" | "reliefRule">>) => void;
+  /** "I sign here" on one building. */
+  setPrincipalSigns: (bbl: string, on: boolean) => void;
   setLoiFocus: (id: number | null) => void;
   loiFocusId: number | null;
   /** Paper a cross-collateralised facility over a pool of buildings. */
@@ -1064,6 +1070,20 @@ export const useStore = create<AppState>((set, get) => ({
   // notification somewhere else to learn the outcome of the thing you had just
   // clicked. The toast stays for every other caller; the modal now reads the
   // result and shows it in place.
+  clearTray: (skip) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = clearTrayAgainstPlan(game, parcels, skip ?? []);
+    set({ game: r.s });
+    const bits = [
+      r.signed ? `${r.signed} signed` : "",
+      r.countered ? `${r.countered} countered` : "",
+      r.walked ? `${r.walked} walked` : "",
+      r.passed ? `${r.passed} passed` : "",
+    ].filter(Boolean);
+    toast(`Tray cleared against your terms — ${bits.join(", ") || "nothing moved"}.${r.left ? ` ${r.left} still on your desk, each with its reason.` : ""}`);
+    void persist(r.s);
+  },
   respondLoi: (id, action, fund, counter) => {
     const { game, parcels } = get();
     if (!game || !parcels) return { ok: false, msg: "" };
@@ -1996,6 +2016,23 @@ export const useStore = create<AppState>((set, get) => ({
     const next = structuredClone(game);
     writePlanAuthority(next, n);
     set({ game: next });
+    void persist(next);
+  },
+  setPlanOptions: (patch) => {
+    const { game } = get();
+    if (!game) return;
+    const next = structuredClone(game);
+    patchPlanOptions(next, patch);
+    set({ game: next });
+    void persist(next);
+  },
+  setPrincipalSigns: (bbl, on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = structuredClone(game);
+    writePrincipalSigns(next, bbl, on);
+    set({ game: next });
+    toast(on ? "You sign every letter on this building — the desk leaves it to you." : "The desk works this building again.");
     void persist(next);
   },
   setLoiFocus: (id) => set({ loiFocusId: id }),

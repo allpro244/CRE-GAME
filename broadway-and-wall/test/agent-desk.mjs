@@ -77,15 +77,30 @@ g.agent = true;
 g.leasingPlan = E.starterPlan();
 g.cash = Math.max(g.cash, 20_000_000);
 
-const beforeTenants = g.holdings[boughtBbl].tenants.length;
-E.runLeasingAgent(g, parcels);
-const tourLeft = g.lois.filter((l) => l.id === 101 || l.id === 102 || l.id === 103);
-const signed = g.holdings[boughtBbl].tenants.length > beforeTenants;
-check(!signed, "contested tour is not auto-signed — the principal picks");
-check(tourLeft.length === 3 && tourLeft.every((l) => l.referred || l.docketReason),
-  "entire contested tour is docketed so the principal chooses");
-check(E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
-  "docketed tour letters still need the principal");
+// Tour rule "mine": the whole contested tour is the principal's.
+{
+  const m = structuredClone(g);
+  m.leasingPlan.tourRule = "mine";
+  const beforeTenants = m.holdings[boughtBbl].tenants.length;
+  E.runLeasingAgent(m, parcels);
+  const tourLeft = m.lois.filter((l) => l.id === 101 || l.id === 102 || l.id === 103);
+  check(m.holdings[boughtBbl].tenants.length === beforeTenants, "tour rule mine: contested tour is not auto-signed — the principal picks");
+  check(tourLeft.length === 3 && tourLeft.every((l) => l.referred || l.docketReason),
+    "tour rule mine: entire contested tour is docketed so the principal chooses");
+  check(E.attentionItems(m).some((a) => a.key.startsWith("loi:")),
+    "docketed tour letters still need the principal");
+}
+// Default "best": the desk works the letter that nets most; the rest lose the space.
+{
+  const b = structuredClone(g);
+  const beforeTenants = b.holdings[boughtBbl].tenants.length;
+  E.runLeasingAgent(b, parcels);
+  const tourLeft = b.lois.filter((l) => l.id === 101 || l.id === 102 || l.id === 103);
+  const signedName = b.holdings[boughtBbl].tenants.slice(beforeTenants).map((t) => t.name);
+  check(!tourLeft.some((l) => l.referred), "tour rule best: nothing referred on a clear winner");
+  check(signedName.length === 0 || signedName.includes("Mandate Clear Co"),
+    `tour rule best: if anyone signed, it is the best net effective (${signedName.join(",") || "walked"})`);
+}
 
 // Hire-path: open letters, agent off → runLeasingAgent after flag.
 {
@@ -240,6 +255,46 @@ console.log("\nQUIET DESK SCORECARD\n");
     if (!l.referred) check(!E.loiNeedsPrincipal(g, l), `unreferred ${l.name} stays quiet under the agent`);
     else check(E.loiNeedsPrincipal(g, l), `referred ${l.name} still needs the principal`);
   }
+}
+
+// "I SIGN HERE": the pin keeps letters on one building with the principal
+// whoever holds the pen on the rest of the book.
+{
+  const p = structuredClone(g);
+  p.agent = true;
+  p.leasingPlan = E.starterPlan();
+  const L = { id: 301, bbl: boughtBbl, kind: "new", use, name: "Pinned Co", sector: "law", credit: 2, sf: suite,
+    rentPsf: +(market * 1.05).toFixed(2), termM: 84, tiPsf: 10, freeM: 0, net: true, expiresM: p.month + 3, arrivedM: p.month };
+  p.lois = [L];
+  check(!E.loiNeedsPrincipal(p, L), "unpinned: the agent has the letter");
+  E.setPrincipalSigns(p, boughtBbl, true);
+  check(E.loiNeedsPrincipal(p, L), "pinned: the letter needs the principal");
+  const before = p.holdings[boughtBbl].tenants.length;
+  E.runLeasingAgent(p, parcels);
+  check(p.lois.some((l) => l.id === 301 && !l.referred) && p.holdings[boughtBbl].tenants.length === before,
+    "pinned: the desk does not touch it (not signed, not referred)");
+}
+
+// THE LINE THE MANDATE AUTHORISES. Cash under the reserve, line undrawn: a
+// cash-only desk refers; a desk whose sheet allows the line signs.
+{
+  const c = structuredClone(g);
+  c.agent = true;
+  c.leasingPlan = E.starterPlan();
+  const reserve = E.agentCashReserve(c);
+  c.cash = reserve + 1000;
+  const L = { id: 401, bbl: boughtBbl, kind: "new", use, name: "Needs Fitout", sector: "law", credit: 2, sf: suite,
+    rentPsf: +(market * 1.10).toFixed(2), termM: 84, tiPsf: 30, freeM: 0, net: true, expiresM: c.month + 3, arrivedM: c.month };
+  const rec = E.resolveRec(parcels, c, boughtBbl);
+  const h = c.holdings[boughtBbl];
+  const cashOnly = E.clearAgainstPlan(c, L, c.leasingPlan, { rec, h, parcels });
+  check(cashOnly.verdict === "docket" && /reserve/.test(cashOnly.why ?? ""), `cash only: referred on the reserve (${cashOnly.verdict})`);
+  const room = E.locAvailable(c, parcels);
+  if (room > 50_000) {
+    E.patchPlanOptions(c, { lineForFitOut: 2_000_000 });
+    const lined = E.clearAgainstPlan(c, L, c.leasingPlan, { rec, h, parcels });
+    check(lined.verdict === "sign", `with line authority: the desk may sign (${lined.verdict} ${lined.why ?? ""})`);
+  } else check(true, `no line room on this fixture (${Math.round(room)}) — line authority not exercised`);
 }
 
 console.log("");

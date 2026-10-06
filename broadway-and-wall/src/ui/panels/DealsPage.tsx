@@ -6,7 +6,7 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow } from "@/engine/leasing";
+import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
 import { saleTaxQuote } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
@@ -16,6 +16,72 @@ import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/L
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { Gloss } from "@/ui/Glossary";
 import { leasingDeskName, loiRead, saleOfferRead } from "@/ui/advisor";
+
+/**
+ * CLEAR THE TRAY AGAINST MY TERMS. With more than a couple of letters on the
+ * desk, one pass reads all of them against your own number — what signs as
+ * written, what gets countered, what cannot reach it, and what is yours to
+ * decide (competing tours, expansions, the treasury) — and shows the three
+ * piles before anything happens. Untick anything you want to answer by hand.
+ * You still hold the pen; this is your Accept / Counter / Pass, in bulk.
+ */
+export function TrayClear() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const [open, setOpen] = useState(false);
+  const [skip, setSkip] = useState<number[]>([]);
+  const rows = previewTray(game, parcels);
+  if (rows.length < 2) return null;
+  // RENEWALS BY BUILDING. A building's rolling year is one negotiation
+  // pretending to be several; answer the lot against your terms in one go.
+  const byBldg = new Map<string, number[]>();
+  for (const r of rows) if (r.loi.kind === "renewal") byBldg.set(r.loi.bbl, [...(byBldg.get(r.loi.bbl) ?? []), r.loi.id]);
+  const batches = [...byBldg.entries()].filter(([, ids]) => ids.length >= 2);
+  const pile = (p: string) => rows.filter((r) => r.pile === p);
+  const label: Record<string, string> = { sign: "Signs as written", counter: "Countered to your number", pass: "Passed — cannot reach it", yours: "Stays with you" };
+  const counts = (["sign", "counter", "pass", "yours"] as const).map((p) => `${pile(p).length} ${label[p].toLowerCase()}`).join(" · ");
+  return (
+    <div className="agent-bar" style={{ display: "block", marginBottom: 8 }}>
+      <div className="btn-row" style={{ justifyContent: "space-between" }}>
+        <div>
+          <div className="agent-title">{rows.length} letters on your desk</div>
+          <div className="agent-sub">{counts}</div>
+        </div>
+        <div className="btn-row">
+          <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Preview"}</button>
+          <button className="btn btn-buy" onClick={() => { useStore.getState().clearTray(skip); setSkip([]); setOpen(false); }}>
+            Clear the tray against my terms
+          </button>
+        </div>
+      </div>
+      {batches.map(([bbl, ids]) => (
+        <div key={bbl} className="btn-row" style={{ marginTop: 6, justifyContent: "space-between" }}>
+          <span className="agent-sub">{parcels[bbl]?.address ?? bbl}: {ids.length} renewals waiting</span>
+          <button className="btn" onClick={() => useStore.getState().clearTray(rows.map((r) => r.loi.id).filter((id) => !ids.includes(id)))}>
+            Answer all {ids.length} to my terms
+          </button>
+        </div>
+      ))}
+      {open && (["sign", "counter", "pass", "yours"] as const).map((p) => pile(p).length ? (
+        <div key={p} style={{ marginTop: 8 }}>
+          <div className="page-section-head">{label[p]}</div>
+          {pile(p).map((r) => (
+            <label key={r.loi.id} className="loi-line" style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+              {p !== "yours" && (
+                <input type="checkbox" checked={!skip.includes(r.loi.id)}
+                  onChange={(e) => setSkip((sk) => e.target.checked ? sk.filter((x) => x !== r.loi.id) : [...sk, r.loi.id])} />
+              )}
+              <span><b>{r.loi.name}</b> · {parcels[r.loi.bbl]?.address ?? r.loi.bbl} · {Math.round(r.loi.sf).toLocaleString()} sf
+                {r.neScore !== undefined ? ` · nets ${(r.neScore * 100).toFixed(0)}%` : ""}
+                {r.counter ? ` → ask $${r.counter.rentPsf.toFixed(2)}/sf, their package kept` : ""}
+                {r.why ? <span className="dim"> — {r.why}</span> : null}</span>
+            </label>
+          ))}
+        </div>
+      ) : null)}
+    </div>
+  );
+}
 
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
@@ -47,6 +113,15 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   // only have one of them, so the card has to say so before you press Accept.
   const rivalsOnTour = loi.tourId === undefined ? 0
     : game.lois.filter((l) => l.tourId === loi.tourId && l.id !== loi.id).length;
+  // YOUR TERMS ON THIS LETTER — the counter the clearing engine would put,
+  // read from your posted sheet or, without one, from what you have signed.
+  const [initial, setInitial] = useState<undefined | { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; termM: number }>(undefined);
+  const myTerms = () => {
+    const row = previewTray(game, parcels).find((r) => r.loi.id === loi.id);
+    if (row?.counter) { setInitial(row.counter); setCountering(true); }
+    else if (row?.pile === "sign") useStore.getState().respondLoi(loi.id, "accept", short);
+    else { setInitial(undefined); setCountering(true); }
+  };
   return (
     <div className="loi">
       <button className="loi-addr" onClick={() => go(loi.bbl)}>{rec?.address ?? loi.bbl}</button>
@@ -118,6 +193,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           market={market}
           feeRate={fee}
           fundShort={short}
+          initial={initial}
           onSend={(c) => { respondLoi(loi.id, "counter", short, c); setCountering(false); }}
           onBack={() => setCountering(false)}
         />
@@ -128,7 +204,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
             {final ? "Take their final" : "Accept"}
           </button>
           {!loi.countered && !final && (
-            <button className="btn" onClick={() => setCountering(true)}>Counter…</button>
+            <button className="btn" onClick={() => { setInitial(undefined); setCountering(true); }}>Counter…</button>
+          )}
+          {!loi.countered && !final && (
+            <button className="btn" title="Open the counter at your own terms — the tenant's package, at the rent that reaches your number. Signs as written if it already does." onClick={myTerms}>
+              Counter to my terms
+            </button>
           )}
           <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
         </div>
@@ -481,6 +562,7 @@ export function DealsPage() {
             )}
           </div>
         )}
+        <TrayClear />
         <div className="loi-grid">
           {[...desk]
             .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)

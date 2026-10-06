@@ -88,7 +88,13 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
     def: "NOI ÷ loan amount. A lender's floor that ignores the rate: at 8% a lender is paid back from income alone in twelve and a half years.",
   },
   "leasing plan": {
-    def: "The posted asking sheet the desk and you both clear against — quote, hold-out, package, dollar authority. Not four mandate bands.",
+    def: "Your number and your patience, per asset type: the least net effective you will sign, and how long you hold it on empty space before meeting the street. Whoever holds the pen — a desk, or you clearing your own tray — asks the street or your number, keeps the tenant's package and asks for the rent that reaches it. Nobody is turned away for the shape of their deal, only for price.",
+  },
+  "the street": {
+    def: "What deals in town are actually signing this month, as a share of asking rent — the effective/face index. Concessions widen it in a glut and close it in a squeeze.",
+  },
+  "clear the tray": {
+    def: "Run every letter waiting on you against your own number in one pass: what nets it signs, what can be countered is countered, and the decisions that are really yours — competing tenants, expansions, the treasury — stay on your desk with the reason. You still hold the pen and pay your own 4%/2%.",
   },
 };
 

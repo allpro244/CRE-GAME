@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
@@ -590,6 +590,7 @@ function tickMonth(
   tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
+  applyReliefRule(s, parcels);
   tickGroundLeases(s, parcels);
   tickLeaseholds(s);
   tickBuildToSuit(s, parcels);
@@ -1828,6 +1829,21 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       out.push({
         key: "ti-book",
         label: `Open lease signing costs ${n} would breach the cash reserve`,
+      });
+    }
+  }
+  // THE QUARTER'S LEASING REVIEW, once a quarter, when the sheet and the street
+  // have come apart — the one leasing decision a large book should still stop
+  // the clock for (leasing.ts sheetReview).
+  if (parcels && s.leasingPlan && s.month > 0 && s.month % 3 === 0) {
+    const rev = sheetReview(s, parcels);
+    if (rev.length) {
+      const d = s.deskDigestPrev;
+      out.push({
+        key: `sheet-review:${s.month}`,
+        lastM: s.month + 2,
+        label: `Leasing review: ${rev.map((r) => `${r.use} at ${(r.target * 100).toFixed(0)}% against the street's ${(r.street * 100).toFixed(0)}%`).join(", ")}`
+          + (d ? ` — last quarter ${d.signed} signed, ${d.vacMonths} vacant-months` : ""),
       });
     }
   }

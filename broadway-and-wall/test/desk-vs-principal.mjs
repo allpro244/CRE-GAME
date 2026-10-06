@@ -399,8 +399,8 @@ const summarise = (label, start, end, stats) => {
 
 console.log("\nDESK VS PATIENT PRINCIPAL — Phase 3 re-run (player-equivalent plan)");
 console.log(`  seeds ${SEEDS.join(", ")} · ${HZ} months · target ${TARGET_SUITES} commercial suites`);
-console.log("  desk  = agent + starter plan (quotePct 0.90)");
-console.log("  plan  = agent + player-equivalent sheet (quote 1.08, holdM 18, no par cap)");
+console.log("  desk  = agent + starter brief (92% net effective, 12 mo patience)");
+console.log("  plan  = agent + player-equivalent sheet (95% net effective, 18 mo patience)");
 console.log("  principal = counter every letter to tenantIndifferenceMult");
 console.log("  signed NE% is face after free months and the bump; TI is not on the tenant\n");
 

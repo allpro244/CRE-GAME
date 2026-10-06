@@ -279,6 +279,22 @@ export function fundAndBook(
 }
 
 /** Cover a negative cash balance from the line — same draw tickLoc used to do alone at month-end. */
+/**
+ * Draw the revolver into cash, in place, up to what is available. Returns
+ * the amount drawn. For engine paths that already hold a mutable state (the
+ * leasing desk drawing the line its mandate authorised).
+ */
+export function drawLineInPlace(s: GameState, parcels: ParcelTable, amount: number): number {
+  const draw = Math.min(Math.max(0, Math.ceil(amount)), locAvailable(s, parcels));
+  if (!(draw > 0)) return 0;
+  if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  s.loc.balance += draw;
+  s.loc.drawnTotal += draw;
+  s.cash += draw;
+  _locAvailCache = null;
+  return draw;
+}
+
 export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
   if (s.cash >= 0) return 0;
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };

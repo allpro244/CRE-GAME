@@ -11,7 +11,7 @@ import { portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
-import { LoiCard } from "@/ui/panels/DealsPage";
+import { LoiCard, TrayClear } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
@@ -195,19 +195,19 @@ export function LeasingPage() {
               <Big label="Signed" value={String(tally.signed)}
                 title="Leases the desk closed inside your mandate" />
               <Big label="Passed" value={String(tally.passed)}
-                title="Junk below your pass line — turned away on purpose" />
+                title="Letters that could not reach your number — turned away on purpose" />
               <Big label="Referred" value={String(tally.referred)}
                 title="Came back to you — expansions, capital calls, dead heats, failed counters" />
               <Big label="Walked" value={String(tally.walked)}
                 title="Tenants who left after the desk countered" />
               <Big label="Countered" value={String(tally.countered)}
-                title="Soft letters the desk pushed toward your sign line" />
+                title="Letters the desk countered up to your number" />
             </div>
             <div className="hint" style={{ marginTop: 6 }}>
               {tally.signed === 0 && tally.passed > 0 && tally.referred === 0
-                ? "They have only been passing — check the pass line on your mandate if the market is soft."
+                ? "They have only been passing — if the market is soft, your number may be over what the street is signing."
                 : tally.signed > 0
-                  ? "They are closing. Passed letters are junk under your line, not silent refusals of good paper."
+                  ? "They are closing. Passed letters could not reach your number, even restructured."
                   : referred
                     ? `${referred} letter${referred === 1 ? "" : "s"} on Deals need a principal decision.`
                     : "Desk is working the book quietly — activity shows up here as letters arrive."}
@@ -245,6 +245,7 @@ export function LeasingPage() {
           {renewals ? ` · ${renewals} renewal${renewals === 1 ? "" : "s"}` : ""}
           {quiet ? " · referred by your desk" : ""}
         </div>
+        <TrayClear />
         <div className="loi-grid">
           {[...desk]
             .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
@@ -407,6 +408,15 @@ export function LeasingPage() {
                       {r.h.broker ? " · broker" : ""}
                       {r.notReady ? " · turning" : ""}
                       {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
+                      {r.commercial && (
+                        <button
+                          className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
+                          title={r.h.principalSigns
+                            ? "You sign every letter here, whoever holds the pen on the rest of the book. Click to hand it back to the desk."
+                            : "Keep the pen on this building: its letters come to you even when a desk works the rest of the book."}
+                          onClick={(e) => { e.stopPropagation(); useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns); }}
+                        >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
+                      )}
                       {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
                         <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
                       )}

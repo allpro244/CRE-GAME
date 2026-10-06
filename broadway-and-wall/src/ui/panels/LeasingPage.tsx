@@ -386,6 +386,7 @@ export function LeasingPage() {
               <tr>
                 <th>Property</th>
                 <th className="num">Occ</th>
+                <th className="num" title="In-place rent roll over leased feet — what the building's tenants pay on average, against the market rent for the space">Avg $/sf</th>
                 <th className="num">Rent / yr</th>
                 <th className="num">WALT</th>
                 <th className="num">Rolling</th>
@@ -398,7 +399,6 @@ export function LeasingPage() {
                     <div>{r.rec.address}</div>
                     <div className="dim" style={{ fontSize: 11 }}>
                       {useLabel(r.rec)} · {sf(r.rec.bldgArea)}
-                      {r.leased ? ` · $${(r.rentRoll / r.leased).toFixed(0)}/sf` : ""}
                     </div>
                     <div className="dim" style={{ fontSize: 11 }}>
                       {/* named, so "Market · Market · Fund" reads as three settings */}
@@ -423,6 +423,23 @@ export function LeasingPage() {
                     </div>
                   </td>
                   <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
+                  {(() => {
+                    // IN PLACE AGAINST THE MARKET. The rent roll over the feet
+                    // it is paid on, beside what the same space lets for today.
+                    const avg = r.leased > 0 ? r.rentRoll / r.leased : 0;
+                    const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
+                    const gap = avg > 0 && mkt > 0 ? avg / mkt - 1 : 0;
+                    return (
+                      <td className="num" title={mkt > 0 ? `In place $${avg.toFixed(2)}/sf against a $${mkt.toFixed(2)}/sf market` : undefined}>
+                        {avg > 0 ? `$${avg.toFixed(2)}` : "—"}
+                        {avg > 0 && mkt > 0 && (
+                          <div className={"dim" + (gap < -0.1 ? " neg" : "")} style={{ fontSize: 11 }}>
+                            mkt ${mkt.toFixed(0)} · {gap >= 0 ? "+" : "−"}{Math.abs(Math.round(gap * 100))}%
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })()}
                   <td className="num">{usd(r.rentRoll)}</td>
                   <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
                   <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>

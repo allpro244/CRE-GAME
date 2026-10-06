@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
-import { blocksPaint, parksPaint, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
+import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
@@ -318,6 +318,11 @@ export default function MapView() {
         pixelRatio: ratioFor(graphics, dpr),
       });
       mapRef.current = map;
+      // the ground grain textures are made here, not fetched (see groundGrain)
+      map.on("styleimagemissing", (e: { id: string }) => {
+        if (e.id === "bw-grain-asphalt" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("asphalt"));
+        if (e.id === "bw-grain-yard" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("yard"));
+      });
       // handle for automated playtests and screenshots
       (window as unknown as { __map?: maplibregl.Map }).__map = map;
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");

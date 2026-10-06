@@ -569,6 +569,22 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        // THE ASPHALT HAS A SURFACE. A faint grain over the flat roadway paint
+        // — aggregate speckle, tar seams and worn patches (an alpha texture
+        // made at runtime, see groundGrain) — so the carriageway reads as a
+        // material up close. Gone at the strategic zoom, where it would be
+        // noise.
+        id: "pavement-grain",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pavement"],
+        minzoom: 15,
+        paint: {
+          "fill-pattern": "bw-grain-asphalt",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16.5, 0.85] as never,
+        },
+      },
+      {
         // painted crossings at the gridded corners
         id: "crosswalk",
         type: "fill",
@@ -595,6 +611,19 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         filter: ["==", ["get", "kind"], "block"],
         paint: {
           "fill-color": blocksPaint(0) as never,
+        },
+      },
+      {
+        // the yards are walked on and mown: a soft mottling over the block
+        // paint, the same alpha-only trick as the asphalt grain
+        id: "blocks-grain",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "block"],
+        minzoom: 15,
+        paint: {
+          "fill-pattern": "bw-grain-yard",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16.5, 0.8] as never,
         },
       },
       {
@@ -1047,4 +1076,44 @@ export function composeStyle(base: StyleSpecification, city?: {
     sources: { ...base.sources, ...gameSources(city) },
     layers: [...baseLayers, ...gameLayers()],
   };
+}
+
+
+/**
+ * Alpha-only ground textures, drawn once at runtime (no image files: the game
+ * ships as one HTML file). Asphalt: fine light aggregate and dark tar specks,
+ * a few long crack seams and darker repair patches. Yard: soft darker and
+ * lighter mottling. Each pixel is black or white at low alpha, so it shades
+ * whatever colour the layer below already painted (season, snow, district).
+ */
+export function groundGrain(kind: "asphalt" | "yard", size = 256): { width: number; height: number; data: Uint8Array } {
+  const data = new Uint8Array(size * size * 4);
+  let s = kind === "asphalt" ? 1234567 : 7654321;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const put = (x: number, y: number, v: number, a: number) => {
+    const xi = ((Math.round(x) % size) + size) % size, yi = ((Math.round(y) % size) + size) % size;
+    const i = (yi * size + xi) * 4;
+    // composite over what is there
+    const a0 = data[i + 3] / 255, a1 = a + a0 * (1 - a);
+    const c = a1 > 0 ? (v * a + (data[i] / 255) * a0 * (1 - a)) / a1 : 0;
+    data[i] = data[i + 1] = data[i + 2] = Math.round(c * 255); data[i + 3] = Math.round(a1 * 255);
+  };
+  const blob = (cx: number, cy: number, r: number, v: number, a: number) => {
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+      const d = Math.hypot(x, y) / r;
+      if (d < 1) put(cx + x, cy + y, v, a * (1 - d * d));
+    }
+  };
+  if (kind === "asphalt") {
+    for (let i = 0; i < size * size * 0.18; i++) put(rnd() * size, rnd() * size, rnd() < 0.5 ? 1 : 0, 0.05 + rnd() * 0.1);
+    for (let i = 0; i < 5; i++) blob(rnd() * size, rnd() * size, 14 + rnd() * 26, 0, 0.1);
+    for (let i = 0; i < 3; i++) {
+      let x = rnd() * size, y = rnd() * size, a = rnd() * 6.28;
+      for (let k = 0; k < 60; k++) { put(x, y, 0, 0.22); a += (rnd() - 0.5) * 0.6; x += Math.cos(a); y += Math.sin(a); }
+    }
+  } else {
+    for (let i = 0; i < 40; i++) blob(rnd() * size, rnd() * size, 6 + rnd() * 18, rnd() < 0.6 ? 0 : 1, 0.06 + rnd() * 0.05);
+    for (let i = 0; i < size * size * 0.06; i++) put(rnd() * size, rnd() * size, rnd() < 0.7 ? 0 : 1, 0.04 + rnd() * 0.05);
+  }
+  return { width: size, height: size, data };
 }

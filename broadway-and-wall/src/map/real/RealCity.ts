@@ -786,6 +786,40 @@ export function facadeSwatches(): Record<string, string> {
 
 // ---- geometry accumulation -------------------------------------------------
 
+/** Polygons (with optional holes) in a coarse grid, for point-in-polygon queries. */
+class PolyGrid {
+  private g = new Map<number, { r: P2[]; h: P2[][]; x0: number; y0: number; x1: number; y1: number }[]>();
+  constructor(private C: number) {}
+  add(r: P2[], h: P2[][] = []) {
+    if (r.length < 3) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const e = { r, h, x0, y0, x1, y1 }, C = this.C;
+    for (let cx = Math.floor(x0 / C); cx <= Math.floor(x1 / C); cx++)
+      for (let cy = Math.floor(y0 / C); cy <= Math.floor(y1 / C); cy++) {
+        const k = cx * 100003 + cy;
+        let a = this.g.get(k); if (!a) this.g.set(k, (a = [])); a.push(e);
+      }
+  }
+  hit(x: number, y: number): boolean {
+    const cell = this.g.get(Math.floor(x / this.C) * 100003 + Math.floor(y / this.C));
+    if (!cell) return false;
+    for (const e of cell) {
+      if (x < e.x0 || x > e.x1 || y < e.y0 || y > e.y1) continue;
+      if (PolyGrid.inRing(e.r, x, y) && !e.h.some((h) => PolyGrid.inRing(h, x, y))) return true;
+    }
+    return false;
+  }
+  static inRing(r: P2[], x: number, y: number) {
+    let inside = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) inside = !inside;
+    }
+    return inside;
+  }
+}
+
 class Buf {
   pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = [];
   get count() { return this.pos.length / 3; }
@@ -889,7 +923,7 @@ export class RealCityLayer {
   constructor(
     private volumes: BuildingVolume[],
     private center: [number, number],
-    private curbs: [number, number][][],
+    _curbs: [number, number][][],   // street centre lines: furniture now reads the drawn footways instead
     private ctx: Ctx,
     private seed: number,
   ) {
@@ -1298,6 +1332,10 @@ export class RealCityLayer {
       for (let k = 0; k < n; k++) {
         const t = (k + 0.5) * (L / n);
         const x = a[0] + ux * t, y = a[1] + uy * t;
+        // a canopy hangs over a forecourt or the footway, not into a
+        // neighbour's wall and not out over the carriageway
+        const under = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+        if (under === "bld" || under === "road") continue;
         const tr = trades[Math.floor(hash01(seedK ^ (bayN * 0x9e37 + 0x51), 13) * trades.length)];
         this.putInst("awning", x, y, 0, 1, r, bbl, tr.awn, sz);
         this.putInst("shopsign", x, y, 0, 1, r, bbl, tr.sign, sz);
@@ -1325,14 +1363,21 @@ export class RealCityLayer {
    * with loading docks. Read off the building's own family and use.
    */
   private streetDress(ring: P2[], bbl: string, famKey: string, cls: string, seedK: number, z1: number) {
-    if (cls === "multifamily" && z1 < 22 && (famKey === "brownstone" || famKey === "brick" || famKey === "buff")) {
-      // the brownstone always has its stoop; a brick walk-up about half the time
+    // A STOOP IS A ROW HOUSE'S. Only a low brownstone or brick walk-up, and
+    // only on a front that stands at the footway — a stoop out in a forecourt
+    // is a staircase to nowhere. It comes up in the house's own stone.
+    if (cls === "multifamily" && z1 <= 16 && (famKey === "brownstone" || famKey === "brick")) {
       if (famKey !== "brownstone" && hash01(seedK ^ 0x570f, 9) < 0.5) return;
       for (const e of this.streetEdges(ring, 5)) {
+        const nx = e.uy, ny = -e.ux;
         const n = Math.max(1, Math.floor(e.L / 6.2));
         for (let k = 0; k < n; k++) {
           const t = (k + 0.5) * (e.L / n);
-          this.putInst("stoop", e.a[0] + e.ux * t, e.a[1] + e.uy * t, 0, 1, e.r, bbl, famKey === "brownstone" ? [0.52, 0.36, 0.28] : [0.5, 0.48, 0.45]);
+          const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+          const foot = this.groundAt(x + nx * 2.9, y + ny * 2.9), beyond = this.groundAt(x + nx * 4.5, y + ny * 4.5);
+          const step = this.groundAt(x + nx * 1.5, y + ny * 1.5);
+          if (step === "bld" || foot === "bld" || foot === "road" || (beyond !== "walk" && beyond !== "road")) continue;
+          this.putInst("stoop", x, y, 0, 1, e.r, bbl, famKey === "brownstone" ? [0.36, 0.24, 0.19] : [0.42, 0.38, 0.35]);
         }
       }
     } else if (cls === "industrial") {
@@ -1340,7 +1385,11 @@ export class RealCityLayer {
         const n = Math.min(4, Math.floor(e.L / 12));
         for (let k = 0; k < n; k++) {
           const t = (k + 0.5) * (e.L / n);
-          this.putInst("dock", e.a[0] + e.ux * t, e.a[1] + e.uy * t, 0, 1, e.r, bbl);
+          const x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+          // the apron and canopy need open yard or road in front of them
+          const f = this.groundAt(x + e.uy * 2.6, y - e.ux * 2.6);
+          if (f === "bld" || f === "walk") continue;
+          this.putInst("dock", x, y, 0, 1, e.r, bbl);
         }
       }
     }
@@ -1764,6 +1813,7 @@ export class RealCityLayer {
         for (let row = 3.5; row < 60; row += 6.2) for (let t = 2; t < ll - 2; t += 2.6) {
           const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
           if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
+          if (!this.clearOfBuildings(x, y, 2.6)) continue;
           this.putInst("lotcar", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
         }
       }
@@ -2472,84 +2522,91 @@ export class RealCityLayer {
     this.scene.add(wm, sm);
   }
 
+  /**
+   * THE FOOTWAY'S FURNITURE, FROM THE FOOTWAY. Street trees, lamps, the
+   * people walking and the cars parked at the kerb are laid along the drawn
+   * footway's own kerb edge, not offset from a street's centre line, so they
+   * stand where the pavement and the carriageway actually are. Each one is
+   * then checked against the ground (groundAt): a tree must stand on the
+   * footway with its crown clear of every wall, a lamp on the footway, a
+   * parked car wholly on the carriageway with a running lane beside it.
+   */
+  private dressFootways(rnd: () => number, leafCol: () => number[], CAR: number[][], COAT: number[][]) {
+    const c = this.ctx as { sidewalks?: { ring: P2[]; holes: P2[][] }[] };
+    for (const sw of c.sidewalks ?? []) {
+      let ring = sw.ring.map((q) => this.project(q));
+      if (ring.length < 3) continue;
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();   // counter-clockwise: the band is on the left
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 14) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        const ix = -uy, iy = ux;                   // into the footway
+        const rot = Math.atan2(uy, ux);
+        // how wide the footway is here, probed at the edge's middle
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        let w = 0;
+        while (w < 8 && this.groundAt(mx + ix * (w + 0.25), my + iy * (w + 0.25)) === "walk") w += 0.5;
+        if (w < 1) continue;                       // a sliver, or the band is on the other side
+        const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
+        // people, a few per block face, at a walking pace along the middle of the footway
+        if (w >= 1.5) {
+          const n = Math.max(1, Math.round(L / 16));
+          for (let k = 0; k < n; k++) {
+            const fwd = rnd() < 0.5;
+            const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
+            this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
+          }
+        }
+        // street trees in the kerb strip; a footway under two metres has none
+        if (w >= 2) {
+          const off = Math.min(1.1, w * 0.3);
+          for (let t = 7; t < L - 7; t += 11) {
+            const [x, y] = at(t, off);
+            const sz = 0.72 + rnd() * 0.3;
+            const col = rnd() < 0.33;
+            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
+            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
+          }
+        }
+        // lamps at the kerb, between the trees
+        for (let t = 12; t < L - 6; t += 27) {
+          const [x, y] = at(t, 0.45);
+          if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+        }
+        // moving traffic in the lane outside the parked row, kerb on its right
+        // (the footway is left of this edge, so the kerb lane runs against it)
+        if (L > 40) {
+          const n = Math.max(1, Math.round(L / 34));
+          for (let k = 0; k < n; k++) {
+            const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
+            if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
+            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5, col: CAR[(rnd() * CAR.length) | 0], draw: rnd() });
+          }
+        }
+        // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
+        // only where a running lane is left beside it
+        for (let t = 9; t < L - 9; t += 6.5) {
+          const [x, y] = at(t, -1.25);
+          if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
+          const [lx, ly] = at(t, -5.2);
+          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
+          this.putInst("car", x, y, 0.05, 0.95 + rnd() * 0.12, rot + (rnd() < 0.5 ? 0 : Math.PI), "", CAR[(rnd() * CAR.length) | 0]);
+        }
+      }
+    }
+  }
+
   // ---- street life --------------------------------------------------------
   private buildStreetLife() {
     let s = (this.seed * 7919) % 2147483646 + 1;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    const meta = (this.ctx as { curbMeta?: { hw: number[]; sw: number[] }[] }).curbMeta ?? [];
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
     const leafCol = () => [0.32 + rnd() * 0.08, 0.46 + rnd() * 0.1, 0.20 + rnd() * 0.06];
     const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
-    this.curbs.forEach((line, li) => {
-      const pts = line.map((p) => this.project(p));
-      const hwA = meta[li]?.hw ?? [], swA = meta[li]?.sw ?? [];
-      for (let i = 0; i + 1 < pts.length; i++) {
-        const a = pts[i], b = pts[i + 1];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const L = Math.hypot(dx, dy);
-        if (L < 20) continue;
-        const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
-        const hw = hwA[i] ?? 6, sw = swA[i] ?? 2.5;
-        const rot = Math.atan2(uy, ux);
-        // people on the footway, a few per block face, at a walking pace
-        if (sw >= 1.8) {
-          for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 14));
-            for (let k = 0; k < n; k++) {
-              const fwd = rnd() < 0.5;
-              const o = hw + sw * (0.35 + rnd() * 0.3);
-              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
-              this.walkers.push({
-                x: sx + nx * o * side, y: sy + ny * o * side,
-                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5,
-                col: COAT[(rnd() * COAT.length) | 0], draw: rnd(),
-              });
-            }
-          }
-        }
-        // moving traffic on the wider streets: one car per ~45 m each way,
-        // in the running lane inside the parked row
-        if (hw >= 5 && L > 50) {
-          for (const side of [-1, 1]) {
-            const n = Math.max(1, Math.round(L / 30));
-            for (let k = 0; k < n; k++) {
-              const o = Math.min(hw - 3.2, Math.max(1.8, hw * 0.45));
-              // keep right: one side runs a→b, the other b→a
-              const fwd = side < 0;
-              const sx = fwd ? a[0] : b[0], sy = fwd ? a[1] : b[1];
-              this.movers.push({
-                x: sx + nx * o * side, y: sy + ny * o * side,
-                ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 6 + rnd() * 5,
-                col: CAR[(rnd() * CAR.length) | 0], draw: rnd(),
-              });
-            }
-          }
-        }
-        for (let t = 9; t < L - 9; t += 11) {
-          for (const side of [-1, 1]) {
-            const x = a[0] + ux * t, y = a[1] + uy * t;
-            if (sw >= 2) {
-              const o = hw + Math.max(0.8, sw * 0.45);
-              const sz = 0.75 + rnd() * 0.3;
-              // a third of the street trees are columnar — lindens and hornbeams
-              // pruned tall and narrow, as a city plants them
-              const col = rnd() < 0.33;
-              this.putInst("trunk", x + nx * o * side, y + ny * o * side, 0.15, sz, rnd() * 6.28);
-              this.putInst("crown", x + nx * o * side, y + ny * o * side, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
-            }
-            // kerbside parking fills where the demand is; a country road is clear
-            if (hw >= 5 && rnd() < 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) {
-              const o = hw - 1.15;
-              this.putInst("car", x + ux * 3 + nx * o * side, y + uy * 3 + ny * o * side, 0.05, 0.95 + rnd() * 0.12, rot + (side > 0 ? Math.PI : 0), "", CAR[(rnd() * CAR.length) | 0]);
-            }
-          }
-          if (rnd() < 0.35 && sw >= 1.6) {
-            const o = hw + 0.5;
-            this.putInst("lamp", a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, 0.15, 1, rot - Math.PI / 2);
-          }
-        }
-      }
-    });
+    this.dressFootways(rnd, leafCol, CAR, COAT);
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
     for (const pk of (this.ctx as { parks?: { ring: P2[]; flavour?: string }[] }).parks ?? []) {
@@ -2617,6 +2674,9 @@ export class RealCityLayer {
       const pk = parksP.find((q) => inRingP(x, y, q.ring));
       const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
       const sz = 0.8 + rnd() * 1.0;
+      // a tree stands on a lawn, a yard or a footway — never in the
+      // carriageway, and never with its crown through a wall
+      if (this.groundAt(x, y) === "road" || !this.clearOfBuildings(x, y, 2.2 * sz)) continue;
       if (rnd() < pineP) {
         this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
       } else {
@@ -2977,6 +3037,85 @@ export class RealCityLayer {
     const keep = this.deeds; this.deeds = deeds;
     this.flatten(bbl);
     this.deeds = keep;
+  }
+
+  // ---- what ground is this? -----------------------------------------------
+  // THE GROUND TRUTH every prop is checked against. A tree belongs on a
+  // footway, a lawn or a yard, never in a carriageway or inside a wall; a
+  // parked car belongs on the carriageway or in a car park, never on the
+  // footway. The street furniture used to be placed by offset from a street's
+  // centre line, which is right on a straight block and wrong at every
+  // junction, bend and odd-width street. Now each placement is tested against
+  // the polygons themselves: building footprints, footways (with their
+  // holes), parks and lots. Anything else is road.
+  private groundIx: {
+    bld: PolyGrid; walk: PolyGrid; park: PolyGrid; open: PolyGrid;
+  } | null = null;
+  private groundIndex() {
+    if (this.groundIx) return this.groundIx;
+    const bld = new PolyGrid(30), walk = new PolyGrid(40), park = new PolyGrid(60), open = new PolyGrid(60);
+    for (const pg of (this.ctx as { opens?: P2[][][] }).opens ?? []) {
+      if (pg[0]?.length >= 3) open.add(pg[0].map((q) => this.project(q)), pg.slice(1).map((h) => h.map((q) => this.project(q))));
+    }
+    for (const v of this.volumes) {
+      if (v.d || v.k || !v.b || v.z0 > 0.5) continue;
+      bld.add(v.r.map((q) => this.project(q)));
+    }
+    const c = this.ctx as { sidewalks?: { ring: P2[]; holes: P2[][] }[]; parks?: ({ ring: P2[] } | P2[])[] };
+    for (const sw of c.sidewalks ?? []) walk.add(sw.ring.map((q) => this.project(q)), sw.holes.map((h) => h.map((q) => this.project(q))));
+    for (const pk of c.parks ?? []) {
+      const r = Array.isArray(pk) ? pk : pk.ring;
+      if (r && r.length >= 3) park.add(r.map((q) => this.project(q)));
+    }
+    this.groundIx = { bld, walk, park, open };
+    return this.groundIx;
+  }
+  /** building | walk | park | open | lot | road */
+  groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {
+    const g = this.groundIndex();
+    if (g.bld.hit(x, y)) return "bld";
+    if (g.walk.hit(x, y)) return "walk";
+    if (g.park.hit(x, y)) return "park";
+    if (g.open.hit(x, y)) return "open";
+    if (this.lotAt2D(x, y)) return "lot";
+    return "road";
+  }
+  /** Is a circle of radius r at (x, y) clear of every building? (centre and eight points on the rim) */
+  private clearOfBuildings(x: number, y: number, r: number) {
+    const g = this.groundIndex();
+    if (g.bld.hit(x, y)) return false;
+    for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; if (g.bld.hit(x + Math.cos(a) * r, y + Math.sin(a) * r)) return false; }
+    return true;
+  }
+  /** Every corner of a w x l footprint at (x, y), bearing r, on one of the allowed grounds. */
+  private footprintOn(x: number, y: number, r: number, w: number, l: number, ok: string[]) {
+    const ux = Math.cos(r), uy = Math.sin(r);
+    for (const [a, b] of [[0, 0], [l / 2, w / 2], [l / 2, -w / 2], [-l / 2, w / 2], [-l / 2, -w / 2]]) {
+      if (!ok.includes(this.groundAt(x + ux * a - uy * b, y + uy * a + ux * b))) return false;
+    }
+    return true;
+  }
+  /** For the harness: where each placed prop actually stands, by kind. */
+  auditGround(kinds = ["trunk", "pine", "car", "lotcar", "lamp", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {
+    const out: Record<string, Record<string, number>> = {};
+    const e = new THREE.Matrix4();
+    for (const k of kinds) {
+      const m = this.inst.get(k);
+      if (!m) continue;
+      const row: Record<string, number> = {};
+      for (let i = 0; i < m.count; i++) {
+        m.getMatrixAt(i, e);
+        const el = e.elements;
+        if (el[0] === 0 && el[1] === 0 && el[5] === 0) continue;   // hidden
+        // wall-mounted kinds: where they stand is a pace out from the wall
+        let px = el[12], py = el[13];
+        if (k === "stoop" || k === "dock" || k === "awning") { const l = Math.hypot(el[4], el[5]) || 1; px -= (el[4] / l) * 1.5; py -= (el[5] / l) * 1.5; }
+        const gk = this.groundAt(px, py);
+        row[gk] = (row[gk] ?? 0) + 1;
+      }
+      out[k] = row;
+    }
+    return out;
   }
 
   // ---- picking -------------------------------------------------------------

@@ -15,6 +15,8 @@ export interface CityCtx {
   zebras?: [number, number][][];
   /** The harbour's working edge, where the piers go out. */
   quays?: [number, number][][];
+  /** Open ground — boulevard malls and the esplanade — where a tree or a bench may stand but no car parks. */
+  opens?: [number, number][][][];   // each: outer ring, then holes
   piles?: [number, number][];
   land?: [number, number][];
   benches?: Oriented[];

@@ -384,6 +384,11 @@ export default function MapView() {
               kerbs: linesOf("curb"),
               zebras: linesOf("zebra"),
               quays: linesOf("quay"),
+              // open ground that is neither footway, park nor carriageway: the
+              // boulevard malls and the esplanade
+              opens: (ctx?.features ?? [])
+                .filter((f) => (f.properties?.kind === "median" || f.properties?.kind === "esplanade") && f.geometry.type === "Polygon")
+                .map((f) => (f.geometry as GeoJSON.Polygon).coordinates.map((r) => (r as [number, number][]).slice(0, -1))),
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),

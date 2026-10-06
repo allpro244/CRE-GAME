@@ -643,3 +643,38 @@ buildings in a district also share a batch of the same brick or paint.
 Brownstone rows (and half the brick walk-ups) climb to their doors up
 stoops, one per house front; the works quarter's sheds get loading docks
 with canopies. `docs/map-overhaul/p21-*.jpg`.
+
+# EVERY PROP ON ITS GROUND
+
+Reported from play: cars on the footway, trees in the road and inside
+buildings, and "weird white stairs". Measured, not guessed: a ground
+classifier (`groundAt`: building footprint, footway with its holes, park,
+open ground — boulevard mall and esplanade — lot, else road) over every
+instanced prop, three towns:
+
+| | before (town, seed 4) | after (all three towns) |
+|---|---|---|
+| street trees on the footway | 74 of 6,254 | all |
+| trees in the road or a building | 4,639 | 0 |
+| parked cars on the carriageway | 1,092 of 2,060 | all |
+| lamps on the footway | 33 of 1,229 | all |
+
+The cause was the placement, not the town: street furniture was laid by
+offset from the grid/lane street centre lines with the generator's
+half-width, which matches the drawn street on a straight grid block and
+nothing else, and missed the diagonals, avenues and irregular streets
+entirely. Trees, lamps, walkers, kerbside cars and moving traffic are now
+laid along the drawn footway's own kerb edge (`dressFootways`) and every one
+is checked against the ground: a tree on the footway with its crown clear of
+every wall, a lamp on the footway, a parked car wholly on the carriageway
+with a running lane left beside it, traffic on a lane that stays on the
+road. The generator's own trees are kept on lawns, yards, malls and the
+esplanade; 374 boulevard-row trees that landed in the asphalt are dropped
+(the footway rows line those streets now). Stoops only on a low brownstone
+or brick house whose front stands at the footway, in the house's own stone;
+canopies never over the carriageway or into a neighbour's wall; car-park
+cars clear of walls.
+
+`node tools/ground-audit.mjs` (dev server running, playwright-core
+installed) repeats the measurement and exits 1 on any misplaced prop.
+`docs/map-overhaul/p22-ground-{before,after,district}.jpg`.

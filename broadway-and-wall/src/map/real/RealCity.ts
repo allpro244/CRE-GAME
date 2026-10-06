@@ -295,14 +295,17 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   // full one blazes.
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float lit;\nvarying float vLit;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;")
+      .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nvarying float vLit;\nvarying float vAoH;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;")
       // the street darkens the foot of every wall: bounce light from the sky
-      // is blocked by the pavement and the buildings across the way
-      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 3.5, vGz));")
+      // is blocked by the pavement and the buildings across the way. How far
+      // up it climbs is the street's own: a few metres on an open avenue,
+      // most of the way up the lower floors in a canyon of towers (vAoH).
+      // The first metre is darkest, where wall meets pavement.
+      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
       .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vLit;")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
@@ -996,15 +999,17 @@ class PolyGrid {
 }
 
 class Buf {
-  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = [];
+  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = []; ao: number[] = [];
+  /** how high (m) the street's shade climbs the walls written next (see the facade shader) */
+  aoH = 3.5;
   get count() { return this.pos.length / 3; }
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], uvs: number[][], col: number[]) {
     for (const [p, t] of [[a, uvs[0]], [b, uvs[1]], [c, uvs[2]], [a, uvs[0]], [c, uvs[2]], [d, uvs[3]]] as [number[], number[]][]) {
-      this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]);
+      this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH);
     }
   }
   tri(a: number[], b: number[], c: number[], n: number[], col: number[]) {
-    for (const p of [a, b, c]) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(p[0] * 0.25, p[1] * 0.25); this.col.push(col[0], col[1], col[2]); }
+    for (const p of [a, b, c]) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.uv.push(p[0] * 0.25, p[1] * 0.25); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH); }
   }
   /** A planar polygon (fan), wound so its normal leans toward `want`. */
   face(pts: number[][], want: number[], col: number[], uvOf: (p: number[]) => number[] = (p) => [p[0] * 0.25, p[1] * 0.25]) {
@@ -1016,7 +1021,7 @@ class Buf {
     for (let i = 1; i + 1 < pts.length; i++) {
       for (const p of [pts[0], pts[i], pts[i + 1]]) {
         const t = uvOf(p);
-        this.pos.push(p[0], p[1], p[2]); this.nrm.push(nx, ny, nz); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]);
+        this.pos.push(p[0], p[1], p[2]); this.nrm.push(nx, ny, nz); this.uv.push(t[0], t[1]); this.col.push(col[0], col[1], col[2]); this.ao.push(this.aoH);
       }
     }
   }
@@ -1026,6 +1031,7 @@ class Buf {
     g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute("aoh", new THREE.Float32BufferAttribute(this.ao.length === this.count ? this.ao : new Array(this.count).fill(3.5), 1));
     // how many of this building's rooms are lit after dark (see setOccupancy)
     g.setAttribute("lit", new THREE.Float32BufferAttribute(new Float32Array(this.count).fill(1), 1));
     g.computeBoundingSphere();
@@ -1846,6 +1852,93 @@ export class RealCityLayer {
     });
   }
 
+  // ---- ambient shade ---------------------------------------------------------
+  // HOW DEEP A STREET IS. Mean building height on a 60 m grid, from the
+  // volumes themselves; the shade at the foot of a wall climbs about a third
+  // of the way up its neighbours (an avenue of walk-ups: ~4 m; a canyon of
+  // towers: ~25 m). Calibrated by eye against street photographs, not a
+  // measured constant.
+  private canyonGrid: Map<number, number> | null = null;
+  private canyonAt(x: number, y: number): number {
+    if (!this.canyonGrid) {
+      const sum = new Map<number, number>(), n = new Map<number, number>(), C = 60;
+      for (const v of this.volumes) {
+        if (v.d || v.k || !v.b || v.z0 > 0.5) continue;
+        const [px, py] = this.project(v.r[0]);
+        const key = Math.floor(px / C) * 100003 + Math.floor(py / C);
+        sum.set(key, (sum.get(key) ?? 0) + v.z1); n.set(key, (n.get(key) ?? 0) + 1);
+      }
+      this.canyonGrid = new Map();
+      for (const [k2, sm] of sum) this.canyonGrid.set(k2, sm / (n.get(k2) ?? 1));
+    }
+    const C = 60, cx = Math.floor(x / C), cy = Math.floor(y / C);
+    let acc = 0, cnt = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const h = this.canyonGrid.get((cx + i) * 100003 + (cy + j));
+      if (h !== undefined) { acc += h; cnt++; }
+    }
+    const mean = cnt ? acc / cnt : 10;
+    return Math.min(26, Math.max(3.5, mean * 0.35));
+  }
+  /** 1 for a wall that looks out on open ground; darker the closer another building stands in front of it. */
+  private facing(a: P2, b: P2, n: number[]): number {
+    const g = this.groundIndex();
+    let k = 1;
+    for (const f of [0.3, 0.7]) {
+      const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f;
+      if (g.bld.hit(x + n[0] * 3, y + n[1] * 3)) k = Math.min(k, 0.72);
+      else if (g.bld.hit(x + n[0] * 7, y + n[1] * 7)) k = Math.min(k, 0.84);
+      else if (g.bld.hit(x + n[0] * 12, y + n[1] * 12)) k = Math.min(k, 0.93);
+    }
+    return k;
+  }
+  /**
+   * WHERE A BUILDING MEETS THE GROUND. A soft dark band on the ground round
+   * every footprint, darkest at the wall, gone two to four metres out (wider
+   * for a taller building): the contact shade sky light leaves at the foot of
+   * any wall, which is what seats a building on its street instead of
+   * pasting it on. Drawn just above the footway slab, never casting.
+   */
+  private contactShadow(ring0: P2[], bbl: string, z1: number) {
+    const ring = ringArea(ring0) < 0 ? ring0.slice().reverse() : ring0;
+    const B = this.buf("contact"), c0 = B.count;
+    const w = Math.min(4, 1.8 + z1 * 0.025), Z = 0.17, A = 0.36;
+    const n = ring.length;
+    const nOf = (i: number) => { const a = ring[i], b = ring[(i + 1) % n]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[1] - a[1]) / L, -(b[0] - a[0]) / L]; };
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.2) continue;
+      const [nx, ny] = nOf(i);
+      B.quad([a[0], a[1], Z], [b[0], b[1], Z], [b[0] + nx * w, b[1] + ny * w, Z], [a[0] + nx * w, a[1] + ny * w, Z], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [A, 0, 0]);
+      // fix the far edge to transparent: the quad's last two vertices carry alpha 0
+      const end = B.col.length;
+      for (const vi of [2, 4, 5]) B.col[end - (6 - vi) * 3] = 0;
+      // the convex corner after this edge: a fan between the two bands
+      const [mx, my] = nOf((i + 1) % n);
+      const cr = nx * my - ny * mx;
+      if (cr > 0.01) {   // convex: the outward normal turns counter-clockwise
+        for (let s2 = 0; s2 < 3; s2++) {
+          const t1 = s2 / 3, t2 = (s2 + 1) / 3;
+          const d1 = [nx + (mx - nx) * t1, ny + (my - ny) * t1], d2 = [nx + (mx - nx) * t2, ny + (my - ny) * t2];
+          const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
+          B.tri([b[0], b[1], Z], [b[0] + (d1[0] / l1) * w, b[1] + (d1[1] / l1) * w, Z], [b[0] + (d2[0] / l2) * w, b[1] + (d2[1] / l2) * w, Z], [0, 0, 1], [A, 0, 0]);
+          const e2 = B.col.length;
+          B.col[e2 - 6] = 0; B.col[e2 - 3] = 0;
+        }
+      }
+    }
+    this.note(bbl, "contact", c0);
+  }
+  private contactMat = (() => {
+    const m = new THREE.MeshBasicMaterial({ color: 0x0c0f14, transparent: true, depthWrite: false, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // the vertex colour's red channel is the shade's opacity
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "diffuseColor.a *= vColor.r;");
+    };
+    m.customProgramCacheKey = () => "bw-contact";
+    return m;
+  })();
+
   /** Which of the family's four elevations this deed wears (stable per deed). */
   private variantOf(fk: string, seedK: number): string {
     const n = Math.floor(hash01(seedK ^ 0x7a11, 3) * (1 + (VARIANTS[fk.split("#")[0]]?.length ?? 3)));
@@ -1875,20 +1968,27 @@ export class RealCityLayer {
       const W = this.buf(wallName);
       const w0 = W.count;
       let uRun = 0;
+      const canyon = this.canyonAt(ringC[0], ringC[1]);
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const L = Math.hypot(dx, dy);
         if (L < 0.05) continue;
         const n = [dy / L, -dx / L, 0];
+        // A WALL THAT FACES A WALL is in shade all day: a light well, an
+        // alley, a courtyard. Probe out from the middle of the wall.
+        const close = bbl ? this.facing(a, b, n) : 1;
+        const tE = close < 1 ? [tn[0] * close, tn[1] * close, tn[2] * close] : tn;
+        W.aoH = za < 0.5 ? canyon * (close < 1 ? 1.4 : 1) : 3.5;
         // whole bays per run, so every corner falls between two windows
         const bays = Math.max(1, Math.round(L / f.bayW));
         const u0 = uRun, u1 = uRun + bays;
         uRun = u1;
         const v0 = (za - vOff) / f.floorH, v1 = (zb - vOff) / f.floorH;
         W.quad([a[0], a[1], za], [b[0], b[1], za], [b[0], b[1], zb], [a[0], a[1], zb], n,
-          [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tn);
+          [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tE);
       }
+      W.aoH = 3.5;
       this.note(bbl, wallName, w0);
     };
     // ---- what hangs on the street front ------------------------------------
@@ -1919,6 +2019,7 @@ export class RealCityLayer {
         }
       }
     }
+    if (z0 < 0.5 && bbl) this.contactShadow(ring, bbl, z1);
     const fh = fam.floorH;
     // A trading ground floor is its own storey: display glass under awnings,
     // the upper floors' windows starting above it.
@@ -2342,11 +2443,12 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const mesh = new THREE.Mesh(b.geometry(), mat);
-      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
+      if (name === "contact") mesh.renderOrder = 2;
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     this.bindRanges(this.deeds, this.meshes);
@@ -3194,7 +3296,7 @@ export class RealCityLayer {
     const lv = this.lens?.get(bbl);
     const tint = this.tints.get(bbl);
     for (const r of d.ranges) {
-      if (!r.mesh || !r.base) continue;
+      if (!r.mesh || !r.base || r.buf === "contact") continue;
       const col = r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
       const arr = col.array as Float32Array;
       const base = r.base;
@@ -3300,6 +3402,8 @@ export class RealCityLayer {
       const pa = r.mesh?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
       if (!pa) continue;
       const arr = pa.array as Float32Array;
+      // a demolished building's ground shade goes with it: collapse the band to a point
+      if (r.buf === "contact") { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
       for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.01);
       pa.addUpdateRange(r.start * 3, r.count * 3); pa.needsUpdate = true;
     }
@@ -3400,9 +3504,10 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const mesh = new THREE.Mesh(b.geometry(), mat);
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = mesh.receiveShadow = name !== "contact";
+      if (name === "contact") mesh.renderOrder = 2;
       this.dyn.add(mesh); dynMeshes.set(name, mesh);
     }
     if (craneAt.length) {

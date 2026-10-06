@@ -88,7 +88,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "pile", "bulk", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -575,12 +575,31 @@ const VARIANTS: Record<string, Partial<FamilySpec>[]> = {
 };
 
 /** Which elevation a building wears: by what it is, when it went up and how tall — and a per-building roll among the period-correct ones. */
-function familyFor(cls: string, year: number, h: number, roll = 0.5): string {
+/**
+ * NEIGHBOURHOODS HAVE A MATERIAL. A city's old districts were each put up by
+ * a handful of builders out of whatever the nearest kiln or quarry sold, so a
+ * street of brownstones is a street of brownstones and the buff-brick quarter
+ * is buff brick, not a random draw per lot. Keyed by the district's tone
+ * family (BuildingVolume.t, the same FNV of the district name the ground's
+ * pavement reads), each district leans hard on one tradition: brownstone
+ * rows, red brick, buff brick, a timber-frame quarter, and one mixed. Weights
+ * are [brick, buff, brownstone] and the share of small pre-1950 buildings
+ * that are clapboard. Looks only.
+ */
+const DISTRICT_MASONRY: { w: [number, number, number]; clap: number }[] = [
+  { w: [0.12, 0.08, 0.80], clap: 0.15 },   // the brownstone rows
+  { w: [0.82, 0.08, 0.10], clap: 0.30 },   // red brick
+  { w: [0.18, 0.72, 0.10], clap: 0.30 },   // buff brick
+  { w: [0.60, 0.25, 0.15], clap: 0.85 },   // the timber-frame quarter
+  { w: [0.55, 0.25, 0.20], clap: 0.50 },   // mixed, as it was
+];
+function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 4): string {
+  const dm = DISTRICT_MASONRY[((district % 5) + 5) % 5];
   // a house or a shop of two storeys from before 1950 is, as often as not,
   // timber — wood frame stayed the American small building until the 1950s
-  if (h <= 8.5 && year < 1950 && (cls === "multifamily" || cls === "retail") && ((roll * 7.13) % 1) < 0.5) return "clapboard";
-  // a low pre-war masonry building is one of three brick traditions
-  const oldBrick = () => roll < 0.55 ? "brick" : roll < 0.8 ? "buff" : "brownstone";
+  if (h <= 8.5 && year < 1950 && (cls === "multifamily" || cls === "retail") && ((roll * 7.13) % 1) < dm.clap) return "clapboard";
+  // a low pre-war masonry building is one of three brick traditions, by district
+  const oldBrick = () => roll < dm.w[0] ? "brick" : roll < dm.w[0] + dm.w[1] ? "buff" : "brownstone";
   if (cls === "industrial") return "industrial";
   if (cls === "office") {
     if (year >= 1958) {
@@ -1287,6 +1306,45 @@ export class RealCityLayer {
       }
     }
   }
+  /** The walls of a ring that front a street: six metres out is nobody's lot. */
+  private streetEdges(ring: P2[], minL: number) {
+    const out: { a: P2; ux: number; uy: number; L: number; r: number }[] = [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < minL) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      if (this.lotAt2D((a[0] + b[0]) / 2 + uy * 6, (a[1] + b[1]) / 2 - ux * 6)) continue;
+      out.push({ a, ux, uy, L, r: Math.atan2(uy, ux) });
+    }
+    return out;
+  }
+  /**
+   * WHAT THE STREET FRONT SAYS. The brownstone and brick rows climb to their
+   * doors up a stoop, one to a house; the works quarter's sheds face the road
+   * with loading docks. Read off the building's own family and use.
+   */
+  private streetDress(ring: P2[], bbl: string, famKey: string, cls: string, seedK: number, z1: number) {
+    if (cls === "multifamily" && z1 < 22 && (famKey === "brownstone" || famKey === "brick" || famKey === "buff")) {
+      // the brownstone always has its stoop; a brick walk-up about half the time
+      if (famKey !== "brownstone" && hash01(seedK ^ 0x570f, 9) < 0.5) return;
+      for (const e of this.streetEdges(ring, 5)) {
+        const n = Math.max(1, Math.floor(e.L / 6.2));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) * (e.L / n);
+          this.putInst("stoop", e.a[0] + e.ux * t, e.a[1] + e.uy * t, 0, 1, e.r, bbl, famKey === "brownstone" ? [0.52, 0.36, 0.28] : [0.5, 0.48, 0.45]);
+        }
+      }
+    } else if (cls === "industrial") {
+      for (const e of this.streetEdges(ring, 10)) {
+        const n = Math.min(4, Math.floor(e.L / 12));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) * (e.L / n);
+          this.putInst("dock", e.a[0] + e.ux * t, e.a[1] + e.uy * t, 0, 1, e.r, bbl);
+        }
+      }
+    }
+  }
   private lotAt2D(x: number, y: number): boolean {
     const grid = this.pickIndex(), C = RealCityLayer.PICK_CELL;
     const cell = grid.get(Math.floor(x / C) * 100003 + Math.floor(y / C));
@@ -1427,6 +1485,7 @@ export class RealCityLayer {
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
     } else {
       walls(famKey, z0, zw, 0, tint);
+      if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
     }
 
     // roof
@@ -1738,9 +1797,11 @@ export class RealCityLayer {
         continue;
       }
       const top = topZ.get(v.b) ?? v.z1;
-      const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed));
+      const fam = familyFor(v.c, v.y || 1950, top, hash01(k ^ 0x3c1f, this.seed), v.t ?? 4);
       const tints = TINTS[fam];
-      const t = tints[Math.floor(hash01(k, this.seed) * tints.length)];
+      // a district's buildings mostly share a batch of the same brick or paint
+      const tr = hash01(k, this.seed);
+      const t = tints[tr < 0.55 ? ((v.t ?? 0) * 3 + 1) % tints.length : Math.floor(((tr - 0.55) / 0.45) * tints.length)];
       const shop = v.c === "retail" || (fam === "brick" && hash01(k ^ 0x51ab, this.seed) < 0.5)
         || (fam === "stone" && hash01(k ^ 0x51ab, this.seed) < 0.3) || (fam === "modern" && v.c !== "industrial" && hash01(k ^ 0x51ab, this.seed) < 0.35);
       // old low brick houses keep a pitched roof: a row of 1890s three-storey
@@ -1869,6 +1930,12 @@ export class RealCityLayer {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
         return { g: merge([canopy, box(4.6, 0.05, 0.32, 0, -1.42, 2.42)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
       }
+      // a stoop: three flights of brownstone up to a dark door, facing local -y
+      case "stoop": return { g: merge([box(1.9, 2.6, 0.45, 0, -1.3, 0), box(1.9, 1.75, 0.45, 0, -0.88, 0.45), box(1.9, 0.9, 0.45, 0, -0.45, 0.9),
+        box(0.14, 2.6, 0.95, -1.0, -1.3, 0.35), box(0.14, 2.6, 0.95, 1.0, -1.3, 0.35)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      // a loading dock: a raised apron, a roll-up door, a canopy over it
+      case "dock": return { g: merge([box(4.2, 1.4, 1.15, 0, -0.7, 0), box(3.6, 0.07, 3.6, 0, -0.04, 1.15), box(4.8, 2.0, 0.12, 0, -1.0, 5.0),
+        box(0.25, 0.25, 0.5, -1.6, -1.45, 0.45), box(0.25, 0.25, 0.5, 1.6, -1.45, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x6a6c6c, roughness: 0.75, metalness: 0.2 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
       case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };

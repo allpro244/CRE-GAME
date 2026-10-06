@@ -611,3 +611,35 @@ Measured on the software renderer at a 2x display, Metropolis district view:
 a frame took 8.98 s on High, 5.54 s on Medium (-38%) and 3.67 s on Low
 (-59%). Absolute numbers are meaningless on a CPU rasteriser; the ratio is
 the point. `docs/map-overhaul/p18-graphics-{high,low}.jpg`.
+
+# POINT AT A BUILDING
+
+The pointer picks what it is over in 3D: a ray walked down from the eye
+stops at the first lot whose building stands taller than the ray there
+(about 3-4 ms on the software renderer), so pointing at a tower picks the
+tower, not the street behind it; clicks use the same pick. The hover card
+shows use, floors, size, year, owner, occupancy, market rent, appraisal,
+asking price when listed, and demand — read off the property panel's own
+functions. Occupancy says "mkt est." unless a rent roll has been shown, as
+the panel does. `docs/map-overhaul/p19-hover-card.jpg`.
+
+# SHOPFRONTS BY TRADE
+
+Every street-facing bay of a shop storey (a wall whose far side is no one's
+lot) gets a canopy and fascia in a trade's colours: cafe, grocer, bank,
+pharmacy, diner, hardware, bakery, boutique, with downtown stone and glass
+leaning to banks and boutiques. The trade is looks only: market buildings
+have no tenant roll to read it from. Which bays are boarded with plywood is
+live: round((1 - retail let share) x bays), the same number that already
+papers the glass. `docs/map-overhaul/p20-shopfronts.jpg`.
+
+# NEIGHBOURHOODS HAVE A MATERIAL
+
+Old low-rise buildings used to pick red brick, buff brick or brownstone per
+lot at random. Each district now leans on one tradition, keyed by its tone
+family (the same hash of the district name the pavement uses): brownstone
+rows, red brick, buff brick, a timber-frame quarter, or mixed. Most
+buildings in a district also share a batch of the same brick or paint.
+Brownstone rows (and half the brick walk-ups) climb to their doors up
+stoops, one per house front; the works quarter's sheds get loading docks
+with canopies. `docs/map-overhaul/p21-*.jpg`.

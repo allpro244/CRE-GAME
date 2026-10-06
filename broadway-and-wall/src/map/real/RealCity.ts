@@ -1519,7 +1519,14 @@ export class RealCityLayer {
       rad = Math.min(rad, Math.hypot(b[0] - a[0], b[1] - a[1]));
     }
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-    const inset = (r: P2[], d: number) => insetRing(r, d) ?? shrink(r, 0.82);
+    // an upper tier must stand inside the one below: an inset that leaves the
+    // parent (a sharp triangle's mitres do) shrinks about the parent's own centre instead
+    const inset = (r: P2[], d: number): P2[] => {
+      const q = insetRing(r, d);
+      if (q && ringArea(q) > 0 && q.every(([x, y]) => PolyGrid.inRing(r, x, y))) return q;
+      let px = 0, py = 0; for (const [x, y] of r) { px += x / r.length; py += y / r.length; }
+      return r.map(([x, y]) => [px + (x - px) * 0.82, py + (y - py) * 0.82] as P2);
+    };
     const simple = ring0.length <= 8 && rad > 7;
     const quad = ring0.length === 4 && rad > 10;
     const tall = H >= 40;
@@ -2070,6 +2077,7 @@ export class RealCityLayer {
   /** One volume: walls in its family, a roof, and its trim. */
   private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0, ov?: VolumeOv) {
     const fam = this.families[famKey];
+    if (bbl) { let l = this.volLog.get(bbl); if (!l) this.volLog.set(bbl, (l = [])); l.push({ r: ring, z0, z1 }); }
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     // THE MANSARD. A Second Empire walk-up finishes its top storey as a steep
     // slate roof with dormers rather than a wall — the "French flat" of the
@@ -3794,6 +3802,27 @@ export class RealCityLayer {
       if (!ok.includes(this.groundAt(x + ux * a - uy * b, y + uy * a + ux * b))) return false;
     }
     return true;
+  }
+  /** Every volume drawn, by deed — for the floating-geometry audit. */
+  private volLog = new Map<string, { r: P2[]; z0: number; z1: number }[]>();
+  /**
+   * NOTHING FLOATS. Every raised volume (a tier, a crown, a penthouse) must
+   * stand on a lower volume of the same deed: its centre inside a footprint
+   * whose top reaches its base. Returns the deeds that break that, so the
+   * harness can fail on a floating penthouse before a player sees one.
+   */
+  auditFloating(): { volumes: number; floating: number; deeds: string[] } {
+    let volumes = 0, floating = 0; const deeds: string[] = [];
+    for (const [bbl, list] of this.volLog) {
+      for (const v of list) {
+        volumes++;
+        if (v.z0 < 0.6) continue;
+        let cx = 0, cy = 0; for (const [x, y] of v.r) { cx += x / v.r.length; cy += y / v.r.length; }
+        const ok = list.some((u) => u !== v && u.z0 < v.z0 && u.z1 >= v.z0 - 0.6 && PolyGrid.inRing(u.r, cx, cy));
+        if (!ok) { floating++; if (deeds.length < 20 && !deeds.includes(bbl)) deeds.push(bbl); }
+      }
+    }
+    return { volumes, floating, deeds };
   }
   /** For the harness: where each placed prop actually stands, by kind. */
   auditGround(kinds = ["trunk", "pine", "car", "suv", "van", "taxi", "lotcar", "lotsuv", "lamp", "hydrant", "bin", "shelter", "signal", "sigpost", "stoop", "dock", "awning", "bench", "railing", "hedge", "fence", "parkhedge", "flowerbed", "pile"]) {

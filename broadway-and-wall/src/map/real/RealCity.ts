@@ -1619,13 +1619,13 @@ export class RealCityLayer {
     const bear = Math.atan2(ring[(li + 1) % ring.length][1] - ring[li][1], ring[(li + 1) % ring.length][0] - ring[li][0]);
     const note = (c: string) => { const sg = this.lookSig.get(bbl); if (sg && !sg.includes("|c:")) this.lookSig.set(bbl, `${sg}|c:${c}`); };
     // THE CROWNS OF THE LATER SKYLINE. Not every glass tower ends in a
-    // plant box and a mast: a pyramid cap, a stepped crown, a lantern of
+    // plant box and a mast: a stepped crown, a lantern of
     // glass, a frame of fins carried up past the roof, a helipad, a sloped
     // top. By hash, among the ones its family would have worn.
     if (kind === "auto" && !deco && fam !== "stone" && TOWER_FAMS.has(fam)) {
       const opts: [string, number][] = glassy
-        ? [["mech", 0.18], ["mech2", 0.12], ["pyramid", 0.12], ["stepped", 0.12], ["lantern", 0.12], ["fins", 0.12], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0]]
-        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["pyramid", fam === "pomo" ? 0.25 : 0.05], ["flat", 0.15]];
+        ? [["mech", 0.22], ["mech2", 0.16], ["stepped", 0.14], ["lantern", 0.12], ["fins", 0.12], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0]]
+        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
       const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
       note(c);
       const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
@@ -1633,14 +1633,6 @@ export class RealCityLayer {
         this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, c === "mech", false, k, false, false, "", 0, ov);
         if (c === "mech2") this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
         mastTop(z1 + (c === "mech2" ? 11 : 5));
-      } else if (c === "pyramid" && rad <= 22) {
-        // copper gone green, slate, dark bronze, or (rarely) bright steel
-        const hgt = Math.min(24, rad * (0.6 + 0.5 * hash01(k ^ 0x7c1, this.seed)));
-        const PY = [[0.36, 0.5, 0.44], [0.3, 0.32, 0.36], [0.34, 0.27, 0.2], [0.42, 0.44, 0.47], [0.62, 0.64, 0.66]];
-        const pc = fam === "pomo" ? PY[0] : PY[Math.floor(hash01(k ^ 0x7c3, this.seed) * PY.length)];
-        this.putInst("pyramid", cx, cy, z1, rad * 0.95, bear + Math.PI / 4, bbl, pc, hgt / (rad * 0.95));
-      } else if (c === "pyramid") {
-        this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, true, false, k, false, false, "", 0, ov);
       } else if (c === "stepped") {
         let r = ring, z = z1;
         for (let i = 0; i < 3; i++) { r = shrink(r, 0.8); this.addVolume(r, z, z + 3.4, fam, t, bbl, true, false, k, false, false, "", 0, ov); z += 3.4; }
@@ -2667,8 +2659,6 @@ export class RealCityLayer {
       // a loading dock: a raised apron, a roll-up door, a canopy over it
       case "dock": return { g: merge([box(4.2, 1.4, 1.15, 0, -0.7, 0), box(3.6, 0.07, 3.6, 0, -0.04, 1.15), box(4.8, 2.0, 0.12, 0, -1.0, 5.0),
         box(0.25, 0.25, 0.5, -1.6, -1.45, 0.45), box(0.25, 0.25, 0.5, 1.6, -1.45, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x6a6c6c, roughness: 0.75, metalness: 0.2 }) };
-      // a four-sided cap: unit half-width, unit height, scaled to the roof
-      case "pyramid": return { g: merge([new THREE.ConeGeometry(Math.SQRT2, 1, 4, 1).rotateX(Math.PI / 2).translate(0, 0, 0.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.25 }), colored: true };
       // a crown fin: a slim blade carried up past the roof, height via sz
       case "fin": return { g: merge([box(0.35, 0.9, 1, 0, -0.2, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.4, metalness: 0.6 }) };
       case "helipad": return { g: merge([cyl(8, 0.25, 0, 20), box(1.0, 6, 0.06, -2, 0, 0.25), box(1.0, 6, 0.06, 2, 0, 0.25), box(3, 1.0, 0.06, 0, 0, 0.25)]), mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
@@ -4128,64 +4118,9 @@ export class RealCityLayer {
   setOccupancy(o: Map<string, number>) {
     this.occ = new Map(o);
     for (const d of [this.deeds, this.dynDeeds]) for (const [bbl, deed] of d) this.paintLit(bbl, deed);
-    this.paintBanners();
     this.map?.triggerRepaint();
   }
   private occ = new Map<string, number>();
-  private leaseMeshes: THREE.InstancedMesh[] = [];
-  /**
-   * EMPTY SPACE ADVERTISES ITSELF. With no night there are no dark floors to
-   * read vacancy off, so a building with space to let does what one does on
-   * a real street: hangs a banner. One under 80% let (a fifth of the space
-   * empty — about one building in six at a normal vacancy), two on its two
-   * longest walls under 55%; red FOR LEASE or yellow SPACE AVAILABLE by the
-   * building's own hash. Read from the same occupancy map the windows use.
-   */
-  private paintBanners() {
-    for (const m of this.leaseMeshes) { this.scene.remove(m); m.dispose(); }
-    this.leaseMeshes = [];
-    const spots: { x: number; y: number; z: number; r: number; w: number; kind: number }[][] = [[], []];
-    for (const deeds of [this.deeds, this.dynDeeds]) for (const [bbl, d] of deeds) {
-      const o = this.occ.get(bbl);
-      if (o === undefined || o >= 0.8 || !d.ring || d.height < 6) continue;
-      if (this.dynHeight.has(bbl) && deeds === this.deeds) continue;   // redeveloped: the new building speaks
-      let ring = d.ring;
-      if (ringArea(ring) < 0) ring = ring.slice().reverse();
-      const edges = ring.map((a, i) => { const b = ring[(i + 1) % ring.length]; return { a, b, L: Math.hypot(b[0] - a[0], b[1] - a[1]) }; })
-        .filter((e) => e.L > 5).sort((p, q) => q.L - p.L);
-      const k = keyOf(bbl);
-      const kind = hash01(k ^ 0x1ea5e, this.seed) < 0.6 ? 0 : 1;
-      for (const e of edges.slice(0, o < 0.55 ? 2 : 1)) {
-        const nx = (e.b[1] - e.a[1]) / e.L, ny = -(e.b[0] - e.a[0]) / e.L;
-        const w = Math.max(5, Math.min(13, e.L * 0.7));
-        const t = 0.3 + 0.4 * hash01(k ^ 0x5a1, 7);
-        const z = Math.max(3.2, d.height - 2.4 - (d.height > 20 ? hash01(k, 9) * 6 : 0));
-        spots[kind].push({ x: e.a[0] + (e.b[0] - e.a[0]) * t + nx * 0.18, y: e.a[1] + (e.b[1] - e.a[1]) * t + ny * 0.18, z, r: Math.atan2(ny, nx) + Math.PI / 2, w, kind });
-      }
-    }
-    spots.forEach((list, kind) => {
-      if (!list.length) return;
-      const geo = new THREE.PlaneGeometry(1, 1).rotateX(Math.PI / 2);
-      const mesh = new THREE.InstancedMesh(geo, this.bannerMat(kind), list.length);
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
-      list.forEach((b, i) => { q.setFromEuler(e.set(0, 0, b.r)); mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(b.w, 1, b.w * 0.24))); });
-      mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false;
-      this.scene.add(mesh); this.leaseMeshes.push(mesh);
-    });
-  }
-  private bannerMats: THREE.Material[] = [];
-  private bannerMat(kind: number): THREE.Material {
-    if (this.bannerMats[kind]) return this.bannerMats[kind];
-    const { c, g } = makeCanvas(512, 128);
-    g.fillStyle = kind === 0 ? "#b5121b" : "#f2c230"; g.fillRect(0, 0, 512, 128);
-    g.strokeStyle = kind === 0 ? "#f4f0e6" : "#1d1d1d"; g.lineWidth = 6; g.strokeRect(8, 8, 496, 112);
-    g.fillStyle = kind === 0 ? "#f8f5ee" : "#1d1d1d";
-    g.font = "bold 70px Arial, Helvetica, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(kind === 0 ? "FOR LEASE" : "SPACE TO LET", 256, 68);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    this.bannerMats[kind] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: THREE.DoubleSide, envMapIntensity: 0.2 });
-    return this.bannerMats[kind];
-  }
   private paintLit(bbl: string, d: Deed) {
     const o = this.occ.get(bbl);
     // the tile itself is ~55% lit rooms; full let reads ~1.6x that, empty near dark

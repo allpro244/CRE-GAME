@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
@@ -11,7 +11,8 @@ import { SECTOR_LABEL } from "@/engine/market";
 import { LineChart } from "@/ui/Chart";
 import Slider from "@/ui/Slider";
 import { USE_WORD } from "@/engine/mix";
-import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
+import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, minLettableSf } from "@/engine/leasing";
+import { useRentableSf } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import {
   groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
@@ -274,6 +275,56 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
  * argues for are the ones already on the Management block above: an exclusive,
  * a capital programme, pre-built suites, or coming off your asking rent.
  */
+/**
+ * THE SMALLEST DEAL YOU WILL SIGN. A landlord can refuse to chop a building
+ * into small suites — full floors only — and accept the thinner pool of
+ * tenants that leaves. Prospects asking for less stop touring; renewals and
+ * expansions of sitting tenants are untouched; and a tenant who would take the
+ * whole of what is left vacant still gets in, so the last space is never
+ * stranded. Commercial space only: flats let by the unit.
+ */
+export function MinDealSize({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  const saved = h?.minLeaseSf ?? 0;
+  const [v, setV] = useState(saved);
+  useEffect(() => setV(saved), [saved]);
+  // the slider ticks every few hundred feet; the deed is written once it settles
+  useEffect(() => {
+    if (v === saved) return;
+    const t = setTimeout(() => useStore.getState().minLease(bbl, v), 350);
+    return () => clearTimeout(t);
+  }, [v, saved, bbl]);
+  if (!h || !rec || h.groundLeased) return null;
+  const legs = leasableUses(rec).filter((u) => u !== "multifamily");
+  if (!legs.length) return null;
+  const biggest = Math.max(...legs.map((u) => useRentableSf(rec, u)));
+  if (biggest < 2000) return null;
+  const floorSf = Math.min(...legs.map((u) => minLettableSf(rec, u)));
+  const max = Math.max(1000, Math.round(biggest / 500) * 500);
+  return (
+    <div className="deal">
+      <div className="deal-head">Smallest deal you'll sign</div>
+      <Slider
+        label="Minimum new lease"
+        value={v}
+        min={0}
+        max={max}
+        step={500}
+        editable
+        onChange={(x) => setV(Math.max(0, Math.round(x)))}
+        format={(x) => (x > 0 ? `${sf(x)} and up` : `any size · building minimum ${sf(floorSf)}`)}
+        marks={[{ at: 0, label: "any" }, { at: max, label: sf(max) }]}
+        hint={v > 0
+          ? `Prospects asking for less than ${sf(v)} are turned away. Fewer tenants want space that big, so expect longer vacancy. Renewals and expansions of tenants already here aren't affected, and a tenant taking everything still vacant always gets in. Letters already on your desk stay for you to answer.`
+          : "Any tenant down to the building's own smallest suite can lease here. Set a floor to keep the building in big blocks, at the cost of a smaller tenant pool."}
+      />
+    </div>
+  );
+}
+
 export function LettingOdds({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;

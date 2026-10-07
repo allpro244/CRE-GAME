@@ -1986,6 +1986,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const fit = matchBlock(rec, h, use, want);
         if (!fit) continue;
         const sf = fit.sf;
+        // THE LANDLORD'S OWN FLOOR. Below it, the tour ends at the door —
+        // after every draw above, so the rest of the city's stream is the
+        // same whatever you choose. A tenant taking the whole remainder is
+        // let in even when the remainder is smaller than the floor.
+        if (h.minLeaseSf && sf < Math.min(h.minLeaseSf, legVac - 1)) continue;
         const lastBlock = fit.block.sf >= legVac - 1;
         if (!lastBlock && sf > poolSf + minLettableSf(rec, use) * 0.15) continue;
         const demiseCost = fit.demiseSf > 0
@@ -4567,6 +4572,17 @@ export function buyOutTenants(
 }
 
 /** Stop or restart letting a building — the switch you throw before a demolition. */
+/** Set (or clear, with 0) the smallest new tenancy the landlord will sign at this deed. */
+export function setMinLeaseSf(s: GameState, bbl: string, sf: number): GameState {
+  const h = s.holdings[bbl];
+  if (!h || h.groundLeased) return s;
+  const next: GameState = cloneState(s);
+  const v = Math.max(0, Math.round(sf));
+  // From next month's tours on; letters already on the desk are yours to answer.
+  next.holdings[bbl].minLeaseSf = v > 0 ? v : undefined;
+  return next;
+}
+
 export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
   const h = s.holdings[bbl];
   if (!h || h.groundLeased) return s;

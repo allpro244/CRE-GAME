@@ -612,6 +612,16 @@ export interface Holding {
    * years before it is worth anything as a site.
    */
   leasingHold?: boolean;
+  /**
+   * THE SMALLEST DEAL YOU WILL SIGN HERE, in square feet. A landlord with a
+   * hundred-thousand-foot building can refuse to cut it into 2,000-foot
+   * suites — "full floors only" — and live with the smaller pool of tenants
+   * that leaves. New prospects asking for less are turned away at the door;
+   * renewals and expansions of sitting tenants are not touched. When what is
+   * left vacant is under the minimum, a tenant taking ALL of it still gets in,
+   * so the rule can never strand the last of the building.
+   */
+  minLeaseSf?: number;
   /** When a marketed campaign on this deed was last pulled. The market remembers. */
   lastCampaignM?: number;
   deliveredM?: number; // ground-up completion: new space leases with momentum

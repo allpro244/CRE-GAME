@@ -69,6 +69,7 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     h?.renovatingUntilM,
     h?.broker ? 1 : 0,
     h?.leasingHold ? 1 : 0,
+    h?.minLeaseSf ?? 0,
     h?.plan,
     h?.service,
     // Stance / capital-program toggles used to update the engine without

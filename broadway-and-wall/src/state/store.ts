@@ -11,7 +11,7 @@ import { openResearchOn } from "@/ui/researchTab";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -390,6 +390,8 @@ interface AppState {
   handBackKeys: (bbl: string) => void;
   buyOutLeases: (bbl: string) => void;
   holdLeasing: (bbl: string, on: boolean) => void;
+  /** The smallest new tenancy you will sign at this deed; 0 clears it. */
+  minLease: (bbl: string, sf: number) => void;
   assemble: (bbls: string[]) => void;
   groundLease: (bbl: string, years: number, review?: import("@/engine/types").GroundReview) => void;
   pullGroundOffer: (bbl: string) => void;
@@ -1756,6 +1758,15 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(r.msg ?? "Empty.");
     void persist(r.s);
+  },
+
+  minLease: (bbl, sf) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setMinLeaseSf(game, bbl, sf);
+    if (next === game) return;
+    set({ game: next });
+    void persist(next);
   },
 
   holdLeasing: (bbl, on) => {

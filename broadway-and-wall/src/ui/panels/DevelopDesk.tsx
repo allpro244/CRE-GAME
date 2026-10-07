@@ -20,6 +20,7 @@ import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
   specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor,
+  devFundingNeed,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -148,6 +149,8 @@ export function ReuseSection({ bbl }: { bbl: string }) {
   const reuseBar = eligibility.ok ? reuseZoneBar(game, parcels, bbl, target, mixed) : null;
   const plan = eligibility.ok && !reuseBar ? planAdaptiveReuse(game, parcels, bbl, target, mixed) : null;
   const equity = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);
+  // the engine's own test: equity, points and the change-order margin
+  const short = plan ? Math.max(0, devFundingNeed(plan).whole - spendable(game, parcels).total) : 0;
   return (
     <div className="deal">
       <div className="deal-head">Adaptive reuse</div>
@@ -172,14 +175,14 @@ export function ReuseSection({ bbl }: { bbl: string }) {
             <Row k="After conversion" v={`${sf(plan.sf)} · ${target}`} strong />
             <Row k="Conversion budget" v={usd(plan.costTotal)} />
             <Row k="Opportunity cost in basis" v={usd(plan.landBasis)} />
-            <Row k="Equity required" v={usd(equity)} strong bad={equity > spendable(game, parcels).total} />
+            <Row k="Equity required" v={usd(equity)} strong bad={short > 0} title={plan ? `Plus a ${usd(devFundingNeed(plan).margin)} overrun cushion (6% of cost) you must be able to fund` : undefined} />
             <Row k="Delivery" v={`${plan.months} months`} />
             <Row k="Yield / hurdle" v={`${plan.yieldOnCost.toFixed(2)}% / ${plan.requiredYield.toFixed(2)}%`}
               strong bad={plan.hurdleRatio < 1} />
           </div>
           <LocSplitHint need={equity} game={game} parcels={parcels} />
           <button className="btn btn-buy"
-            disabled={plan.hurdleRatio < 1 || equity > spendable(game, parcels).total}
+            disabled={plan.hurdleRatio < 1 || short > 0}
             onClick={() => useStore.getState().convertUse(bbl, target, mixed)}>
             Convert to {target === "multifamily" ? "apartments" : "mixed use"} · {usd(equity)}
           </button>
@@ -303,8 +306,13 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // is exactly what this card was accused of. Every equity read below goes
   // through these two: the whole cheque, and whether you can write it.
   const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
-  const canFund = equityRequired <= spendable(game, parcels).total;
-  const closeCheque = plan ? plan.equityAtClose + plan.pointsCost : 0;
+  // THE BUTTON ASKS WHAT THE ENGINE ASKS: the whole equity, the points and the
+  // change-order margin (devFundingNeed), not the equity alone.
+  const need = plan ? devFundingNeed(plan) : { whole: 0, dayOne: 0, margin: 0 };
+  const fundableTotal = spendable(game, parcels).total;
+  const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
+  const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
+  const closeCheque = need.dayOne;
   const zoning = deskZoning(rec, game.econ, customMix, fl);
   const USES = zoning.legal;
   const useBar = zoning.bar(use);
@@ -825,16 +833,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   />
                   <Row k="All-in equity" v={usd(equityRequired)} strong bad={!canFund} />
                   <Row
+                    k="Overrun cushion"
+                    v={`${usd(need.margin)} · 6% of cost, must be fundable`}
+                    title="Change orders past the contingency are yours, loan or no loan, so you must be able to cover 6% of the job's cost on top of the equity. On an all-cash job that is 6% of the whole building."
+                    bad={!canFund}
+                  />
+                  <Row
                     k="Change-order margin"
                     v={`${usd(plan.contingency)} contingency${plan.contract === "costplus" ? " — past it, yours under cost-plus" : ""}`}
                     bad={plan.contract === "costplus"}
                   />
                   <Row k="Schedule" v={`${plan.months} months`} />
                   {(() => {
-                    const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);
-                    const fundable = spendable(game, parcels).total;
-                    const shortAll = Math.max(0, commitCap - fundable);
-                    const shortClose = Math.max(0, closeCheque - fundable);
+                    const shortAll = Math.max(0, need.whole - fundableTotal);
+                    const shortClose = Math.max(0, need.dayOne - fundableTotal);
                     if (shortAll <= 0 && shortClose <= 0) return null;
                     return (
                       <Row
@@ -850,9 +862,11 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               </div>
               {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
               <div className="hint">
-                Budget <b>{usd(equityRequired)}</b> all-in — not just the <b>{usd(closeCheque)}</b> at closing.
+                Budget <b>{usd(equityRequired)}</b> all-in — not just the <b>{usd(closeCheque)}</b> at closing — and be able to fund <b>{usd(need.whole)}</b> with the overrun cushion.
                 Delivery lifts nearby demand before lease-up fills the floors.
-                {!canFund && " This massing is past what you can finish."}
+                {!canFund && (plan.commitment === 0 && plan.ltcMax > 0
+                  ? " All cash, the cushion is 6% of the whole building — take some construction debt, or cut the massing."
+                  : " This massing is past what you can finish.")}
               </div>
               <div className="btn-row">
                 <button type="button" className="btn" onClick={() => setTab("design")}>Back · Design</button>
@@ -861,12 +875,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   disabled={!canFund}
                   onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design }, plan.lender, spec)}
                   title={!canFund
-                    ? `Equity short — needs ${usd(equityRequired)} all-in`
+                    ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}
                 >
                   {canFund
                     ? `Break ground · ${usd(equityRequired)} equity all-in`
-                    : `Cannot finish · short ${usd(Math.max(0, equityRequired + Math.round(plan.costTotal * 0.06) - spendable(game, parcels).total))}`}
+                    : `Cannot finish · short ${usd(fundShort)}`}
                 </button>
               </div>
             </>

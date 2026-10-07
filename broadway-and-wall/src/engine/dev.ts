@@ -766,8 +766,7 @@ export function startAdaptiveReuse(
   const plan = planAdaptiveReuse(s, parcels, bbl, target, customMix);
   if (!plan) return { s, err: "That conversion cannot be planned." };
   if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
-  const margin = Math.round(plan.costTotal * 0.06);
-  if (fundableNow(s, parcels) < plan.equity + plan.pointsCost + margin) {
+  if (fundableNow(s, parcels) < devFundingNeed(plan).whole) {
     return { s, err: `The conversion requires ${money(plan.equity)} of equity plus a change-order margin.` };
   }
   // THE DAY-ONE CHEQUE COUNTS THE LINE TOO, and this was the odd one out: the
@@ -1196,6 +1195,26 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
   }
 }
 
+/**
+ * WHAT A JOB ASKS OF YOUR PURSE — one rule for the desk and the engine.
+ *
+ * `whole` is the full equity, the origination points and a 6%-of-cost margin
+ * for change orders: overruns past the contingency land on the owner under
+ * either contract (see the site-risk roll in tickDevelopment), lender or no
+ * lender, so an all-cash job carries it too — and on an all-cash job it is
+ * 6% of the whole building, not of a thin equity slice. `dayOne` is the
+ * closing instalment plus points. The desk used to enable its button on the
+ * equity alone while the engine refused on `whole`, so a sponsor with cash
+ * for every dollar on the card was turned away by a number the card never
+ * showed — and only when they went light on debt, where the margin is big.
+ */
+export function devFundingNeed(plan: { equity: number; equityAtClose: number; pointsCost: number; costTotal: number }): {
+  whole: number; dayOne: number; margin: number;
+} {
+  const margin = Math.round(plan.costTotal * 0.06);
+  return { whole: plan.equity + plan.pointsCost + margin, dayOne: plan.equityAtClose + plan.pointsCost, margin };
+}
+
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
@@ -1243,7 +1262,8 @@ export function startDevelopment(
   // No construction lender on earth closes without evidence the sponsor can
   // fund its whole share — that is the first thing they ask for. The line of
   // credit counts, because it is committed money and that is what it is for.
-  const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);   // and a margin for change orders — origination is cash at close too
+  const need = devFundingNeed(plan);   // equity, points, and a margin for change orders
+  const commitCap = need.whole;
   const fundable = fundableNow(s, parcels);
   if (fundable < commitCap) {
     const short = commitCap - fundable;
@@ -1263,7 +1283,7 @@ export function startDevelopment(
   // 55% at close, the origination points and the change-order margin are all
   // where they were; a job closed on the line simply starts with less room for
   // the capital call that comes at 90% complete, which is the real discipline.
-  const dayOne = plan.equityAtClose + plan.pointsCost;
+  const dayOne = need.dayOne;
   if (fundable < dayOne) {
     const short = dayOne - fundable;
     return {

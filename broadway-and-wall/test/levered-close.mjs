@@ -15,8 +15,9 @@
 //   - a quoted principal is exactly the principal the deed carries after close;
 //   - no desk quotes a loan and then refuses at the table;
 //   - net worth across the close never RISES by more than rounding — a missing
-//     loan shows up as a gain the size of the principal (a distress listing,
-//     priced under appraisal on purpose, may rise by its discount and no more);
+//     loan shows up as a gain the size of the principal (a listing priced
+//     under its mark — distress, or a seller on last year's number — may
+//     rise by its discount and no more);
 //   - a leverage dial under the $100K minimum cheque quotes all cash;
 //   - a debt-financed take-private at a premium never makes net worth.
 //
@@ -74,7 +75,13 @@ for (const [label, s0] of [["clean sponsor", g], ["shut-out sponsor", marked]]) 
         // buying it legitimately marks up by its discount — and by nothing
         // more. A missing loan still shows as a gain the size of the
         // principal on top of that. Every other closing keeps the flat rule.
-        const discount = l.distress ? Math.max(0, E.ownedHoldingValue(r.s, parcels, r.s.holdings[l.bbl]) - l.ask) : 0;
+        // AND SO IS A SELLER STILL ASKING LAST YEAR'S NUMBER. In an
+        // expansion an unpressured seller asks 0.94-1.10 of value (sim.ts,
+        // THE BID-ASK GAP: they hold the old mark while values rise), so an
+        // ordinary listing can close a few per cent under its mark too. The
+        // allowance is that discount and nothing more; a missing loan is
+        // still a gain the size of the principal on top of it.
+        const discount = Math.max(0, E.ownedHoldingValue(r.s, parcels, r.s.holdings[l.bbl]) - l.ask);
         if (dNW > discount + 0.02 * l.ask) { pumped++; worst = Math.max(worst, dNW - discount); }
       }
     }

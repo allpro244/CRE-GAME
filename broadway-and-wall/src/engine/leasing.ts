@@ -18,12 +18,12 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, leaseUpCurve, LEASE_UP_YEARS, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
-import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace } from "./credit";
+import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
@@ -1236,8 +1236,27 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // into a glut ends up in front of a workout desk.
       const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
       const pace = Math.max(0.030, 0.090 - 0.75 * slack);
+      // ONE LEASE-UP, NOT TWO. `target` above is the market's as-is read, and
+      // for a building under LEASE_UP_YEARS old that read already carries the
+      // market's lease-up curve (leaseUpFactor). Walking a share of the gap
+      // towards a target that is itself still climbing lagged the lag: a
+      // block of flats delivered into a 4% market reached 90% let in 34-48
+      // months, against the 19 the curve gives every other new building in
+      // town — and past twice that span the appraiser stops treating it as a
+      // lease-up (leaseUpWeight), so the slow fill also cut its mark and its
+      // takeout. The walk heads for the STABILISED level, and while the
+      // building is inside the market's lease-up span it is let at least as
+      // far as that curve says a building its age is. The age is read from
+      // the month it delivered when there is one: `yearBuilt` is a whole
+      // year, which made a December opening eleven months old on day one.
+      const stab = useOccupancy(rec, s.econ, "multifamily", true);
+      const ageY = h.deliveredM !== undefined
+        ? (q - h.deliveredM) / 12
+        : rec.yearBuilt ? START_YEAR + q / 12 - rec.yearBuilt : Infinity;
+      const market = stab * leaseUpCurve(ageY, true);
       const now = h.occ ?? target;
-      h.occ = Math.min(0.99, Math.max(0, now + (target - now) * pace + rrange(s, -0.006, 0.006, "leasing")));
+      const walked = now + (stab - now) * pace + rrange(s, -0.006, 0.006, "leasing");
+      h.occ = Math.min(0.99, Math.max(0, ageY < LEASE_UP_YEARS(true) ? Math.max(walked, market) : walked));
       // AND THE RENT ROLL TURNS OVER. A twelfth of the leases reach the market
       // each month; the rest pay what they signed. So in-place rent closes a
       // twelfth of its gap to the market a month — loss-to-lease on the way
@@ -2858,7 +2877,12 @@ function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE, parce
  * it into the mandate once IS that decision.
  */
 export function lineDeskMayDraw(s: GameState, parcels?: ParcelTable): number {
-  const auth = s.leasingPlan?.lineForFitOut ?? 0;
+  // PLUS THE FIRM'S OWN CASH THAT WAS SWEPT ONTO THE LINE. Surplus cash pays
+  // the revolver down the month it arrives (sweepLocIdleCash), so the money
+  // this desk used to sign from now sits on the line as headroom. Redrawing
+  // that much borrows nothing the firm did not have — the delegation rule
+  // above is about an agent levering the firm, and this is not that.
+  const auth = (s.leasingPlan?.lineForFitOut ?? 0) + parkedOnLine(s);
   if (!(auth > 0) || !parcels) return 0;
   return Math.min(auth, locAvailable(s, parcels));
 }

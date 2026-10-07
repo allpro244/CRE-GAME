@@ -3244,7 +3244,16 @@ export interface GameState {
   /** Last docket's outcomes on lots you bid on. Cleared once read. */
   auctionResults?: { m: number; rows: AuctionResultRow[] };
   // Revolving line against the portfolio: 35% of net worth at index + 400bps.
-  loc: { balance: number; drawnTotal: number; interestPaid: number };
+  loc: {
+    balance: number; drawnTotal: number; interestPaid: number;
+    /**
+     * The firm's own cash sitting on the line: every dollar repaid out of
+     * cash, less every dollar drawn since, never more than the balance.
+     * Redrawing it borrows nothing new — it is the treasury reserve held as
+     * headroom instead of as a deposit (credit.ts parkedOnLine).
+     */
+    parked?: number;
+  };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */
   booksMonthly?: BooksMonth[];

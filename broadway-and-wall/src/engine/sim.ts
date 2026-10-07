@@ -10,15 +10,15 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
-import { tickLoan, productById, stackPayoff, balloonLadder } from "./debt";
+import { tickLoan, productById, loanLender, stackPayoff, balloonLadder } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
@@ -1586,7 +1586,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       out.push({
         key: `arrears:${h.bbl}:${ms}`,
         label: `${addr(h.bbl)} has missed ${ms} payment${ms === 1 ? "" : "s"} — `
-          + `${productById(h.loan!.product).lender} files at three`,
+          + `${loanLender(h.loan!)} files at three`,
       });
     }
     // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
@@ -1596,7 +1596,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       out.push({
         soft: true,
         key: `renewed:${h.bbl}:${s.month}`,
-        label: `${addr(h.bbl)} balloon renewed with ${productById(h.loan.product).lender} at `
+        label: `${addr(h.bbl)} balloon renewed with ${loanLender(h.loan)} at `
           + `${h.loan.ratePct.toFixed(2)}% — matures ${monthLabel(h.loan.maturityM)}`,
       });
     }
@@ -1797,10 +1797,15 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       // while the real cheque would drain the account in under three months.
       + (s.facility?.monthlyPmt ?? 0)
       + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
-    if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
+    // Surplus cash pays the line down after debt service, so the firm's own
+    // cash parked there is runway too — the line hands it straight back.
+    const parked = parcels ? Math.min(parkedOnLine(s), locAvailable(s, parcels)) : parkedOnLine(s);
+    if (monthlyDebt > 0 && s.cash + parked < monthlyDebt * 3) {
       out.push({
         key: "cash-runway",
-        label: `Cash covers less than three months of debt service`,
+        label: parked > 0
+          ? `Cash and the cash parked on the line cover less than three months of debt service`
+          : `Cash covers less than three months of debt service`,
       });
     }
   }
@@ -1819,7 +1824,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         label: `Open lease signing costs ${money(vehicle)} on the fund's buildings would breach the fund's reserve`,
       });
     }
-    if (committed > 0 && s.cash - committed < agentCashReserve(s)) {
+    if (committed > 0 && s.cash + (parcels ? lineDeskMayDraw(s, parcels) : 0) - committed < agentCashReserve(s)) {
       const n = committed >= 1_000_000
         ? `$${(committed / 1_000_000).toFixed(2)}M`
         : `$${Math.round(committed / 1000)}K`;

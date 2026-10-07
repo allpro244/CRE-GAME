@@ -2,7 +2,11 @@
 //
 //   pnpm engine && node test/loc-auto-paydown.mjs
 //
-// Month-end already swept idle cash above $250K. A sale used to leave the line
+// DEBT SERVICE FIRST, THEN THE LINE: after every scheduled payment, cash above
+// next month's debt service pays the revolver down, and the swept dollars stay
+// redrawable as the firm's own cash parked on the line (parkedOnLine) — the
+// leasing desk may draw them back, nothing more. (It used to hold back six
+// months of debt service, never under $250K.) A sale used to leave the line
 // drawn until the next Advance, so the top bar could show millions of cash
 // next to an expensive drawn balance. Sale proceeds (and the month tick) must
 // pay it down immediately.
@@ -31,7 +35,7 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   g.cash = 2_000_000;
   g = E.advanceMonth(g, parcels, bbls);
   check((g.loc?.balance ?? 0) === 0, "month tick clears the line when cash covers it");
-  check(g.cash >= E.LOC_CASH_RESERVE * 0.5, "operating float remains after the sweep");
+  check(g.cash >= E.monthlyDebtService(g), "next month\u2019s debt service remains after the sweep");
 }
 
 // --- 2. Sale proceeds pay the line immediately (no Advance required) --------
@@ -65,22 +69,35 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   if (closed.err) throw new Error(closed.err);
   g = closed.s;
   check((g.loc?.balance ?? 0) === 0, "sale proceeds clear the line without advancing");
-  check(g.cash >= E.LOC_CASH_RESERVE, "sale leaves the $250K operating float");
+  check(g.cash >= E.monthlyDebtService(g), "sale leaves next month\u2019s debt service in the account");
   check(
     (g.news ?? []).some((n) => /Idle cash paid .* down on the line/.test(n.text)),
     `paydown is written into the news tape (was drawn $${(locBefore / 1e6).toFixed(2)}M)`,
   );
 }
 
-// --- 3. Helper itself respects the reserve ----------------------------------
+// --- 3. Debt service first, then the line ----------------------------------
 {
-  const g = E.newGame(44, parcels, 1_000_000);
+  // a firm with a free-and-clear building, so the line has room to redraw
+  let g0 = E.firstListings(E.newGame(44, parcels, 40_000_000), parcels, bbls);
+  const li = g0.listings.find((l) => { const r = E.resolveRec(parcels, g0, l.bbl); return r && r.class !== "land" && r.bldgArea > 0 && l.ask > 4_000_000 && l.ask < 30_000_000; });
+  const b = E.executePurchase(g0, parcels, li.bbl, li.ask, "cash", false, 1);
+  if (b.err) throw new Error(b.err);
+  const g = b.s;
   g.loc = { balance: 500_000, drawnTotal: 500_000, interestPaid: 0 };
-  g.cash = E.LOC_CASH_RESERVE + 80_000;
+  const keep = E.monthlyDebtService(g);
+  check(keep > 0, `next month's debt service is held back (${keep})`);
+  g.cash = keep + 80_000;
   const paid = E.sweepLocIdleCash(g);
-  check(paid === 80_000, "sweep pays only the dollars above the reserve");
+  check(paid === 80_000, "sweep pays every dollar above next month's debt service");
   check(g.loc.balance === 420_000, "line balance falls by the same amount");
-  check(g.cash === E.LOC_CASH_RESERVE, "cash lands on the reserve floor");
+  check(g.cash === keep, "cash lands on next month's debt service, not a six-month hoard");
+  check(E.parkedOnLine(g) === 80_000, "the swept cash is recorded as parked on the line");
+  // drawing spends the parked cash first
+  const d = E.drawLoc(g, parcels, 30_000);
+  check(!d.err && E.parkedOnLine(d.s) === 50_000, `a draw spends parked cash first (${d.err ?? E.parkedOnLine(d.s)}, avail ${E.locAvailable(g, parcels)})`);
+  // the leasing desk may redraw parked cash, and no more than the line has room for
+  check(E.lineDeskMayDraw(g, parcels) === Math.min(80_000, E.locAvailable(g, parcels)), "the desk may draw back exactly the parked cash");
 }
 
 if (bad) {

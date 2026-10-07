@@ -45,6 +45,26 @@ export function operatingReserve(s: GameState): number {
 }
 
 /**
+ * THE FIRM'S OWN CASH, PARKED ON THE LINE. Debt service is paid first, then
+ * every dollar above next month's cheque goes to the revolver (sweepLocIdleCash)
+ * — which leaves the operating reserve held as undrawn line rather than as a
+ * deposit. Redrawing up to this much borrows nothing the firm did not already
+ * have: it is where the cash went. Any draw spends it first; it never exceeds
+ * what is drawn.
+ */
+export function parkedOnLine(s: GameState): number {
+  return Math.max(0, Math.min(s.loc?.parked ?? 0, s.loc?.balance ?? 0));
+}
+function parkCash(s: GameState, repaid: number) {
+  if (!s.loc || !(repaid > 0)) return;
+  s.loc.parked = Math.min(s.loc.balance, (s.loc.parked ?? 0) + repaid);
+}
+function unpark(s: GameState, drawn: number) {
+  if (!s.loc || !(drawn > 0) || !s.loc.parked) return;
+  s.loc.parked = Math.max(0, Math.min(s.loc.balance, s.loc.parked - drawn));
+}
+
+/**
  * ONE MONTH OF SCHEDULED DEBT SERVICE — every mortgage payment, every mezz
  * coupon, the facility's interest and the line's own interest. This is the
  * cheque the firm must be able to write next month whatever else happens.
@@ -75,24 +95,33 @@ export function locRate(s: GameState): number {
 }
 
 /**
- * Pay the revolver with idle cash above {@link LOC_CASH_RESERVE}.
+ * DEBT SERVICE FIRST, THEN THE LINE. Whatever cash is left above next month's
+ * scheduled debt service (every mortgage, mezz coupon, the facility and the
+ * line's own interest) pays the revolver down.
  *
- * Month-end already did this inside `tickLoc`, but a sale (or any other cash
- * inflow) used to leave the line drawn until the next Advance — millions in
- * the account, index+400 still running. Call this whenever firm cash jumps.
- * Returns dollars repaid.
+ * This used to hold back SIX months of debt service, never under $250K, before
+ * a dollar reached the line — so a drawn revolver ran at index+400 against a
+ * pile of idle cash earning the deposit rate. No treasurer runs a revolver
+ * that way: the line can be redrawn tomorrow, so the undrawn commitment IS the
+ * liquidity reserve, and cash held against it is pure negative carry. The
+ * reserve still exists; it is now held as headroom (parkedOnLine), and the
+ * desks that test against it read that headroom.
+ *
+ * Month-end does this inside `tickLoc`, after every loan has been paid; a sale
+ * (or any other cash inflow) calls it at once. Returns dollars repaid.
  */
 export function sweepLocIdleCash(
   s: GameState,
   opts?: { announce?: boolean },
 ): number {
   if (!s.loc || s.loc.balance <= 0) return 0;
-  const keep = operatingReserve(s);
+  const keep = monthlyDebtService(s);
   if (s.cash <= keep) return 0;
   const sweep = Math.min(s.loc.balance, Math.floor(s.cash - keep));
   if (sweep <= 0) return 0;
   s.loc.balance -= sweep;
   s.cash -= sweep;
+  parkCash(s, sweep);
   _locAvailCache = null;
   if (opts?.announce && sweep >= 25_000) {
     s.news.unshift({
@@ -188,6 +217,7 @@ export function fundCashNeed(
       s.loc.balance += draw;
       s.loc.drawnTotal += draw;
       s.cash += draw;
+      unpark(s, draw);
       _locAvailCache = null; // cash and drawn both moved
     }
   }
@@ -291,6 +321,7 @@ export function drawLineInPlace(s: GameState, parcels: ParcelTable, amount: numb
   s.loc.balance += draw;
   s.loc.drawnTotal += draw;
   s.cash += draw;
+  unpark(s, draw);
   _locAvailCache = null;
   return draw;
 }
@@ -304,6 +335,7 @@ export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
   s.loc.balance += draw;
   s.loc.drawnTotal += draw;
   s.cash += draw;
+  unpark(s, draw);
   _locAvailCache = null;
   // Micro-shorts still draw — a $8k interest hole is real — but they used to
   // spam "Short $0.01M" every month and drown the news while the firm died of
@@ -335,6 +367,7 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
   next.loc.balance += amt;
   next.loc.drawnTotal += amt;
   next.cash += amt;
+  unpark(next, amt);
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Drew ${locMoney(amt)} on the line at ${locRate(next).toFixed(2)}%. Balance ${locMoney(next.loc.balance)}.`,
@@ -349,6 +382,7 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
   if (amt <= 0) return { s, err: "No cash to pay it down with." };
   next.loc.balance -= amt;
   next.cash -= amt;
+  parkCash(next, amt);
   next.news.unshift({
     q: next.month, kind: "info",
     text: `Paid ${locMoney(amt)} down on the line. Balance ${locMoney(next.loc.balance)}.`,
@@ -390,8 +424,10 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
     const holdBack = monthlyDebtService(s);
     const pay = Math.min(over, Math.max(0, s.cash - holdBack));
     if (pay > 0) {
+      // Called back by the bank, not parked: this headroom no longer exists.
       s.loc.balance -= pay;
       s.cash -= pay;
+      if (s.loc.parked) s.loc.parked = Math.min(s.loc.parked, s.loc.balance);
       _locAvailCache = null;
     }
     const stillOver = s.loc.balance - locLimit(s, parcels);

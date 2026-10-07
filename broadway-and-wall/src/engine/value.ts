@@ -1862,10 +1862,21 @@ function leaseUpFactor(rec: ParcelRecord, econ: Econ, apt: boolean): number {
   const nowYr = START_YEAR + econ.m / 12;
   const age = nowYr - rec.yearBuilt;
   if (age < 0 || age > 4) return 1;
+  return leaseUpCurve(age, apt);
+}
+
+/**
+ * The market's lease-up curve: the share of its stabilised occupancy a
+ * building `ageYears` old is let at. Opens at a fifth let and climbs — the
+ * shape of a real lease-up curve — to stabilised at LEASE_UP_YEARS. Exported
+ * so a building with a real roll (tickLeasing's apartment walk) can be read
+ * against the same curve the market reads every other new building on.
+ */
+export function leaseUpCurve(ageYears: number, apt: boolean): number {
+  if (!(ageYears >= 0)) return 1;
   const span = LEASE_UP_YEARS(apt);
-  if (age >= span) return 1;
-  // opens at a fifth let and climbs — the shape of a real lease-up curve
-  return clamp(0.2 + 0.8 * Math.pow(age / span, 0.75), 0.2, 1);
+  if (ageYears >= span) return 1;
+  return clamp(0.2 + 0.8 * Math.pow(ageYears / span, 0.75), 0.2, 1);
 }
 
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {

@@ -409,6 +409,15 @@ function lenderByNameLocal(s: GameState, name: string) {
 }
 
 export const productById = (id: string): LoanProduct => PRODUCTS.find((p) => p.id === id) ?? PRODUCTS[0];
+/**
+ * WHO HOLDS THIS PAPER. A loan's product names a desk, but the balance can sit
+ * elsewhere: a construction takeout is written on the "cordage" mini-perm
+ * terms while the construction lender that carried the job keeps it. Reading
+ * the product's desk named one lender in the arrears notice and another in
+ * the workout filing for the same loan, and credited the relationship to a
+ * desk that never lent.
+ */
+export const loanLender = (l: { holder?: string; product: string }): string => l.holder ?? productById(l.product).lender;
 
 const REFI_FEE = 0.01;
 
@@ -724,7 +733,7 @@ export function payOffLoan(
         : `Need $${due.toLocaleString()} cash to retire this loan — short $${short.toLocaleString()}.`,
     };
   }
-  const lender = h.loan.holder ?? productById(h.loan.product).lender;
+  const lender = loanLender(h.loan);
   const paid = fundCashNeed(next, parcels, due);
   if (paid < due) {
     return { s, err: `Could not raise the $${due.toLocaleString()} payoff.` };
@@ -800,7 +809,7 @@ export function paydownLoan(
   loan.monthlyPmt = io
     ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
     : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
-  const lender = loan.holder ?? productById(loan.product).lender;
+  const lender = loan.holder ?? loanLender(loan);
   const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -1188,7 +1197,8 @@ export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null 
 export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): number {
   const loan = h.loan;
   if (!loan) return 0;
-  const d = dscr(rec, s, h);
+  // No coverage covenant, no coverage cure (see the covenant test in tickLoan).
+  const d = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
   const l = ltv(rec, s, h);
   const value = ownedHoldingValueFromRec(s, rec, h);
   let target = loan.balance;
@@ -1260,14 +1270,22 @@ export function tickLoan(
 
   const interest = (loan.balance * loan.ratePct) / 100 / 12;
   const principalPay = io ? 0 : Math.max(0, Math.min(loan.balance, loan.monthlyPmt - interest));
-  if (!loan.sweep && s.month % 12 === 0) bumpLenderRel(s, productById(loan.product).lender, 0.6);
+  if (!loan.sweep && s.month % 12 === 0) bumpLenderRel(s, loanLender(loan), 0.6);
   loan.balance = Math.max(0, loan.balance - principalPay);
   let cashOut = loan.monthlyPmt;
 
   // covenants — after a 12-month stabilization holiday, so a building you
   // just bought with honest vacancy isn't in default before the ink dries
   const holiday = q < (loan.holidayUntilM ?? loan.originM + 12);
-  const d = dscr(rec, s, h);
+  // A LOAN WITH NO COVERAGE COVENANT HAS NO COVERAGE TEST. The land loan is
+  // written at minDSCR 0 because dirt has no income to cover anything; but a
+  // lot carries its property tax, so its NOI is a small negative number, and
+  // `d < 0` read as a breach of a covenant the paper does not have. Every land
+  // loan then "breached" the month its holiday ended and the equity cure below
+  // demanded 12% of the balance — every month — from a developer whose loan
+  // sat at 11% LTV. Measured on one 26-month build: $4.3M of cash forced into
+  // the land loan before delivery. The LTV covenant (70%) still applies.
+  const d = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
   const l = ltv(rec, s, h);
   let breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
 
@@ -1321,7 +1339,7 @@ export function tickLoan(
       // Re-test against the loan as it now stands. A cure that covered the
       // whole gap ends the breach this month; a partial one does not, and the
       // sweep and the clock go on exactly as they did.
-      const d2 = dscr(rec, s, h);
+      const d2 = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
       const l2 = ltv(rec, s, h);
       const still = (d2 !== null && d2 < loan.minDSCR) || (l2 !== null && l2 > loan.maxLTV);
       if (!still) {
@@ -1347,7 +1365,7 @@ export function tickLoan(
         text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — the lender trapped the cash flow.`,
       });
     }
-    if (!loan.sweep) bumpLenderRel(s, productById(loan.product).lender, -3);  // a tripped covenant sours the coffee
+    if (!loan.sweep) bumpLenderRel(s, loanLender(loan), -3);  // a tripped covenant sours the coffee
     loan.sweep = true;
     loan.cleanQs = 0;
     loan.breachMs = (loan.breachMs ?? 0) + 1;
@@ -1368,14 +1386,14 @@ export function tickLoan(
       s.news.unshift({
         q, kind: "warn",
         text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
-          + `${productById(loan.product).lender} has moved it to their workout desk — inject `
+          + `${loanLender(loan)} has moved it to their workout desk — inject `
           + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
           + `to restructure, or hand back the deed. They will not file while the note stays current.`,
       });
     }
   } else if (loan.sweep) {
     loan.cleanQs++;
-    bumpLenderRel(s, productById(loan.product).lender, 0.1);
+    bumpLenderRel(s, loanLender(loan), 0.1);
     if (loan.cleanQs >= 2) {
       loan.sweep = false;
       loan.breachMs = 0;
@@ -1408,14 +1426,14 @@ export function tickLoan(
       q, kind: "warn",
       text: `${rec.address} did not cover its debt service and there is nothing left to make it up with — `
         + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs} of it. `
-        + `${productById(loan.product).lender} opens a file at three, and from there it is a notice period and an auction.`,
+        + `${loanLender(loan)} opens a file at three, and from there it is a notice period and an auction.`,
     });
   }
   if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
     openWorkout(s, h.bbl, "arrears", Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3)));
     s.news.unshift({
       q, kind: "warn",
-      text: `Three months of missed payments at ${rec.address}. ${productById(loan.product).lender} has `
+      text: `Three months of missed payments at ${rec.address}. ${loanLender(loan)} has `
         + `opened a file — the arrears are ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K and they `
         + `want them, or they want the building.`,
     });
@@ -1561,7 +1579,7 @@ export function tickLoan(
             + `${money(qd.principal)} against a ${money(loan.balance)} balance plus a `
             + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short, and you can raise `
             + `${money(room)} of it from cash and the line. `
-            + `${productById(loan.product).lender} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
+            + `${loanLender(loan)} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
             + `pay the difference, ask them to extend, sell it, or hand back the deed before they file.`,
         });
       }

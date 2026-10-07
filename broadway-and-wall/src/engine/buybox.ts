@@ -11,7 +11,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { GameState, BuiltClass, Econ } from "./types";
-import { inPlace, landRead, resolveRec, ownedHoldingNoiYr } from "./value";
+import { inPlace, landRead, landValue, resolveRec, ownedHoldingNoiYr } from "./value";
 
 /** Closing costs a buyer carries into basis on top of the ask. */
 const CLOSING = 0.02;
@@ -95,4 +95,51 @@ export function suggestBuyBox(s: GameState, parcels: ParcelTable): BuyBox | null
     maxAsk: Math.round((maxBasis * 1.5) / 50_000) * 50_000,
     minCap: Math.max(0, Math.round((q1 - 1) * 4) / 4),
   };
+}
+
+export interface PencilSite {
+  bbl: string;
+  address: string;
+  lotArea: number;
+  /** The builder's scheme the land is priced on. */
+  use: BuiltClass;
+  floors: number;
+  /** What the dirt trades at today, all of it — the parcel card's number. */
+  value: number;
+  /** $/sf of land a builder can pay, which on these lots is also the price. */
+  builderPsf: number;
+}
+
+/**
+ * THE LAND BROKER'S SITE LIST — vacant lots nobody is marketing where the
+ * builder's residual sets the price: dirt that pencils for a developer who can
+ * buy it at what it trades for. Each lot's parcel card already says so; this is
+ * that answer for the whole town at once, which is what a developer pays a land
+ * broker for. Measured on the reference city: 14-26 such lots stand at any time
+ * against 440 vacant, and in 40 years the open tape carried almost none of them
+ * (the best land listing planned at 1.01x), so without this a developer's only
+ * way to find a site was to click lots one at a time.
+ *
+ * It says nothing the cards do not: the owner's number is still the owner's,
+ * and most of them want more than the residual (approachOwner).
+ */
+export function sitesThatPencil(s: GameState, parcels: ParcelTable, limit = 12): PencilSite[] {
+  const listed = new Set(s.listings.map((l) => l.bbl));
+  const out: PencilSite[] = [];
+  for (const bbl of Object.keys(parcels)) {
+    const raw = parcels[bbl];
+    if (!raw || raw.class !== "land" || (raw.bldgArea ?? 0) > 0) continue;
+    if (s.holdings[bbl] || listed.has(bbl) || s.developments?.[bbl] || s.groundLeases?.[bbl]) continue;
+    if (s.landmarks?.[bbl] !== undefined || s.civicLand?.[bbl] || s.merged?.[bbl]) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || rec.bldgArea > 0 || !(rec.lotArea > 0)) continue;
+    const lr = landRead(rec, s.econ);
+    if (lr.winner !== "builder" || !(lr.builder > 0) || !lr.scheme) continue;
+    out.push({
+      bbl, address: rec.address, lotArea: rec.lotArea,
+      use: lr.scheme.use, floors: lr.scheme.floors,
+      value: Math.round(landValue(rec, s.econ)), builderPsf: lr.builder,
+    });
+  }
+  return out.sort((a, b) => a.value - b.value).slice(0, limit);
 }

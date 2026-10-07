@@ -1235,6 +1235,10 @@ export function generateCity(cfg) {
       const angV = Math.acos(Math.max(-1, Math.min(1, cos)));
       if (angV < minAng) minAng = angV;
     }
+    // NARROWER THAN ONE LOT, AT ANY LENGTH. Under the 8 m stake floor no cut
+    // can ever make a lot of it, and the length cap below let a 5 m x 190 m
+    // ribbon through as a single deed. It is paving, like any other gore.
+    if (wid < 8) { b.gore = 1; continue; }
     const wedge = ((wid < FLATIRON_W || minAng < (FLATIRON_DEG * Math.PI) / 180) && len <= FLATIRON_LEN)
       || (r.length === 3 && polygonArea([r]) <= 900);
     if (!wedge) continue;
@@ -1246,11 +1250,13 @@ export function generateCity(cfg) {
   // --- parcels & buildings --------------------------------------------------
   function splitLots(ring, opt, out, depth = 0) {
     const area = polygonArea([ring]);
-    if (depth > 16 || area < opt.min * 1.9 || area <= opt.target()) { out.push(ring); return; }
     const axis = longestEdgeAngle(ring);
     const across = axis + Math.PI / 2;
     const spanAlong = extentAlong(ring, axis).span;
     const spanAcross = extentAlong(ring, across).span;
+    // a strip past the stake aspect is cut whatever its area (see below)
+    const strip = Math.max(spanAlong, spanAcross) > 6.5 * Math.min(spanAlong, spanAcross);
+    if (depth > 16 || area < opt.min * 1.9 || (area <= opt.target() && !strip)) { out.push(ring); return; }
     let dir, p;
     if (spanAcross > opt.maxDepth * 1.8 && spanAcross > spanAlong * 0.55) {
       dir = axis + (rr(-3.5, 3.5) * Math.PI) / 180;
@@ -1259,7 +1265,7 @@ export function generateCity(cfg) {
       dir = across + (rr(-opt.jitter, opt.jitter) * Math.PI) / 180;
       p = pointAt(ring, axis, rr(0.36, 0.64));
     }
-    const [a, b] = splitConvex(ring, p, dir);
+    let [a, b] = splitConvex(ring, p, dir);
     // A CUT MAY NOT MANUFACTURE A SLIVER. The guard here was area-only, and a
     // legal cut could still leave a child four metres wide — a strip no
     // surveyor would stake. The floor is the convention the whole block maths
@@ -1267,13 +1273,32 @@ export function generateCity(cfg) {
     // 4, so no child under 8 m across and none past aspect 6.5. When the cut
     // cannot satisfy that, the parent is emitted whole — a fat lot is a site,
     // a sliver is debris.
+    //
+    // BUT A STRIP IS NOT A SLIVER OF ITSELF. A block already past aspect 6.5 —
+    // the long thin terrace between two close parallel streets — could never
+    // be cut: halving a 30:1 strip leaves two 15:1 halves, both "slivers", so
+    // the whole terrace came out as ONE deed hundreds of metres long. For such
+    // a parent a cut is progress when it SHORTENS the pieces — a long taper's
+    // tip is a smaller copy of itself and never gets less skinny, only
+    // shorter — and the recursion keeps cutting until the pieces are ordinary
+    // lots or too narrow to stake. The 8 m width floor is unchanged, and a
+    // strip whose one drawn cut fails tries a few fixed positions before it
+    // gives up (no further draws, so the stream is the same either way).
+    const parentLong = Math.max(spanAlong, spanAcross);
     const sliverChild = (r2) => {
       if (!r2 || polygonArea([r2]) < opt.min) return true;
       const ax2 = longestEdgeAngle(r2);
       const sA = extentAlong(r2, ax2).span, sB = extentAlong(r2, ax2 + Math.PI / 2).span;
-      const w2 = Math.min(sA, sB);
-      return w2 < 8 || Math.max(sA, sB) > w2 * 6.5;
+      const w2 = Math.min(sA, sB), l2 = Math.max(sA, sB);
+      if (w2 < 8) return true;
+      return l2 > w2 * 6.5 && !(strip && l2 <= parentLong * 0.8);
     };
+    if (strip && (sliverChild(a) || sliverChild(b))) {
+      for (const f of [0.5, 0.4, 0.6, 0.3, 0.7, 0.25, 0.75]) {
+        const [a2, b2] = splitConvex(ring, pointAt(ring, axis, f), across);
+        if (!sliverChild(a2) && !sliverChild(b2)) { a = a2; b = b2; break; }
+      }
+    }
     if (sliverChild(a) || sliverChild(b)) { out.push(ring); return; }
     splitLots(a, opt, out, depth + 1);
     splitLots(b, opt, out, depth + 1);
@@ -1744,8 +1769,19 @@ export function generateCity(cfg) {
     // A flatiron takes the full-block branch WITHOUT a roll — the geometry
     // decided it in the wedge pass, before any draw, so the outcome is a fact
     // of the plat rather than of rand state.
+    // ...but a full-block deed is a COMPACT block taken by one owner — the
+    // department store, the estate, the bank. A terrace hundreds of metres
+    // long between two close streets is not a site anybody assembles; won by
+    // the same roll it became one deed 40 times longer than it is wide. The
+    // roll is still drawn (same stream position); a strip past the stake
+    // aspect is subdivided whatever it rolls.
+    const stripBlock = (() => {
+      const ax = longestEdgeAngle(street);
+      const sA = extentAlong(street, ax).span, sB = extentAlong(street, ax + Math.PI / 2).span;
+      return Math.max(sA, sB) > 6.5 * Math.min(sA, sB);
+    })();
     if (block.flatiron) lots.push(street);
-    else if (rand() < fullBlockP) lots.push(street);
+    else if (rand() < fullBlockP && !stripBlock) lots.push(street);
     else { splitLots(street, lotOptOf(d, heat), lots); absorbSlivers(lots); }
 
     let lotNo = 1;

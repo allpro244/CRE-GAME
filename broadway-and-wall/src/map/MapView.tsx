@@ -471,6 +471,30 @@ export default function MapView() {
             // geometry how tall it still is.
             (window as unknown as { __three?: unknown }).__three = layer;
             map.addLayer(layer);
+            // THE LOT LINE ABOVE THE MODEL. The parcel outline is drawn under
+            // the 3D layer, and on a vacant lot the mesh lays grass and hedges
+            // right over it — a selected empty lot showed no edge at all, and
+            // three lots side by side read as one field. The deed you clicked
+            // (gold) and the lots touching it (teal) are drawn again on top,
+            // so what you are about to buy is what you see outlined.
+            if (!map.getLayer("bw-select-top")) {
+              const sel = ["boolean", ["feature-state", "selected"], false];
+              const nbr = ["boolean", ["feature-state", "neighbor"], false];
+              const hov = ["boolean", ["feature-state", "hover"], false];
+              map.addLayer({
+                id: "bw-select-top",
+                type: "line",
+                source: "bw-parcels",
+                layout: { "line-join": "round" },
+                paint: {
+                  "line-color": ["case", sel, "#f2c353", nbr, "#3fb3a8", "#ffffff"] as never,
+                  "line-width": ["interpolate", ["linear"], ["zoom"],
+                    13, ["case", sel, 2.4, nbr, 1.2, hov, 1.2, 0],
+                    16.5, ["case", sel, 4, nbr, 2, hov, 2, 0]] as never,
+                  "line-opacity": ["case", sel, 1, nbr, 0.9, hov, 0.8, 0] as never,
+                },
+              });
+            }
           })
           .catch(() => {
             // no mesh feed — fall back to the flat extrusions

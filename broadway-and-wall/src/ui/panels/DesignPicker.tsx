@@ -37,8 +37,8 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
     <div className="design-picker">
       {onPeek && (
         <button type="button" className="btn btn-on" style={{ marginBottom: 8 }} onClick={onPeek}
-          title="Close the desk and fly to the lot — keep designing from a bar on the map">
-          See it on the map ▸
+          title="Close the desk and fly to the lot: orbit, tilt and spin round the scheme in 3D, and keep designing from a bar on the map">
+          View in 3D ▸
         </button>
       )}
       <div className="page-section">Facade</div>

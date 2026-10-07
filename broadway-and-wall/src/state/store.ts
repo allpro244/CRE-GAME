@@ -51,6 +51,7 @@ import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, se
 import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
+export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
@@ -327,6 +328,12 @@ interface AppState {
   /** Stepped out of the Build desk to look at the scheme on the map (DesignPeekBar). */
   designPeek: boolean;
   setDesignPeek: (v: boolean) => void;
+  /** A camera move for the scheme viewer: orbit, tilt, zoom or reset around the lot (MapView carries it out). */
+  designCam: { op: DesignCamOp; n: number } | null;
+  designCamGo: (op: DesignCamOp) => void;
+  /** Turntable: the camera circles the scheme until stopped. */
+  designSpin: boolean;
+  setDesignSpin: (v: boolean) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
@@ -768,7 +775,11 @@ export const useStore = create<AppState>((set, get) => ({
   designPreview: null,
   setDesignPreview: (p) => set({ designPreview: p }),
   designPeek: false,
-  setDesignPeek: (v) => set({ designPeek: v }),
+  setDesignPeek: (v) => set(v ? { designPeek: true } : { designPeek: false, designSpin: false }),
+  designCam: null,
+  designCamGo: (op) => set((st) => ({ designCam: { op, n: (st.designCam?.n ?? 0) + 1 } })),
+  designSpin: false,
+  setDesignSpin: (v) => set({ designSpin: v }),
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,
@@ -1274,7 +1285,7 @@ export const useStore = create<AppState>((set, get) => ({
       r.s = { ...r.s, holdings: { ...r.s.holdings, [bbl]: rest } };
     }
     // the scheme on the desk is now a crane on the lot: take the preview down
-    set({ game: r.s, designPreview: null, designPeek: false });
+    set({ game: r.s, designPreview: null, designPeek: false, designSpin: false });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
   },

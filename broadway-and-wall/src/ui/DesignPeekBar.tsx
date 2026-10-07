@@ -3,7 +3,7 @@
 // on the map" steps out: the desk closes, the camera flies to the lot, and
 // this bar keeps the design controls over the map while you look and turn
 // the view. Changes go to the scheme's draft, so the desk reopens on them.
-import { useStore } from "@/state/store";
+import { useStore, type DesignCamOp } from "@/state/store";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import type { BuildingDesign } from "@/engine/types";
 
@@ -11,7 +11,12 @@ export default function DesignPeekBar() {
   const peek = useStore((s) => s.designPeek);
   const p = useStore((s) => s.designPreview);
   const address = useStore((s) => (p ? s.parcels?.[p.bbl]?.address : undefined));
+  const spin = useStore((s) => s.designSpin);
   if (!peek || !p) return null;
+  const cam = (op: DesignCamOp) => useStore.getState().designCamGo(op);
+  const camBtn = (op: DesignCamOp, label: string, title: string) => (
+    <button type="button" className="btn btn-sm" title={title} onClick={() => cam(op)}>{label}</button>
+  );
   const change = (design: BuildingDesign) => {
     const st = useStore.getState();
     st.setDesignPreview({ ...p, design });
@@ -37,6 +42,23 @@ export default function DesignPeekBar() {
         <strong style={{ fontSize: 14 }}>Designing {address ?? "the scheme"}</strong>
         <span style={{ fontSize: 11, opacity: 0.7 }}>{p.floors} floors</span>
       </div>
+      {/* THE VIEWPORT. Turn the camera round the scheme the way a modelling
+          program does: orbit, tilt, zoom, a turntable, and back to the
+          framed view. Right-drag (or Ctrl-drag) on the map orbits by hand. */}
+      <div className="page-section" style={{ marginTop: 6 }}>View</div>
+      <div className="btn-row" style={{ flexWrap: "wrap", gap: 4 }}>
+        {camBtn("left", "⟲", "Orbit left")}
+        {camBtn("right", "⟳", "Orbit right")}
+        {camBtn("up", "▲", "Tilt up — towards the plan view")}
+        {camBtn("down", "▼", "Tilt down — towards street level")}
+        {camBtn("in", "+", "Zoom in")}
+        {camBtn("out", "−", "Zoom out")}
+        <button type="button" className={"btn btn-sm" + (spin ? " btn-on" : "")}
+          title="Turntable — the camera circles the building. Grab the map to stop."
+          onClick={() => useStore.getState().setDesignSpin(!spin)}>{spin ? "■ Stop" : "▶ Turntable"}</button>
+        {camBtn("reset", "Reset", "Back to the framed view")}
+      </div>
+      <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>Right-drag or Ctrl-drag the map to orbit by hand; scroll to zoom.</div>
       <DesignPicker design={p.design} onChange={change} floors={p.floors} compact />
       <div className="btn-row" style={{ marginTop: 8 }}>
         <button type="button" className="btn btn-on" onClick={back}>Back to the Build desk</button>

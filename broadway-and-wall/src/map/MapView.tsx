@@ -1466,6 +1466,79 @@ export default function MapView() {
       cov: p.cov, year: START_YEAR + Math.floor(month / 12), design: p.design,
     } : null);
   }, [designPreview, mapReady]);
+
+  // THE SCHEME VIEWER'S CAMERA. Stepped out of the Build desk, the bar's
+  // orbit / tilt / zoom buttons and the turntable all turn the camera ROUND
+  // THE LOT, not round whatever the map happened to be centred on — the pivot
+  // is the scheme itself, aimed half-way up it the way flyTo frames a
+  // building, so it stays put in the middle of the frame as you go round.
+  const designCam = useStore((s) => s.designCam);
+  const designSpin = useStore((s) => s.designSpin);
+  const designPeek = useStore((s) => s.designPeek);
+  const schemeBbl = designPreview?.bbl ?? null;
+  const schemeFloors = designPreview?.floors ?? 0;
+  const orbitCam = (bearing: number, pitch: number, zoom: number) => {
+    const map = mapRef.current;
+    const rec = schemeBbl ? parcels?.[schemeBbl] : null;
+    if (!map || !rec) return null;
+    const height = threeRef.current?.buildingFrame(schemeBbl!)?.height || schemeFloors * 3.55;
+    const lift = (height * 0.45) * Math.tan((pitch * Math.PI) / 180);
+    const br = (bearing * Math.PI) / 180;
+    const lat = rec.centroid[1];
+    const mPerDegLat = 111320, mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180);
+    const center: [number, number] = [
+      rec.centroid[0] + (Math.sin(br) * lift) / mPerDegLng,
+      rec.centroid[1] + (Math.cos(br) * lift) / mPerDegLat,
+    ];
+    return { center, bearing, pitch, zoom };
+  };
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !designCam || !designPeek || !schemeBbl) return;
+    if (designCam.op === "reset") {
+      useStore.getState().setDesignSpin(false);
+      useStore.getState().focus(schemeBbl);
+      useStore.getState().select(null);
+      return;
+    }
+    const b = map.getBearing(), p = map.getPitch(), z = map.getZoom();
+    const next = {
+      left: [b - 45, p, z], right: [b + 45, p, z],
+      // tilting toward the street brings more of the tower up the frame, so
+      // the camera backs off a little as it drops (and closes in as it rises)
+      up: [b, Math.max(0, p - 15), Math.min(19.5, z + 0.35)], down: [b, Math.min(75, p + 15), Math.max(14, z - 0.35)],
+      in: [b, p, Math.min(19.5, z + 0.6)], out: [b, p, Math.max(14, z - 0.6)],
+    }[designCam.op] as [number, number, number];
+    const cam = orbitCam(...next);
+    if (cam) map.easeTo({ ...cam, duration: 650, essential: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designCam]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !designSpin || !designPeek || !schemeBbl) return;
+    let raf = 0, last = performance.now();
+    const stop = () => useStore.getState().setDesignSpin(false);
+    // a hand on the map takes the camera back
+    map.on("mousedown", stop);
+    map.on("touchstart", stop);
+    map.on("wheel", stop);
+    const tick = (t: number) => {
+      const dt = Math.min(64, t - last);
+      last = t;
+      // ~12° a second: a full turn in half a minute, slow enough to read the facade
+      const cam = orbitCam(map.getBearing() + dt * 0.012, map.getPitch(), map.getZoom());
+      if (cam) map.jumpTo(cam);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      map.off("mousedown", stop);
+      map.off("touchstart", stop);
+      map.off("wheel", stop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designSpin, designPeek, schemeBbl]);
   // THE HOUR. Always the calibrated afternoon every colour in the renderer
   // was tuned under. There used to be a dusk cycle while Play ran and a
   // blue-hour photo frame; the owner's call: "we don't need a night mode,

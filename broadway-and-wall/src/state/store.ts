@@ -51,7 +51,7 @@ import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, se
 import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
-export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "listings";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
 export type GraphicsQuality = "low" | "medium" | "high";

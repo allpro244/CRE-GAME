@@ -15,6 +15,7 @@ export const LENSES: readonly { id: Exclude<Lens, "none">; label: string; icon: 
   { id: "demand", label: "Demand", icon: "◨", title: "Demand lens — transit + employment gravity, the why behind the rents" },
   { id: "zoning", label: "Zoning", icon: "◩", title: "Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black." },
   { id: "owners", label: "Owners", icon: "◫", title: "Owners lens — every building the other firms hold, one colour per firm. Yours stay gold." },
+  { id: "vacancy", label: "Vacancy", icon: "◪", title: "Vacancy lens — how full every building is. Dark is empty space; light is full. Yours read off the rent roll, the rest off the market." },
   { id: "leases", label: "Leases", icon: "◬", title: "Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT." },
 ];
 

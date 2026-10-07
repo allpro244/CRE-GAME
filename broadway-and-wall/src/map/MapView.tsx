@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
-import { condIdxOf, occupancy, resolveRec, useOccupancy } from "@/engine/value";
+import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -949,6 +949,33 @@ export default function MapView() {
     leaseRef.current = next;
   }, [paintSig, parcels, mapReady, lens]);
 
+  // VACANCY LENS — how full every building is, as per cent occupied.
+  // Your own buildings read off the rent roll; everyone else's off the same
+  // market occupancy the lit windows show. Land and empty lots carry nothing.
+  const vacRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const game = useStore.getState().game;
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    if (lens !== "vacancy") return;
+    const next = new Map<string, number>();
+    for (const bbl of Object.keys(parcels)) {
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      const h = game.holdings[bbl];
+      const occ = h && !h.groundLeased ? physicalOcc(rec, h) : occupancy(rec, game.econ);
+      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, occ))));
+    }
+    for (const [bbl, v] of next) {
+      if (vacRef.current.get(bbl) === v) continue;
+      map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { occPct: v });
+    }
+    for (const bbl of vacRef.current.keys()) {
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "occPct");
+    }
+    vacRef.current = next;
+  }, [paintSig, parcels, mapReady, lens]);
+
   // name labels: districts, parks, water — DOM markers, no glyph server needed.
   // Photo frame silences them with the rest of the chrome: a model photograph
   // has no captions. They come back with the effect re-run on exit.
@@ -1514,7 +1541,7 @@ export default function MapView() {
     // the district names come up full-strength at every zoom (the CSS side of
     // the class below) and the seams between districts get a dashed line.
     // Both go away with the lens — the normal view keeps its clean model look.
-    const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases";
+    const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases" || lens === "vacancy";
     map.getContainer().classList.toggle("bw-lens-hoods", hoods);
     if (hoods && !map.getLayer("bw-hood-line")) {
       const cityNow = useStore.getState().city;
@@ -1612,6 +1639,22 @@ export default function MapView() {
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
       // only your buildings carry a number; everything else stays pale card
       roofLens(new Map(leaseRef.current), stops, ramp);
+      return;
+    }
+    if (lens === "vacancy" && game && parcels) {
+      // Dark is vacant, light is full — the demand lens's ramp run the other
+      // way. Most of the city sits between 80% and full, so the stops crowd
+      // up there: a building at 85% and one at 97% should not look alike.
+      const stops = [40, 65, 80, 90, 97];
+      const ramp = ["#1f2a3c", "#3d5170", "#7088ab", "#b5c3d7", "#eef1f5"];
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "case",
+        ["<", ["coalesce", ["feature-state", "occPct"], -1], 0], "#d8d2c4",
+        ["interpolate", ["linear"], ["coalesce", ["feature-state", "occPct"], 0],
+          ...stops.flatMap((s, i) => [s, ramp[i]])],
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.85 as never);
+      roofLens(new Map(vacRef.current), stops, ramp);
       return;
     }
     if (lens === "listings" && game) {

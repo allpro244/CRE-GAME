@@ -76,6 +76,7 @@ const LENSES: readonly { id: Lens; label: string; note: string }[] = [
   { id: "demand", label: "Lens: demand", note: "Transit and employment gravity — the why behind the rents" },
   { id: "zoning", label: "Lens: zoning", note: "How much of the allowed envelope is still unbuilt" },
   { id: "owners", label: "Lens: owners", note: "Every building the other firms hold; yours stay gold" },
+  { id: "vacancy", label: "Lens: vacancy", note: "How full every building is — dark is vacant, light is occupied" },
   { id: "leases", label: "Lens: leases", note: "Months to next expiry on buildings you own" },
 ];
 

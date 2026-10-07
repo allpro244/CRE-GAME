@@ -321,6 +321,79 @@ export function LeasingPage() {
           title="Letters that still need you — listed above, and on Deals. Desk-covered paper is quiet."
         />
       </div>
+
+      <div className="page-section">
+        <div className="page-section-head">By building</div>
+        <div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>Type</th>
+                <th className="num">Bldg sf</th>
+                <th className="num">Occ</th>
+                <th className="num" title="In-place rent roll over leased feet — what the building's tenants pay on average, against the market rent for the space">Avg $/sf</th>
+                <th className="num">Rent / yr</th>
+                <th className="num">WALT</th>
+                <th className="num">Rolling</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.sort((a, b) => a.occ - b.occ).map((r) => (
+                <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
+                  <td>
+                    <div>{r.rec.address}</div>
+                    <div className="dim" style={{ fontSize: 11 }}>
+                      {/* named, so "Market · Market · Fund" reads as three settings */}
+                      rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
+                      {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
+                      {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
+                      {r.h.broker ? " · broker" : ""}
+                      {r.notReady ? " · turning" : ""}
+                      {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
+                      {r.commercial && (
+                        <button
+                          className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
+                          title={r.h.principalSigns
+                            ? "You sign every letter here, whoever holds the pen on the rest of the book. Click to hand it back to the desk."
+                            : "Keep the pen on this building: its letters come to you even when a desk works the rest of the book."}
+                          onClick={(e) => { e.stopPropagation(); useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns); }}
+                        >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
+                      )}
+                      {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
+                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
+                      )}
+                    </div>
+                  </td>
+                  <td>{useLabel(r.rec)}</td>
+                  <td className="num">{sf(r.rec.bldgArea)}</td>
+                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
+                  {(() => {
+                    // IN PLACE AGAINST THE MARKET. The rent roll over the feet
+                    // it is paid on, beside what the same space lets for today.
+                    const avg = r.leased > 0 ? r.rentRoll / r.leased : 0;
+                    const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
+                    const gap = avg > 0 && mkt > 0 ? avg / mkt - 1 : 0;
+                    return (
+                      <td className="num" title={mkt > 0 ? `In place $${avg.toFixed(2)}/sf against a $${mkt.toFixed(2)}/sf market` : undefined}>
+                        {avg > 0 ? `$${avg.toFixed(2)}` : "—"}
+                        {avg > 0 && mkt > 0 && (
+                          <div className={"dim" + (gap < -0.1 ? " neg" : "")} style={{ fontSize: 11 }}>
+                            mkt ${mkt.toFixed(0)} · {gap >= 0 ? "+" : "−"}{Math.abs(Math.round(gap * 100))}%
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })()}
+                  <td className="num">{usd(r.rentRoll)}</td>
+                  <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
+                  <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <DeskLetters />
       <DeskActivity />
       <Fold id="leasing:mandate" title="Who works the book" summary={penLine}>
@@ -377,78 +450,6 @@ export function LeasingPage() {
       <HousePolicy />
 
       <LeasedFeeStrip />
-
-      <div className="page-section">
-        <div className="page-section-head">By building</div>
-        <div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th className="num">Occ</th>
-                <th className="num" title="In-place rent roll over leased feet — what the building's tenants pay on average, against the market rent for the space">Avg $/sf</th>
-                <th className="num">Rent / yr</th>
-                <th className="num">WALT</th>
-                <th className="num">Rolling</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.sort((a, b) => a.occ - b.occ).map((r) => (
-                <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
-                  <td>
-                    <div>{r.rec.address}</div>
-                    <div className="dim" style={{ fontSize: 11 }}>
-                      {useLabel(r.rec)} · {sf(r.rec.bldgArea)}
-                    </div>
-                    <div className="dim" style={{ fontSize: 11 }}>
-                      {/* named, so "Market · Market · Fund" reads as three settings */}
-                      rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
-                      {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
-                      {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
-                      {r.h.broker ? " · broker" : ""}
-                      {r.notReady ? " · turning" : ""}
-                      {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
-                      {r.commercial && (
-                        <button
-                          className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
-                          title={r.h.principalSigns
-                            ? "You sign every letter here, whoever holds the pen on the rest of the book. Click to hand it back to the desk."
-                            : "Keep the pen on this building: its letters come to you even when a desk works the rest of the book."}
-                          onClick={(e) => { e.stopPropagation(); useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns); }}
-                        >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
-                      )}
-                      {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
-                      )}
-                    </div>
-                  </td>
-                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
-                  {(() => {
-                    // IN PLACE AGAINST THE MARKET. The rent roll over the feet
-                    // it is paid on, beside what the same space lets for today.
-                    const avg = r.leased > 0 ? r.rentRoll / r.leased : 0;
-                    const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
-                    const gap = avg > 0 && mkt > 0 ? avg / mkt - 1 : 0;
-                    return (
-                      <td className="num" title={mkt > 0 ? `In place $${avg.toFixed(2)}/sf against a $${mkt.toFixed(2)}/sf market` : undefined}>
-                        {avg > 0 ? `$${avg.toFixed(2)}` : "—"}
-                        {avg > 0 && mkt > 0 && (
-                          <div className={"dim" + (gap < -0.1 ? " neg" : "")} style={{ fontSize: 11 }}>
-                            mkt ${mkt.toFixed(0)} · {gap >= 0 ? "+" : "−"}{Math.abs(Math.round(gap * 100))}%
-                          </div>
-                        )}
-                      </td>
-                    );
-                  })()}
-                  <td className="num">{usd(r.rentRoll)}</td>
-                  <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
-                  <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       <div className="page-section">
         <div className="page-section-head">The rent roll</div>

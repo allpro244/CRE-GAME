@@ -1,3 +1,4 @@
+import { fundableNow } from "@/engine/credit";
 import { useStore } from "@/state/store";
 import { districtLabel } from "@/engine/mix";
 import type { ParcelTable } from "@/data/types";
@@ -267,7 +268,7 @@ export function NotesPage() {
               </div>
             )}
             <div className="btn-row" style={{ marginTop: 6 }}>
-              <button className="btn" disabled={game.cash < px} onClick={() => takeNote(o.id)}>
+              <button className="btn" disabled={fundableNow(game, parcels) < px} onClick={() => takeNote(o.id)}>
                 Buy the paper · {usd(px)}
               </button>
               <span className="dim">Offer lapses {monthLabel(o.expiresM)}. Somebody else is looking at it.</span>

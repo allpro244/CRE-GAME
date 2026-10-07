@@ -1158,16 +1158,16 @@ function ParcelPanelInner({
                 The site goes back to vacant land — the building, and every lease in it, does not come back.
               </div>
               <div className="grid">
-                <Row k="Demolition cost" v={usd(demoCost)} bad={demoCost > game.cash} strong />
+                <Row k="Demolition cost" v={usd(demoCost)} bad={demoCost > fundableNow(game, parcels)} strong />
                 <Row k="Cleared site is worth" v={usd(dirt)} />
                 {farMax > 0 && <Row k="Buildable envelope" v={`${sf(Math.round(rec.lotArea * farMax))} at ${farMax.toFixed(1)} FAR`} />}
-                <Row k="Cash on hand" v={usd(game.cash)} bad={demoCost > game.cash} />
+                <Row k="Cash and line" v={usd(fundableNow(game, parcels))} bad={demoCost > fundableNow(game, parcels)} />
               </div>
               <div className="modal-actions">
                 <button
                   className="btn btn-sell"
-                  disabled={demoCost > game.cash}
-                  title={demoCost > game.cash ? "The wreckers want cash you don't have." : undefined}
+                  disabled={demoCost > fundableNow(game, parcels)}
+                  title={demoCost > fundableNow(game, parcels) ? "The wreckers want more than your cash and line together." : undefined}
                   onClick={() => { setRazeAsk(null); useStore.getState().raze(selectedBBL); }}
                 >
                   Take it down · {usd(demoCost)}

@@ -318,7 +318,9 @@ export function MarketPage() {
             const disc = p.gross > 0 ? (1 - p.ask / p.gross) * 100 : 0;
             const closing = Math.round(p.ask * 0.02);
             const need = p.ask + closing;
-            const short = Math.max(0, need - game.cash);
+            // cash and the undrawn line — the engine's own purse (buyPortfolio)
+            const purse = spendable(game, parcels).total;
+            const short = Math.max(0, need - purse);
             const open = expandedBook === p.id;
             const seller = p.sellerLender
               ?? (p.sellerId ? (game.rivals?.find((r) => r.id === p.sellerId)?.name ?? "A fund") : "A seller");
@@ -457,8 +459,8 @@ export function MarketPage() {
                   {p.talks && (
                     <button
                       className="btn btn-buy"
-                      disabled={game.cash < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02)}
-                      title={game.cash < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02) ? `Need ${usd(p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02))} including 2% closing — you have ${usd(game.cash)}` : undefined}
+                      disabled={purse < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02)}
+                      title={purse < p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02) ? `Need ${usd(p.talks.theirPrice + Math.round(p.talks.theirPrice * 0.02))} including 2% closing — you have ${usd(purse)} in cash and line` : undefined}
                       onClick={() => acceptStreetBook(p.id)}
                     >
                       Take {usd(p.talks.theirPrice)}
@@ -469,7 +471,7 @@ export function MarketPage() {
                     disabled={short > 0}
                     title={short > 0
                       ? `Need ${usd(need)} including 2% closing — short ${usd(short)}`
-                      : `${usd(p.ask)} plus ~${usd(closing)} closing, all cash`
+                      : `${usd(p.ask)} plus ~${usd(closing)} closing, from cash${need > game.cash ? ` and ${usd(need - Math.max(0, game.cash))} drawn on the line` : ""}`
                         + (st.yieldOnAsk !== null ? ` · ${pct(st.yieldOnAsk * 100)} going-in` : "")}
                     onClick={() => buyStreetBook(p.id)}
                   >

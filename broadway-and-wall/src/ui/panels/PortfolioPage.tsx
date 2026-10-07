@@ -320,7 +320,7 @@ export function PortfolioPage() {
                   if (!q?.open) return null;
                   return (
                     <div style={{ marginBottom: 4 }}>
-                      <button className="btn-mini" disabled={game.cash < q.px}
+                      <button className="btn-mini" disabled={fundableNow(game, parcels) < q.px}
                         title={q.why}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().payOffAtDiscount(w.bbl); }}>
                         pay it off at {usd(q.px)} of {usd(q.bal)}

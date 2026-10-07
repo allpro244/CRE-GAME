@@ -30,7 +30,7 @@ import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { acceptSaleOffer, executePurchase } from "./actions";
 import { cloneState } from "./types";
-import { sweepLocIdleCash } from "./credit";
+import { sweepLocIdleCash, fundableNow } from "./credit";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -292,26 +292,23 @@ export function buyPortfolio(
   if (!p || p.player) return { s, err: "That package is no longer available." };
   const struck = Math.round(price ?? p.ask);
   if (struck <= 0) return { s, err: "Name a price." };
-  // ONE CHEQUE, AND THERE IS NO FINANCING IT AT THE TABLE. That is the whole
-  // reason a portfolio trades back from the sum of its parts, and making the
-  // player raise the full amount in cash is what makes the discount earned
-  // rather than free money.
+  // ONE CHEQUE, AND NO MORTGAGE AT THE TABLE — but a committed line is money.
   //
-  // SO THIS ONE STAYS CASH-ONLY while the rest of the engine learned to spend
-  // the revolver. The discount here is not a fee being charged, it is a PRICE
-  // discovered against the size of the buying pool: a book only trades back
-  // from the sum of its parts because almost nobody can settle the whole thing
-  // at once. Let the line settle it and the pool widens, the discount stops
-  // being earned, and a modelled scarcity turns into free money — which is the
-  // one thing this change is not allowed to do. It is also the single largest,
-  // least liquid cheque in the game, and funding it by exhausting the facility
-  // that covers every other building's next bad month is exactly the liquidity
-  // a sponsor must not spend. Every individual deed inside the package is
-  // still bought through `executePurchase`, which does reach the line — one
-  // building at a time, at the sum-of-parts price, with no discount.
+  // This used to be cash-only, on the argument that the discount is earned by
+  // the scarcity of buyers who can settle a whole book at once and the line
+  // would widen that pool. It is the wrong side of that argument: a sponsor
+  // with a committed revolver IS one of the few buyers who can settle the
+  // book, which is exactly what a corporate facility is for, and every other
+  // closing in this engine (single deeds, development equity, conversions)
+  // already counts it. What stays true is that nobody lends against the
+  // package itself: there is no acquisition mortgage here, so the cheque is
+  // cash plus the line, and a book bought on the line leaves no room for the
+  // next bad month anywhere else. Each deed still closes through
+  // `executePurchase`, which draws cash first and then the revolver.
   const closing = Math.round(struck * 0.02);
-  if (s.cash < struck + closing) {
-    return { s, err: `You are ${money(struck + closing - s.cash)} short. A package is one cheque — nobody lends against a book you do not own yet.` };
+  const purse = fundableNow(s, parcels);
+  if (purse < struck + closing) {
+    return { s, err: `You are ${money(struck + closing - purse)} short, counting cash and the undrawn line. A package is one cheque — nobody lends against a book you do not own yet.` };
   }
   const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
   const sellerName = seller?.name ?? p.sellerLender ?? "a receiver";

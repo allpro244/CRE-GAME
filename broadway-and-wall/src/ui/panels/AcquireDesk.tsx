@@ -53,6 +53,8 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
   // than discovered by clicking it — see raze in actions.ts.
   const occNow = physicalOcc(rec as never, h);
   const canRaze = occNow < 0.20;
+  // the engine pays both from cash and then the line (buyOutTenants, demolish)
+  const purse = spendable(game, parcels).total;
 
   return (
     <div className="deal">
@@ -66,7 +68,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
         )}
         {occupied && <Row k="Cost to buy them all out" v={usd(clearCost)} strong />}
         <Row k="Demolition" v={usd(demoCost)} />
-        {occupied && <Row k="Vacant dirt costs you" v={usd(clearCost + demoCost)} strong bad={clearCost + demoCost > game.cash} />}
+        {occupied && <Row k="Vacant dirt costs you" v={usd(clearCost + demoCost)} strong bad={clearCost + demoCost > purse} />}
       </div>
       <div className="btn-row">
         <button className={"btn" + (h.leasingHold ? " btn-on" : "")}
@@ -77,7 +79,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
           {h.leasingHold ? "Resume letting" : "Stop letting"}
         </button>
         {occupied && clearCost > 0 && (
-          <button className="btn btn-sell" disabled={clearCost > game.cash}
+          <button className="btn btn-sell" disabled={clearCost > purse}
             onClick={() => useStore.getState().buyOutLeases(bbl)}
             title={`Every remaining month of every contract, plus ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% for making them move`}>
             Buy out every lease · {usd(clearCost)}
@@ -109,8 +111,8 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
           </tbody>
         </table>
       )}
-      {clearCost > game.cash && occupied && (
-        <div className="hint">Short {usd(clearCost - game.cash)} of what it takes to clear it.</div>
+      {clearCost > purse && occupied && (
+        <div className="hint">Short {usd(clearCost - purse)} of what it takes to clear it, counting cash and the line.</div>
       )}
     </div>
   );

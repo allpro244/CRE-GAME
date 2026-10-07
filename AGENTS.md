@@ -12,6 +12,8 @@
 - Before engine or economy work: `broadway-and-wall/CLAUDE.md` and
   `broadway-and-wall/HANDOFF.md`.
 - Post-skyline / no-playtest queue: `broadway-and-wall/NO_PLAYTEST_PLAN.md`.
+- Developer-only play (MDGA — Make Development Great Again): `broadway-and-wall/MDGA_PLAN.md`;
+  instruments in `broadway-and-wall/tools/mdga/`.
 - Commands from the repo root (`pnpm dev`, `pnpm check`, `pnpm gate`) already
   delegate into `broadway-and-wall/`.
 - Cloud Agent bootstrap from repo root: `pnpm install` then `pnpm engine`

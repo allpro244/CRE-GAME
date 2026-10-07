@@ -2157,6 +2157,145 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // and does not sign. "Take leasing back" means the principal owns every
   // letter that is not on the renewal desk.
   if (ensureLeasingPlan(s)) runPlanDesk(s, parcels);
+  autoLeaseDesk(s, parcels);
+}
+
+/**
+ * AUTO-LEASE — the building answers its own letters by its stance.
+ *
+ * A big building drew a letter a month, and every one was a pop-up asking the
+ * same question the stance switch already answers: how hard do you want to
+ * hold out on rent? So on a building set to auto, that switch IS the answer.
+ * Every letter is scored the way the desks score it — net effective (after
+ * free rent, fit-out and bumps) against your current ask, which already sits
+ * 8% under the market on Fill and 8% over on Push — and then:
+ *
+ *   Fill    sign what comes. Speed over price; the low ask does the work.
+ *   Market  sign at 95% of your ask or better; counter the rest to the ask,
+ *           take their counter-back at 95%, pass under it.
+ *   Push    sign only at or over your ask; counter to 5% over it, take a
+ *           counter-back that reaches the ask, pass under it.
+ *
+ * Nothing here is a new economic rule. The commission is the one you pay
+ * signing yourself (in-house 4% / 2%, or the exclusive's 6%), the counter is
+ * the same tenant reaction the Counter button draws (`tenantCounterOutcome`),
+ * and the cheque comes from cash and then the line, as yours does. Competing
+ * tours go to the letter that nets most. A letter you cannot fund is passed
+ * rather than parked on your desk. Relief and give-back requests: Fill grants
+ * them, Market grants a give-back and grants relief only at 95% of your ask
+ * or better, Push holds every tenant to their lease.
+ */
+const AUTO_WHO = "Auto-lease";
+function autoTerms(stance: number): { floor: number; target: number } {
+  return stance < 0 ? { floor: 0, target: 1 } : stance > 0 ? { floor: 1, target: 1.05 } : { floor: 0.95, target: 1 };
+}
+function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, loi: LOI): boolean {
+  const fee = principalFee(h, loi);
+  const cost = loiSigningCost(loi, fee) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  if (vehicleSigns(s, h)) {
+    if (vehiclePurse(s) < cost) return false;
+  } else {
+    if (Math.max(0, s.cash) + locAvailable(s, parcels) < cost) return false;
+    const short = Math.ceil(cost - s.cash);
+    if (short > 0) drawLineInPlace(s, parcels, short);
+  }
+  const before = h.tenants.length;
+  delete (s as GameState & { _signFailed?: string })._signFailed;
+  signLoi(s, rec, h, loi, fee);
+  const failed = (s as GameState & { _signFailed?: string })._signFailed
+    || (loi.kind === "new" && h.tenants.length <= before);
+  delete (s as GameState & { _signFailed?: string })._signFailed;
+  if (failed) return false;
+  s.lois = s.lois.filter((l) => l.id !== loi.id);
+  digestOf(s).signed += 1;
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `${AUTO_WHO} signed ${loi.name} at ${rec.address}: ${Math.round(loi.sf).toLocaleString()} sf at $${loi.rentPsf.toFixed(2)}/sf`
+      + `${loi.kind === "renewal" ? " (renewal)" : loi.kind === "expansion" ? " (expansion)" : ""}.`,
+  });
+  return true;
+}
+function autoPass(s: GameState, loi: LOI, rec: ParcelRecord, why: string) {
+  digestOf(s).declined += 1;
+  s.lois = s.lois.filter((l) => l.id !== loi.id);
+  s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} passed on ${loi.name} at ${rec.address} — ${why}.` });
+}
+export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
+  const auto = (bbl: string) => !!s.holdings[bbl]?.autoLease && !s.holdings[bbl]?.groundLeased;
+  // competing tours: the letter that nets most takes the space
+  const seenTour = new Set<number>();
+  for (const loi of [...s.lois]) {
+    if (!auto(loi.bbl) || !s.lois.some((l) => l.id === loi.id)) continue;
+    const h = s.holdings[loi.bbl];
+    const rec = resolveRec(parcels, s, loi.bbl);
+    if (!h || !rec) continue;
+    let mine = loi;
+    if (loi.tourId !== undefined) {
+      if (seenTour.has(loi.tourId)) continue;
+      seenTour.add(loi.tourId);
+      const party = s.lois.filter((l) => l.tourId === loi.tourId);
+      if (party.length > 1) {
+        party.sort((a, b) => loiMandateScore(b, loiMarket(s, rec, h, b)) - loiMandateScore(a, loiMarket(s, rec, h, a)));
+        mine = party[0];
+        const lost = new Set(party.slice(1).map((l) => l.id));
+        s.lois = s.lois.filter((l) => !lost.has(l.id));
+      }
+    }
+    const { floor, target } = autoTerms(h.stance ?? 0);
+    const market = loiMarket(s, rec, h, mine);
+    const score = loiMandateScore(mine, market);
+    // their final, or a letter that already clears: sign it
+    if (mine.stage === "countered" || score + 0.005 >= floor || floor <= 0) {
+      if (score + 0.005 >= floor || floor <= 0) {
+        if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
+      } else autoPass(s, mine, rec, `their final nets ${(score * 100).toFixed(0)}% of your ask`);
+      continue;
+    }
+    if (mine.countered) continue;   // already countered; they are deciding
+    // counter on rent alone, scaled to bring the net effective to the target
+    const rentPsf = +(mine.rentPsf * Math.min(1.35, target / Math.max(0.3, score))).toFixed(2);
+    const outcome = tenantCounterOutcome(s, rec, h, mine, {
+      rentPsf, tiPsf: mine.tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
+    });
+    if (outcome === "took") {
+      if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
+      continue;
+    }
+    if (outcome === "walked") {
+      digestOf(s).walked += 1;
+      s.lois = s.lois.filter((l) => l.id !== mine.id);
+      s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} countered ${mine.name} at ${rec.address} to $${rentPsf.toFixed(2)}/sf and they walked.` });
+      continue;
+    }
+    // their counter-back, taken or passed now — nothing waits on you
+    const back = loiMandateScore(mine, loiMarket(s, rec, h, mine));
+    if (back + 0.005 >= floor) {
+      if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
+    } else autoPass(s, mine, rec, `their counter-back nets ${(back * 100).toFixed(0)}% of your ask`);
+  }
+  // relief and give-back requests from sitting tenants
+  for (const a of [...(s.asks ?? [])]) {
+    if (!auto(a.bbl)) continue;
+    const h = s.holdings[a.bbl];
+    const rec = resolveRec(parcels, s, a.bbl);
+    if (!h || !rec) continue;
+    const st = h.stance ?? 0;
+    const ask = currentAskPsfYr(rec, s.econ, h, leasableUses(rec)[0]);
+    const grant = st < 0 || (st === 0 && (a.kind === "giveback" || a.askPsf >= ask * 0.95));
+    const r = answerAsk(s, parcels, a.id, grant ? "grant" : "decline");
+    if (r.err) continue;
+    Object.assign(s, r.s);
+  }
+}
+
+/** Switch auto-lease on or off for a deed; on, the letters already waiting are answered at once. */
+export function setAutoLease(s: GameState, parcels: ParcelTable, bbl: string, on: boolean): GameState {
+  const h = s.holdings[bbl];
+  if (!h || h.groundLeased) return s;
+  const next: GameState = cloneState(s);
+  next.holdings[bbl].autoLease = on || undefined;
+  if (on) autoLeaseDesk(next, parcels);
+  return next;
 }
 
 /**
@@ -2230,6 +2369,8 @@ export function overDeskAuthority(s: GameState, l: LOI): boolean {
 export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
   // Fee owner is not the landlord — never interrupt for the lessee's paper.
   if (s.holdings[l.bbl]?.groundLeased) return false;
+  // standing instructions: answered in the tick, never put in front of you
+  if (s.holdings[l.bbl]?.autoLease) return false;
   if (l.referred) return true;
   // Above the three delegations, because it overrides all three.
   if (overDeskAuthority(s, l)) return true;
@@ -3610,6 +3751,8 @@ function planCoverOf(
   s: GameState, bbl: string, loi: LOI, onlyDelegated: boolean,
 ): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
   if (s.holdings[bbl]?.principalSigns) return null;
+  // auto-lease answers its own building's letters (autoLeaseDesk)
+  if (s.holdings[bbl]?.autoLease) return null;
   if (!onlyDelegated && s.agent) return { kind: "agent", who: "Your agent" };
   const c = deskCoverage(s, bbl);
   if (c) return c;

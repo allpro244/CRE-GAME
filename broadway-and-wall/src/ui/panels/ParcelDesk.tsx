@@ -1075,6 +1075,27 @@ function ParcelPanelInner({
               </button>
             ))}
           </div>
+          <div className="btn-row">
+            <button
+              type="button"
+              className={"btn" + (holding.autoLease ? " btn-on" : "")}
+              onClick={() => useStore.getState().autoLease(selectedBBL, !holding.autoLease)}
+              title={holding.autoLease
+                ? "Answering every letter here by the rent posture above. Click to take the letters back."
+                : "Let this building answer its own letters by the rent posture above — no pop-ups. Same commission and tenant reactions as signing yourself."}
+            >
+              {holding.autoLease ? "Auto-lease on ✓" : "Auto-lease"}
+            </button>
+          </div>
+          {holding.autoLease && (
+            <div className="hint" style={{ fontSize: 11 }}>
+              {(holding.stance ?? 0) < 0
+                ? "Fill: every letter is signed as it comes, at an asking rent 8% under the market. Relief and give-back requests are granted."
+                : (holding.stance ?? 0) > 0
+                  ? "Push: asking 8% over the market. Letters at or above the ask are signed; the rest are countered 5% over it, and passed if they will not get there. Tenants are held to their leases."
+                  : "Market: letters at 95% of the ask or better are signed; the rest are countered to the ask, and passed if they will not come to 95%. Give-backs are granted; relief only near the ask."}
+            </div>
+          )}
           <div className="grid">
             <Row k="Service" v={`${serviceSpec(holding.service).label} · tenants read it as ${Math.round(100 * (holding.svcIdx ?? 0.55))} of 100`} />
             <Row k="Capital plan" v={`${planSpec(holding.plan).label} · condition ${Math.round(100 * (holding.condIdx ?? 0.6))} of 100`} />

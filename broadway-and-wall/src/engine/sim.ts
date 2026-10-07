@@ -1513,6 +1513,9 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
             l.bbl === h.bbl && (l.kind === "renewal" ? l.tenantIdx !== undefined && h.tenants[l.tenantIdx]?.name === t.name : false));
           if (!covered) {
             out.push({
+              // on auto-lease the roll is answered when the letters come; it
+              // rides on the docket rather than stopping the clock
+              ...(h.autoLease ? { soft: true } : {}),
               key: `lease-roll:${h.bbl}:${t.name}:${t.endM}`,
               label: `${t.name} lease ends ${monthLabel(t.endM)} — ${moLeft} month${moLeft === 1 ? "" : "s"}`,
             });

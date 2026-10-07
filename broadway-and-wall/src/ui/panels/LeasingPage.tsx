@@ -323,7 +323,23 @@ export function LeasingPage() {
       </div>
 
       <div className="page-section">
-        <div className="page-section-head">By building</div>
+        <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span>By building</span>
+          {(() => {
+            const all = rows.map((r) => r.h.bbl);
+            const allOn = all.length > 0 && rows.every((r) => r.h.autoLease);
+            return all.length > 0 && (
+              <button
+                type="button"
+                className={"btn btn-mini" + (allOn ? " btn-on" : "")}
+                title={allOn
+                  ? "Every building is answering its own letters by its rent posture. Click to take them all back."
+                  : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture, and none of them pop up."}
+                onClick={() => useStore.getState().autoLease(all, !allOn)}
+              >{allOn ? "Auto-lease: all on ✓" : "Auto-lease every building"}</button>
+            );
+          })()}
+        </div>
         <div>
           <table className="tbl">
             <thead>
@@ -346,11 +362,27 @@ export function LeasingPage() {
                     <div className="dim" style={{ fontSize: 11 }}>
                       {/* named, so "Market · Market · Fund" reads as three settings */}
                       rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
+                      {r.h.autoLease ? " · auto" : ""}
                       {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
                       {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
                       {r.h.broker ? " · broker" : ""}
                       {r.notReady ? " · turning" : ""}
                       {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
+                      {([-1, 0, 1] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          className={"btn btn-mini" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
+                          title={v === 1 ? "Push rents: ask 8% over the market, fewer prospects" : v === -1 ? "Fill space: ask 8% under the market, faster lease-up" : "Market rents"}
+                          onClick={(e) => { e.stopPropagation(); useStore.getState().stance(r.h.bbl, v); }}
+                        >{v === 1 ? "Push" : v === -1 ? "Fill" : "Market"}</button>
+                      ))}
+                      <button
+                        type="button"
+                        className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
+                        title={r.h.autoLease ? "Answering its own letters by its rent posture. Click to take them back." : "Let this building answer its own letters by its rent posture — no pop-ups."}
+                        onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
+                      >{r.h.autoLease ? "auto ✓" : "auto"}</button>
                       {r.commercial && (
                         <button
                           className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}

@@ -11,7 +11,7 @@ import { openResearchOn } from "@/ui/researchTab";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setAutoLease, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -390,6 +390,8 @@ interface AppState {
   handBackKeys: (bbl: string) => void;
   buyOutLeases: (bbl: string) => void;
   holdLeasing: (bbl: string, on: boolean) => void;
+  /** Auto-lease: the deed answers its own letters by its rent stance. A list sets many at once. */
+  autoLease: (bbl: string | string[], on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   assemble: (bbls: string[]) => void;
@@ -1758,6 +1760,19 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(r.msg ?? "Empty.");
     void persist(r.s);
+  },
+
+  autoLease: (bbl, on) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    let next = game;
+    for (const b of Array.isArray(bbl) ? bbl : [bbl]) next = setAutoLease(next, parcels, b, on);
+    if (next === game) return;
+    set({ game: next });
+    toast(on
+      ? "Auto-lease on. Letters there are answered by the rent posture — nothing will pop up."
+      : "Auto-lease off. Those letters come to you again.");
+    void persist(next);
   },
 
   minLease: (bbl, sf) => {

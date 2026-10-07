@@ -124,14 +124,20 @@ function setup(seed, nFund) {
 
 // ---- 2. A FUND DEED SIGNS ITS LEASES FROM THE VEHICLE ----------------------
 {
-  const { g: g0, fund } = setup(9202, 3);
-  let g = clone(g0);
-  g.fund.investEndM = g.month + 24; g.fund.lifeEndM = g.month + 84;
-  // Walk until a letter lands on a fund deed.
-  let loi = null;
-  for (let m = 0; m < 36 && !loi; m++) {
-    loi = (g.lois ?? []).find((l) => g.holdings[l.bbl]?.fundOwned && !l.agreed);
-    if (!loi) g = E.advanceMonth(g, parcels, bbls, adjacency);
+  // Walk until a letter lands on a fund deed. The fixture needs a fund deed
+  // with space to let, which depends on the world the seed deals (the economy
+  // is simulated, so a seed can open full) — search a few; the checks below
+  // are unchanged.
+  let g, fund, loi = null;
+  for (const seed of [9202, 9203, 9204, 9205, 9206]) {
+    const st = setup(seed, 3);
+    g = clone(st.g); fund = st.fund;
+    g.fund.investEndM = g.month + 24; g.fund.lifeEndM = g.month + 84;
+    for (let m = 0; m < 36 && !loi; m++) {
+      loi = (g.lois ?? []).find((l) => g.holdings[l.bbl]?.fundOwned && !l.agreed);
+      if (!loi) g = E.advanceMonth(g, parcels, bbls, adjacency);
+    }
+    if (loi) break;
   }
   ok("setup: a letter arrived on a fund deed", !!loi);
   if (loi) {

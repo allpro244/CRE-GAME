@@ -146,7 +146,9 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   econ.phase = scratchEcon.phase;
   econ.creditIdx = +scratchEcon.creditIdx.toFixed(3);
   econ.indexRate = scratchEcon.indexRate;
-  econ.shortIndex = scratchEcon.shortIndex;
+  // The short index is struck on the credit window the history ENDED on;
+  // inside the month tickNation reads the window before stepCredit moves it.
+  econ.shortIndex = shortIndexFor(n.policy, econ.creditIdx);
   econ.rateRegime = scratchEcon.rateRegime;
   econ.rateEma = econ.indexRate;
   const tail = uHist.slice(-36);

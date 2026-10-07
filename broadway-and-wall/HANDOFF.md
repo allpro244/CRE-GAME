@@ -1172,5 +1172,12 @@ fixed/floating gap is the term premium alone. Test: `test/floating.mjs`.
   the loan call left cash at exactly 0 and reset `stressMs`. `settleEmptyBook`
   now starts the stress clock when debt survives the sweep, and the arrears
   test reads `calledShort` as well as `cash < 0`.
+- *Distressed and receiver listings were priced on the firm's class-model
+  mark* (`markAsset`), not the deed that conveys: duress sales asked up to
+  2.6x the market appraisal and REO up to 1.9x (already true on the era
+  build; a world with more distressed rivals tipped appraisal.mjs's median to
+  1.16). All three paths (duress sale, hand-back, dead-firm receiver) now
+  price on `conveyedValue(..., distress=true, grade)`: duress p50 0.80-0.88
+  of appraisal, REO ~1.0 at a flush desk, under it at an impaired one.
 - `test/buybox.mjs`'s land-pencils fixture searches seeds 777 / 12007 /
   550991 — the criterion is unchanged, the re-roll moved which lot pencils.

@@ -2602,7 +2602,13 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   }
   // A closing the sponsor has to fund is not a source of cash. See the header.
   if (!sell || sell.net <= 0) return false;
-  const v = markAsset(s, r, sell.rec).v;
+  // PRICED ON THE DEED THAT CONVEYS, not the firm's class-model mark. The
+  // duress discount is off what a buyer gets — this roll, this grade, less the
+  // distress notch (conveyedValue) — and the class mark ran up to 2.6x the
+  // market appraisal on an emptied building, so a "motivated" seller asked
+  // over the tape (test/appraisal.mjs; the voluntary listing made this move
+  // long ago, HANDOFF 0f).
+  const v = conveyedValue(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
   const px = Math.round(v * rrange(s, ...DURESS_BAND));
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
@@ -2723,15 +2729,18 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   // What the desk asks for it, and it is a fact about the DESK. See reoAsk: a
   // bank with capital markets it and wants the mark; one with a regulator in
   // the building wants the loan off the books at whatever it is carried at.
-  const ask = reoAsk(s, worst.v, owed, desk);
-  const loanBasis = Math.min(worst.v, Math.max(0, owed));
+  // The desk marks what it repossessed — the deed as it conveys, distressed
+  // (see the duress sale above) — not the firm's class-model book.
+  const deedV = conveyedValue(s, worst.rec, worst.bbl, true, assetGrade(r, worst.rec));
+  const ask = reoAsk(s, deedV, owed, desk);
+  const loanBasis = Math.min(deedV, Math.max(0, owed));
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
     loanBasis,
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask));
-  const off = Math.max(0, 1 - ask / Math.max(1, worst.v));
+  const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
@@ -2983,7 +2992,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
         const rec = resolveRec(parcels, s, bbl);
         if (!rec) continue;
-        const v = assetValue(rec, s.econ, initialCondition(rec));
+        // The receiver sells the deed as it conveys — nobody has run the plant,
+        // so the building's own age grade, distressed (conveyedValue).
+        const v = conveyedValue(s, rec, bbl, true);
         // AND THE PRICE IS THE DESK'S, NOT A BAND. What a receiver asks is what
         // clears the balance sheet of the bank behind it, and how badly it needs
         // to clear is `lenderPressure` — see reoAsk. A flush desk holding a dead
@@ -2991,7 +3002,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // impaired one puts it out at the loan, which is where the best buying
         // in this business has always come from.
         const desk = deskFor(s, r, bbl);
-        const basis = book > 0 ? Math.round(r.debt * (v / book)) : r.debt;
+        // The loan is allocated across the book on the same class value the
+        // book was summed on; only the price is the deed's.
+        const basis = book > 0 ? Math.round(r.debt * (assetValue(rec, s.econ, initialCondition(rec)) / book)) : r.debt;
         const loanBasis = Math.min(v, Math.max(0, basis));
         s.listings.push({
           bbl, ask: reoAsk(s, v, basis, desk),

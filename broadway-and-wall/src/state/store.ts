@@ -42,7 +42,7 @@ import { normalizeParcels } from "@/engine/mix";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import { usdSigned } from "@/ui/format";
-import { periodRecap, firmTier } from "@/engine/standing";
+import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
@@ -129,7 +129,7 @@ interface AppState {
   /** Step back to the previous room and deed. No-op with nowhere to go. */
   goBack: () => void;
   /** `attnKey`: an attentionItems key — clicking the toast opens it via openAttention. */
-  toast: { text: string; kind: "ok" | "err"; at: number; attnKey?: string } | null;
+  toast: { text: string; kind: "ok" | "err"; at: number; attnKey?: string; yearReview?: boolean } | null;
   /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
   paletteOpen: boolean;
   setPaletteOpen: (v: boolean) => void;
@@ -172,6 +172,9 @@ interface AppState {
   dismissDeliveryCeremony: () => void;
   /** The year whose review card is up, if any (UI only). See standing.ts. */
   yearReviewY: number | null;
+  /** The year card is drawn only when asked for — a December no longer stops the clock. */
+  yearReviewOpen: boolean;
+  openYearReview: () => void;
   dismissYearReview: () => void;
   /** Milestones reached in the last advance, for the banner (UI only). */
   milestoneFlash: string[] | null;
@@ -472,7 +475,18 @@ export const pendingGoal: { id: GoalId | null } = { id: null };
 function queueYearReview(prev: GameState, next: GameState, set: (partial: Partial<AppState>) => void) {
   const before = prev.yearMarks?.at(-1)?.y ?? -1;
   const last = next.yearMarks?.at(-1);
-  if (last && last.y >= 0 && last.y > before) set({ yearReviewY: last.y });
+  // THE YEAR CLOSES WITHOUT STOPPING THE CLOCK. The review used to open as a
+  // card over the map, and a card holds Play until it is dismissed — every
+  // December. It is a line in the toast lane now; a click opens the card.
+  if (last && last.y >= 0 && last.y > before) {
+    set({ yearReviewY: last.y, yearReviewOpen: false });
+    const r = yearReview(next, last.y, MILESTONES, START_YEAR);
+    // after this tick, so the advance's own month-close toast does not land
+    // on the same render and swallow it
+    if (r) setTimeout(() => useStore.setState({
+      toast: { text: `${r.year} in review: ${r.verdict}`, kind: "ok", at: Date.now(), yearReview: true },
+    }), 60);
+  }
   // A milestone is a moment, not a line on the tape.
   const got = MILESTONES.filter((m) => next.milestones?.[m.id] !== undefined && prev.milestones?.[m.id] === undefined).map((m) => m.label);
   // A STEP UP THE STANDING LADDER, when it happens rather than at December.
@@ -846,7 +860,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
   dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   yearReviewY: null,
-  dismissYearReview: () => set({ yearReviewY: null }),
+  yearReviewOpen: false,
+  openYearReview: () => set((st) => (st.yearReviewY !== null ? { yearReviewOpen: true } : {})),
+  dismissYearReview: () => set({ yearReviewY: null, yearReviewOpen: false }),
   milestoneFlash: null,
   goalCard: null,
   exitCard: null,

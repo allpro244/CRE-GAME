@@ -15,7 +15,7 @@ import { usd, pctSigned } from "@/ui/format";
  * numbers behind it, and the next thing worth chasing. Dismiss it anywhere.
  */
 export default function YearReview() {
-  const y = useStore((s) => s.yearReviewY);
+  const y = useStore((s) => (s.yearReviewOpen ? s.yearReviewY : null));
   const game = useStore((s) => s.game);
   const popupsOff = useStore((s) => s.popupsOff);
   const dismiss = useStore((s) => s.dismissYearReview);
@@ -144,7 +144,7 @@ export function ExitCard() {
   const game = useStore((s) => s.game);
   const popupsOff = useStore((s) => s.popupsOff);
   const dismiss = useStore((s) => s.dismissExitCard);
-  const yr = useStore((s) => s.yearReviewY);
+  const yr = useStore((s) => (s.yearReviewOpen ? s.yearReviewY : null));
   if (!card || !game || popupsOff || game.gameOver || yr !== null) return null;
   const e = game.exits?.[card.i];
   if (!e) return null;

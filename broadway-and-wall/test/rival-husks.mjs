@@ -39,10 +39,17 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
   const r = (g.rivals ?? []).find((x) => x.failedM === undefined && !(g.cityJobs ?? []).some((j) => j.firmId === x.id));
   r.bbls = []; r.debt = 48_000; r.cash = 2_010_000; r.stressMs = 0; r.basis = 1; r.extendedTo = {};
   const id = r.id;
+  // THE CONTROL: the same firm, the same month, no crumb. A month's money-
+  // market yield on the balance tracks the policy rate, which the simulated
+  // opening sets, so the repayment is read against the control rather than a
+  // fixed balance.
+  const ctl = structuredClone(g);
+  ctl.rivals.find((x) => x.id === id).debt = 0;
+  const c1 = E.advanceMonth(ctl, parcels, bbls, adjacency).rivals.find((x) => x.id === id);
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   const r1 = g.rivals.find((x) => x.id === id);
   check(r1.debt === 0, `the $48k crumb is called and repaid (debt now $${r1.debt.toLocaleString()})`);
-  check(r1.cash < 2_010_000 - 40_000, `out of the account ($${(r1.cash / 1e6).toFixed(3)}M left)`);
+  check(c1.cash - r1.cash > 40_000, `out of the account ($${(r1.cash / 1e6).toFixed(3)}M left, $${Math.round((c1.cash - r1.cash) / 1000)}K under the debt-free control)`);
   check((r1.emptyMs ?? 0) >= 1, `and the wind-up clock has started (emptyMs ${r1.emptyMs ?? 0})`);
 
   // A firm that cannot cover the call does not sit on the street with

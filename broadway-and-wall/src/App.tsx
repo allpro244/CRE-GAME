@@ -104,7 +104,7 @@ function PhotoFrameHint() {
  * the same tick. The store still sets a single `toast`; this keeps the last
  * three on screen, newest at the bottom, each for as long as it takes to read.
  */
-type ToastItem = { text: string; kind: "ok" | "err"; at: number; id: number };
+type ToastItem = { text: string; kind: "ok" | "err"; at: number; attnKey?: string; id: number };
 let toastSeq = 0;
 function Toast() {
   const toast = useStore((s) => s.toast);
@@ -124,13 +124,19 @@ function Toast() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={"toast toast-" + t.kind}
+          className={"toast toast-" + t.kind + (t.attnKey ? " toast-link" : "")}
+          title={t.attnKey ? "Open it" : undefined}
           role={t.kind === "err" ? "alert" : "status"}
           aria-live={t.kind === "err" ? "assertive" : "polite"}
           aria-atomic="true"
-          onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))}
+          onClick={() => {
+            setItems((xs) => xs.filter((x) => x.id !== t.id));
+            // A stop names the thing that stopped it; the click takes you there.
+            if (t.attnKey) useStore.getState().openAttention(t.attnKey);
+          }}
         >
           {t.text}
+          {t.attnKey && <span className="toast-go" aria-hidden="true"> Open →</span>}
         </div>
       ))}
     </div>

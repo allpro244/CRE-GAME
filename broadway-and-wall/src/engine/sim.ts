@@ -2001,14 +2001,14 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
 // caller's state is untouched until they adopt the returned one.
 export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
-): { s: GameState; months: number; reason: string | null } {
+): { s: GameState; months: number; reason: string | null; key?: string } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
   const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
     const fresh = stop(cur);
-    if (fresh) return { s: cur, months: i, reason: fresh.label };
+    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
   }
   return { s: cur, months: cap, reason: null };
@@ -2022,14 +2022,14 @@ export function advanceUntilAttention(
 export async function advanceUntilAttentionAsync(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
   yieldEvery = 1,
-): Promise<{ s: GameState; months: number; reason: string | null }> {
+): Promise<{ s: GameState; months: number; reason: string | null; key?: string }> {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
   const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
     const fresh = stop(cur);
-    if (fresh) return { s: cur, months: i, reason: fresh.label };
+    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
     if (yieldEvery > 0 && i % yieldEvery === 0 && i < cap) {
       await new Promise<void>((r) => setTimeout(r, 0));

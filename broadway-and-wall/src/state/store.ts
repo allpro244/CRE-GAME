@@ -127,7 +127,8 @@ interface AppState {
   navBack: { page: Page; bbl: string | null }[];
   /** Step back to the previous room and deed. No-op with nowhere to go. */
   goBack: () => void;
-  toast: { text: string; kind: "ok" | "err"; at: number } | null;
+  /** `attnKey`: an attentionItems key — clicking the toast opens it via openAttention. */
+  toast: { text: string; kind: "ok" | "err"; at: number; attnKey?: string } | null;
   /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
   paletteOpen: boolean;
   setPaletteOpen: (v: boolean) => void;
@@ -567,8 +568,8 @@ function pushNav(
   return { navBack };
 }
 
-function toast(text: string, kind: "ok" | "err" = "ok") {
-  useStore.setState({ toast: { text, kind, at: Date.now() } });
+function toast(text: string, kind: "ok" | "err" = "ok", attnKey?: string) {
+  useStore.setState({ toast: { text, kind, at: Date.now(), attnKey } });
 }
 
 /** What a multi-month run did, as a tail for its toast. Empty when nothing did. */
@@ -941,7 +942,7 @@ export const useStore = create<AppState>((set, get) => ({
     // cash movement, and the first thing waiting — short enough to read once.
     const dCash = next.cash - cash0;
     const attn = attentionItems(next, parcels)[0];
-    if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`);
+    if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
     void persist(next);
   },
 
@@ -967,7 +968,7 @@ export const useStore = create<AppState>((set, get) => ({
         // A spectator is not at the desk: no cards about the player's own firm.
         if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
         if (!r.s.spectator) queueYearReview(game, r.s, set);
-        toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`);
+        toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`, "ok", r.reason ? r.key : undefined);
         void persist(r.s);
       } finally {
         set({ advancing: false });
@@ -991,7 +992,7 @@ export const useStore = create<AppState>((set, get) => ({
         // A spectator is not at the desk: no cards about the player's own firm.
         if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
         if (!r.s.spectator) queueYearReview(game, r.s, set);
-        toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`);
+        toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`, "ok", r.reason ? r.key : undefined);
         void persist(r.s);
       } finally {
         set({ advancing: false });

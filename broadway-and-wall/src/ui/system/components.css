@@ -474,6 +474,9 @@
 }
 .app .toast.toast-err { color: var(--text); border-left-color: var(--neg); }
 .app .toast.toast-err::before { content: "⚠ "; color: var(--neg); }
+.app .toast.toast-link { cursor: pointer; }
+.app .toast.toast-link:hover { border-color: var(--accent-bright); }
+.app .toast .toast-go { color: var(--accent-bright); font-weight: 600; white-space: nowrap; }
 
 /* ---------- tooltips / pops ---------- */
 .app .hover-tip,

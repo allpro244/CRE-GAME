@@ -82,7 +82,7 @@ for (const SEED of SEEDS) {
   let lastDeepWalk = -99;
   let hired = false; let facOpened = false; let glOffered = false; let reuseTried = false; let varTried = false;
   const startYear = E.START_YEAR ?? 2000;
-  console.log(`\n=== seed ${SEED} · era ${g.econ.era ?? "?"} · phase ${g.econ.phase} · index ${f2(g.econ.indexRate)}% · cash ${K(g.cash)} ===`);
+  console.log(`\n=== seed ${SEED} · phase ${g.econ.phase} · index ${f2(g.econ.indexRate)}% · cash ${K(g.cash)} ===`);
 
   for (let m = 0; m < YRS * 12; m++) {
     const prev = g;

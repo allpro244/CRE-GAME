@@ -372,7 +372,7 @@ export async function listSaves(): Promise<SaveMeta[]> {
         const cur = req.result;
         if (!cur) { resolve(metas); db.close(); return; }
         const v = cur.value as { state: GameState; savedAt: number };
-        metas.push({ slot: String(cur.key), month: v.state.month, cash: v.state.cash, savedAt: v.savedAt, setup: describeSetup(v.state.setup, v.state.econ?.eraKey) || undefined, sandbox: !!v.state.setup?.sandbox });
+        metas.push({ slot: String(cur.key), month: v.state.month, cash: v.state.cash, savedAt: v.savedAt, setup: describeSetup(v.state.setup) || undefined, sandbox: !!v.state.setup?.sandbox });
         cur.continue();
       };
       req.onerror = () => reject(req.error);

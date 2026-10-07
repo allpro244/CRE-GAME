@@ -1577,10 +1577,6 @@ export interface Econ {
   effRentIdx?: Record<BuiltClass, number>;
   /** sf-weighted mean demandIdx of the built stock, measured once per city at
    *  init — the pivot that keeps the location curves mean-neutral on any map. */
-  /** Which decade this game opened in. See regime.ts. */
-  eraKey?: string;
-  eraLabel?: string;
-  eraBlurb?: string;
   locIdxMean?: number;
   /** Per-class location pivots — a shed competes with sheds, not with towers. */
   locIdxMeanBy?: Record<BuiltClass, number>;

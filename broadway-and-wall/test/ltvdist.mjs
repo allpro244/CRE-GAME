@@ -33,7 +33,7 @@ for (const seed of SEEDS) {
     if (q % 2 === 0) {
       const ci = g.econ.creditIdx ?? 1;
       const advs = {}; for (const L of LENDERS) advs[L] = { adv: E.advanceFactor(g, L), app: E.lenderAppetite(g, L) };
-      advRows.push({ seed, m: g.month, ci, era: g.econ.eraKey, phase: g.econ.phase, idx: g.econ.indexRate, ...Object.fromEntries(LENDERS.map((L) => [L, advs[L]])) });
+      advRows.push({ seed, m: g.month, ci, phase: g.econ.phase, idx: g.econ.indexRate, ...Object.fromEntries(LENDERS.map((L) => [L, advs[L]])) });
       const live = g.listings.filter((li) => { const r = E.resolveRec(parcels, g, li.bbl); return r && r.bldgArea > 0 && r.class !== "land" && !li.halfBuilt; });
       // cap the sample so the run stays bounded
       const take = live.length > 30 ? live.filter((_, i) => i % Math.ceil(live.length / 30) === 0) : live;
@@ -48,7 +48,7 @@ for (const seed of SEEDS) {
           per[d] = { p: qq.principal, ltvAsk, ltvBasis, bind: qq.bind, rate: qq.ratePct };
           if (qq.principal > 0 && (!best || qq.principal > best.p)) best = { d, ...per[d] };
         }
-        rows.push({ seed, m: g.month, ci, era: g.econ.eraKey, phase: g.econ.phase, idx: g.econ.indexRate, cls: rec.class, grade, occ: ip.occ, ask: li.ask, per, best });
+        rows.push({ seed, m: g.month, ci, phase: g.econ.phase, idx: g.econ.indexRate, cls: rec.class, grade, occ: ip.occ, ask: li.ask, per, best });
       }
     }
     if (q === YEARS * 4) break;
@@ -78,7 +78,7 @@ const cut = (label, keyFn, order) => {
 };
 cut("credit window", (r) => r.ci >= 0.95 ? "open ≥0.95" : r.ci >= 0.8 ? "0.80-0.95" : r.ci >= 0.6 ? "0.60-0.80" : r.ci >= 0.4 ? "0.40-0.60" : "shut <0.40", ["open ≥0.95", "0.80-0.95", "0.60-0.80", "0.40-0.60", "shut <0.40"]);
 cut("phase", (r) => r.phase);
-cut("era", (r) => r.era);
+
 cut("class", (r) => r.cls);
 cut("occupancy", (r) => r.occ >= 0.9 ? "≥90%" : r.occ >= 0.75 ? "75-90%" : r.occ >= 0.5 ? "50-75%" : "<50%", ["≥90%", "75-90%", "50-75%", "<50%"]);
 cut("ask size", (r) => r.ask < 2.5e6 ? "<$2.5M" : r.ask < 6e6 ? "$2.5-6M" : r.ask < 15e6 ? "$6-15M" : r.ask < 40e6 ? "$15-40M" : "≥$40M", ["<$2.5M", "$2.5-6M", "$6-15M", "$15-40M", "≥$40M"]);

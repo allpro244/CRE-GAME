@@ -65,7 +65,7 @@ export function recordRun(g: GameState) {
     bestYear: best ? START_YEAR + best.y : null,
     over: !!g.gameOver,
     updatedAt: Date.now(),
-    ...(g.setup ? { setup: describeSetup(g.setup, g.econ?.eraKey) } : {}),
+    ...(g.setup ? { setup: describeSetup(g.setup) } : {}),
     ...(g.goal ? { goal: goalDef(g.goal.id).label, goalResult: g.goal.doneM !== undefined ? "met" as const : g.goal.failedM !== undefined ? "missed" as const : "open" as const } : {}),
   };
   const all = loadRuns().filter((r) => r.seed !== rec.seed);

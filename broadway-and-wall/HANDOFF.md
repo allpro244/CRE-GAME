@@ -1103,32 +1103,49 @@ buildings genuinely sign nothing for years — open question, not fixed here.
 Tests: `quiet-clock`, `tray`, `sheet-review` (in check); `agent-desk`,
 `agent-mandate`, `plan-desk`, `plan-ui` rewritten for the two dials.
 
-## 12. THE ECONOMY IS NOT A SETTING; FLOATING PAPER (Oct 2026)
+## 12. A SIMULATED ECONOMY, NO SETTINGS; FLOATING PAPER (Oct 2026)
 
-**No economy on the start screen.** Owner: "random every single time with no
-hint". `normalizeSetup` forces `era: "random"` and `credit: "drawn"`; the era
-and credit sections and the four era presets are gone from `GameSetup.tsx`.
-The store deals the town from the setup seed and the RUN from a fresh random
-seed (`startRun`), so a shared seed is the same map in an unseen economy; the
-firm keeps the name the setup page showed. `econ.eraLabel/eraBlurb` are no
-longer written (the era key stays for the engine's own readers), the opening
-news states only the rate and the credit window, and the top bar, Economy
-page and saves list never name the era.
+**No eras, no presets.** Owner: "I don't want presets when starting the game
+or eras in general. I want a simulated economy." The five-era table
+(`ERAS`/`applyEra`/`chooseEra` in regime.ts) is gone, with `econ.eraKey`,
+the setup's `era`/`credit` fields (dropped by `normalizeSetup` on old saves),
+`PRESETS`, the setup page's preset cards and saved custom presets, and the
+per-era deposit-insurance table (`insuredLimit` is the $100K limit of the
+calendar's opening year, 2000, carried by costIdx). The store deals the town
+from the setup seed and the RUN from a fresh random seed, so a shared seed is
+the same map in an unseen economy.
 
-**The bank opens at its own rule** (`applyEra`, regime.ts). The opening policy
-rate was drawn from the era's historical range independently of the inflation,
-unemployment and r* drawn for the same economy, so the first meetings walked it
-toward the rule: 47 of 60 openings saw the loan index fall >50bp in two years,
-and every era fell on average. It now opens at the Taylor rule market.ts reads
-(no supply shock, the bank's u* at the truth, no Volcker restore term — that is
-the regime change, and an inflation era opens before it), offset ±0.5 point by
-the era draw's position in its range. `Era.overshoot` keeps the morning-after
-era at its drawn rate: that era IS the bank sitting above its rule. Measured
-over 80 openings: falls 32, rises 23 at two years; 31 / 36 at five. The first
-year still tilts to cuts in the long-expansion and disinflation eras (−0.3 to
-−0.4 pt mean) as opening unemployment drifts up; not chased further. Baseline
-regenerated: on 12 paired seeds no standing metric moved past |t| 1.5 — the
-6-seed shift is the re-roll.
+**The opening is a history** (`simulateHistory`, regime.ts). The national
+block of tickEcon is now `tickNation` and the credit window `stepCredit`
+(both in market.ts, behaviour-identical — a 10-year run hashed the same
+before and after the extraction). At new game they run 20-60 years on a
+private generator from the model's steady state (2% inflation, 4.8%
+unemployment, the rule's policy rate; r* anchor and credibility drawn), with
+the phase read off the nation (`nationPhase`). The player opens on whatever
+that left: the nation's state, the credit window with its lag, the loan and
+short indexes. The city cannot be simulated with nobody building on the map
+(measured: office vacancy pinned at 5.4% within ten years), so it is
+positioned on the history: vacancy on 36 months of unemployment and rents on
+vacancy (a line through the five historical openings the table used to hold),
+cap rates at tickEcon's own target (`capTargetOf`) including the allocation
+term at its fixed point (`capFlowsOf`). The phase clock opens part-way
+through the phase (it used to open at 0, so the opening phase ended on the
+first tick). Cost: ~65 ms per new game.
+
+Measured over 60 openings: policy 0.25-13%, inflation p10/p90 0.0/4.0%,
+unemployment 4.2-16%, all five phases (27 expansion, 14 recession, 13
+recovery, 4 peak, 2 depression); loan index two years on fell >50bp in 25
+and rose in 19 (era table: 16 / 10 of 40, and its morning-after openings fell
+11 points); office cap first-year move −0.04 pt (era table −0.80).
+
+**The deflation trap is closed.** Run alone for 40 centuries the national
+model spent 4.4% of months under −2% inflation, with twenty deflations
+longer than two years (the longest 17 years) and policy at the floor 16.6% of
+the time: at the zero bound falling prices raised the real rate and the
+money channel (`easy`) pushed prices further down. The channel is now half
+strength on the tight side (downward nominal rigidity); under −2% 1.6%,
+longest spell 50 months, floor 11.1% (US since 1950 ~11%), inflation side
+unchanged.
 
 **Floating paper on stabilised buildings.** `Econ.shortIndex` = policy + a
 money-market spread (0.15, up to +0.75 when the credit window shuts;

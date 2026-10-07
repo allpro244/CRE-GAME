@@ -26,13 +26,11 @@ const f2 = (x) => Number.isFinite(x) ? x.toFixed(2) : "  —  ";
 
 const rows = [];          // one per month
 const parcelCaps = [];    // capRateFor over built office parcels at low-rate months
-const eraOf = {};
 for (let i = 0; i < N; i++) {
   const seed = 1000 + i * 7919;
   const { parcels: P0, adjacency, bbls } = loadCity(i, E.normalizeParcels);
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
-  eraOf[seed] = g.econ.eraKey;
   for (let m = 0; m < HZ; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
@@ -53,7 +51,7 @@ for (let i = 0; i < N; i++) {
       };
     }
     rows.push({
-      seed, m, era: e.eraKey, phase: e.phase, idx: e.indexRate, policy: e.nat?.policy ?? NaN,
+      seed, m, phase: e.phase, idx: e.indexRate, policy: e.nat?.policy ?? NaN,
       prem: e.nat?.termPrem ?? NaN, credit: e.creditIdx, cycleDev: e.cycleDev, inflExp: (e.nat?.inflExp ?? 0.02) * 100,
       cap: { ...e.capRate }, vac: { ...e.cityVac }, comp,
     });
@@ -67,10 +65,10 @@ for (let i = 0; i < N; i++) {
       }
     }
   }
-  process.stderr.write(`seed ${seed} (${g.econ.eraKey}) done\n`);
+  process.stderr.write(`seed ${seed} done\n`);
 }
 
-console.log(`\n${N} cities x ${HZ} months. Eras: ${Object.values(eraOf).join(", ")}\n`);
+console.log(`\n${N} cities x ${HZ} months.\n`);
 const bins = [[0, 2], [2, 2.5], [2.5, 3], [3, 4], [4, 5], [5, 6], [6, 8], [8, 10], [10, 99]];
 console.log("Cap rate by loan-index bin (p10 / p50 / p90), and office spread over the index");
 console.log("index bin     n      office              retail              multifam            industrial          office-idx p50");
@@ -89,7 +87,7 @@ for (const [lo, hi] of bins) {
 const low = rows.filter((x) => x.idx <= 2.5);
 console.log(`\nMonths with index <= 2.5%: ${low.length} of ${rows.length} (${(100 * low.length / rows.length).toFixed(1)}%)`);
 if (low.length) {
-  console.log("  by era: " + Object.entries(low.reduce((a, x) => (a[x.era] = (a[x.era] ?? 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
+  console.log("  by phase: " + Object.entries(low.reduce((a, x) => (a[x.phase] = (a[x.phase] ?? 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   console.log("  by phase: " + Object.entries(low.reduce((a, x) => (a[x.phase] = (a[x.phase] ?? 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   console.log(`  office cap >= 8.0 in ${(100 * low.filter((x) => x.cap.office >= 8).length / low.length).toFixed(1)}% of those months; >= 7.0 in ${(100 * low.filter((x) => x.cap.office >= 7).length / low.length).toFixed(1)}%`);
   console.log(`  policy p50 ${f2(q(low.map((x) => x.policy), 0.5))}  termPrem p50 ${f2(q(low.map((x) => x.prem), 0.5))}  credit p50 ${f2(q(low.map((x) => x.credit), 0.5))}  office vac p50 ${(100 * q(low.map((x) => x.vac.office), 0.5)).toFixed(1)}%`);

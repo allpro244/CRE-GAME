@@ -20,7 +20,6 @@ import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
-import { DEPOSIT_INSURANCE, chooseEra } from "./regime";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -46,7 +45,7 @@ export type LenderKind = "bank" | "life" | "conduit" | "fund";
 export interface Deposits {
   /** Household and business money on the books, in today's dollars. */
   total: number;
-  /** Share of it above the insurance limit — see DEPOSIT_INSURANCE. */
+  /** Share of it above the insurance limit — see insuredLimit. */
   uninsuredShare: number;
 }
 
@@ -298,10 +297,12 @@ export function reoAsk(s: GameState, mark: number, basis: number, lender: string
  * free until the one week it is not.
  */
 export function insuredLimit(s: GameState): number {
-  // The era is not stored on econ — it is chosen deterministically from the
-  // seed, so it can simply be re-derived. See chooseEra.
-  const era = chooseEra(s.seed).key;
-  return (DEPOSIT_INSURANCE[era] ?? 100_000) * (s.econ.costIdx ?? 1);
+  // THE LIMIT ON THE CALENDAR THE GAME OPENS ON. The game's clock starts in
+  // START_YEAR (2000), when the FDIC limit was $100,000 (set 1980, raised to
+  // $250,000 only in 2008), and every price in the engine is year-2000
+  // dollars carried forward by costIdx. It used to be looked up by which of
+  // five historical "eras" the seed drew; there are no eras now.
+  return 100_000 * (s.econ.costIdx ?? 1);
 }
 
 /** Which desk the firm banks with, defaulting to its deepest relationship. */

@@ -1,14 +1,13 @@
 /**
  * THE WORLD YOU ARE DEALT, CHOSEN RATHER THAN ROLLED.
  *
- * The setup page asks which world the run is played in. Every option below is
- * a SCENARIO — a position the American property market has actually opened
- * from — and never a multiplier. CLAUDE.md, "DIFFICULTY IS AN OUTPUT, NOT A
- * DIAL": nothing here makes rents higher, losses smaller or lenders kinder
- * than the engine would make them in the world described. Each choice picks
- * among states the engine already models (an era in regime.ts, a position
- * inside that era's credit band, a generation of incumbent capital in
- * rivals.ts) and initialises the world consistently in it, before month one.
+ * The setup page asks about the PLAYER — the firm, the money, the family
+ * book — and about which generation of capital owns the town. It never asks
+ * about the economy: the economy is simulated (regime.ts runs the national
+ * model for decades before month one) and the player meets it on the tape.
+ * Owner, Oct 2026: "I don't want presets ... or eras in general. I want a
+ * simulated economy." Every option is a state the engine already models,
+ * never a multiplier — CLAUDE.md, "DIFFICULTY IS AN OUTPUT, NOT A DIAL".
  *
  * THE DEFAULT IS TODAY'S GAME, EXACTLY. `DEFAULT_SETUP` takes the same draws
  * in the same order as a newGame with no setup at all; test/setup.mjs proves
@@ -26,10 +25,8 @@
  *    scarcity) and one variance desk. There is no permissive/restrictive pair
  *    of real regimes to choose between, and inventing one means two new
  *    unmeasured constants.
- *  - STARTING CYCLE PHASE, separately from the era. Each era in regime.ts
- *    opens in its own phase because the phase is a consequence of the money
- *    (a 14% policy rate does not coexist with an expansion). Choosing the
- *    era chooses the phase; the page shows which.
+ *  - ANYTHING ABOUT THE ECONOMY: era, rates, credit climate, cycle phase.
+ *    These are outputs of the pre-history (regime.ts), not inputs.
  *  - RIVAL COUNT as a free number. How many firms a town supports is an
  *    output — rivals are raised and fail over the run (rivals.ts). What can
  *    honestly be chosen is WHICH GENERATION of capital owns the town on day
@@ -38,7 +35,6 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Holding, RivalStyle } from "./types";
 import { SVC_START } from "./types";
-import { ERAS, type Era } from "./regime";
 import { ownerOf, gradeOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import { assetValue, initialCondIdx, inPlace, marketAppraisal } from "./value";
@@ -46,15 +42,11 @@ import { genRentRoll } from "./leasing";
 import { originate, quote, productById, stabViewFor } from "./debt";
 import { money } from "./money";
 
-export type CreditChoice = "drawn" | "loose" | "tight";
 export type FieldChoice = "standard" | "prefunds";
 export type HomeChoice = "any" | "core" | "middle" | "edge";
 
 export interface GameSetup {
   v: 1;
-  /** "random" draws the era off the seed (regime.ts chooseEra); else an Era key. */
-  era: string;
-  credit: CreditChoice;
   field: FieldChoice;
   /** 0 = start from nothing; 2-4 = a small family portfolio. */
   inherit: 0 | 2 | 3 | 4;
@@ -77,7 +69,7 @@ export interface GameSetup {
 }
 
 export const DEFAULT_SETUP: GameSetup = {
-  v: 1, era: "random", credit: "drawn", field: "standard", inherit: 0, home: "any", sandbox: false,
+  v: 1, field: "standard", inherit: 0, home: "any", sandbox: false,
 };
 
 /** Sandbox bankroll: large enough to be unconstrained, and labelled as such. */
@@ -86,14 +78,6 @@ export const SANDBOX_CASH = 1_000_000_000;
 /** Custom opening capital bounds: the smallest cheque that buys a building, the largest institutional opening. */
 export const CASH_MIN = 500_000;
 export const CASH_MAX = 20_000_000;
-
-export function eraOptions(): Era[] { return ERAS; }
-
-export const CREDIT_OPTIONS: { id: CreditChoice; label: string; note: string }[] = [
-  { id: "drawn", label: "As the era drew it", note: "A seeded point inside the era's own range — the standard game." },
-  { id: "loose", label: "Easing", note: "The top of the era's credit band: the quarters when the loan officers' survey showed standards easing." },
-  { id: "tight", label: "Tightening", note: "The bottom of the era's band: the quarters when desks were pulling advance rates and widening spreads." },
-];
 
 /**
  * WHICH GENERATION OF CAPITAL OWNS THE TOWN.
@@ -131,33 +115,13 @@ export const CLOCK_OPTIONS: { id: NonNullable<GameSetup["clock"]>; label: string
   { id: "money", label: "What can cost money", note: "Stops only when not answering costs something you already own — a balloon, a sweep, a lapsing tenant, a capital call. Listings, first looks and bids wait on the docket." },
 ];
 
-// ----------------------------------------------------------------- presets
-
-export interface SetupPreset {
-  id: string;
-  label: string;
-  note: string;
-  setup: Partial<GameSetup>;
-}
-
-/**
- * NAMED SCENARIOS, each built only from the options above. "Frequent shocks"
- * was asked for in the gauntlet and is not in it — see the header.
- */
-export const PRESETS: SetupPreset[] = [
-  { id: "standard", label: "The standard game", note: "Today's street, $2.5M and nothing else.", setup: { ...DEFAULT_SETUP, cash0: 2_500_000 } },
-  { id: "family", label: "The family firm", note: "Three of the family's buildings in the middle ring, with the family's light leverage.",
-    setup: { era: "random", credit: "drawn", field: "standard", inherit: 3, home: "middle", sandbox: false } },
-];
-
 export function normalizeSetup(p: Partial<GameSetup> | undefined): GameSetup {
   const s = { ...DEFAULT_SETUP, ...(p ?? {}) } as GameSetup;
-  // THE ECONOMY IS NOT A SETTING (owner, Oct 2026): "I want that to be random
-  // every single time with no hint on it". The era and the credit climate
-  // are always drawn; a setup that names either — an old preset, an old
-  // save's record — is read as the draw.
-  s.era = "random";
-  s.credit = "drawn";
+  // THE ECONOMY IS NOT A SETTING (owner, Oct 2026). An old save's record may
+  // still carry the era and credit fields the page used to offer; they mean
+  // nothing now and are dropped.
+  delete (s as unknown as Record<string, unknown>).era;
+  delete (s as unknown as Record<string, unknown>).credit;
   if (!FIELDS.some((f) => f.id === s.field)) s.field = "standard";
   if (![0, 2, 3, 4].includes(s.inherit)) s.inherit = 0;
   if (!HOME_OPTIONS.some((h) => h.id === s.home)) s.home = "any";
@@ -178,15 +142,13 @@ export function shortFirmName(name: string): string {
 /** True when nothing on this setup moves the world off the standard draw. */
 export function isDefaultWorld(s: GameSetup | undefined): boolean {
   if (!s) return true;
-  return s.era === "random" && s.credit === "drawn" && s.field === "standard" && !s.inherit && !s.sandbox;
+  return s.field === "standard" && !s.inherit && !s.sandbox;
 }
 
 /** One line for a save row or a run record. */
-export function describeSetup(s: GameSetup | undefined, eraKey?: string): string {
+export function describeSetup(s: GameSetup | undefined): string {
   if (!s) return "";
   const bits: string[] = [];
-  // The economy is never named — not on the saves list, not on the record.
-  void eraKey;
   if (s.field !== "standard") bits.push(FIELDS.find((f) => f.id === s.field)?.label.toLowerCase() ?? s.field);
   if (s.inherit) bits.push(`${s.inherit} family buildings`);
   if (s.sandbox) bits.push("SANDBOX");

@@ -369,7 +369,7 @@ export function SaveSlots() {
       {thisRun?.setup && (
         <div className="hint" style={{ marginBottom: 6 }}>
           This campaign: {thisRun.setup.sandbox ? <span className="badge badge-warn">SANDBOX</span> : null}{" "}
-          {describeSetup(thisRun.setup, thisRun.econ?.eraKey) || "the standard world"} · seed <span className="mono">{thisRun.citySeed ?? thisRun.seed}</span>
+          {describeSetup(thisRun.setup) || "the standard world"} · seed <span className="mono">{thisRun.citySeed ?? thisRun.seed}</span>
         </div>
       )}
       <div className="hint">

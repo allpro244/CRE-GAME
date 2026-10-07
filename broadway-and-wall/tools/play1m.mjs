@@ -23,7 +23,7 @@ const out = (...a) => console.log(...a);
 
 let g = E.firstListings(E.newGame(SEED, parcels, 1_000_000), parcels, bbls);
 const open = g.cash;
-out(`seed ${SEED} · era ${g.econ.era} · phase ${g.econ.phase} · index ${g.econ.indexRate.toFixed(2)}% · cash ${K(g.cash)} · listings ${g.listings.length}`);
+out(`seed ${SEED} · phase ${g.econ.phase} · index ${g.econ.indexRate.toFixed(2)}% · cash ${K(g.cash)} · listings ${g.listings.length}`);
 
 // --------------------------------------------------------------- bookkeeping
 const yr = () => Math.floor(g.month / 12);

@@ -6,9 +6,9 @@
 // 1. DEFAULT_SETUP reproduces a newGame with no setup at all: state hash at
 //    month zero and after YEARS years (default 20), two seeds. The only
 //    difference allowed is the recorded `setup` field itself.
-// 2. Every non-default option changes the world the way the page says it
-//    does — and only through the engine's own states (an era, a position in
-//    its credit band, a roster, a real rent roll and real paper).
+// 2. The economy is simulated, never chosen (regime.ts), and every remaining
+//    option changes the world only through the engine's own states (a roster,
+//    a real rent roll and real paper).
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { createHash } from "node:crypto";
@@ -45,38 +45,43 @@ for (const seed of [550991, 12007]) {
     `seed ${seed}: ${YEARS} years, hash ${hash(a)} == ${hash(b)}${diverged >= 0 ? ` — DIVERGED at month ${diverged}` : ""} (over: ${a.gameOver ? "yes" : "no"})`);
 }
 
-// ----------------------------------------------- 2-3. the economy is not a setting
-// Owner, Oct 2026: the economy random every single time, with no hint. A setup
-// that names an era or a credit climate (an old preset, an old save) draws
-// exactly as the seed would have — and the opening news names no era.
+// ------------------------------------------- 2-3. the economy is simulated
+// Owner, Oct 2026: "I don't want presets ... or eras in general. I want a
+// simulated economy." There is no era table: regime.ts runs the national model
+// for decades before month one and the town opens on what it left behind.
 {
   const seeded = start(550991).g;
-  for (const era of E.eraOptions()) {
-    const { g } = start(550991, { era: era.key, credit: "tight" });
-    check(g.econ.eraKey === seeded.econ.eraKey && g.econ.creditIdx === seeded.econ.creditIdx && g.econ.nat.policy === seeded.econ.nat.policy,
-      `a setup naming ${era.key}/tight is ignored — the seed draws ${seeded.econ.eraKey}, credit ${seeded.econ.creditIdx}`);
-  }
-  check(!seeded.econ.eraLabel && !seeded.econ.eraBlurb, "the economy carries no era label for the screen");
-  const labels = E.eraOptions().map((e) => e.label.toLowerCase());
-  check(!seeded.news.some((n) => labels.some((l) => n.text.toLowerCase().includes(l))), "no opening news line names the era");
+  // An old save's setup may still name an era or a credit climate; ignored.
+  const { g: named } = start(550991, { era: "zirp", credit: "tight" });
+  check(named.econ.creditIdx === seeded.econ.creditIdx && named.econ.nat.policy === seeded.econ.nat.policy,
+    `a setup naming an era/credit is ignored (policy ${seeded.econ.nat.policy}%, credit ${seeded.econ.creditIdx})`);
+  check(!("eraKey" in seeded.econ) && E.ERAS === undefined && E.applyEra === undefined, "no era table, no era on the economy");
+  check(!seeded.news.some((n) => /era\b|great inflation|morning after|disinflation|after the crash/i.test(n.text)), "no opening news names a decade");
 }
-// THE BANK OPENS AT ITS OWN RULE. The opening rate is not a correction
-// waiting to happen: outside the morning-after era (the deliberate
-// overshoot), over 40 openings the first meeting moves the policy rate by a
-// small step in either direction, and it is not always down.
+// THE OPENING IS AN OUTPUT OF THE MODEL. Across 40 openings: the macro state
+// varies (policy, inflation, unemployment, credit, the phase), the bank is not
+// left walking a rate it would never have set (first-year moves both ways),
+// and the opening is the history the national equations produce — replaying
+// simulateHistory on a copy lands on the same policy rate.
 {
-  let up = 0, down = 0, big = 0;
+  let up = 0, down = 0;
+  const pol = [], ph = new Set(), cr = [];
   for (let i = 1; i <= 40; i++) {
     let { g, p } = start(i * 7919);
-    if (g.econ.eraKey === "volcker") continue;
     const p0 = g.econ.nat.policy;
+    pol.push(p0); ph.add(g.econ.phase); cr.push(g.econ.creditIdx);
     for (let m = 0; m < 12; m++) g = E.advanceMonth(g, p, bbls, adjacency);
     const dp = g.econ.nat.policy - p0;
     if (dp > 0.2) up++; else if (dp < -0.2) down++;
-    if (Math.abs(dp) > 3) big++;
   }
-  check(up > 0 && down > 0 && up >= Math.round(down / 3), `first-year policy moves go both ways (up ${up}, down ${down})`);
-  check(big <= 3, `a first-year move over 3 points is rare outside the morning-after era (${big})`);
+  const spread = Math.max(...pol) - Math.min(...pol);
+  check(spread > 4 && ph.size >= 3 && Math.max(...cr) - Math.min(...cr) > 0.3,
+    `openings vary: policy ${Math.min(...pol)}-${Math.max(...pol)}%, ${ph.size} phases (${[...ph].join(", ")}), credit ${Math.min(...cr)}-${Math.max(...cr)}`);
+  check(up > 0 && down > 0 && up >= Math.round(down / 3) && down >= Math.round(up / 3), `first-year policy moves go both ways (up ${up}, down ${down})`);
+  const g = start(4242).g;
+  const e = structuredClone(g.econ);
+  E.simulateHistory(e, g.seed, { office: 0.115, retail: 0.085, multifamily: 0.05, industrial: 0.07 });
+  check(e.nat.policy === g.econ.nat.policy && e.nat.infl === g.econ.nat.infl, `the opening is the simulated history, replayable (policy ${g.econ.nat.policy}%)`);
 }
 
 // ---------------------------------------------------------------- 4. field
@@ -173,8 +178,9 @@ for (const seed of [550991, 12007]) {
 {
   const { g } = start(550991, { firmName: "Heines Capital Partners" });
   check(g.firm.name === "Heines Capital Partners" && g.firm.short === "Heines", `firm name ${g.firm.name} (${g.firm.short} in the paper)`);
-  check(E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 7 }).era === "random", `any named era normalises to random`);
-  check(!/after the crash|inflation|expansion|disinflation|morning/i.test(E.describeSetup(E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 2 }), "zirp")), `the record line never names the era`);
+  const norm = E.normalizeSetup({ era: "zirp", credit: "tight", inherit: 7 });
+  check(!("era" in norm) && !("credit" in norm), `an old setup's era/credit fields are dropped`);
+  check(E.PRESETS === undefined, `no presets`);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");

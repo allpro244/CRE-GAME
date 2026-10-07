@@ -28,6 +28,9 @@ export const MODULES = [
   // cannot ask what a hire is worth and has to re-derive the band — the exact
   // drift this file exists to prevent.
   "staff",
+  // regime is the pre-history: nationPhase and simulateHistory, so a harness
+  // can replay the opening on the engine's own equations.
+  "regime",
   // people is the Person substrate (player, hires, rival principals). Missing
   // from this list once made every harness re-derive a person — silent drift.
   "people",

@@ -4,10 +4,10 @@ import { useJev } from "@/state/jevStore";
 import { JevSettings } from "@/ui/panels/JevPanel";
 import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
-import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
+import { START_CASH_CHOICES } from "@/engine/types";
 import {
-  DEFAULT_SETUP, PRESETS, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
-  type GameSetup, type CreditChoice, type FieldChoice, type HomeChoice,
+  DEFAULT_SETUP, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
+  type GameSetup, type FieldChoice, type HomeChoice,
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
@@ -18,11 +18,10 @@ import { usd } from "./format";
 /**
  * THE GAME SETUP PAGE — which world you play in.
  *
- * Every control here is a SCENARIO, not a dial (CLAUDE.md, "DIFFICULTY IS AN
- * OUTPUT, NOT A DIAL"). The engine side is engine/setup.ts, and every option
- * names its real-world basis there. What the page adds is the reading: each
- * choice is shown with the numbers it actually opens at, so a player picks a
- * decade knowing its policy rate rather than an adjective.
+ * Every control here is about the player and the town, never the economy,
+ * and never a dial (CLAUDE.md, "DIFFICULTY IS AN OUTPUT, NOT A DIAL"). The
+ * economy is simulated before month one (engine/regime.ts) and is met on the
+ * tape. No presets either (owner, Oct 2026): a run is set up from its parts.
  *
  * The default is the standard game exactly — test/setup.mjs holds that with a
  * state hash — so a player who presses Break ground without touching anything
@@ -40,21 +39,12 @@ const CASH_NOTE: Record<number, string> = {
 
 interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
-  era: string; credit: CreditChoice; field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice;
+  field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice;
   firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number;
 }
 
-const PRESET_KEY = "bw:setupPresets";
-interface CustomPreset { name: string; draft: Omit<Draft, "seed"> & { seed?: number } }
-function loadCustom(): CustomPreset[] {
-  try { const v = JSON.parse(localStorage.getItem(PRESET_KEY) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
-}
-function saveCustom(list: CustomPreset[]) {
-  try { localStorage.setItem(PRESET_KEY, JSON.stringify(list.slice(0, 12))); } catch { /* private mode */ }
-}
 
 const SECTIONS = [
-  { id: "presets", label: "Presets" },
   { id: "city", label: "City" },
   { id: "firm", label: "Starting firm" },
   { id: "competition", label: "Competition" },
@@ -81,7 +71,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = currentCity();
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
-      era: DEFAULT_SETUP.era, credit: DEFAULT_SETUP.credit, field: DEFAULT_SETUP.field, inherit: 0, home: "any",
+      field: DEFAULT_SETUP.field, inherit: 0, home: "any",
       firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(),
     };
   };
@@ -90,24 +80,11 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const isWritten = !!cities.find((c) => c.id === d.island)?.extents;
   const pickIsland = (id: string) => up({ island: id, size: currentSize(id), dev: currentDev(id) });
 
-  const [custom, setCustom] = useState<CustomPreset[]>(loadCustom);
-  const [presetName, setPresetName] = useState("");
   const [cashText, setCashText] = useState("");
   const [seedText, setSeedText] = useState(String(d.seed));
   useEffect(() => setSeedText(String(d.seed)), [d.seed]);
   const customCash = !START_CASH_CHOICES.includes(d.cash0 as never);
 
-  const applyPreset = (p: Partial<GameSetup> & { cash0?: number }) => setD((x) => ({
-    ...x,
-    era: p.era ?? DEFAULT_SETUP.era, credit: p.credit ?? DEFAULT_SETUP.credit, field: p.field ?? DEFAULT_SETUP.field,
-    inherit: p.inherit ?? 0, home: p.home ?? "any", sandbox: !!p.sandbox, cash0: p.cash0 ?? DEFAULT_START_CASH,
-  }));
-
-  const matches = (p: Partial<GameSetup> & { cash0?: number }) =>
-    d.era === (p.era ?? DEFAULT_SETUP.era) && d.credit === (p.credit ?? DEFAULT_SETUP.credit)
-    && d.field === (p.field ?? DEFAULT_SETUP.field) && d.inherit === (p.inherit ?? 0)
-    && (!d.inherit || d.home === (p.home ?? "any")) && d.sandbox === !!p.sandbox
-    && d.cash0 === (p.cash0 ?? DEFAULT_START_CASH);
 
   const randomiseAll = () => {
     const r = Math.random;
@@ -130,7 +107,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
   // ---- section rail: which section is in view
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState<string>("presets");
+  const [active, setActive] = useState<string>("city");
   useEffect(() => {
     const root = bodyRef.current;
     if (!root) return;
@@ -179,7 +156,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const breakGround = () => {
     pendingGoal.id = d.sandbox ? null : d.goal;
     const setup: Partial<GameSetup> = {
-      era: d.era, credit: d.credit, field: d.field, inherit: d.inherit, home: d.home,
+      field: d.field, inherit: d.inherit, home: d.home,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never", jevFirms: j.startFirms, spectator: j.startSpectator,
     };
@@ -219,36 +196,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
         </nav>
 
         <div className="start-body setup-body" ref={bodyRef}>
-          {/* ---------------------------------------------------------- presets */}
-          <section id="setup-presets" className="setup-sec">
-            <h2 className="setup-h">Presets</h2>
-            <p className="setup-lede">Named scenarios, each built only from the options below. Pick one and adjust, or save your own.</p>
-            <div className="setup-cards">
-              {PRESETS.map((p) => (
-                <button key={p.id} type="button" className={"setup-card" + (matches(p.setup) ? " on" : "")} aria-pressed={matches(p.setup)} onClick={() => applyPreset(p.setup)}>
-                  <strong>{p.label}</strong><span>{p.note}</span>
-                </button>
-              ))}
-            </div>
-            <div className="setup-row setup-custom">
-              <span className="setup-label">Your presets</span>
-              {custom.length === 0 && <span className="setup-dim">None saved yet.</span>}
-              {custom.map((c, i) => (
-                <span key={c.name + i} className="setup-chip">
-                  <button type="button" onClick={() => setD((x) => ({ ...x, ...c.draft, seed: c.draft.seed ?? x.seed }))}>{c.name}</button>
-                  <button type="button" aria-label={`Delete preset ${c.name}`} className="setup-chip-x"
-                    onClick={() => { const n = custom.filter((_, k) => k !== i); setCustom(n); saveCustom(n); }}>×</button>
-                </span>
-              ))}
-              <input className="setup-input" placeholder="Name this setup" value={presetName} maxLength={40}
-                onChange={(e) => setPresetName(e.target.value)} aria-label="Preset name" />
-              <button type="button" className="setup-btn" disabled={!presetName.trim()}
-                onClick={() => {
-                  const n = [...custom.filter((c) => c.name !== presetName.trim()), { name: presetName.trim(), draft: { ...d } }];
-                  setCustom(n); saveCustom(n); setPresetName("");
-                }}>Save current</button>
-            </div>
-          </section>
 
           {/* ------------------------------------------------------------- city */}
           <section id="setup-city" className="setup-sec">

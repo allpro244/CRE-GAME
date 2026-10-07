@@ -267,14 +267,11 @@ export function newGame(
           ? "Same cheque, deeper pond — rivals and bank holds are sized to the map."
           : "The standard island: banks and rivals sized to what stands here."),
   });
-  // WHICH DECADE YOU WALKED INTO, SAID OUT LOUD. The era draw (regime.ts) can
-  // open the game at a 17% base rate under a calendar that says January 2000,
-  // and nothing on screen said why — the owner read it as the rate being
-  // wrong. It is not wrong; it is a different decade wearing this year's
-  // date, and the player is owed the sentence.
-  // The facts only — what money costs and how open the desks are. Which
-  // decade the economy behaves like is for the player to read off the tape;
-  // the owner asked for no hint of it (Oct 2026).
+  // WHERE THE MONEY STANDS, SAID OUT LOUD. The pre-history (regime.ts) can
+  // open the game at a 15% loan rate under a calendar that says January 2000,
+  // and the player is owed the sentence. The facts only — what money costs
+  // and how open the desks are; what the history behind it was is for the
+  // player to read off the tape (owner, Oct 2026: no hint of it).
   s.news.push({
     q: 0,
     kind: "info",

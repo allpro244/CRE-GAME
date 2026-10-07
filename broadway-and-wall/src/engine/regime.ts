@@ -1,62 +1,55 @@
 /**
- * THE DECADE YOU INHERIT.
+ * THE ECONOMY YOU WALK INTO HAS A PAST.
  *
- * Every game of this used to open on exactly the same board. Measured across
- * twelve fresh seeds: identical rent indices, identical 11.5% vacancy,
- * identical 5.40% loan rate, identical 240,000 people, identical 35 firms with
- * identical names, identical fifteen listings, and the phase always
- * "expansion". The seed changed the weather from month one onward and changed
- * nothing at all about where you were standing when it started.
+ * Every game of this once opened on exactly the same board, and the first fix
+ * was a table: five "eras" of American property history, one drawn per game,
+ * each a box of ranges for inflation, policy, vacancy, rents and caps. That
+ * was variety without a mechanism. The opening was an ARRANGEMENT of numbers
+ * — inflation drawn from one range, the policy rate from another, so the
+ * bank's first meetings spent two years walking a rate it would never have
+ * set back to its own rule; and a player who had seen five openings had seen
+ * all of them.
  *
- * That is not how anybody comes into this business. Buying your first building
- * in 1974 is a different profession from buying it in 1994, and the difference
- * is not difficulty — it is which problem you have. So a new game now draws a
- * STARTING REGIME: where in the cycle the city is, what money costs, what
- * inflation is doing, and how much empty space there is.
+ * So there is no table. The national model in market.ts (`tickNation`: the
+ * business cycle, the Phillips curve, unanchored expectations, a central bank
+ * that misjudges full employment, supply shocks that cluster, governments that
+ * lean on the bank) runs for twenty to sixty years before month one, on a
+ * private generator, from a neutral long-run state. The credit window runs
+ * beside it on the same equation tickEcon uses (`stepCredit`). Whatever that
+ * history produced — a bank still earning back its word after an inflation, a
+ * labour market two years into a deep recession, a credit window that slammed
+ * shut eighteen months ago and is reopening at its usual crawl — is where the
+ * player stands. Nothing about it is named or shown; the player reads it off
+ * the tape like everyone else.
  *
  * TWO RULES GOVERN THIS FILE.
  *
- * 1. THE DRAW IS COHERENT, NOT TWELVE DICE. Real macro variables are locked
- *    together. High inflation means a high policy rate, because the bank is
- *    responding to it. High vacancy means soft rents, because that is what
- *    vacancy does. Drawing each independently would produce a 14% policy rate
- *    beside 1% inflation, which is not variety, it is a fake number with extra
- *    steps. So an ERA is drawn first and everything else follows from it.
+ * 1. THE OPENING IS AN OUTPUT. Every macro number the player inherits is
+ *    state the engine's own equations left behind, and every number the city
+ *    opens with is positioned FROM that state — never drawn beside it.
  *
- * 2. AN ERA IS NOT A DIFFICULTY SETTING. A high-rate, high-vacancy start is
- *    harder to borrow into and cheaper to buy in; a boom start is easy money
- *    and nothing on the shelf worth owning. Neither is the easy roll, and the
- *    archetypes are not tuned so that they score the same — they are the
- *    positions the American property market has actually opened from, and the
- *    consequences fall where they fall.
+ * 2. IT IS NOT A DIFFICULTY SETTING. A history that ends in a deep recession
+ *    is cheap to buy into and impossible to borrow in; one that ends at the
+ *    top of a long expansion is easy money with nothing worth owning. Neither
+ *    is tuned to score like the other.
  *
- * THE OTHER HALF: A CENTURY SHOULD CONTAIN MORE THAN ONE MONETARY WORLD.
- *
- * A starting draw on its own washes out. The engine mean-reverts `neutralReal`
- * to a fixed 1.2% and the Taylor rule targets a hardcoded 2% inflation, so
- * whatever era you start in, you are back in the same one within a decade.
- * Measured over twenty-two unplayed centuries: the loan index sat above 11%
- * in 1.4% of months and TWELVE OF THE TWENTY-TWO CENTURIES NEVER SAW IT AT
- * ALL, against roughly 6-7% of the last real American century. Inflation ran
- * over 6% in 1.1% of months against roughly 10% in life.
- *
- * The reason is that 2% is written down as a constant, and it was not a
- * constant. Before 1990 no central bank had an explicit target at all; the
- * implicit one drifted with the politics, ran near 4-5% through the 1960s and
- * 70s, and only converged on 2% after a deliberate and expensive campaign to
- * put it there. So `inflTarget` becomes slow-moving state — anchored hard when
- * the bank is credible, free to drift when it is not — which is what lets a
- * century contain a Great Inflation, a Volcker, and a long disinflation
- * instead of one flat line with excursions.
+ * WHY THE CITY IS NOT SIMULATED TOO. The city's space market is a function of
+ * the map: its stock grows only when somebody builds on a real parcel, so a
+ * city run for forty years with nobody developing it runs out of space
+ * (measured: office vacancy pinned at 5.4% within ten years, against 11.5%
+ * natural). So the city opens positioned on the nation's recent history —
+ * vacancy on the last three years of unemployment, rents on that vacancy,
+ * cap rates at the target tickEcon itself chases — and from month one the
+ * full model runs both.
  */
-import type { GameState, Econ } from "./types";
-import { mulberry32Step } from "./market";
+import type { Econ, GameState, MarketPhase } from "./types";
+import { mulberry32Step, initStreams, tickNation, stepCredit, capTargetOf, capFlowsOf, inflationOverBumpPct } from "./market";
 
 /**
  * THIS DRAWS FROM ITS OWN GENERATOR. The engine has one shared PRNG for the
  * whole world, and anything that consumes it a different number of times
  * re-rolls the century — the payroll module learned this the expensive way
- * (see staff.ts). The regime is chosen once, before month one, and must not
+ * (see staff.ts). The pre-history runs once, before month one, and must not
  * shift the sequence the rest of the simulation is going to draw from.
  */
 function rrng(seed: number, step: number): number {
@@ -65,61 +58,6 @@ function rrng(seed: number, step: number): number {
   return mulberry32Step(st).value;
 }
 
-export interface Era {
-  key: string;
-  label: string;
-  /** one line the player reads on the opening screen */
-  blurb: string;
-  infl: [number, number];
-  policy: [number, number];
-  neutralReal: [number, number];
-  /** how much the public believes the bank. Low credibility is what lets inflation run. */
-  credibility: [number, number];
-  inflTarget: [number, number];
-  unemp: [number, number];
-  /** office vacancy at the start, as a multiple of natural */
-  vac: [number, number];
-  /** rent index as a multiple of the long-run base, given that vacancy */
-  rent: [number, number];
-  /** cap rates move with money, not against it */
-  capBump: [number, number];
-  creditIdx: [number, number];
-  phase: Econ["phase"];
-  weight: number;
-  /**
-   * The morning after a Great Inflation is the one opening where the bank is
-   * deliberately ABOVE its own rule — the overshoot is the policy (see the
-   * restore term in market.ts). Every other era opens where the rule sits.
-   */
-  overshoot?: boolean;
-}
-
-/**
- * FIVE POSITIONS THE AMERICAN PROPERTY MARKET HAS ACTUALLY OPENED FROM.
- *
- * The numbers in each are the real ones, not a spread around a mean. Weights
- * are how much of the last century each describes, so a fresh game is most
- * often ordinary and occasionally is not — which is also true of life.
- */
-/**
- * WHAT THE GOVERNMENT INSURES, BY ERA — the fact that decides whether a bank
- * failure is a headline or a catastrophe for the people who banked there.
- *
- * These are the real FDIC limits and the real dates, and they are the reason
- * the same event feels completely different depending on when the game opens:
- *   1934 $2,500 · 1934 $5,000 · 1950 $10,000 · 1966 $15,000 · 1969 $20,000
- *   1974 $40,000 · 1980 $100,000 · 2008 $250,000 (permanent 2010)
- *
- * Mapped onto the five eras this engine actually opens from. In a postwar game
- * the limit is $10-20k and a failure genuinely wipes households out; in a ZIRP
- * game it is $250k and almost every resident is whole, so the damage has to
- * travel by another road entirely — uninsured BUSINESS deposits and the
- * withdrawal of local credit. That difference is a consequence of the date,
- * which is exactly how it works in life.
- *
- * Expressed in year-2000 dollars, like every other salary and price in this
- * engine; the reader multiplies by costIdx.
- */
 /**
  * THE CAP-RATE RAIL, ONCE. The monthly walk in market.ts clamped cap rates to
  * 3.4..11 while the era opener clamped them to 3.2..14 — the same quantity
@@ -133,188 +71,132 @@ export interface Era {
  */
 export const CAP_RAIL = { lo: 3.4, hi: 11 } as const;
 
-export const DEPOSIT_INSURANCE: Record<string, number> = {
-  postwar: 20_000,
-  greatinflation: 40_000,
-  volcker: 100_000,
-  disinflation: 100_000,
-  zirp: 250_000,
-};
-
-export const ERAS: Era[] = [
-  {
-    key: "postwar", label: "A long expansion",
-    blurb: "Money is cheap, the town is filling up, and everybody you meet is sure it continues.",
-    infl: [0.015, 0.032], policy: [3.0, 5.5], neutralReal: [0.015, 0.024],
-    credibility: [0.72, 0.88], inflTarget: [0.020, 0.030], unemp: [0.040, 0.055],
-    vac: [0.72, 0.95], rent: [1.00, 1.18], capBump: [-0.4, 0.3], creditIdx: [0.98, 1.10],
-    phase: "expansion", weight: 30,
-  },
-  {
-    key: "greatinflation", label: "The Great Inflation",
-    blurb: "Prices are running, the bank has lost the argument, and a mortgage costs more every quarter you wait.",
-    infl: [0.055, 0.105], policy: [8.0, 14.0], neutralReal: [0.018, 0.028],
-    credibility: [0.28, 0.48], inflTarget: [0.035, 0.055], unemp: [0.055, 0.078],
-    vac: [0.85, 1.15], rent: [0.86, 1.02], capBump: [1.4, 2.8], creditIdx: [0.72, 0.92],
-    phase: "peak", weight: 13,
-  },
-  {
-    key: "volcker", label: "The morning after",
-    blurb: "Rates are at the moon to kill the inflation, half the tape is a receiver, and nobody can borrow a dollar.",
-    infl: [0.030, 0.065], policy: [10.0, 16.0], neutralReal: [0.020, 0.030],
-    credibility: [0.40, 0.62], inflTarget: [0.025, 0.040], unemp: [0.078, 0.105],
-    vac: [1.25, 1.75], rent: [0.62, 0.82], capBump: [2.0, 3.6], creditIdx: [0.48, 0.68],
-    phase: "recession", weight: 11, overshoot: true,
-  },
-  {
-    key: "disinflation", label: "The long disinflation",
-    blurb: "Money gets cheaper every year, the empty space from the last bust is still letting, and values only go up.",
-    infl: [0.018, 0.038], policy: [4.5, 8.0], neutralReal: [0.012, 0.022],
-    credibility: [0.62, 0.82], inflTarget: [0.020, 0.032], unemp: [0.050, 0.070],
-    vac: [1.05, 1.40], rent: [0.78, 0.96], capBump: [0.2, 1.2], creditIdx: [0.85, 1.02],
-    phase: "recovery", weight: 26,
-  },
-  {
-    key: "zirp", label: "After the crash",
-    blurb: "Money is nearly free and nobody wants it. Half the buildings in town changed hands at the courthouse.",
-    infl: [0.002, 0.018], policy: [0.25, 2.0], neutralReal: [0.001, 0.010],
-    credibility: [0.70, 0.90], inflTarget: [0.016, 0.024], unemp: [0.070, 0.098],
-    vac: [1.20, 1.60], rent: [0.70, 0.90], capBump: [-0.8, 0.4], creditIdx: [0.42, 0.66],
-    phase: "recovery", weight: 20,
-  },
-];
-
 const pick = (r: number, lo: number, hi: number) => lo + r * (hi - lo);
 
-export function chooseEra(seed: number): Era {
-  const total = ERAS.reduce((a, e) => a + e.weight, 0);
-  let x = rrng(seed, 0) * total;
-  for (const e of ERAS) { x -= e.weight; if (x <= 0) return e; }
-  return ERAS[0];
+/**
+ * THE NATION'S CYCLE IN THE CITY'S VOCABULARY. Before month one there is no
+ * city phase machine to consult — it reads the city's vacancy, and the city
+ * has not opened — so the credit window in the pre-history reads the phase
+ * the nation is in: in a recession (a deep one is a depression), recovering
+ * for two years after, at the top once an expansion is past eight years with
+ * the labour market tight, and otherwise expanding. Post-war US expansions
+ * averaged about five years; eight is where they start being called old.
+ */
+export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
+  if ((n.recM ?? 0) > 0) return n.deep ? "depression" : "recession";
+  const exp = n.expM ?? 0;
+  if (exp < 24) return "recovery";
+  if (exp > 96 && n.unemp < 0.048) return "peak";
+  return "expansion";
+}
+
+export interface History {
+  months: number;
+  /** national unemployment, mean over the last 36 months */
+  uTrail: number;
 }
 
 /**
- * Apply the era to a freshly built economy. Called from initEcon after the
- * baseline is laid down, so everything here is a deliberate departure from the
- * old fixed opening and the old opening is still what `postwar` at the middle
- * of its ranges looks like.
- */
-/**
- * WHAT THE SETUP PAGE MAY CHOOSE, AND ONLY THAT.
+ * RUN THE NATION FORWARD TO THE DAY THE PLAYER ARRIVES, and position the city
+ * on it. Called from initEcon after the long-run baseline is laid down.
  *
- * `eraKey` names one of the five ERAS above instead of drawing one off the
- * seed — the same era, at the same seeded positions inside its ranges, that
- * the seed would have produced had it landed there. Nothing about the era is
- * re-tuned; the player just picks which decade they walk into.
- *
- * `credit` picks WHERE INSIDE THE ERA'S OWN creditIdx BAND the town opens,
- * instead of a seeded point in it: "loose" is the top of the band, "tight"
- * the bottom. Real-world basis: every era above spans both easing and
- * tightening quarters in the Fed's Senior Loan Officer Survey (1990-) and
- * its predecessors — 1972-73 easing vs 1974 tightening inside the Great
- * Inflation, 2010 tight vs 2013 easing inside the post-crash years. The
- * bands are the measured ranges, so either end is a position the market has
- * actually opened from. The loan index then follows through the same
- * term-premium identity as always, so a tight opening also costs more.
- * The draw is still taken so every later draw in this function is unmoved.
+ * Where the history STARTS is the model's own steady state: inflation at a 2%
+ * target, unemployment at the 4.8% the rule calls full, policy where the rule
+ * sits there. Two slow variables are drawn because nothing in a twenty-year
+ * window would move them far enough to forget a fixed start: the neutral real
+ * rate's anchor (anywhere inside the 0.4-3.2% band market.ts lets it wander —
+ * Laubach-Williams puts r* near 3.5% in the 1960s and 0.5% after 2010) and how
+ * far the public believes the bank (0.45-0.95; credibility is earned and
+ * spent by the model from there). The length of the history is drawn too, so
+ * the same start does not always arrive at the same point in its own cycle.
  */
-export interface EraChoice { eraKey?: string; credit?: "loose" | "tight" }
-
-export function applyEra(econ: Econ, seed: number, natural: Record<string, number>, choice?: EraChoice): Era {
-  const era = (choice?.eraKey && ERAS.find((e) => e.key === choice.eraKey)) || chooseEra(seed);
-  const nat = econ.nat;
-  if (!nat) return era;                       // nothing to position yet
-  let k = 1;
+export function simulateHistory(econ: Econ, seed: number, natural: Record<string, number>): History {
+  let k = 0;
   const d = (lo: number, hi: number) => pick(rrng(seed, k++), lo, hi);
-
-  const infl = d(...era.infl);
-  const policy = d(...era.policy);
-  nat.infl = infl;
-  // Expectations lag realised inflation and lag it further when nobody
-  // believes the bank — which is the mechanism that makes an inflation
-  // persist rather than a number that decides it should.
-  const cred = d(...era.credibility);
-  nat.credibility = cred;
-  nat.inflExp = infl * (1 - cred * 0.45) + 0.02 * cred * 0.45;
-  nat.policy = policy;
-  nat.neutralReal = d(...era.neutralReal);
-  // The era sets where r* is AND where it is heading, so a high-rate world
-  // does not quietly decay into the low-rate one inside twenty years.
-  nat.neutralAnchor = Math.max(0.004, Math.min(0.032, nat.neutralReal + d(-0.004, 0.004)));
-  nat.unemp = d(...era.unemp);
-  nat.inflTarget = d(...era.inflTarget);
-
-  // THE BANK OPENS WHERE ITS OWN RULE SITS. The policy rate used to be drawn
-  // from the era's historical range independently of the inflation,
-  // unemployment and neutral rate drawn for the same economy — so on the
-  // first meeting the reaction function in market.ts saw a rate it would
-  // never have set and walked it toward its own answer. Measured over sixty
-  // openings: the loan index fell more than 50bp in the first two years in
-  // 47, rose in 8, and fell on average in every era, the long expansion
-  // included. That is not a cycle, it is a correction of the opening, and a
-  // player learns it in two games ("it always starts high and comes down").
-  //
-  // A central bank on the opening day had been setting this rate all along
-  // against this economy, so it sits at the rule — the same rule, the same
-  // inputs the first meeting reads (no supply shock, trend inflation equal to
-  // the print, the bank's belief about full employment at the truth) — off it
-  // by where in the committee's cycle the town opens: the era draw's position
-  // in its own range, mapped to half a point either side (two ordinary
-  // meetings). What comes next is decided by how the economy moves, which is
-  // the point. The morning-after era keeps its drawn rate: that era IS the
-  // bank sitting far above its rule on purpose.
-  if (!era.overshoot) {
-    const uStar = 0.048;   // market.ts — the same constant the rule reads
-    // Without the restore (Volcker) premium: that term is the regime change
-    // itself, and an inflation era opens BEFORE it — "the bank has lost the
-    // argument". If its credibility is low enough the first meetings add it,
-    // and rates climb, which is that era's story told in play.
-    const want = 100 * (nat.neutralReal + infl + 0.5 * (infl - nat.inflTarget) + 0.5 * (-2.0 * (nat.unemp - uStar)));
-    const pos = (policy - era.policy[0]) / Math.max(1e-9, era.policy[1] - era.policy[0]);
-    nat.policy = +Math.max(0.25, Math.min(22, want + (pos - 0.5))).toFixed(2);
+  const anchor = d(0.004, 0.032);
+  const cred = d(0.45, 0.95);
+  const months = Math.round(d(240, 720));
+  const burnSeed = (seed ^ 0x6a09e667) >>> 0;
+  const scratchEcon = {
+    ...econ,
+    nat: {
+      infl: 0.02, inflExp: 0.02, inflSm: 0.02, unemp: 0.048, policy: +(100 * (anchor + 0.02)).toFixed(2),
+      neutralReal: anchor, neutralAnchor: anchor, inflTarget: 0.02, credibility: cred,
+      shockM: 0, shockSev: 0, recM: 0, expM: 60, deep: false, pressureM: 0,
+    },
+    creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: 0.048,
+  } as Econ;
+  const streams = initStreams(burnSeed);
+  const s = { econ: scratchEcon, seed: burnSeed, month: -months, streams, rng: streams.econ, news: [] } as unknown as GameState;
+  const uHist: number[] = [];
+  for (let m = -months; m < 0; m++) {
+    s.month = m;
+    // One city in a nation: in the pre-history its labour market IS the
+    // nation's, so the 1% city pull inside tickNation is neutral.
+    scratchEcon.unemployment = scratchEcon.nat!.unemp;
+    tickNation(s);
+    scratchEcon.phase = nationPhase(scratchEcon.nat!);
+    stepCredit(s);
+    uHist.push(scratchEcon.nat!.unemp);
+    s.news.length = 0;
   }
-  econ.unemployment = nat.unemp;
-  econ.phase = era.phase;
+  const n = scratchEcon.nat!;
+  econ.nat = { ...n };
+  econ.unemployment = n.unemp;
+  econ.phase = scratchEcon.phase;
+  econ.creditIdx = +scratchEcon.creditIdx.toFixed(3);
+  econ.indexRate = scratchEcon.indexRate;
+  econ.shortIndex = scratchEcon.shortIndex;
+  econ.rateRegime = scratchEcon.rateRegime;
+  econ.rateEma = econ.indexRate;
+  const tail = uHist.slice(-36);
+  const uTrail = tail.reduce((a, x) => a + x, 0) / Math.max(1, tail.length);
 
-  // The space market, positioned consistently with the money. Vacancy is drawn
-  // as a multiple of each class's own natural rate so a glut is a glut
-  // everywhere rather than a number that only means something to offices,
-  // and the classes do not move in perfect lockstep because they never do.
-  const vacMult = d(...era.vac);
+  // THE SPACE MARKET, ON THE LABOUR MARKET IT HAS BEEN LIVING THROUGH.
+  // Vacancy lags employment by a year or two — tenants give space back at
+  // their lease ends, not at the layoff — so it reads three years of national
+  // unemployment, as a multiple of each class's own natural rate so a glut is
+  // a glut everywhere. CALIBRATED, not tuned: the line runs through the five
+  // historical openings this file used to draw from (unemployment / vacancy
+  // as a multiple of natural): 1950s-60s 4.8% / 0.84, 1970s 6.7% / 1.00,
+  // 1982 9.2% / 1.50, 1990s 6.0% / 1.23, 2010 8.4% / 1.40 — about fifteen
+  // points of vacancy multiple per point of unemployment. The 1990s sit
+  // furthest off it (vacancy left over from the overbuilt eighties), which is
+  // a stock story the map supplies from month one.
+  const vacMult = Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
   for (const cls of Object.keys(econ.cityVac) as (keyof typeof econ.cityVac)[]) {
     const jitter = d(0.88, 1.12);
     econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (natural[cls] ?? 0.11) * vacMult * jitter));
   }
-  // Rents follow the vacancy, not a separate roll of the dice.
-  const rentMult = d(...era.rent);
+  // Rents follow the vacancy — the same five openings: a long expansion at
+  // 0.84x natural vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
+  // ran them ~28% under, about 0.55 of rent per unit of vacancy multiple.
+  const rentMult = 1.09 - 0.55 * (vacMult - 0.835);
   for (const cls of Object.keys(econ.rentIdx) as (keyof typeof econ.rentIdx)[]) {
     econ.rentIdx[cls] = +(econ.rentIdx[cls] * rentMult * d(0.95, 1.05)).toFixed(2);
   }
   econ.effRentIdx = { ...econ.rentIdx };
 
-  // Cap rates move WITH money. A property yield is a bond yield plus a spread,
-  // so an era that opens at 14% short rates does not also open at a 5% cap.
-  const bump = d(...era.capBump);
-  for (const cls of Object.keys(econ.capRate) as (keyof typeof econ.capRate)[]) {
-    econ.capRate[cls] = +Math.max(CAP_RAIL.lo, Math.min(CAP_RAIL.hi, econ.capRate[cls] + bump + d(-0.2, 0.2))).toFixed(2);
+  // Cap rates open AT the target the monthly walk chases (capTargetOf) — the
+  // same rates, credit window and vacancy the player is shown — so the first
+  // year of cap moves is news, not a correction. The allocation term reads
+  // the caps themselves at the opening (capFlowsOf), so the target is a fixed
+  // point, found by iterating; it settles inside a handful of passes because
+  // the term's slope is under one. Without it office opened 0.7-0.8 points
+  // over where its own walk took it inside a year (measured over 60 openings,
+  // the era table included). Two-tenths of noise per class on top, the spread
+  // a month of transactions shows.
+  const capIndex = econ.indexRate - inflationOverBumpPct(econ);
+  const classes = Object.keys(econ.capRate) as (keyof typeof econ.capRate)[];
+  const base = Object.fromEntries(classes.map((c) => [c, capTargetOf(econ, c, capIndex)])) as typeof econ.capRate;
+  let caps = { ...base };
+  for (let it = 0; it < 12; it++) {
+    caps = Object.fromEntries(classes.map((c) => [c, base[c] + capFlowsOf(caps, c)])) as typeof econ.capRate;
   }
-  {
-    const drawn = d(...era.creditIdx);
-    const at = choice?.credit === "loose" ? era.creditIdx[1] : choice?.credit === "tight" ? era.creditIdx[0] : drawn;
-    econ.creditIdx = +at.toFixed(3);
+  for (const cls of classes) {
+    econ.capRate[cls] = +Math.max(CAP_RAIL.lo, Math.min(CAP_RAIL.hi, caps[cls] + d(-0.2, 0.2))).toFixed(2);
   }
-
-  // AND WHAT A BORROWER ACTUALLY PAYS. The loan index is the policy rate plus
-  // a term premium that widens when credit is frightened — the same identity
-  // tickEcon uses every month. Without setting it here the opening screen
-  // quoted 5.40% in a game whose central bank was at 13.3%, which is not a
-  // starting position, it is two starting positions in one economy.
-  const termPrem = 1.55 + 1.85 * Math.max(0, 1 - econ.creditIdx);
-  econ.indexRate = +Math.max(0.75, Math.min(22, nat.policy + termPrem)).toFixed(2);
-  econ.shortIndex = shortIndexFor(nat.policy, econ.creditIdx);
-  econ.rateEma = econ.indexRate;
-  econ.rateRegime = econ.indexRate;
-  return era;
+  return { months, uTrail };
 }
 
 /**
@@ -357,9 +239,4 @@ export function driftInflTarget(econ: Econ, rnd: number) {
  */
 export function shortIndexFor(policy: number, creditIdx: number): number {
   return +Math.max(0.05, Math.min(23, policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
-}
-
-export function eraOf(s: GameState): Era | null {
-  const k = s.econ?.eraKey;
-  return k ? ERAS.find((e) => e.key === k) ?? null : null;
 }

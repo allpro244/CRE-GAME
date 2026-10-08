@@ -307,10 +307,20 @@ const SHELVE_ODDS = 0.25;
  * Points spans are the same order as the old station-only draw (16-26), scaled
  * by kind rather than retuned.
  */
+// SIZED TO WHAT A STATION IS ACTUALLY WORTH (2026-10-08). These were 16-26
+// points for a station — about +50% rent at an ordinary address — while the
+// centring below hid it by marking every other block down. Once civic lifts
+// stopped being zero-sum the excess showed: 14% of blocks rode the drift cap
+// by year 30. The meta-analysis of 57 studies (Debrezion, Pels & Rietveld
+// 2007) puts the station premium at ~16% for commercial and ~4% for homes
+// near the stop; open space adds 5-10% at its edge (Crompton 2001). On this
+// engine's rent curve a point is ~2.5% of rent at an ordinary address, so a
+// station is 4-8 points, a park 2-4, a bridge (an access gain like a line)
+// 3-7.
 const WORK_KINDS = {
-  station: { lo: 16, span: 10, sigma: 380, buildM: 72 },
-  park:    { lo: 8,  span: 6,  sigma: 300, buildM: 36 },
-  bridge:  { lo: 12, span: 8,  sigma: 520, buildM: 60 },
+  station: { lo: 4, span: 4, sigma: 380, buildM: 72 },
+  park:    { lo: 2, span: 2, sigma: 300, buildM: 36 },
+  bridge:  { lo: 3, span: 4, sigma: 520, buildM: 60 },
 } as const;
 type WorkKind = keyof typeof WORK_KINDS;
 

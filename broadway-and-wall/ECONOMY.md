@@ -2609,3 +2609,34 @@ Two corrections to phase B came out of measuring this:
 Measured after (4 worlds x 50 years): 4-8 local downturns, 8-15% of time,
 57-86% coinciding with national recessions; payrolls fall in every recession
 and rise in every recovery; unfilled openings peak at 7.6-10.9%.
+
+# LOCATION: STATIONS WERE WORTH HALF THE TOWN, AND THE REST PAID FOR THEM (phase L, 2026-10-08)
+
+Measured on seed 1: lots vacant at the opening lost demand 28 -> 13 over 30
+years, and by year 30 86-91% of vacant lots (38-45% of all lots) sat on the
+location multiplier's floor (`LOC_SPREAD.min`). Decomposed, the block-demand
+centre rose 12-14 points, mostly from transit: stations were inside the
+centring, so a line near the core lifted its blocks and marked every other
+block down by the mean. Three changes:
+
+1. Civic works are added after centring — a line improves the places it
+   serves and does not make the others worse (Gibbons & Machin 2005).
+2. Civic lifts are sized to the evidence: a station was 16-26 points (about
+   +50% rent at an ordinary address); the meta-analysis of 57 studies
+   (Debrezion, Pels & Rietveld 2007) puts it at ~16% commercial, ~4%
+   residential, so a station is 4-8 points, a park 2-4 (Crompton 2001), a
+   bridge 3-7. Uncentred at the old size, 14% of blocks rode the drift cap.
+3. The centre is weighted by land area, not land value, so the dearest
+   blocks no longer set it. (Measured alone this moved little; kept because
+   an acre that did not change should not be marked down.)
+
+After: fixed vacant lots' median demand 28 -> 21 (was -> 13); lots on the
+floor 22-32% (was 38-45%); blocks on the drift cap 2%; median block drift
++2.8.
+
+**Still open.** 57-74% of vacant lots end on the floor, and 14-42% start
+there: the generator puts the fringe below the multiplier's minimum at the
+opening, so `LOC_SPREAD.min` is in effect the price of fringe space (0.52x
+the index for flats, 0.40x for offices), not a guard. Whether those ratios
+are right for a town 1.0 x 1.7 km across is the calibration question the
+location model needs next; it is why fringe land still rarely pencils.

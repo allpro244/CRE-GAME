@@ -247,9 +247,11 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const alb = makeCanvas(W, H), orm = makeCanvas(W, H), hgt = makeCanvas(W, H), msk = makeCanvas(W, H);
   orm.g.fillStyle = `rgb(0,${Math.round(spec.wallRough * 255)},0)`; orm.g.fillRect(0, 0, W, H);
   hgt.g.fillStyle = "#ffffff"; hgt.g.fillRect(0, 0, W, H);
-  // a curtain wall, or any non-masonry tower, reads as one sheet of tinted glass in daylight
-  const fk0 = spec.key.split("#")[0];
-  const glassy = spec.glass || GLASSY.has(fk0) || (!spec.masonry && TOWER_FAMS.has(fk0));
+  // EVEN PANES, EVERY FAMILY. Per-pane blinds, curtains and brightness read
+  // in daylight as a patchwork of lit and dark rooms, on mass timber and brick
+  // as much as on a curtain wall, so every elevation's windows match; the
+  // building-to-building difference comes from paint, style and family.
+  const glassy = true;
   // the paint mask: R lit room after dark, G trim, B accent (see PAINT_FRAG)
   msk.g.fillStyle = "#000000"; msk.g.fillRect(0, 0, W, H);
   const pc = { m: msk.g, hg: hgt.g };

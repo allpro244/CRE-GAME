@@ -566,7 +566,7 @@ export function EconomyPage() {
                   the way down. */}
               {e.sectorPhase?.[k] && e.sectorPhase[k] !== "steady" && (
                 <div className={"mkt-card-sub" + (e.sectorPhase[k] === "bust" ? " neg" : "")}>
-                  sector {e.sectorPhase[k]} · {Math.max(1, Math.round((e.sectorPhaseM?.[k] ?? 0)))} mo left
+                  tenants {e.sectorPhase[k] === "boom" ? "hiring and expanding" : "shedding space"}
                 </div>
               )}
               <div className="mkt-card-sub mono">

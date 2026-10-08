@@ -134,7 +134,11 @@ let owned = null;   // the player after the close — a buyer with a record, for
   check(Math.abs(basis - cost) <= deeds.length * 2, `basis ${M(basis)} carries price, closing and stamps`);
   check(deeds.every((d) => n.deedCf?.[d] && !n.deedCf[d].pooled && n.deedCf[d].from === n.month), "each deed opened its own equity ledger at the close");
   check(n.news.some((x) => x.text.startsWith(`${q.name} is yours`)), "one news line for the firm");
-  check(!n.news.slice(0, 5).some((x) => / has taken .* at \$/.test(x.text)), "and no per-building tape prints");
+  // The lines this close added, and only those: the world's own tape that
+  // month (a bank taking a different firm's book, say) is not this deal.
+  const added = n.news.slice(0, Math.max(0, n.news.length - g.news.length));
+  check(added.some((x) => x.text.startsWith(`${q.name} is yours`)) && !added.some((x) => / has taken .* at \$/.test(x.text)),
+    `and no per-building tape prints (${added.length} lines added by the close)`);
   check((n.takePrivate?.done ?? []).length === 1 && n.takePrivate.done[0].deeds === deeds.length, "the closing statement is kept");
   check(E.attentionItems(n, parcels).every((x) => !x.key.startsWith("take-private")), "nothing left in the inbox");
 
@@ -194,7 +198,7 @@ let owned = null;   // the player after the close — a buyer with a record, for
 
   // firms that do not sell
   const h = structuredClone(base);
-  const [f1, f2, f3, f4] = E.livingRivals(h).filter((x) => x.bbls.length >= 2 && noJob(h, x) && x.style !== "family" && x.style !== "owneruser").slice(0, 4);
+  const [f1, f2, f3] = E.livingRivals(h).filter((x) => x.bbls.length >= 2 && noJob(h, x) && x.style !== "family" && x.style !== "owneruser").slice(0, 4);
   f1.style = "owneruser";
   f2.style = "family"; f2.stressMs = 0; f2.debt = 0; f2.occ = undefined;
   f3.debt = 1e12;
@@ -203,6 +207,10 @@ let owned = null;   // the player after the close — a buyer with a record, for
     const x = E.takePrivateQuote(h, parcels, f.id);
     check(!x.available && x.why.includes(word), `${f.style} firm ${f.name}: ${x.why?.slice(0, 70)}…`);
   }
+  // The crane must be the ONLY reason: a firm whose quote is already open, so
+  // an underwater book on this world's path cannot answer first.
+  const f4 = E.livingRivals(h).find((x) => ![f1, f2, f3].includes(x) && x.bbls.length >= 2 && noJob(h, x)
+    && E.takePrivateQuote(h, parcels, x.id).available);
   if (f4) {
     (h.cityJobs ??= []).push({ bbl: f4.bbls[0], firmId: f4.id, startM: h.month, deliverM: h.month + 20, sf: 1, use: "office", floors: 1 });
     const x = E.takePrivateQuote(h, parcels, f4.id);

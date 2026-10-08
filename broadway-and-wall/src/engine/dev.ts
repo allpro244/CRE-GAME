@@ -3744,7 +3744,18 @@ function startCityJob(
   let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
   let bestScore = -1;
   const bestBy: Partial<Record<BuiltClass, { bbl: string; rec: (typeof parcels)[string]; score: number }>> = {};
-  for (let i = 0; i < 36; i++) {
+  // THIRTY-SIX SITES, NOT THIRTY-SIX DRAWS. `refreshDevelopmentFeasibility`
+  // publishes the order desk's pencil as the P97 of the lots the city
+  // examines — "36 candidate lots for each crane" — and it samples VACANT
+  // land to get it. This loop drew 36 parcels from the whole map and threw
+  // away the standing buildings, so in a town two-thirds built it looked at
+  // about a dozen lots: the pencil the orders were placed on and the search
+  // the shovel ran were two different statistics. Measured (seeds 1 and 3,
+  // years 1-20): 75-80% of crane attempts found no lot that pencilled at
+  // all. A developer hunting for a site looks at sites; the draw cap is a
+  // guard for a town with almost no vacant land left.
+  let examined = 0;
+  for (let draw = 0; draw < 36 * 8 && examined < 36; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
     if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
@@ -3759,6 +3770,7 @@ function startCityJob(
     // no longer vacant, and the static table still says it is.
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
+    examined++;
     // THE CITY PICKED THE MOST EXPENSIVE DIRT IN THE SAMPLE, EVERY TIME.
     //
     // This scored candidates on DEMAND — "the city builds where the
@@ -3830,6 +3842,26 @@ function startCityJob(
   // A corner that carries twenty floors does not get a two-storey shop on
   // it: it gets shops at grade with something above them.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
+  // THE BUILDER BUILDS THE SCHEME THAT PAID FOR THE DIRT.
+  //
+  // The lot above was chosen because its land read says a builder can pay
+  // more than the dirt costs — and that read is a specific building: a use,
+  // a height and a plate (`residualSchemeIn`, the desk's own pro forma
+  // solved for land, already capped at the cornice the shovel gets). The
+  // city then threw the scheme away, rolled a use off the zoning table and
+  // sized it off a young-town fraction, and underwrote THAT. Measured, seeds
+  // 1 and 3, years 1-20: 97-98% of city groundbreaks failed the desk (median
+  // hurdle 0.40-0.64), while every one that cleared was the lot's own
+  // scheme. Orders ran 1-4.5% of stock a year and deliveries 0.0-0.6%, so
+  // a class sat on its vacancy floor for decades with the order book full.
+  //
+  // A developer who bought a site because flats pencil there builds flats.
+  // Where the read finds a scheme that clears at today's land price, that is
+  // the building; elsewhere the old path stands (the desk below still has
+  // the last word either way, so nothing is built that does not underwrite).
+  const siteRead = landRead(rec, s.econ);
+  const scheme = siteRead.scheme && siteRead.builder >= siteRead.psf ? siteRead.scheme : null;
+  if (scheme) use = scheme.use;
   const cmix = devMix(use);
   const lead = dominantOf(cmix);
   // Preserve the established RNG draw count while retiring the duplicate
@@ -3842,8 +3874,12 @@ function startCityJob(
   // young town builds small; a mature one builds to the envelope
   const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s, "dev") * 0.15);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  const plate = cityCoverage(use);
+  const plate = scheme ? scheme.coverage : cityCoverage(use);
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
+  if (scheme) {
+    floors = scheme.floors;
+    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
+  }
   // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
   // three-storey town broke ground at a median of fifteen floors. The datum
   // cap is what makes twenty years of growth read like twenty years.
@@ -3855,7 +3891,7 @@ function startCityJob(
   // the entitlement premium — never at the cost of a project that would
   // have gone ahead by right.
   let entitleBasis: number | undefined;
-  if (floors > infill) {
+  if (!scheme && floors > infill) {
     const base = s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
     const premium = entitlementPremium(floors, infill, sf, base, s.econ.costIdx ?? 1);
     const tall = premium > 0

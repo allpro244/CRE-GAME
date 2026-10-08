@@ -307,10 +307,20 @@ const SHELVE_ODDS = 0.25;
  * Points spans are the same order as the old station-only draw (16-26), scaled
  * by kind rather than retuned.
  */
+// SIZED TO WHAT A STATION IS ACTUALLY WORTH (2026-10-08). These were 16-26
+// points for a station — about +50% rent at an ordinary address — while the
+// centring below hid it by marking every other block down. Once civic lifts
+// stopped being zero-sum the excess showed: 14% of blocks rode the drift cap
+// by year 30. The meta-analysis of 57 studies (Debrezion, Pels & Rietveld
+// 2007) puts the station premium at ~16% for commercial and ~4% for homes
+// near the stop; open space adds 5-10% at its edge (Crompton 2001). On this
+// engine's rent curve a point is ~2.5% of rent at an ordinary address, so a
+// station is 4-8 points, a park 2-4, a bridge (an access gain like a line)
+// 3-7.
 const WORK_KINDS = {
-  station: { lo: 16, span: 10, sigma: 380, buildM: 72 },
-  park:    { lo: 8,  span: 6,  sigma: 300, buildM: 36 },
-  bridge:  { lo: 12, span: 8,  sigma: 520, buildM: 60 },
+  station: { lo: 4, span: 4, sigma: 380, buildM: 72 },
+  park:    { lo: 2, span: 2, sigma: 300, buildM: 36 },
+  bridge:  { lo: 3, span: 4, sigma: 520, buildM: 60 },
 } as const;
 type WorkKind = keyof typeof WORK_KINDS;
 
@@ -1118,6 +1128,16 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
   // ---- what each block's surroundings now justify --------------------------
   const raw = new Map<string, number>();
+  // A CIVIC WORK ADDS VALUE; IT DOES NOT MOVE IT (2026-10-08). Stations were
+  // inside the centring below, so a line opening near the core lifted its own
+  // blocks ~13 points and pushed every other block in the city down by the
+  // mean — measured, transit was most of the 12-14 point rise in the centre
+  // over 30 years, and the reason land that never got a station sank to the
+  // location floor. A new line makes the places it serves better; the places
+  // it does not serve are not made worse (transit capitalisation is local —
+  // Gibbons & Machin 2005 — and it is why value capture funds stations). So
+  // the civic lift is added after the centre is removed.
+  const civic = new Map<string, number>();
   const flat = flatOccupancy(model, occ);
   let bi = 0;
   for (const b of model.blocks.values()) {
@@ -1154,7 +1174,8 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     const acres = b.nbLandArea / 43_560;
     const mix = intensityOf((j / acres) / model.refJobs, (r / acres) / model.refPop, (a / acres) / model.refAmen);
     const lr = clamp(Math.log(mix / Math.max(1e-6, model.mix0.get(b.id) ?? mix)), -LOG_CAP, LOG_CAP);
-    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + transitLift(s, b) + poleLift(s, b) + constructionLift(s, model, b) + spill(b));
+    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + poleLift(s, b) + constructionLift(s, model, b) + spill(b));
+    civic.set(b.id, transitLift(s, b));
   }
 
   // ---- DEMAND IS REDISTRIBUTIVE, NOT ADDITIVE -----------------------------
@@ -1175,12 +1196,28 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   // and total market rent 0.985-1.000x, flat over 50 years on three seeds.
   // With the centring removed the same runs read 1.14-1.22x land and
   // 1.08-1.11x rent by year 50, and still climbing.
-  let centre = 0;
-  for (const [id, v] of raw) centre += v * (model.landW.get(id) ?? 0);
-  centre /= model.landWTot;
+  // ...CENTRED BY THE ACRE, NOT BY THE DOLLAR (2026-10-08). The mean was
+  // weighted by land VALUE, so the dearest blocks set it: as the core built
+  // up, the mean rose with it and every block whose surroundings had not
+  // changed was pushed down by the same amount. Measured: the median vacant
+  // lot's demand fell 28 -> 11 in thirty years, and by year 30 86-91% of
+  // vacant lots sat on the location multiplier's FLOOR (LOC_SPREAD.min) —
+  // a load-bearing rail, and the reason fringe land never pencilled. A place
+  // does not become less desirable because a different place got better;
+  // the outer land of a growing city gains value (Alonso-Muth-Mills). Each
+  // acre now counts once, so the city's ordinary land — most of it — holds
+  // its standing and only genuine change moves a block. Still relative:
+  // the mean is removed every month, so nothing is created from nothing.
+  let centre = 0, areaTot = 0;
+  for (const [id, v] of raw) {
+    const a = model.blocks.get(id)?.landArea ?? 0;
+    centre += v * a;
+    areaTot += a;
+  }
+  centre /= Math.max(1, areaTot);
 
   for (const b of model.blocks.values()) {
-    const target = clamp((raw.get(b.id) ?? 0) - centre, -DRIFT_CAP, DRIFT_CAP);
+    const target = clamp((raw.get(b.id) ?? 0) - centre + (civic.get(b.id) ?? 0), -DRIFT_CAP, DRIFT_CAP);
     const was = s.blockE[b.id] ?? 0;
     const e = +(was + (target - was) * MOMENTUM).toFixed(2);
     if (e === 0) delete s.blockE[b.id];

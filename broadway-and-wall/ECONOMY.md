@@ -2458,3 +2458,212 @@ Rival principal deaths never ended a firm (an heir always took over), so
 removing them does not remove a firm exit. ECONOMY.md's firm-flow section
 above already counted "takeovers and succession" as zero exits in an
 unplayed run.
+
+# A SHORTAGE THAT DID NOT PRICE, AND A CITY THAT COULD NOT BUILD — fixed, one thing left open (2026-10-08)
+
+Measured first over four 50-year worlds with no player (`advanceMonth`, one
+row a month): every class sat on its vacancy floor (`residenceVac`) in 55-67%
+of months, with looking demand 2% over stock and `structTight` 10-25%. Real
+asking rose 0.2-2.5%/yr while pinned — no faster than a balanced market —
+while soft markets fell 1-6%/yr. Four causes, all in the same loop:
+
+1. **The city threw away the scheme that paid for the dirt.** `startCityJob`
+   picked the lot with the best builder residual and then rolled a use off the
+   zoning table and sized it off a young-town fraction. 97-98% of city
+   groundbreaks failed the desk (median hurdle 0.40-0.64); every one that
+   cleared was the lot's own scheme. Orders ran 1-4.5% of stock a year,
+   deliveries 0.0-0.6%. **Fix:** build the residual scheme (use, floors,
+   plate) when it pencils at the dirt's price.
+2. **The shovel searched a third of what the pencil assumed.** `sitePencil`
+   is the P97 of 36 *vacant* lots; the picker drew 36 parcels from the whole
+   map and discarded the standing ones (~12 lots). **Fix:** examine 36
+   eligible lots, with a draw cap.
+3. **The rent equation refused to price a shortage on the floor.** The
+   shortage branch was zero on the pin and scaled by room-above-friction near
+   it; asking carried 35% of CPI there; stored pressure bled 10% a month.
+   Each was added because a pinned rent compounded when supply never came.
+   **Fix:** the shortage branch (this block's own 0.045 coefficient) applies
+   wherever the market is short; full CPI in a firm market; no bleed. The
+   level is held by the income anchor and `affordEff`.
+4. **Construction cost chased office rents.** A catch-up pulled `costIdx`
+   toward the office asking level (22-63% of months), so a shortage's margin
+   went to the cost index. Underneath it the base drift was *expected*
+   inflation with no labour share, so real cost slid 0.5-0.7%/yr whenever the
+   trades were not fully booked — the catch-up had been propping that up.
+   **Fix:** catch-up retired; cost drifts on realised inputs, 45% wages
+   (RSMeans / BLS on-site labour share) and 55% CPI, plus `heat`.
+
+Measured after (4 worlds, 50 years): real asking while pinned 2.0-3.2%/yr;
+real rent overall 0.6-1.1%/yr; rent/wage 0.82-1.03 at the end; real
+construction cost 0.86-1.11x. Paired against `39a191b` over 16 seeds x 300
+months (`tools/baseline-paired.mjs`): office vacancy 6.8% -> 9.2%, retail
+7.0% -> 9.3%, industrial 3.4% -> 5.9% (natural 11.5 / 8.5 / 7.0); months
+on the residence floor down 24-43%; buildings +2.0% (t 5.5).
+
+**The cost, stated plainly.** Jobs and population -5% (t -2.7): dearer
+space rations demand, as it should, but it is a headline number down.
+`dev.affordableLotShare` -24%: land re-prices on the higher rents.
+`test/rent-anchor.mjs` (readiness) now breaches over a century: median real
+office rent 1.1-1.4%/yr against its -1..+1 band, rent-to-income 1.22-1.26x
+against 1.15 on three of four seeds. Its "pinned" clauses read
+`frictionFloor`, which vacancy no longer touches, so they pass vacuously —
+that harness needs to read `residenceVac`. The bands were NOT moved.
+
+**What is still open.** Supply is still short of demand (stock ~0.7%/yr
+against jobs ~1.1%/yr), and the reason is now location: of the best of 36
+vacant lots the city examines, 49-83% carry no scheme worth building at all
+(builder residual <= 0). The land a growing town has left is the fringe,
+and fringe rents (`LOC_SPREAD` minimums 0.40-0.62 of the city index) do not
+cover construction there. Whether demand spreads outward fast enough as the
+core fills is the next question — MDGA phase 2's spillover measured small.
+That is why a shortage lasts a century and the office band breaches.
+
+Also fixed on the way: `landSales` (the MDGA land tape) listed lots in a
+named firm's book as anonymous private sales, so the player could buy a deed
+a rival already held (invariants, syndicator seed 4000).
+
+# THE LABOUR MARKET HAD A WALL — replaced with flows (ECON_REALISM_PLAN phase A, 2026-10-08)
+
+`jobs = min(wanted, labour force x 0.972)` put local unemployment on exactly
+2.80% in 8-48% of months (rails: 38.6% of calls at the bound), and at exactly
+2.80% at its lowest in every world. Participation was a constant 0.58.
+
+Now employment is a stock moved by flows: separations at 2.6% a month (CPS,
+Shimer 2005), openings = unfilled positions + replacements, hires = the
+job-finding rate x searchers, with the finding rate rising in tightness at the
+square-root matching elasticity (Petrongolo & Pissarides 2001) and saturating
+below one. Its one parameter is solved from the opening steady state, not
+tuned, and lands the opening job-finding rate at ~47%/month against ~45% in US
+data. Participation moves 0.3 points per point of unemployment over a year
+(Erceg & Levin 2014). Unfilled openings pull movers at ln2/36 a month
+(Blanchard & Katz 1992 half-life).
+
+A plain Cobb-Douglas matching function was tried first and REJECTED: past
+about twice as many openings as searchers it hires every searcher, which put
+unemployment on s/(s+1) = 2.52% in 10-27% of months — a new floor made of the
+formula.
+
+Measured (4 worlds x 50 years): unemployment min 2.9-3.6%, median 3.5-4.5%,
+max 7.4-13.8%; no value holds more than 1.8% of months; participation
+56.3-58.7%; nominal wage growth when unemployment is under 3.5% runs
+4.1-5.4%; the wage-unemployment correlation is -0.34 to -0.76.
+
+# THE CYCLE WAS A CLOCK — now it comes from the city's industries (ECON_REALISM_PLAN phase B, 2026-10-08)
+
+Three layers of clocks drove the cycle: the city phase (a random countdown
+that then SET job growth by label), a boom/steady/bust clock per property
+class (`sectorPhase`) and one per trade (`industryPhase`). Measured: 52-71%
+of local recession months fell while the nation was not worsening, and a
+"recovery" averaged falling jobs on two of four worlds.
+
+Now (B1) each of the ten trades follows national employment by its own beta
+(BLS recession declines by industry), grows at its own long-run trend (BLS
+CES), and takes hazard-drawn shocks with an 18-month half-life sized to move
+a unit-volatility trade 4-12% of its local employment. Local-serving work
+follows the export base with a 12-month half-life at Moretti's (2010)
+multiplier of 1.6. National payrolls move 1.5% per point of unemployment
+(2008-10). The phase is dated from the result like NBER dates a cycle. (B2)
+Office and industrial demand follow their own tenant trades' employment
+relative to the city; a class's momentum is its driver's growth against its
+own five-year normal, so a class booms because its tenants are hiring.
+
+Two first cuts were REJECTED on measurement: shocks scaled linearly with
+volatility halved a tech sector in a decade on one world (one local
+downturn of 161 months with 17% national coincidence); and one-for-one
+national transmission left a city flat through a 6-point national
+recession because trend growth cancelled it.
+
+Also retired: the "monetary era" block, whose rate scares and surprise cuts
+were printed as news but overwritten by `tickNation` every month — the loan
+index never read them.
+
+Measured (4 worlds x 50 years): 3-6 local downturns, 11-19% of time,
+62-98% coinciding with national recessions (US: ~13% of time since 1950);
+expansions 2-15 years with no built-in end; job growth positive in every
+recovery. Months on the vacancy floor: retail 23% -> 7%, multifamily 61% ->
+53%, industrial 51% -> 38% (B1 -> B2); real rents -0.1% to +0.7%/yr.
+
+# PEOPLE WITH AGES, AND A WORKFORCE THAT COSTS SOMETHING (ECON_REALISM_PLAN phase C, 2026-10-08)
+
+Natural increase was a constant 0.016% a month for a population with no ages.
+Now three groups (Census 2020: 22 / 61 / 17) with US vital rates: births 11
+per 1,000 to the working-age group (CDC NVSS), deaths 0.3 / 3 / 45 per 1,000
+(CDC age-specific), ageing over 18 and 47 years, movers 75 / 20 / 5 by group
+(Census CPS mobility). Participation reads the age mix (80% of working-age,
+19% of over-65s, BLS CPS); apartment demand reads adults, who form
+households. Measured: the 65+ share rises 17% -> 22-23% over 50 years (the
+Census projection for the US is ~22% by 2050) and participation drifts to
+56-57% with nothing telling it to.
+
+Two corrections to phase B came out of measuring this:
+- The cycle is dated off PAYROLLS (last month's filled jobs), as NBER dates
+  one, not employers' demand: "recession" months showed rising jobs on three
+  of four worlds.
+- A dear workforce is hired less. Employers compare local pay with the
+  national wage path (expectations plus productivity, no local tightness)
+  at elasticity 0.5 (Hamermesh 1993 surveys -0.15 to -0.75; a firm that can
+  hire in another city sits in the upper half), through a two-year average.
+  Without it unfilled openings ran to 7-17% of the labour force (US maximum
+  ~7.4%) and a national recession only trimmed vacancies.
+
+Measured after (4 worlds x 50 years): 4-8 local downturns, 8-15% of time,
+57-86% coinciding with national recessions; payrolls fall in every recession
+and rise in every recovery; unfilled openings peak at 7.6-10.9%.
+
+# LOCATION: STATIONS WERE WORTH HALF THE TOWN, AND THE REST PAID FOR THEM (phase L, 2026-10-08)
+
+Measured on seed 1: lots vacant at the opening lost demand 28 -> 13 over 30
+years, and by year 30 86-91% of vacant lots (38-45% of all lots) sat on the
+location multiplier's floor (`LOC_SPREAD.min`). Decomposed, the block-demand
+centre rose 12-14 points, mostly from transit: stations were inside the
+centring, so a line near the core lifted its blocks and marked every other
+block down by the mean. Three changes:
+
+1. Civic works are added after centring — a line improves the places it
+   serves and does not make the others worse (Gibbons & Machin 2005).
+2. Civic lifts are sized to the evidence: a station was 16-26 points (about
+   +50% rent at an ordinary address); the meta-analysis of 57 studies
+   (Debrezion, Pels & Rietveld 2007) puts it at ~16% commercial, ~4%
+   residential, so a station is 4-8 points, a park 2-4 (Crompton 2001), a
+   bridge 3-7. Uncentred at the old size, 14% of blocks rode the drift cap.
+3. The centre is weighted by land area, not land value, so the dearest
+   blocks no longer set it. (Measured alone this moved little; kept because
+   an acre that did not change should not be marked down.)
+
+After: fixed vacant lots' median demand 28 -> 21 (was -> 13); lots on the
+floor 22-32% (was 38-45%); blocks on the drift cap 2%; median block drift
++2.8.
+
+**Still open.** 57-74% of vacant lots end on the floor, and 14-42% start
+there: the generator puts the fringe below the multiplier's minimum at the
+opening, so `LOC_SPREAD.min` is in effect the price of fringe space (0.52x
+the index for flats, 0.40x for offices), not a guard. Whether those ratios
+are right for a town 1.0 x 1.7 km across is the calibration question the
+location model needs next; it is why fringe land still rarely pencils.
+
+# THE EDGE OF TOWN STAYS EMPTY — and the floor is not why (measured 2026-10-08, no change shipped)
+
+57-74% of vacant lots end on the location multiplier's floor, and the
+floors (flats 0.52, offices 0.40, sheds 0.62) are wider than the spreads the
+code's own comment states. Two fixes were built and measured, and both were
+REJECTED:
+
+- **Floors at the stated spreads** (flats 0.87, offices 0.98, sheds 0.86):
+  supply unchanged; offices lost nearly all location premium (98% of office
+  lots on the floor, prime 1.43x); a fringe garden-apartment scheme still
+  needed 0.94-1.00 of the city's rent to cover construction on free land.
+- **A pivot solved so the stock's multiplier averages 1.0**: conceptually
+  right (the index would then BE the average rent), but the curve is convex
+  and floored, so the stock currently averages above 1.0 and the fix reprices
+  every typical building down by that gap; the life company's quote share fell
+  from >= 8% to 5% (test/advance.mjs). A citywide repricing, to be decided on
+  its own.
+
+**The finding.** At the city's AVERAGE location, a new apartment scheme is
+worth about 1.00-1.09x its full cost including the developer's margin, on free
+land, across twenty years. So only above-average dirt can ever pay for land.
+Glaeser, Gyourko & Saks (2005) find prices at construction cost only in
+elastic-supply metros and well above it (1.5-2x+) in constrained ones; this
+city is constrained (classes sit on their vacancy floor 30-50% of months). The
+edge of town is a question about the rent LEVEL against replacement cost —
+the income anchor and the opening calibration — not about the spread.

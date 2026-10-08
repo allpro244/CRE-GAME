@@ -258,7 +258,9 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
  *  cycles are far smaller: US financial-activities employment fell about 8%
  *  peak to trough over 2008-10, information about 10% over 2001-03, and most
  *  sectors less. At 4 the demand swing is about 10%, which is that. */
-const MOM_DEMAND = 4;
+// RETIRED (2026-10-08): MOM_DEMAND. The class cycle is in each class's
+// demand driver now (tenant trades' employment, population), not a momentum
+// multiplier on top of it.
 
 /** WHAT PRICE IS ALLOWED TO DO TO THE SPACE ONE WORKER OCCUPIES. Affordability
  *  rations demand — dear space, firms take less of it — but it was unbounded,
@@ -1748,6 +1750,166 @@ export function tickNation(s: GameState) {
   e.rateRegime = clamp(n.policy + premBase, RATE_FLOOR, RATE_CEIL);
 }
 
+
+// ---------------------------------------------------------------------------
+// THE CITY'S INDUSTRIES, AND THE CYCLE THEY MAKE (2026-10-08).
+//
+// An export-base city. Its tradable industries — the ten trades its tenants
+// work in — sell outside the city, so their employment follows the NATION by
+// each trade's own cyclical sensitivity, grows at its own long-run trend, and
+// takes its own shocks (a plant closes, a sector booms). Local-serving work —
+// shops, schools, trades, government — follows the export base with a lag:
+// Moretti (2010) finds about 1.6 local jobs for each tradable one, which is
+// where a downturn in one industry spreads to the whole town. The city's
+// demand for workers moves with that composite, and the PHASE is read off
+// it afterwards, the way a statistician dates a cycle: nothing here consults
+// a label to decide what jobs do.
+//
+// INDUSTRY_TREND and INDUSTRY_BETA are stated facts about US industries,
+// rounded: long-run payroll growth by sector (BLS CES, 1990-2019) and the
+// sector's employment swing per unit of the national swing (BLS recession
+// employment declines by industry, 1990-91, 2001, 2008-09). Medical barely
+// moves; logistics, apparel and design swing harder than the nation.
+// INDUSTRY_VOL keeps its role as relative idiosyncratic volatility.
+// ---------------------------------------------------------------------------
+const INDUSTRY_TREND: Record<Sector, number> = {      // per year
+  finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
+  logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
+};
+const INDUSTRY_BETA: Record<Sector, number> = {
+  finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
+  logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
+};
+/** Local-serving jobs per tradable job (Moretti 2010, "Local Multipliers"). */
+const LOCAL_MULT = 1.6;
+/** Months for local-serving employment to close half its gap to the base. */
+const LOCAL_HALF_M = 12;
+/** A trade's own shocks: about one notable one a decade at unit volatility (more often for volatile trades), half-life 18 months. */
+const IND_SHOCK_HAZ = 1 / 120, IND_SHOCK_HALF_M = 18;
+/**
+ * `industryMom`'s readers (tenant staffing, default stress, renewals, the
+ * comps tape) were calibrated in "boom units", where 0.016 x vol was a trade
+ * in full boom. A boom here is excess hiring of about 0.4% a month, so the
+ * conversion is 4. Units, not a dial: change the readers and this goes.
+ */
+const MOM_UNITS = 4;
+
+export function tickIndustryCycle(s: GameState) {
+  const e = s.econ;
+  const n = e.nat;
+  // The nation's employment swing this month, against its trend. Payrolls
+  // fall about 1.5% for each point unemployment rises, because people also
+  // leave the labour force: 2008-10 took 6.3% off US payrolls against a 2%
+  // trend while unemployment rose 5.5 points. One-for-one was tried first
+  // and a 6-point national recession left this city flat — the trend growth
+  // simply cancelled it.
+  const NAT_EMP_PER_U = 1.5;
+  const uNow = n?.unemp ?? 0.05;
+  const uPrev = e.natUnempPrev ?? uNow;
+  e.natUnempPrev = uNow;
+  const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
+
+  if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
+  if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
+  const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
+  let base = 0, wsum = 0;
+  for (const k of SECTORS) {
+    const vol = INDUSTRY_VOL[k];
+    e.indShock[k] *= decay;
+    if (rng(s) < IND_SHOCK_HAZ * vol) {
+      const up = rng(s) < 0.5;
+      // A shock's whole effect is about 26x its first month (18-month half-
+      // life), so this moves a unit-volatility trade 4-12% of its local
+      // employment — a plant closing, a sector boom — and tech up to ~16%.
+      const size = Math.sqrt(vol) * rrange(s, 0.0015, 0.0045);
+      e.indShock[k] += up ? size : -size;
+      const exposed = exposureToTrade(s, k) > 0.10;
+      pushNews(s, exposed ? (up ? "event" : "warn") : "info", up
+        ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
+        : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
+    }
+    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
+    e.indIdx[k] *= 1 + INDUSTRY_TREND[k] / 12 + dev;
+    // Momentum is smoothed excess hiring, in the units its readers expect.
+    e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
+    const was = e.industryPhase[k];
+    const m = e.industryMom[k];
+    e.industryPhase[k] = m > 0.008 * vol ? "boom" : m < -0.0075 * vol ? "bust" : "steady";
+    void was;
+    const w = e.sectorShare?.[k] ?? 1 / SECTORS.length;
+    base += w * e.indIdx[k];
+    wsum += w;
+  }
+  const exportIdx = wsum > 0 ? base / wsum : 1;
+  e.exportIdx = exportIdx;
+  const local = e.localIdx ?? exportIdx;
+  e.localIdx = local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M));
+  const comp = (exportIdx + LOCAL_MULT * e.localIdx) / (1 + LOCAL_MULT);
+  const prevComp = e.cycIdx ?? comp;
+  e.cycIdx = comp;
+  e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
+  derivePhase(s);
+}
+
+/**
+ * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's payrolls the
+ * way NBER dates a cycle — after the fact, from the data — with the same
+ * thresholds every month. Definitions, not tuning: a contraction is jobs
+ * falling at an annualised half a point over six months; a recovery runs
+ * until the old peak is regained; a depression is a recession that has taken
+ * more than five per cent off the peak and kept going for a year.
+ */
+function derivePhase(s: GameState) {
+  const e = s.econ;
+  // Payrolls actually filled (last month's — the data a statistician has),
+  // not employers' demand for staff: a boom short of workers is still a
+  // boom, and a bust is jobs lost, not jobs no longer wanted.
+  const T = (e.jobs ?? e.jobs0 ?? 1) / Math.max(1, e.jobs0 ?? 1);
+  const hist = (e.cycHist ??= []);
+  hist.push(T);
+  if (hist.length > 7) hist.shift();
+  const T6 = hist[0];
+  const g6 = T6 > 0 ? Math.pow(T / T6, 12 / Math.max(1, hist.length - 1)) - 1 : 0;
+  if (e.cycPeak === undefined || ((e.phase === "expansion" || e.phase === "peak") && T > e.cycPeak)) e.cycPeak = T;
+  const dd = e.cycPeak > 0 ? 1 - T / e.cycPeak : 0;
+  e.phaseAge = (e.phaseAge ?? 0) + 1;
+  const dwell = e.phaseAge >= 3;
+  let next = e.phase;
+  switch (e.phase) {
+    case "expansion": if (dwell && g6 < 0.004) next = "peak"; break;
+    case "peak": if (dwell && g6 < -0.005) next = "recession"; else if (g6 > 0.012) next = "expansion"; break;
+    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.05 && e.phaseAge >= 12) next = "depression"; break;
+    case "depression": if (dwell && g6 > 0.002) next = "recovery"; break;
+    case "recovery": if (T >= (e.cycPeak ?? T)) next = "expansion"; else if (dwell && g6 < -0.005) next = "recession"; break;
+  }
+  // The street sees a turn coming from the same numbers, a little early.
+  const near: Partial<Record<MarketPhase, boolean>> = {
+    expansion: g6 < 0.008, peak: g6 < -0.002, recession: g6 > 0, depression: g6 > 0,
+    recovery: dd < 0.01,
+  };
+  if (next === e.phase && !e.rumoredPhase && near[e.phase] && rng(s) < 0.25) {
+    const ahead: Record<MarketPhase, MarketPhase> = { expansion: "peak", peak: "recession", recession: "recovery", depression: "recovery", recovery: "expansion" };
+    e.rumoredPhase = ahead[e.phase];
+    pushNews(s, "rumor", RUMORS[e.rumoredPhase][Math.floor(rng(s) * RUMORS[e.rumoredPhase].length)]);
+  }
+  if (next !== e.phase) {
+    e.phase = next;
+    e.phaseAge = 0;
+    e.rumoredPhase = null;
+    if (next === "expansion") e.cycPeak = T;
+    const label: Record<MarketPhase, string> = {
+      expansion: "The expansion is on — rents push, capital chases.",
+      peak: "The market has topped out. Everything is priced to perfection.",
+      recession: "The turn is here: tenants retrench, lenders retreat.",
+      recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
+      depression: "This is not a recovery — the city has lost more than one job in twenty and is still losing them.",
+    };
+    pushNews(s, "event", label[e.phase]);
+  }
+}
+
 export function tickEcon(s: GameState) {
   // The space market needs the calendar: a building that opened last year is
   // not the same asset as one that opened in 1928, and occupancy has to know.
@@ -1759,140 +1921,22 @@ export function tickEcon(s: GameState) {
   // consistent level for the month. See swans.ts; it draws off the campaign
   // seed rather than `s.rng`, so nothing in this file's stream shifts.
   tickSwans(s);
-  const cfg = PHASE_CFG[e.phase];
-
-  // phase machine with rumors one or two quarters ahead of the turn
-  // --- THE PHASE MACHINE READS THE PROPERTY MARKET ---------------------------
+  // THE CITY'S CYCLE IS NOT A CLOCK (2026-10-08). This was a countdown —
+  // a random length per phase, a fixed round robin, shortened by a glut, a
+  // tight market or a national recession — and the label then SET the city's
+  // job growth (+0.26%/month in an expansion, -0.14% in a recession). Measured
+  // over four 50-year worlds, 52-71% of local recession months fell while the
+  // nation was not worsening: the clock made half the city's recessions up,
+  // and a "recovery" averaged falling jobs on two seeds. Post-war expansions
+  // do not die of old age (Diebold & Rudebusch); recessions are caused. The
+  // cycle now comes from the city's industries (`tickIndustryCycle`, after
+  // the nation moves) and the phase is a DESCRIPTION of what jobs did.
   //
-  // It used to be a countdown clock and nothing else: `phaseMLeft--`, then a
-  // fixed round-robin. No state of the market it was describing was ever
-  // consulted. The consequence is the owner's own bug report — cheat the
-  // money, build until the city is 45% empty, and the corner of the screen
-  // still says EXPANSION, because the clock cannot see an empty building.
-  //
-  // Slack is the stock-weighted excess vacancy across all four classes,
-  // smoothed over about eight months so the machine reads a sustained
-  // condition and never a spot number. A boom carrying real slack dies early;
-  // a boom carrying a glut is over. The 36-month guard is what stops one bad
-  // year from rattling the cycle into noise.
-  {
-    let sw = 0, gw = 0;
-    for (const k of BUILT_CLASSES) {
-      const st = e.stock?.[k] ?? CITY_STOCK[k];
-      sw += st;
-      gw += st * ((e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k]);
-    }
-    const gapW = sw > 0 ? gw / sw : 0;
-    e.slackEma = (e.slackEma ?? gapW) + 0.08 * (gapW - (e.slackEma ?? gapW));
-    const slack = e.slackEma;
-    if ((e.phase === "expansion" || e.phase === "peak") && slack > 0.05) {
-      e.phaseMLeft -= 2;                       // the boom is running on fumes
-      if (slack > 0.09 && s.month - (e.forcedTurnM ?? -999) > 36) {
-        e.phaseMLeft = 0;                      // and now it is simply over
-        e.forcedTurnM = s.month;
-        pushNews(s, "warn",
-          "The glut has caught up with the market — there is a year of empty space on the tape "
-          + "and everyone has stopped pretending this is an expansion.");
-      }
-    }
-    // ...and the other way: a market that has eaten its slack cannot stay in
-    // recession forever on a timer. Absorption ends a downturn, not patience.
-    if ((e.phase === "recession" || e.phase === "recovery" || e.phase === "depression") && slack < -0.01) {
-      e.phaseMLeft -= e.phase === "depression" ? 2 : 1;
-    }
-    // A depression that is STILL carrying a year of empty space does not get
-    // to walk into expansion on a calendar. Stretch the clock while the glut
-    // is load-bearing — the label stays honest for as long as the market is.
-    if (e.phase === "depression" && slack > 0.08) e.phaseMLeft = Math.max(e.phaseMLeft, 6);
-
-    // AND THE NATION OUTRANKS THE CITY. No local property cycle survives a
-    // national recession on its own schedule — 1990, 2001 and 2008 each ended
-    // every regional boom in the country within a few quarters of each other,
-    // because the tenants are national firms and the lenders are national
-    // banks. A local boom can outlast a mild downturn for a while; it cannot
-    // ignore one.
-    if ((e.nat?.recM ?? 0) > 0 && (e.phase === "expansion" || e.phase === "peak")) {
-      e.phaseMLeft -= 2;
-    }
-  }
-
-  e.phaseMLeft--;
-  if (e.phaseMLeft <= 6 && !e.rumoredPhase && rng(s) < 0.25) {
-    e.rumoredPhase = cfg.next;
-    pushNews(s, "rumor", RUMORS[cfg.next][Math.floor(rng(s) * RUMORS[cfg.next].length)]);
-  }
-  if (e.phaseMLeft <= 0) {
-    // A MARKET CANNOT BEGIN AN EXPANSION WITH A YEAR OF EMPTY SPACE ON THE
-    // TAPE. Forcing a turn out of a boom was only half of it: the round-robin
-    // would then walk recovery -> expansion -> peak again three years later
-    // while the city was still 40% vacant, which is the owner's complaint
-    // wearing a different hat. Entering a boom is a claim about the market,
-    // and slack is the market's answer. The recovery simply continues — which
-    // is what a long depression actually looks like from inside.
-    let nextPhase = cfg.next;
-    const slackNow = e.slackEma ?? 0;
-    // A boom cannot start on a glut — and the honest name for that stuck state
-    // is depression, not recovery. Recovery is what happens AFTER the bleeding
-    // has stopped; century measurement had rents still falling in 61% of
-    // months labelled recovery because this branch lied about the market.
-    if ((nextPhase === "expansion" || nextPhase === "peak") && slackNow > 0.055) {
-      nextPhase = "depression";
-    }
-    // Leaving depression into recovery while slack is still catastrophic just
-    // relabels the same market. Stay down until the glut has actually eased.
-    if (e.phase === "depression" && nextPhase === "recovery" && slackNow > 0.09) {
-      nextPhase = "depression";
-    }
-    e.phase = nextPhase;
-    e.rumoredPhase = null;
-    const [lo, hi] = PHASE_CFG[e.phase].nextM;
-    e.phaseMLeft = Math.round(lo + (hi - lo) * rng(s));
-    const label: Record<MarketPhase, string> = {
-      expansion: "The expansion is on — rents push, capital chases.",
-      peak: "The market has topped out. Everything is priced to perfection.",
-      recession: "The turn is here: tenants retrench, lenders retreat.",
-      recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
-      depression: "This is not a recovery — empty space is still winning and capital has left the floor.",
-    };
-    pushNews(s, "event", label[e.phase]);
-  }
-
-  const c2 = PHASE_CFG[e.phase];
-
-  // --- the monetary era ------------------------------------------------------
-  // A slow walk between long regimes, re-aimed roughly every twelve to
-  // twenty-five years. This is the layer that makes a mortgage struck in one
-  // decade a different animal by the time it matures in the next.
-  if (e.rateRegime === undefined) { e.rateRegime = 5.4; e.rateAimTo = 5.4; e.rateAimM = s.month + 180; }
-  // NOTE: the era walk below is now vestigial — rateRegime is written by the
-  // central bank block as policy + term premium. It survives only to keep
-  // rateAimTo/rateAimM alive for old saves and for the era news copy.
-  if (s.month >= (e.rateAimM ?? 0)) {
-    const was = e.rateAimTo ?? 5.4;
-    e.rateAimTo = rrange(s, 2.4, 11.0);
-    e.rateAimM = s.month + Math.round(rrange(s, 150, 320));
-    if (Math.abs(e.rateAimTo - was) > 1.6) {
-      pushNews(s, e.rateAimTo > was ? "warn" : "event", e.rateAimTo > was
-        ? "The cost of money is turning. Economists are talking about a decade of dearer credit."
-        : "A new monetary era: money is getting cheaper, and everything with a yield is about to be repriced.");
-    }
-  }
-  // half-life around five years — an era arrives slowly and then it is simply
-  // the world you underwrite in
-  e.rateRegime = clamp(e.rateRegime + 0.012 * ((e.rateAimTo ?? 5.4) - e.rateRegime), RATE_FLOOR, RATE_CEIL);
-  // and once in a long while it moves all at once
-  if (rng(s) < 0.0035) {
-    const jump = rrange(s, 1.1, 3.2) * (rng(s) < 0.55 ? 1 : -1);
-    e.rateRegime = clamp(e.rateRegime + jump, RATE_FLOOR, RATE_CEIL);
-    pushNews(s, jump > 0 ? "warn" : "event", jump > 0
-      ? "An inflation scare. The index jumped this month and every floating coupon in the city went with it."
-      : "The central bank cut hard and unexpectedly. Refinancing windows are open that were shut last month.");
-  }
-
-  // --- THE NATION, AND THE CENTRAL BANK ------------------------------------
-  //
-  // Calibrated against a century of the real thing. The federal funds rate sat
-  // at 3-4% through the twenties, fell to about 1% in the Depression and was
+  // RETIRED with it: the "monetary era" block that rolled a secular rate
+  // target and random jumps ("An inflation scare. The index jumped this
+  // month..."). `tickNation` overwrites `rateRegime` from the policy rate
+  // every month and the loan index never read it, so the news reported rate
+  // moves that did not happen.
   // pegged near zero through the war; drifted up through the fifties and
   // sixties; came apart in the seventies as inflation reached 14.8%; peaked at
   // TWENTY PER CENT in June 1981 when Volcker decided to break it and accepted
@@ -1908,6 +1952,8 @@ export function tickEcon(s: GameState) {
   // come unanchored — the Great Inflation was an expectations failure, and the
   // Great Moderation was thirty years of a central bank being believed.
   tickNation(s);
+  tickIndustryCycle(s);
+  const c2 = PHASE_CFG[e.phase];
 
   // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
   // a player who wrecked his own city was handed a rate cut for it. The nation
@@ -1943,10 +1989,9 @@ export function tickEcon(s: GameState) {
   // years with their vacancy still in the twenties. The local phase's job
   // drift now runs at less than half its rate when the nation is expanding;
   // the national recession (`natPull`, below) is what costs a city jobs.
-  const natRec = (e.nat?.recM ?? 0) > 0;
-  const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
-    : e.phase === "recession" ? (natRec ? -0.0031 : -0.0014)
-    : e.phase === "depression" ? (natRec ? -0.0010 : -0.0003) : 0.0015;
+  // Job growth is what the city's industries are doing, export and local
+  // (`tickIndustryCycle`). It replaces a table of rates by phase label.
+  const jobDrift = e.cycDrift ?? 0;
   // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
   // causal graph had a dead end where its most important feedback belongs: a
   // city that becomes ruinously expensive relative to what it pays its
@@ -2066,7 +2111,9 @@ export function tickEcon(s: GameState) {
   // months, the 1930s class, where −4 to −5%/yr gross for the duration is the
   // measured shape. Sized so the trend PAUSES AND TURNS, which is what the
   // word recession means on a payroll chart.
-  const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0045 : -0.0030) : 0.0002;
+  // The national recession reaches the city through each industry's beta
+  // (tickIndustryCycle); a second flat pull here would count it twice.
+  const natPull = 0;
   // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
   // arrives. This is the only place a level event touches the aggregate
   // economy, and it is the one that has to exist: without it a trade could
@@ -2175,32 +2222,99 @@ export function tickEcon(s: GameState) {
     // and vacancies are how a labour market that has run out of people goes on
     // transmitting pressure to wages and to migration. See `e.jobVac` at the
     // Phillips term below.
-    // Written as `clamp` and not `Math.min` on purpose: `tools/rails.mjs` only
-    // instruments the `clamp` helper, so expressing this any other way would
-    // convert an instrumented rail into an invisible one and the successor to
-    // the 47.7% figure would be unmeasurable by the tool that found it.
-    const FRICTIONAL = 0.028;
-    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
-    const force = e.population! * PARTICIPATION;
-    e.jobs = Math.round(clamp(wanted, 0, force * (1 - FRICTIONAL)));
-    // Unfilled positions as a share of the labour force — the other half of
-    // labour-market tightness, and the half that was being thrown away.
+    // ...AND THEN THE FLOOR ITSELF WAS THE RAIL (2026-10-08). `min(wanted,
+    // force x (1 - 0.028))` put local unemployment on exactly 2.80% in 8-48%
+    // of months over four 50-year worlds, and at exactly 2.80% at its lowest
+    // in every one. No labour market sits on a number. What a real one does
+    // as it tightens is make each additional hire harder: openings go
+    // unfilled, pay rises, people come back into the labour force and move
+    // to town. So employment is now a stock moved by FLOWS, the way the
+    // labour statistics measure it:
+    //
+    //   separations   s x E a month                      SEPARATION_RATE
+    //   openings      V = (positions wanted - E) + separations
+    //   hires         H = min(V, f(theta) x U),  theta = V / U
+    //                 f(theta) = 1 - exp(-lambda x sqrt(theta))
+    //   employment    E' = E - separations + hires
+    //
+    // The job-finding rate f rises with tightness at the square-root
+    // elasticity of the empirical matching function (Petrongolo & Pissarides
+    // 2001) and saturates below one, the urn-ball shape: no labour market
+    // hires every searcher in a month. A plain Cobb-Douglas was tried first
+    // and does exactly that once openings pass about twice the searchers —
+    // unemployment then sat on s/(s+1) = 2.52% in 10-27% of months, a new
+    // floor made of the formula. `lambda` is not tuned: it is solved so the
+    // opening town, whose unemployment is OPENING_UNEMP, is a steady state —
+    // hires exactly replace separations. That gives a job-finding rate of
+    // about 47% a month at the opening, against roughly 45% in US data
+    // (Shimer 2005), which is a check, not a fit. Unemployment then
+    // bottoms out wherever the pace of hiring and the pool of searchers
+    // leave it: a fast boom runs into ever-harder hires and unfilled
+    // openings, which bid up pay (`jobVac` in the Phillips term) and pull in
+    // movers (migration, below). The Beveridge curve falls out of this; it is
+    // not written anywhere.
+    //
+    // Layoffs are immediate (positions wanted below employment), because
+    // firms cut payroll faster than they can hire it back — the asymmetry
+    // every recession shows.
+    const SEPARATION_RATE = 0.026;   // monthly employment-to-unemployment flow, CPS (Shimer 2005)
+    // At the opening steady state openings are just replacements (V = sE),
+    // so theta0 = s(1-u0)/u0 and the finding rate must equal it too.
+    const THETA0 = SEPARATION_RATE * (1 - OPENING_UNEMP) / OPENING_UNEMP;
+    const MATCH_LAMBDA = -Math.log(1 - THETA0) / Math.sqrt(THETA0);
+    // A DEAR WORKFORCE IS HIRED LESS (2026-10-08). Employers here compare
+    // what this town pays with what the same worker costs elsewhere (the
+    // national wage path: expected inflation plus productivity, with none of
+    // this town's tightness — `natWageIdx`, below). Local pay above it trims
+    // how many they want, and local pay below it draws work in. Without this
+    // the only answer to a labour shortage was migration, and unfilled
+    // openings ran to 7-17% of the labour force against a US maximum of
+    // about 7.4%, so national recessions trimmed vacancies and cost nobody a
+    // job. Elasticity 0.5: Hamermesh (1993) surveys -0.15 to -0.75, and a
+    // firm that can also hire in another city sits in the upper half. Read
+    // through a two-year average, because hiring plans move slowly.
+    const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
+    e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
+    const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
+    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
+    // easy to find and stop looking when they are not — the discouraged-
+    // worker effect. About 0.3 points of participation per point of
+    // unemployment against normal, adjusting over a year (Erceg & Levin 2014
+    // put the cyclical response at 0.2-0.4). The guard is wider than any
+    // US metro has recorded and should never bind.
+    const partPrev = e.participation ?? PARTICIPATION;
+    // ...and on WHO lives here: a working-age adult participates at about 80%,
+    // a retiree at about 19% (BLS CPS), children not at all. An ageing town
+    // works less per head without anything telling it to.
+    const ag = e.ages;
+    const ageMix = ag ? (0.80 * ag.work + 0.19 * ag.old) / Math.max(1, ag.kids + ag.work + ag.old) : 0.80 * 0.61 + 0.19 * 0.17;
+    const ageFactor = ageMix / (0.80 * 0.61 + 0.19 * 0.17);
+    const partAim = PARTICIPATION * ageFactor + 0.3 * (OPENING_UNEMP - (e.unemployment ?? OPENING_UNEMP));
+    e.participation = clamp(partPrev + (partAim - partPrev) / 12, 0.50, 0.66);
+    const force = e.population! * e.participation;
+    const empStart = Math.min(prevJobs, wanted);                 // layoffs first
+    const seps = SEPARATION_RATE * empStart;
+    const searchers = Math.max(0, force - empStart);
+    const openings = Math.max(0, wanted - empStart) + seps;
+    const theta = searchers > 0 ? openings / searchers : 0;
+    const finding = 1 - Math.exp(-MATCH_LAMBDA * Math.sqrt(theta));
+    const hires = Math.min(openings, finding * searchers);
+    // People leaving town take their jobs with them: employment cannot exceed
+    // the labour force. A guard — the flows above cannot reach it unless the
+    // population falls faster than firms shed staff.
+    e.jobs = Math.round(clamp(empStart - seps + hires, 0, force));
+    // Unfilled positions beyond ordinary turnover, as a share of the labour
+    // force — what the Phillips term and migration read as tightness.
     e.jobVac = Math.max(0, (wanted - e.jobs) / Math.max(1, force));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
-    // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
-    // not shrink the month the jobs go; people look for work for a year before
-    // they leave town, which is why a bust shows up in the unemployment rate
-    // long after it has shown up in the rents.
-    // The participation rate is 0.58 and not 0.62 for a reason that only
-    // became visible once anything READ unemployment: at 0.62 the opening
-    // state describes 240,000 people, 148,800 of them in the labour force and
-    // 132,000 jobs — an 11.3% unemployment rate, while the same object
-    // initialises `unemployment: 0.052`. The city was born with a number that
-    // contradicted its own population. 0.58 makes the opening state true.
-    const labourForce = e.population! * PARTICIPATION;
-    const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
-    e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
+    // UNEMPLOYMENT IS WHAT THE FLOWS LEAVE. It still lags the cycle — the
+    // labour force does not shrink the month the jobs go; people look for a
+    // year before they stop or leave town — but the lag is now participation
+    // and migration doing it, not a smoothing coefficient on the rate.
+    const labourForce = force;
+    e.unemployment = clamp(1 - e.jobs / Math.max(1, labourForce), 0, 0.5);
 
     // POPULATION FOLLOWS WORK, slowly and asymmetrically. People move to a
     // boom within a couple of years; they leave a bust over a decade, because
@@ -2232,7 +2346,12 @@ export function tickEcon(s: GameState) {
     // could not call anybody. A tenth of the vacancy gap a year is a slow
     // answer, which is right — moving house takes a year — and it is enough to
     // close a shortage over a decade instead of never.
-    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * 0.10 / 12;
+    // UNFILLED JOBS DRAW PEOPLE. A local boom is staffed mostly by movers:
+    // Blanchard & Katz (1992) find a state's employment shock is absorbed
+    // largely by migration with a half-life of a few years, so the pull of
+    // unfilled openings closes the gap at ln2/36 a month. It used to be a
+    // tenth a year, which left the labour cap to do the work.
+    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * (Math.LN2 / 36);
     let migration = jobGrowth * pull + vacPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
 
     // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
@@ -2298,7 +2417,37 @@ export function tickEcon(s: GameState) {
     // and that is all a bound here is for.
     const popFloor = Math.max(1_000, (e.pop0 ?? 240_000) * 0.25);
     const popCeil = Math.max(popFloor * 4, (e.pop0 ?? 240_000) * 16);
-    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), popFloor, popCeil));
+    // PEOPLE ARE BORN, AGE AND DIE (2026-10-08). Natural increase was a
+    // constant 0.016% a month for a population with no ages. Now the city has
+    // three groups and the vital rates of the US, rounded: births 11 per 1,000
+    // people a year, all to the working-age group (CDC NVSS 2019); deaths 0.3,
+    // 3 and 45 per 1,000 among children, working-age and over-65s (CDC
+    // age-specific mortality); children reach working age over 18 years and
+    // workers retire over 47. The opening mix is the 2020 Census (22 / 61 / 17).
+    // Movers are mostly working-age adults, some with children (Census CPS
+    // mobility): 75 / 20 / 5. Natural increase is now an outcome — about
+    // +0.15%/yr at the opening, falling as the town ages, rising when young
+    // movers arrive — and so is the age mix that participation and household
+    // formation read.
+    {
+      const pop = e.population!;
+      if (!e.ages) e.ages = { kids: pop * 0.22, work: pop * 0.61, old: pop * 0.17 };
+      if (e.adults0 === undefined) e.adults0 = (e.pop0 ?? pop) * 0.78;
+      const a = e.ages;
+      const births = a.work * (0.011 / 0.61) / 12;
+      const grow = a.kids / 18 / 12, retire = a.work / 47 / 12;
+      const mig = pop * migration;
+      a.kids += births + 0.20 * mig - grow - a.kids * 0.0003 / 12;
+      a.work += grow + 0.75 * mig - retire - a.work * 0.003 / 12;
+      a.old += retire + 0.05 * mig - a.old * 0.045 / 12;
+      a.kids = Math.max(0, a.kids); a.work = Math.max(0, a.work); a.old = Math.max(0, a.old);
+      const total = a.kids + a.work + a.old;
+      // The guard below is a share of this town (see above); if it ever binds,
+      // every group is scaled alike.
+      const bounded = clamp(total, popFloor, popCeil);
+      if (total > 0 && bounded !== total) { const f = bounded / total; a.kids *= f; a.work *= f; a.old *= f; }
+      e.population = Math.round(bounded);
+    }
 
     // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
     //
@@ -2509,6 +2658,9 @@ export function tickEcon(s: GameState) {
       e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7, 400);
     }
     e.wageDebt = clamp(e.wageDebt, 0, 0.25);
+    // What the same worker earns elsewhere: the national path, expectations
+    // plus productivity, none of this town's tightness or slack.
+    e.natWageIdx = (e.natWageIdx ?? e.wageIdx!) * (1 + e.inflExp / 12 + productivity / 12);
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
@@ -2523,47 +2675,10 @@ export function tickEcon(s: GameState) {
   // long enough to live through and independent of its neighbours, so office
   // can be three years into a bust while apartments are booming — which is the
   // ordinary condition of a real property market, not an exotic one.
-  if (!e.sectorPhase) {
-    e.sectorPhase = { office: "steady", retail: "steady", multifamily: "steady", industrial: "steady" };
-    e.sectorPhaseM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    for (const k of BUILT_CLASSES) e.sectorPhaseM[k] = Math.round(rrange(s, 8, 60));
-  }
-  const SECTOR_AIM = { boom: 0.0125, steady: 0, bust: -0.0115 };
-  for (const k of BUILT_CLASSES) {
-    if ((e.sectorPhaseM![k] -= 1) <= 0) {
-      const cur = e.sectorPhase![k];
-      // A tight market is what tempts capital into a sector, and a sector that
-      // has just boomed is the one carrying the new supply that ends it. The
-      // transition is not a coin toss — it leans on where vacancy actually is.
-      const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-      const tight = clamp(0.5 - gap * 6, 0.1, 0.9);
-      let nextPhase: "boom" | "steady" | "bust";
-      if (cur === "steady") nextPhase = rng(s) < tight ? "boom" : "bust";
-      else if (cur === "boom") nextPhase = rng(s) < 0.45 ? "bust" : "steady";
-      else nextPhase = rng(s) < 0.72 ? "steady" : "boom";
-      e.sectorPhase![k] = nextPhase;
-      e.sectorPhaseM![k] = Math.round(
-        nextPhase === "boom" ? rrange(s, 20, 56)
-          : nextPhase === "bust" ? rrange(s, 16, 42)
-            : rrange(s, 26, 74),
-      );
-      if (nextPhase !== "steady") {
-        // The same dead guard as the industry turn above, and the same fix at
-        // the grain this loop runs at: it is over ASSET CLASSES, not trades, so
-        // the stake is whether the player owns any of the class.
-        // `exposureToTrade` answers the trade question and is not
-        // interchangeable with this one.
-        const exposed = ownsClass(s, k);
-        pushNews(s, exposed ? (nextPhase === "boom" ? "event" : "warn") : "info", nextPhase === "boom"
-          ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
-          : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
-      }
-    }
-    // ease toward the phase's level rather than jumping: a sector turn is
-    // something you notice over a year, not in a month
-    const aim = SECTOR_AIM[e.sectorPhase![k]];
-    e.sectorMom[k] = clamp(e.sectorMom[k] + 0.055 * (aim - e.sectorMom[k]) + rrange(s, -0.0006, 0.0006), -0.02, 0.02);
-  }
+  // (Each property class ran its own boom/steady/bust clock here, and its
+  // momentum fed rents, cap rates, leasing pace and tenant stress. It is now
+  // read off the class's own demand driver in the space loop below — a class
+  // booms when the people who lease it are hiring or arriving.)
 
   // --- what the tenants do for a living -------------------------------------
   //
@@ -2573,72 +2688,8 @@ export function tickEcon(s: GameState) {
   // startups empties while the one across the street let to insurers does not.
   // That distinction did not exist — sector was a name on a lease and nothing
   // else — and it is the difference between a rent roll and a list.
-  if (!e.industryPhase) {
-    e.industryPhase = {} as Record<Sector, "boom" | "steady" | "bust">;
-    e.industryPhaseM = {} as Record<Sector, number>;
-    e.industryMom = {} as Record<Sector, number>;
-    for (const k of SECTORS) {
-      e.industryPhase[k] = "steady";
-      e.industryPhaseM[k] = Math.round(rrange(s, 6, 70));
-      e.industryMom[k] = 0;
-    }
-  }
-  for (const k of SECTORS) {
-    const vol = INDUSTRY_VOL[k];
-    if ((e.industryPhaseM![k] -= 1) <= 0) {
-      const cur = e.industryPhase![k];
-      // Industries lean on the macro cycle without being it: a recession makes
-      // a bust likelier everywhere, and an expansion makes a boom likelier,
-      // but each one still turns on its own schedule.
-      const macro = e.phase === "recession" ? -0.22 : e.phase === "depression" ? -0.14
-        : e.phase === "recovery" ? 0.06 : e.phase === "expansion" ? 0.14 : -0.06;
-      const up = clamp(0.45 + macro, 0.12, 0.85);
-      let next: "boom" | "steady" | "bust";
-      if (cur === "steady") next = rng(s) < up ? "boom" : "bust";
-      else if (cur === "boom") next = rng(s) < 0.5 ? "bust" : "steady";
-      else next = rng(s) < 0.7 ? "steady" : "boom";
-      e.industryPhase![k] = next;
-      // Volatile industries run shorter, sharper cycles; a stable one can sit
-      // steady for the better part of a decade.
-      const len = next === "boom" ? rrange(s, 18, 48) : next === "bust" ? rrange(s, 12, 36) : rrange(s, 30, 96);
-      e.industryPhaseM![k] = Math.round(len / Math.max(0.6, vol));
-      if (next !== "steady") {
-        // A DEAD GUARD, REPLACED BY THE TEST IT WAS PRETENDING TO BE.
-        //
-        // This read `next !== "steady" && cur !== next`, which looks like a
-        // de-duplication filter and is not one: the transition table is
-        // steady->{boom,bust}, boom->{bust,steady}, bust->{steady,boom}, so
-        // `next !== "steady"` already implies `next !== cur`. Measured over
-        // 1,200 months: 437 phase changes, 280 ended non-steady, 280 news items
-        // fired, and the clause suppressed ZERO of them. Nought from->to
-        // repeats in 437 transitions.
-        //
-        // Ten trades on independent multi-year clocks made this the single
-        // loudest emitter on the tape, and 88% of the items concerned a trade
-        // the player had no lease to. The relevance test is not new either:
-        // `exposureToTrade` already exists and swans.ts already uses it for
-        // exactly this judgement, printing "You have nothing let to that trade
-        // today" when it is zero. A trade turning is still filed — a principal
-        // reads about the city — but it INTERRUPTS only when it is your rent
-        // roll turning. The 10% line is the same materiality swans.ts draws.
-        const exposed = exposureToTrade(s, k) > 0.10;
-        pushNews(s, exposed ? (next === "boom" ? "event" : "warn") : "info", next === "boom"
-          ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
-          : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
-      }
-    }
-    const aim = (e.industryPhase![k] === "boom" ? 0.016 : e.industryPhase![k] === "bust" ? -0.015 : 0) * vol;
-    e.industryMom![k] = clamp(
-      e.industryMom![k] + 0.05 * (aim - e.industryMom![k]) + rrange(s, -0.0008, 0.0008) * vol,
-      -0.05, 0.05,
-    );
-  }
+  // (The trades' boom/steady/bust clocks lived here. See tickIndustryCycle.)
 
-  // --- the construction pipeline --------------------------------------------
-  // Everyone else builds when it pays, and delivers three years later into a
-  // market that has usually turned. Starts scale with the spread between what
-  // rent supports and what construction costs, and with whether anyone will
-  // lend. Deliveries land as supply, and supply is what ends a boom.
   const monthAbs: Record<string, number> = {};
   const monthComp: Record<string, number> = {};
   // Demand that PHYSICALLY CANNOT BE HOUSED, as a share of stock. When a city
@@ -3243,25 +3294,61 @@ export function tickEcon(s: GameState) {
     // employment that still wants a shed — see `industComp` / INDUST_COMP_MONTH.
     // Without that factor, a growing services city manufactures warehouse
     // demand it cannot supply and the vacancy floor becomes load-bearing.
-    // Office demand is the city's TRADE MIX, not a single jobs blob. Finance
-    // and tech do not take the same desks in the same months; industryMom and
-    // sectorShare already exist — demand reads them. No new RNG: pure function
-    // of published clocks (stream-safe).
-    const officeComp = (() => {
-      if (k !== "office") return 1;
-      const trades = SECTOR_CLASSES.office ?? [];
+    // WHO LEASES THIS CLASS, AND HOW MANY OF THEM THERE ARE. Office is let to
+    // finance, law, tech, media, insurance and design; sheds to logistics,
+    // food and apparel. Their employment moves with the city's industries
+    // (`tickIndustryCycle`), so a class's driver is the city's jobs times how
+    // its tenant trades are doing against the city as a whole: a tech bust
+    // empties offices, a logistics boom fills sheds. This replaces adding
+    // industry MOMENTUM on top of job counts, which, now that jobs come from
+    // the same industries, would count one cycle twice.
+    const tradeMix = (() => {
+      const trades = SECTOR_CLASSES[k] ?? [];
+      if (!trades.length || !e.indIdx) return 1;
       let w = 0, acc = 0;
       for (const sec of trades) {
         const share = e.sectorShare?.[sec] ?? (1 / Math.max(1, trades.length));
-        acc += share * (1 + (e.industryMom?.[sec] ?? 0) * MOM_DEMAND);
+        acc += share * (e.indIdx[sec] ?? 1);
         w += share;
       }
-      return w > 0 ? acc / w : 1;
+      const own = w > 0 ? acc / w : 1;
+      return own / Math.max(0.05, e.exportIdx ?? 1);
     })();
     const secIdx = e.secular?.[k]?.idx ?? (k === "industrial" ? (e.industComp ?? 1) : 1);
-    const driver = (k === "multifamily" ? popIdx
+    // Flats are rented by HOUSEHOLDS, and households are formed by adults —
+    // an ageing town with fewer children forms more, smaller households per
+    // head. Adults against the opening's adults.
+    const hhIdx = e.ages && e.adults0 ? (e.ages.work + e.ages.old) / e.adults0 : popIdx;
+    const driver = (k === "multifamily" ? hhIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
-      : jobIdx) * secIdx;
+      : jobIdx * tradeMix) * secIdx;
+    // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
+    // of the driver less its own five-year average, smoothed over six months,
+    // in the "boom units" its readers (rents, cap rates, absorption, tenant
+    // stress) were calibrated in — see MOM_UNITS. The class booms when its
+    // tenant base is growing faster than usual and busts when it shrinks; no
+    // clock decides it.
+    {
+      if (!e.classDrv) e.classDrv = {} as Record<BuiltClass, number>;
+      if (!e.classDrvTrend) e.classDrvTrend = {} as Record<BuiltClass, number>;
+      const prevD = e.classDrv[k] ?? driver;
+      e.classDrv[k] = driver;
+      const g = prevD > 0 ? driver / prevD - 1 : 0;
+      const tr = (e.classDrvTrend[k] ??= g);
+      e.classDrvTrend[k] = tr + (g - tr) / 60;
+      e.sectorMom[k] = clamp(e.sectorMom[k] + (MOM_UNITS * (g - tr) - e.sectorMom[k]) / 6, -0.02, 0.02);
+      if (!e.sectorPhase) e.sectorPhase = { office: "steady", retail: "steady", multifamily: "steady", industrial: "steady" };
+      const ph = e.sectorMom[k] > 0.006 ? "boom" : e.sectorMom[k] < -0.006 ? "bust" : "steady";
+      if (ph !== e.sectorPhase[k]) {
+        e.sectorPhase[k] = ph;
+        if (ph !== "steady") {
+          const exposed = ownsClass(s, k);
+          pushNews(s, exposed ? (ph === "boom" ? "event" : "warn") : "info", ph === "boom"
+            ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
+            : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+        }
+      }
+    }
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent
     // restatement of what this class is wanted for once something has: less
@@ -3271,9 +3358,9 @@ export function tickEcon(s: GameState) {
     // outside `sectorMom` and `affordEff` because neither of those ever stops
     // reverting and this never reverts at all. See swans.ts.
     const swanLvl = swanClassLevel(e, k);
-    // Office uses trade composition instead of the class sectorMom term so the
-    // cycle is not counted twice.
-    const cycleTerm = k === "office" ? officeComp : (1 + e.sectorMom[k] * MOM_DEMAND);
+    // The cycle is already in the driver (the tenants' own employment or
+    // population); adding momentum on top would count it twice.
+    const cycleTerm = 1;
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
       * cycleTerm
@@ -3397,7 +3484,7 @@ export function tickEcon(s: GameState) {
     // arriving long before a single lease expires.
     const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
-      * (1 + e.sectorMom[k] * MOM_DEMAND)
+      * cycleTerm
       * affordRaw
       * incomeRaw   // the give-back reads the SAME two arguments targetRaw does
       * swanLvl;
@@ -3828,16 +3915,23 @@ export function tickEcon(s: GameState) {
       && (e.structTight?.[k] ?? 0) > 0.06
       && siteP !== undefined
       && siteP <= 0;
+    // A SHORTAGE PRICES UNTIL IT ENDS (2026-10-08). The shortage branch was
+    // muted to zero on the frictional floor and scaled by `railSat` (room
+    // above it) near the floor, on the argument that a pinned gap is a
+    // constant and so a "permanent rent tax". It is permanent only if nothing
+    // answers it, and two things do: tenants economise on dear space
+    // (`affordEff`, the real-rent elasticity in the demand target) and
+    // builders build once the residual clears (`startCityJob`). Muted, the
+    // engine ran a class on its vacancy floor in 55-67% of months over four
+    // 50-year worlds with real asking up 0.2-2.5%/yr — no faster than a
+    // balanced market — and with 10-25% of desired demand unhoused. The
+    // coefficient is this block's own documented one (five points of
+    // shortage ≈ 2.7%/yr, the header above), now applied wherever the
+    // market is short, including on the floor. The income anchor below still
+    // bounds the LEVEL against what tenants earn.
+    void railSat; void supplyShut;
     const vacTerm = gap <= 0
-      ? (pinned && !supplyShut ? 0 : (() => {
-          const depth = -gap;
-          // Shut: a thinner coefficient than the off-rail shortage term.
-          // Enough to close a ~14% hurdle gap over a few years of CPI-plus;
-          // not the old constant tax (that was 0.045 * full depth, uncapped
-          // by sat, every month of a fifty-year pin).
-          const sat = supplyShut ? 0.40 : railSat;
-          return clamp(depth * 0.045 * sat, 0, supplyShut ? 0.0030 : 0.0045);
-        })())
+      ? clamp(-gap * 0.045, 0, 0.0045)
       : -(gap <= FIT_MAX
         ? glut(gap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
@@ -3886,9 +3980,18 @@ export function tickEcon(s: GameState) {
     // Bleed stored shortage press on a saturated rail — unless the rail is
     // a supply failure. Bleeding then is how asking never reaches the
     // hurdle that would reopen the desk (550991: 23 years, pencil 0).
-    if (railBound && !supplyShut && (e.rentPress[k] ?? 0) > 0) {
-      e.rentPress[k] *= 0.90;
-    }
+    //
+    // RETIRED (2026-10-08). Draining a shortage out of the quote sheet while
+    // the shortage is still there is the reason a class sat on its vacancy
+    // floor for decades with asking rents flat in real terms: measured over
+    // four 50-year worlds, real asking growth on the pin was 0-1%/yr for
+    // office, retail and flats, no faster than in a balanced market, while
+    // soft markets fell 1-6%/yr. A landlord with no vacancy and a queue at
+    // the door does not mark his quote DOWN. The bleed was added because a
+    // rising pin rent compounded when supply never came; supply now answers
+    // (startCityJob builds the scheme that pencils), and the level is held
+    // by the income anchor below and by tenants economising on dear space
+    // (affordEff), which is where a shortage really stops.
     // Hard rail on the EMA itself — see the press clamp at the drift line.
     e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
 
@@ -3975,10 +4078,14 @@ export function tickEcon(s: GameState) {
     // Below the floor: track the price level (and a bit more) so the floor is
     // reachable against rising wages; once restored, the mute returns.
     const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
-    const railEscal = supplyShut ? 1
-      : railBound
-        ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
-        : 1;
+    // RETIRED (2026-10-08): the rail escalator. Asking carried 35% of CPI on
+    // or near the frictional floor, which made a tight market the one place
+    // where a dollar's falling value was NOT passed on — real asking fell in
+    // a shortage. A firm market passes on the price level in full (it is the
+    // soft market that cannot, and `softW` above already says so). The level
+    // risk this guarded against is the income anchor's job.
+    void underFloor;
+    const railEscal = 1;
     const escalGate = Math.max(firmW, cheapFloor) * railEscal;
     const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
@@ -4317,15 +4424,39 @@ export function tickEcon(s: GameState) {
     // pivot had and arriving through a different door.
     const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
     const slope = heat < 0 ? 0.0026 : 0.0016;
-    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope
+    // WHAT A BUILDING COSTS IS WHAT ITS INPUTS COST (2026-10-08). The base
+    // drift was EXPECTED inflation, which sits near its 2% anchor while
+    // realised CPI ran 1.9-3.8%/yr across four 50-year worlds, and it gave
+    // the trades none of the city's real wage growth. On-site labour is
+    // roughly 45% of hard cost (RSMeans / BLS construction cost shares) and
+    // is paid what the town's wages pay; the rest is materials, equipment and
+    // overhead, which move with the price level. With only `inflExp` the real
+    // index slid 0.5-0.7%/yr whenever the trades were not fully booked, and
+    // the office-rent catch-up below had been propping it up. Realised
+    // inputs, not a target: a wage boom makes building dearer, a deflation
+    // cheaper. `heat` stays the premium for how busy the trades are.
+    const LABOUR_SHARE = 0.45;
+    const cpiNow = Math.max(0.35, e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
+    const prevIn = e.costInputsPrev;
+    const inputGrowth = prevIn
+      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
+      : (e.inflExp ?? 0.02) / 12;
+    e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
+    const costDrift = inputGrowth + heat * slope
       + (e.phase === "recession" || e.phase === "depression" ? -0.0004 : 0);
-    // When asking rents outrun construction cost, the land residual (rent −
-    // cost) explodes and vacant lots print absurd $/sf. Catch costIdx up
-    // toward the rent level once the stretch is past a quarter — same
-    // identity landIdx already chases, applied to the cost denominator.
-    const rentLvl = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
-    const stretch = rentLvl / Math.max(0.5, e.costIdx) - 1;
-    const catchUp = stretch > 0.25 ? Math.min(0.0045, 0.012 * (stretch - 0.25)) : 0;
+    // RETIRED (2026-10-08): the office-rent catch-up. This pulled the cost
+    // index toward the OFFICE asking level whenever rents ran a quarter ahead
+    // of it, for every class — flats and sheds priced their concrete off
+    // office quotes. Nothing in the world does that: a contractor's bid is
+    // materials, labour and how busy the trades are, which is `costDrift`
+    // above (inflation plus `heat`, the share of the city under
+    // construction). Measured over four 50-year worlds it fired in 22-63% of
+    // months, and it fired exactly when a shortage lifted rents — so the
+    // margin a shortage should open for builders was handed to the cost
+    // index instead, the residual stayed flat, and the class stayed on its
+    // vacancy floor. When rents outrun cost now, the residual rises, land
+    // pencils, cranes go up, and THEN the trades get dear through `heat`.
+    const catchUp = 0;
     // Real construction cost mean-reverts toward a slow productivity path
     // (~0.4%/yr above CPI — long-run structure, code, and wage mix). Boom heat
     // still moves the index at ENR extremes; what it must not do is compound

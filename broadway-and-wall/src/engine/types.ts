@@ -1742,6 +1742,31 @@ export interface Econ {
    * changing where the trend ends up.
    */
   wageDebt?: number;
+  /** Labour-force participation, moving with how easy work is to find. */
+  participation?: number;
+  /** The nation's unemployment last month, for its monthly employment swing. */
+  natUnempPrev?: number;
+  /** Employment index per trade, its own shock state, and the local-serving index. */
+  indIdx?: Record<Sector, number>;
+  indShock?: Record<Sector, number>;
+  localIdx?: number;
+  /** The export-base composite, its monthly change, recent history, last peak and months in phase. */
+  cycIdx?: number;
+  cycDrift?: number;
+  cycHist?: number[];
+  cycPeak?: number;
+  phaseAge?: number;
+  exportIdx?: number;
+  /** The population by age: children, working age, over 65. */
+  ages?: { kids: number; work: number; old: number };
+  /** Adults (working age + over 65) at the opening, for household formation. */
+  adults0?: number;
+  /** The national wage path (no local tightness), and this town's smoothed premium over it. */
+  natWageIdx?: number;
+  wagePremEma?: number;
+  /** Each class's demand driver last month and its five-year average monthly growth. */
+  classDrv?: Record<BuiltClass, number>;
+  classDrvTrend?: Record<BuiltClass, number>;
   /** Unfilled positions as a share of the labour force — what employers wanted
    *  and could not staff. Zero whenever the market is slack. Together with
    *  `unemployment` this is the tightness the wage curve reads; on its own it is
@@ -1795,6 +1820,8 @@ export interface Econ {
    * reason the crew count is a market rather than a wall.
    */
   crewIdx?: number;
+  /** Last month's price level and wage index, read by the construction cost drift. */
+  costInputsPrev?: { cpi: number; wage: number };
   /**
    * How chronically short of space this city has been, over about a
    * twenty-year memory. A city that has been tight for a generation earns a

@@ -305,7 +305,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
         {q.maxProceeds > 0 && q.bindingWhy && (
-          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px" }}>{q.bindingWhy}</div>
+          // a sentence, not a value: across both columns, never as a cell in
+          // the label column (which sizes to its widest cell, and squeezed
+          // every figure on the desk into a one-word-wide strip)
+          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px", gridColumn: "1 / -1" }}>{q.bindingWhy}</div>
         )}
         <Row
           k="Structure"

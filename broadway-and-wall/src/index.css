@@ -252,6 +252,10 @@ body {
 .grid { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; }
 .grid .k { color: var(--ink-dim); }
 .grid .v { text-align: right; color: var(--ink); }
+/* A note dropped into a key/value grid is a sentence, not a cell: it spans
+   both columns, or the label column (auto = widest cell) swells to fit it
+   and squeezes every value into a one-word strip. */
+.grid > div.dim, .grid > div.hint { grid-column: 1 / -1; }
 
 .demand { margin-top: 14px; }
 

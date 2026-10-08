@@ -148,7 +148,8 @@
     "ai-match": "node tools/ai-match.mjs",
     "ai-bridge": "node tools/ai-bridge.mjs",
     "pnl": "node test/pnl.mjs",
-    "ti-probe": "node test/ti-probe.mjs"
+    "ti-probe": "node test/ti-probe.mjs",
+    "spec-arms": "node test/build-spec-arms.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

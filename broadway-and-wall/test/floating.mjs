@@ -88,9 +88,9 @@ console.log("monthly reset through the cap");
 console.log("prepay at par");
 {
   const L = E.originate(g, hf, 3_000_000, 260_000, 1, "standard", "office");
-  ok(L && E.prepayPenalty(L, g.month + 1) === 0, `a bank floater leaves at par in month one (penalty ${L && E.prepayPenalty(L, g.month + 1)})`);
+  ok(L && E.prepayPenalty(L, g.month + 1, g.econ) === 0, `a bank floater leaves at par in month one (penalty ${L && E.prepayPenalty(L, g.month + 1, g.econ)})`);
   const F = E.originate(g, harbor, 3_000_000, 260_000, 1, "standard", "office");
-  ok(F && E.prepayPenalty(F, g.month + 1) > 0, `…where the same desk's fixed sheet charges a step-down (${F && Math.round(E.prepayPenalty(F, g.month + 1))})`);
+  ok(F && E.prepayPenalty(F, g.month + 1, g.econ) > 0, `…where the same desk's fixed sheet charges a step-down (${F && Math.round(E.prepayPenalty(F, g.month + 1, g.econ))})`);
 }
 
 console.log("an old save's floater keeps its coupon");

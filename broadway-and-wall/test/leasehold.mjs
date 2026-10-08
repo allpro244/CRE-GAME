@@ -56,7 +56,7 @@ check(Math.abs(q.rentYr - q.price * q.yieldPct / 100) < 2, "the rent is the pric
 
 const nw0 = E.netWorth(g, parcels), cash0 = g.cash, led0 = ledger(g);
 const noi0 = E.contractNoiYr(rec, g.econ, g.holdings[bbl], g.month);
-const pen = E.stackPayoff(g.holdings[bbl], g.month).penalty;
+const pen = E.stackPayoff(g.holdings[bbl], g.month, g.econ).penalty;
 const r = E.sellLandLeaseBack(g, parcels, bbl);
 check(!r.err, `sold${r.err ? ": " + r.err : ""}`);
 const g1 = r.s, h1 = g1.holdings[bbl];

@@ -774,7 +774,7 @@ export function assemblyPayoff(s: GameState, bbls: string[]): { due: number; bal
   for (const d of [...new Set(bbls.flatMap((b) => siteDeeds(s, siteRoot(s, b))))]) {
     const h = s.holdings[d];
     if (!h) continue;
-    const parts = [h.loan ? payOffDue(h.loan, s.month) : null, h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month) : null];
+    const parts = [h.loan ? payOffDue(h.loan, s.month, s.econ) : null, h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month, s.econ) : null];
     let any = false;
     for (const p of parts) if (p && p.due > 0) { due += p.due; balance += p.balance; penalty += p.penalty; any = true; }
     if (any || h.loan) deeds.push(d);
@@ -2822,7 +2822,7 @@ export function saleProceedsToSeller(
   const { net, gain } = saleTaxQuote(h, price, s);
   const tax = sponsorsSaleTax(s, h, price);
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-  const stack = stackPayoff(h, s.month);
+  const stack = stackPayoff(h, s.month, s.econ);
   const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
   const loanPayoff = stack.balance;

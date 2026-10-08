@@ -79,7 +79,7 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const yieldPct = groundYieldPct(s.econ);
   const rentYr = Math.round(price * yieldPct / 100);
   const costs = Math.round(price * (TRANSFER_TAX + LEASEHOLD_DEAL_COST));
-  const stack = stackPayoff(h, s.month);
+  const stack = stackPayoff(h, s.month, s.econ);
   const payoff = stack.balance + stack.penalty;
   const valueBefore = ownedHoldingValueFromRec(s, rec, h);
   // The land's share of what you paid is the basis that leaves with it.
@@ -104,7 +104,7 @@ export function sellLandLeaseBack(
   const next = cloneState(s);
   const h = next.holdings[bbl]!;
   const rec = resolveRec(parcels, next, bbl)!;
-  const stack = stackPayoff(h, next.month);
+  const stack = stackPayoff(h, next.month, next.econ);
   // Booked like a sale: the proceeds net of the loan they retire under `sold`,
   // the break fee as the debt cost it is, the gain's tax under `taxes`.
   // The deed stays on the book, so these land on its own equity ledger too.

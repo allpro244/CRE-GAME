@@ -810,7 +810,7 @@ function ParcelPanelInner({
           </div>
           <div className="btn-row">
             {(() => {
-              const due = payOffDue(holding.loan, game.month);
+              const due = payOffDue(holding.loan, game.month, game.econ);
               const facPledged = !!game.facility?.bbls?.includes(selectedBBL);
               const canPay = !facPledged && fundableNow(game, parcels) >= due.due;
               return (
@@ -1318,7 +1318,7 @@ function PaydownRow({ bbl }: { bbl: string }) {
   const cure = Math.min(bal - 1, Math.round(equityCureNeed(rec, game, h)));
   const amt = Math.round(Number(txt.replace(/[^0-9.]/g, "")) || 0);
   const valid = amt > 0 && amt < bal;
-  const pen = valid ? prepayPenalty({ ...loan, balance: amt }, game.month) : 0;
+  const pen = valid ? prepayPenalty({ ...loan, balance: amt }, game.month, game.econ) : 0;
   const tooMuch = valid && amt + pen > game.cash;
   return (
     <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>

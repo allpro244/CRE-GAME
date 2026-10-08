@@ -1739,8 +1739,12 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
   const vr = s.variance?.[bbl] ?? 0;
   const marked = s.landmarks?.[bbl] !== undefined;
   const zu = s.zoneUse?.[bbl];
-  if (!b && !adj && !dd && zx === 1 && !vr && !marked && !zu) return rec;
+  // WHAT IT WAS BUILT TO, from the save: a delivery stamps `built`, a gut
+  // stamps `specOf`. Never from a write to the static parcel table.
+  const spec = s.specOf?.[bbl] ?? b?.buildSpec;
+  if (!b && !adj && !dd && zx === 1 && !vr && !marked && !zu && spec === undefined) return rec;
   const out = { ...rec };
+  if (spec !== undefined) out.buildSpec = spec;
   if (zu) out.zoneDist = zu;
   if (marked) {
     // A landmark's envelope is what is standing on it. The redevelopment

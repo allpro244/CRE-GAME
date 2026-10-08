@@ -8,7 +8,7 @@ import { DESKS } from "@/ui/desks";
  */
 
 const TIME: readonly [string, string][] = [
-  ["Space", "Advance one month"],
+  ["Space", "Play / pause, a month a second"],
   ["G", "Play / pause — a month a second, pausing when something needs you"],
   ["Y", "Up to one year, stopping when a decision arrives"],
   ["N", "Skip to the next decision, up to three years"],

@@ -52,10 +52,11 @@ export default function GamePanels() {
       }
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
-      // A dropdown owns its arrow and letter keys, and Space on a focused
-      // button presses that button — it must not also advance the month.
+      // A dropdown owns its arrow and letter keys. Space is always play and
+      // pause, so a button left focused by a click does not swallow it (the
+      // keydown's preventDefault below stops the button pressing as well).
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
-      if (e.code === "Space" && tag === "BUTTON") return;
+      if (e.code === "Space" && tag === "BUTTON") el?.blur();
       if (e.key === "Escape") {
         const st0 = useStore.getState();
         if (st0.photoFrame) {
@@ -93,13 +94,20 @@ export default function GamePanels() {
           return;
         }
       }
-      if (e.code === "KeyG" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // SPACE IS PLAY AND PAUSE, like G: pausing always works, even with a
+      // card open; playing waits until the card is answered
+      if ((e.code === "KeyG" || e.code === "Space") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        if (!st.game?.gameOver) st.setAutoplay(st.autoplay ? 0 : 1);
+        if (st.autoplay) { st.setAutoplay(0); return; }
+        if (document.querySelector(".modal-backdrop")) {
+          useStore.setState({ toast: { text: "Answer or dismiss the card on your desk before playing.", kind: "err", at: Date.now() } });
+          return;
+        }
+        if (!st.game?.gameOver) st.setAutoplay(1);
         return;
       }
       if (st.advancing) return;
-      const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
+      const wantsTime = e.code === "KeyY" || e.code === "KeyN";
       if (wantsTime && document.querySelector(".modal-backdrop")) {
         e.preventDefault();
         useStore.setState({
@@ -107,8 +115,7 @@ export default function GamePanels() {
         });
         return;
       }
-      if (e.code === "Space") { e.preventDefault(); st.advance(); }
-      else if (e.code === "KeyY") st.advanceYear();
+      if (e.code === "KeyY") st.advanceYear();
       else if (e.code === "KeyN") st.advanceUntil();
     };
     window.addEventListener("keydown", onKey);

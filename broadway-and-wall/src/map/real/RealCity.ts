@@ -247,7 +247,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const alb = makeCanvas(W, H), orm = makeCanvas(W, H), hgt = makeCanvas(W, H), msk = makeCanvas(W, H);
   orm.g.fillStyle = `rgb(0,${Math.round(spec.wallRough * 255)},0)`; orm.g.fillRect(0, 0, W, H);
   hgt.g.fillStyle = "#ffffff"; hgt.g.fillRect(0, 0, W, H);
-  const glassy = spec.glass || GLASSY.has(spec.key.split("#")[0]);
+  // a curtain wall, or any non-masonry tower, reads as one sheet of tinted glass in daylight
+  const fk0 = spec.key.split("#")[0];
+  const glassy = spec.glass || GLASSY.has(fk0) || (!spec.masonry && TOWER_FAMS.has(fk0));
   // the paint mask: R lit room after dark, G trim, B accent (see PAINT_FRAG)
   msk.g.fillStyle = "#000000"; msk.g.fillRect(0, 0, W, H);
   const pc = { m: msk.g, hg: hgt.g };

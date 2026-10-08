@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, SVC_START } from "@/engine/types";
 import type { BuiltClass, GameState } from "@/engine/types";
 import { deedMark } from "@/ui/deedMarks";
 import { managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
@@ -43,6 +43,7 @@ export function PortfolioPage() {
   // decision — you do it while looking at the maturity wall, not after opening
   // one building's record and scrolling past its rent roll.
   const [refiRow, setRefiRow] = useState<string | null>(null);
+  const [opsRow, setOpsRow] = useState<string | null>(null);
   // The ask you are about to name, per row. See ListSection.
   const [listRow, setListRow] = useState<string | null>(null);
   // Vacant dirt: offer a ground lease from the row — same reach as List / Refi.
@@ -686,6 +687,16 @@ export function PortfolioPage() {
                       List
                     </button>
                   )}
+                  {/* how the building is run: the six choices from the property card */}
+                  {!h.groundLeased && (rec?.bldgArea ?? 0) > 0 && (
+                    <button
+                      className={"btn btn-sm" + (opsRow === h.bbl ? " btn-on" : "")}
+                      onClick={(ev) => { ev.stopPropagation(); setOpsRow(opsRow === h.bbl ? null : h.bbl); }}
+                      title={`Service ${serviceSpec(h.service).label} (tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100) · capital plan ${planSpec(h.plan).label} (condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100)`}
+                    >
+                      {serviceSpec(h.service).label} · {planSpec(h.plan).label}
+                    </button>
+                  )}
                   <button
                     className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
                     onClick={(ev) => { ev.stopPropagation(); setRefiRow(refiRow === h.bbl ? null : h.bbl); }}
@@ -739,6 +750,33 @@ export function PortfolioPage() {
                 </div>
               </td>
             </tr>
+            {opsRow === h.bbl && (
+              <tr>
+                <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <div className="grid">
+                    <Row k="Service" v={`${serviceSpec(h.service).label} · tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100`} />
+                    <Row k="Capital plan" v={`${planSpec(h.plan).label} · condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100 (${h.condition})`} />
+                  </div>
+                  <div className="btn-row">
+                    {OPS_SERVICE.map((o) => (
+                      <button key={o.key} type="button"
+                        className={"btn btn-sm" + ((h.service ?? 0) === o.key ? " btn-on" : "")}
+                        title={o.blurb + " — three years to matter, three years to undo"}
+                        onClick={() => useStore.getState().ops(h.bbl, { service: o.key })}
+                      >{o.label}</button>
+                    ))}
+                    <span className="dim" style={{ margin: "0 6px" }}>|</span>
+                    {OPS_PLAN.map((o) => (
+                      <button key={o.key} type="button"
+                        className={"btn btn-sm" + ((h.plan ?? 1) === o.key ? " btn-on" : "")}
+                        title={o.blurb}
+                        onClick={() => useStore.getState().ops(h.bbl, { plan: o.key })}
+                      >{o.label}</button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            )}
             {refiRow === h.bbl && (
               <tr>
                 <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>

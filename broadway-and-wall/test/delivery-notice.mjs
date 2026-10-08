@@ -1,6 +1,6 @@
 /**
- * A delivery popup is for a massive building — top 1% of the standing city
- * by floor area, measured against the rest of the properties.
+ * A delivery popup is for a massive building — one of the five largest on the
+ * map by floor area, any class, measured against the rest of the properties.
  *
  *   pnpm engine && pnpm --dir broadway-and-wall delivery-notice
  */
@@ -48,11 +48,15 @@ parcels.new = lot("new", 12_000);
 ok("ordinary 12k office is not a popup", !E.deliveryWorthCeremony(game, parcels, "new"));
 
 parcels.huge = lot("huge", 120_000);
-ok("120k tower is top 1% of a 200-building city", E.deliveryWorthCeremony(game, parcels, "huge"));
+ok("120k tower is the largest in a 200-building city", E.deliveryWorthCeremony(game, parcels, "huge"));
 
 parcels.mid = lot("mid", 72_000);
-// Top 1% of ~200 is two or three trophies (100k / 90k / 85k). 72k is not that.
-ok("72k is large but not top 1%", !E.deliveryWorthCeremony(game, parcels, "mid"));
+// the five largest of the others are 120k, 100k, 90k, 85k, 80k: 72k is sixth or worse
+ok("72k is large but not top five", !E.deliveryWorthCeremony(game, parcels, "mid"));
+delete parcels.mid;
+parcels.fifth = lot("fifth", 81_000);
+ok("81k beats the fifth-largest and makes the top five", E.deliveryWorthCeremony(game, parcels, "fifth"));
+delete parcels.fifth;
 
 parcels.tie = lot("tie", 100_000);
 ok("a peer of the largest still qualifies", E.deliveryWorthCeremony(game, parcels, "tie"));

@@ -314,8 +314,7 @@ export function SettingsPage() {
       <JevSettings />
       <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
-        <Row k="Space" v="Advance one month" />
-        <Row k="G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />
+        <Row k="Space / G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />
         <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
         <Row k="N" v="Skip to the next decision, up to three years" />
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />

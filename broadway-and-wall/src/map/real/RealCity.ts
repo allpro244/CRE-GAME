@@ -1062,18 +1062,37 @@ export class RealCityLayer {
   }
 
   /** The shadow box follows the view, sized to what the camera can see. */
+  //
+  // WITHOUT SHIMMER. The box re-fits as the camera pans and zooms, and every
+  // re-fit used to land at an arbitrary sub-pixel offset and an arbitrary
+  // size, so each one re-rasterised every shadow edge a fraction of a shadow
+  // texel to one side: the whole city's shadows crawled and flickered as you
+  // moved. Two fixes, the usual pair: the size comes in fixed steps (a
+  // quarter-octave apart), so the texel size only changes on a real zoom; and
+  // the box is moved in whole texels of the light's own view, so a pan
+  // re-renders the same edges onto the same pixels.
   private fitShadow(fx: number, fy: number, distM: number) {
-    const span = Math.max(260, Math.min(2600, distM * 1.6));
+    const raw = Math.max(260, Math.min(2600, distM * 1.6));
+    const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
     const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
-    if (moved < span * 0.12 && Math.abs(span - this.shadowSpan) < this.shadowSpan * 0.15) return;
+    if (moved < span * 0.12 && span === this.shadowSpan) return;
+    // the light's right and up axes, as the shadow camera will see them
+    const eye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
+    const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(), this.sun.shadow.camera.up);
+    const right = new THREE.Vector3().setFromMatrixColumn(look, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(look, 1);
+    const texel = (2 * span) / this.sun.shadow.mapSize.x;
+    const f = new THREE.Vector3(fx, fy, 0);
+    const x = f.dot(right), y = f.dot(up);
+    f.addScaledVector(right, Math.round(x / texel) * texel - x).addScaledVector(up, Math.round(y / texel) * texel - y);
     this.shadowFocus.set(fx, fy, 0);
     this.shadowSpan = span;
     const cam = this.sun.shadow.camera;
     cam.left = -span; cam.right = span; cam.top = span; cam.bottom = -span;
     cam.near = 10; cam.far = 6000;
     cam.updateProjectionMatrix();
-    this.sun.target.position.set(fx, fy, 0);
-    this.sun.position.set(fx, fy, 0).addScaledVector(this.sunDir, 2500);
+    this.sun.target.position.copy(f);
+    this.sun.position.copy(f).add(eye);
     this.sun.target.updateMatrixWorld();
     this.renderer.shadowMap.needsUpdate = true;
   }

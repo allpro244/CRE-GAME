@@ -1398,7 +1398,7 @@ export default function MapView() {
     // alone. The renderer's familyFor answers both, and it needs the year to
     // give them.
     const nowYear = START_YEAR + Math.floor(game.month / 12);
-    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number; design?: BuildingDesign }[] = [];
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number; year?: number; design?: BuildingDesign; shops?: boolean }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
@@ -1434,7 +1434,8 @@ export default function MapView() {
       // b.yearBuilt is the delivery year the engine stamped. A building keeps
       // the skin of the decade it went up in for the rest of the campaign;
       // it does not restyle itself as the years pass.
-      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov, year: b.yearBuilt || nowYear, design: b.design });
+      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov, year: b.yearBuilt || nowYear, design: b.design,
+        ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}) });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out
@@ -1505,8 +1506,8 @@ export default function MapView() {
     const month = useStore.getState().game?.month ?? 0;
     const FLOOR_M = 3.55;   // the storey the skyline effect below draws player stock at
     layer.setPreview(p ? {
-      bbl: p.bbl, cls: p.use, heightM: p.floors * FLOOR_M, floors: p.floors, construction: false,
-      cov: p.cov, year: START_YEAR + Math.floor(month / 12), design: p.design,
+      bbl: p.bbl, cls: p.cls ?? p.use, heightM: p.floors * FLOOR_M, floors: p.floors, construction: false,
+      cov: p.cov, year: p.year ?? START_YEAR + Math.floor(month / 12), design: p.design, shops: p.shops,
     } : null);
   }, [designPreview, mapReady]);
 

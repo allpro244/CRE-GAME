@@ -1332,3 +1332,47 @@ export const RUSTIC_BASE: Record<string, number> = { stone: 0.7, newstone: 0.6, 
 export const BAY_P: Record<string, number> = { brownstone: 0.55, brick: 0.28, romanesque: 0.5, georgian: 0.18, gothic: 0.3, clapboard: 0.35, buff: 0.2, stucco: 0.12 };
 /** Chance a front of this family has dressed quoins at its corners. */
 export const QUOIN_P: Record<string, number> = { georgian: 0.7, stone: 0.35, newstone: 0.4, brick: 0.12, buff: 0.14, romanesque: 0.25, gothic: 0.15, brownstone: 0.1 };
+
+// ============================================================================
+// THE ARCHITECTURAL STYLES. A facade family says what a wall is made of; a
+// style says what the building is: its shape, its ground floor, its roofline
+// and its ornament. A Beaux-Arts bank and a brutalist office are not the same
+// box in two skins — the bank has a temple front and a balustrade, the office
+// stands on a recessed base under cantilevered floors.
+// ============================================================================
+export type ArchStyle = "classical" | "chicago" | "deco" | "victorian" | "spanish" | "tudor" | "modernist" | "brutalist"
+  | "moderne" | "midcentury" | "contemporary" | "futurist" | "vernacular";
+
+/** The style a building of this family and year was put up in. */
+export function styleOf(fam: string, year: number, h: number): ArchStyle {
+  const f = fam.split("#")[0];
+  switch (f) {
+    case "stone": case "newstone": case "rustic": return "classical";
+    case "georgian": return h > 9 ? "classical" : "vernacular";
+    case "terracotta": case "castiron": case "romanesque": return "chicago";
+    case "deco": case "decobrick": return "deco";
+    case "gothic": case "clapboard": return "victorian";
+    case "brick": case "buff": case "brownstone": return year > 0 && year < 1905 ? "victorian" : "vernacular";
+    case "stucco": case "arcade": return "spanish";
+    case "tudor": return "tudor";
+    case "brutalist": return "brutalist";
+    case "moderne": return "moderne";
+    case "midcentury": return h > 16 ? "modernist" : "midcentury";
+    case "ribbon": case "grid": case "blackglass": case "bronze": return "modernist";
+    case "precast": return year > 0 && year < 1985 ? "modernist" : "vernacular";
+    case "glass": return year > 0 && year < 1980 ? "modernist" : year >= 2005 ? "futurist" : "vernacular";
+    case "diagrid": case "pixel": return "futurist";
+    case "blueglass": case "greenglass": case "silverglass": case "fins": return year >= 2005 ? "futurist" : "vernacular";
+    case "fibercement": case "metalpanel": case "rainscreen": case "stackbrick": case "timber": return "contemporary";
+    default: return "vernacular";
+  }
+}
+
+/** A Spanish Revival ground storey: round arches on stucco piers. */
+export const ARCADE_SPEC: FamilySpec = { key: "arcade", bayW: 3.6, floorH: 4.4, masonry: false, glass: false,
+  win: { x0: 0.14, x1: 0.86, y0: 0.0, y1: 0.86 }, wall: stuccoWall([236, 224, 198]), winStyle: "arch",
+  glassCol: "#33424c", frameCol: "#3a2e26", wallRough: 0.9, glassRough: 0.1, glassMetal: 0.1, mullions: [2, 3], reveal: 4.4 };
+FAMILY_SPECS.push(ARCADE_SPEC);
+VARIANTS.arcade = [{ wall: stuccoWall([226, 200, 166]) }, { wall: stuccoWall([242, 236, 222]), frameCol: "#22302a" }];
+TINTS.arcade = [[1, 1, 1]];
+PALETTES.arcade = PALETTES.stucco;

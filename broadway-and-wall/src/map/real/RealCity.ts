@@ -18,7 +18,7 @@ import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
-import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, NO_PAINT, type FamilySpec, type Livery } from "./facades";
+import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
 
 type Ctx = CityCtx;
@@ -150,7 +150,7 @@ function rippleNormal(): THREE.CanvasTexture {
  * the street, and the low sun. Built once as a little scene and prefiltered
  * (PMREM) for every material's reflections and ambient light. Up is +z.
  */
-function skyEnvironment(): THREE.Scene {
+export function skyEnvironment(): THREE.Scene {
   const sc = new THREE.Scene();
   const geo = new THREE.SphereGeometry(100, 48, 24);
   const mat = new THREE.ShaderMaterial({
@@ -784,6 +784,15 @@ function roofLin(hex: string): number[] { const c = new THREE.Color(hex); return
 /** The trim material's own colour, linear — a painted cornice's vertex colour divides it out. */
 const TRIM_LIN = (() => { const c = new THREE.Color(0xd8d0be); return [c.r, c.g, c.b]; })();
 
+/** A scheme built as a model for the Build desk's viewer (RealCityLayer.schemeModel). Metres, lot-centred, z up. */
+export interface SchemeModel {
+  group: THREE.Group; height: number; lot: P2[]; neighbours: { ring: P2[]; h: number }[];
+  sun: { dir: THREE.Vector3; color: THREE.Color; intensity: number };
+  sky: { sky: THREE.Color; ground: THREE.Color; intensity: number };
+}
+/** The city layer on the map now, for the Build desk's viewer (null when no map is up). */
+export let activeCity: RealCityLayer | null = null;
+
 interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
@@ -861,6 +870,7 @@ export class RealCityLayer {
 
   // ---- MapLibre custom layer --------------------------------------------
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
+    activeCity = this;
     this.map = map;
     const mc = maplibregl.MercatorCoordinate.fromLngLat({ lng: this.center[0], lat: this.center[1] }, 0);
     this.origin = { x: mc.x, y: mc.y, z: mc.z, s: mc.meterInMercatorCoordinateUnits() };
@@ -895,6 +905,7 @@ export class RealCityLayer {
   }
 
   onRemove() {
+    if (activeCity === this) activeCity = null;
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
@@ -1162,6 +1173,19 @@ export class RealCityLayer {
     return c.toDataURL("image/png");
   }
 
+  /** Each style feature and the deeds that got it, for the review shots and the count. */
+  features = new Map<string, string[]>();
+  private feat(f: string, bbl: string) { if (!bbl || this.sandbox) return; let l = this.features.get(f); if (!l) this.features.set(f, (l = [])); if (!l.includes(bbl)) l.push(bbl); }
+  /** Where to look at one building per feature: [lng, lat, height]. */
+  featureSpots(): Record<string, { n: number; at: number[][] }> {
+    const out: Record<string, { n: number; at: number[][] }> = {};
+    const byB = new Map<string, BuildingVolume>();
+    for (const v of this.volumes) if (v.b && !byB.has(v.b)) byB.set(v.b, v);
+    for (const [f, l] of this.features) {
+      out[f] = { n: l.length, at: l.slice(0, 4).map((b) => { const v = byB.get(b); if (!v) return [0, 0, 0]; let x = 0, y = 0; for (const p of v.r) { x += p[0] / v.r.length; y += p[1] / v.r.length; } return [x, y, this.deeds.get(b)?.height ?? 0]; }) };
+    }
+    return out;
+  }
   /** elevation | paint scheme of every building's base volume, for the variety audit. */
   looks = new Map<string, string>();
   /** What each tower ended up as — family#elevation | massing | crown | tint — for the variety audit. */
@@ -1201,10 +1225,12 @@ export class RealCityLayer {
     const quad = ring0.length === 4 && rad > 10;
     const tall = H >= 40;
     const h = (n: number) => hash01(k ^ n, this.seed);
-    type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers";
+    type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers" | "twist";
+    const futurist = styleOf(fam, year, H) === "futurist";
     const opts: [M, number][] = tall
       ? [["straight", 0.1], ["podium", 0.15], ["tiers", 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
-         ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0]]
+         ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0],
+         ["twist", futurist && simple && H > 80 ? 0.22 : 0], ["taper", futurist && simple ? 0.08 : 0]]
       : [["straight", 0.4], ["podium", 0.2], ["chamfer", simple ? 0.15 : 0], ["round", simple ? 0.1 : 0], ["notch", quad ? 0.08 : 0], ["tiers", 0.1]];
     const m = pick(h(0x6a55), opts) as M;
     let ring = ring0;
@@ -1244,6 +1270,18 @@ export class RealCityLayer {
         vol(r, za, zb, i === n - 1, i === 0 && shop);
         za = zb; topRing = r;
       }
+    } else if (m === "twist") {
+      // THE TWISTING TOWER: each band of floors turned a few degrees on the
+      // one below, about the core, a quarter-turn or less top to bottom
+      const n = 12, turn = (0.35 + 0.5 * h(0x7f1)) * (h(0x7f2) < 0.5 ? -1 : 1);
+      let za = z0;
+      for (let i = 0; i < n; i++) {
+        const zb = z0 + ((H - z0) * (i + 1)) / n, a = (turn * i) / (n - 1), ca = Math.cos(a), sa = Math.sin(a);
+        const r = ring.map(([x, y]) => [cx + ((x - cx) * ca - (y - cy) * sa) * 0.86, cy + ((x - cx) * sa + (y - cy) * ca) * 0.86] as P2);
+        vol(r, za, zb, i === n - 1, i === 0 && shop);
+        za = zb; topRing = r;
+      }
+      this.feat("twist", bbl);
     } else if (m === "twin") {
       // a shared base, then two towers of unequal height with a slot between
       const base = H * (0.35 + 0.2 * h(0x4a));
@@ -1297,7 +1335,7 @@ export class RealCityLayer {
         ? [["mech", 0.2], ["mech2", 0.15], ["stepped", 0.13], ["lantern", 0.11], ["fins", 0.11], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0], ["slant", ring.length === 4 ? 0.09 : 0]]
         : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
       const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
-      note(c);
+      note(c); this.feat("crown:" + c, bbl);
       const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
       if (c === "mech" || c === "mech2") {
         this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, c === "mech", false, k, false, false, "", 0, ov);
@@ -1352,7 +1390,7 @@ export class RealCityLayer {
     if (kind === "auto" && (deco || STONE_TOWER.has(fam))) {
       const c = deco ? pick(hash01(k ^ 0x7c1, this.seed), [["spire", 0.45], ["ziggurat", 0.3], ["piers", 0.25]])
         : pick(hash01(k ^ 0x7c1, this.seed), [["setback", 0.32], ["chateau", ring.length === 4 ? 0.3 : 0], ["setchateau", ring.length === 4 ? 0.18 : 0], ["pinnacles", fam === "terracotta" || fam === "stone" ? 0.2 : 0.05]]);
-      note(c);
+      note(c); this.feat("crown:" + c, bbl);
       const d2 = this.deedOf(bbl);
       if (c === "ziggurat") {
         let r = ring, z = z1;
@@ -1647,6 +1685,282 @@ export class RealCityLayer {
       }
     }
   }
+  // ---- the styles' pieces (see styleOf) ----------------------------------
+
+  /**
+   * ONE BUILDING IN ITS STYLE'S SHAPE. Most styles stand as their footprint
+   * extruded; three do not. Brutalism turns the ziggurat upside down — a
+   * recessed base under floors that cantilever out over it. The contemporary
+   * block sets its top floor back behind a terrace and pushes boxes of a
+   * second cladding out of its face. Streamline Moderne rounds its corners.
+   * Same height and footprint as the deed's; only the shape changes.
+   */
+  private styledVolume(ring: P2[], z0: number, z1: number, fam: string, t: number[], bbl: string, k: number, shop: boolean, cls: string, year: number, ov?: VolumeOv) {
+    if (ringArea(ring) < 0) ring = ring.slice().reverse();
+    const style = styleOf(fam, year, z1);
+    let rad = Infinity;
+    for (let i = 0; i < ring.length; i++) rad = Math.min(rad, Math.hypot(ring[(i + 1) % ring.length][0] - ring[i][0], ring[(i + 1) % ring.length][1] - ring[i][1]));
+    const simple = ring.length <= 8 && rad > 6;
+    const h = (n: number) => hash01(k ^ n, this.seed);
+    const fh = this.families[fam]?.floorH ?? 3.4;
+    const ok = (r: P2[] | null): r is P2[] => !!r && r.length === ring.length && ringArea(r) > 0.3 * ringArea(ring) && r.every(([x, y]) => PolyGrid.inRing(ring, x, y));
+    if (!ov && simple && z0 < 0.5) {
+      if (style === "brutalist" && z1 > 12 && h(0xb701) < 0.7) {
+        const base = insetRing(ring, 2.4 + 1.6 * h(0xb702));
+        if (ok(base)) {
+          const b1 = z0 + Math.max(4.6, (z1 - z0) * (0.18 + 0.12 * h(0xb703)));
+          this.addVolume(base, z0, b1, fam, t, bbl, false, false, k, false, false, cls, year);
+          // a second step out on the taller ones
+          const mid = z1 > 30 && h(0xb704) < 0.5 ? insetRing(ring, 1.1) : null;
+          if (ok(mid)) {
+            const b2 = b1 + (z1 - b1) * 0.3;
+            this.addVolume(mid, b1, b2, fam, t, bbl, false, false, k, false, false, "", year);
+            this.soffit(mid, base, b1, bbl, [0.62, 0.61, 0.58]);
+            this.addVolume(ring, b2, z1, fam, t, bbl, true, true, k, false, false, cls, year);
+            this.soffit(ring, mid, b2, bbl, [0.62, 0.61, 0.58]);
+          } else {
+            this.addVolume(ring, b1, z1, fam, t, bbl, true, true, k, false, false, cls, year);
+            this.soffit(ring, base, b1, bbl, [0.62, 0.61, 0.58]);
+          }
+          this.lookSig.set(bbl, `${this.variantOf(fam, k)}|cantilever`); this.feat("cantilever", bbl);
+          return ring;
+        }
+      }
+      if (style === "contemporary" && z1 > 10 && h(0xc701) < 0.6) {
+        const top = insetRing(ring, 2.2 + 1.2 * h(0xc702));
+        if (ok(top)) {
+          const zt = z1 - fh;
+          this.addVolume(ring, z0, zt, fam, t, bbl, true, false, k, shop, false, cls, year);
+          this.addVolume(top, zt, z1, fam, t, bbl, true, true, k, false, false, cls, year);
+          this.popOuts(ring, fam, k, zt, bbl);
+          this.lookSig.set(bbl, `${this.variantOf(fam, k)}|setback`); this.feat("setback", bbl);
+          return top;
+        }
+      }
+      if (style === "moderne" && h(0x30d1) < 0.75) { ring = chamferRing(ring, 0.24, 5.5, true); this.feat("rounded", bbl); }
+    }
+    this.addVolume(ring, z0, z1, fam, t, bbl, true, true, k, shop, false, cls, year, ov);
+    if (style === "contemporary" && !ov && z0 < 0.5 && z1 > 7) this.popOuts(ring, fam, k, z1, bbl);
+    return ring;
+  }
+
+  /**
+   * Boxes pushed out of a contemporary front: one or two on the main street
+   * wall, a storey up, two or three floors tall, 0.9 m proud, clad in a
+   * second material — the move every 2010s apartment block makes.
+   */
+  private popOuts(ring: P2[], fam: string, k: number, zTop: number, bbl: string) {
+    const h = (n: number) => hash01(k ^ n, this.seed);
+    if (h(0x9091) > 0.65) return;
+    const edges = this.streetEdges(ring, 12);
+    if (!edges.length) return;
+    const e = edges.reduce((x, y) => (y.L > x.L ? y : x));
+    const alt = pick(h(0x9092), fam === "metalpanel" ? [["fibercement#3", 0.4], ["timber", 0.3], ["metalpanel#2", 0.3]]
+      : fam === "timber" ? [["metalpanel#1", 0.6], ["metalpanel", 0.4]] : [["metalpanel#1", 0.35], ["metalpanel#3", 0.25], ["timber", 0.2], ["metalpanel#2", 0.2]]);
+    const f = this.families[alt]; if (!f) return;
+    const fh = this.families[fam]?.floorH ?? 3.3;
+    const W = this.buf("w:" + alt), R = this.buf("roof"), T = this.buf("trim");
+    const w0 = W.count, r0 = R.count, t0 = T.count;
+    const nx = e.uy, ny = -e.ux, D = 0.9, q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const nBox = e.L > 30 && h(0x9093) < 0.6 ? 2 : 1;
+    const g = this.groundIndex();
+    for (let b = 0; b < nBox; b++) {
+      const wd = Math.min(7, Math.max(3.5, e.L * 0.18));
+      const tc = e.L * (nBox === 1 ? 0.3 + 0.4 * h(0x9094) : b === 0 ? 0.25 : 0.72);
+      const floors = 2 + Math.floor(h(0x9095 + b) * 2);
+      const za = fh * (1 + Math.floor(h(0x9097 + b) * 2)), zb = Math.min(zTop - 0.3, za + floors * fh);
+      if (zb - za < fh * 1.5 || tc - wd / 2 < 0.5 || tc + wd / 2 > e.L - 0.5) continue;
+      const P = (t: number, o: number): P2 => [e.a[0] + e.ux * t + nx * o, e.a[1] + e.uy * t + ny * o];
+      const A = P(tc - wd / 2, 0), B = P(tc - wd / 2, D), C = P(tc + wd / 2, D), Dd = P(tc + wd / 2, 0);
+      const faces: [P2, P2, number][] = [[A, B, D], [B, C, wd], [C, Dd, D]];
+      let u = 0;
+      for (const [a, c, L] of faces) {
+        const nn = [(c[1] - a[1]) / L, -(c[0] - a[0]) / L, 0];
+        W.quad([a[0], a[1], za], [c[0], c[1], za], [c[0], c[1], zb], [a[0], a[1], zb], nn, [[u, za / f.floorH], [u + L / f.bayW, za / f.floorH], [u + L / f.bayW, zb / f.floorH], [u, zb / f.floorH]], [1, 1, 1]);
+        u += L / f.bayW;
+      }
+      R.face([[A[0], A[1], zb], [B[0], B[1], zb], [C[0], C[1], zb], [Dd[0], Dd[1], zb]], [0, 0, 1], [0.9, 0.9, 0.9]);
+      T.quad([A[0], A[1], za], [Dd[0], Dd[1], za], [C[0], C[1], za], [B[0], B[1], za], [0, 0, -1], q, [0.6, 0.6, 0.6]);
+      if (!this.sandbox) g.bld.add([A, B, C, Dd]); this.feat("popout", bbl);
+    }
+    this.note(bbl, "w:" + alt, w0); this.note(bbl, "roof", r0); this.note(bbl, "trim", t0);
+  }
+
+  /** The underside between an outer outline and an inner one at height z (a soffit over a recessed base). */
+  private soffit(outer: P2[], inner: P2[], z: number, bbl: string, col: number[]) {
+    const T = this.buf("trim"); const t0 = T.count;
+    const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    for (let i = 0; i < outer.length && i < inner.length; i++) {
+      const a = outer[i], b = outer[(i + 1) % outer.length], bi = inner[(i + 1) % inner.length], ai = inner[i];
+      T.quad([a[0], a[1], z], [ai[0], ai[1], z], [bi[0], bi[1], z], [b[0], b[1], z], [0, 0, -1], q, col);
+    }
+    this.note(bbl, "trim", t0);
+  }
+
+  /** Columns round an outline, `inset` in from it, one at each corner and every `spacing` metres between. */
+  private colonnade(ring: P2[], inset: number, spacing: number, h: number, kind: string, bbl: string) {
+    const r = insetRing(ringArea(ring) < 0 ? ring.slice().reverse() : ring, inset);
+    if (!r) return;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const n = Math.max(1, Math.round(L / spacing));
+      for (let j = 0; j < n; j++) this.putInst(kind, a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n, 0, 1, 0, bbl, undefined, h);
+    }
+  }
+
+  /** An outline pushed out by d (a counter-clockwise ring), mitred, the mitre capped. */
+  private outset(ring: P2[], d: number): P2[] {
+    const n = ring.length, out: P2[] = [];
+    for (let i = 0; i < n; i++) {
+      const p = ring[(i + n - 1) % n], c = ring[i], q = ring[(i + 1) % n];
+      const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]) || 1, l2 = Math.hypot(q[0] - c[0], q[1] - c[1]) || 1;
+      const n1 = [(c[1] - p[1]) / l1, -(c[0] - p[0]) / l1], n2 = [(q[1] - c[1]) / l2, -(q[0] - c[0]) / l2];
+      const mx = n1[0] + n2[0], my = n1[1] + n2[1], ml = Math.hypot(mx, my);
+      const k = ml < 1e-6 ? d : Math.min(d * 2.5, (d * 2) / ml);
+      out.push(ml < 1e-6 ? [c[0] + n2[0] * d, c[1] + n2[1] * d] : [c[0] + (mx / ml) * k, c[1] + (my / ml) * k]);
+    }
+    return out;
+  }
+
+  /** The mid-century roof: a thin slab run out past the walls, a white edge, a shaded soffit. */
+  private roofSlab(ring: P2[], z: number, over: number, bbl: string, rc: number[]) {
+    const o = this.outset(ring, over), th = 0.38;
+    const R = this.buf("roof"), T = this.buf("trim"); const r0 = R.count, t0 = T.count;
+    let tris: number[][] = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(o.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { tris = []; }
+    for (const t of tris) R.tri([o[t[0]][0], o[t[0]][1], z + th], [o[t[1]][0], o[t[1]][1], z + th], [o[t[2]][0], o[t[2]][1], z + th], [0, 0, 1], rc);
+    const q = [[0, 0], [1, 0], [1, 1], [0, 1]], edge = [1.18, 1.18, 1.16];
+    for (let i = 0; i < o.length; i++) {
+      const a = o[i], b = o[(i + 1) % o.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      T.quad([a[0], a[1], z], [b[0], b[1], z], [b[0], b[1], z + th], [a[0], a[1], z + th], [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0], q, edge);
+    }
+    this.soffit(o, ring, z, bbl, [0.8, 0.8, 0.78]);
+    this.note(bbl, "roof", r0); this.note(bbl, "trim", t0);
+  }
+
+  /** A balustrade round a flat roof: plinth, balusters every 0.32 m, posts every bay or so, a rail. */
+  private balustrade(ring: P2[], z: number, col: number[], bbl: string) {
+    const T = this.buf("trim"); const t0 = T.count;
+    const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 0.8) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, nx = uy, ny = -ux;
+      const P = (t: number, o: number, zz: number) => [a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, zz];
+      const box = (t0b: number, t1b: number, o0: number, o1: number, za: number, zb: number) => {
+        T.quad(P(t0b, o1, za), P(t1b, o1, za), P(t1b, o1, zb), P(t0b, o1, zb), [nx, ny, 0], q, col);
+        T.quad(P(t1b, o0, za), P(t0b, o0, za), P(t0b, o0, zb), P(t1b, o0, zb), [-nx, -ny, 0], q, [col[0] * 0.85, col[1] * 0.85, col[2] * 0.85]);
+        T.quad(P(t0b, o0, zb), P(t0b, o1, zb), P(t1b, o1, zb), P(t1b, o0, zb), [0, 0, 1], q, col);
+      };
+      box(0, L, -0.1, 0.12, z, z + 0.22);                     // plinth
+      box(0, L, -0.12, 0.14, z + 0.86, z + 1.02);             // rail
+      for (let t = 0.25; t < L - 0.1; t += 0.32) box(t - 0.05, t + 0.05, -0.04, 0.06, z + 0.22, z + 0.86);
+      const np = Math.max(1, Math.round(L / 2.8));
+      for (let j = 0; j <= np; j++) { const t = Math.min(L - 0.2, Math.max(0.2, (L * j) / np)); box(t - 0.18, t + 0.18, -0.14, 0.16, z, z + 1.12); }
+    }
+    this.note(bbl, "trim", t0);
+  }
+
+  /** The temple front: a giant order of engaged columns, an architrave and a pediment, on the main street front. */
+  private templeFront(ring: P2[], baseH: number, zw: number, col: number[], bbl: string) {
+    const edges = this.streetEdges(ring, 14);
+    if (!edges.length) return;
+    const e = edges.reduce((x, y) => (y.L > x.L ? y : x));
+    const nx = e.uy, ny = -e.ux;
+    const span = Math.min(e.L * 0.62, 26);
+    const n = Math.max(4, Math.min(8, Math.round(span / 3.4) + 1));
+    const sp = span / (n - 1), t0 = e.L / 2 - span / 2;
+    const r = Math.max(0.3, Math.min(0.55, sp * 0.13)), off = 0.42 + r;
+    const g1 = this.groundAt(e.a[0] + e.ux * (e.L / 2) + nx * (off + 0.8), e.a[1] + e.uy * (e.L / 2) + ny * (off + 0.8));
+    if (g1 === "road" || g1 === "bld") return;
+    const T = this.buf("trim"); const tt = T.count;
+    const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const P = (t: number, o: number, zz: number) => [e.a[0] + e.ux * t + nx * o, e.a[1] + e.uy * t + ny * o, zz];
+    const block = (ta: number, tb: number, oa: number, ob: number, za: number, zb: number, c: number[]) => {
+      T.quad(P(ta, ob, za), P(tb, ob, za), P(tb, ob, zb), P(ta, ob, zb), [nx, ny, 0], q, c);
+      T.quad(P(ta, oa, za), P(ta, ob, za), P(ta, ob, zb), P(ta, oa, zb), [-e.ux, -e.uy, 0], q, c);
+      T.quad(P(tb, ob, za), P(tb, oa, za), P(tb, oa, zb), P(tb, ob, zb), [e.ux, e.uy, 0], q, c);
+      T.quad(P(ta, oa, zb), P(ta, ob, zb), P(tb, ob, zb), P(tb, oa, zb), [0, 0, 1], q, c);
+      T.quad(P(ta, oa, za), P(tb, oa, za), P(tb, ob, za), P(ta, ob, za), [0, 0, -1], q, c);
+    };
+    const zc0 = baseH, zc1 = zw - 1.85;
+    if (zc1 - zc0 < 5) return;
+    for (let i = 0; i < n; i++) {
+      const tc = t0 + i * sp;
+      // an octagonal shaft, a square base and capital
+      for (let k = 0; k < 8; k++) {
+        const a0 = (k / 8) * 6.2832, a1 = ((k + 1) / 8) * 6.2832;
+        const p0 = [Math.cos(a0) * r, Math.sin(a0) * r], p1 = [Math.cos(a1) * r, Math.sin(a1) * r];
+        const A = P(tc + p0[0], off + p0[1], zc0 + 0.45), B = P(tc + p1[0], off + p1[1], zc0 + 0.45);
+        const C = P(tc + p1[0], off + p1[1], zc1 - 0.5), D = P(tc + p0[0], off + p0[1], zc1 - 0.5);
+        const am = (a0 + a1) / 2, nn = [e.ux * Math.cos(am) + nx * Math.sin(am), e.uy * Math.cos(am) + ny * Math.sin(am), 0];
+        T.quad(A, B, C, D, nn, q, col);
+      }
+      block(tc - r * 1.4, tc + r * 1.4, off - r * 1.4, off + r * 1.4, zc0, zc0 + 0.45, col);
+      block(tc - r * 1.5, tc + r * 1.5, off - r * 1.5, off + r * 1.5, zc1 - 0.5, zc1, col);
+    }
+    const ta = t0 - r * 2, tb = t0 + span + r * 2, fo = off + r * 1.5;
+    block(ta, tb, 0, fo, zc1, zw - 0.95, col);                                        // architrave and frieze
+    block(ta - 0.2, tb + 0.2, 0, fo + 0.25, zw - 0.95, zw - 0.6, col);                // cornice
+    // the pediment: a low triangle over the cornice, front and back faces and its raking tops
+    const rise = (tb - ta) * 0.15, zp = zw - 0.6, mid = (ta + tb) / 2;
+    const F1 = P(ta - 0.2, fo + 0.25, zp), F2 = P(tb + 0.2, fo + 0.25, zp), FA = P(mid, fo + 0.25, zp + rise);
+    const B1 = P(ta - 0.2, -1.2, zp), B2 = P(tb + 0.2, -1.2, zp), BA = P(mid, -1.2, zp + rise);
+    T.face([F1, F2, FA], [nx, ny, 0], [col[0] * 0.92, col[1] * 0.92, col[2] * 0.92]);
+    T.face([B2, B1, BA], [-nx, -ny, 0], col);
+    T.face([F1, FA, BA, B1], [-e.ux, -e.uy, 1], col);
+    T.face([FA, F2, B2, BA], [e.ux, e.uy, 1], col);
+    this.note(bbl, "trim", tt);
+  }
+
+  /** The deco parapet: the middle of the longest front raised in two steps. */
+  private stepParapet(ring: P2[], z: number, col: number[], bbl: string) {
+    let li = 0, ll = -1;
+    for (let i = 0; i < ring.length; i++) { const L = Math.hypot(ring[(i + 1) % ring.length][0] - ring[i][0], ring[(i + 1) % ring.length][1] - ring[i][1]); if (L > ll) { ll = L; li = i; } }
+    if (ll < 10) return;
+    const a = ring[li], b = ring[(li + 1) % ring.length];
+    const ux = (b[0] - a[0]) / ll, uy = (b[1] - a[1]) / ll, nx = uy, ny = -ux;
+    const T = this.buf("trim"); const t0 = T.count;
+    const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const P = (t: number, o: number, zz: number) => [a[0] + ux * t + nx * o, a[1] + uy * t + ny * o, zz];
+    for (const [w, h] of [[0.5, 1.9], [0.26, 3.6]]) {
+      const ta = ll * (0.5 - w / 2), tb = ll * (0.5 + w / 2), oa = -0.5, ob = 0.12;
+      T.quad(P(ta, ob, z), P(tb, ob, z), P(tb, ob, z + h), P(ta, ob, z + h), [nx, ny, 0], q, col);
+      T.quad(P(tb, oa, z), P(ta, oa, z), P(ta, oa, z + h), P(tb, oa, z + h), [-nx, -ny, 0], q, col);
+      T.quad(P(ta, oa, z + h), P(ta, ob, z + h), P(tb, ob, z + h), P(tb, oa, z + h), [0, 0, 1], q, col);
+      T.quad(P(ta, oa, z), P(ta, ob, z), P(ta, ob, z + h), P(ta, oa, z + h), [-ux, -uy, 0], q, col);
+      T.quad(P(tb, ob, z), P(tb, oa, z), P(tb, oa, z + h), P(tb, ob, z + h), [ux, uy, 0], q, col);
+    }
+    this.note(bbl, "trim", t0);
+  }
+
+  /** Where a corner turret stands: a convex corner with a street on both sides; an octagon of radius r over it. */
+  private turretAt(ring: P2[], r: number): { c: P2; ring: P2[] } | null {
+    const n = ring.length;
+    const street = (a: P2, b: P2) => {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      return L >= 5 && !this.lotAt2D((a[0] + b[0]) / 2 + ((b[1] - a[1]) / L) * 6, (a[1] + b[1]) / 2 - ((b[0] - a[0]) / L) * 6);
+    };
+    for (let i = 0; i < n; i++) {
+      const p = ring[(i + n - 1) % n], c = ring[i], q = ring[(i + 1) % n];
+      if (!street(p, c) || !street(c, q)) continue;
+      const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]), l2 = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      const d1 = [(c[0] - p[0]) / l1, (c[1] - p[1]) / l1], d2 = [(q[0] - c[0]) / l2, (q[1] - c[1]) / l2];
+      if (d1[0] * d2[1] - d1[1] * d2[0] <= 0.5) continue;               // a real corner, turning left
+      const inw = [d2[0] - d1[0], d2[1] - d1[1]], il = Math.hypot(inw[0], inw[1]) || 1;
+      const cc: P2 = [c[0] + (inw[0] / il) * r * 0.6, c[1] + (inw[1] / il) * r * 0.6];
+      const outer: P2 = [cc[0] - (inw[0] / il) * r, cc[1] - (inw[1] / il) * r];
+      const g = this.groundAt(outer[0], outer[1]);
+      if (g === "road" || g === "bld") continue;
+      const a0 = Math.atan2(-inw[1], -inw[0]);
+      const oct: P2[] = Array.from({ length: 8 }, (_, k) => [cc[0] + Math.cos(a0 + (k / 8) * 6.2832 + 0.3927) * r, cc[1] + Math.sin(a0 + (k / 8) * 6.2832 + 0.3927) * r] as P2);
+      return { c: cc, ring: oct };
+    }
+    return null;
+  }
+
   /**
    * A HIPPED ROOF on a four-sided top, built on its own outline: every side a
    * slope at `pitch` (rise over run), up to a flat crest where the slopes
@@ -1748,7 +2062,7 @@ export class RealCityLayer {
           T.quad([a[0], a[1], zw + 0.05], [a[0] + ox, a[1] + oy, zw + 0.05], [b[0] + ox, b[1] + oy, zw + 0.05], [b[0], b[1], zw + 0.05], [0, 0, 1], q, cap);
         }
         // a tree or a parked car must not stand in it
-        g.bld.add([BL, FL, FR, BR]);
+        if (!this.sandbox) g.bld.add([BL, FL, FR, BR]);
       }
     }
     this.note(bbl, "w:" + fk, w0); this.note(bbl, "roof", r0); this.note(bbl, "trim", t0);
@@ -1952,7 +2266,7 @@ export class RealCityLayer {
   /** One volume: walls in its family, a roof, and its trim. */
   private addVolume(ring: P2[], z0: number, z1: number, famKey: string, tint: number[], bbl: string, crown: boolean, plant: boolean, seedK: number, shop = false, pitched = false, cls = "", year = 0, ov?: VolumeOv) {
     const fam = this.families[famKey];
-    if (bbl) { let l = this.volLog.get(bbl); if (!l) this.volLog.set(bbl, (l = [])); l.push({ r: ring, z0, z1 }); }
+    if (bbl && !this.sandbox) { let l = this.volLog.get(bbl); if (!l) this.volLog.set(bbl, (l = [])); l.push({ r: ring, z0, z1 }); }
     if (ringArea(ring) < 0) ring = ring.slice().reverse();     // counter-clockwise: outward normals
     // THE MANSARD. A Second Empire walk-up finishes its top storey as a steep
     // slate roof with dormers rather than a wall — the "French flat" of the
@@ -1965,24 +2279,25 @@ export class RealCityLayer {
       && (famKey === "brick" || famKey === "buff" || famKey === "brownstone" || famKey === "stone" || famKey === "castiron")
       && z1 - z0 > 9 && z1 < 34 && hash01(seedK ^ 0x3a5, 7) < 0.4;
     const zw = mans ? z1 - fam.floorH * 0.95 : z1;            // where the walls stop
+    const style: ArchStyle = styleOf(famKey, year, z1);
     // the owner's paint: a scheme per deed, only on the building's own
     // elevation (a shop storey and a lobby keep theirs), and never over a
     // design the player chose from a swatch
     const livery = ov ? null : liveryFor(famKey, seedK);
-    if (bbl && z0 < 0.5) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
-    const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[]) => {
+    if (bbl && z0 < 0.5 && !this.sandbox) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
+    const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
       const fk = fk0.includes("#") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
       const W = this.buf(wallName);
-      W.painted(fk0 === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn));
+      W.painted(fk0 === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn, rr));
     };
-    const wallsOf = (wallName: string, f: Family, W: Buf, za: number, zb: number, vOff: number, tn: number[]) => {
+    const wallsOf = (wallName: string, f: Family, W: Buf, za: number, zb: number, vOff: number, tn: number[], rr: P2[]) => {
       const w0 = W.count;
       let uRun = 0;
       const canyon = this.canyonAt(ringC[0], ringC[1]);
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
+      for (let i = 0; i < rr.length; i++) {
+        const a = rr[i], b = rr[(i + 1) % rr.length];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const L = Math.hypot(dx, dy);
         if (L < 0.05) continue;
@@ -2037,7 +2352,23 @@ export class RealCityLayer {
     // A trading ground floor is its own storey: display glass under awnings,
     // the upper floors' windows starting above it.
     const shopH = this.families.shop.floorH;
-    if (shop && z0 < 0.5 && zw > shopH + 2.5) {
+    // THE MODERNIST GROUND FLOOR. The International Style lifted its slab
+    // off the street on columns — pilotis — and set the lobby glass back
+    // behind them, so the tower floats over a shaded colonnade.
+    const pil = z0 < 0.5 && style === "modernist" && zw > 14 && ring.length <= 12 && !shop
+      && hash01(seedK ^ 0x9111, 3) < (zw > 36 ? 0.5 : 0.3) ? insetRing(ring, 2.6) : null;
+    if (pil && Math.abs(ringArea(pil)) > 0.35 * Math.abs(ringArea(ring)) && pil.every(([x, y]) => PolyGrid.inRing(ring, x, y))) {
+      const lh = zw > 36 ? this.families.lobby.floorH : Math.min(6, fam.floorH * 1.5);
+      walls("lobby", z0, lh, 0, [1, 1, 1], pil);
+      walls(famKey, lh, zw, lh, tint);
+      this.soffit(ring, pil, lh, bbl, [0.86, 0.86, 0.84]); this.feat("pilotis", bbl);
+      this.colonnade(ring, 0.55, 6.5, lh, "piloti", bbl);
+    } else if (style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
+      // the Spanish Revival shop row trades behind an arcade
+      const ah = this.families.arcade.floorH;
+      walls("arcade", z0, ah, 0, [1, 1, 1]); this.feat("arcade", bbl);
+      walls(famKey, ah, zw, ah, tint);
+    } else if (shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
       walls(famKey, shopH, zw, shopH, tint);
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
@@ -2194,11 +2525,13 @@ export class RealCityLayer {
     const liv = livery && livery.trim[0] >= 0 && (fam.masonry || famKey === "clapboard") ? livery.trim.map((c, i) => c / TRIM_LIN[i]) : null;
     const white = ov?.trim !== undefined ? TRIM_PAINTS[ov.trim]?.rgb ?? [1, 1, 1]
       : liv ?? (fam.masonry || famKey === "clapboard" ? TRIM[Math.floor(hash01(seedK ^ 0x71a, 5) * TRIM.length)] : [1, 1, 1]);
-    const corn = Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
+    // the Chicago school always crowns its block with a deep projecting
+    // cornice; the rest draw one of four
+    const corn = style === "chicago" ? 1 : Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
     if (fam.masonry) {
       if (crown && zw - z0 > 4 && !pitched) {
         if (corn === 1 || mans) {
-          band(zw - 1.1, 0.95, 0.85, white);            // a deep bracketed cornice
+          band(zw - 1.1, 0.95, style === "chicago" ? 1.3 : 0.85, white);            // a deep bracketed cornice
           band(zw - 1.45, 0.35, 0.3, white);
         } else if (corn === 2) {
           band(zw - 0.45, 0.4, 0.12, white);            // stripped back to a coping
@@ -2261,7 +2594,15 @@ export class RealCityLayer {
     // A FLAT ROOF IS FENCED BY ITS PARAPET: a knee-high wall standing above
     // the deck, its inside face toward the roof so the far side reads from
     // above, and a coping on top. A masonry parapet sits behind its cornice.
-    if (crown && !pitched && !mans && !saw && z1 - z0 > 3.5) {
+    // THE MID-CENTURY ROOF is a thin slab run out past the walls on every
+    // side, its edge a crisp white line and its soffit in shade.
+    const slab = crown && !pitched && !mans && style === "midcentury" && zw - z0 <= 18 && hash01(seedK ^ 0x51ab2, 3) < 0.7;
+    if (slab) { this.roofSlab(ring, z1, 1.3, bbl, roofTone(famKey, cls, false, seedK)); this.feat("slab", bbl); }
+    // A CLASSICAL ROOF IS FENCED BY A BALUSTRADE: posts at the bays and turned
+    // balusters between, on a plinth, under a rail.
+    const balus = crown && !pitched && !mans && !slab && style === "classical" && fam.masonry && zw - z0 > 6 && hash01(seedK ^ 0xba7, 3) < 0.6;
+    if (balus) { this.balustrade(ring, z1, white, bbl); this.feat("balustrade", bbl); }
+    if (crown && !pitched && !mans && !saw && !slab && !balus && z1 - z0 > 3.5) {
       const ph = fam.masonry ? 1.0 : fam.glass ? 0.5 : 0.75;
       const po = fam.masonry ? 0.18 : 0.1;
       const q = [[0, 0], [1, 0], [1, 1], [0, 1]], zt = z1 + ph;
@@ -2279,6 +2620,32 @@ export class RealCityLayer {
       }
     }
     this.note(bbl, fam.glass ? "dark" : "trim", t0);
+    if (bbl && z0 < 0.5 && crown && !pitched && !mans) {
+      // THE TEMPLE FRONT: a giant order of engaged columns across the middle
+      // of the main street front, base to cornice, and a pediment over them.
+      if (style === "classical" && zw <= 45 && zw - (baseH || 0) > 8 && hash01(seedK ^ 0x7e3, 3) < (famKey === "georgian" ? 0.25 : 0.4)) { this.templeFront(ring, baseH, zw, white, bbl); this.feat("temple", bbl); }
+      // THE DECO PARAPET steps up in the middle of the front, twice.
+      if (style === "deco" && zw - z0 > 10 && zw < 90) { this.stepParapet(ring, zw + (fam.masonry ? 1 : 0.6), white, bbl); this.feat("decoparapet", bbl); }
+    }
+    // THE QUEEN ANNE TURRET: a round-ish tower on the street corner, a
+    // storey taller than the eaves, under its own steep roof.
+    if (bbl && z0 < 0.5 && crown && style === "victorian" && zw > 6 && zw <= 18 && (cls === "multifamily" || cls === "retail") && hash01(seedK ^ 0x7a1, 3) < 0.3) {
+      const t = this.turretAt(ring, 2.2);
+      if (t) {
+        const zt = zw + fam.floorH * 0.9; this.feat("turret", bbl);
+        walls(famKey, z0, zt, 0, tint, t.ring);
+        const rr = t.ring.map(([x, y]: P2) => [t.c[0] + (x - t.c[0]) * 1.08, t.c[1] + (y - t.c[1]) * 1.08] as P2);
+        const R2 = this.buf("roof"); const q0 = R2.count;
+        const rise = 2.2 * 2.3, top = [t.c[0], t.c[1], zt + rise];
+        const rc2 = roofLin(hash01(seedK ^ 0x7a2, 3) < 0.6 ? "#4e5056" : hash01(seedK ^ 0x7a3, 3) < 0.5 ? "#7a4a3a" : "#6f9f8a");
+        for (let i = 0; i < rr.length; i++) {
+          const a = rr[i], b = rr[(i + 1) % rr.length];
+          R2.face([[a[0], a[1], zt], [b[0], b[1], zt], top], [(a[0] + b[0]) / 2 - t.c[0], (a[1] + b[1]) / 2 - t.c[1], 0.5], rc2);
+        }
+        this.note(bbl, "roof", q0);
+        this.putInst("pinnacle", t.c[0], t.c[1], zt + rise - 1.2, 0.3, 0, bbl, [0.3, 0.3, 0.32]);
+      }
+    }
 
     // ROOF PLANT on the building's top volume, by what the building is. A
     // pre-war walk-up or loft over six storeys needs a wooden water tank on
@@ -2480,8 +2847,10 @@ export class RealCityLayer {
         // building-wide crown below would float a footprint-long penthouse
         // over the row at the original height
         rowDone = true;
-      } else if (isTop && v.z0 < 0.5 && !pitched && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
+      } else if (isTop && v.z0 < 0.5 && !pitched && fam !== "brutalist" && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
         topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
+      } else if (isTop && v.z0 < 0.5 && !pitched) {
+        topRing = this.styledVolume(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else {
         this.addVolume(ring, v.z0, v.z1, fam, t, v.b, isTop, true, k, shop, pitched, v.c, v.y || 0);
       }
@@ -2596,6 +2965,8 @@ export class RealCityLayer {
       case "pinnacle": return { g: merge([box(0.9, 0.9, 2.6), box(1.1, 1.1, 0.3, 0, 0, 2.6), new THREE.ConeGeometry(0.62, 3.2, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 4.5), cyl(0.06, 0.8, 6.1, 4)]),
         mat: new THREE.MeshStandardMaterial({ color: 0xd8d0be, roughness: 0.75 }), colored: true };
       // a stone pier carried past the roof, height via sz: the deco crown's frame
+      // a round concrete column under a lifted slab, height via sz
+      case "piloti": return { g: merge([cyl(0.38, 1, 0, 12)]), mat: new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.8 }) };
       case "crownpier": return { g: merge([box(0.9, 0.75, 1, 0, -0.1, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xcfc6b4, roughness: 0.8 }) };
       case "fin": return { g: merge([box(0.35, 0.9, 1, 0, -0.2, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.4, metalness: 0.6 }) };
       case "helipad": return { g: merge([cyl(8, 0.25, 0, 20), box(1.0, 6, 0.06, -2, 0, 0.25), box(1.0, 6, 0.06, 2, 0, 0.25), box(3, 1.0, 0.06, 0, 0, 0.25)]), mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
@@ -3595,6 +3966,72 @@ export class RealCityLayer {
     this.renderer && (this.renderer.shadowMap.needsUpdate = true);
   }
 
+  /** Building into a sandbox (schemeModel): no audit logs, no props pushed off the footprint, no variety counts. */
+  private sandbox = false;
+  private geomCache = new Map<string, { g: THREE.BufferGeometry; mat: THREE.Material; colored?: boolean }>();
+
+  /**
+   * THE SCHEME AS A MODEL. The building the Build desk is designing, built by
+   * the very code that will draw it on the map when it delivers (buildItem —
+   * same elevation, paint, style, crown, roof plant and street dress), into
+   * its own group centred on the lot, with the lot outline and its standing
+   * neighbours for scale, and the city's sun and sky of the month. The desk's
+   * viewer renders it; nothing on the map changes.
+   */
+  schemeModel(it: PlayerItem): SchemeModel | null {
+    const lot = this.lotRing(it.bbl) ?? this.deeds.get(it.bbl)?.ring ?? null;
+    if (!lot || !(it.heightM > 0)) return null;
+    let cx = 0, cy = 0;
+    for (const [x, y] of lot) { cx += x / lot.length; cy += y / lot.length; }
+    const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems, saveDyn = new Map(this.dynHeight);
+    this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map(); this.sandbox = true;
+    const group = new THREE.Group();
+    let height = it.heightM;
+    try {
+      this.buildItem({ ...it, construction: false, fresh: false }, saveDeeds, []);
+      height = Math.max(height, this.deeds.get(it.bbl)?.height ?? 0);
+      for (const [name, b] of this.bufs) {
+        if (!b.count) continue;
+        const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
+          : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
+        const mesh = new THREE.Mesh(b.geometry(), mat);
+        mesh.castShadow = mesh.receiveShadow = name !== "contact";
+        if (name === "contact") mesh.renderOrder = 2;
+        group.add(mesh);
+      }
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pv = new THREE.Vector3();
+      for (const [kind, list] of this.instItems) {
+        if (!list.length) continue;
+        let gm = this.geomCache.get(kind);
+        if (!gm) { gm = this.geomFor(kind); this.geomCache.set(kind, gm); }
+        const im = new THREE.InstancedMesh(gm.g, gm.mat, list.length);
+        list.forEach((p, i) => {
+          q.setFromEuler(e.set(0, 0, p.r)); im.setMatrixAt(i, m4.compose(pv.set(p.x, p.y, p.z), q, sc.set(p.s, p.s, p.s * (p.sz ?? 1))));
+          if (gm!.colored) im.setColorAt(i, new THREE.Color(...(p.col ?? [1, 1, 1]) as [number, number, number]));
+        });
+        im.castShadow = im.receiveShadow = true;
+        group.add(im);
+      }
+    } finally {
+      this.bufs = saveBufs; this.deeds = saveDeeds; this.instItems = saveInst; this.dynHeight = saveDyn; this.sandbox = false;
+    }
+    group.position.set(-cx, -cy, 0);
+    // the street around it, for scale: standing neighbours as plain masses
+    const reach = Math.max(90, height * 0.9);
+    const neighbours: { ring: P2[]; h: number }[] = [];
+    for (const [b, d] of this.deeds) {
+      if (b === it.bbl || !d.ring || this.flattened.has(b)) continue;
+      let nx = 0, ny = 0; for (const [x, y] of d.ring) { nx += x / d.ring.length; ny += y / d.ring.length; }
+      if (Math.hypot(nx - cx, ny - cy) > reach) continue;
+      neighbours.push({ ring: d.ring.map(([x, y]) => [x - cx, y - cy] as P2), h: this.dynHeight.get(b) ?? d.height });
+    }
+    return {
+      group, height, lot: lot.map(([x, y]) => [x - cx, y - cy] as P2), neighbours,
+      sun: { dir: this.sunDir.clone(), color: this.sun.color.clone(), intensity: this.sun.intensity },
+      sky: { sky: this.hemi.color.clone(), ground: this.hemi.groundColor.clone(), intensity: this.hemi.intensity },
+    };
+  }
+
   /**
    * THE SCHEME ON THE DESK, STANDING ON ITS LOT. While the player designs a
    * building it is drawn finished, in its chosen look, where it will stand —
@@ -3612,10 +4049,71 @@ export class RealCityLayer {
   private previewSig = "";
   private lastItems: PlayerItem[] = [];
 
+  /** One player or rival building into the current buffers: a job site by stage, or the finished building in its design. */
+  private buildItem(it: PlayerItem, saveDeeds: Map<string, Deed>, craneAt: { x: number; y: number; r: number }[]) {
+    if (!(it.heightM > 0) || it.cls === "land") return;
+    const lot = this.lotRing(it.bbl) ?? saveDeeds.get(it.bbl)?.ring ?? null;
+    if (!lot) return;
+    let cx = 0, cy = 0;
+    for (const [x, y] of lot) { cx += x; cy += y; }
+    cx /= lot.length; cy /= lot.length;
+    const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
+    const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    const h = Math.max(3, it.heightM);
+    let fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
+    const k = keyOf(it.bbl);
+    // the developer's own design, where there is one (BuildingDesign)
+    const d = it.construction ? undefined : it.design;
+    let variant: string | undefined;
+    if (d?.facade) {
+      const base = d.facade.split("#")[0];
+      if (this.families[base]) { fam = base; variant = this.families[d.facade] ? d.facade : base; }
+    }
+    // a design counts as the player's only where they chose something: an
+    // untouched design is the street's choice, paint scheme and style shape
+    // included, exactly as an undesigned building
+    const ov: VolumeOv | undefined = d && (d.facade || d.trim !== undefined || d.roof) ? { variant, trim: d.trim, roof: d.roof } : undefined;
+    const pitched = !!d && (d.roof === "gable" || d.roof === "hip") && ring.length === 4;
+    const tints = TINTS[fam];
+    const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];
+    const shop = it.shops ?? (it.cls === "retail" || it.cls === "mixed");
+    let topRing = ring;
+    if (it.construction) {
+      // a job site goes up in stages, not as a grey box (buildSite)
+      this.buildSite(ring, it, k, cx, cy);
+      this.dynHeight.set(it.bbl, h);
+      craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+      return;
+    }
+    if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
+      // the wedding cake: a full-lot base, a terrace, a slim shaft
+      const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
+      const h1 = h * 0.55, h2 = h * 0.82;
+      this.addVolume(ring, 0, h1, fam, tint, it.bbl, true, false, k, shop, false, it.cls, 0, ov);
+      this.addVolume(at(0.84), h1, h2, fam, tint, it.bbl, true, false, k, false, false, "", 0, ov);
+      topRing = at(0.68);
+      this.addVolume(topRing, h2, h, fam, tint, it.bbl, true, true, k, false, false, it.cls, 0, ov);
+    } else {
+      const yr = it.year && it.year > 1800 ? it.year : 2000;
+      // a tower nobody designed takes its period's massing, as the
+      // generator's towers do; a designed one keeps the player's shape
+      if (!ov && !d?.crown && h >= 40 && TOWER_FAMS.has(fam) && fam !== "brutalist") topRing = this.massing(ring, 0, h, fam, tint, it.bbl, k, shop, it.cls, yr);
+      else if (!pitched && !(d?.roof)) topRing = this.styledVolume(ring, 0, h, fam, tint, it.bbl, k, shop, it.cls, yr, ov);
+      else this.addVolume(ring, 0, h, fam, tint, it.bbl, true, true, k, shop, pitched, it.cls, yr, ov);
+    }
+    if (!it.construction) {
+      // a crown the player named (towers only); otherwise the period's own
+      const kind = d?.crown && d.crown !== "cake" && it.floors >= CROWN_MIN_FLOORS ? d.crown : "auto";
+      this.towerTop(topRing, h, h, fam, tint, it.bbl, k, kind as "auto" | "none" | "setback" | "spire" | "mast", ov);
+    }
+    this.dynHeight.set(it.bbl, h);
+    if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+  }
+
   setPlayerBuildings(items0: PlayerItem[], force = false) {
     this.lastItems = items0;
     const items = this.preview ? [...items0.filter((i) => i.bbl !== this.preview!.bbl), this.preview] : items0;
-    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}:${i.design ? JSON.stringify(i.design) : ""}`).join("|");
+    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}:${i.year ?? 0}:${i.shops ?? ""}:${i.design ? JSON.stringify(i.design) : ""}`).join("|");
     if (sig === this.dynSig && !force) return;
     this.dynSig = sig;
     for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
@@ -3628,55 +4126,7 @@ export class RealCityLayer {
     this.cranes = null;
     for (const it of items) {
       this.flattenStatic(saveDeeds, it.bbl);
-      if (!(it.heightM > 0) || it.cls === "land") continue;
-      const lot = this.lotRing(it.bbl) ?? saveDeeds.get(it.bbl)?.ring ?? null;
-      if (!lot) continue;
-      let cx = 0, cy = 0;
-      for (const [x, y] of lot) { cx += x; cy += y; }
-      cx /= lot.length; cy /= lot.length;
-      const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
-      const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
-      const h = Math.max(3, it.heightM);
-      let fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
-      const k = keyOf(it.bbl);
-      // the developer's own design, where there is one (BuildingDesign)
-      const d = it.construction ? undefined : it.design;
-      let variant: string | undefined;
-      if (d?.facade) {
-        const base = d.facade.split("#")[0];
-        if (this.families[base]) { fam = base; variant = this.families[d.facade] ? d.facade : base; }
-      }
-      const ov: VolumeOv | undefined = d ? { variant, trim: d.trim, roof: d.roof } : undefined;
-      const pitched = !!d && (d.roof === "gable" || d.roof === "hip") && ring.length === 4;
-      const tints = TINTS[fam];
-      const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];
-      const shop = it.cls === "retail" || it.cls === "mixed";
-      let topRing = ring;
-      if (it.construction) {
-        // a job site goes up in stages, not as a grey box (buildSite)
-        this.buildSite(ring, it, k, cx, cy);
-        this.dynHeight.set(it.bbl, h);
-        craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
-        continue;
-      }
-      if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
-        // the wedding cake: a full-lot base, a terrace, a slim shaft
-        const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-        const h1 = h * 0.55, h2 = h * 0.82;
-        this.addVolume(ring, 0, h1, fam, tint, it.bbl, true, false, k, shop, false, it.cls, 0, ov);
-        this.addVolume(at(0.84), h1, h2, fam, tint, it.bbl, true, false, k, false, false, "", 0, ov);
-        topRing = at(0.68);
-        this.addVolume(topRing, h2, h, fam, tint, it.bbl, true, true, k, false, false, it.cls, 0, ov);
-      } else {
-        this.addVolume(ring, 0, h, fam, tint, it.bbl, true, !it.construction, k, !it.construction && shop, pitched, it.construction ? "" : it.cls, 0, ov);
-      }
-      if (!it.construction) {
-        // a crown the player named (towers only); otherwise the period's own
-        const kind = d?.crown && d.crown !== "cake" && it.floors >= CROWN_MIN_FLOORS ? d.crown : "auto";
-        this.towerTop(topRing, h, h, fam, tint, it.bbl, k, kind as "auto" | "none" | "setback" | "spire" | "mast", ov);
-      }
-      this.dynHeight.set(it.bbl, h);
-      if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+      this.buildItem(it, saveDeeds, craneAt);
     }
     const dynMeshes = new Map<string, THREE.Mesh>();
     for (const [name, b] of this.bufs) {

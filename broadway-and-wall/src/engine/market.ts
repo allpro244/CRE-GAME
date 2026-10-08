@@ -258,7 +258,9 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
  *  cycles are far smaller: US financial-activities employment fell about 8%
  *  peak to trough over 2008-10, information about 10% over 2001-03, and most
  *  sectors less. At 4 the demand swing is about 10%, which is that. */
-const MOM_DEMAND = 4;
+// RETIRED (2026-10-08): MOM_DEMAND. The class cycle is in each class's
+// demand driver now (tenant trades' employment, population), not a momentum
+// multiplier on top of it.
 
 /** WHAT PRICE IS ALLOWED TO DO TO THE SPACE ONE WORKER OCCUPIES. Affordability
  *  rations demand — dear space, firms take less of it — but it was unbounded,
@@ -1841,6 +1843,7 @@ export function tickIndustryCycle(s: GameState) {
     wsum += w;
   }
   const exportIdx = wsum > 0 ? base / wsum : 1;
+  e.exportIdx = exportIdx;
   const local = e.localIdx ?? exportIdx;
   e.localIdx = local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M));
   const comp = (exportIdx + LOCAL_MULT * e.localIdx) / (1 + LOCAL_MULT);
@@ -2616,47 +2619,10 @@ export function tickEcon(s: GameState) {
   // long enough to live through and independent of its neighbours, so office
   // can be three years into a bust while apartments are booming — which is the
   // ordinary condition of a real property market, not an exotic one.
-  if (!e.sectorPhase) {
-    e.sectorPhase = { office: "steady", retail: "steady", multifamily: "steady", industrial: "steady" };
-    e.sectorPhaseM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    for (const k of BUILT_CLASSES) e.sectorPhaseM[k] = Math.round(rrange(s, 8, 60));
-  }
-  const SECTOR_AIM = { boom: 0.0125, steady: 0, bust: -0.0115 };
-  for (const k of BUILT_CLASSES) {
-    if ((e.sectorPhaseM![k] -= 1) <= 0) {
-      const cur = e.sectorPhase![k];
-      // A tight market is what tempts capital into a sector, and a sector that
-      // has just boomed is the one carrying the new supply that ends it. The
-      // transition is not a coin toss — it leans on where vacancy actually is.
-      const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-      const tight = clamp(0.5 - gap * 6, 0.1, 0.9);
-      let nextPhase: "boom" | "steady" | "bust";
-      if (cur === "steady") nextPhase = rng(s) < tight ? "boom" : "bust";
-      else if (cur === "boom") nextPhase = rng(s) < 0.45 ? "bust" : "steady";
-      else nextPhase = rng(s) < 0.72 ? "steady" : "boom";
-      e.sectorPhase![k] = nextPhase;
-      e.sectorPhaseM![k] = Math.round(
-        nextPhase === "boom" ? rrange(s, 20, 56)
-          : nextPhase === "bust" ? rrange(s, 16, 42)
-            : rrange(s, 26, 74),
-      );
-      if (nextPhase !== "steady") {
-        // The same dead guard as the industry turn above, and the same fix at
-        // the grain this loop runs at: it is over ASSET CLASSES, not trades, so
-        // the stake is whether the player owns any of the class.
-        // `exposureToTrade` answers the trade question and is not
-        // interchangeable with this one.
-        const exposed = ownsClass(s, k);
-        pushNews(s, exposed ? (nextPhase === "boom" ? "event" : "warn") : "info", nextPhase === "boom"
-          ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
-          : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
-      }
-    }
-    // ease toward the phase's level rather than jumping: a sector turn is
-    // something you notice over a year, not in a month
-    const aim = SECTOR_AIM[e.sectorPhase![k]];
-    e.sectorMom[k] = clamp(e.sectorMom[k] + 0.055 * (aim - e.sectorMom[k]) + rrange(s, -0.0006, 0.0006), -0.02, 0.02);
-  }
+  // (Each property class ran its own boom/steady/bust clock here, and its
+  // momentum fed rents, cap rates, leasing pace and tenant stress. It is now
+  // read off the class's own demand driver in the space loop below — a class
+  // booms when the people who lease it are hiring or arriving.)
 
   // --- what the tenants do for a living -------------------------------------
   //
@@ -3272,25 +3238,57 @@ export function tickEcon(s: GameState) {
     // employment that still wants a shed — see `industComp` / INDUST_COMP_MONTH.
     // Without that factor, a growing services city manufactures warehouse
     // demand it cannot supply and the vacancy floor becomes load-bearing.
-    // Office demand is the city's TRADE MIX, not a single jobs blob. Finance
-    // and tech do not take the same desks in the same months; industryMom and
-    // sectorShare already exist — demand reads them. No new RNG: pure function
-    // of published clocks (stream-safe).
-    const officeComp = (() => {
-      if (k !== "office") return 1;
-      const trades = SECTOR_CLASSES.office ?? [];
+    // WHO LEASES THIS CLASS, AND HOW MANY OF THEM THERE ARE. Office is let to
+    // finance, law, tech, media, insurance and design; sheds to logistics,
+    // food and apparel. Their employment moves with the city's industries
+    // (`tickIndustryCycle`), so a class's driver is the city's jobs times how
+    // its tenant trades are doing against the city as a whole: a tech bust
+    // empties offices, a logistics boom fills sheds. This replaces adding
+    // industry MOMENTUM on top of job counts, which, now that jobs come from
+    // the same industries, would count one cycle twice.
+    const tradeMix = (() => {
+      const trades = SECTOR_CLASSES[k] ?? [];
+      if (!trades.length || !e.indIdx) return 1;
       let w = 0, acc = 0;
       for (const sec of trades) {
         const share = e.sectorShare?.[sec] ?? (1 / Math.max(1, trades.length));
-        acc += share * (1 + (e.industryMom?.[sec] ?? 0) * MOM_DEMAND);
+        acc += share * (e.indIdx[sec] ?? 1);
         w += share;
       }
-      return w > 0 ? acc / w : 1;
+      const own = w > 0 ? acc / w : 1;
+      return own / Math.max(0.05, e.exportIdx ?? 1);
     })();
     const secIdx = e.secular?.[k]?.idx ?? (k === "industrial" ? (e.industComp ?? 1) : 1);
     const driver = (k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
-      : jobIdx) * secIdx;
+      : jobIdx * tradeMix) * secIdx;
+    // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
+    // of the driver less its own five-year average, smoothed over six months,
+    // in the "boom units" its readers (rents, cap rates, absorption, tenant
+    // stress) were calibrated in — see MOM_UNITS. The class booms when its
+    // tenant base is growing faster than usual and busts when it shrinks; no
+    // clock decides it.
+    {
+      if (!e.classDrv) e.classDrv = {} as Record<BuiltClass, number>;
+      if (!e.classDrvTrend) e.classDrvTrend = {} as Record<BuiltClass, number>;
+      const prevD = e.classDrv[k] ?? driver;
+      e.classDrv[k] = driver;
+      const g = prevD > 0 ? driver / prevD - 1 : 0;
+      const tr = (e.classDrvTrend[k] ??= g);
+      e.classDrvTrend[k] = tr + (g - tr) / 60;
+      e.sectorMom[k] = clamp(e.sectorMom[k] + (MOM_UNITS * (g - tr) - e.sectorMom[k]) / 6, -0.02, 0.02);
+      if (!e.sectorPhase) e.sectorPhase = { office: "steady", retail: "steady", multifamily: "steady", industrial: "steady" };
+      const ph = e.sectorMom[k] > 0.006 ? "boom" : e.sectorMom[k] < -0.006 ? "bust" : "steady";
+      if (ph !== e.sectorPhase[k]) {
+        e.sectorPhase[k] = ph;
+        if (ph !== "steady") {
+          const exposed = ownsClass(s, k);
+          pushNews(s, exposed ? (ph === "boom" ? "event" : "warn") : "info", ph === "boom"
+            ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
+            : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+        }
+      }
+    }
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent
     // restatement of what this class is wanted for once something has: less
@@ -3300,9 +3298,9 @@ export function tickEcon(s: GameState) {
     // outside `sectorMom` and `affordEff` because neither of those ever stops
     // reverting and this never reverts at all. See swans.ts.
     const swanLvl = swanClassLevel(e, k);
-    // Office uses trade composition instead of the class sectorMom term so the
-    // cycle is not counted twice.
-    const cycleTerm = k === "office" ? officeComp : (1 + e.sectorMom[k] * MOM_DEMAND);
+    // The cycle is already in the driver (the tenants' own employment or
+    // population); adding momentum on top would count it twice.
+    const cycleTerm = 1;
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
       * cycleTerm
@@ -3426,7 +3424,7 @@ export function tickEcon(s: GameState) {
     // arriving long before a single lease expires.
     const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
-      * (1 + e.sectorMom[k] * MOM_DEMAND)
+      * cycleTerm
       * affordRaw
       * incomeRaw   // the give-back reads the SAME two arguments targetRaw does
       * swanLvl;

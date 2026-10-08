@@ -2547,3 +2547,38 @@ Measured (4 worlds x 50 years): unemployment min 2.9-3.6%, median 3.5-4.5%,
 max 7.4-13.8%; no value holds more than 1.8% of months; participation
 56.3-58.7%; nominal wage growth when unemployment is under 3.5% runs
 4.1-5.4%; the wage-unemployment correlation is -0.34 to -0.76.
+
+# THE CYCLE WAS A CLOCK — now it comes from the city's industries (ECON_REALISM_PLAN phase B, 2026-10-08)
+
+Three layers of clocks drove the cycle: the city phase (a random countdown
+that then SET job growth by label), a boom/steady/bust clock per property
+class (`sectorPhase`) and one per trade (`industryPhase`). Measured: 52-71%
+of local recession months fell while the nation was not worsening, and a
+"recovery" averaged falling jobs on two of four worlds.
+
+Now (B1) each of the ten trades follows national employment by its own beta
+(BLS recession declines by industry), grows at its own long-run trend (BLS
+CES), and takes hazard-drawn shocks with an 18-month half-life sized to move
+a unit-volatility trade 4-12% of its local employment. Local-serving work
+follows the export base with a 12-month half-life at Moretti's (2010)
+multiplier of 1.6. National payrolls move 1.5% per point of unemployment
+(2008-10). The phase is dated from the result like NBER dates a cycle. (B2)
+Office and industrial demand follow their own tenant trades' employment
+relative to the city; a class's momentum is its driver's growth against its
+own five-year normal, so a class booms because its tenants are hiring.
+
+Two first cuts were REJECTED on measurement: shocks scaled linearly with
+volatility halved a tech sector in a decade on one world (one local
+downturn of 161 months with 17% national coincidence); and one-for-one
+national transmission left a city flat through a 6-point national
+recession because trend growth cancelled it.
+
+Also retired: the "monetary era" block, whose rate scares and surprise cuts
+were printed as news but overwritten by `tickNation` every month — the loan
+index never read them.
+
+Measured (4 worlds x 50 years): 3-6 local downturns, 11-19% of time,
+62-98% coinciding with national recessions (US: ~13% of time since 1950);
+expansions 2-15 years with no built-in end; job growth positive in every
+recovery. Months on the vacancy floor: retail 23% -> 7%, multifamily 61% ->
+53%, industrial 51% -> 38% (B1 -> B2); real rents -0.1% to +0.7%/yr.

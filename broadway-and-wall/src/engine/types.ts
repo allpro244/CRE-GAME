@@ -1756,6 +1756,10 @@ export interface Econ {
   cycHist?: number[];
   cycPeak?: number;
   phaseAge?: number;
+  exportIdx?: number;
+  /** Each class's demand driver last month and its five-year average monthly growth. */
+  classDrv?: Record<BuiltClass, number>;
+  classDrvTrend?: Record<BuiltClass, number>;
   /** Unfilled positions as a share of the labour force — what employers wanted
    *  and could not staff. Zero whenever the market is slack. Together with
    *  `unemployment` this is the tightness the wage curve reads; on its own it is

@@ -761,3 +761,66 @@ on a building. It is gone; those towers draw from the other crowns. The
 FOR LEASE / SPACE TO LET banners are gone entirely, at the owner's request;
 vacancy still shows in the papered shopfronts and boarded bays, the
 thinner crowds, and the hover card.
+
+# THE WIDER PATTERN BOOK (October 2026)
+
+Asked for: far more variety in the buildings, and every one of them
+beautiful. Measured first, with the same probe on both commits (distinct
+elevation × tint × paint per building's base volume; `looks` on the layer):
+
+| town | buildings | families in use | elevations in use | distinct looks |
+|---|---|---|---|---|
+| metropolis, seed 2 | 1,282 | 20 → 37 | 101 → 191 | 333 → 1,152 |
+| city, seed 4 | 803 | 18 → 30 | 76 → 141 | 209 → 733 |
+| town, seed 1 | 490 | 17 → 27 | 67 → 117 | 166 → 451 |
+
+Before, a quarter of a town's buildings looked like nobody else's; now about
+nine in ten do — the ceiling is the number of buildings, not the book. The
+book itself went from 22 families / ~109 elevations to 42 families / ~275
+elevations, and every elevation now takes a paint scheme on top.
+
+- **Paint (`liveryFor`, `PAINT_FRAG`).** Each elevation carries a paint mask
+  (the old emissive canvas: R lit room, G trim, B accent). Three per-vertex
+  colours carry one building's scheme: wall paint (keeps the texture's light
+  and shade, so mortar reads through), trim (lintels, sills, voussoirs, the
+  3D cornice too) and accent (sash, frames, shutters, spandrels, timbers,
+  cast iron). Palettes are each family's own period colours — historic house
+  colours on clapboard, painted brick in cream/black/oxblood one walk-up in
+  six, porcelain-enamel spandrels on the 1950s panel, zinc and rust on the
+  2010s block — and a scheme never puts a colour on its own wall colour.
+  Player designs chosen from a swatch are never repainted.
+- **Twenty new families**, each with 4-7 elevations, all real traditions at
+  real sizes: cast iron, Richardsonian Romanesque, glazed terra cotta (Chicago
+  windows), High Victorian Gothic (banded brick, pointed heads), Colonial
+  Revival (Flemish bond, keystones), Tudor Revival, Spanish Revival stucco,
+  Streamline Moderne, the daylight factory, post-war glazed white brick,
+  1950s enamel panel, board-formed brutalism, 2000s limestone, two-tone
+  fibre cement and metal panel with staggered windows, stack-bond brick,
+  terracotta rainscreen, mass timber, diagrid and fritted glass — plus a
+  rusticated base storey. The tower and old-brick families gain 1-3 more
+  elevations each. All twenty are on the Build desk.
+- **Who wears what (`familyFor`)** by use, era, height and district, plus a
+  neighbourhood number (a ~380 m cell built together), so a Colonial Revival
+  or Tudor quarter is a quarter, not a scatter.
+- **Fronts.** A rusticated stone ground storey under Beaux-Arts, Romanesque,
+  terra-cotta and 2000s limestone fronts; quoins on Georgian and stone
+  corners; modillion brackets under deep cornices; canted bay windows on
+  brownstone, Romanesque and Victorian rows (beside the stoop, never over the
+  carriageway, and registered as building so no tree stands in one).
+- **Roofs.** Clay tile on Spanish Revival, slate/shingle/red tin/old copper
+  on pitched roofs, gables and hips on Colonial, Tudor and Gothic houses, a
+  planted roof in seven on new blocks.
+- **Crowns.** Masonry towers end in a setback, a steep château roof in
+  copper or slate with dormers, a setback and château, or a Gothic crown of
+  corner pinnacles; deco towers in a spire, a ziggurat or a frame of piers
+  carried past the roof; one glass tower in eleven in a 45° wedge top.
+  Every pitched crown is built on the top's own outline, inset, and a square
+  one stops at a flat crest — nothing can overhang like the removed pyramid
+  caps.
+
+**Cost.** Elevations are built on first use (`makeFamilies` is lazy), so a
+town pays GPU memory only for what it wears: 210 elevations in the
+metropolis against 117 before. `elevationSheet()` on the layer draws the
+whole book on one contact sheet for review. `tools/ground-audit.mjs` on all
+three test towns: 0 floating, every prop on its ground. Looks only; nothing
+here is read by the engine.

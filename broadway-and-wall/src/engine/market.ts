@@ -4018,13 +4018,42 @@ export function tickEcon(s: GameState) {
     // as hot seeds at +3–4%/yr real and land residuals from $50 to $3,000/sf.
     const base = e.rentAnchor?.[k] ?? RENT_BASE[k];
     const rentToIncome = (e.rentIdx[k] / Math.max(1e-6, base)) / income;
-    // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN.
-    // Long-run US CRE real rent is roughly flat to +1%/yr (CBRE/NCREIF).
-    // The full 0.28 loading is a primary-CBD earn; secondary fabric
-    // (`cityClassFactor`) keeps a smaller sustainable RTI premium so a
-    // harbour town that runs tight does not quietly become Manhattan.
-    const classFAnchor = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
-    const sustain = 1 + 0.28 * classFAnchor * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    // HOW MUCH OF A PREMIUM A CHRONICALLY SHORT CITY EARNS (2026-10-08).
+    //
+    // This read an office-only `tightEma` that REFUSED to grow while a class
+    // sat on its vacancy floor ("a Manhattan premium is earned by demand, not
+    // by a supply failure"), loaded at 0.28 x the city-class factor and capped
+    // at 0.55 — at most +15% rent-to-income, less in a secondary town. That is
+    // the economics backwards. A price above replacement cost is what a supply
+    // shortfall looks like: Manhattan and San Francisco sit far above cost
+    // because supply cannot answer (Glaeser & Gyourko 2005; Saiz 2010), and
+    // the premium lasts as long as the shortfall does. Measured with the old
+    // rule, new space at the city's AVERAGE location was worth only 1.00-1.09x
+    // its full cost on free land for twenty years while classes sat on their
+    // vacancy floor 30-50% of months — so nothing beyond the best dirt could
+    // ever be built, and the shortage could not end.
+    //
+    // Now each class keeps its own memory of how short it has been: on the
+    // floor, how much desired demand the city cannot house (`structTight`, 10%
+    // of stock counting as fully short — a shape parameter, stated); off it,
+    // availability against natural, as before; a glut reads negative. A decade
+    // to build or lose (1/120 a month): long enough that one tight year earns
+    // nothing, short enough that the premium goes once supply catches up. At
+    // full shortage the sustainable rent-to-income is +60%, about the spread
+    // between the most supply-constrained US metros and ordinary ones
+    // (rent-to-income, rounded). A small town that cannot build prices like
+    // any other place that cannot build; the city-class haircut is gone.
+    // The level is still held where it should be: tenants economise on dear
+    // space (`affordEff`), households leave (migration), firms hire elsewhere
+    // (the wage and space pulls on employment) — and builders build.
+    if (!e.scarcity) e.scarcity = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    {
+      const short = pinned
+        ? clamp((e.structTight?.[k] ?? 0) / 0.10, 0, 1)
+        : clamp(-gap / NATURAL_VAC[k], -0.3, 1);
+      e.scarcity[k] += (short - e.scarcity[k]) / 120;
+    }
+    const sustain = 1 + 0.6 * e.scarcity[k];
     const dev = rentToIncome / sustain - 1;
     // Pull hard when rent outruns pay; barely nudge when rent is cheap —
     // cheap space is what supply is for, not a reason to reprice the city up.
@@ -4087,7 +4116,20 @@ export function tickEcon(s: GameState) {
     void underFloor;
     const railEscal = 1;
     const escalGate = Math.max(firmW, cheapFloor) * railEscal;
-    const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
+    // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
+    // EXPECTED inflation, which the central bank anchors near 2%, while the
+    // city's own price level ran 0.3-0.8 points a year faster (measured over
+    // four 50-year worlds: realised CPI 1.9-3.8%/yr against expectations of
+    // 1.6-2.4%). So even a firm market's asking lost ground to its own
+    // currency every year, rent-to-income fell to 0.4-0.9 of the opening, and
+    // new space at an average address stayed at replacement cost for decades.
+    // A lease's CPI clause reads the published index for the trailing year,
+    // and a landlord re-marking an asking sheet reads the same number; so
+    // does this. The soft-market gate is unchanged: empty floors still do not
+    // escalate.
+    const hRent = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
+    const realised12 = hRent?.cpi ? (e.cpi ?? 1) / hRent.cpi - 1 : (e.inflExp ?? 0.02);
+    const escalation = (realised12 / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);

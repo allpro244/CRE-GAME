@@ -63,14 +63,16 @@ ok(rows.filter((r) => r.pile === "counter").every((r) => r.counter && r.counter.
 
 // ------------------------------------------------------------- 2-4. five years of passes
 console.log("five years of passes reconcile");
-let passes = 0, worst = 0, deskMoved = 0, signedTotal = 0;
+let passes = 0, worst = 0, deskMoved = 0, signedTotal = 0, signedNew = 0;
 for (let m = 0; m < 60; m++) {
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   if (g.gameOver) break;
   if (!g.lois.some((l) => E.loiNeedsPrincipal(g, l))) continue;
   const before = { cash: g.cash, leasing: books(g, "leasing"), capex: books(g, "capex"), loc: g.loc?.balance ?? 0, dep: deposits(g), desk: JSON.stringify(g.deskMonth ?? null) };
+  const pendingNew = g.lois.filter((l) => E.loiNeedsPrincipal(g, l) && l.kind === "new");
   const r = E.clearTrayAgainstPlan(g, parcels);
   const s = r.s;
+  signedNew += pendingNew.filter((l) => s.holdings[l.bbl]?.tenants.some((x) => x.name === l.name)).length;
   passes++;
   signedTotal += r.signed;
   const explained = -(books(s, "leasing") - before.leasing) - (books(s, "capex") - before.capex)
@@ -84,6 +86,7 @@ ok(worst < 1, `every pass reconciles to the dollar (worst residual $${worst.toFi
 ok(deskMoved === 0, "no desk scorecard moved — no desk acted");
 
 // the fee, on one planted letter that signs as written
+let probeRemembered = -1;
 {
   const t = structuredClone(g);
   const bbl = Object.keys(t.holdings).find((b) => !t.holdings[b].broker && E.vacantSf(E.resolveRec(parcels, t, b), t.holdings[b]) > 3000);
@@ -97,6 +100,7 @@ ok(deskMoved === 0, "no desk scorecard moved — no desk acted");
     const lea0 = books(t, "leasing");
     const r = E.clearTrayAgainstPlan(t, parcels);
     const paid = books(r.s, "leasing") - lea0;
+    probeRemembered = (r.s.principalSigned ?? []).length;
     ok(r.signed === 1 && Math.abs(paid - E.loiSigningCost(L, 0.04)) < 2,
       `signed as written at the principal's 4% (paid ${Math.round(paid)}, 4% would be ${Math.round(E.loiSigningCost(L, 0.04))}, 6% ${Math.round(E.loiSigningCost(L, 0.06))})`);
   } else ok(true, "no vacant non-broker building for the fee probe");
@@ -104,7 +108,11 @@ ok(deskMoved === 0, "no desk scorecard moved — no desk acted");
 
 // ------------------------------------------------------------- 5. the record
 console.log("the record briefs a desk later");
-ok((g.principalSigned ?? []).length > 0 || signedTotal === 0, `signings remembered (${(g.principalSigned ?? []).length})`);
+// Only NEW leases brief a desk (renewals say nothing about the market), so the
+// five-year record is checked against the new leases actually signed, and the
+// planted new letter above must be remembered whatever the market produced.
+ok(probeRemembered !== 0 && ((g.principalSigned ?? []).length > 0 || signedNew === 0),
+  `signings remembered (${(g.principalSigned ?? []).length} of ${signedNew} new leases signed in five years; planted letter ${probeRemembered < 0 ? "not run" : probeRemembered})`);
 const plan = E.seedPlanFromRecord(g);
 console.log(`      a desk hired now would be briefed: ${JSON.stringify(plan.sheet.office)} from ${JSON.stringify(plan.seededFrom)}`);
 ok(!!plan.sheet.office, "the brief exists");

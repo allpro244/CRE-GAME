@@ -1,4 +1,4 @@
-# Baseline attribution — jobs, workers, people and places from causes
+# Baseline attribution — the rent level
 
 **Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
 **Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
@@ -6,6 +6,18 @@
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
 
 ---
+
+## This ruler: rents escalate on realised CPI; scarcity premium earned by shortfall (`063055b`)
+
+See ECONOMY.md, "THE RENT LEVEL". Paired against `39f1cc8` over 16 seeds x 300 months:
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `city.buildings` | +0.7% | 2.5 | A little more gets built |
+| `vac.retail` 0.081 -> 0.091, `rail.occ.retail.cap` | +12%, -40% | 2.0, -2.0 | Retail leaves its floor toward natural (8.5%) |
+| `rentIdx.office`, `land.*` | +6%, +8-9% | 0.8-1.3 | Direction as intended; not resolved at 16 seeds |
+| `rentIdx.industrial` | +3.6% | 0.9 | The 4-seed "-0.7%/yr" was noise |
+| `city.employed`, `population`, `floorAreaM` | within +-1% | < 1 | Unchanged |
 
 ## This ruler: jobs, workers, people and places from causes (`c86c5cf`..`7d0cca6`)
 

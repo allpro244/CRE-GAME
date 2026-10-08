@@ -544,7 +544,8 @@ function queueDeliveryCeremony(
   // street's towers — a popup on every rival delivery would be noise — but it
   // was also silencing the player's own: three years of building ended in a
   // toast the month-close toast overwrote on the same tick.
-  const candidates = [...player, ...rival.filter((b) => parcels && deliveryWorthCeremony(next, parcels, b))];
+  // yours or the street's, only one of the five largest buildings on the map
+  const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
   const bbl = candidates[0];
   if (!bbl) return;
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;

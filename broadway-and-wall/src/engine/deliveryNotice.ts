@@ -2,9 +2,11 @@
  * When a building opening is worth interrupting the player.
  *
  * The city delivers a hundred-odd buildings a century. A popup on every one
- * is noise. A principal is told when something MASSIVE tops out — the top
- * one per cent of the standing city by floor area, measured against the rest
- * of the properties, not against the handful of jobs already in `s.built`.
+ * is noise. A principal is told when something MASSIVE tops out — one of the
+ * five largest buildings on the whole map by floor area, any asset class,
+ * yours or anyone's — measured against the rest of the standing city, not
+ * against the handful of jobs already in `s.built`. Smaller deliveries still
+ * land in the news, the digest and the firm timeline.
  *
  * Compared to the rest, not including itself: otherwise a new building is
  * already in the distribution it is being ranked against.
@@ -13,7 +15,8 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { resolveRec } from "./value";
 
-export const DELIVERY_CEREMONY_TOP = 0.01;
+/** How many of the city's largest buildings earn the popup. */
+export const DELIVERY_CEREMONY_TOP_N = 5;
 
 export function deliveryWorthCeremony(
   game: GameState, parcels: ParcelTable, bbl: string,
@@ -32,6 +35,6 @@ export function deliveryWorthCeremony(
   // An empty town: the first building is the skyline.
   if (others.length === 0) return true;
   others.sort((a, b) => b - a);
-  const k = Math.max(1, Math.ceil(others.length * DELIVERY_CEREMONY_TOP));
-  return sf >= (others[k - 1] ?? 0);
+  // in the top five if it is at least the fifth-largest of the others
+  return others.length < DELIVERY_CEREMONY_TOP_N || sf >= others[DELIVERY_CEREMONY_TOP_N - 1];
 }

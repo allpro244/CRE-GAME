@@ -504,7 +504,7 @@ export default function TopBar() {
       {game && (
         <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <PlayButton />
-          <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month (Space)">
+          <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month">
             Advance <span className="advance-unit">1 mo</span>
           </button>
           <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
@@ -783,22 +783,21 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
  * most of its effort on was never seen growing. This runs the clock a month at
  * a time with the map drawing between ticks, and pauses itself on exactly what
  * Yr ▸▸ stops on (stopRule), on any card that wants an answer, and on game over.
- * Click again to speed up, a third time to stop. G toggles it.
+ * One speed, a month a second: click (or Space, or G) to play, again to pause.
  */
 function PlayButton() {
   const autoplay = useStore((s) => s.autoplay);
   const over = useStore((s) => !!s.game?.gameOver);
-  const next = autoplay === 0 ? 1 : autoplay === 1 ? 2 : 0;
   return (
     <button
       className={"advance-btn advance-play" + (autoplay ? " advance-play-on" : "")}
-      onClick={() => useStore.getState().setAutoplay(next)}
+      onClick={() => useStore.getState().setAutoplay(autoplay ? 0 : 1)}
       disabled={over}
       aria-pressed={autoplay > 0}
-      title={autoplay === 0 ? "Play — a month a second, pausing when something needs you (G)"
-        : autoplay === 1 ? "Playing a month a second — click for 3× (G pauses)" : "Playing at 3× — click to pause (G)"}
+      title={autoplay === 0 ? "Play — a month a second, pausing when something needs you (Space)"
+        : "Playing a month a second — click to pause (Space)"}
     >
-      {autoplay === 0 ? "▶ Play" : autoplay === 1 ? "▶ 1×" : "▶ 3×"}
+      {autoplay === 0 ? "▶ 1×" : "❚❚ Pause"}
     </button>
   );
 }

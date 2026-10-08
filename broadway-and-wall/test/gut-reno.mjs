@@ -66,8 +66,11 @@ g0.holdings[bbl] = {
 const spec0 = parcels[bbl].buildSpec;
 const g1 = E.advanceMonth(g0, parcels, extra, {});
 const h1 = g1.holdings[bbl];
+// the lifted spec is SAVED STATE (g.specOf, read through resolveRec), not a
+// write to the static parcel table, which a reload rebuilds without it
+const live = E.resolveRec(parcels, g1, bbl);
 const ceiling = E.condCeiling(
-  { yearBuilt: parcels[bbl].yearBuilt, buildSpec: parcels[bbl].buildSpec },
+  { yearBuilt: live.yearBuilt, buildSpec: live.buildSpec },
   g1.month,
 );
 ok("condIdx is the ceiling, not the old 0.40",
@@ -77,8 +80,8 @@ ok("grade is a reading of that index",
   h1 && h1.condition === E.condGrade(h1.condIdx),
   `${h1?.condition} vs ${E.condGrade(h1?.condIdx ?? 0)}`);
 ok("bones stepped toward 0.75, not to it",
-  parcels[bbl].buildSpec > spec0 && parcels[bbl].buildSpec < 0.75,
-  `${spec0} -> ${parcels[bbl].buildSpec}`);
+  live.buildSpec > spec0 && live.buildSpec < 0.75 && parcels[bbl].buildSpec === spec0,
+  `${spec0} -> ${live.buildSpec} (parcel table untouched: ${parcels[bbl].buildSpec})`);
 ok("yearBuilt is still 1928", parcels[bbl].yearBuilt === 1928);
 ok("renovating flag is gone", h1 && h1.renovatingUntilM === undefined);
 ok("a 1928 gut is not trophy-new — ceiling stays under 0.90",

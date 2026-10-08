@@ -28,7 +28,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const fundableQuotes = quotes.filter((x) => x.available && x.maxProceeds > 0);
   const deskQuotes = showAllQuotes ? quotes : fundableQuotes;
   const cur = game.holdings[bbl]?.loan;
-  const existing = cur ? prepayPenalty(cur, game.month) : 0;
+  const existing = cur ? prepayPenalty(cur, game.month, game.econ) : 0;
   if (!quotes.length && !privateQuotes.length) {
     return (
       <div className="refi">
@@ -48,7 +48,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
         {privateQuotes.map((pq) => {
           const pts = Math.round(pq.principal * pq.points);
           const mezzPen = holding?.mezz && holding.mezz.balance > 0
-            ? prepayPenalty(holding.mezz, game.month) : 0;
+            ? prepayPenalty(holding.mezz, game.month, game.econ) : 0;
           // payoff from refiQuotes is already senior + mezz balance
           const net = pq.principal - payoff - pts - existing - mezzPen;
           return (
@@ -136,7 +136,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       {privateQuotes.map((pq) => {
         const pts = Math.round(pq.principal * pq.points);
         const mezzPen = holding?.mezz && holding.mezz.balance > 0
-          ? prepayPenalty(holding.mezz, game.month) : 0;
+          ? prepayPenalty(holding.mezz, game.month, game.econ) : 0;
         // payoff from refiQuotes is already senior + mezz balance
         const net = pq.principal - payoff - pts - existing - mezzPen;
         return (
@@ -305,7 +305,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
         {q.maxProceeds > 0 && q.bindingWhy && (
-          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px" }}>{q.bindingWhy}</div>
+          // a sentence, not a value: across both columns, never as a cell in
+          // the label column (which sizes to its widest cell, and squeezed
+          // every figure on the desk into a one-word-wide strip)
+          <div className="dim" style={{ fontSize: 11, margin: "-2px 0 6px", gridColumn: "1 / -1" }}>{q.bindingWhy}</div>
         )}
         <Row
           k="Structure"

@@ -41,7 +41,7 @@ for (let m = 0; m < 3; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
 const h0 = g.holdings[bbl];
 const loan0 = { ...h0.loan };
 const amt = Math.round(loan0.balance * 0.2);
-const pen = E.prepayPenalty({ ...loan0, balance: amt }, g.month);
+const pen = E.prepayPenalty({ ...loan0, balance: amt }, g.month, g.econ);
 const r = E.paydownLoan(g, parcels, bbl, amt);
 check(!r.err, `pays down ${K(amt)} of ${K(loan0.balance)}${r.err ? ": " + r.err : ""}`);
 const g1 = r.s, loan1 = g1.holdings[bbl].loan;

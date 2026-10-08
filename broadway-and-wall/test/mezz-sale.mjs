@@ -35,7 +35,7 @@ const placed = E.placeMezz(g, parcels, bbl);
 check(!placed.err, `mezz — ${placed.err ?? "ok"}`);
 g = placed.s;
 const mezzBal = g.holdings[bbl].mezz.balance;
-const stack = E.stackPayoff(g.holdings[bbl], g.month);
+const stack = E.stackPayoff(g.holdings[bbl], g.month, g.econ);
 check(stack.balance === senior + mezzBal, `stack = senior+mezz (${stack.balance})`);
 check(stack.mezzBal === mezzBal, `stack.mezzBal`);
 

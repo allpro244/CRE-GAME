@@ -709,10 +709,12 @@ function tickMonth(
       // what they are (yearBuilt is left alone — a 1928 building never becomes
       // a 2015 one), but a full re-clad and re-plant does lift the
       // specification. The 0.4 step toward 0.75 is that lift. QUALITY_BALANCE_PLAN.md §1.
-      const parcel = parcels[h.bbl];
-      const spec = parcel?.buildSpec ?? rec.buildSpec ?? 0.5;
-      if (parcel && spec < 0.75) parcel.buildSpec = spec + 0.4 * (0.75 - spec);
-      const ceilingRec = { yearBuilt: rec.yearBuilt, buildSpec: parcel?.buildSpec ?? spec };
+      // The lifted spec is saved state (s.specOf, read by resolveRec), not a
+      // write to the static parcel table, which a reload rebuilds without it.
+      const spec0 = rec.buildSpec ?? 0.5;
+      const spec = spec0 < 0.75 ? spec0 + 0.4 * (0.75 - spec0) : spec0;
+      if (spec !== spec0) (s.specOf ??= {})[h.bbl] = +spec.toFixed(4);
+      const ceilingRec = { yearBuilt: rec.yearBuilt, buildSpec: spec };
       h.condIdx = condCeiling(ceilingRec, s.month);
       h.condition = condGrade(h.condIdx);
       h.lastCapM = s.month;
@@ -1094,7 +1096,7 @@ function tickMonth(
         const { net, tax } = saleTaxQuote(pick, gross, s);
         // Senior + mezz — same stack as a voluntary sale. Leaving mezz off
         // the waterfall paid the sponsor Cordage's junior in cash.
-        const stack = stackPayoff(pick, s.month);
+        const stack = stackPayoff(pick, s.month, s.econ);
         const lien = stack.balance;
         const breakFee = stack.penalty;
         // Facility collateral used to walk off at seizure with only the

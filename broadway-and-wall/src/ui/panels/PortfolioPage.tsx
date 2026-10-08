@@ -707,7 +707,7 @@ export function PortfolioPage() {
                     Refi
                   </button>
                   {h.loan && !game.facility?.bbls?.includes(h.bbl) && (() => {
-                    const due = payOffDue(h.loan, game.month);
+                    const due = payOffDue(h.loan, game.month, game.econ);
                     const canPay = fundableNow(game, parcels) >= due.due;
                     return (
                       <button

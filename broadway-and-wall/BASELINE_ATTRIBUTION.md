@@ -1,9 +1,37 @@
-# Baseline attribution — the plat overhaul
+# Baseline attribution — MDGA
 
 **Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
 **Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
 
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
+
+---
+
+## This ruler: MDGA (`99f0b0a`, SAVE_VERSION unchanged)
+
+Make Development Great Again — see `MDGA_PLAN.md` §7. The macro draw moved to
+its own RNG channel (`"nation"`), so EVERY seed re-rolls its national cycle:
+the six-seed medians below are mostly that re-roll. Attributed with a paired
+16-seed run (`ENGINE=` old build at `8463e10`, `tools/baseline-paired.mjs`):
+
+| Metric | 6-seed median | Paired mean, 16 seeds | t | Read |
+|---|---|---|---|---|
+| `city.buildings` | 860 -> 884 | +3.9% ± 0.9% | 4.2 | Real: more lots pencil, more get built |
+| `dev.affordableLotShare` | 0.023 -> 0.066 | +88% ± 23% | 3.7 | **The intended move**: wood frame, holder capitulation, ripe land on the tape |
+| `city.demolished` | 30 -> 24 | -39% ± 16% | -2.4 | Fewer teardowns once vacant land is cheaper to build on |
+| `city.employed`, `jobGrowth` | +5.6% | +10% ± 5% | 1.9 | Growth follows supply that can now be built |
+| `rentIdx.*` | +45% to +68% | +14% to +24% ± 11-15% | 1.1-2.0 | Mostly re-roll. What is left goes with jobs outgrowing floor area |
+| `vac.*` | -4% to -32% | -20% to -39% | -0.8 to -1.8 | Tighter, same direction as rents |
+| `land.*` | +35% to +84% | +18% to +27% | 0.8-1.7 | Follows rent; capitulation pulls on the unripe floor only |
+| `rail.occ.*.cap`, `city.floorGrowth`, `city.jobGrowth` | new | — | — | New metrics: months residence vacancy sits on its cap, and end/start floor and jobs |
+
+### The cost, stated plainly
+
+The city still cannot build as fast as it hires: `jobGrowth` 1.25 against
+`floorGrowth` 1.13 over 300 months, and occupancy sits on its cap 44-60% of
+months in office, multifamily and industrial. MDGA made sites pencil for
+developers. It did not lift the city's own construction pipeline (REALISM_AUDIT
+#1, shortage-queue regime). That is the next fix. Do not tune it away here.
 
 ---
 

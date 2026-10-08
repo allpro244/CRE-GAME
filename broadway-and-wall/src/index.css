@@ -2509,3 +2509,40 @@ html, body, #root { overflow-x: hidden; }
 .hover-tip .ht-row span { opacity: 0.72; }
 .hover-tip .ht-row.bad b { color: var(--bad, #b0432f); }
 .hover-tip .ht-row.sale b { color: var(--accent, #9a6a12); }
+
+/* AT RISK (ui/AtRiskBanner.tsx, and toast-critical). The one red thing on the
+   screen: something the firm owns is being taken. Nothing else uses this
+   colour block, so a foreclosure never reads like a broker's call. */
+.at-risk {
+  pointer-events: auto; width: min(640px, calc(100vw - 32px));
+  background: #8f2416; color: #fff7ef; border: 2px solid #5e1309;
+  border-radius: var(--r-md, 6px); box-shadow: 0 8px 26px rgba(80, 14, 4, 0.45);
+  font-family: system-ui, sans-serif; font-size: 13px; overflow: hidden;
+  animation: at-risk-arrive 0.3s var(--ease, ease-out);
+}
+.at-risk-head {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  font-weight: 700; letter-spacing: 0.8px; font-size: 12px; background: #6e1a0e;
+}
+.at-risk-mark { font-size: 15px; animation: at-risk-pulse 1.6s ease-in-out infinite; }
+.at-risk-fold {
+  margin-left: auto; background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; padding: 0 4px;
+}
+.at-risk-row {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14); color: inherit; font: inherit;
+  padding: 7px 12px; cursor: pointer; line-height: 1.35;
+}
+.at-risk-row:hover { background: rgba(255, 255, 255, 0.1); }
+.at-risk-go { opacity: 0.75; white-space: nowrap; font-size: 12px; }
+.at-risk-more { padding: 4px 12px 7px; opacity: 0.8; font-size: 12px; }
+.toast-stack .toast.toast-critical {
+  background: #8f2416; color: #fff7ef; border: 2px solid #5e1309;
+  font-family: system-ui, sans-serif; font-size: 14px; font-weight: 600;
+}
+.toast-alarm { font-size: 15px; }
+@keyframes at-risk-arrive { 0% { transform: translateY(-6px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes at-risk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  .at-risk, .at-risk-mark { animation: none; }
+}

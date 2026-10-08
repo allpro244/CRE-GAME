@@ -209,6 +209,8 @@ export function SettingsPage() {
     const st = useStore.getState();
     useStore.setState({ game: { ...st.game!, ...patch } });
   };
+  // "money" is the retired name of today's default (stopRule).
+  const clockMode = !game.clockStops || game.clockStops === "money" ? "decisions" : game.clockStops;
   return (
     <div>
       <ThemePicker />
@@ -224,11 +226,11 @@ export function SettingsPage() {
       <div className="setting-row">
         <div className="setting-text">
           <div style={{ fontWeight: 600 }}>What stops Yr / Skip / Play</div>
-          <div className="hint" style={{ padding: 0 }}>{CLOCK_OPTIONS.find((c) => c.id === (game.clockStops ?? "decisions"))?.note}</div>
+          <div className="hint" style={{ padding: 0 }}>{CLOCK_OPTIONS.find((c) => c.id === clockMode)?.note}</div>
         </div>
         <div className="seg" role="radiogroup" aria-label="What stops the clock">
           {CLOCK_OPTIONS.map((c) => {
-            const on = (game.clockStops ?? "decisions") === c.id;
+            const on = clockMode === c.id;
             return (
               <button key={c.id} type="button" role="radio" aria-checked={on} title={c.note}
                 className={"seg-btn" + (on ? " on" : "")}
@@ -237,12 +239,12 @@ export function SettingsPage() {
           })}
         </div>
       </div>
-      <Toggle
+      {clockMode !== "decisions" && <Toggle
         on={game.brokerStops !== "never"}
         set={(v) => flip({ brokerStops: v ? undefined : "never" })}
         label="Broker first looks stop the clock"
         detail="On, Yr / Skip / Play stop when a broker's private window on a building is about to lapse — only for buildings you could fund at a typical 65% loan. Off, they wait on the Marketplace, marked FIRST LOOK."
-      />
+      />}
       <Toggle
         on={!popupsOff}
         set={(v) => setPopupsOff(!v)}
@@ -257,9 +259,9 @@ export function SettingsPage() {
         on={!alertsOff}
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
-        detail="Bank failures, economy-wide events, books taken back and bids on your sales take the screen. Off, you read them on News instead."
-        more={"The full list: a bank failing, a level event in the wider economy, a book of buildings taken back at once, "
-          + "an institution indicating on a portfolio you put in the market, and bids landing on a marketed sale. "
+        detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead."
+        more={"Bank failures, economy-wide events and a rival's book taken back pass as a line at the top of the screen and do not stop play, "
+          + "unless the clock is set to stop for opportunities too or for everything. "
           + "Each is written into the news feed the moment it fires, so turning this off loses the interruption and not the event. "
           + "A lender taking a rival's whole book puts the package on Marketplace under Books for sale. "
           + "With both switches off a sale or portfolio bid still stops Year/Skip and badges Deals, but will not take the screen — "
@@ -275,7 +277,7 @@ export function SettingsPage() {
         on={!game.auctionQuiet}
         set={(v) => flip({ auctionQuiet: !v })}
         label="The July auction card"
-        detail="The county docket comes up as a card when it is published each July. Off, the auction still runs on the same day with the same lots — you read it on Marketplace instead."
+        detail="The county docket comes up as a card when it is published each July — when one of the lots is your own building, or when the clock is set to stop for opportunities. Off, the auction still runs on the same day with the same lots — you read it on Marketplace instead."
       />
       {/* the two renderer switches were filed under Interruptions */}
       <div className="page-section">Display</div>

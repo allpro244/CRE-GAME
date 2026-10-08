@@ -3121,12 +3121,13 @@ export interface GameState {
   brokerStops?: "affordable" | "never";
   /**
    * WHAT STOPS THE CLOCK, chosen on the setup page and editable in Settings.
-   * Absent is "decisions" — every item on the attention list that is not
-   * `soft` — which is how the game has always run. "everything" also stops on
-   * the soft notices; "money" stops only on items where not answering costs the
-   * firm something it already has (OPPORTUNITY_KEYS wait). See stopRule in sim.ts.
+   * Absent is "decisions" — items where not answering costs the firm
+   * something it already has; OPPORTUNITY_KEYS wait on the docket.
+   * "opportunities" lets those stop it too; "everything" also stops on the
+   * soft notices. "money" is the retired name of the default, kept so an old
+   * save still reads. See stopRule in sim.ts.
    */
-  clockStops?: "everything" | "money";
+  clockStops?: "everything" | "opportunities" | "money";
   /**
    * THE WORLD THIS RUN WAS DEALT, as chosen on the setup page (setup.ts).
    * Recorded so the Saves page and the run record can say which world it was;

@@ -133,7 +133,7 @@ interface AppState {
   /** Step back to the previous room and deed. No-op with nowhere to go. */
   goBack: () => void;
   /** `attnKey`: an attentionItems key — clicking the toast opens it via openAttention. */
-  toast: { text: string; kind: "ok" | "err"; at: number; attnKey?: string; yearReview?: boolean } | null;
+  toast: { text: string; kind: "ok" | "err" | "critical"; at: number; attnKey?: string; yearReview?: boolean } | null;
   /** Command palette (Cmd/Ctrl-K). View flag only — never part of the save. */
   paletteOpen: boolean;
   setPaletteOpen: (v: boolean) => void;
@@ -600,7 +600,7 @@ function pushNav(
   return { navBack };
 }
 
-function toast(text: string, kind: "ok" | "err" = "ok", attnKey?: string) {
+function toast(text: string, kind: "ok" | "err" | "critical" = "ok", attnKey?: string) {
   useStore.setState({ toast: { text, kind, at: Date.now(), attnKey } });
 }
 
@@ -1008,7 +1008,7 @@ export const useStore = create<AppState>((set, get) => ({
         // A spectator is not at the desk: no cards about the player's own firm.
         if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
         if (!r.s.spectator) queueYearReview(game, r.s, set);
-        toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`, "ok", r.reason ? r.key : undefined);
+        toast(`${r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes."}${recapBit(game, r.s)}`, r.critical ? "critical" : "ok", r.reason ? r.key : undefined);
         void persist(r.s);
       } finally {
         set({ advancing: false });
@@ -1032,7 +1032,7 @@ export const useStore = create<AppState>((set, get) => ({
         // A spectator is not at the desk: no cards about the player's own firm.
         if (!r.s.spectator) queueDeliveryCeremony(game, r.s, parcels, set);
         if (!r.s.spectator) queueYearReview(game, r.s, set);
-        toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`, "ok", r.reason ? r.key : undefined);
+        toast(`${r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. The town hums along."}${recapBit(game, r.s)}`, r.critical ? "critical" : "ok", r.reason ? r.key : undefined);
         void persist(r.s);
       } finally {
         set({ advancing: false });

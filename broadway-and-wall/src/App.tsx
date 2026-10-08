@@ -14,6 +14,7 @@ import RunRecorder from "@/ui/RunRecords";
 import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
+import AtRiskBanner from "@/ui/AtRiskBanner";
 
 export default function App() {
   const loadError = useStore((s) => s.loadError);
@@ -104,7 +105,7 @@ function PhotoFrameHint() {
  * the same tick. The store still sets a single `toast`; this keeps the last
  * three on screen, newest at the bottom, each for as long as it takes to read.
  */
-type ToastItem = { text: string; kind: "ok" | "err"; at: number; attnKey?: string; yearReview?: boolean; id: number };
+type ToastItem = { text: string; kind: "ok" | "err" | "critical"; at: number; attnKey?: string; yearReview?: boolean; id: number };
 let toastSeq = 0;
 function Toast() {
   const toast = useStore((s) => s.toast);
@@ -113,21 +114,25 @@ function Toast() {
     if (!toast) return;
     const id = ++toastSeq;
     setItems((xs) => [...xs.filter((x) => x.text !== toast.text), { ...toast, id }].slice(-3));
-    // ~3s for a short line, longer for a long one; errors linger.
-    const ms = Math.min(9000, 2600 + toast.text.length * 35) + (toast.kind === "err" ? 1500 : 0);
+    // ~3s for a short line, longer for a long one; errors linger, and a stop
+    // for something being taken from you lingers longest.
+    const ms = Math.min(9000, 2600 + toast.text.length * 35)
+      + (toast.kind === "err" ? 1500 : toast.kind === "critical" ? 6000 : 0);
     // Not cleared when the next toast lands — each line keeps its own clock.
     setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), ms);
   }, [toast]);
-  if (!items.length) return null;
+  const playing = useStore((s) => s.phase === "playing" && !s.photoFrame);
+  if (!items.length && !playing) return null;
   return (
     <div className="toast-stack">
+      {playing && <AtRiskBanner />}
       {items.map((t) => (
         <div
           key={t.id}
           className={"toast toast-" + t.kind + (t.attnKey || t.yearReview ? " toast-link" : "")}
           title={t.attnKey || t.yearReview ? "Open it" : undefined}
-          role={t.kind === "err" ? "alert" : "status"}
-          aria-live={t.kind === "err" ? "assertive" : "polite"}
+          role={t.kind === "ok" ? "status" : "alert"}
+          aria-live={t.kind === "ok" ? "polite" : "assertive"}
           aria-atomic="true"
           onClick={() => {
             setItems((xs) => xs.filter((x) => x.id !== t.id));
@@ -136,6 +141,7 @@ function Toast() {
             if (t.yearReview) useStore.getState().openYearReview();
           }}
         >
+          {t.kind === "critical" && <span className="toast-alarm" aria-hidden="true">⚠ </span>}
           {t.text}
           {(t.attnKey || t.yearReview) && <span className="toast-go" aria-hidden="true"> Open →</span>}
         </div>

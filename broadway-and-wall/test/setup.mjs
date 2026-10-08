@@ -161,17 +161,29 @@ for (const seed of [550991, 12007]) {
   }
   const li = g.listings[0];
   const watchNow = (s) => ({ ...s, watch: [li.bbl] });
-  const stopStd = E.stopRule(g, p), stopMoney = E.stopRule({ ...g, clockStops: "money" }, p), stopAll = E.stopRule({ ...g, clockStops: "everything" }, p);
-  check(stopStd(watchNow(g))?.key.startsWith("watch:") && !stopMoney(watchNow({ ...g, clockStops: "money" })),
-    `"what can cost money" lets a watched listing wait; the standard clock stops for it`);
+  const stopStd = E.stopRule(g, p), stopOpp = E.stopRule({ ...g, clockStops: "opportunities" }, p), stopAll = E.stopRule({ ...g, clockStops: "everything" }, p);
+  const stopOld = E.stopRule({ ...g, clockStops: "money" }, p);
+  check(!stopStd(watchNow(g)) && stopOpp(watchNow({ ...g, clockStops: "opportunities" }))?.key.startsWith("watch:")
+    && !stopOld(watchNow({ ...g, clockStops: "money" })),
+    `the standard clock lets a watched listing wait; "opportunities too" stops for it; an old "money" save reads as standard`);
   const h0 = Object.values(g.holdings).find((h) => h.tenants?.length && !h.groundLeased);
   const soft = structuredClone(g);
   const hs = soft.holdings[h0.bbl];
   if (hs.tenants[0]) hs.tenants[0].nonRenewM = soft.month;
   check(!!hs.tenants[0] && !stopStd(soft) && stopAll({ ...soft, clockStops: "everything" })?.key.startsWith("nonrenew:"),
     `"everything" stops for a tenant's notice; the standard clock does not`);
-  const { g: c } = start(550991, { clock: "money" });
-  check(c.clockStops === "money", `the setup's clock lands on the save (clockStops ${c.clockStops})`);
+  // A MISSED PAYMENT IS NOT A NOTICE. It is critical, stops the clock in every
+  // mode, and is named first even when an opportunity lands the same month.
+  const hl = Object.values(g.holdings).find((h) => h.loan);
+  if (hl) {
+    const late = watchNow(structuredClone(g));
+    late.holdings[hl.bbl].loan.arrearsMs = 1;
+    const why = stopOpp({ ...late, clockStops: "opportunities" });
+    check(stopStd(late)?.critical && why?.key.startsWith("arrears:") && why.critical,
+      `a missed payment is critical and stops every clock ahead of a watched listing (${why?.key})`);
+  }
+  const { g: c } = start(550991, { clock: "opportunities" });
+  check(c.clockStops === "opportunities", `the setup's clock lands on the save (clockStops ${c.clockStops})`);
 }
 
 // -------------------------------------------------------------- 8. the firm

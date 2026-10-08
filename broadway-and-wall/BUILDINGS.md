@@ -5,7 +5,8 @@
 > `src/map/real/RealCity.ts` (facade families and their elevations, roofs,
 > crowns, the player's BuildingDesign, water, street life, haze). Read the
 > references to ThreeBuildings below as history. Current notes:
-> `MAP_VISUAL_AUDIT.md`.
+> `MAP_VISUAL_AUDIT.md`. The pattern book (painters, families, elevations,
+> paint schemes, `familyFor`, roof tones) is `src/map/real/facades.ts`.
 
 
 What the city is made of, who owns which file, and how to check that any of it

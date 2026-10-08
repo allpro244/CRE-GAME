@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
-import { newGame, advanceMonth, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { newGame, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -50,6 +50,7 @@ import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveFo
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
+import { monthOffThread } from "@/state/simClient";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
@@ -209,7 +210,8 @@ interface AppState {
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
   /** One month. `quiet` skips the month-close toast — continuous play would stack twelve of them a minute. */
-  advance: (opts?: { quiet?: boolean }) => void;
+  /** Close one month. Resolves once the new month is on the store. */
+  advance: (opts?: { quiet?: boolean }) => Promise<void>;
   /** Continuous play: 0 off, 1 about a month a second, 2 fast. Pauses itself on anything Yr would stop on. */
   autoplay: 0 | 1 | 2;
   setAutoplay: (v: 0 | 1 | 2) => void;
@@ -606,6 +608,57 @@ function pushNav(
   return { navBack };
 }
 
+let monthInFlight: Promise<void> | null = null;
+let monthAgain: { quiet?: boolean } | null = null;
+
+/**
+ * ONE MONTH: the tick in the sim worker, then the cards and the toast here.
+ * If the player acted while the month was out (a click lands in the 50-200ms
+ * the tick takes), the month is closed again from what they did, never from
+ * the state they had already moved past.
+ */
+async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
+  const st = useStore.getState();
+  const { parcels, bbls, adjacency } = st;
+  let game = st.game;
+  if (!game || !parcels || game.gameOver) return;
+  // JEV'S ANSWERS FIRST, when a decision period is due: the Jev-run firms'
+  // questions were (usually) sent while the last month closed, and are filed
+  // on the state before the tick reads them. Play waits only if they are
+  // still in flight — see state/jevStore.ts.
+  if (jevDueNow(game)) {
+    if (!(await runDueJev())) return;
+    game = useStore.getState().game;
+    if (!game || game.gameOver) return;
+  }
+  let ticked: GameState;
+  for (;;) {
+    ticked = await monthOffThread(game, parcels, bbls, adjacency);
+    const now = useStore.getState().game;
+    if (now === game) break;
+    // the desk moved underneath the tick: a new campaign, a load, or a decision
+    if (!now || now.gameOver || useStore.getState().parcels !== parcels || now.month !== game.month) return;
+    game = now;
+  }
+  const set = (partial: Partial<AppState>) => useStore.setState(partial);
+  const cash0 = game.cash;
+  // A spectator's principal can die; nobody is at the desk, the match goes on.
+  const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
+  set({ game: next, prevForDigest: game });
+  // Ask Jev about the next period while this month is on screen.
+  prefetchJev(next);
+  // A spectator is not at the desk: no cards about the player's own firm.
+  if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
+  if (!next.spectator) queueYearReview(game, next, set);
+  // Month-close feedback: the single-month Advance used to be silent, so
+  // Yr/Skip felt like the only clock that answered. Stamp the new month,
+  // cash movement, and the first thing waiting — short enough to read once.
+  const dCash = next.cash - cash0;
+  const attn = attentionItems(next, parcels)[0];
+  if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
+  void persist(next);
+}
+
 function toast(text: string, kind: "ok" | "err" | "critical" = "ok", attnKey?: string) {
   useStore.setState({ toast: { text, kind, at: Date.now(), attnKey } });
 }
@@ -963,33 +1016,24 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
   advance: (opts) => {
-    const { game, parcels, bbls, adjacency, advancing } = get();
-    if (!game || !parcels || game.gameOver || advancing) return;
-    // JEV'S ANSWERS FIRST, when a decision period is due: the Jev-run firms'
-    // questions were (usually) sent while the last month closed, and are filed
-    // on the state before the tick reads them. Play waits only if they are
-    // still in flight — see state/jevStore.ts.
-    if (jevDueNow(game)) {
-      void runDueJev().then((ran) => { if (ran) get().advance(opts); });
-      return;
-    }
-    const cash0 = game.cash;
-    const ticked = advanceMonth(game, parcels, bbls, adjacency);
-    // A spectator's principal can die; nobody is at the desk, the match goes on.
-    const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
-    set({ game: next, prevForDigest: game });
-    // Ask Jev about the next period while this month is on screen.
-    prefetchJev(next);
-    // A spectator is not at the desk: no cards about the player's own firm.
-    if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
-    if (!next.spectator) queueYearReview(game, next, set);
-    // Month-close feedback: the single-month Advance used to be silent, so
-    // Yr/Skip felt like the only clock that answered. Stamp the new month,
-    // cash movement, and the first thing waiting — short enough to read once.
-    const dCash = next.cash - cash0;
-    const attn = attentionItems(next, parcels)[0];
-    if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
-    void persist(next);
+    const { game, parcels, advancing } = get();
+    if (!game || !parcels || game.gameOver || advancing) return Promise.resolve();
+    // ONE MONTH IN FLIGHT. The tick runs in the sim worker now, so a second
+    // Space while it is out is held as one more month rather than dropped —
+    // and only one, so letting go of a held key does not leave a queue of
+    // months still turning over.
+    if (monthInFlight) { monthAgain = opts ?? {}; return monthInFlight; }
+    monthInFlight = (async () => {
+      try {
+        await advanceOne(opts);
+      } finally {
+        monthInFlight = null;
+      }
+      const again = monthAgain;
+      monthAgain = null;
+      if (again) await get().advance(again);
+    })();
+    return monthInFlight;
   },
 
   // A year in one click — but stop early the moment something new needs you.

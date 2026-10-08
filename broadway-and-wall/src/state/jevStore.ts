@@ -18,7 +18,7 @@
 import { create } from "zustand";
 import type { ParcelTable } from "@/data/types";
 import type { GameState } from "@/engine/types";
-import { advanceUntilAttentionAsync } from "@/engine/sim";
+import { spanOffThread } from "@/state/simClient";
 import { jevRivals } from "@/engine/rivals";
 import { setJevFirms, defaultJevFirms } from "@/engine/jevmatch";
 import { jevDue, fetchJevDecisions, applyJevDecisions, type Fetched, type FirmCallInfo } from "@/ai/jevController";
@@ -156,14 +156,14 @@ export async function runDueJev(): Promise<boolean> {
 export async function advanceSpanWithJev(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
 ): Promise<{ s: GameState; months: number; reason: string | null; key?: string; critical?: boolean }> {
-  if (!jevRivals(s).length && !s.spectator) return advanceUntilAttentionAsync(s, parcels, bbls, adjacency, cap, 1);
+  if (!jevRivals(s).length && !s.spectator) return spanOffThread(s, parcels, bbls, adjacency, cap);
   const every = Math.max(1, s.jev?.every ?? 3);
   let g = s, months = 0;
   while (months < cap) {
     if (jevDueNow(g)) g = applyJevDecisions(g, parcels, await (pending.get(g.month) ?? fetchFor(g, parcels, g.month)), g.month);
     pending.delete(g.month);
     const span = Math.min(cap - months, every - (g.month % every));
-    const r = await advanceUntilAttentionAsync(g, parcels, bbls, adjacency, span, 1);
+    const r = await spanOffThread(g, parcels, bbls, adjacency, span);
     g = r.s;
     months += r.months;
     if (g.spectator && g.gameOver) g = { ...g, gameOver: null };

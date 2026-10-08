@@ -2640,3 +2640,30 @@ opening, so `LOC_SPREAD.min` is in effect the price of fringe space (0.52x
 the index for flats, 0.40x for offices), not a guard. Whether those ratios
 are right for a town 1.0 x 1.7 km across is the calibration question the
 location model needs next; it is why fringe land still rarely pencils.
+
+# THE EDGE OF TOWN STAYS EMPTY — and the floor is not why (measured 2026-10-08, no change shipped)
+
+57-74% of vacant lots end on the location multiplier's floor, and the
+floors (flats 0.52, offices 0.40, sheds 0.62) are wider than the spreads the
+code's own comment states. Two fixes were built and measured, and both were
+REJECTED:
+
+- **Floors at the stated spreads** (flats 0.87, offices 0.98, sheds 0.86):
+  supply unchanged; offices lost nearly all location premium (98% of office
+  lots on the floor, prime 1.43x); a fringe garden-apartment scheme still
+  needed 0.94-1.00 of the city's rent to cover construction on free land.
+- **A pivot solved so the stock's multiplier averages 1.0**: conceptually
+  right (the index would then BE the average rent), but the curve is convex
+  and floored, so the stock currently averages above 1.0 and the fix reprices
+  every typical building down by that gap; the life company's quote share fell
+  from >= 8% to 5% (test/advance.mjs). A citywide repricing, to be decided on
+  its own.
+
+**The finding.** At the city's AVERAGE location, a new apartment scheme is
+worth about 1.00-1.09x its full cost including the developer's margin, on free
+land, across twenty years. So only above-average dirt can ever pay for land.
+Glaeser, Gyourko & Saks (2005) find prices at construction cost only in
+elastic-supply metros and well above it (1.5-2x+) in constrained ones; this
+city is constrained (classes sit on their vacancy floor 30-50% of months). The
+edge of town is a question about the rent LEVEL against replacement cost —
+the income anchor and the opening calibration — not about the spread.

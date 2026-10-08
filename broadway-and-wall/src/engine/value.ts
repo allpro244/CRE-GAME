@@ -1370,6 +1370,27 @@ const LOC_MULT_MEMO: Record<string, { d: number; p: number; v: number }> = Objec
  * The prime-to-fringe rent spread each class actually runs, as an exponent on
  * the location index and a ceiling on the multiplier. See locationRentMult.
  */
+// THE FLOOR IS NOT WHY THE FRINGE STAYS EMPTY (measured 2026-10-08; nothing
+// below was changed by it). The table runs wider than the comment in
+// locationRentMult says (5.5x for offices, 3.75x for flats) and most of the
+// town's spare land sits on the floor (57-74% of vacant lots by year 30), so
+// the floors looked like the reason the edge of town never gets built.
+// Raising them to the stated spreads (flats 0.87, offices 0.98, sheds 0.86)
+// was tried and REJECTED: supply did not move, offices lost almost all
+// location premium (98% of office lots on the floor), and a garden-apartment
+// scheme on a fringe lot still needed 0.94-1.00 of the city's rent just to
+// cover construction on FREE land. At the AVERAGE location new space barely
+// covers its replacement cost, so only above-average dirt can ever pay for
+// land, whatever the floor. Whether a growing, short city's rents should sit
+// above replacement cost (Glaeser, Gyourko & Saks 2005: only elastic cities
+// sit at it) is a question about the rent LEVEL, not this spread.
+//
+// Also measured and NOT adopted: solving each class's pivot so the stock's
+// multiplier averages exactly 1.0. The curve is convex and floored, so the
+// standing stock averages above 1.0 at the current pivot; making the index
+// the true average reprices every typical building down by that gap and the
+// life company's quote share fell from >= 8% to 5% (test/advance.mjs). That
+// is a citywide repricing to be decided on its own, not a cleanup.
 const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> = {
   retail:      { exp: 1.45, max: 3.10, min: 0.34 },
   // Office ceiling was 2.45 — primary CBD trophy vs suburban commodity.

@@ -648,8 +648,21 @@ export function productOpen(s: GameState, p: LoanProduct): boolean {
  *  yieldmaint  — the lender is made whole on the coupon it was promised, which
  *                is brutal early in the term and the reason long money is a
  *                commitment rather than a preference
+ *
+ * YIELD MAINTENANCE IS PRICED OFF TODAY'S RATES, because that is what it is.
+ * The lender is not owed its coupon; it is owed the DIFFERENCE between the
+ * coupon and what the returned money earns reinvested today, every month to
+ * the end of the protection period, discounted at that reinvestment rate —
+ * the standard CMBS/life-company clause, with the usual 1% floor. The old
+ * form (balance x coupon x years x 0.62) ignored the market entirely: it
+ * charged a 7% note's full coupon whether rates had fallen to 4% or risen to
+ * 9%, so breaking a loan in a rising market cost millions when the real
+ * clause costs the floor. The reinvestment yield is the loan index — policy
+ * plus term premium, what fixed paper prices off here, i.e. the Treasury the
+ * clause names; a floater is measured against the short index it resets on.
  */
-export function prepayPenalty(loan: Loan, month: number): number {
+const YM_FLOOR = 0.01;   // the customary 1%-of-balance minimum in a yield-maintenance clause
+export function prepayPenalty(loan: Loan, month: number, econ: Pick<Econ, "indexRate" | "shortIndex">): number {
   const p = loan.prepay ?? "open";
   const left = Math.max(0, (loan.prepayUntilM ?? 0) - month);
   if (p === "open" || left <= 0) return 0;
@@ -657,9 +670,11 @@ export function prepayPenalty(loan: Loan, month: number): number {
     const yearsLeft = Math.ceil(left / 12);
     return Math.round(loan.balance * Math.min(0.05, 0.01 * yearsLeft));
   }
-  // yield maintenance: the coupon the lender loses, discounted roughly
-  const yrs = left / 12;
-  return Math.round(loan.balance * (loan.ratePct / 100) * yrs * 0.62);
+  const reinvest = Math.max(0, (loan.floating ? (econ.shortIndex ?? econ.indexRate) : econ.indexRate) / 100);
+  const lostMo = (loan.balance * Math.max(0, loan.ratePct / 100 - reinvest)) / 12;
+  const r = reinvest / 12;
+  const annuity = r > 0 ? (1 - Math.pow(1 + r, -left)) / r : left;
+  return Math.round(Math.max(loan.balance * YM_FLOOR, lostMo * annuity));
 }
 
 /** Balance + break cost to retire a mortgage today. */
@@ -668,12 +683,12 @@ export function prepayPenalty(loan: Loan, month: number): number {
  * takeout and payoff all need the same stack maths — using only `h.loan`
  * left Cordage junior unpaid and leaked conserve.
  */
-export function stackPayoff(h: Holding, month: number): {
+export function stackPayoff(h: Holding, month: number, econ: Pick<Econ, "indexRate" | "shortIndex">): {
   seniorBal: number; mezzBal: number; balance: number;
   seniorPenalty: number; mezzPenalty: number; penalty: number; due: number;
 } {
-  const senior = h.loan ? payOffDue(h.loan, month) : { balance: 0, penalty: 0, due: 0 };
-  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, month) : { balance: 0, penalty: 0, due: 0 };
+  const senior = h.loan ? payOffDue(h.loan, month, econ) : { balance: 0, penalty: 0, due: 0 };
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, month, econ) : { balance: 0, penalty: 0, due: 0 };
   return {
     seniorBal: senior.balance,
     mezzBal: mezz.balance,
@@ -685,10 +700,10 @@ export function stackPayoff(h: Holding, month: number): {
   };
 }
 
-export function payOffDue(loan: Loan, month: number): { balance: number; penalty: number; due: number } {
+export function payOffDue(loan: Loan, month: number, econ: Pick<Econ, "indexRate" | "shortIndex">): { balance: number; penalty: number; due: number } {
   const balance = Math.max(0, Math.round(loan.balance));
   if (balance <= 0) return { balance: 0, penalty: 0, due: 0 };
-  const penalty = prepayPenalty({ ...loan, balance }, month);
+  const penalty = prepayPenalty({ ...loan, balance }, month, econ);
   return { balance, penalty, due: balance + penalty };
 }
 
@@ -713,8 +728,8 @@ export function payOffLoan(
   if (next.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
   }
-  const senior = payOffDue(h.loan, next.month);
-  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, next.month) : null;
+  const senior = payOffDue(h.loan, next.month, next.econ);
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, next.month, next.econ) : null;
   const balance = senior.balance + (mezz?.balance ?? 0);
   const penalty = senior.penalty + (mezz?.penalty ?? 0);
   const due = senior.due + (mezz?.due ?? 0);
@@ -795,7 +810,7 @@ export function paydownLoan(
   const next = cloneState(s);
   const h = next.holdings[bbl]!;
   const loan = h.loan!;
-  const penalty = prepayPenalty({ ...loan, balance: amt }, next.month);
+  const penalty = prepayPenalty({ ...loan, balance: amt }, next.month, next.econ);
   const due = amt + penalty;
   if (next.cash < due) {
     return { s, err: `Need $${due.toLocaleString()} in cash${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(next.cash)).toLocaleString()}.` };
@@ -2154,8 +2169,8 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;
   const oldBal = seniorBal + mezzBal;
-  const penalty = (h.loan ? prepayPenalty(h.loan, next.month) : 0)
-    + (h.mezz ? prepayPenalty(h.mezz, next.month) : 0);
+  const penalty = (h.loan ? prepayPenalty(h.loan, next.month, next.econ) : 0)
+    + (h.mezz ? prepayPenalty(h.mezz, next.month, next.econ) : 0);
   const points = Math.round(qd.principal * product.points);
   const capPremium = product.floating ? Math.round(qd.principal * 0.0125) : 0;
   const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty + capPremium;

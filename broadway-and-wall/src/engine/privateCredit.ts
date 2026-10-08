@@ -547,8 +547,8 @@ export function acceptPrivateBorrowQuote(
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;
   const oldBal = seniorBal + mezzBal;
-  const penalty = (h.loan ? prepayPenalty(h.loan, s.month) : 0)
-    + (h.mezz ? prepayPenalty(h.mezz, s.month) : 0);
+  const penalty = (h.loan ? prepayPenalty(h.loan, s.month, s.econ) : 0)
+    + (h.mezz ? prepayPenalty(h.mezz, s.month, s.econ) : 0);
   // Bridge closes without a bank rate-cap tax — the coupon is already the hedge.
   const fee = pointsFee + penalty;
   const need = Math.max(0, oldBal + fee - quote.principal);

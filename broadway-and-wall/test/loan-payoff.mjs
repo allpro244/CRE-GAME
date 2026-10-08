@@ -60,7 +60,7 @@ g.holdings[land].loan = {
 const blocked = E.offerGroundLease(g, parcels, land, 75, "fixed");
 ok("ground lease blocked while crumb loan sits", !!blocked.err, blocked.err);
 
-const due = E.payOffDue(g.holdings[land].loan, g.month);
+const due = E.payOffDue(g.holdings[land].loan, g.month, g.econ);
 ok("payoff due is the $26 balance", due.due === 26 && due.penalty === 0, JSON.stringify(due));
 
 const paid = E.payOffLoan(g, parcels, land);
@@ -81,7 +81,7 @@ g.holdings[land].loan = {
   cleanQs: 0, originM: g.month, origValue: 2e6,
 };
 g.cash = 2_000_000;
-const due2 = E.payOffDue(g.holdings[land].loan, g.month);
+const due2 = E.payOffDue(g.holdings[land].loan, g.month, g.econ);
 ok("stepdown break fee is positive", due2.penalty > 0 && due2.due === due2.balance + due2.penalty, JSON.stringify(due2));
 const paid2 = E.payOffLoan(g, parcels, land);
 ok("payoff with break fee clears lien", !paid2.err && !paid2.s.holdings[land].loan, paid2.err ?? paid2.msg);

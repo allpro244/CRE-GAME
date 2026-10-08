@@ -1308,8 +1308,8 @@ export function takeoutRead(
 export function siteDebtAtGroundbreak(s: GameState, bbl: string): { due: number; balance: number; penalty: number; lender?: string } {
   const h = s.holdings[bbl];
   if (!h?.loan && !(h?.mezz && h.mezz.balance > 0)) return { due: 0, balance: 0, penalty: 0 };
-  const senior = h.loan ? payOffDue(h.loan, s.month) : { balance: 0, penalty: 0, due: 0 };
-  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month) : { balance: 0, penalty: 0, due: 0 };
+  const senior = h.loan ? payOffDue(h.loan, s.month, s.econ) : { balance: 0, penalty: 0, due: 0 };
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month, s.econ) : { balance: 0, penalty: 0, due: 0 };
   return {
     due: senior.due + mezz.due,
     balance: senior.balance + mezz.balance,
@@ -2121,8 +2121,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // holding, because it outlives your ownership: whoever buys this building in
   // 2040 is buying the floor-to-floor and the curtain wall you paid for, and
   // condCeiling reads it forever.
+  // (Stamped on `s.built` below, which resolveRec reads. It used to be written
+  // onto the static parcel table too, which a reload rebuilds without it.)
   const built = parcels[d.bbl] ?? rec;
-  if (built) built.buildSpec = d.spec ?? 0.5;
   // THE CEILING OF THE BUILDING YOU JUST BUILT, NOT OF THE DIRT IT STANDS ON.
   // `parcels[bbl]` is the STATIC record. On a lot that was land it carries
   // yearBuilt 0, so condCeiling read a two-thousand-year-old ruin and clamped
@@ -2134,7 +2135,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // s.built a few lines up carries the real year; a conversion keeps the old
   // bones' year on purpose (see condCeiling — no capital makes 1930 new).
   const bones = d.mode === "reuse" ? (built ?? { yearBuilt: START_YEAR }) : (s.built[d.bbl] as { yearBuilt: number });
-  (s.built[d.bbl] as { buildSpec?: number }).buildSpec = d.spec ?? 0.5;
+  s.built[d.bbl].buildSpec = d.spec ?? 0.5;
   h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;

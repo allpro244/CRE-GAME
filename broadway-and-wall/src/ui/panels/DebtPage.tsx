@@ -278,8 +278,8 @@ export function DebtPage() {
             const h = game.holdings[q.bbl];
             const payoff = (h?.loan?.balance ?? 0) + (h?.mezz?.balance ?? 0);
             const pts = Math.round(q.principal * q.points);
-            const penalty = (h?.loan ? payOffDue(h.loan, game.month).penalty : 0)
-              + (h?.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, game.month).penalty : 0);
+            const penalty = (h?.loan ? payOffDue(h.loan, game.month, game.econ).penalty : 0)
+              + (h?.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, game.month, game.econ).penalty : 0);
             const net = q.principal - payoff - pts - penalty;
             return (
               <div key={q.id} className="hint" style={{ marginBottom: 10 }}>
@@ -582,7 +582,7 @@ export function DebtPage() {
               const d = ds > 0 ? noi / ds : null;
               const lv = v > 0 ? l.balance / v : null;
               const near = l.maturityM - game.month <= 24;
-              const due = payOffDue(l, game.month);
+              const due = payOffDue(l, game.month, game.econ);
               const canPay = !pledged(game, h.bbl) && fundableNow(game, parcels) >= due.due;
               const crumb = due.balance > 0 && due.balance < 25_000;
               return (

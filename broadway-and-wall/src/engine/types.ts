@@ -915,6 +915,8 @@ export interface BuiltOverride {
   mix?: UseMix;
   bldgArea: number;
   floors: number;
+  /** what the developer built it to (0..1, 0.5 = market); resolveRec reads it */
+  buildSpec?: number;
   yearBuilt: number;
   /** sf per leasable space, per use — the programming decision you made. */
   suites?: Partial<Record<BuiltClass, number>>;
@@ -2989,6 +2991,15 @@ export interface GameState {
   /** the last rezoning each district saw — month, direction, and where the envelope landed. A value event you can read, not just a news line that scrolled away. */
   zoneLog?: Record<string, { m: number; dir: 1 | -1; adj: number }>;
   variance?: Record<string, number>;         // bbl -> extra FAR granted
+  /**
+   * THE SPECIFICATION A GUT RENOVATION LIFTED A BUILDING TO, by bbl. Ground-up
+   * work records its spec on `built`; a gut of a building the city put up has
+   * no `built` record (and must not get one — that would cap its zoning at
+   * what stands), so its lifted spec lives here. Both used to be written onto
+   * the static parcel table, which is rebuilt on every load and is not part
+   * of the state the sim worker hands back — the spec silently reset to 0.5.
+   */
+  specOf?: Record<string, number>;
   /**
    * WHAT THE BOARD SAID, and when.
    *

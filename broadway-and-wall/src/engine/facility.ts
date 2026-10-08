@@ -285,7 +285,7 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
   for (const bbl of bbls) {
     const h = s.holdings[bbl];
     if (!h) continue;
-    const stack = stackPayoff(h, s.month);
+    const stack = stackPayoff(h, s.month, s.econ);
     payoff += stack.balance;
     penalties += stack.penalty;
   }

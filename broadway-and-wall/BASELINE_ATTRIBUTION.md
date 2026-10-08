@@ -1,9 +1,30 @@
-# Baseline attribution — MDGA
+# Baseline attribution — a shortage prices space
 
 **Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
 **Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
 
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
+
+---
+
+## This ruler: a shortage prices space (`2a5fd80`, `e0d2b2a`)
+
+See ECONOMY.md, "A SHORTAGE THAT DID NOT PRICE". Paired against `39a191b`
+over 16 seeds x 300 months (`tools/baseline-paired.mjs`):
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `vac.office` 0.068 -> 0.092, `vac.retail` 0.070 -> 0.093, `vac.industrial` 0.034 -> 0.059 | +36%, +33%, +73% | 2.1, 2.5, 2.9 | **The intended move**: vacancy leaves the residence floor toward natural (11.5 / 8.5 / 7.0) |
+| `rail.occ.*.cap` (office, retail, industrial) | -24% to -43% | -2.1 to -3.4 | Fewer months on the floor |
+| `city.buildings` | +2.0% | 5.5 | The city builds the scheme that pencils |
+| `city.employed`, `city.population`, `city.jobGrowth` | -5% | -2.7 | **Cost**: dearer space rations demand |
+| `dev.affordableLotShare` | -24% | -2.2 | Land re-prices on higher rents |
+| `land.p90` | +78% | 1.6 | Residual is levered to rent |
+| `rentIdx.*` | -1% to +9% | <= 1.3 | Not resolved at 16 seeds |
+
+Not moved: `test/rent-anchor.mjs` bands, which now breach over a century
+(office real 1.1-1.4%/yr vs <= 1.0; RTI 1.22-1.26 vs <= 1.15). Supply on the
+fringe is the open fault; see ECONOMY.md.
 
 ---
 

@@ -1,4 +1,4 @@
-# Baseline attribution — a shortage prices space
+# Baseline attribution — jobs, workers, people and places from causes
 
 **Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
 **Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
@@ -6,6 +6,24 @@
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
 
 ---
+
+## This ruler: jobs, workers, people and places from causes (`c86c5cf`..`7d0cca6`)
+
+ECON_REALISM_PLAN phases A, B, C and L; see the four ECONOMY.md sections of
+2026-10-08. Paired against `72feaf6` over 16 seeds x 300 months:
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `rentIdx.industrial` | -27.9% | -3.0 | Shed demand follows its own tenant trades (logistics, food, apparel); apparel shrinks 1.5%/yr (BLS) |
+| `vac.industrial` 0.044 -> 0.081 | +85% | 2.2 | Toward natural (7%) from below it |
+| `rail.occ.industrial.cap` | -36% | -2.0 | Fewer months on the residence floor |
+| `occGap.multifamily`, `occGap.industrial` | flip to ~0 / negative | -3.2, -2.0 | Tight -> balanced |
+| `rentIdx.multifamily`, `rentIdx.retail` | +13%, +17% | 1.7, 1.6 | Not resolved at 16 seeds |
+| `city.employed`, `jobGrowth`, `population`, `floorAreaM` | -4% to +0.2% | <= 1.3 | Not resolved: the cycle's SHAPE changed, its level did not |
+
+Not visible in BASELINE but measured (4 worlds x 50y): unemployment no longer
+sits on any value (was 2.80% in 8-48% of months); local downturns coincide
+with national ones 57-86% (was 29-48%); the 65+ share rises 17% -> 22-23%.
 
 ## This ruler: a shortage prices space (`2a5fd80`, `e0d2b2a`)
 

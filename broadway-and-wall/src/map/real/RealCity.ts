@@ -2698,7 +2698,11 @@ export class RealCityLayer {
       }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
-        for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
+        for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) {
+          // cedar staves: new wood is honey, years of weather turn it silver-grey
+          const TANK = [[0.62, 0.45, 0.3], [0.5, 0.4, 0.32], [0.46, 0.44, 0.41], [0.36, 0.3, 0.26]], c = TANK[(rnd() * TANK.length) | 0];
+          this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl, c);
+        } }
       }
       // WHAT ELSE IS ON A ROOF. A deck of boards with planters on an
       // apartment block (a third of those under 60 m); solar panels in tilted
@@ -2713,7 +2717,11 @@ export class RealCityLayer {
       if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
       if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail") && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
-        for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
+        for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) {
+          // packaged units come in a maker's cabinet colour: grey, off-white or beige
+          const HVAC = [[0.66, 0.68, 0.69], [0.82, 0.82, 0.8], [0.76, 0.72, 0.62], [0.52, 0.55, 0.57]], c = HVAC[(rnd() * HVAC.length) | 0];
+          this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl, c);
+        } }
       }
       if ((famKey === "industrial" || famKey === "plain") && z1 < 20 && area > 500) {
         // skylights in rows along the long side
@@ -3057,8 +3065,8 @@ export class RealCityLayer {
         return { g, mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
       }
       case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
-      case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
-      case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
+      case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.5, roughness: 0.45 }), colored: true };
       // the trunk forks below the crown: two limbs leaning out
       case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
         new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),

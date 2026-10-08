@@ -13,7 +13,6 @@
  * here writes state.
  */
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
@@ -892,9 +891,15 @@ export class RealCityLayer {
     this.camera.matrixAutoUpdate = false;
     this.scene.matrixWorldAutoUpdate = true;
     const pm = new THREE.PMREMGenerator(this.renderer);
-    // matte surfaces take their ambient light from a neutral light box; the
-    // glass and the water reflect the sky (skyEnvironment)
-    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.03).texture;
+    // THE AMBIENT IS THE SKY. Matte surfaces used to take their ambient from
+    // a photographer's light box — the same neutral grey from every side, so
+    // a roof, a shaded wall and a wall facing the ground were lit alike. Out
+    // of doors the ambient is the sky: blue from overhead, the warm grey of
+    // the city and the ground from below. The sun's disc is left out of this
+    // copy (the key light is the sun); the glass and the water still see it.
+    const ambient = skyEnvironment();
+    ambient.remove(ambient.children[1]);
+    this.scene.environment = pm.fromScene(ambient, 0.04).texture;
     this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();

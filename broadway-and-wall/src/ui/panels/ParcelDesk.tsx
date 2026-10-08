@@ -9,7 +9,8 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
-import { initialCondition, recoveryOf, marketRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import type { BuiltClass } from "@/engine/types";
+import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
@@ -365,6 +366,39 @@ function ParcelPanelInner({
             with "market rent" written next to it, which is where the sense
             that shops lease miles under the market came from: they were being
             compared against a number that was mostly office. */}
+        {/* WHAT YOUR BUILDING ACTUALLY GETS, above what the market would pay.
+            Per market, like the rows below it: the area-weighted contract rent
+            of the tenants in that part of the building — or, for flats, which
+            carry no named leases, what the occupied flats collect (the same
+            number the Portfolio book's rent column shows). Compared against
+            that market's own rent, so a shop roll is never marked against an
+            office number. */}
+        {isBuilt && holding && (() => {
+          const legs = leasableUses(rec);
+          const inPlace = (u: BuiltClass): number | null => {
+            const ts = holding.tenants.filter((t) => (t.use ?? rec.class) === u);
+            const sfLet = ts.reduce((a, t) => a + t.sf, 0);
+            if (sfLet > 0) return ts.reduce((a, t) => a + t.rentPsf * t.sf, 0) / sfLet;
+            if (u === "multifamily" && (occRead(rec, holding)?.lettableOcc ?? 0) > 0) return managedRentPsfYr(rec, game.econ, holding, u);
+            return null;
+          };
+          const rows = legs.map((u) => ({ u, ip: inPlace(u), mkt: legs.length <= 1 ? marketRentPsfYr(rec, game.econ, cond) : useRentPsfYr(rec, game.econ, cond, u) }));
+          if (!rows.some((r) => r.ip !== null)) return <Row k="In-place rent" v="no tenants" />;
+          return (
+            <>
+              {rows.map(({ u, ip, mkt }) => {
+                const k = legs.length <= 1 ? "In-place rent" : `In-place rent · ${CLASS_LABEL[u] ?? u}`;
+                if (ip === null) return <Row key={u} k={k} v="no tenants" />;
+                const d = mkt > 0 ? (ip / mkt - 1) * 100 : 0;
+                return (
+                  <Row key={u} k={k}
+                    v={`$${ip.toFixed(0)} /sf/yr · ${d >= 0 ? "+" : "\u2212"}${Math.abs(d).toFixed(0)}% vs market`}
+                    strong={Math.abs(d) >= 10} />
+                );
+              })}
+            </>
+          );
+        })()}
         {isBuilt && (() => {
           const legs = leasableUses(rec);
           if (legs.length <= 1) {

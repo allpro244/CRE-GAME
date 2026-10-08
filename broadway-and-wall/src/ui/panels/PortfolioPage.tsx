@@ -141,6 +141,12 @@ export function PortfolioPage() {
       // them against. Land has no building to divide by, and a lot bought for
       // its dirt does not have a basis per foot of anything; it sorts last.
       basisPsf: rec && rec.bldgArea > 0 ? h.costBasis / rec.bldgArea : 0,
+      // THE NEIGHBOURHOOD, AS THE MARKET READS IT. The live demand score
+      // (0-100) the map, the lot card and every rent and land price read —
+      // the generator's score plus whatever the blocks around it have become.
+      // Land especially: a lot's whole case is where it is.
+      demand: rec ? rec.demandScore : -1,
+      demand0: parcels[h.bbl]?.demandScore ?? (rec ? rec.demandScore : -1),
       gain: v - h.costBasis,
       debt,
       equity: v - debt,
@@ -166,7 +172,7 @@ export function PortfolioPage() {
   const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   // Property … buttons. Extra lead cells when ranking or bundling.
-  const bookCols = 9 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
+  const bookCols = 10 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
   const schemes = holdings.filter((h) => h.devDraft && !game.developments[h.bbl]);
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
@@ -477,6 +483,7 @@ export function PortfolioPage() {
             {ranked && <th className="num">#</th>}
             <H k="addr" label="Property" desc={false} />
             <H k="area" label="sf" num />
+            <H k="demand" label="Demand" num title="Neighbourhood demand, 0-100 — what the market reads for this location today. The small figure is the change since the city was laid out." />
             <H k="occ" label="Occ" num />
             <H k="rentPsf" label="Rent" num title="Average contract rent across the rent roll, per square foot per year" />
             <H k="noi" label="NOI / yr" num />
@@ -487,7 +494,7 @@ export function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ, or, debt, ds }, i) => {
+          {shown.map(({ h, rec, v, noi, cf, occ, or, debt, ds, demand, demand0 }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
@@ -580,6 +587,14 @@ export function PortfolioPage() {
                 {h.groundLeased || !rec || !rec.bldgArea ? "—" : sf(rec.bldgArea)}
                 {!h.groundLeased && rec && avgUnitSf(rec) > 0 && (
                   <div className="dim" style={{ fontSize: 11 }}>{sf(avgUnitSf(rec))}/flat</div>
+                )}
+              </td>
+              <td className="num" title={demand >= 0 ? `Demand ${demand.toFixed(0)} of 100 · ${demand0 >= 0 ? `${demand >= demand0 ? "+" : ""}${(demand - demand0).toFixed(0)} since the city was laid out` : ""}` : undefined}>
+                {demand >= 0 ? demand.toFixed(0) : "—"}
+                {demand >= 0 && demand0 >= 0 && Math.round(demand - demand0) !== 0 && (
+                  <div className={"dim" + (demand < demand0 ? " neg" : "")} style={{ fontSize: 11 }}>
+                    {demand > demand0 ? "+" : "\u2212"}{Math.abs(Math.round(demand - demand0))}
+                  </div>
                 )}
               </td>
               <td
@@ -766,6 +781,7 @@ export function PortfolioPage() {
                 </div>
               </td>
               <td className="num dim">{sf(dv.sf)}</td>
+              <td className="num dim">{(() => { const r = resolveRec(parcels, game, dv.bbl); return r ? r.demandScore.toFixed(0) : "—"; })()}</td>
               <td className="num dim">{(dv.signed?.length ?? 0)
                 ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre`
                 : "—"}</td>

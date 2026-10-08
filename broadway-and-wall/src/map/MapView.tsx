@@ -720,12 +720,23 @@ export default function MapView() {
       rec.centroid[0] + (Math.sin(br) * lift) / mPerDegLng,
       rec.centroid[1] + (Math.cos(br) * lift) / mPerDegLat,
     ];
+    // FRAME WITH AN OFFSET, NOT WITH PADDING. MapLibre's `padding` shifts
+    // the VANISHING POINT, and it stays on the transform after the flight.
+    // With a wide panel open on one side, the perspective centre sat far off
+    // the middle of the screen, so every building toward the panel leaned
+    // outward and the whole city looked knocked sideways — and it stayed
+    // that way after the panel closed ("the camera turns lopsided", seen
+    // after a refinance). `offset` moves where the building lands without
+    // skewing the view; padding goes back to zero (clearing any skew left by
+    // an earlier flight), and roll is pinned level for the same reason.
     map.flyTo({
       center,
       zoom,
       pitch,
       bearing,
-      padding: { top: 24, bottom: 24, left: padL, right: padR },
+      roll: 0,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      offset: [(padL - padR) / 2, 0],
       duration: 1700,
       curve: 1.25,
       // ease-in-out cubic: leaves gently, arrives gently

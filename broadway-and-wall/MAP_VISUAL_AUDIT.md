@@ -894,3 +894,16 @@ completion year, design and ground-floor trade all equal. What the model
 does not show: the map's own lenses on a delivered building (gold roofs on
 your holdings, the selection glow), and a schedule that slips past a year
 end can move the completion year.
+
+# TURNING THE MODEL ON THE MAP
+
+"View in 3D" from the Design tab flies to the lot and keeps the design
+controls on a bar over the map. There, a plain drag now turns the camera
+round the scheme, as the desk's own viewer does — across to orbit, up and
+down to tilt — and the scroll wheel zooms in on the building, not on the
+cursor, so it never slides out of frame. MapLibre's own pan, rotate and
+zoom pivot on the map's centre, not the building, so they stand aside while
+you design and come back when you leave; "Pan the map" on the bar hands them
+back at any time. Checked in the browser: a 300 px drag turned the view
+~105° and tilted it, the wheel zoomed in, the building stayed in frame
+(the pivot is aimed half-way up it), and "Pan the map" re-enabled panning.

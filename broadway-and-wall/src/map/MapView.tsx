@@ -1583,6 +1583,64 @@ export default function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designSpin, designPeek, schemeBbl]);
+
+  // TURN THE MODEL BY HAND. Designing on the map, a drag turns the camera
+  // round the scheme the way the desk's viewer does — across to orbit, up and
+  // down to tilt — and the scroll wheel zooms in on the building rather than
+  // on the cursor, so it never slides out of frame. The map's own pan, rotate
+  // and zoom (which pivot on the map's centre, not the building) stand aside
+  // until you leave, or until "Pan the map" on the bar hands them back.
+  const designOrbit = useStore((s) => s.designOrbit);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !designPeek || !schemeBbl || !designOrbit) return;
+    const handlers = [map.dragPan, map.dragRotate, map.scrollZoom, map.touchZoomRotate, map.doubleClickZoom];
+    const was = handlers.map((h) => h.isEnabled());
+    for (const h of handlers) h.disable();
+    const el = map.getCanvas();
+    const cursor = el.style.cursor;
+    el.style.cursor = "grab";
+    let drag: { x: number; y: number; id: number } | null = null;
+    const go = (bearing: number, pitch: number, zoom: number) => {
+      const cam = orbitCam(bearing, Math.max(0, Math.min(75, pitch)), Math.max(14, Math.min(19.5, zoom)));
+      if (cam) map.jumpTo(cam);
+    };
+    const down = (ev: PointerEvent) => {
+      if (ev.button !== 0 && ev.pointerType === "mouse") return;
+      drag = { x: ev.clientX, y: ev.clientY, id: ev.pointerId };
+      el.style.cursor = "grabbing";
+      if (useStore.getState().designSpin) useStore.getState().setDesignSpin(false);
+    };
+    const move = (ev: PointerEvent) => {
+      if (!drag || ev.pointerId !== drag.id) return;
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) < 1) return;
+      drag.x = ev.clientX; drag.y = ev.clientY;
+      // a full drag across the map is about a turn and a half
+      go(map.getBearing() - dx * 0.35, map.getPitch() - dy * 0.25, map.getZoom());
+    };
+    const up = (ev: PointerEvent) => { if (drag && ev.pointerId === drag.id) { drag = null; el.style.cursor = "grab"; } };
+    const wheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      if (useStore.getState().designSpin) useStore.getState().setDesignSpin(false);
+      go(map.getBearing(), map.getPitch(), map.getZoom() - ev.deltaY * 0.0022);
+    };
+    el.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      el.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      el.removeEventListener("wheel", wheel);
+      el.style.cursor = cursor;
+      handlers.forEach((h, i) => { if (was[i]) h.enable(); });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designPeek, schemeBbl, designOrbit]);
   // THE HOUR. Always the calibrated afternoon every colour in the renderer
   // was tuned under. There used to be a dusk cycle while Play ran and a
   // blue-hour photo frame; the owner's call: "we don't need a night mode,

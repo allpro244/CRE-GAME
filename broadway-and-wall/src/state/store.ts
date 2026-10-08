@@ -340,6 +340,9 @@ interface AppState {
   designCamGo: (op: DesignCamOp) => void;
   /** Turntable: the camera circles the scheme until stopped. */
   designSpin: boolean;
+  /** Designing on the map: a drag turns the camera round the scheme (true) or pans the map (false). */
+  designOrbit: boolean;
+  setDesignOrbit: (v: boolean) => void;
   setDesignSpin: (v: boolean) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
@@ -802,6 +805,8 @@ export const useStore = create<AppState>((set, get) => ({
   designCamGo: (op) => set((st) => ({ designCam: { op, n: (st.designCam?.n ?? 0) + 1 } })),
   designSpin: false,
   setDesignSpin: (v) => set({ designSpin: v }),
+  designOrbit: true,
+  setDesignOrbit: (v) => set({ designOrbit: v }),
   mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
   photoFrame: false,
   toast: null,

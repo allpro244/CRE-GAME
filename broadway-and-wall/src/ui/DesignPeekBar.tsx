@@ -12,6 +12,7 @@ export default function DesignPeekBar() {
   const p = useStore((s) => s.designPreview);
   const address = useStore((s) => (p ? s.parcels?.[p.bbl]?.address : undefined));
   const spin = useStore((s) => s.designSpin);
+  const orbit = useStore((s) => s.designOrbit);
   if (!peek || !p) return null;
   const cam = (op: DesignCamOp) => useStore.getState().designCamGo(op);
   const camBtn = (op: DesignCamOp, label: string, title: string) => (
@@ -58,7 +59,15 @@ export default function DesignPeekBar() {
           onClick={() => useStore.getState().setDesignSpin(!spin)}>{spin ? "■ Stop" : "▶ Turntable"}</button>
         {camBtn("reset", "Reset", "Back to the framed view")}
       </div>
-      <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>Right-drag or Ctrl-drag the map to orbit by hand; scroll to zoom.</div>
+      <div className="btn-row" style={{ gap: 4, marginTop: 4 }}>
+        <button type="button" className={"btn btn-sm" + (orbit ? " btn-on" : "")} title="Drag turns the camera round the building; scroll zooms in on it"
+          onClick={() => useStore.getState().setDesignOrbit(true)}>Turn the building</button>
+        <button type="button" className={"btn btn-sm" + (!orbit ? " btn-on" : "")} title="Drag pans the map as usual"
+          onClick={() => useStore.getState().setDesignOrbit(false)}>Pan the map</button>
+      </div>
+      <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>{orbit
+        ? "Drag the map to turn round the building — across to orbit, up and down to tilt. Scroll to zoom in on it."
+        : "Drag pans the map; right-drag or Ctrl-drag rotates it. “Turn the building” goes back to turning round the scheme."}</div>
       <DesignPicker design={p.design} onChange={change} floors={p.floors} compact />
       <div className="btn-row" style={{ marginTop: 8 }}>
         <button type="button" className="btn btn-on" onClick={back}>Back to the Build desk</button>

@@ -2667,3 +2667,39 @@ elastic-supply metros and well above it (1.5-2x+) in constrained ones; this
 city is constrained (classes sit on their vacancy floor 30-50% of months). The
 edge of town is a question about the rent LEVEL against replacement cost —
 the income anchor and the opening calibration — not about the spread.
+
+# THE RENT LEVEL: what was holding it, and what was not (2026-10-08)
+
+Asked to let a short, growing city's rents settle above replacement cost.
+Measured first, and the obvious suspect was innocent:
+
+- **The income anchor was not binding.** Rent-to-income starts at 1.0 and
+  falls from there (0.4-0.9 of the opening by year 30-50), so the anchor's
+  sustainable premium was never the ceiling. Its premium rule was still wrong
+  in principle and is replaced: each class keeps a decade's memory of how
+  short of space it has been — on the vacancy floor, how much demand the city
+  cannot house (`structTight`, 10% of stock = fully short); off it,
+  availability against natural — and a fully short city sustains +60%
+  rent-to-income, about the spread between the most supply-constrained US
+  metros and ordinary ones. The old rule refused to grow the premium while a
+  class sat on its floor ("earned by demand, not by a supply failure"), which
+  is backwards: a supply shortfall is what holds price above cost
+  (Glaeser & Gyourko 2005; Saiz 2010). The city-class haircut is gone.
+- **The leak was the escalator.** Asking rents escalated on EXPECTED
+  inflation, anchored near 2%, while the city's own price level ran 0.3-0.8
+  points a year faster (realised CPI 1.9-3.8%/yr against expectations of
+  1.6-2.4%). Firm-market asking lost ground to its own currency every year.
+  It now reads the city's realised trailing-year CPI, as a lease's CPI clause
+  does; the soft-market gate is unchanged.
+
+Measured (4 worlds x 50 years, mean): months on the vacancy floor office
+36% -> 22%, multifamily 61% -> 46%; multifamily stock growth 0.92 -> 1.09%/yr;
+real rents office +0.4, retail 0.0, multifamily +0.3, industrial -0.7%/yr
+(industrial was +0.3; to be read against the paired baseline before trusting).
+
+**What sets the level, then.** Supply at the margin: whenever the best
+remaining lots pencil they are built, and only 5-10% of vacant lots do at any
+time. Rents rise in a shortage (2-3%/yr real on the floor) until tenants
+economise on space and households move out, and the edge of town waits — a
+constrained-city equilibrium, now with a premium that can build while the
+shortfall lasts.

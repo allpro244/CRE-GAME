@@ -1829,6 +1829,8 @@ export interface Econ {
    * and it has to be EARNED rather than assumed.
    */
   tightEma?: number;
+  /** Per class: a decade's memory of how short of space the city has been (-0.3 glut .. 1 fully short). */
+  scarcity?: Record<BuiltClass, number>;
   /**
    * What developers believe rents are, as opposed to what they are. Adaptive
    * and lagging, so a run of rising rents gets extrapolated into pro formas —

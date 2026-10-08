@@ -388,6 +388,22 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
     label: "Condition", detail: h.condition,
     mult: h.condition === "good" ? 1.22 : h.condition === "worn" ? 0.76 : h.condition === "obsolete" ? 0.48 : 1,
   });
+  // FLIGHT TO QUALITY. Tenants choosing between two buildings on the same
+  // street tour the better-built one first: in every leasing cycle since 2010
+  // the top tier of office stock has taken the large majority of net
+  // absorption (JLL / CBRE flight-to-quality reports — since 2020 the newest
+  // ~10-20% of buildings absorbed more than all of the net demand while the
+  // commodity tier shed it). Condition above is today's state of repair; this
+  // is the permanent part, the bones. exp(0.6 x (spec − 0.5)): Signature
+  // tours ~1.26x, Box ~0.88x. A shape parameter, set against that pattern,
+  // not tuned to an arm.
+  const bones = rec.buildSpec;
+  if (bones !== undefined && Math.abs(bones - 0.5) > 0.01 && rec.bldgArea > 0) {
+    out.push({
+      label: "Specification", detail: bones > 0.5 ? "built above the market — tenants tour it first" : "built to a budget — tenants tour it last",
+      mult: +Math.exp(0.6 * (bones - 0.5)).toFixed(3),
+    });
+  }
   const st = h.stance ?? 0;
   if (st !== 0) {
     out.push({

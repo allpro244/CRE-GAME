@@ -1162,15 +1162,20 @@ export const CONDITION_RENT_MULT: Record<Condition, number> = {
  * specification slider moved cost ±31% and rent not at all. That is not a
  * quality decision, it is a tax on building well.
  *
- * Class A vs B asking-rent spreads in US office and multifamily run about
- * 8–15% for comparable locations. Spec 0..1 maps onto that band around the
- * mid-spec building: ±10% at the extremes. Cost still moves ±31%, so trophy
- * still costs more than it rents — the slight advantage is this rent, a
- * small cap tightener, and the slower wear already in `condCeiling`. It is
- * not a YoC win for gold-plated bones, and it is not meant to be.
+ * Class A over Class B asking rents in US office run ~25-40% in the broker
+ * surveys (CBRE / JLL quarterly, 2015-2024), but much of that gap is location
+ * and age. Holding the submarket fixed — the hedonic office-rent studies, and
+ * the like-for-like A-vs-B spreads inside one CBD — leaves roughly 10-20%
+ * for the building itself, with trophy over commodity at the top of that.
+ * Condition is priced separately (CONDITION_RENT_MULT), so this is only the
+ * permanent part: ±15% at the extremes of spec, +11% for "Signature" (0.88),
+ * −7% for "Box" (0.28). Calibrated against that band, not tuned to an arm.
+ * (It was ±10%, off a cited 8-15% that was the unadjusted multifamily gap;
+ * measured with `pnpm spec-arms`, every dollar of spec then bought 44¢ of
+ * value and the cheapest building was always the right one.)
  */
 export function specRentMult(spec = 0.5): number {
-  return 1 + 0.20 * (spec - 0.5);
+  return 1 + 0.30 * (spec - 0.5);
 }
 
 /**
@@ -2262,9 +2267,13 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // move, because the buyer is pricing the capital they are about to spend, and
   // an obsolete one is priced as the capital plus a demolition risk
   const qualSpread = condIdx !== undefined ? qualSpreadAt(condIdx) : qualSpreadAt(COND_CENTRE[condition] ?? 0.65);
-  // Permanent bones, not today's paint. Class A trades 15–30 bp tighter than
-  // Class B on the same street; spec 0..1 is that band around mid-spec (±15 bp).
-  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.30;
+  // Permanent bones, not today's paint. Class A office trades ~50-100 bp
+  // tighter than Class B in the CBRE cap-rate surveys (2015-2024), trophy at
+  // the wide end; part of that is the condition gap qualSpread already prices,
+  // so the bones carry ±40 bp across spec 0..1 (Signature ~30 bp tighter than
+  // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
+  // like a commodity building with a nicer lobby.
+  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
   return clamp(base + locSpread + qualSpread + specSpread, 3.2, 13);
 }
 

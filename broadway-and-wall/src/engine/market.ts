@@ -1854,7 +1854,7 @@ export function tickIndustryCycle(s: GameState) {
 }
 
 /**
- * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's employment demand the
+ * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's payrolls the
  * way NBER dates a cycle — after the fact, from the data — with the same
  * thresholds every month. Definitions, not tuning: a contraction is jobs
  * falling at an annualised half a point over six months; a recovery runs
@@ -1863,7 +1863,10 @@ export function tickIndustryCycle(s: GameState) {
  */
 function derivePhase(s: GameState) {
   const e = s.econ;
-  const T = e.cycIdx ?? 1;
+  // Payrolls actually filled (last month's — the data a statistician has),
+  // not employers' demand for staff: a boom short of workers is still a
+  // boom, and a bust is jobs lost, not jobs no longer wanted.
+  const T = (e.jobs ?? e.jobs0 ?? 1) / Math.max(1, e.jobs0 ?? 1);
   const hist = (e.cycHist ??= []);
   hist.push(T);
   if (hist.length > 7) hist.shift();
@@ -2259,7 +2262,21 @@ export function tickEcon(s: GameState) {
     // so theta0 = s(1-u0)/u0 and the finding rate must equal it too.
     const THETA0 = SEPARATION_RATE * (1 - OPENING_UNEMP) / OPENING_UNEMP;
     const MATCH_LAMBDA = -Math.log(1 - THETA0) / Math.sqrt(THETA0);
-    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    // A DEAR WORKFORCE IS HIRED LESS (2026-10-08). Employers here compare
+    // what this town pays with what the same worker costs elsewhere (the
+    // national wage path: expected inflation plus productivity, with none of
+    // this town's tightness — `natWageIdx`, below). Local pay above it trims
+    // how many they want, and local pay below it draws work in. Without this
+    // the only answer to a labour shortage was migration, and unfilled
+    // openings ran to 7-17% of the labour force against a US maximum of
+    // about 7.4%, so national recessions trimmed vacancies and cost nobody a
+    // job. Elasticity 0.5: Hamermesh (1993) surveys -0.15 to -0.75, and a
+    // firm that can also hire in another city sits in the upper half. Read
+    // through a two-year average, because hiring plans move slowly.
+    const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
+    e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
+    const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
+    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
     // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
     // easy to find and stop looking when they are not — the discouraged-
     // worker effect. About 0.3 points of participation per point of
@@ -2267,7 +2284,13 @@ export function tickEcon(s: GameState) {
     // put the cyclical response at 0.2-0.4). The guard is wider than any
     // US metro has recorded and should never bind.
     const partPrev = e.participation ?? PARTICIPATION;
-    const partAim = PARTICIPATION + 0.3 * (OPENING_UNEMP - (e.unemployment ?? OPENING_UNEMP));
+    // ...and on WHO lives here: a working-age adult participates at about 80%,
+    // a retiree at about 19% (BLS CPS), children not at all. An ageing town
+    // works less per head without anything telling it to.
+    const ag = e.ages;
+    const ageMix = ag ? (0.80 * ag.work + 0.19 * ag.old) / Math.max(1, ag.kids + ag.work + ag.old) : 0.80 * 0.61 + 0.19 * 0.17;
+    const ageFactor = ageMix / (0.80 * 0.61 + 0.19 * 0.17);
+    const partAim = PARTICIPATION * ageFactor + 0.3 * (OPENING_UNEMP - (e.unemployment ?? OPENING_UNEMP));
     e.participation = clamp(partPrev + (partAim - partPrev) / 12, 0.50, 0.66);
     const force = e.population! * e.participation;
     const empStart = Math.min(prevJobs, wanted);                 // layoffs first
@@ -2394,7 +2417,37 @@ export function tickEcon(s: GameState) {
     // and that is all a bound here is for.
     const popFloor = Math.max(1_000, (e.pop0 ?? 240_000) * 0.25);
     const popCeil = Math.max(popFloor * 4, (e.pop0 ?? 240_000) * 16);
-    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), popFloor, popCeil));
+    // PEOPLE ARE BORN, AGE AND DIE (2026-10-08). Natural increase was a
+    // constant 0.016% a month for a population with no ages. Now the city has
+    // three groups and the vital rates of the US, rounded: births 11 per 1,000
+    // people a year, all to the working-age group (CDC NVSS 2019); deaths 0.3,
+    // 3 and 45 per 1,000 among children, working-age and over-65s (CDC
+    // age-specific mortality); children reach working age over 18 years and
+    // workers retire over 47. The opening mix is the 2020 Census (22 / 61 / 17).
+    // Movers are mostly working-age adults, some with children (Census CPS
+    // mobility): 75 / 20 / 5. Natural increase is now an outcome — about
+    // +0.15%/yr at the opening, falling as the town ages, rising when young
+    // movers arrive — and so is the age mix that participation and household
+    // formation read.
+    {
+      const pop = e.population!;
+      if (!e.ages) e.ages = { kids: pop * 0.22, work: pop * 0.61, old: pop * 0.17 };
+      if (e.adults0 === undefined) e.adults0 = (e.pop0 ?? pop) * 0.78;
+      const a = e.ages;
+      const births = a.work * (0.011 / 0.61) / 12;
+      const grow = a.kids / 18 / 12, retire = a.work / 47 / 12;
+      const mig = pop * migration;
+      a.kids += births + 0.20 * mig - grow - a.kids * 0.0003 / 12;
+      a.work += grow + 0.75 * mig - retire - a.work * 0.003 / 12;
+      a.old += retire + 0.05 * mig - a.old * 0.045 / 12;
+      a.kids = Math.max(0, a.kids); a.work = Math.max(0, a.work); a.old = Math.max(0, a.old);
+      const total = a.kids + a.work + a.old;
+      // The guard below is a share of this town (see above); if it ever binds,
+      // every group is scaled alike.
+      const bounded = clamp(total, popFloor, popCeil);
+      if (total > 0 && bounded !== total) { const f = bounded / total; a.kids *= f; a.work *= f; a.old *= f; }
+      e.population = Math.round(bounded);
+    }
 
     // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
     //
@@ -2605,6 +2658,9 @@ export function tickEcon(s: GameState) {
       e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7, 400);
     }
     e.wageDebt = clamp(e.wageDebt, 0, 0.25);
+    // What the same worker earns elsewhere: the national path, expectations
+    // plus productivity, none of this town's tightness or slack.
+    e.natWageIdx = (e.natWageIdx ?? e.wageIdx!) * (1 + e.inflExp / 12 + productivity / 12);
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
@@ -3259,7 +3315,11 @@ export function tickEcon(s: GameState) {
       return own / Math.max(0.05, e.exportIdx ?? 1);
     })();
     const secIdx = e.secular?.[k]?.idx ?? (k === "industrial" ? (e.industComp ?? 1) : 1);
-    const driver = (k === "multifamily" ? popIdx
+    // Flats are rented by HOUSEHOLDS, and households are formed by adults —
+    // an ageing town with fewer children forms more, smaller households per
+    // head. Adults against the opening's adults.
+    const hhIdx = e.ages && e.adults0 ? (e.ages.work + e.ages.old) / e.adults0 : popIdx;
+    const driver = (k === "multifamily" ? hhIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
       : jobIdx * tradeMix) * secIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth

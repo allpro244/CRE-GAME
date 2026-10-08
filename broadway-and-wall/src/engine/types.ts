@@ -1757,6 +1757,13 @@ export interface Econ {
   cycPeak?: number;
   phaseAge?: number;
   exportIdx?: number;
+  /** The population by age: children, working age, over 65. */
+  ages?: { kids: number; work: number; old: number };
+  /** Adults (working age + over 65) at the opening, for household formation. */
+  adults0?: number;
+  /** The national wage path (no local tightness), and this town's smoothed premium over it. */
+  natWageIdx?: number;
+  wagePremEma?: number;
   /** Each class's demand driver last month and its five-year average monthly growth. */
   classDrv?: Record<BuiltClass, number>;
   classDrvTrend?: Record<BuiltClass, number>;

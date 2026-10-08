@@ -134,9 +134,11 @@ let owned = null;   // the player after the close — a buyer with a record, for
   check(Math.abs(basis - cost) <= deeds.length * 2, `basis ${M(basis)} carries price, closing and stamps`);
   check(deeds.every((d) => n.deedCf?.[d] && !n.deedCf[d].pooled && n.deedCf[d].from === n.month), "each deed opened its own equity ledger at the close");
   check(n.news.some((x) => x.text.startsWith(`${q.name} is yours`)), "one news line for the firm");
-  // This close's own lines only: an unrelated receivership the month before
-  // can print "has taken ... at $" in the last five, which is not this deal.
-  check(!n.news.filter((x) => x.q === n.month).some((x) => / has taken .* at \$/.test(x.text)), "and no per-building tape prints");
+  // The lines this close added, and only those: the world's own tape that
+  // month (a bank taking a different firm's book, say) is not this deal.
+  const added = n.news.slice(0, Math.max(0, n.news.length - g.news.length));
+  check(added.some((x) => x.text.startsWith(`${q.name} is yours`)) && !added.some((x) => / has taken .* at \$/.test(x.text)),
+    `and no per-building tape prints (${added.length} lines added by the close)`);
   check((n.takePrivate?.done ?? []).length === 1 && n.takePrivate.done[0].deeds === deeds.length, "the closing statement is kept");
   check(E.attentionItems(n, parcels).every((x) => !x.key.startsWith("take-private")), "nothing left in the inbox");
 

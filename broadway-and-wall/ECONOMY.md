@@ -2582,3 +2582,30 @@ Measured (4 worlds x 50 years): 3-6 local downturns, 11-19% of time,
 expansions 2-15 years with no built-in end; job growth positive in every
 recovery. Months on the vacancy floor: retail 23% -> 7%, multifamily 61% ->
 53%, industrial 51% -> 38% (B1 -> B2); real rents -0.1% to +0.7%/yr.
+
+# PEOPLE WITH AGES, AND A WORKFORCE THAT COSTS SOMETHING (ECON_REALISM_PLAN phase C, 2026-10-08)
+
+Natural increase was a constant 0.016% a month for a population with no ages.
+Now three groups (Census 2020: 22 / 61 / 17) with US vital rates: births 11
+per 1,000 to the working-age group (CDC NVSS), deaths 0.3 / 3 / 45 per 1,000
+(CDC age-specific), ageing over 18 and 47 years, movers 75 / 20 / 5 by group
+(Census CPS mobility). Participation reads the age mix (80% of working-age,
+19% of over-65s, BLS CPS); apartment demand reads adults, who form
+households. Measured: the 65+ share rises 17% -> 22-23% over 50 years (the
+Census projection for the US is ~22% by 2050) and participation drifts to
+56-57% with nothing telling it to.
+
+Two corrections to phase B came out of measuring this:
+- The cycle is dated off PAYROLLS (last month's filled jobs), as NBER dates
+  one, not employers' demand: "recession" months showed rising jobs on three
+  of four worlds.
+- A dear workforce is hired less. Employers compare local pay with the
+  national wage path (expectations plus productivity, no local tightness)
+  at elasticity 0.5 (Hamermesh 1993 surveys -0.15 to -0.75; a firm that can
+  hire in another city sits in the upper half), through a two-year average.
+  Without it unfilled openings ran to 7-17% of the labour force (US maximum
+  ~7.4%) and a national recession only trimmed vacancies.
+
+Measured after (4 worlds x 50 years): 4-8 local downturns, 8-15% of time,
+57-86% coinciding with national recessions; payrolls fall in every recession
+and rise in every recovery; unfilled openings peak at 7.6-10.9%.

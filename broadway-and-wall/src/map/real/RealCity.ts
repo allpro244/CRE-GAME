@@ -802,6 +802,23 @@ export let activeCity: RealCityLayer | null = null;
 interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
+/**
+ * How far a building's reading may drift before it is repainted. Display
+ * thresholds, not economics: 0.004 of condition is under a third of one
+ * 8-bit colour step at the steepest point of the soot ramp, and 0.01 of
+ * occupancy moves a lit window or a papered shop by about one step.
+ */
+const COND_EPS = 0.004;
+const OCC_EPS = 0.01;
+/** One layer of the game's own stock (finished, or on site): its meshes and what they cover. */
+interface DynLayer {
+  group: THREE.Group;
+  sig: string;
+  deeds: Map<string, Deed>;
+  heights: Map<string, number>;
+  bays: string[];
+  cranes: { mesh: THREE.InstancedMesh; at: { x: number; y: number; r: number }[] } | null;
+}
 
 // ---- the layer -------------------------------------------------------------
 
@@ -834,7 +851,21 @@ export class RealCityLayer {
   private flattened = new Set<string>();
   private inst = new Map<string, THREE.InstancedMesh>();
   private dyn = new THREE.Group();
-  private dynSig = "";
+  /**
+   * THE NEW STOCK, IN TWO LAYERS. Finished buildings change when something is
+   * delivered or demolished; a job site changes every month it rises. They
+   * used to share one set of buffers, so every crane in town that grew a
+   * floor re-meshed every tower ever delivered — a stall at each month turn
+   * that got worse for the whole campaign. Now a rising frame rebuilds only
+   * the sites. The design preview rides with the sites: it changes on every
+   * click at the desk.
+   */
+  private dynDone = RealCityLayer.emptyDyn();
+  private dynSite = RealCityLayer.emptyDyn();
+  private static emptyDyn(): DynLayer {
+    return { group: new THREE.Group(), sig: "", deeds: new Map(), heights: new Map(), bays: [], cranes: null };
+  }
+  /** Both layers' heights and deeds, merged (sites win), for the readers that do not care which. */
   private dynHeight = new Map<string, number>();
   private dynDeeds = new Map<string, Deed>();
   private shadowFocus = new THREE.Vector3(1e9, 0, 0);
@@ -904,6 +935,7 @@ export class RealCityLayer {
     this.buildChannels();
     this.buildBridges();
     this.buildStreetLife();
+    this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
     const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
     measure(); map.on("resize", measure);
@@ -4118,18 +4150,33 @@ export class RealCityLayer {
 
   setPlayerBuildings(items0: PlayerItem[], force = false) {
     this.lastItems = items0;
-    const items = this.preview ? [...items0.filter((i) => i.bbl !== this.preview!.bbl), this.preview] : items0;
-    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}:${i.year ?? 0}:${i.shops ?? ""}:${i.design ? JSON.stringify(i.design) : ""}`).join("|");
-    if (sig === this.dynSig && !force) return;
-    this.dynSig = sig;
-    for (const c of [...this.dyn.children]) { this.dyn.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
-    this.dynHeight.clear();
+    const pv = this.preview;
+    const items = pv ? [...items0.filter((i) => i.bbl !== pv.bbl), pv] : items0;
+    const site = items.filter((i) => i.construction || i === pv);
+    const done = items.filter((i) => !(i.construction || i === pv));
+    const rebuilt = [this.buildDyn(this.dynDone, done, force), this.buildDyn(this.dynSite, site, force)].filter((l): l is DynLayer => !!l);
+    if (!rebuilt.length) return;
+    this.dynDeeds = new Map([...this.dynDone.deeds, ...this.dynSite.deeds]);
+    this.dynHeight = new Map([...this.dynDone.heights, ...this.dynSite.heights]);
+    this.cranes = this.dynSite.cranes ?? this.dynDone.cranes;
     this.pickGrid = null;
+    for (const l of rebuilt) for (const [b, d] of l.deeds) { this.refreshDeed(b); this.paintLit(b, d); }
+    if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
+    this.map?.triggerRepaint();
+  }
+
+  /** Rebuild one layer of the new stock if its items changed; the layer, or null when nothing did. */
+  private buildDyn(layer: DynLayer, items: PlayerItem[], force: boolean): DynLayer | null {
+    const sig = items.map((i) => `${i.bbl}:${i.cls}:${i.heightM}:${i.floors}:${i.construction ? 1 : 0}:${i.cov ?? 0}:${i.year ?? 0}:${i.shops ?? ""}:${i.design ? JSON.stringify(i.design) : ""}`).join("|");
+    if (sig === layer.sig && !force) return null;
+    layer.sig = sig;
+    for (const c of [...layer.group.children]) { layer.group.remove(c); if (!(c as THREE.InstancedMesh).isInstancedMesh) (c as THREE.Mesh).geometry?.dispose(); }
     // the new stock is built into its own small set of buffers
-    const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems;
+    const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems, saveHeight = this.dynHeight;
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map();
+    this.dynHeight = layer.heights = new Map();
     const craneAt: { x: number; y: number; r: number }[] = [];
-    this.cranes = null;
+    layer.cranes = null;
     for (const it of items) {
       this.flattenStatic(saveDeeds, it.bbl);
       this.buildItem(it, saveDeeds, craneAt);
@@ -4142,7 +4189,7 @@ export class RealCityLayer {
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = mesh.receiveShadow = name !== "contact";
       if (name === "contact") mesh.renderOrder = 2;
-      this.dyn.add(mesh); dynMeshes.set(name, mesh);
+      layer.group.add(mesh); dynMeshes.set(name, mesh);
     }
     if (craneAt.length) {
       const { g, mat } = this.geomFor("crane");
@@ -4150,8 +4197,8 @@ export class RealCityLayer {
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
       craneAt.forEach((c, i) => { q.setFromEuler(e.set(0, 0, c.r)); cm.setMatrixAt(i, m4.compose(new THREE.Vector3(c.x, c.y, 0), q, new THREE.Vector3(1, 1, 1))); });
       cm.castShadow = cm.receiveShadow = true;
-      this.dyn.add(cm);
-      this.cranes = { mesh: cm, at: craneAt };
+      layer.group.add(cm);
+      layer.cranes = { mesh: cm, at: craneAt };
     }
     // the new buildings' own plant, fire escapes and balconies
     {
@@ -4166,20 +4213,19 @@ export class RealCityLayer {
           if (colored) im.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
         });
         im.castShadow = im.receiveShadow = true;
-        this.dyn.add(im); dynInst.set(kind, im);
+        layer.group.add(im); dynInst.set(kind, im);
       }
-      for (const b of this.dynBays) this.bays.delete(b);
+      for (const b of layer.bays) this.bays.delete(b);
       const before = new Set(this.bays.keys());
       this.registerBays(dynInst, this.instItems, false);
-      for (const b of this.bays.keys()) this.applyBays(b);
-      this.dynBays = [...this.bays.keys()].filter((b) => !before.has(b));
+      layer.bays = [...this.bays.keys()].filter((b) => !before.has(b));
+      // the new bays, and the street's own on any lot this layer just flattened
+      for (const b of new Set([...layer.bays, ...items.map((i) => i.bbl)])) this.applyBays(b);
     }
     this.bindRanges(this.deeds, dynMeshes);
-    this.dynDeeds = this.deeds;
-    this.bufs = saveBufs; this.deeds = saveDeeds; this.instItems = saveInst;
-    for (const [b, d] of this.dynDeeds) { this.refreshDeed(b); this.paintLit(b, d); }
-    if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
-    this.map?.triggerRepaint();
+    layer.deeds = this.deeds;
+    this.bufs = saveBufs; this.deeds = saveDeeds; this.instItems = saveInst; this.dynHeight = saveHeight;
+    return layer;
   }
 
   private flattenStatic(deeds: Map<string, Deed>, bbl: string) {
@@ -4501,17 +4547,34 @@ export class RealCityLayer {
    * on every wall; a refit is a touch cleaner.
    */
   setCondition(c: Map<string, number>) {
-    const touched = new Set<string>([...this.cond.keys(), ...c.keys()]);
-    this.cond = new Map(c);
+    const touched = RealCityLayer.settle(this.cond, c, (a, b) => Math.abs(a - b) > COND_EPS);
     for (const b of touched) this.refreshDeed(b);
-    this.map?.triggerRepaint();
+    if (touched.length) this.map?.triggerRepaint();
+  }
+  /**
+   * ONLY WHAT MOVED IS REPAINTED. Condition ages every building a hair every
+   * month, so writing the whole map back each month rewrote every vertex
+   * colour in the city and re-uploaded it — the largest single stall at the
+   * month turn. `held` keeps the value each building was last PAINTED at; a
+   * building is touched only when the new reading has moved past `moved` from
+   * that, so slow drift still lands (it accumulates against the painted value)
+   * and nothing is ever more than a shade behind the engine.
+   */
+  private static settle(held: Map<string, number>, next: Map<string, number>, moved: (was: number, now: number, bbl: string) => boolean): string[] {
+    const touched: string[] = [];
+    for (const [b, v] of next) {
+      const was = held.get(b);
+      if (was === undefined || moved(was, v, b)) { held.set(b, v); touched.push(b); }
+    }
+    for (const b of [...held.keys()]) if (!next.has(b)) { held.delete(b); touched.push(b); }
+    return touched;
   }
   private cond = new Map<string, number>();
   /** Share of each building that is let (read only): sets how much of it is lit after dark. */
   setOccupancy(o: Map<string, number>) {
-    this.occ = new Map(o);
-    for (const d of [this.deeds, this.dynDeeds]) for (const [bbl, deed] of d) this.paintLit(bbl, deed);
-    this.map?.triggerRepaint();
+    const touched = RealCityLayer.settle(this.occ, o, (a, b) => Math.abs(a - b) > OCC_EPS);
+    for (const bbl of touched) for (const d of [this.deeds.get(bbl), this.dynDeeds.get(bbl)]) if (d) this.paintLit(bbl, d);
+    if (touched.length) this.map?.triggerRepaint();
   }
   private occ = new Map<string, number>();
   private paintLit(bbl: string, d: Deed) {
@@ -4527,13 +4590,14 @@ export class RealCityLayer {
   }
   /** Let share of each building's shopfronts (read only): a dead frontage is papered over and dark. */
   setRetail(r: Map<string, number>) {
-    const touched = new Set<string>([...this.ret.keys(), ...r.keys()]);
-    this.ret = new Map(r);
+    // a bay boards up or opens the month the count of empty bays changes,
+    // however small the move that tipped it
+    const dead = (v: number, b: string) => Math.round((1 - Math.max(0, Math.min(1, v))) * (this.bays.get(b)?.length ?? 0));
+    const touched = RealCityLayer.settle(this.ret, r, (a, v, b) => Math.abs(a - v) > OCC_EPS || dead(a, b) !== dead(v, b));
     for (const b of touched) { this.refreshDeed(b); this.applyBays(b); }
-    this.map?.triggerRepaint();
+    if (touched.length) this.map?.triggerRepaint();
   }
   private ret = new Map<string, number>();
-  private dynBays: string[] = [];
   setNotices(_b: string[]) { /* badges carry notices */ }
   setForSale(_m: string[], _o: string[]) { /* badges carry listings */ }
   setCivicWorks(_w: unknown) { /* civic works: classic renderer */ }

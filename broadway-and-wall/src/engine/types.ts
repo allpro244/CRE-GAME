@@ -1744,6 +1744,18 @@ export interface Econ {
   wageDebt?: number;
   /** Labour-force participation, moving with how easy work is to find. */
   participation?: number;
+  /** The nation's unemployment last month, for its monthly employment swing. */
+  natUnempPrev?: number;
+  /** Employment index per trade, its own shock state, and the local-serving index. */
+  indIdx?: Record<Sector, number>;
+  indShock?: Record<Sector, number>;
+  localIdx?: number;
+  /** The export-base composite, its monthly change, recent history, last peak and months in phase. */
+  cycIdx?: number;
+  cycDrift?: number;
+  cycHist?: number[];
+  cycPeak?: number;
+  phaseAge?: number;
   /** Unfilled positions as a share of the labour force — what employers wanted
    *  and could not staff. Zero whenever the market is slack. Together with
    *  `unemployment` this is the tightness the wage curve reads; on its own it is

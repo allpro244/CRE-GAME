@@ -1748,6 +1748,162 @@ export function tickNation(s: GameState) {
   e.rateRegime = clamp(n.policy + premBase, RATE_FLOOR, RATE_CEIL);
 }
 
+
+// ---------------------------------------------------------------------------
+// THE CITY'S INDUSTRIES, AND THE CYCLE THEY MAKE (2026-10-08).
+//
+// An export-base city. Its tradable industries — the ten trades its tenants
+// work in — sell outside the city, so their employment follows the NATION by
+// each trade's own cyclical sensitivity, grows at its own long-run trend, and
+// takes its own shocks (a plant closes, a sector booms). Local-serving work —
+// shops, schools, trades, government — follows the export base with a lag:
+// Moretti (2010) finds about 1.6 local jobs for each tradable one, which is
+// where a downturn in one industry spreads to the whole town. The city's
+// demand for workers moves with that composite, and the PHASE is read off
+// it afterwards, the way a statistician dates a cycle: nothing here consults
+// a label to decide what jobs do.
+//
+// INDUSTRY_TREND and INDUSTRY_BETA are stated facts about US industries,
+// rounded: long-run payroll growth by sector (BLS CES, 1990-2019) and the
+// sector's employment swing per unit of the national swing (BLS recession
+// employment declines by industry, 1990-91, 2001, 2008-09). Medical barely
+// moves; logistics, apparel and design swing harder than the nation.
+// INDUSTRY_VOL keeps its role as relative idiosyncratic volatility.
+// ---------------------------------------------------------------------------
+const INDUSTRY_TREND: Record<Sector, number> = {      // per year
+  finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
+  logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
+};
+const INDUSTRY_BETA: Record<Sector, number> = {
+  finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
+  logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
+};
+/** Local-serving jobs per tradable job (Moretti 2010, "Local Multipliers"). */
+const LOCAL_MULT = 1.6;
+/** Months for local-serving employment to close half its gap to the base. */
+const LOCAL_HALF_M = 12;
+/** A trade's own shocks: about one notable one a decade at unit volatility (more often for volatile trades), half-life 18 months. */
+const IND_SHOCK_HAZ = 1 / 120, IND_SHOCK_HALF_M = 18;
+/**
+ * `industryMom`'s readers (tenant staffing, default stress, renewals, the
+ * comps tape) were calibrated in "boom units", where 0.016 x vol was a trade
+ * in full boom. A boom here is excess hiring of about 0.4% a month, so the
+ * conversion is 4. Units, not a dial: change the readers and this goes.
+ */
+const MOM_UNITS = 4;
+
+export function tickIndustryCycle(s: GameState) {
+  const e = s.econ;
+  const n = e.nat;
+  // The nation's employment swing this month, against its trend. Payrolls
+  // fall about 1.5% for each point unemployment rises, because people also
+  // leave the labour force: 2008-10 took 6.3% off US payrolls against a 2%
+  // trend while unemployment rose 5.5 points. One-for-one was tried first
+  // and a 6-point national recession left this city flat — the trend growth
+  // simply cancelled it.
+  const NAT_EMP_PER_U = 1.5;
+  const uNow = n?.unemp ?? 0.05;
+  const uPrev = e.natUnempPrev ?? uNow;
+  e.natUnempPrev = uNow;
+  const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
+
+  if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
+  if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
+  const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
+  let base = 0, wsum = 0;
+  for (const k of SECTORS) {
+    const vol = INDUSTRY_VOL[k];
+    e.indShock[k] *= decay;
+    if (rng(s) < IND_SHOCK_HAZ * vol) {
+      const up = rng(s) < 0.5;
+      // A shock's whole effect is about 26x its first month (18-month half-
+      // life), so this moves a unit-volatility trade 4-12% of its local
+      // employment — a plant closing, a sector boom — and tech up to ~16%.
+      const size = Math.sqrt(vol) * rrange(s, 0.0015, 0.0045);
+      e.indShock[k] += up ? size : -size;
+      const exposed = exposureToTrade(s, k) > 0.10;
+      pushNews(s, exposed ? (up ? "event" : "warn") : "info", up
+        ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
+        : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
+    }
+    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
+    e.indIdx[k] *= 1 + INDUSTRY_TREND[k] / 12 + dev;
+    // Momentum is smoothed excess hiring, in the units its readers expect.
+    e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
+    const was = e.industryPhase[k];
+    const m = e.industryMom[k];
+    e.industryPhase[k] = m > 0.008 * vol ? "boom" : m < -0.0075 * vol ? "bust" : "steady";
+    void was;
+    const w = e.sectorShare?.[k] ?? 1 / SECTORS.length;
+    base += w * e.indIdx[k];
+    wsum += w;
+  }
+  const exportIdx = wsum > 0 ? base / wsum : 1;
+  const local = e.localIdx ?? exportIdx;
+  e.localIdx = local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M));
+  const comp = (exportIdx + LOCAL_MULT * e.localIdx) / (1 + LOCAL_MULT);
+  const prevComp = e.cycIdx ?? comp;
+  e.cycIdx = comp;
+  e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
+  derivePhase(s);
+}
+
+/**
+ * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's employment demand the
+ * way NBER dates a cycle — after the fact, from the data — with the same
+ * thresholds every month. Definitions, not tuning: a contraction is jobs
+ * falling at an annualised half a point over six months; a recovery runs
+ * until the old peak is regained; a depression is a recession that has taken
+ * more than five per cent off the peak and kept going for a year.
+ */
+function derivePhase(s: GameState) {
+  const e = s.econ;
+  const T = e.cycIdx ?? 1;
+  const hist = (e.cycHist ??= []);
+  hist.push(T);
+  if (hist.length > 7) hist.shift();
+  const T6 = hist[0];
+  const g6 = T6 > 0 ? Math.pow(T / T6, 12 / Math.max(1, hist.length - 1)) - 1 : 0;
+  if (e.cycPeak === undefined || ((e.phase === "expansion" || e.phase === "peak") && T > e.cycPeak)) e.cycPeak = T;
+  const dd = e.cycPeak > 0 ? 1 - T / e.cycPeak : 0;
+  e.phaseAge = (e.phaseAge ?? 0) + 1;
+  const dwell = e.phaseAge >= 3;
+  let next = e.phase;
+  switch (e.phase) {
+    case "expansion": if (dwell && g6 < 0.004) next = "peak"; break;
+    case "peak": if (dwell && g6 < -0.005) next = "recession"; else if (g6 > 0.012) next = "expansion"; break;
+    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.05 && e.phaseAge >= 12) next = "depression"; break;
+    case "depression": if (dwell && g6 > 0.002) next = "recovery"; break;
+    case "recovery": if (T >= (e.cycPeak ?? T)) next = "expansion"; else if (dwell && g6 < -0.005) next = "recession"; break;
+  }
+  // The street sees a turn coming from the same numbers, a little early.
+  const near: Partial<Record<MarketPhase, boolean>> = {
+    expansion: g6 < 0.008, peak: g6 < -0.002, recession: g6 > 0, depression: g6 > 0,
+    recovery: dd < 0.01,
+  };
+  if (next === e.phase && !e.rumoredPhase && near[e.phase] && rng(s) < 0.25) {
+    const ahead: Record<MarketPhase, MarketPhase> = { expansion: "peak", peak: "recession", recession: "recovery", depression: "recovery", recovery: "expansion" };
+    e.rumoredPhase = ahead[e.phase];
+    pushNews(s, "rumor", RUMORS[e.rumoredPhase][Math.floor(rng(s) * RUMORS[e.rumoredPhase].length)]);
+  }
+  if (next !== e.phase) {
+    e.phase = next;
+    e.phaseAge = 0;
+    e.rumoredPhase = null;
+    if (next === "expansion") e.cycPeak = T;
+    const label: Record<MarketPhase, string> = {
+      expansion: "The expansion is on — rents push, capital chases.",
+      peak: "The market has topped out. Everything is priced to perfection.",
+      recession: "The turn is here: tenants retrench, lenders retreat.",
+      recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
+      depression: "This is not a recovery — the city has lost more than one job in twenty and is still losing them.",
+    };
+    pushNews(s, "event", label[e.phase]);
+  }
+}
+
 export function tickEcon(s: GameState) {
   // The space market needs the calendar: a building that opened last year is
   // not the same asset as one that opened in 1928, and occupancy has to know.
@@ -1759,140 +1915,22 @@ export function tickEcon(s: GameState) {
   // consistent level for the month. See swans.ts; it draws off the campaign
   // seed rather than `s.rng`, so nothing in this file's stream shifts.
   tickSwans(s);
-  const cfg = PHASE_CFG[e.phase];
-
-  // phase machine with rumors one or two quarters ahead of the turn
-  // --- THE PHASE MACHINE READS THE PROPERTY MARKET ---------------------------
+  // THE CITY'S CYCLE IS NOT A CLOCK (2026-10-08). This was a countdown —
+  // a random length per phase, a fixed round robin, shortened by a glut, a
+  // tight market or a national recession — and the label then SET the city's
+  // job growth (+0.26%/month in an expansion, -0.14% in a recession). Measured
+  // over four 50-year worlds, 52-71% of local recession months fell while the
+  // nation was not worsening: the clock made half the city's recessions up,
+  // and a "recovery" averaged falling jobs on two seeds. Post-war expansions
+  // do not die of old age (Diebold & Rudebusch); recessions are caused. The
+  // cycle now comes from the city's industries (`tickIndustryCycle`, after
+  // the nation moves) and the phase is a DESCRIPTION of what jobs did.
   //
-  // It used to be a countdown clock and nothing else: `phaseMLeft--`, then a
-  // fixed round-robin. No state of the market it was describing was ever
-  // consulted. The consequence is the owner's own bug report — cheat the
-  // money, build until the city is 45% empty, and the corner of the screen
-  // still says EXPANSION, because the clock cannot see an empty building.
-  //
-  // Slack is the stock-weighted excess vacancy across all four classes,
-  // smoothed over about eight months so the machine reads a sustained
-  // condition and never a spot number. A boom carrying real slack dies early;
-  // a boom carrying a glut is over. The 36-month guard is what stops one bad
-  // year from rattling the cycle into noise.
-  {
-    let sw = 0, gw = 0;
-    for (const k of BUILT_CLASSES) {
-      const st = e.stock?.[k] ?? CITY_STOCK[k];
-      sw += st;
-      gw += st * ((e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k]);
-    }
-    const gapW = sw > 0 ? gw / sw : 0;
-    e.slackEma = (e.slackEma ?? gapW) + 0.08 * (gapW - (e.slackEma ?? gapW));
-    const slack = e.slackEma;
-    if ((e.phase === "expansion" || e.phase === "peak") && slack > 0.05) {
-      e.phaseMLeft -= 2;                       // the boom is running on fumes
-      if (slack > 0.09 && s.month - (e.forcedTurnM ?? -999) > 36) {
-        e.phaseMLeft = 0;                      // and now it is simply over
-        e.forcedTurnM = s.month;
-        pushNews(s, "warn",
-          "The glut has caught up with the market — there is a year of empty space on the tape "
-          + "and everyone has stopped pretending this is an expansion.");
-      }
-    }
-    // ...and the other way: a market that has eaten its slack cannot stay in
-    // recession forever on a timer. Absorption ends a downturn, not patience.
-    if ((e.phase === "recession" || e.phase === "recovery" || e.phase === "depression") && slack < -0.01) {
-      e.phaseMLeft -= e.phase === "depression" ? 2 : 1;
-    }
-    // A depression that is STILL carrying a year of empty space does not get
-    // to walk into expansion on a calendar. Stretch the clock while the glut
-    // is load-bearing — the label stays honest for as long as the market is.
-    if (e.phase === "depression" && slack > 0.08) e.phaseMLeft = Math.max(e.phaseMLeft, 6);
-
-    // AND THE NATION OUTRANKS THE CITY. No local property cycle survives a
-    // national recession on its own schedule — 1990, 2001 and 2008 each ended
-    // every regional boom in the country within a few quarters of each other,
-    // because the tenants are national firms and the lenders are national
-    // banks. A local boom can outlast a mild downturn for a while; it cannot
-    // ignore one.
-    if ((e.nat?.recM ?? 0) > 0 && (e.phase === "expansion" || e.phase === "peak")) {
-      e.phaseMLeft -= 2;
-    }
-  }
-
-  e.phaseMLeft--;
-  if (e.phaseMLeft <= 6 && !e.rumoredPhase && rng(s) < 0.25) {
-    e.rumoredPhase = cfg.next;
-    pushNews(s, "rumor", RUMORS[cfg.next][Math.floor(rng(s) * RUMORS[cfg.next].length)]);
-  }
-  if (e.phaseMLeft <= 0) {
-    // A MARKET CANNOT BEGIN AN EXPANSION WITH A YEAR OF EMPTY SPACE ON THE
-    // TAPE. Forcing a turn out of a boom was only half of it: the round-robin
-    // would then walk recovery -> expansion -> peak again three years later
-    // while the city was still 40% vacant, which is the owner's complaint
-    // wearing a different hat. Entering a boom is a claim about the market,
-    // and slack is the market's answer. The recovery simply continues — which
-    // is what a long depression actually looks like from inside.
-    let nextPhase = cfg.next;
-    const slackNow = e.slackEma ?? 0;
-    // A boom cannot start on a glut — and the honest name for that stuck state
-    // is depression, not recovery. Recovery is what happens AFTER the bleeding
-    // has stopped; century measurement had rents still falling in 61% of
-    // months labelled recovery because this branch lied about the market.
-    if ((nextPhase === "expansion" || nextPhase === "peak") && slackNow > 0.055) {
-      nextPhase = "depression";
-    }
-    // Leaving depression into recovery while slack is still catastrophic just
-    // relabels the same market. Stay down until the glut has actually eased.
-    if (e.phase === "depression" && nextPhase === "recovery" && slackNow > 0.09) {
-      nextPhase = "depression";
-    }
-    e.phase = nextPhase;
-    e.rumoredPhase = null;
-    const [lo, hi] = PHASE_CFG[e.phase].nextM;
-    e.phaseMLeft = Math.round(lo + (hi - lo) * rng(s));
-    const label: Record<MarketPhase, string> = {
-      expansion: "The expansion is on — rents push, capital chases.",
-      peak: "The market has topped out. Everything is priced to perfection.",
-      recession: "The turn is here: tenants retrench, lenders retreat.",
-      recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
-      depression: "This is not a recovery — empty space is still winning and capital has left the floor.",
-    };
-    pushNews(s, "event", label[e.phase]);
-  }
-
-  const c2 = PHASE_CFG[e.phase];
-
-  // --- the monetary era ------------------------------------------------------
-  // A slow walk between long regimes, re-aimed roughly every twelve to
-  // twenty-five years. This is the layer that makes a mortgage struck in one
-  // decade a different animal by the time it matures in the next.
-  if (e.rateRegime === undefined) { e.rateRegime = 5.4; e.rateAimTo = 5.4; e.rateAimM = s.month + 180; }
-  // NOTE: the era walk below is now vestigial — rateRegime is written by the
-  // central bank block as policy + term premium. It survives only to keep
-  // rateAimTo/rateAimM alive for old saves and for the era news copy.
-  if (s.month >= (e.rateAimM ?? 0)) {
-    const was = e.rateAimTo ?? 5.4;
-    e.rateAimTo = rrange(s, 2.4, 11.0);
-    e.rateAimM = s.month + Math.round(rrange(s, 150, 320));
-    if (Math.abs(e.rateAimTo - was) > 1.6) {
-      pushNews(s, e.rateAimTo > was ? "warn" : "event", e.rateAimTo > was
-        ? "The cost of money is turning. Economists are talking about a decade of dearer credit."
-        : "A new monetary era: money is getting cheaper, and everything with a yield is about to be repriced.");
-    }
-  }
-  // half-life around five years — an era arrives slowly and then it is simply
-  // the world you underwrite in
-  e.rateRegime = clamp(e.rateRegime + 0.012 * ((e.rateAimTo ?? 5.4) - e.rateRegime), RATE_FLOOR, RATE_CEIL);
-  // and once in a long while it moves all at once
-  if (rng(s) < 0.0035) {
-    const jump = rrange(s, 1.1, 3.2) * (rng(s) < 0.55 ? 1 : -1);
-    e.rateRegime = clamp(e.rateRegime + jump, RATE_FLOOR, RATE_CEIL);
-    pushNews(s, jump > 0 ? "warn" : "event", jump > 0
-      ? "An inflation scare. The index jumped this month and every floating coupon in the city went with it."
-      : "The central bank cut hard and unexpectedly. Refinancing windows are open that were shut last month.");
-  }
-
-  // --- THE NATION, AND THE CENTRAL BANK ------------------------------------
-  //
-  // Calibrated against a century of the real thing. The federal funds rate sat
-  // at 3-4% through the twenties, fell to about 1% in the Depression and was
+  // RETIRED with it: the "monetary era" block that rolled a secular rate
+  // target and random jumps ("An inflation scare. The index jumped this
+  // month..."). `tickNation` overwrites `rateRegime` from the policy rate
+  // every month and the loan index never read it, so the news reported rate
+  // moves that did not happen.
   // pegged near zero through the war; drifted up through the fifties and
   // sixties; came apart in the seventies as inflation reached 14.8%; peaked at
   // TWENTY PER CENT in June 1981 when Volcker decided to break it and accepted
@@ -1908,6 +1946,8 @@ export function tickEcon(s: GameState) {
   // come unanchored — the Great Inflation was an expectations failure, and the
   // Great Moderation was thirty years of a central bank being believed.
   tickNation(s);
+  tickIndustryCycle(s);
+  const c2 = PHASE_CFG[e.phase];
 
   // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
   // a player who wrecked his own city was handed a rate cut for it. The nation
@@ -1943,10 +1983,9 @@ export function tickEcon(s: GameState) {
   // years with their vacancy still in the twenties. The local phase's job
   // drift now runs at less than half its rate when the nation is expanding;
   // the national recession (`natPull`, below) is what costs a city jobs.
-  const natRec = (e.nat?.recM ?? 0) > 0;
-  const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
-    : e.phase === "recession" ? (natRec ? -0.0031 : -0.0014)
-    : e.phase === "depression" ? (natRec ? -0.0010 : -0.0003) : 0.0015;
+  // Job growth is what the city's industries are doing, export and local
+  // (`tickIndustryCycle`). It replaces a table of rates by phase label.
+  const jobDrift = e.cycDrift ?? 0;
   // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
   // causal graph had a dead end where its most important feedback belongs: a
   // city that becomes ruinously expensive relative to what it pays its
@@ -2066,7 +2105,9 @@ export function tickEcon(s: GameState) {
   // months, the 1930s class, where −4 to −5%/yr gross for the duration is the
   // measured shape. Sized so the trend PAUSES AND TURNS, which is what the
   // word recession means on a payroll chart.
-  const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0045 : -0.0030) : 0.0002;
+  // The national recession reaches the city through each industry's beta
+  // (tickIndustryCycle); a second flat pull here would count it twice.
+  const natPull = 0;
   // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
   // arrives. This is the only place a level event touches the aggregate
   // economy, and it is the one that has to exist: without it a trade could
@@ -2625,72 +2666,8 @@ export function tickEcon(s: GameState) {
   // startups empties while the one across the street let to insurers does not.
   // That distinction did not exist — sector was a name on a lease and nothing
   // else — and it is the difference between a rent roll and a list.
-  if (!e.industryPhase) {
-    e.industryPhase = {} as Record<Sector, "boom" | "steady" | "bust">;
-    e.industryPhaseM = {} as Record<Sector, number>;
-    e.industryMom = {} as Record<Sector, number>;
-    for (const k of SECTORS) {
-      e.industryPhase[k] = "steady";
-      e.industryPhaseM[k] = Math.round(rrange(s, 6, 70));
-      e.industryMom[k] = 0;
-    }
-  }
-  for (const k of SECTORS) {
-    const vol = INDUSTRY_VOL[k];
-    if ((e.industryPhaseM![k] -= 1) <= 0) {
-      const cur = e.industryPhase![k];
-      // Industries lean on the macro cycle without being it: a recession makes
-      // a bust likelier everywhere, and an expansion makes a boom likelier,
-      // but each one still turns on its own schedule.
-      const macro = e.phase === "recession" ? -0.22 : e.phase === "depression" ? -0.14
-        : e.phase === "recovery" ? 0.06 : e.phase === "expansion" ? 0.14 : -0.06;
-      const up = clamp(0.45 + macro, 0.12, 0.85);
-      let next: "boom" | "steady" | "bust";
-      if (cur === "steady") next = rng(s) < up ? "boom" : "bust";
-      else if (cur === "boom") next = rng(s) < 0.5 ? "bust" : "steady";
-      else next = rng(s) < 0.7 ? "steady" : "boom";
-      e.industryPhase![k] = next;
-      // Volatile industries run shorter, sharper cycles; a stable one can sit
-      // steady for the better part of a decade.
-      const len = next === "boom" ? rrange(s, 18, 48) : next === "bust" ? rrange(s, 12, 36) : rrange(s, 30, 96);
-      e.industryPhaseM![k] = Math.round(len / Math.max(0.6, vol));
-      if (next !== "steady") {
-        // A DEAD GUARD, REPLACED BY THE TEST IT WAS PRETENDING TO BE.
-        //
-        // This read `next !== "steady" && cur !== next`, which looks like a
-        // de-duplication filter and is not one: the transition table is
-        // steady->{boom,bust}, boom->{bust,steady}, bust->{steady,boom}, so
-        // `next !== "steady"` already implies `next !== cur`. Measured over
-        // 1,200 months: 437 phase changes, 280 ended non-steady, 280 news items
-        // fired, and the clause suppressed ZERO of them. Nought from->to
-        // repeats in 437 transitions.
-        //
-        // Ten trades on independent multi-year clocks made this the single
-        // loudest emitter on the tape, and 88% of the items concerned a trade
-        // the player had no lease to. The relevance test is not new either:
-        // `exposureToTrade` already exists and swans.ts already uses it for
-        // exactly this judgement, printing "You have nothing let to that trade
-        // today" when it is zero. A trade turning is still filed — a principal
-        // reads about the city — but it INTERRUPTS only when it is your rent
-        // roll turning. The 10% line is the same materiality swans.ts draws.
-        const exposed = exposureToTrade(s, k) > 0.10;
-        pushNews(s, exposed ? (next === "boom" ? "event" : "warn") : "info", next === "boom"
-          ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
-          : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
-      }
-    }
-    const aim = (e.industryPhase![k] === "boom" ? 0.016 : e.industryPhase![k] === "bust" ? -0.015 : 0) * vol;
-    e.industryMom![k] = clamp(
-      e.industryMom![k] + 0.05 * (aim - e.industryMom![k]) + rrange(s, -0.0008, 0.0008) * vol,
-      -0.05, 0.05,
-    );
-  }
+  // (The trades' boom/steady/bust clocks lived here. See tickIndustryCycle.)
 
-  // --- the construction pipeline --------------------------------------------
-  // Everyone else builds when it pays, and delivers three years later into a
-  // market that has usually turned. Starts scale with the spread between what
-  // rent supports and what construction costs, and with whether anyone will
-  // lend. Deliveries land as supply, and supply is what ends a boom.
   const monthAbs: Record<string, number> = {};
   const monthComp: Record<string, number> = {};
   // Demand that PHYSICALLY CANNOT BE HOUSED, as a share of stock. When a city

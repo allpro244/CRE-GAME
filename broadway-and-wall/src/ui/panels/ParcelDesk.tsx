@@ -27,7 +27,7 @@ import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft, pctSigned } from "@/ui/format";
-import { LettingOdds, MinDealSize, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
+import { LettingOdds, MinDealSize, LeasingDesk, ResidualRead, LandDesk, AssembleCard } from "@/ui/panels/PropertyDesks";
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
@@ -208,6 +208,7 @@ function ParcelPanelInner({
         </div>
       )}
 
+      {on("summary") && holding && !dev && <AssembleCard bbl={selectedBBL} />}
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
-import { buyBoxSet, inBuyBox, landPencils, sitesThatPencil, type BuyBox } from "@/engine/buybox";
+import { buyBoxSet, inBuyBox, landPencils, type BuyBox } from "@/engine/buybox";
 import { starterPicks } from "@/engine/standing";
 import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
@@ -596,7 +596,6 @@ export function MarketPage() {
       <BrokerCalls />
       <BuyBoxEditor />
       <SiteFinder />
-      <SitesThatPencil />
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -992,54 +991,6 @@ export function LandValueChart() {
  * first look outside it no longer stops the clock; listings inside it wear a
  * chip. Empty means "anything" — the old behaviour.
  */
-/**
- * OFF-MARKET DIRT THAT PENCILS — the land broker's site list (sitesThatPencil).
- * The open tape almost never carries a lot a builder would pay up for, so a
- * developer's sites come from the phone; this is where to start dialling.
- * Folded by default: a landlord never needs it.
- */
-const SITE_USE_LABEL: Record<string, string> = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" };
-function SitesThatPencil() {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const focus = useStore((s) => s.focus);
-  const setPage = useStore((s) => s.setPage);
-  const [open, setOpen] = useState(false);
-  const rows = useMemo(() => (open ? sitesThatPencil(game, parcels, 12) : []),
-    // re-read once a month, not every render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, game.month, parcels]);
-  const purse = spendable(game, parcels).total;
-  return (
-    <div className="page-section" style={{ marginTop: 10 }}>
-      <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)} aria-expanded={open}
-        title="Vacant lots nobody is marketing where a builder's residual sets the price — the parcel card's 'Developable', for the whole town">
-        {open ? "▾" : "▸"} Sites that pencil · off-market
-      </button>
-      {open && (rows.length === 0
-        ? <div className="hint dim">No vacant lot in town pencils for a builder at today's rents. That is most of the cycle, and it is when the next shortage starts.</div>
-        : (
-          <>
-            <table className="tbl" style={{ marginTop: 6 }}>
-              <thead><tr><th>Lot</th><th className="num">Land</th><th>What pencils</th><th className="num">Trades at</th><th>Owner</th></tr></thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.bbl} onClick={() => { focus(r.bbl); setPage("property"); }} style={{ cursor: "pointer" }}>
-                    <td>{r.address}</td>
-                    <td className="num">{sf(r.lotArea)}</td>
-                    <td>{SITE_USE_LABEL[r.use] ?? r.use} · {r.floors} fl</td>
-                    <td className={"num" + (r.value * 1.4 > purse ? " dim" : "")}>{usd(r.value)}</td>
-                    <td className="dim">{ownerAt(game, parcels, r.bbl)?.name ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="hint">Priced where a builder's residual sets it, so at that number a scheme clears its hurdle with the margin and no more. The owner names their own number when you call — most want more.</div>
-          </>
-        ))}
-    </div>
-  );
-}
 
 function BuyBoxEditor() {
   const game = useStore((s) => s.game)!;

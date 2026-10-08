@@ -3529,6 +3529,11 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
   // The note on a wound-down fund's liquidating trust — see fund.ts TrustNote.
   nw += s.trustNote?.balance ?? 0;
+  // A CLAIM ON A FAILED BANK'S RECEIVER IS AN ASSET, at its expected recovery:
+  // the frozen deposit is not gone, only the haircut is (seizeDeposits). Only
+  // claims booked as an asset count — an old save's claims were expensed whole
+  // and come back as income, and counting them here too would count them twice.
+  for (const r of s.receivership ?? []) if (r.seizedM !== undefined) nw += r.amount;
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
   // This booked `costTotal` — the WHOLE build budget — the instant a shovel

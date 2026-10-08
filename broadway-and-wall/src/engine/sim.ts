@@ -1480,6 +1480,19 @@ export type AttentionItem = {
 export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
   const out: AttentionItem[] = [];
   const addr = (bbl: string) => parcelAddr(s, bbl, parcels);
+  // YOUR BANK FAILED WITH YOUR MONEY IN IT. The single largest one-day loss a
+  // cash-rich firm can take arrived as a line of news; it stops the clock now,
+  // once, keyed on the seizure, with what is frozen and what is expected back.
+  for (const r of s.receivership ?? []) {
+    if (r.seizedM === undefined || s.month - r.seizedM > 1) continue;
+    const m = (v: number) => `$${(v / 1e6).toFixed(1)}M`;
+    out.push({
+      critical: true,
+      key: `bank-seized:${r.from}:${r.seizedM}`,
+      label: `${r.from} has failed: ${m(r.amount + (r.lost ?? 0))} over the insurance limit is frozen. `
+        + `The receiver expects to return ${m(r.amount)} by ${monthLabel(r.payM)}; ${m(r.lost ?? 0)} is lost`,
+    });
+  }
   // Only letters the principal still owns — firm agent, exclusive, staff desk
   // or renewal management already worked the rest. Counting every LOI here is
   // why Year/Skip kept stopping for paper somebody else was hired to handle.

@@ -907,3 +907,22 @@ you design and come back when you leave; "Pan the map" on the bar hands them
 back at any time. Checked in the browser: a 300 px drag turned the view
 ~105° and tilted it, the wheel zoomed in, the building stayed in frame
 (the pivot is aimed half-way up it), and "Pan the map" re-enabled panning.
+
+# SMALL ASKS FROM PLAY (October 2026)
+
+- **One site list.** The Market page carried two lists of dirt that pencils —
+  the Site Finder (lots on the tape, plus a few unlisted "ripe" ones) and
+  "Sites that pencil · off-market". They are one list now (`SiteFinder`): On
+  the market, ranked by how far the builder's residual clears the ask; and
+  Off-market, the engine's own site list (`sitesThatPencil`, which leaves out
+  lots under construction, ground-leased, landmarked, civic or merged —
+  the old unlisted half did not), cheapest first, with the owner. Prices you
+  could not fund with a builder's carry are dimmed; clicking opens the lot.
+- **Your firm on the street.** The Street table listed every firm but yours.
+  You now have a highlighted row, measured exactly as the rivals are (gross
+  assets marked, net equity the Books page's number, debt the identity
+  between them), and the table is sorted by net equity — the league table's
+  own measure — so your row stands at your rank ("25th of 27 by net equity").
+- **Delivery on the hover card.** A building under construction says when it
+  delivers, how long to go and how far along it is ("Delivers Apr 2001 · in
+  15 months · 42% built"), or that it has stalled.

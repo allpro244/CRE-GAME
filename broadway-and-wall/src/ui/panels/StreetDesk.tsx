@@ -1,7 +1,7 @@
 import { useMemo, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { resolveRec, netWorth } from "@/engine/value";
+import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firmEntryPitch } from "@/engine/rivals";
 import { rivalPrincipalOf } from "@/engine/people";
 import { ownerById } from "@/engine/ownership";
@@ -41,8 +41,20 @@ export function TheStreet() {
   // Same number as TopBar / Books — a street rank that re-derives equity is
   // one quantity with two answers (facility, loc, deposits, CIP, notes).
   const playerEquity = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  // YOUR FIRM ON THE BOARD, measured the rivals' way: gross assets marked,
+  // net equity the Books page's own number, and the debt the identity between
+  // them (assets + cash − equity) — so the row cannot disagree with the rank.
+  const mine = useMemo(() => {
+    const gav = portfolioMark(game, parcels).gav;
+    const cash = Math.max(0, game.cash);
+    const debt = Math.max(0, gav + game.cash - playerEquity);
+    const buildings = Object.keys(game.holdings).filter((b) => !game.merged?.[b]).length;
+    return { gav, cash, debt, buildings, ltv: gav > 0 ? debt / gav : 0 };
+  }, [game, parcels, playerEquity]);
   const marked = useMemo(() => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
-    .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum),
+    // by net equity, the league table's own measure, so your row stands
+    // exactly at your rank; failed firms at the foot
+    .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || rivalEquity(b.m, b.r) - rivalEquity(a.m, a.r)),
   [game, parcels, rivals]);
   if (!rivals.length) return null;
   const appetite = marketAppetite(game);
@@ -141,7 +153,33 @@ export function TheStreet() {
           </tr>
         </thead>
         <tbody>
-          {marked.map(({ r, m }) => {
+          {(() => {
+            // where your row stands: by net equity, as the firms are sorted
+            const at = marked.findIndex(({ r, m }) => r.failedM !== undefined || rivalEquity(m, r) < playerEquity);
+            return [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true },
+              ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
+          })().map((row) => {
+            if ("you" in row) return (
+              <tr key="__you" style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
+                title="Your firm, marked the same way as theirs. Click for your Books."
+                onClick={() => useStore.getState().setPage("books")}>
+                <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
+                <td className="dim" style={{ fontWeight: 400 }}>{game.principal ? personLine(game.principal) : "—"}</td>
+                <td className="dim" style={{ fontWeight: 400 }}>Yours</td>
+                <td className="num">{mine.buildings}</td>
+                <td className="num">{usd(mine.gav)}</td>
+                <td className={"num" + (mine.debt > 0 ? " dim" : "")}>{usd(mine.debt)}</td>
+                <td className={"num" + (playerEquity < 0 ? " neg" : "")}>{usd(playerEquity)}</td>
+                <td className={"num" + (mine.ltv > 0.8 ? " neg" : "")}>{mine.gav <= 0 ? "—" : `${(mine.ltv * 100).toFixed(0)}%`}</td>
+                <td className="num">{usd(mine.cash)}</td>
+                <td className="dim" style={{ fontWeight: 400 }}>{(() => {
+                  const live = marked.filter(({ r }) => r.failedM === undefined);
+                  const rank = live.filter(({ r, m }) => rivalEquity(m, r) > playerEquity).length + 1;
+                  return `${rank}${rank === 1 ? "st" : rank === 2 ? "nd" : rank === 3 ? "rd" : "th"} of ${live.length + 1} by net equity`;
+                })()}</td>
+              </tr>
+            );
+            const { r, m } = row.x;
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
             const isOpen = open === r.id;

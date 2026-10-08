@@ -339,8 +339,19 @@ function seizeDeposits(s: GameState, l: Lender) {
   // started reaching the desks that funded them. The dividend is booked back
   // as it arrives in tickReceivership, so the net expense over the whole
   // episode is exactly the haircut.
-  logBooks(s, "ga", exposed);
-  (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36, "lenders")) });
+  //
+  // AND ONLY THE HAIRCUT IS A LOSS. The whole exposed balance leaves the
+  // account (above), but what the receiver will pay back is not spent — it is
+  // a claim, an asset the firm now holds instead of cash. Booked as the whole
+  // exposure under firm overhead, a $226M seizure printed as a $226M overhead
+  // year and net worth fell by all of it, when the expected loss was the
+  // haircut. Now: the haircut is the expense; the claim is exchanged for the
+  // cash (a balance-sheet movement, "bought"), counted in net worth at its
+  // expected recovery (portfolioMark), and redeemed as "sold" when the
+  // receiver pays — so the cash identity still closes to the dollar.
+  logBooks(s, "ga", lost);
+  logBooks(s, "bought", eventual);
+  (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36, "lenders")), seizedM: s.month, lost });
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `YOUR BANK HAS FAILED. ${usdShort(here)} of the firm's money was at ${l.name}. `
@@ -472,7 +483,10 @@ export function tickReceivership(s: GameState) {
   if (!due.length) return;
   for (const r of due) {
     s.cash += r.amount;
-    logBooks(s, "interest", r.amount);          // money coming back, not income earned — see above
+    // the claim redeemed: an asset turned back into cash, not income earned
+    // (claims from saves made before the claim was booked as an asset came in
+    // as interest, and still do, so those books keep closing)
+    logBooks(s, r.seizedM !== undefined ? "sold" : "interest", r.amount);
     s.news.unshift({
       q: s.month, kind: "deal",
       text: `The receiver for ${r.from} has finished selling the book. ${usdShort(r.amount)} of your money comes back — `

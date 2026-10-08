@@ -2703,3 +2703,57 @@ time. Rents rise in a shortage (2-3%/yr real on the floor) until tenants
 economise on space and households move out, and the edge of town waits — a
 constrained-city equilibrium, now with a premium that can build while the
 shortfall lasts.
+
+## Assembly: where to find it, and the loans on the lots (2026-10)
+
+Reported from play: an owner of two lots that plainly touch could not
+assemble them. The engine had `assembleLots` all along; two things stood in
+the way. The action lived at the foot of the Build tab's land desk and behind
+a Portfolio row button, and it refused any lot carrying a loan ("pay it off
+first") — which is most lots, because land is usually bought on a land loan.
+
+- **Where.** A lot's own card now says, on its overview, "You own N lots
+  touching this one" with an Assemble… button that opens the assembly there
+  (`AssembleCard`).
+- **The loans.** A merger re-papers the title, and no lender keeps a lien on
+  a lot that has become part of someone else's site, so the loans come off at
+  the filing: `assembleLots(…, { payoff: true })` retires each deed's senior
+  and mezz with `payOffLoan` — the same rules, break fees and ledger entries
+  as the Debt page's Pay off — after one funding test for the filing fee plus
+  every payoff (`assemblyPayoff`). The assembly panel shows the payoff and
+  the total cash at the filing before you commit.
+- **Unchanged.** A building on a lot, a landmark, a listing, a ground lease, a
+  facility pledge, a JV partner's consent and construction still block, each
+  with its reason; contiguity and the per-deed fee are as they were.
+
+Checked in the browser: a lot bought on a 60% land loan and an adjoining lot
+bought outright; the card offered the assembly; the panel priced $106K of
+filing plus a $328K payoff, $434K at the filing; after it, one 20,098 sf site,
+the loan retired, $433,742 out of the account.
+
+## A bank failure expensed the whole frozen balance (fixed 2026-10)
+
+Reported from play: about $226M of sale proceeds vanished into "Firm
+overhead" the month the firm's bank failed. The seizure rule (lenders.ts
+`seizeDeposits`) is right that everything over the insurance limit leaves the
+account that day, and right that the receiver pays back 60-90c over 1-3
+years. The books were wrong: the whole exposure was logged as overhead, the
+claim on the receiver was in nobody's net worth, and the payback came in years
+later as "interest on cash". So the year printed a $226M overhead loss, net
+worth fell by all of it, and a later year showed a fake windfall.
+
+Now only the haircut is expensed; the frozen remainder is exchanged for a
+claim ("bought" out, "sold" back in when the receiver pays), the claim counts
+in net worth at its expected recovery (`portfolioMark`), and the failure is a
+critical attention item that stops the clock once. `test/bank-seizure.mjs`
+(in `pnpm check`) forces a failure on a $230M balance: $229.9M frozen,
+$38.0M expensed, a $191.9M claim, net worth down $38.0M, the payback as cash
+with no interest income. Saves with older claims keep their old booking so
+their books still close.
+
+Not yet modelled, and the honest next step: a firm with $200M does not keep
+it as an uninsured deposit at one bank — it holds Treasury bills or a
+government money-market fund, which a bank failure does not touch. The game
+has no such option (and cannot even split deposits, though the failure news
+says it could), so a cash-rich firm currently has no defence a real treasurer
+would have.

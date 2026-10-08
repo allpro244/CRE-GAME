@@ -35,9 +35,17 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
   if (job || cityJob) {
     const j = (job ?? cityJob)!;
     out.push(`<div class="ht-sub">Under construction · ${j.floors} fl ${esc(j.use)}</div>`);
+    // WHEN IT DELIVERS, said first: the month, how long to go, how far along
+    if (cityJob?.orphaned) out.push(row("Delivery", "stalled — work has stopped", "bad"));
+    else {
+      const left = Math.max(0, j.deliverM - g.month);
+      const total = Math.max(1, j.deliverM - j.startM);
+      const pct = Math.round(Math.min(1, Math.max(0, (g.month - j.startM) / total)) * 100);
+      out.push(row("Delivers", `${monthLabel(j.deliverM)} · ${left === 0 ? "this month" : `in ${left} month${left === 1 ? "" : "s"}`}`, "sale"));
+      out.push(row("Progress", `${pct}% built`));
+    }
     out.push(row("Size", `${Math.round(j.sf).toLocaleString()} sf`));
     out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A rival" : "The city"));
-    out.push(row(cityJob?.orphaned ? "Status" : "Opens", cityJob?.orphaned ? "stalled" : monthLabel(j.deliverM)));
     return out.join("");
   }
 

@@ -2648,7 +2648,8 @@ export interface GameState {
    * that will come back at 60-90c, in a year or two. It is not cash and it is
    * not net worth you can spend; it is a certificate and a wait.
    */
-  receivership?: { from: string; amount: number; payM: number }[];
+  /** Claims on a failed bank's receiver: what it is expected to pay back, and when. `seizedM` and `lost` are set on claims booked as an asset (see seizeDeposits). */
+  receivership?: { from: string; amount: number; payM: number; seizedM?: number; lost?: number }[];
   /**
    * The months a desk in this town was seized, most recent last, trimmed to
    * the last three years. What the funding market prices contagion off — see

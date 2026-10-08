@@ -16,7 +16,7 @@ import { useRentableSf } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import {
   groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
-  mergeCost, siteDeeds, siteLotArea, contiguousOwnedRoots, hasOwnedSiteNeighbor,
+  mergeCost, siteDeeds, siteLotArea, contiguousOwnedRoots, hasOwnedSiteNeighbor, assemblyPayoff,
 } from "@/engine/actions";
 import type { GroundReview } from "@/engine/types";
 import { varianceQuote } from "@/engine/zoning";
@@ -30,6 +30,8 @@ type AssembleCand = {
   why: string | null;
   area: number;
   deeds: number;
+  /** the loans on it, retired at the filing */
+  loan: number;
 };
 
 const EMPTY_ASSEMBLE: { eligible: AssembleCand[]; blocked: AssembleCand[] } = {
@@ -55,11 +57,11 @@ function useAssembleCandidates(
         : game.groundLeases?.[n] ? "ground-leased to somebody else"
         : game.holdings[n]?.sale ? "on the market — pull the listing"
         : game.landmarks?.[n] !== undefined ? "landmarked"
-        : game.holdings[n]?.loan ? "mortgage outstanding — pay it off first"
         : game.facility?.bbls?.includes(n) ? "in the portfolio facility — release it first"
         : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
         : null;
-      return { bbl: n, rec: r, why, area, deeds };
+      const loan = assemblyPayoff(game, [n]).due;
+      return { bbl: n, rec: r, why, area, deeds, loan };
     });
     return {
       eligible: candidates.filter((x) => !x.why),
@@ -562,7 +564,6 @@ export function AssembleSection({
   const children = siteDeeds(game, bbl).slice(1);
   const selfBlocked = !vacant
     ? `${useLabel(rec)} standing — clear this site before folding anything in`
-    : h.loan ? "mortgage outstanding on this site — pay it off first"
     : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
     : game.groundLeases?.[bbl] ? "ground-leased — pull it back before folding title"
     : h.sale ? "on the market — pull the listing first"
@@ -574,6 +575,8 @@ export function AssembleSection({
   const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
   const cost = mergeCost(game, siteDeeds(game, bbl).length + pickedDeeds);
   const addedArea = livePicked.reduce((a, n) => a + siteLotArea(game, parcels, n), 0);
+  // the paper on every lot in the filing comes off at the closing
+  const payoff = livePicked.length ? assemblyPayoff(game, [bbl, ...livePicked]) : { due: 0, balance: 0, penalty: 0, deeds: [] as string[] };
 
   return (
     <div style={embedded ? undefined : { padding: "8px 2px" }}>
@@ -619,6 +622,7 @@ export function AssembleSection({
                   <span className="neighbor-meta">
                     {sf(x.area)} of land
                     {x.deeds > 1 ? ` · ${x.deeds} deeds already assembled` : " · vacant"}
+                    {x.loan > 0 ? ` · ${usd(x.loan)} loan paid off at the filing` : ""}
                   </span>
                 </button>
               );
@@ -653,11 +657,15 @@ export function AssembleSection({
                     : null;
                 })()}
                 <Row k="Survey, title and lawyers" v={usd(cost)} />
+                {payoff.due > 0 && (
+                  <Row k="Loans retired at the filing" v={`${usd(payoff.due)}${payoff.penalty > 0 ? ` (incl. ${usd(payoff.penalty)} to break the paper)` : ""} · ${payoff.deeds.length} deed${payoff.deeds.length === 1 ? "" : "s"}`} />
+                )}
+                {payoff.due > 0 && <Row k="Cash at the filing" v={usd(cost + payoff.due)} strong />}
               </div>
               <button
                 className="btn"
                 onClick={() => {
-                  assemble([bbl, ...livePicked]);
+                  assemble([bbl, ...livePicked], { payoff: payoff.due > 0 });
                   setPicked([]);
                   onDone?.();
                 }}
@@ -668,6 +676,32 @@ export function AssembleSection({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * ASSEMBLY WHERE YOU LOOK FOR IT. The fold-together lived at the foot of the
+ * Build tab's land desk and behind a row button on the Portfolio page, so an
+ * owner of two lots that plainly touch could not find it. The lot's own card
+ * now says so on its overview, and opens the assembly there.
+ */
+export function AssembleCard({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const adjacency = useStore((s) => s.adjacency);
+  const [open, setOpen] = useState(false);
+  if (!canAssembleFromBook(game, adjacency, bbl)) return null;
+  const n = contiguousOwnedRoots(game, adjacency!, bbl).filter((r) => r !== bbl).length;
+  return (
+    <div className="deal" style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div>
+          <strong>You own {n} lot{n === 1 ? "" : "s"} touching this one.</strong>
+          <div className="hint">Fold them into one larger site: one plate, one envelope, one address.</div>
+        </div>
+        <button type="button" className={"btn btn-sm" + (open ? "" : " btn-on")} onClick={() => setOpen(!open)}>{open ? "Close" : "Assemble…"}</button>
+      </div>
+      {open && <AssembleSection bbl={bbl} onDone={() => setOpen(false)} />}
     </div>
   );
 }

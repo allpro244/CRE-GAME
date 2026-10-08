@@ -401,7 +401,8 @@ interface AppState {
   autoLease: (bbl: string | string[], on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
-  assemble: (bbls: string[]) => void;
+  /** Fold contiguous owned lots into one site; `payoff` retires the loans on them at the filing. */
+  assemble: (bbls: string[], opts?: { payoff?: boolean }) => void;
   groundLease: (bbl: string, years: number, review?: import("@/engine/types").GroundReview) => void;
   pullGroundOffer: (bbl: string) => void;
   delistSale: (bbl: string) => void;
@@ -1823,10 +1824,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  assemble: (bbls) => {
+  assemble: (bbls, opts) => {
     const { game, parcels, adjacency } = get();
     if (!game || !parcels || !adjacency) return;
-    const r = assembleLots(game, parcels, adjacency, bbls);
+    const r = assembleLots(game, parcels, adjacency, bbls, opts);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Assembled.");

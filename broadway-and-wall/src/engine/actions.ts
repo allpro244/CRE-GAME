@@ -16,6 +16,7 @@ import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
+import { payOffDue, payOffLoan } from "./debt";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -731,7 +732,7 @@ export function contiguousOwnedRoots(
 }
 
 function assembleBlocker(
-  s: GameState, parcels: ParcelTable, bbl: string,
+  s: GameState, parcels: ParcelTable, bbl: string, payoff = false,
 ): string | null {
   const root = siteRoot(s, bbl);
   for (const d of siteDeeds(s, root)) {
@@ -751,7 +752,7 @@ function assembleBlocker(
     if (s.developments[d]) return `Construction is already underway at ${rec.address}.`;
     if (s.holdings[d].sale) return `${rec.address} is on the market — pull the listing first.`;
     if (s.groundLeases?.[d]) return `${rec.address} is under a ground lease. It is not yours to build on.`;
-    if (s.holdings[d].loan || (s.holdings[d].mezz?.balance ?? 0) > 0) {
+    if (!payoff && (s.holdings[d].loan || (s.holdings[d].mezz?.balance ?? 0) > 0)) {
       return `${rec.address} still has a mortgage. Pay it off before you fold the title.`;
     }
     if (s.facility?.bbls?.includes(d)) {
@@ -761,8 +762,29 @@ function assembleBlocker(
   return null;
 }
 
+/**
+ * What retiring the paper on an assemblage costs: every deed's senior and mezz
+ * balance plus any break fee. A merger re-papers the title, and no lender
+ * keeps a lien on a lot that has just become part of somebody else's site,
+ * so the loans come off at the filing (payOffLoan, deed by deed).
+ */
+export function assemblyPayoff(s: GameState, bbls: string[]): { due: number; balance: number; penalty: number; deeds: string[] } {
+  let due = 0, balance = 0, penalty = 0;
+  const deeds: string[] = [];
+  for (const d of [...new Set(bbls.flatMap((b) => siteDeeds(s, siteRoot(s, b))))]) {
+    const h = s.holdings[d];
+    if (!h) continue;
+    const parts = [h.loan ? payOffDue(h.loan, s.month) : null, h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month) : null];
+    let any = false;
+    for (const p of parts) if (p && p.due > 0) { due += p.due; balance += p.balance; penalty += p.penalty; any = true; }
+    if (any || h.loan) deeds.push(d);
+  }
+  return { due, balance, penalty, deeds };
+}
+
 export function assembleLots(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbls: string[],
+  opts: { payoff?: boolean } = {},
 ): { s: GameState; err?: string; msg?: string } {
   // Normalise to site roots. Passing a child, or the same site twice, or two
   // already-assembled parents that touch, all collapse to one node per site.
@@ -772,7 +794,7 @@ export function assembleLots(
     if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
     { const why = jvConsent(s.holdings[r]); if (why) return { s, err: why }; }
     if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
-    const why = assembleBlocker(s, parcels, r);
+    const why = assembleBlocker(s, parcels, r, !!opts.payoff);
     if (why) return { s, err: why };
   }
 
@@ -800,8 +822,23 @@ export function assembleLots(
   // Survey, title and counsel on dirt you already own — pre-development legal
   // spend, and it comes off the line like every other professional fee. The
   // per-deed price and the contiguity rule above are untouched.
-  if (fundableNow(s, parcels) < cost) {
-    return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}K — you're short.` };
+  // the paper on the lots, retired at the filing if asked (payOffLoan's rules)
+  const debt = opts.payoff ? assemblyPayoff(s, roots) : { due: 0, balance: 0, penalty: 0, deeds: [] as string[] };
+  if (fundableNow(s, parcels) < cost + debt.due) {
+    return {
+      s, err: debt.due > 0
+        ? `The filing ($${(cost / 1e3).toFixed(0)}K) and retiring the loans on the lots ($${(debt.due / 1e3).toFixed(0)}K) need $${((cost + debt.due) / 1e3).toFixed(0)}K — you're short.`
+        : `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}K — you're short.`,
+    };
+  }
+  if (debt.deeds.length) {
+    let cur = s;
+    for (const d of debt.deeds) {
+      const r = payOffLoan(cur, parcels, d);
+      if (r.err) return { s, err: r.err };
+      cur = r.s;
+    }
+    s = cur;
   }
 
   // Parent = largest site by total dirt (not just the root's original lot),

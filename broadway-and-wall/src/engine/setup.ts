@@ -61,7 +61,7 @@ export interface GameSetup {
   dev?: string;
   cash0?: number;
   goal?: string | null;
-  clock?: "decisions" | "everything" | "money";
+  clock?: "decisions" | "opportunities" | "everything";
   /** "never" keeps broker first looks off the clock (GameState.brokerStops). */
   brokerStops?: "affordable" | "never";
   jevFirms?: number;
@@ -110,9 +110,9 @@ export const HOME_OPTIONS: { id: HomeChoice; label: string; note: string }[] = [
 ];
 
 export const CLOCK_OPTIONS: { id: NonNullable<GameSetup["clock"]>; label: string; note: string }[] = [
-  { id: "decisions", label: "Decisions", note: "Stops for anything that needs an answer. The standard game." },
+  { id: "decisions", label: "What you own", note: "Stops only when not answering costs something you already own — a lender filing, a missed payment, a balloon, a lapsing tenant, a capital call. Broker calls, first looks, bids, books for sale and the auction wait on the docket. The standard game." },
+  { id: "opportunities", label: "Opportunities too", note: "Also stops for things offered to you — a broker's call, a first look, another firm's repossessed book, a loan for sale, the county auction." },
   { id: "everything", label: "Everything", note: "Also stops for notices with nothing to decide — a tenant giving notice, a quiet letter." },
-  { id: "money", label: "What can cost money", note: "Stops only when not answering costs something you already own — a balloon, a sweep, a lapsing tenant, a capital call. Listings, first looks and bids wait on the docket." },
 ];
 
 export function normalizeSetup(p: Partial<GameSetup> | undefined): GameSetup {

@@ -18,8 +18,8 @@ export default function AutoPlay() {
     if (!autoplay) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const pause = (why: string, attnKey?: string) => {
-      useStore.setState({ autoplay: 0, toast: { text: `Paused — ${why}`, kind: "ok", at: Date.now(), attnKey } });
+    const pause = (why: string, attnKey?: string, critical?: boolean) => {
+      useStore.setState({ autoplay: 0, toast: { text: `Paused — ${why}`, kind: critical ? "critical" : "ok", at: Date.now(), attnKey } });
     };
     const step = () => {
       if (cancelled) return;
@@ -42,7 +42,7 @@ export default function AutoPlay() {
       if (next && next !== prev) {
         // A spectator is not at the desk: nothing of the player's stops the clock.
         const why = next.spectator ? undefined : stop(next);
-        if (why) { pause(why.label, why.key); return; }
+        if (why) { pause(why.label, why.key, why.critical); return; }
         if (next.gameOver) { useStore.setState({ autoplay: 0 }); return; }
       }
       timer = setTimeout(step, PACE[useStore.getState().autoplay as 1 | 2] ?? PACE[1]);

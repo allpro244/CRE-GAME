@@ -155,7 +155,7 @@ export async function runDueJev(): Promise<boolean> {
  */
 export async function advanceSpanWithJev(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
-): Promise<{ s: GameState; months: number; reason: string | null; key?: string }> {
+): Promise<{ s: GameState; months: number; reason: string | null; key?: string; critical?: boolean }> {
   if (!jevRivals(s).length && !s.spectator) return advanceUntilAttentionAsync(s, parcels, bbls, adjacency, cap, 1);
   const every = Math.max(1, s.jev?.every ?? 3);
   let g = s, months = 0;
@@ -167,7 +167,7 @@ export async function advanceSpanWithJev(
     g = r.s;
     months += r.months;
     if (g.spectator && g.gameOver) g = { ...g, gameOver: null };
-    if (r.reason && !g.spectator) return { s: g, months, reason: r.reason, key: r.key };
+    if (r.reason && !g.spectator) return { s: g, months, reason: r.reason, key: r.key, critical: r.critical };
     if (g.gameOver || r.months === 0) break;
   }
   return { s: g, months, reason: null };

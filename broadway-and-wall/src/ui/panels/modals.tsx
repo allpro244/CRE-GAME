@@ -6,7 +6,7 @@ import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
 import { saleProceedsToSeller } from "@/engine/actions";
-import { MILESTONES } from "@/engine/sim";
+import { MILESTONES, opportunitiesStop } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
@@ -169,7 +169,10 @@ function auctionAwake(s: ReturnType<typeof useStore.getState>): boolean {
   if (!a || g.month >= a.m) return false;
   // Keep the subscriber alive when they asked for the sheet, or when the card
   // would still auto-open. Quiet/popups-off with no request stays cold.
-  return s.auctionOpen || (!s.popupsOff && !g.auctionQuiet);
+  // The docket is an opportunity — it sits on Marketplace — unless one of the
+  // lots is YOUR building, which is the one auction that must be seen.
+  const yours = a.lots.some((l) => l.kind === "yours");
+  return s.auctionOpen || (!s.popupsOff && !g.auctionQuiet && (yours || opportunitiesStop(g)));
 }
 
 export function AuctionModal() {
@@ -260,7 +263,8 @@ function AuctionBody({
   // good. Asking for something and not getting it is the one outcome an
   // opt-out must never produce.
   if (auctionOpen) { /* they asked for it */ }
-  else if (seenM === a.m || game.auctionQuiet || popupsOff) return null;
+  else if (seenM === a.m || game.auctionQuiet || popupsOff
+    || !(a.lots.some((l) => l.kind === "yours") || opportunitiesStop(game))) return null;
 
   const parsed: Record<string, number> = {};
   for (const [id, v] of Object.entries(bids)) {
@@ -442,8 +446,40 @@ function AuctionBody({
 export function AlertModal() {
   const awake = useStore((s) =>
     !s.alertsOff && !s.game?.gameOver && (s.game?.alerts?.length ?? 0) > 0);
-  if (!awake) return null;
+  // THE WORLD'S NEWS NO LONGER TAKES THE SCREEN (owner, Oct 2026): "a lot of
+  // stuff stops the game that shouldn't, like when portfolios are taken back
+  // by the bank." A rival's book repossessed, a bank closed, a swan, a buyer
+  // ringing about your deeds — every one is filed in the news by raiseAlert
+  // and the opportunities sit on Marketplace and the docket. They pass as a
+  // line in the toast lane and play goes on. Only what is about your own
+  // deeds and needs your answer — your ground tenant's default, bids on a
+  // building you listed, an indication on a book you put up — still takes
+  // the screen; "Opportunities too" or "Everything" restores the cards.
+  const stray = useStore((s) => {
+    const g = s.game;
+    if (s.alertsOff || !g?.alerts?.length || g.gameOver) return 0;
+    return g.alerts.filter((a) => !alertTakesScreen(g, a)).length;
+  });
+  useEffect(() => {
+    if (!stray) return;
+    const g = useStore.getState().game;
+    if (!g?.alerts) return;
+    const pass = g.alerts.filter((a) => !alertTakesScreen(g, a));
+    const keep = g.alerts.filter((a) => alertTakesScreen(g, a));
+    useStore.setState({
+      game: { ...g, alerts: keep },
+      toast: { text: pass.map((a) => a.title).join(" · "), kind: "ok", at: Date.now() },
+    });
+  }, [stray]);
+  if (!awake || stray) return null;
   return <AlertBody />;
+}
+
+type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["game"]>["alerts"]>[number];
+function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
+  if (opportunitiesStop(g)) return true;
+  if (a.kind === "ground" || a.kind === "sale") return true;
+  return a.kind === "portfolio" && a.tone === "good" && !!g.portfolioSale && !g.portfolioSale.unsolicited;
 }
 
 function AlertBody() {
@@ -546,13 +582,16 @@ function AlertBody() {
 // finding out later that one lapsed while you clicked past it is no fun.
 function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
   if (!g || g.gameOver || popupsOff) return false;
-  if (g.portfolioSale?.bids?.[0]) return true;
+  // Somebody ringing about deeds you never put up is an opportunity: it waits
+  // on Portfolio unless the player asked for opportunities to interrupt.
+  const opp = opportunitiesStop(g);
+  if (g.portfolioSale?.bids?.[0] && (opp || !g.portfolioSale.unsolicited)) return true;
   // Desk-covered letters stay quiet (agent / exclusive / renewals).
   // Ground-leased fees never wake the modal — the lessee is the landlord.
   // A live plan works exceptions on the docket, not a per-letter modal stream.
   if (g.lois.some((l) => loiNeedsPrincipal(g, l)) && !planIsLive(g)) return true;
   for (const h of Object.values(g.holdings)) {
-    if (h.sale?.offer) return true;
+    if (h.sale?.offer && (opp || !h.sale.unsolicited)) return true;
     // Live bids only — a best-and-final where everyone walked left bids.length
     // > 0 with every row dropped, so the modal still woke and Take errored.
     if ((h.sale?.bids ?? []).some((b) => !b.dropped)) return true;

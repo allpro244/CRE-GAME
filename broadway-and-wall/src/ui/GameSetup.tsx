@@ -338,11 +338,11 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
               </div>
               <div className="start-col">
                 <div className="start-col-head">interruptions</div>
-                <label className="setup-check">
+                {d.clock !== "decisions" && <label className="setup-check">
                   <input type="checkbox" checked={d.brokerStops} onChange={(e) => up({ brokerStops: e.target.checked })} />
                   <span><strong>Broker first looks stop the clock</strong><br />
                     <span className="start-opt-note">Only for buildings you could fund at a typical 65% loan. Off, they wait on the Marketplace.</span></span>
-                </label>
+                </label>}
                 <label className="setup-check">
                   <input type="checkbox" checked={!popupsOff} onChange={(e) => setPopupsOff(!e.target.checked)} />
                   <span><strong>Pop-up cards</strong><br />

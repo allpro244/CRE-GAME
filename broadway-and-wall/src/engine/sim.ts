@@ -210,7 +210,7 @@ export function newGame(
   // position off it, and initRivals reads the field.
   if (setup) s.setup = setup;
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
-  if (setup?.clock === "everything" || setup?.clock === "money") s.clockStops = setup.clock;
+  if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
   s.econ = initEcon(s, parcels);
   // Player principal BEFORE rivals so the principal's draws do not depend on
@@ -1467,6 +1467,14 @@ export type AttentionItem = {
   key: string; label: string; lastM?: number;
   /** Worth seeing on the docket, but not a decision: never stops the clock. */
   soft?: boolean;
+  /**
+   * SOMETHING YOU OWN IS BEING TAKEN. A lender has filed or wants a cure, a
+   * payment is missed, a balloon is close with no takeout, the facility is
+   * called, the account is under water. These stop the clock in every mode,
+   * sort first, and get their own alarm in the UI — a foreclosure must never
+   * read like a broker's call.
+   */
+  critical?: boolean;
 };
 
 export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
@@ -1650,6 +1658,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
           label: `${due}. Renews on its own with ${roll.product.lender} at ~${roll.qd.ratePct.toFixed(2)}% unless you refinance or sell`,
         }
         : {
+          critical: mo <= 6 || undefined,
           key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}:gap`,
           // named: three buildings maturing together were three identical rows
           label: roll
@@ -1667,6 +1676,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if ((h.loan?.arrearsMs ?? 0) > 0) {
       const ms = h.loan!.arrearsMs!;
       out.push({
+        critical: true,
         key: `arrears:${h.bbl}:${ms}`,
         label: `${addr(h.bbl)} has missed ${ms} payment${ms === 1 ? "" : "s"} — `
           + `${productById(h.loan!.product).lender} files at three`,
@@ -1691,6 +1701,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     const mo = s.facility.maturityM - s.month;
     if (mo <= 12 && mo > 0) {
       out.push({
+        critical: mo <= 6 || undefined,
         key: `facility-balloon:${mo > 6 ? "far" : "near"}`,
         label: `${s.facility.lender} facility due ${monthLabel(s.facility.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
       });
@@ -1706,6 +1717,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if ((s.facility.arrearsMs ?? 0) > 0) {
       const ms = s.facility.arrearsMs!;
       out.push({
+        critical: true,
         key: `facility-arrears:${ms}`,
         label: `${s.facility.lender} facility payment short ${ms} month${ms === 1 ? "" : "s"} — `
           + `${s.facility.bbls.length} buildings stand behind it`,
@@ -1717,6 +1729,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (s.facility.noticedM !== undefined) {
       const left = Math.max(0, FACILITY_CURE_M - (s.month - s.facility.noticedM));
       out.push({
+        critical: true,
         key: `facility-called:${s.facility.noticedM}`,
         label: `${s.facility.lender} has called the facility's maturity — ${left} month${left === 1 ? "" : "s"} to `
           + `refinance or pay down $${(s.facility.balance / 1e6).toFixed(1)}M before a receiver takes all `
@@ -1730,6 +1743,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (s.facility.accelM !== undefined) {
       const left = Math.max(0, 3 - (s.month - s.facility.accelM));
       out.push({
+        critical: true,
         key: `facility-accel:${s.facility.accelM}`,
         label: left <= 0
           ? `${s.facility.lender} has accelerated — the receiver is selling all ${s.facility.bbls.length} buildings now`
@@ -1767,12 +1781,14 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const w of Object.values(s.workouts ?? {})) {
     const left = Math.max(0, (w.saleM ?? w.decideM) - s.month);
     out.push({
+      // Kept current by the owner, the file is managed, not an alarm.
+      critical: w.stage === "foreclosure" || !w.servicing || undefined,
       key: `workout:${w.bbl}:${w.stage}${w.servicing ? ":paying" : ""}`,
       label: w.stage === "foreclosure"
-        ? `${w.lender} has filed on ${addr(w.bbl)} — auction in ${left} months`
+        ? `FORECLOSURE — ${w.lender} has filed on ${addr(w.bbl)}; it is sold at auction in ${left} month${left === 1 ? "" : "s"}`
         : w.servicing
         ? `${addr(w.bbl)}: keeping it current, ${w.servicedMs ?? 0} months paid`
-        : `${w.lender} wants ${Math.round(w.cure / 1000)}K on ${addr(w.bbl)} — ${left} months to decide`,
+        : `DEFAULT — ${w.lender} wants ${Math.round(w.cure / 1000)}K on ${addr(w.bbl)} or files in ${left} month${left === 1 ? "" : "s"}`,
     });
   }
   // A counter on the table is the definition of something needing you — and an
@@ -1864,6 +1880,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   if (s.cash < 0) {
     const ms = s.insolventMs ?? 0;
     out.push({
+      critical: true,
       key: "cash",
       label: ms > 0
         ? `Cash is negative — insolvency month ${ms} of 12 before lender seizure`
@@ -1935,7 +1952,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   }
   // Milestones stay in the news tape; they are not decisions that should stop Skip.
   if (s.gameOver) out.push({ key: "over", label: "The run is over" });
-  return out;
+  // What is being taken from you reads first, everywhere this list is read.
+  return [...out.filter((a) => a.critical), ...out.filter((a) => !a.critical)];
 }
 
 /**
@@ -2054,25 +2072,43 @@ const TYPICAL_LTV = 0.65;
  */
 export const OPPORTUNITY_KEYS = new Set([
   "watch", "portfolio-bid", "broker", "early-look", "offer", "sale-bids", "talks", "note", "private-ask", "street-book",
+  "take-private", "auction", "private-borrow",
 ]);
+
+/**
+ * Whether things OFFERED to the firm may stop the clock or take the screen:
+ * only when the player chose "Opportunities too" or "Everything". By default
+ * a broker's call, a first look, another firm's repossessed book, a board
+ * that wants to sell, the county docket — all wait on the docket.
+ */
+export function opportunitiesStop(s: GameState): boolean {
+  return s.clockStops === "everything" || s.clockStops === "opportunities";
+}
 
 export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
-  // WHAT STOPS THE CLOCK (GameState.clockStops). Absent is the standard
-  // rule; "everything" lets the soft notices stop it too; "money" keeps only
-  // the items where not answering costs the firm something it already has —
-  // a balloon, a sweep, a lapsing tenant, a capital call, a workout — and lets
-  // the opportunities (a listing, a first look, a bid, a loan for sale) wait
-  // on the docket. Missing an opportunity costs nothing you own.
+  // WHAT STOPS THE CLOCK (GameState.clockStops). Absent (and the retired
+  // "money") is the standard rule: only items where not answering costs the
+  // firm something it already has — a balloon, a sweep, a lapsing tenant, a
+  // capital call, a workout. The opportunities (a listing, a first look, a
+  // broker's call, a bid, a book for sale, a loan for sale) wait on the
+  // docket; missing one costs nothing you own, and stopping for them buried
+  // the stops that did. "opportunities" lets those stop it too; "everything"
+  // adds the soft notices. A critical item stops it in every mode.
   const mode = s.clockStops;
-  const counts = (a: AttentionItem) => mode === "everything" ? true
-    : mode === "money" ? !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0])
-    : !a.soft;
-  return (cur) => attentionItems(cur, parcels).find((a) => counts(a) && (a.lastM !== undefined
-    ? cur.month >= a.lastM && !dueAtStart.has(a.key)
-    : !before.has(a.key)));
+  const counts = (a: AttentionItem) => a.critical || mode === "everything" ? true
+    : mode === "opportunities" ? !a.soft
+    : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
+  // Critical first: if a foreclosure and a broker's call land the same month,
+  // the stop names the foreclosure.
+  return (cur) => {
+    const due = attentionItems(cur, parcels).filter((a) => counts(a) && (a.lastM !== undefined
+      ? cur.month >= a.lastM && !dueAtStart.has(a.key)
+      : !before.has(a.key)));
+    return due.find((a) => a.critical) ?? due[0];
+  };
 }
 
 // Run up to `cap` months, stopping when something needs the player.
@@ -2084,14 +2120,14 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
 // caller's state is untouched until they adopt the returned one.
 export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
-): { s: GameState; months: number; reason: string | null; key?: string } {
+): { s: GameState; months: number; reason: string | null; key?: string; critical?: boolean } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
   const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
     const fresh = stop(cur);
-    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key };
+    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key, critical: fresh.critical };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
   }
   return { s: cur, months: cap, reason: null };
@@ -2105,14 +2141,14 @@ export function advanceUntilAttention(
 export async function advanceUntilAttentionAsync(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
   yieldEvery = 1,
-): Promise<{ s: GameState; months: number; reason: string | null; key?: string }> {
+): Promise<{ s: GameState; months: number; reason: string | null; key?: string; critical?: boolean }> {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
   const stop = stopRule(s, parcels);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);
     const fresh = stop(cur);
-    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key };
+    if (fresh) return { s: cur, months: i, reason: fresh.label, key: fresh.key, critical: fresh.critical };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
     if (yieldEvery > 0 && i % yieldEvery === 0 && i < cap) {
       await new Promise<void>((r) => setTimeout(r, 0));

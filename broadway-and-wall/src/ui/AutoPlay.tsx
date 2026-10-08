@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { stopRule } from "@/engine/sim";
 
-/** Milliseconds per month at each speed. The tick itself takes most of 0.3s on a large town. */
+/** Milliseconds per month at each speed, start to start. The tick runs in the sim worker. */
 const PACE: Record<1 | 2, number> = { 1: 1000, 2: 330 };
 
 /**
@@ -37,15 +37,22 @@ export default function AutoPlay() {
       }
       const prev = st.game;
       const stop = stopRule(prev, st.parcels);
-      st.advance({ quiet: true });
-      const next = useStore.getState().game;
-      if (next && next !== prev) {
-        // A spectator is not at the desk: nothing of the player's stops the clock.
-        const why = next.spectator ? undefined : stop(next);
-        if (why) { pause(why.label, why.key, why.critical); return; }
-        if (next.gameOver) { useStore.setState({ autoplay: 0 }); return; }
-      }
-      timer = setTimeout(step, PACE[useStore.getState().autoplay as 1 | 2] ?? PACE[1]);
+      // The month closes in the sim worker; the map keeps drawing meanwhile.
+      // The pace runs from the moment the month is on screen, so a slow tick
+      // shortens the wait rather than stacking on top of it.
+      const t0 = performance.now();
+      void st.advance({ quiet: true }).then(() => {
+        if (cancelled) return;
+        const next = useStore.getState().game;
+        if (next && next !== prev) {
+          // A spectator is not at the desk: nothing of the player's stops the clock.
+          const why = next.spectator ? undefined : stop(next);
+          if (why) { pause(why.label, why.key, why.critical); return; }
+          if (next.gameOver) { useStore.setState({ autoplay: 0 }); return; }
+        }
+        const pace = PACE[useStore.getState().autoplay as 1 | 2] ?? PACE[1];
+        timer = setTimeout(step, Math.max(60, pace - (performance.now() - t0)));
+      });
     };
     timer = setTimeout(step, 150);
     return () => { cancelled = true; if (timer) clearTimeout(timer); };

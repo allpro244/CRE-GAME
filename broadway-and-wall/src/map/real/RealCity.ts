@@ -90,7 +90,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "bulkdoor", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -2678,7 +2678,19 @@ export class RealCityLayer {
       };
       const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      if (area > 160 && rnd() < 0.7) {
+        // the stair bulkhead is built of whatever the house is: brick or
+        // tar-papered timber on a walk-up, a stucco or metal-panel box on
+        // anything newer, with a steel door to the roof on one face
+        const q = spot(0, 0.3);
+        if (q) {
+          const BULK_OLD = [[0.56, 0.32, 0.25], [0.46, 0.3, 0.26], [0.3, 0.29, 0.28], [0.62, 0.52, 0.42]];
+          const BULK_NEW = [[0.66, 0.66, 0.64], [0.52, 0.54, 0.56], [0.74, 0.71, 0.64], [0.4, 0.42, 0.44]];
+          const pal = oldWalk ? BULK_OLD : BULK_NEW, c = pal[(rnd() * pal.length) | 0], k = 0.9 + rnd() * 0.2;
+          this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl, [c[0] * k, c[1] * k, c[2] * k]);
+          this.putInst("bulkdoor", q[0], q[1], z1, 1, rot, bbl);
+        }
+      }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
@@ -3009,7 +3021,9 @@ export class RealCityLayer {
       case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
-      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      // the door out onto the roof, and the vent hood above it
+      case "bulkdoor": return { g: merge([box(0.08, 1.0, 2.1, 1.62, 0.9, 0), box(0.5, 0.7, 0.35, 0.6, -1.2, 3.05)]), mat: new THREE.MeshStandardMaterial({ color: 0x33373a, roughness: 0.55, metalness: 0.4 }) };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
       case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
@@ -3353,7 +3367,9 @@ export class RealCityLayer {
    */
   private applyWeather() {
     const oc = this.overcast;
-    this.catcherMat.opacity = 0.42 * (1 - oc * 0.72);
+    // a building's shadow on the street is the sky's light only: deep on a
+    // clear day, a smudge under cloud
+    this.catcherMat.opacity = 0.6 * (1 - oc * 0.75);
     const snowG = this.snowGround;
     if (this.paveMat) {
       this.paveMat.roughness = 0.86 - this.wet * 0.55;
@@ -4464,11 +4480,21 @@ export class RealCityLayer {
     const night = smooth(0.35, 0.95, this.dusk);
     const golden = smooth(0.0, 0.5, this.dusk) * (1 - night);
     const sunK = (1 - night * 0.97) * (1 - this.overcast * 0.6);
-    this.sun.intensity = 3.4 * sunK;
-    this.sun.color.setRGB(1, 0.9 - golden * 0.25, 0.78 - golden * 0.4);
-    this.hemi.intensity = 0.6 * (1 - night * 0.8) + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.78 - night * 0.45, 0.85 - night * 0.45, 0.93 - night * 0.3);
-    this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
+    // KEY AND FILL. On a clear day the sun is most of the light and the sky
+    // the rest: a wall in shade takes roughly a fifth to a quarter of what the
+    // sunlit wall beside it does, and takes it from the blue overhead, so the
+    // shade side of a building is cool and the sun side warm. With the fill
+    // near the key every face of a block came out within a few per cent of
+    // every other and the city read flat, as if under cloud on the sunniest
+    // day. Overcast hands the light back to the sky (the fill rises as the
+    // sun dims), which is what an overcast day is.
+    const oc = this.overcast;
+    this.sun.intensity = 4.1 * sunK;
+    this.sun.color.setRGB(1, 0.91 - golden * 0.25, 0.8 - golden * 0.42);
+    this.hemi.intensity = (0.36 + oc * 0.42) * (1 - night * 0.8);
+    this.hemi.color.setRGB(0.66 - night * 0.35 + oc * 0.14, 0.78 - night * 0.4 + oc * 0.08, 1.0 - night * 0.3 - oc * 0.06);
+    this.hemi.groundColor.setRGB(0.6, 0.53, 0.44);
+    this.scene.environmentIntensity = (0.38 + oc * 0.14) * (1 - night * 0.85);
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
     this.lampMat.emissiveIntensity = night * 2.2;
@@ -4484,7 +4510,6 @@ export class RealCityLayer {
     this.veil.opacity = night * 0.62 + golden * 0.08;
     // the haze: sky blue by day (greyer overcast, warmer at golden hour),
     // a blue-black murk at night
-    const oc = this.overcast;
     const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);

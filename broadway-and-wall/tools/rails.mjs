@@ -75,7 +75,7 @@ for (const f of readdirSync(join(APP, "src", "engine")).filter((x) => x.endsWith
     // access, and not the definition line itself.
     const isCall = !IDENT.test(prev);
     const line = src.slice(0, at).split("\n").length;
-    const isDef = /^\s*(export\s+)?const clamp\s*=/.test(lines[line - 1] ?? "");
+    const isDef = /^\s*(export\s+)?(const clamp\s*=|function clamp\s*\()/.test(lines[line - 1] ?? "");
     if (!isCall || isDef) { out += src.slice(i, at + 6); i = at + 6; continue; }
     const id = sites.length;
     sites.push({ file: f, line, text: (lines[line - 1] ?? "").trim() });

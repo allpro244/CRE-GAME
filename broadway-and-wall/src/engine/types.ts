@@ -1742,6 +1742,8 @@ export interface Econ {
    * changing where the trend ends up.
    */
   wageDebt?: number;
+  /** Labour-force participation, moving with how easy work is to find. */
+  participation?: number;
   /** Unfilled positions as a share of the labour force — what employers wanted
    *  and could not staff. Zero whenever the market is slack. Together with
    *  `unemployment` this is the tightness the wage curve reads; on its own it is

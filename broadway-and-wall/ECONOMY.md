@@ -2521,3 +2521,29 @@ That is why a shortage lasts a century and the office band breaches.
 Also fixed on the way: `landSales` (the MDGA land tape) listed lots in a
 named firm's book as anonymous private sales, so the player could buy a deed
 a rival already held (invariants, syndicator seed 4000).
+
+# THE LABOUR MARKET HAD A WALL — replaced with flows (ECON_REALISM_PLAN phase A, 2026-10-08)
+
+`jobs = min(wanted, labour force x 0.972)` put local unemployment on exactly
+2.80% in 8-48% of months (rails: 38.6% of calls at the bound), and at exactly
+2.80% at its lowest in every world. Participation was a constant 0.58.
+
+Now employment is a stock moved by flows: separations at 2.6% a month (CPS,
+Shimer 2005), openings = unfilled positions + replacements, hires = the
+job-finding rate x searchers, with the finding rate rising in tightness at the
+square-root matching elasticity (Petrongolo & Pissarides 2001) and saturating
+below one. Its one parameter is solved from the opening steady state, not
+tuned, and lands the opening job-finding rate at ~47%/month against ~45% in US
+data. Participation moves 0.3 points per point of unemployment over a year
+(Erceg & Levin 2014). Unfilled openings pull movers at ln2/36 a month
+(Blanchard & Katz 1992 half-life).
+
+A plain Cobb-Douglas matching function was tried first and REJECTED: past
+about twice as many openings as searchers it hires every searcher, which put
+unemployment on s/(s+1) = 2.52% in 10-27% of months — a new floor made of the
+formula.
+
+Measured (4 worlds x 50 years): unemployment min 2.9-3.6%, median 3.5-4.5%,
+max 7.4-13.8%; no value holds more than 1.8% of months; participation
+56.3-58.7%; nominal wage growth when unemployment is under 3.5% runs
+4.1-5.4%; the wage-unemployment correlation is -0.34 to -0.76.

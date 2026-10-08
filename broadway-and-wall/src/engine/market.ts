@@ -2175,32 +2175,79 @@ export function tickEcon(s: GameState) {
     // and vacancies are how a labour market that has run out of people goes on
     // transmitting pressure to wages and to migration. See `e.jobVac` at the
     // Phillips term below.
-    // Written as `clamp` and not `Math.min` on purpose: `tools/rails.mjs` only
-    // instruments the `clamp` helper, so expressing this any other way would
-    // convert an instrumented rail into an invisible one and the successor to
-    // the 47.7% figure would be unmeasurable by the tool that found it.
-    const FRICTIONAL = 0.028;
+    // ...AND THEN THE FLOOR ITSELF WAS THE RAIL (2026-10-08). `min(wanted,
+    // force x (1 - 0.028))` put local unemployment on exactly 2.80% in 8-48%
+    // of months over four 50-year worlds, and at exactly 2.80% at its lowest
+    // in every one. No labour market sits on a number. What a real one does
+    // as it tightens is make each additional hire harder: openings go
+    // unfilled, pay rises, people come back into the labour force and move
+    // to town. So employment is now a stock moved by FLOWS, the way the
+    // labour statistics measure it:
+    //
+    //   separations   s x E a month                      SEPARATION_RATE
+    //   openings      V = (positions wanted - E) + separations
+    //   hires         H = min(V, f(theta) x U),  theta = V / U
+    //                 f(theta) = 1 - exp(-lambda x sqrt(theta))
+    //   employment    E' = E - separations + hires
+    //
+    // The job-finding rate f rises with tightness at the square-root
+    // elasticity of the empirical matching function (Petrongolo & Pissarides
+    // 2001) and saturates below one, the urn-ball shape: no labour market
+    // hires every searcher in a month. A plain Cobb-Douglas was tried first
+    // and does exactly that once openings pass about twice the searchers —
+    // unemployment then sat on s/(s+1) = 2.52% in 10-27% of months, a new
+    // floor made of the formula. `lambda` is not tuned: it is solved so the
+    // opening town, whose unemployment is OPENING_UNEMP, is a steady state —
+    // hires exactly replace separations. That gives a job-finding rate of
+    // about 47% a month at the opening, against roughly 45% in US data
+    // (Shimer 2005), which is a check, not a fit. Unemployment then
+    // bottoms out wherever the pace of hiring and the pool of searchers
+    // leave it: a fast boom runs into ever-harder hires and unfilled
+    // openings, which bid up pay (`jobVac` in the Phillips term) and pull in
+    // movers (migration, below). The Beveridge curve falls out of this; it is
+    // not written anywhere.
+    //
+    // Layoffs are immediate (positions wanted below employment), because
+    // firms cut payroll faster than they can hire it back — the asymmetry
+    // every recession shows.
+    const SEPARATION_RATE = 0.026;   // monthly employment-to-unemployment flow, CPS (Shimer 2005)
+    // At the opening steady state openings are just replacements (V = sE),
+    // so theta0 = s(1-u0)/u0 and the finding rate must equal it too.
+    const THETA0 = SEPARATION_RATE * (1 - OPENING_UNEMP) / OPENING_UNEMP;
+    const MATCH_LAMBDA = -Math.log(1 - THETA0) / Math.sqrt(THETA0);
     const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
-    const force = e.population! * PARTICIPATION;
-    e.jobs = Math.round(clamp(wanted, 0, force * (1 - FRICTIONAL)));
-    // Unfilled positions as a share of the labour force — the other half of
-    // labour-market tightness, and the half that was being thrown away.
+    // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
+    // easy to find and stop looking when they are not — the discouraged-
+    // worker effect. About 0.3 points of participation per point of
+    // unemployment against normal, adjusting over a year (Erceg & Levin 2014
+    // put the cyclical response at 0.2-0.4). The guard is wider than any
+    // US metro has recorded and should never bind.
+    const partPrev = e.participation ?? PARTICIPATION;
+    const partAim = PARTICIPATION + 0.3 * (OPENING_UNEMP - (e.unemployment ?? OPENING_UNEMP));
+    e.participation = clamp(partPrev + (partAim - partPrev) / 12, 0.50, 0.66);
+    const force = e.population! * e.participation;
+    const empStart = Math.min(prevJobs, wanted);                 // layoffs first
+    const seps = SEPARATION_RATE * empStart;
+    const searchers = Math.max(0, force - empStart);
+    const openings = Math.max(0, wanted - empStart) + seps;
+    const theta = searchers > 0 ? openings / searchers : 0;
+    const finding = 1 - Math.exp(-MATCH_LAMBDA * Math.sqrt(theta));
+    const hires = Math.min(openings, finding * searchers);
+    // People leaving town take their jobs with them: employment cannot exceed
+    // the labour force. A guard — the flows above cannot reach it unless the
+    // population falls faster than firms shed staff.
+    e.jobs = Math.round(clamp(empStart - seps + hires, 0, force));
+    // Unfilled positions beyond ordinary turnover, as a share of the labour
+    // force — what the Phillips term and migration read as tightness.
     e.jobVac = Math.max(0, (wanted - e.jobs) / Math.max(1, force));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
-    // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
-    // not shrink the month the jobs go; people look for work for a year before
-    // they leave town, which is why a bust shows up in the unemployment rate
-    // long after it has shown up in the rents.
-    // The participation rate is 0.58 and not 0.62 for a reason that only
-    // became visible once anything READ unemployment: at 0.62 the opening
-    // state describes 240,000 people, 148,800 of them in the labour force and
-    // 132,000 jobs — an 11.3% unemployment rate, while the same object
-    // initialises `unemployment: 0.052`. The city was born with a number that
-    // contradicted its own population. 0.58 makes the opening state true.
-    const labourForce = e.population! * PARTICIPATION;
-    const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
-    e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
+    // UNEMPLOYMENT IS WHAT THE FLOWS LEAVE. It still lags the cycle — the
+    // labour force does not shrink the month the jobs go; people look for a
+    // year before they stop or leave town — but the lag is now participation
+    // and migration doing it, not a smoothing coefficient on the rate.
+    const labourForce = force;
+    e.unemployment = clamp(1 - e.jobs / Math.max(1, labourForce), 0, 0.5);
 
     // POPULATION FOLLOWS WORK, slowly and asymmetrically. People move to a
     // boom within a couple of years; they leave a bust over a decade, because
@@ -2232,7 +2279,12 @@ export function tickEcon(s: GameState) {
     // could not call anybody. A tenth of the vacancy gap a year is a slow
     // answer, which is right — moving house takes a year — and it is enough to
     // close a shortage over a decade instead of never.
-    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * 0.10 / 12;
+    // UNFILLED JOBS DRAW PEOPLE. A local boom is staffed mostly by movers:
+    // Blanchard & Katz (1992) find a state's employment shock is absorbed
+    // largely by migration with a half-life of a few years, so the pull of
+    // unfilled openings closes the gap at ln2/36 a month. It used to be a
+    // tenth a year, which left the labour cap to do the work.
+    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * (Math.LN2 / 36);
     let migration = jobGrowth * pull + vacPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
 
     // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.

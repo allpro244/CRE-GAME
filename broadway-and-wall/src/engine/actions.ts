@@ -14,7 +14,7 @@ import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, f
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
 import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
-import { releaseCost, RELEASE_PREMIUM } from "./facility";
+import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
@@ -755,9 +755,9 @@ function assembleBlocker(
     if (!payoff && (s.holdings[d].loan || (s.holdings[d].mezz?.balance ?? 0) > 0)) {
       return `${rec.address} still has a mortgage. Pay it off before you fold the title.`;
     }
-    if (s.facility?.bbls?.includes(d)) {
-      return `${rec.address} is in the portfolio facility. Release it before assembling.`;
-    }
+    // A lot in the portfolio facility can be folded: the pool lender holds the
+    // lien and consents to the replat, and the merged site stays in its pool
+    // (see assembleLots). Only the pool's minimum size is checked there.
   }
   return null;
 }
@@ -814,6 +814,19 @@ export function assembleLots(
     return { s, err: "Those lots do not touch. An assemblage has to be one contiguous site." };
   }
 
+  // THE POOL LENDER CONSENTS TO A REPLAT OF ITS OWN COLLATERAL. Lots pledged
+  // to the facility merge like any others and the new site takes their place
+  // in the pool (an unpledged lot folded in joins the lender's collateral).
+  // What the lender will not do is let the pool fall under its minimum.
+  const fac = s.facility;
+  const pooled = fac ? roots.flatMap((r) => siteDeeds(s, r)).filter((d) => fac.bbls.includes(d)) : [];
+  if (fac && pooled.length && fac.balance > 0) {
+    const after = fac.bbls.length - pooled.length + 1;
+    if (after < FACILITY_MIN_ASSETS) {
+      return { s, err: `The pool lender will consent to merging the lots, but not to a pool of ${after} — a facility needs at least ${FACILITY_MIN_ASSETS} deeds behind it. Pledge another building or repay the balance first.` };
+    }
+  }
+
   // Fee is on the number of DEEDS changing hands in the filing, not just the
   // number of already-assembled sites — three lots already folded once still
   // cost three when you pull in a fourth.
@@ -867,6 +880,13 @@ export function assembleLots(
     }
   }
 
+  // the merged site replaces its lots in the facility's collateral
+  if (pooled.length && next.facility) {
+    const nb = next.facility.bbls.map((b) => (next.merged?.[b] ? parent : b));
+    if (!nb.includes(parent)) nb.push(parent);
+    next.facility.bbls = [...new Set(nb)];
+  }
+
   const rec = resolveRec(parcels, next, parent)!;
   const deedsN = siteDeeds(next, parent).length;
   next.news.unshift({
@@ -875,7 +895,8 @@ export function assembleLots(
       + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable on a `
       + `${Math.round(rec.lotArea * 0.7).toLocaleString()} sf plate. One core, one lobby, and a floor somebody will take `
       + `a whole of. The dirt underneath reprices this morning at ${landPsfNow(rec, next.econ).toFixed(0)}/sf. `
-      + `That is what all those premiums were for.`,
+      + `That is what all those premiums were for.`
+      + (pooled.length ? ` The site stays in the portfolio facility as one deed; the pool lender signed the replat.` : ""),
   });
   return { s: next, msg: `${deedsN} lots merged into one site at ${rec.address}.` };
 }

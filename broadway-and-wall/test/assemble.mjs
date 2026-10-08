@@ -156,6 +156,27 @@ if (line) {
   console.log("skip merge-of-assemblages — no 4-lot line");
 }
 
+// Lots in the same loan pool can be assembled: the lender consents and the
+// merged site takes their place in the facility's collateral.
+{
+  let gf = E.firstListings(E.newGame(5, parcels), parcels, bbls);
+  gf = { ...gf, cash: gf.cash + 50e6 };
+  gf = own(gf, A); gf = own(gf, B); gf = own(gf, C);
+  gf.facility = { bbls: [A, B, C, "X1", "X2"], balance: 5e6 };
+  let rf = E.assembleLots(gf, parcels, adjacency, [A, B]);
+  if (rf.err) { console.error("FAIL pooled assemble", rf.err); process.exit(1); }
+  const pr = E.siteRoot(rf.s, A);
+  const fb = rf.s.facility.bbls;
+  if (fb.length !== 4 || !fb.includes(pr) || fb.some((b) => rf.s.merged?.[b])) {
+    console.error("FAIL pool collateral after merge", fb, rf.s.merged); process.exit(1);
+  }
+  // a pool of three cannot lose a deed to a merge
+  gf.facility = { bbls: [A, B, C], balance: 5e6 };
+  rf = E.assembleLots(gf, parcels, adjacency, [A, B]);
+  if (!rf.err || !/at least 3/.test(rf.err)) { console.error("FAIL thin pool should refuse", rf.err); process.exit(1); }
+  console.log("pooled lots assemble ok", { pool: fb.length });
+}
+
 console.log(JSON.stringify({
   ok: true,
   strip: strip.length,

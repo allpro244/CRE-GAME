@@ -57,7 +57,6 @@ function useAssembleCandidates(
         : game.groundLeases?.[n] ? "ground-leased to somebody else"
         : game.holdings[n]?.sale ? "on the market — pull the listing"
         : game.landmarks?.[n] !== undefined ? "landmarked"
-        : game.facility?.bbls?.includes(n) ? "in the portfolio facility — release it first"
         : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
         : null;
       const loan = assemblyPayoff(game, [n]).due;
@@ -564,7 +563,6 @@ export function AssembleSection({
   const children = siteDeeds(game, bbl).slice(1);
   const selfBlocked = !vacant
     ? `${useLabel(rec)} standing — clear this site before folding anything in`
-    : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
     : game.groundLeases?.[bbl] ? "ground-leased — pull it back before folding title"
     : h.sale ? "on the market — pull the listing first"
     : null;

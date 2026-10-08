@@ -1656,6 +1656,72 @@ export class RealCityLayer {
       }
     }
   }
+  /**
+   * THE STREET WALL. A building on a city lot is built out to the street line
+   * and to both party walls, and whatever the lot does not cover is left as a
+   * yard at the back — which is how a block gets a street wall in front and
+   * a hollow of yards behind. The new building used to be the lot shrunk
+   * toward its own middle, so every one stood marooned with a strip of yard
+   * all the way round, its front set back from its neighbours' and a gap at
+   * each party wall.
+   *
+   * The plate here is the lot with its back cut off: the longest edge that
+   * faces open ground (no lot six metres out) is the front, and a line
+   * parallel to it moves in from the rear until the plate covers exactly the
+   * share of the lot the old shrink did (`share`), so floor area, coverage
+   * and every number the engine sees are unchanged — only where the yard is.
+   * A corner lot keeps both street walls; a lot with no street edge (an
+   * interior parcel, a lot by the water) returns null and keeps the old plate.
+   */
+  private streetWallPlate(lot: P2[], share: number): P2[] | null {
+    if (lot.length < 3 || !(share > 0) || share >= 0.995) return null;
+    const area = Math.abs(ringArea(lot));
+    if (area < 40) return null;
+    const inLot = (x: number, y: number) => { let ins = false; for (let i = 0, j = lot.length - 1; i < lot.length; j = i++) { const xi = lot[i][0], yi = lot[i][1], xj = lot[j][0], yj = lot[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+    let best: { a: P2; nx: number; ny: number; L: number } | null = null;
+    for (let i = 0; i < lot.length; i++) {
+      const a = lot[i], b = lot[(i + 1) % lot.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 4) continue;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      // the inward normal is whichever side of the edge the lot is on
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if (!inLot(mx + nx * 0.5, my + ny * 0.5)) { nx = -nx; ny = -ny; }
+      if (this.lotAt2D(mx - nx * 6, my - ny * 6)) continue;
+      if (!best || L > best.L) best = { a, nx, ny, L };
+    }
+    if (!best) return null;
+    const { a, nx, ny } = best;
+    const depth = (p: P2) => (p[0] - a[0]) * nx + (p[1] - a[1]) * ny;
+    let D = 0;
+    for (const p of lot) D = Math.max(D, depth(p));
+    if (D < 6) return null;
+    // the lot up to `t` metres back from the front line (one half-plane clip)
+    const clip = (t: number): P2[] => {
+      const out: P2[] = [];
+      for (let i = 0; i < lot.length; i++) {
+        const p = lot[i], q = lot[(i + 1) % lot.length];
+        const dp = depth(p) - t, dq = depth(q) - t;
+        if (dp <= 0) out.push(p);
+        if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) {
+          const f = dp / (dp - dq);
+          out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]);
+        }
+      }
+      return out;
+    };
+    const want = area * share;
+    let lo = 0, hi = D;
+    for (let k = 0; k < 24; k++) {
+      const mid = (lo + hi) / 2;
+      if (Math.abs(ringArea(clip(mid))) < want) lo = mid; else hi = mid;
+    }
+    const plate = clip(hi);
+    // at high coverage the yard is a light well a metre or two deep: still
+    // the street wall, never the old marooned plate
+    return plate.length >= 3 ? plate : null;
+  }
+
   /** The walls of a ring that front a street: six metres out is nobody's lot. */
   private streetEdges(ring: P2[], minL: number) {
     const out: { a: P2; ux: number; uy: number; L: number; r: number }[] = [];
@@ -4109,7 +4175,12 @@ export class RealCityLayer {
     for (const [x, y] of lot) { cx += x; cy += y; }
     cx /= lot.length; cy /= lot.length;
     const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
-    const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    const ring = this.streetWallPlate(lot, B * B) ?? lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    // everything after this (the cake's terraces, the job site, the crane)
+    // centres on the building, not on the lot it no longer sits in the middle of
+    cx = 0; cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
     const h = Math.max(3, it.heightM);
     let fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
     const k = keyOf(it.bbl);

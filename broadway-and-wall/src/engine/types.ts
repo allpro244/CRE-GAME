@@ -1795,6 +1795,8 @@ export interface Econ {
    * reason the crew count is a market rather than a wall.
    */
   crewIdx?: number;
+  /** Last month's price level and wage index, read by the construction cost drift. */
+  costInputsPrev?: { cpi: number; wage: number };
   /**
    * How chronically short of space this city has been, over about a
    * twenty-year memory. A city that has been tight for a generation earns a

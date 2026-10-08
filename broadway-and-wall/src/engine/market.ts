@@ -3828,16 +3828,23 @@ export function tickEcon(s: GameState) {
       && (e.structTight?.[k] ?? 0) > 0.06
       && siteP !== undefined
       && siteP <= 0;
+    // A SHORTAGE PRICES UNTIL IT ENDS (2026-10-08). The shortage branch was
+    // muted to zero on the frictional floor and scaled by `railSat` (room
+    // above it) near the floor, on the argument that a pinned gap is a
+    // constant and so a "permanent rent tax". It is permanent only if nothing
+    // answers it, and two things do: tenants economise on dear space
+    // (`affordEff`, the real-rent elasticity in the demand target) and
+    // builders build once the residual clears (`startCityJob`). Muted, the
+    // engine ran a class on its vacancy floor in 55-67% of months over four
+    // 50-year worlds with real asking up 0.2-2.5%/yr — no faster than a
+    // balanced market — and with 10-25% of desired demand unhoused. The
+    // coefficient is this block's own documented one (five points of
+    // shortage ≈ 2.7%/yr, the header above), now applied wherever the
+    // market is short, including on the floor. The income anchor below still
+    // bounds the LEVEL against what tenants earn.
+    void railSat; void supplyShut;
     const vacTerm = gap <= 0
-      ? (pinned && !supplyShut ? 0 : (() => {
-          const depth = -gap;
-          // Shut: a thinner coefficient than the off-rail shortage term.
-          // Enough to close a ~14% hurdle gap over a few years of CPI-plus;
-          // not the old constant tax (that was 0.045 * full depth, uncapped
-          // by sat, every month of a fifty-year pin).
-          const sat = supplyShut ? 0.40 : railSat;
-          return clamp(depth * 0.045 * sat, 0, supplyShut ? 0.0030 : 0.0045);
-        })())
+      ? clamp(-gap * 0.045, 0, 0.0045)
       : -(gap <= FIT_MAX
         ? glut(gap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
@@ -3886,9 +3893,18 @@ export function tickEcon(s: GameState) {
     // Bleed stored shortage press on a saturated rail — unless the rail is
     // a supply failure. Bleeding then is how asking never reaches the
     // hurdle that would reopen the desk (550991: 23 years, pencil 0).
-    if (railBound && !supplyShut && (e.rentPress[k] ?? 0) > 0) {
-      e.rentPress[k] *= 0.90;
-    }
+    //
+    // RETIRED (2026-10-08). Draining a shortage out of the quote sheet while
+    // the shortage is still there is the reason a class sat on its vacancy
+    // floor for decades with asking rents flat in real terms: measured over
+    // four 50-year worlds, real asking growth on the pin was 0-1%/yr for
+    // office, retail and flats, no faster than in a balanced market, while
+    // soft markets fell 1-6%/yr. A landlord with no vacancy and a queue at
+    // the door does not mark his quote DOWN. The bleed was added because a
+    // rising pin rent compounded when supply never came; supply now answers
+    // (startCityJob builds the scheme that pencils), and the level is held
+    // by the income anchor below and by tenants economising on dear space
+    // (affordEff), which is where a shortage really stops.
     // Hard rail on the EMA itself — see the press clamp at the drift line.
     e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
 
@@ -3975,10 +3991,14 @@ export function tickEcon(s: GameState) {
     // Below the floor: track the price level (and a bit more) so the floor is
     // reachable against rising wages; once restored, the mute returns.
     const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
-    const railEscal = supplyShut ? 1
-      : railBound
-        ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
-        : 1;
+    // RETIRED (2026-10-08): the rail escalator. Asking carried 35% of CPI on
+    // or near the frictional floor, which made a tight market the one place
+    // where a dollar's falling value was NOT passed on — real asking fell in
+    // a shortage. A firm market passes on the price level in full (it is the
+    // soft market that cannot, and `softW` above already says so). The level
+    // risk this guarded against is the income anchor's job.
+    void underFloor;
+    const railEscal = 1;
     const escalGate = Math.max(firmW, cheapFloor) * railEscal;
     const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
@@ -4317,15 +4337,39 @@ export function tickEcon(s: GameState) {
     // pivot had and arriving through a different door.
     const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
     const slope = heat < 0 ? 0.0026 : 0.0016;
-    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope
+    // WHAT A BUILDING COSTS IS WHAT ITS INPUTS COST (2026-10-08). The base
+    // drift was EXPECTED inflation, which sits near its 2% anchor while
+    // realised CPI ran 1.9-3.8%/yr across four 50-year worlds, and it gave
+    // the trades none of the city's real wage growth. On-site labour is
+    // roughly 45% of hard cost (RSMeans / BLS construction cost shares) and
+    // is paid what the town's wages pay; the rest is materials, equipment and
+    // overhead, which move with the price level. With only `inflExp` the real
+    // index slid 0.5-0.7%/yr whenever the trades were not fully booked, and
+    // the office-rent catch-up below had been propping it up. Realised
+    // inputs, not a target: a wage boom makes building dearer, a deflation
+    // cheaper. `heat` stays the premium for how busy the trades are.
+    const LABOUR_SHARE = 0.45;
+    const cpiNow = Math.max(0.35, e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
+    const prevIn = e.costInputsPrev;
+    const inputGrowth = prevIn
+      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
+      : (e.inflExp ?? 0.02) / 12;
+    e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
+    const costDrift = inputGrowth + heat * slope
       + (e.phase === "recession" || e.phase === "depression" ? -0.0004 : 0);
-    // When asking rents outrun construction cost, the land residual (rent −
-    // cost) explodes and vacant lots print absurd $/sf. Catch costIdx up
-    // toward the rent level once the stretch is past a quarter — same
-    // identity landIdx already chases, applied to the cost denominator.
-    const rentLvl = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
-    const stretch = rentLvl / Math.max(0.5, e.costIdx) - 1;
-    const catchUp = stretch > 0.25 ? Math.min(0.0045, 0.012 * (stretch - 0.25)) : 0;
+    // RETIRED (2026-10-08): the office-rent catch-up. This pulled the cost
+    // index toward the OFFICE asking level whenever rents ran a quarter ahead
+    // of it, for every class — flats and sheds priced their concrete off
+    // office quotes. Nothing in the world does that: a contractor's bid is
+    // materials, labour and how busy the trades are, which is `costDrift`
+    // above (inflation plus `heat`, the share of the city under
+    // construction). Measured over four 50-year worlds it fired in 22-63% of
+    // months, and it fired exactly when a shortage lifted rents — so the
+    // margin a shortage should open for builders was handed to the cost
+    // index instead, the residual stayed flat, and the class stayed on its
+    // vacancy floor. When rents outrun cost now, the residual rises, land
+    // pencils, cranes go up, and THEN the trades get dear through `heat`.
+    const catchUp = 0;
     // Real construction cost mean-reverts toward a slow productivity path
     // (~0.4%/yr above CPI — long-run structure, code, and wage mix). Boom heat
     // still moves the index at ENR extremes; what it must not do is compound

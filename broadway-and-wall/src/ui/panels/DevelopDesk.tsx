@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
-import { monthLabel, CREDIT_LABEL } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
+import { dominantOf } from "@/engine/proforma";
 import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
+import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN } from "@/engine/value";
 
 // What a plan short of its hurdle is still worth over its cost. The required
@@ -268,10 +270,6 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const fl = Math.min(floors, maxFl);
   // the scheme stands on its lot in the 3D city while the desk is open on
   // Design, and comes down when you leave the tab or the desk
-  useEffect(() => {
-    if (tab !== "design" || fl < 1) { useStore.getState().setDesignPreview(null); return; }
-    useStore.getState().setDesignPreview({ bbl, use, floors: fl, cov, design });
-  }, [tab, bbl, use, fl, cov, design]);
   // leaving the desk takes the scheme down — unless you stepped out to look at it
   useEffect(() => () => { if (!useStore.getState().designPeek) useStore.getState().setDesignPreview(null); }, []);
   const peek = () => {
@@ -300,6 +298,18 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
     planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail }, bank, spec);
+  // THE PREVIEW IS THE DELIVERY. The model on the desk is drawn from what the
+  // engine will record when the building completes, not from the dials: the
+  // class its mix makes it, whether that mix trades at street level, the
+  // year it delivers on the plan's schedule, the coverage the plan settled.
+  const previewCls = plan ? dominantOf(plan.mix) : use === "mixed" ? "office" : use;
+  const previewShops = plan ? (plan.mix.retail ?? 0) > 0.001 : use === "retail";
+  const previewYear = START_YEAR + Math.floor(((game.month ?? 0) + (plan?.months ?? 0)) / 12);
+  const previewCov = plan?.coverage ?? cov;
+  useEffect(() => {
+    if (tab !== "design" || fl < 1) { useStore.getState().setDesignPreview(null); return; }
+    useStore.getState().setDesignPreview({ bbl, use, floors: fl, cov: previewCov, design, cls: previewCls, shops: previewShops, year: previewYear });
+  }, [tab, bbl, use, fl, previewCov, design, previewCls, previewShops, previewYear]);
   const nb = blockReport(game, parcels, rec.block);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
@@ -682,6 +692,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
 
       {tab === "design" && (
         <>
+          <SchemeViewer />
           <DesignPicker design={design} onChange={setDesign} floors={fl} onPeek={peek} />
           <Slider
             label="Build quality"

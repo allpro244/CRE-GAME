@@ -57,7 +57,11 @@ export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" |
 export type MapFilter = "all" | "owned" | "construction";
 export type GraphicsQuality = "low" | "medium" | "high";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
-export interface DesignPreview { bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign }
+export interface DesignPreview {
+  bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign;
+  /** what the engine will record at delivery: the class the mix makes it, ground-floor trade, the year it completes */
+  cls?: string; shops?: boolean; year?: number;
+}
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 

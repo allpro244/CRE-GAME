@@ -44,4 +44,6 @@ export interface PlayerItem {
   year?: number;
   /** the developer's chosen look (BuildingDesign); absent means the street decides */
   design?: BuildingDesign;
+  /** a trading ground floor (the scheme's mix carries retail); absent: read off cls */
+  shops?: boolean;
 }

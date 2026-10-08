@@ -2458,3 +2458,66 @@ Rival principal deaths never ended a firm (an heir always took over), so
 removing them does not remove a firm exit. ECONOMY.md's firm-flow section
 above already counted "takeovers and succession" as zero exits in an
 unplayed run.
+
+# A SHORTAGE THAT DID NOT PRICE, AND A CITY THAT COULD NOT BUILD — fixed, one thing left open (2026-10-08)
+
+Measured first over four 50-year worlds with no player (`advanceMonth`, one
+row a month): every class sat on its vacancy floor (`residenceVac`) in 55-67%
+of months, with looking demand 2% over stock and `structTight` 10-25%. Real
+asking rose 0.2-2.5%/yr while pinned — no faster than a balanced market —
+while soft markets fell 1-6%/yr. Four causes, all in the same loop:
+
+1. **The city threw away the scheme that paid for the dirt.** `startCityJob`
+   picked the lot with the best builder residual and then rolled a use off the
+   zoning table and sized it off a young-town fraction. 97-98% of city
+   groundbreaks failed the desk (median hurdle 0.40-0.64); every one that
+   cleared was the lot's own scheme. Orders ran 1-4.5% of stock a year,
+   deliveries 0.0-0.6%. **Fix:** build the residual scheme (use, floors,
+   plate) when it pencils at the dirt's price.
+2. **The shovel searched a third of what the pencil assumed.** `sitePencil`
+   is the P97 of 36 *vacant* lots; the picker drew 36 parcels from the whole
+   map and discarded the standing ones (~12 lots). **Fix:** examine 36
+   eligible lots, with a draw cap.
+3. **The rent equation refused to price a shortage on the floor.** The
+   shortage branch was zero on the pin and scaled by room-above-friction near
+   it; asking carried 35% of CPI there; stored pressure bled 10% a month.
+   Each was added because a pinned rent compounded when supply never came.
+   **Fix:** the shortage branch (this block's own 0.045 coefficient) applies
+   wherever the market is short; full CPI in a firm market; no bleed. The
+   level is held by the income anchor and `affordEff`.
+4. **Construction cost chased office rents.** A catch-up pulled `costIdx`
+   toward the office asking level (22-63% of months), so a shortage's margin
+   went to the cost index. Underneath it the base drift was *expected*
+   inflation with no labour share, so real cost slid 0.5-0.7%/yr whenever the
+   trades were not fully booked — the catch-up had been propping that up.
+   **Fix:** catch-up retired; cost drifts on realised inputs, 45% wages
+   (RSMeans / BLS on-site labour share) and 55% CPI, plus `heat`.
+
+Measured after (4 worlds, 50 years): real asking while pinned 2.0-3.2%/yr;
+real rent overall 0.6-1.1%/yr; rent/wage 0.82-1.03 at the end; real
+construction cost 0.86-1.11x. Paired against `39a191b` over 16 seeds x 300
+months (`tools/baseline-paired.mjs`): office vacancy 6.8% -> 9.2%, retail
+7.0% -> 9.3%, industrial 3.4% -> 5.9% (natural 11.5 / 8.5 / 7.0); months
+on the residence floor down 24-43%; buildings +2.0% (t 5.5).
+
+**The cost, stated plainly.** Jobs and population -5% (t -2.7): dearer
+space rations demand, as it should, but it is a headline number down.
+`dev.affordableLotShare` -24%: land re-prices on the higher rents.
+`test/rent-anchor.mjs` (readiness) now breaches over a century: median real
+office rent 1.1-1.4%/yr against its -1..+1 band, rent-to-income 1.22-1.26x
+against 1.15 on three of four seeds. Its "pinned" clauses read
+`frictionFloor`, which vacancy no longer touches, so they pass vacuously —
+that harness needs to read `residenceVac`. The bands were NOT moved.
+
+**What is still open.** Supply is still short of demand (stock ~0.7%/yr
+against jobs ~1.1%/yr), and the reason is now location: of the best of 36
+vacant lots the city examines, 49-83% carry no scheme worth building at all
+(builder residual <= 0). The land a growing town has left is the fringe,
+and fringe rents (`LOC_SPREAD` minimums 0.40-0.62 of the city index) do not
+cover construction there. Whether demand spreads outward fast enough as the
+core fills is the next question — MDGA phase 2's spillover measured small.
+That is why a shortage lasts a century and the office band breaches.
+
+Also fixed on the way: `landSales` (the MDGA land tape) listed lots in a
+named firm's book as anonymous private sales, so the player could buy a deed
+a rival already held (invariants, syndicator seed 4000).

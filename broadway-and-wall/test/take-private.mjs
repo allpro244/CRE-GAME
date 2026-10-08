@@ -194,7 +194,7 @@ let owned = null;   // the player after the close — a buyer with a record, for
 
   // firms that do not sell
   const h = structuredClone(base);
-  const [f1, f2, f3, f4] = E.livingRivals(h).filter((x) => x.bbls.length >= 2 && noJob(h, x) && x.style !== "family" && x.style !== "owneruser").slice(0, 4);
+  const [f1, f2, f3] = E.livingRivals(h).filter((x) => x.bbls.length >= 2 && noJob(h, x) && x.style !== "family" && x.style !== "owneruser").slice(0, 4);
   f1.style = "owneruser";
   f2.style = "family"; f2.stressMs = 0; f2.debt = 0; f2.occ = undefined;
   f3.debt = 1e12;
@@ -203,6 +203,10 @@ let owned = null;   // the player after the close — a buyer with a record, for
     const x = E.takePrivateQuote(h, parcels, f.id);
     check(!x.available && x.why.includes(word), `${f.style} firm ${f.name}: ${x.why?.slice(0, 70)}…`);
   }
+  // The crane must be the ONLY reason: a firm whose quote is already open, so
+  // an underwater book on this world's path cannot answer first.
+  const f4 = E.livingRivals(h).find((x) => ![f1, f2, f3].includes(x) && x.bbls.length >= 2 && noJob(h, x)
+    && E.takePrivateQuote(h, parcels, x.id).available);
   if (f4) {
     (h.cityJobs ??= []).push({ bbl: f4.bbls[0], firmId: f4.id, startM: h.month, deliverM: h.month + 20, sf: 1, use: "office", floors: 1 });
     const x = E.takePrivateQuote(h, parcels, f4.id);

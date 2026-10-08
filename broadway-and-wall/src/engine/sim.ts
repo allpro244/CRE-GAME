@@ -29,7 +29,7 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
-import { initRivals, tickRivals, fundJobs, gradeOf } from "./rivals";
+import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -552,6 +552,12 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   for (const bbl of bbls) {
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) continue;
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) continue;
+    // A FIRM'S DIRT IS NOT A PRIVATE OWNER'S TO SELL. These listings are
+    // anonymous private sellers; a lot in a named firm's book goes to market
+    // through that firm's own disposals (rivals.ts), or not at all. Listing it
+    // here put one deed on two balance sheets the moment anyone bought it
+    // (invariants, syndicator seed 4000, month 63).
+    if (ownerOf(s, bbl)) continue;
     const traded = s.lastTradeM?.[bbl];
     if (traded !== undefined && s.month - traded < 24) continue;
     const rec = resolveRec(parcels, s, bbl);

@@ -5,6 +5,7 @@
     "dev": "pnpm --dir broadway-and-wall dev",
     "build": "pnpm --dir broadway-and-wall build",
     "check": "pnpm --dir broadway-and-wall check",
+    "mdga": "pnpm --dir broadway-and-wall mdga",
     "gate": "pnpm --dir broadway-and-wall gate",
     "readiness": "pnpm --dir broadway-and-wall readiness",
     "engine": "pnpm --dir broadway-and-wall engine",

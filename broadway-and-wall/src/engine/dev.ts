@@ -14,7 +14,7 @@ import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStoc
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
-  developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
+  developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
   rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
@@ -346,8 +346,8 @@ export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = {
  */
 export function replacementCostPsf(rec: { class: string; mix?: UseMix; floors: number }, econ: GameState["econ"]): number {
   const mix = rec.mix && Object.keys(rec.mix).length ? rec.mix : ({ [rec.class]: 1 } as UseMix);
-  const base = overMix(mix, (u) => HARD_COST_PSF[u]);
   const fl = Math.max(1, rec.floors || 1);
+  const base = overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl));
   const hard = base * econ.costIdx * heightPremium(fl);
   return Math.round(hard * (1 + SOFT_COST) * (1 + CONTINGENCY));
 }
@@ -402,7 +402,8 @@ export function cityValueToReplacement(s: GameState): number {
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town
     // and that is worth knowing rather than papering over.
-    const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
+    // ...and a low-rise apartment is wood frame (constructionTypeMult)
+    const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
     // weight by the class's share of citywide stock, so the blend reflects
     // what this town is actually made of
     const w = Math.max(1, (e.stock?.[k] ?? 1));
@@ -1208,18 +1209,91 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
  * for every dollar on the card was turned away by a number the card never
  * showed — and only when they went light on debt, where the margin is big.
  */
-export function devFundingNeed(plan: { equity: number; equityAtClose: number; pointsCost: number; costTotal: number }): {
+export function devFundingNeed(plan: { equity: number; equityAtClose: number; pointsCost: number; costTotal: number }, hedge = 0): {
   whole: number; dayOne: number; margin: number;
 } {
   const margin = Math.round(plan.costTotal * 0.06);
-  return { whole: plan.equity + plan.pointsCost + margin, dayOne: plan.equityAtClose + plan.pointsCost, margin };
+  return { whole: plan.equity + plan.pointsCost + margin + hedge, dayOne: plan.equityAtClose + plan.pointsCost + hedge, margin };
+}
+
+/**
+ * THE TAKEOUT, CHOSEN AT THE GROUNDBREAK (MDGA phase 5).
+ *
+ * The construction loan rolls into a floating mini-perm at index + 2.1 the
+ * month the building delivers (see the takeout in tickDevelopment). Measured:
+ * a $5.6M fringe apartment job started in a recession met an index that rose
+ * from 8% to 13%, paid 10-15% on a $3.9M balance against $0.2M of NOI, could
+ * never refinance, and took the firm with it. Nothing on the desk had said
+ * the word "floating".
+ *
+ * Real construction lenders do not leave that to chance: a floating
+ * construction loan above modest leverage closes with an interest-rate cap
+ * the borrower buys, or with a forward commitment that fixes the takeout.
+ * Both are offered here and priced off the desk's own cap premium:
+ *
+ *   cap    the index capped at today's index + 1.5 from groundbreak to the
+ *          mini-perm's maturity (build months + 60). Premium: the 3-year
+ *          cap desk's 1.25% of notional (rateCapCost), scaled by tenor, at
+ *          60% for a strike a point further out of the money than the
+ *          desk's +0.5 — a shape parameter scaled from the desk, not
+ *          calibrated to a vol surface, and said so.
+ *   fixed  a forward rate lock: the takeout converts at today's index + 2.1
+ *          + 0.75 for the lock's optionality, for a 1% commitment fee.
+ *          Forward commitments ran 50-100bp over spot with a 1-2% fee.
+ *   float  naked; allowed only at or below 60% of cost.
+ */
+export const TAKEOUT_CAP_STRIKE_OVER = 1.5;
+export const TAKEOUT_LOCK_PREMIUM = 0.75;
+export const TAKEOUT_LOCK_FEE = 0.01;
+export const TAKEOUT_HEDGE_LTC = 0.6;
+export type TakeoutKind = "float" | "cap" | "fixed";
+export const MINI_PERM_SPREAD = 2.1;
+export function takeoutHedgeCost(plan: { commitment: number; months: number }, kind: TakeoutKind): number {
+  if (!(plan.commitment > 0) || kind === "float") return 0;
+  if (kind === "fixed") return Math.round(plan.commitment * TAKEOUT_LOCK_FEE);
+  const tenor = plan.months + 60;
+  return Math.round(plan.commitment * 0.0125 * (tenor / 36) * 0.6);
+}
+/** Does the construction lender insist on a hedge for this loan? */
+export function takeoutHedgeRequired(plan: { commitment: number; ltc: number }): boolean {
+  return plan.commitment > 0 && plan.ltc > TAKEOUT_HEDGE_LTC + 1e-9;
+}
+/**
+ * WHAT THE TAKEOUT WILL COST TO CARRY, said before the groundbreak: the
+ * mini-perm's rate at today's index under the chosen structure, interest-only
+ * debt service on the full commitment, the stabilised DSCR on the plan's NOI,
+ * the same with the index 300bp higher, and the plan's finished value over
+ * the loan. Read only; the engine's own terms, not a second model.
+ */
+export function takeoutRead(
+  econ: { indexRate: number },
+  plan: { commitment: number; stabNoi: number; exitYield: number; months: number },
+  kind: TakeoutKind,
+): { ratePct: number; stressPct: number; debtSvc: number; dscr: number; dscrStress: number; valueToLoan: number; strike?: number } {
+  const idx = econ.indexRate;
+  const strike = +(idx + TAKEOUT_CAP_STRIKE_OVER).toFixed(2);
+  const at = (i: number) => kind === "fixed" ? idx + MINI_PERM_SPREAD + TAKEOUT_LOCK_PREMIUM
+    : kind === "cap" ? Math.min(i, strike) + MINI_PERM_SPREAD
+    : i + MINI_PERM_SPREAD;
+  const ratePct = +at(idx).toFixed(2);
+  const stressPct = +at(idx + 3).toFixed(2);
+  const debtSvc = plan.commitment * ratePct / 100;
+  const debtStress = plan.commitment * stressPct / 100;
+  const value = plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) : 0;
+  return {
+    ratePct, stressPct, debtSvc,
+    dscr: debtSvc > 0 ? plan.stabNoi / debtSvc : Infinity,
+    dscrStress: debtStress > 0 ? plan.stabNoi / debtStress : Infinity,
+    valueToLoan: plan.commitment > 0 ? value / plan.commitment : Infinity,
+    ...(kind === "cap" ? { strike } : {}),
+  };
 }
 
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {
@@ -1262,7 +1336,17 @@ export function startDevelopment(
   // No construction lender on earth closes without evidence the sponsor can
   // fund its whole share — that is the first thing they ask for. The line of
   // credit counts, because it is committed money and that is what it is for.
-  const need = devFundingNeed(plan);   // equity, points, and a margin for change orders
+  // THE TAKEOUT HEDGE (MDGA phase 5). A lender that requires one closes with
+  // it; a caller that names nothing on such a loan gets the cap, which is what
+  // the lender's term sheet says. Float is refused above the threshold.
+  const required = takeoutHedgeRequired(plan);
+  let takeoutKind: TakeoutKind = custom?.takeout ?? (required ? "cap" : "float");
+  if (!(plan.commitment > 0)) takeoutKind = "float";
+  if (required && takeoutKind === "float") {
+    return { s, err: `The construction lender wants a rate cap or a forward lock on a loan over ${Math.round(TAKEOUT_HEDGE_LTC * 100)}% of cost — floating naked into the mini-perm is not on their term sheet.` };
+  }
+  const hedgeCost = takeoutHedgeCost(plan, takeoutKind);
+  const need = devFundingNeed(plan, hedgeCost);   // equity, points, the hedge, and a margin for change orders
   const commitCap = need.whole;
   const fundable = fundableNow(s, parcels);
   if (fundable < commitCap) {
@@ -1297,7 +1381,9 @@ export function startDevelopment(
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
-  fundAndBook(next, parcels, dayOne, "dev", { bbl });
+  fundAndBook(next, parcels, dayOne - hedgeCost, "dev", { bbl });
+  // the hedge is a financing cost, booked as such, paid at the close
+  if (hedgeCost > 0) fundAndBook(next, parcels, hedgeCost, "debtSvc", { bbl });
   if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
   noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
   // YOUR CRANE IS IN THE SAME SKY AS EVERYBODY ELSE'S. A city job enters
@@ -1335,6 +1421,11 @@ export function startDevelopment(
     equityBudget: plan.equity, equitySpent: plan.equityAtClose,
     // paid on day one, not yet applied against any work
     equityPrefunded: plan.equityAtClose,
+    ...(takeoutKind === "cap"
+      ? { takeout: { kind: "cap" as const, strike: +(next.econ.indexRate + TAKEOUT_CAP_STRIKE_OVER).toFixed(2), expiresM: next.month + plan.months + 60 } }
+      : takeoutKind === "fixed"
+        ? { takeout: { kind: "fixed" as const, ratePct: +(next.econ.indexRate + MINI_PERM_SPREAD + TAKEOUT_LOCK_PREMIUM).toFixed(2) } }
+        : {}),
     ratePct: plan.ratePct,
     startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
     piped: true,   // its cohort is in the market's queue, pushed above
@@ -2127,13 +2218,21 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // mini-perm that is interest-only for a year and matures in three, and the
   // whole job now is to stabilise the building before that clock runs out.
   // A developer's real risk is not building it. It is owning it empty.
+  // The hedge bought at the groundbreak (MDGA phase 5): a cap rides into the
+  // mini-perm, a forward lock converts it fixed. Naked otherwise.
+  const tk = d.takeout;
+  const fixedTk = tk?.kind === "fixed" ? tk : null;
+  const capTk = tk?.kind === "cap" && tk.expiresM > s.month ? tk : null;
+  const takeRate = fixedTk ? fixedTk.ratePct
+    : +((capTk ? Math.min(s.econ.indexRate, capTk.strike) : s.econ.indexRate) + MINI_PERM_SPREAD).toFixed(2);
   h.loan = {
     product: "cordage",
-    floating: true,
+    floating: !fixedTk,
     principal: d.loanBalance,
     balance: d.loanBalance,
-    ratePct: +(s.econ.indexRate + 2.1).toFixed(2),
-    spread: 2.1,
+    ratePct: takeRate,
+    spread: MINI_PERM_SPREAD,
+    ...(capTk ? { cap: { strike: capTk.strike, expiresM: capTk.expiresM } } : {}),
     // A THREE-YEAR CLOCK WAS TOO SHORT. Filling a building at this market's
     // pace takes longer than that, so every job arrived at its balloon still
     // half empty and un-refinanceable. A construction takeout is a three-plus
@@ -2141,7 +2240,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     ioUntilM: s.month + 24,
     amortYears: 30,
     maturityM: s.month + 60,
-    monthlyPmt: Math.round((d.loanBalance * (s.econ.indexRate + 2.1)) / 100 / 12),
+    monthlyPmt: Math.round((d.loanBalance * takeRate) / 100 / 12),
     minDSCR: 1.05,
     maxLTV: 0.9,
     sweep: false,

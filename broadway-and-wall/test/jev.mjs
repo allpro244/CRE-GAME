@@ -129,9 +129,14 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
 // (a) answers drive decisions --------------------------------------------------
 {
   // BUY — a confident pick with strong scores is bought through rivalBuys.
-  let g = fresh();
-  const id = E.defaultJevFirms(g, parcels, 1)[0];
-  g = E.setJevFirms(g, { firms: [{ id, charter: "valueadd" }] });
+  // The largest firm on the street that can fund something on today's tape: the
+  // biggest by marks can be a cash-thin vulture with nothing it can close, and
+  // which firm is biggest moves with every repricing of the city.
+  const g0 = fresh();
+  const offered = (x) => E.buildJevRequest(E.setJevFirms(g0, { firms: [{ id: x, charter: "valueadd" }] }), parcels, x).ctx.buy.length;
+  const ranked = E.defaultJevFirms(g0, parcels, 99);
+  const id = ranked.find((x) => offered(x) > 0) ?? ranked[0];
+  let g = E.setJevFirms(g0, { firms: [{ id, charter: "valueadd" }] });
   const built = E.buildJevRequest(g, parcels, id);
   const pick = built.ctx.buy[0];
   check(!!pick, `the firm is offered ${built.ctx.buy.length} affordable listings`);

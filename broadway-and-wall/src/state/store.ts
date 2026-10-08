@@ -52,7 +52,7 @@ import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/ind
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
-export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "listings";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction";
 export type GraphicsQuality = "low" | "medium" | "high";
@@ -324,7 +324,7 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed" }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
   setDesignPreview: (p: DesignPreview | null) => void;

@@ -4,7 +4,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
+import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
@@ -689,6 +689,23 @@ export function EconomyPage() {
               v={`${dpp >= 0 ? "+" : ""}${dpp.toFixed(1)} pp vs twelve months ago`}
               bad={dpp >= 2}
               strong={Math.abs(dpp) >= 1}
+            />
+          );
+        })()}
+        {(() => {
+          // THE SHORTAGE (MDGA phase 6). Requirement looking for space the
+          // city has no suite for — the looking book over housable stock.
+          // When this is positive the market is short of floor, rents carry
+          // the queue, and the next cranes belong in this class.
+          const unmet = Math.max(0, (e.pool?.[focus] ?? 0) - housableStock(e, focus));
+          if (!(unmet > stock * 0.002)) return null;
+          return (
+            <Row
+              k="Unhoused demand"
+              v={`${(unmet / 1e6).toFixed(2)}M sf · ${((unmet / Math.max(1, stock)) * 100).toFixed(1)}% of stock looking for space the city has not built`}
+              bad
+              strong
+              title="Tenants in the market for this class that no standing suite can house. Rents carry the queue until somebody builds."
             />
           );
         })()}

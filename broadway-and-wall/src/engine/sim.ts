@@ -45,7 +45,7 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
-import { netWorth } from "./value";
+import { netWorth, landRead, landValue } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -513,6 +513,80 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     maybeEarlyLook(s, listing, rec.address);
     if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
       s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at ${money(ask)} — well under appraisal. It won't last.` });
+    }
+  }
+  landSales(s, parcels, bbls, listed);
+}
+
+/**
+ * THE LAND TAPE (MDGA phase 3).
+ *
+ * The tape above draws parcels uniformly, so the vacant land it offered was
+ * mostly the outskirts — ~85% of the city's vacant lots, where a building is
+ * worth 0.4x its cost — and the handful of lots a builder could use almost
+ * never came up. Measured over fifty years: 0-5 vacant lots listed at any
+ * time, and the tape thinnest in a recession, which is exactly when the
+ * distress asks a developer lives on appear. Two things real land markets do
+ * that this one did not:
+ *
+ * LAND TRADES WHEN IT RIPENS. An owner of dirt that a builder can now pay
+ * for — the residual has overtaken the holder's option and the comp floor —
+ * gets the call and sells. Each month a twelfth of the vacant lots is
+ * checked; a ripe one comes to market with probability 0.25, i.e. a ripe lot
+ * reaches a builder in about four years on average. That is a shape
+ * parameter (the "time to sale once ripe"), stated as such; unripe dirt keeps
+ * only the uniform draw above.
+ *
+ * FORCED SELLERS LIST MORE IN A DOWNTURN, NOT LESS. Lenders, receivers and
+ * estates clear land through a slump (bank-owned lot sales peaked 2009-12).
+ * A per-lot monthly hazard by phase — recession 0.4%, depression 0.6%,
+ * recovery 0.15%, otherwise none — lists vacant lots at the distress ask
+ * (0.72-0.90x value), capped at three a month. Its own rng channel, so the
+ * rest of the city's stream is not re-rolled by the land market.
+ */
+const RIPE_CHECK_SHARE = 1 / 12;
+const RIPE_LIST_P = 0.25;
+const DISTRESS_LAND_HAZARD: Partial<Record<string, number>> = { recession: 0.004, depression: 0.006, recovery: 0.0015 };
+function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
+  const vacant: { bbl: string; rec: ParcelRecord }[] = [];
+  for (const bbl of bbls) {
+    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) continue;
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) continue;
+    const traded = s.lastTradeM?.[bbl];
+    if (traded !== undefined && s.month - traded < 24) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || !(rec.lotArea > 0)) continue;
+    vacant.push({ bbl, rec });
+  }
+  if (!vacant.length) return;
+  const put = (bbl: string, rec: ParcelRecord, distress: boolean) => {
+    const value = landValue(rec, s.econ);
+    if (!(value > 0)) return;
+    const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
+    s.listings.push({
+      bbl, ask, listedM: s.month,
+      expiresM: s.month + Math.round(rrange(s, LISTING_LIFE_M[0], LISTING_LIFE_M[1], "land")),
+      distress: distress || undefined,
+    });
+    listed.add(bbl);
+    if (distress && newsChance(s, "motivated:" + bbl, 0.4)) {
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: the lot at ${rec.address} is on the tape at ${money(ask)} — well under appraisal.` });
+    }
+  };
+  // ripe dirt finds its builder
+  for (const v of vacant) {
+    if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
+    const read = landRead(v.rec, s.econ);
+    if (!(read.builder > 0) || read.winner !== "builder") continue;
+    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, v.rec, false);
+  }
+  // forced sellers clear land through a slump
+  const h = DISTRESS_LAND_HAZARD[s.econ.phase] ?? 0;
+  if (h > 0) {
+    const want = Math.min(3, Math.floor(vacant.length * h + rng(s, "land")));
+    for (let i = 0; i < want; i++) {
+      const v = vacant[Math.floor(rng(s, "land") * vacant.length)];
+      if (!listed.has(v.bbl)) put(v.bbl, v.rec, true);
     }
   }
 }

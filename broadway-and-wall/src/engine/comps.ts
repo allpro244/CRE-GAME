@@ -18,7 +18,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, GameState, Sector } from "./types";
 import type { Disclosure } from "./value";
-import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, resolveRec } from "./value";
+import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec } from "./value";
 import { industryStress } from "./market";
 import { recordPropertyEvent } from "./history";
 
@@ -263,6 +263,7 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
   // Appraisals are quarterly work. Nobody re-marks a book every month.
   if (s.month % 3 !== 0) return;
   if (!s.landAdj) s.landAdj = {};
+  holderCapitulation(s, parcels);
   const since = s.month - LAND_WINDOW_M;
   const byDist = new Map<string, number[]>();
   for (const c of s.comps ?? []) {
@@ -410,5 +411,49 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     const cur = s.landAdj[bbl] ?? 1;
     const next = cur * (1 + LAND_SPEED * (f - 1));
     s.landAdj[bbl] = +Math.max(0.25, Math.min(4, next)).toFixed(4);
+  }
+}
+
+/**
+ * HOLDER CAPITULATION (MDGA phase 1) — the reservation learns from the bid.
+ *
+ * REALISM_AUDIT_2026-08 left this open as "land reservation vs transaction +
+ * holder capitulation", and it turned out to be the wall in front of every
+ * developer in the city, the city's own builders included. Measured on the
+ * standard town: of the vacant lots where a builder could pay something for
+ * the dirt (41 at the opening, 85 by year 20), about 85% were priced instead
+ * at the sales-comparison texture floor, at a median 2.2x what any builder
+ * could pay at the opening and 4.0x by year 20. Nobody sold, nothing was
+ * built, and the floor never learned: the no-bid decay above only fires on a
+ * district with two land listings stale past nine months, which a tape of
+ * 0-5 vacant listings that expire at six to twelve months almost never has.
+ *
+ * An owner of dirt whose asking price sits above the only real bid for it —
+ * a builder's, for a building that would pay — does not hold that price for
+ * fifty years. Land markets correct: residential land fell 40-70% in
+ * 2007-11, over three to four years, as owners and their lenders conceded to
+ * the bids that existed. So, quarterly, a vacant lot priced at the comp floor
+ * while a positive builder bid stands under it moves its comp adjustment
+ * toward that bid by CAPITULATION x the gap (the share of the price no builder
+ * will pay): about 6% of the gap a quarter, a few years to close most of it,
+ * slowing as it closes. It stops the moment the builder's bid sets the price,
+ * it never touches dirt nobody can build on (no positive bid: the floor is
+ * all the evidence there is), and a holder bid that wins is left alone — that
+ * owner is waiting on a better rent, not refusing one that exists.
+ *
+ * CAPITULATION = 0.06 is a shape parameter — the speed of a correction,
+ * placed from the 2007-11 episode, not tuned to any outcome here.
+ */
+const CAPITULATION = 0.06;
+function holderCapitulation(s: GameState, parcels: Record<string, ParcelRecord>) {
+  for (const bbl of Object.keys(parcels)) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || !(rec.lotArea > 0)) continue;
+    const read = landRead(rec, s.econ);
+    if (!(read.builder > 0) || read.winner !== "texture" || !(read.psf > 0)) continue;
+    const gap = 1 - read.builder / read.psf;
+    if (!(gap > 0)) continue;
+    const cur = s.landAdj![bbl] ?? 1;
+    s.landAdj![bbl] = +Math.max(0.25, cur * (1 - CAPITULATION * gap)).toFixed(4);
   }
 }

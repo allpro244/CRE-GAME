@@ -75,7 +75,11 @@ console.log("\nBALLOON HOLDOVER — the desk extends once, or files\n");
   // Clears the coupon for months; cash and line together nowhere near the
   // payoff — the line fully drawn, or the auto-cure pays the note off out of
   // the revolver (which is the right thing for a funded sponsor to do).
-  g.cash = 30_000;
+  // Enough for a quarter of coupons and the empty building's carry, sized to
+  // THIS loan — a flat $30k was a bet on the rate the opening happened to
+  // print, and a different rate path bounced the coupon in month one and
+  // tested the filing instead of the holdover. Still nowhere near the payoff.
+  g.cash = Math.max(30_000, Math.round(h.loan.monthlyPmt * 3 + 30_000));
   { const lim = E.locLimit(g, parcels); g.loc = { balance: lim, drawnTotal: lim, interestPaid: 0 }; }
   const bal0 = h.loan.balance; const mat0 = h.loan.maturityM; const rate0 = h.loan.ratePct;
   const log = [];

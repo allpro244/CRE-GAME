@@ -23,7 +23,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -1339,6 +1339,14 @@ export function stepCredit(s: GameState) {
  * `simulateHistory`) — there is one macro model, not a model and a table of
  * openings. Reads the city only through `e.unemployment` and `e.creditIdx`.
  */
+// THE NATION ROLLS ITS OWN DICE (MDGA). The comment below records why the
+// national cycle stopped reading the city's property phase: "one town's
+// leasing decided the nation's labour market". It still drew from the city's
+// stream, so any change to local behaviour — a land price, a listing pick —
+// re-rolled whether 1929 happened. Measured while landing MDGA: a holder
+// capitulation that changed no national quantity moved one seed's 33-month
+// deep national recession from absent to present. Every draw in this
+// function is on its own channel now; the town cannot re-roll the nation.
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -1362,11 +1370,11 @@ export function tickNation(s: GameState) {
   // neutralReal reverts to wherever the anchor currently is.
   if (n.neutralAnchor === undefined) n.neutralAnchor = n.neutralReal;
   n.neutralAnchor = clamp(
-    n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035),
+    n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035, "nation"),
     0.004, 0.032,
   );
   n.neutralReal = clamp(n.neutralReal + 0.004 * (n.neutralAnchor - n.neutralReal)
-    + rrange(s, -0.00020, 0.00020), 0.001, 0.034);
+    + rrange(s, -0.00020, 0.00020, "nation"), 0.001, 0.034);
   // Deterministic in (seed, month) rather than a draw from the shared
   // stream: consuming s.rng here would re-roll the whole century and any
   // movement in the acceptance gates would then be reshuffling rather than
@@ -1397,9 +1405,9 @@ export function tickNation(s: GameState) {
   // the way to the record's cadence — the seventies stay a cluster, not a
   // constant.
   const shockHaz = 0.006 + (n.shockClusterM > 0 ? 0.0050 : 0);
-  if (n.shockM > 0) { n.shockM--; } else if (rng(s) < shockHaz) {
-    n.shockM = Math.round(rrange(s, 10, 26));
-    n.shockClusterM = Math.round(rrange(s, 60, 130));
+  if (n.shockM > 0) { n.shockM--; } else if (rng(s, "nation") < shockHaz) {
+    n.shockM = Math.round(rrange(s, 10, 26, "nation"));
+    n.shockClusterM = Math.round(rrange(s, 60, 130, "nation"));
     // SHOCKS CUT BOTH WAYS, and a model where they only ever raise prices
     // has a permanent inflationary bias built into its weather — measured,
     // it pushed the century's median loan rate to 7.4% against a real 4.2%.
@@ -1416,17 +1424,17 @@ export function tickNation(s: GameState) {
     // central bank that was not free to act. A model with no politics in it
     // can only ever produce a bank that does the right thing on time, and
     // such a bank never has an inflation to disinflate from.
-    const roll = rng(s);
+    const roll = rng(s, "nation");
     if (roll < 0.30) {
-      n.shockSev = rrange(s, 0.010, 0.038);
-      n.pressureM = Math.round(rrange(s, 30, 96));
+      n.shockSev = rrange(s, 0.010, 0.038, "nation");
+      n.pressureM = Math.round(rrange(s, 30, 96, "nation"));
       pushNews(s, "warn",
         "The government has opened the spending taps and is financing it in the bond market. "
         + "The central bank has been asked — in the way these things are asked — to keep money "
         + "cheap while it does.");
     } else {
       const adverse = roll < 0.30 + 0.42;
-      n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055);
+      n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055, "nation");
       pushNews(s, adverse ? "warn" : "event", adverse
         ? "A supply shock has hit the national economy — prices are rising for reasons that have "
           + "nothing to do with demand, and the central bank cannot cut its way out of this one."
@@ -1473,11 +1481,11 @@ export function tickNation(s: GameState) {
       + clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
       + (shock > 0.02 ? 0.010 : 0)
       + ((n.expM ?? 0) > 110 ? 0.004 : 0);
-    if (rng(s) < haz) {
+    if (rng(s, "nation") < haz) {
       // Most downturns are downturns. About one in fourteen is 1929 or 2008,
       // and those are the ones that redraw a career.
-      n.deep = rng(s) < 0.07;
-      n.recM = Math.round(n.deep ? rrange(s, 26, 48) : rrange(s, 7, 19));
+      n.deep = rng(s, "nation") < 0.07;
+      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
       // EVERY RECESSION IS AIMED, not integrated. A rate of rise applied for
       // a drawn duration compounds two dice into a third, and a long draw and
       // a fast draw together produced 27 points of unemployment — the model
@@ -1485,7 +1493,7 @@ export function tickNation(s: GameState) {
       // the Phillips term negative and the policy rate on the floor for a
       // quarter of the century. A downturn has a depth, and the labour market
       // approaches it and decelerates into it, the way a real one does.
-      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.135) : rrange(s, 0.016, 0.042)),
+      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.135, "nation") : rrange(s, 0.016, 0.042, "nation")),
         0.03, 0.26);
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
@@ -1506,7 +1514,7 @@ export function tickNation(s: GameState) {
     : 0.025 * (0.042 - n.unemp);
   n.unemp = clamp(n.unemp + uMove
     + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
-    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007), 0.026, 0.26);
+    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0.026, 0.26);
 
   // National inflation: expectations, plus a Phillips term, plus the shock.
   // THE PHILLIPS CURVE IS CONVEX. Slack disinflates weakly — you cannot get
@@ -1547,7 +1555,7 @@ export function tickNation(s: GameState) {
   // 5.2% either way, median century peak 9.4 → 9.1%). A third (0.3) moved
   // the deflation share only another point.
   const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) : 0.5 * Math.max(n.easeEma, -0.05));
-  n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004), -0.06, 0.22);
+  n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
   // makes an inflation a decade rather than a year. Credibility is spent in
@@ -1606,7 +1614,7 @@ export function tickNation(s: GameState) {
   n.uStarBelief = clamp(
     n.uStarBelief + 0.006 * (uStar - n.uStarBelief)
       + 0.011 * clamp(n.inflSm - 0.02, -0.012, 0.045)
-      + rrange(s, -0.0018, 0.0018),
+      + rrange(s, -0.0018, 0.0018, "nation"),
     0.028, 0.075);
 
   const okunGap = -2.0 * (n.unemp - n.uStarBelief);
@@ -1732,7 +1740,7 @@ export function tickNation(s: GameState) {
   const premBase = 1.55 + 1.85 * Math.max(0, 1 - (e.creditIdx ?? 1));
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = clamp(
-    n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30),
+    n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation"),
     0.2, 4.5);
   e.indexRate = clamp(n.policy + n.termPrem, RATE_FLOOR, RATE_CEIL);
   e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);

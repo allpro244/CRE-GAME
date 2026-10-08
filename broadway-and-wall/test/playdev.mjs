@@ -39,6 +39,11 @@ const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07
 const USES = ["multifamily", "office", "retail", "industrial"];
 
 const GRANT = Number(process.env.GRANT ?? 0);
+// MDGA phase 0: the levers the game already has. On by default; LEVERS=0
+// reproduces the old listed-land-only, unhedged bot for a before/after.
+const LEVERS = process.env.LEVERS !== "0";
+const APPROACH = LEVERS;
+const CAPS = LEVERS;
 // startDevelopment's own closing and change-order terms (actions.ts CLOSING_PCT,
 // dev.ts commitCap) — the bot budgets for the cheque the engine will ask for.
 const CLOSING = 0.02;
@@ -83,8 +88,12 @@ function bestScheme(g, bbl, landBasis, budget) {
       // Scale the job to the cheque. A developer with six million does not
       // start a twenty-million job and hope; they build what they can fund
       // and do it again next year.
-      const maxFl = Math.min(E.maxFloorsFor(rec, cov, use), 14);
-      for (let fl = maxFl; fl >= 1; fl--) {
+      // No 14-floor ceiling (MDGA phase 0): the envelope and the cheque decide.
+      // A sparse ladder keeps the screen cheap on a tall envelope.
+      const maxFl = E.maxFloorsFor(rec, cov, use);
+      const ladder = [...new Set([maxFl, 60, 48, 40, 32, 26, 20, 16, 13, 10, 8, 6, 5, 4, 3, 2, 1])]
+        .filter((f) => f >= 1 && f <= maxFl).sort((x, y) => y - x);
+      for (const fl of ladder) {
         const plan = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp",
           undefined, undefined, undefined, 0.5, landBasis);
         if (!plan || !Number.isFinite(plan.hurdleRatio)) continue;
@@ -122,7 +131,7 @@ function play(seed, verbose) {
   // bankroll became a choice.
   const openCash = g.cash;
   const log = [];
-  const st = { lotsSeen: 0, lotsPencil: 0, bestLotH: 0, refused: 0, delivered: 0, land: 0, built: 0, sold: 0, leases: 0, refis: 0, stalled: 0, noSite: 0, noPencil: 0, loisSeen: 0, countered: 0, passed: 0, emptyMo: 0, vacSf: 0 };
+  const st = { approached: 0, offMarket: 0, caps: 0, lotsSeen: 0, lotsPencil: 0, bestLotH: 0, refused: 0, delivered: 0, land: 0, built: 0, sold: 0, leases: 0, refis: 0, stalled: 0, noSite: 0, noPencil: 0, loisSeen: 0, countered: 0, passed: 0, emptyMo: 0, vacSf: 0 };
   let peakNW = 0, drawdown = 0;
   const trace = [];
   const delivered = new Set();
@@ -271,6 +280,53 @@ function play(seed, verbose) {
         if (!r.err) g = r.s;
       } else st.noSite++;
     }
+    // ---- OFF-MARKET: approach the owners of ripe land (MDGA phase 0) ------
+    // Most land that pencils is never listed. A developer works the phones:
+    // once a quarter, ring the owner of the best unlisted ripe lot not rung
+    // in the last six months, and buy if the number still builds.
+    if (APPROACH && m % 3 === 0 && !Object.keys(g.talks ?? {}).length && g.cash > reserve) {
+      const listed = new Set(g.listings.map((l) => l.bbl));
+      let target = null;
+      for (const b of bbls) {
+        if (g.holdings[b] || listed.has(b) || g.approaches?.[b]) continue;
+        const rec = E.resolveRec(parcels, g, b);
+        if (!rec || rec.class !== "land" || rec.lotArea < 2500) continue;
+        const lr = E.landRead(rec, g.econ);
+        if (!(lr.builder > 0) || lr.builder < lr.psf) continue;
+        const v = lr.builder * rec.lotArea;
+        if (!target || v > target.v) target = { b, v };
+      }
+      if (target) {
+        const r = E.approachOwner(g, parcels, adjacency, target.b);
+        st.approached++;
+        if (!r.err) {
+          g = r.s;
+          const a = g.approaches[target.b];
+          const px = a?.ask ?? (a?.reserve !== undefined ? Math.round(E.landValue(E.resolveRec(parcels, g, target.b), g.econ)) : undefined);
+          if (px) {
+            const q = E.buyQuote(g, parcels, target.b, px, "land", 0.5);
+            const { pick } = bestScheme(g, target.b, px * (1 + CLOSING), g.cash - reserve - q.equity);
+            if (pick) {
+              const r2 = E.buyOffMarket(g, parcels, target.b, "land", 0.5, a?.ask === undefined ? px : undefined);
+              if (!r2.err) {
+                g = r2.s;
+                if (g.holdings[target.b]) { st.land++; st.offMarket++; trace.push(`  m${g.month} BOUGHT SITE OFF-MARKET ${M(px)} · cash ${M(g.cash)}`); }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ---- HEDGE THE TAKEOUT: cap any floating loan that has none (MDGA phase 0)
+    if (CAPS) {
+      for (const h of Object.values(g.holdings)) {
+        if (!h.loan || !h.loan.floating || h.loan.cap) continue;
+        const r = E.buyRateCap(g, parcels, h.bbl);
+        if (!r.err) { g = r.s; st.caps++; }
+      }
+    }
+
     for (const t of Object.values(g.talks ?? {})) {
       if (t.agreed) {
         let r = E.closeDeal(g, parcels, t.bbl, "land", 0.5);
@@ -370,7 +426,8 @@ const tot = (k) => out.reduce((a, r) => a + (r.st[k] ?? 0), 0);
 const stages = { "sites bought": tot("land"), "ground broken": tot("built"), "buildings delivered": tot("delivered"), "leases signed": tot("leases") };
 console.log(`\ncoverage: ${Object.entries(stages).map(([k, v]) => `${k} ${v}`).join(" · ")}` +
   `\n          site screen: ${tot("lotsSeen")} lot-months seen · ${tot("lotsPencil")} pencilled and fit the purse` +
-  ` · best hurdle seen ${Math.max(...out.map((r) => r.st.bestLotH)).toFixed(2)} · ${tot("refused")} starts refused`);
+  ` · best hurdle seen ${Math.max(...out.map((r) => r.st.bestLotH)).toFixed(2)} · ${tot("refused")} starts refused` +
+  `\n          levers: ${tot("approached")} owners approached · ${tot("offMarket")} sites bought off-market · ${tot("caps")} rate caps bought`);
 const dead = Object.entries(stages).filter(([, v]) => !(v > 0)).map(([k]) => k);
 if (dead.length) {
   console.log(`\nFAIL — the developer never got past: ${dead.join(", ")}. This run measured nothing about development.` +

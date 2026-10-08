@@ -280,6 +280,13 @@ function rails(g, acc) {
     // Read from the engine, never mirrored — see market.frictionFloor.
     const fr = E.frictionFloor(k);
     if (Number.isFinite(v) && v <= fr * 1.001) acc[`rail.vac.${k}.lo`] = (acc[`rail.vac.${k}.lo`] ?? 0) + 1;
+    // THE CAPACITY CLAMP (MDGA F1). Not the frictional floor: the point where
+    // every suite that can be let IS let and occupied is held at housable
+    // minus the suites between tenants. Vacancy resting here means demand is
+    // queued against a city that is not building — the floor-area shortage
+    // the frictional rail cannot see, because it sits above it.
+    const rv = E.residenceVac(g.econ, k);
+    if (Number.isFinite(v) && Number.isFinite(rv) && v <= rv + 0.0005) acc[`rail.occ.${k}.cap`] = (acc[`rail.occ.${k}.cap`] ?? 0) + 1;
   }
   acc.__n = (acc.__n ?? 0) + 1;
 }
@@ -295,6 +302,7 @@ function measure() {
     let g = E.firstListings(E.newGame(seed, base.parcels), base.parcels, base.bbls);
     const samples = {};
     const railAcc = {};
+    const start = { floor: city(g, base)["city.floorAreaM"], jobs: g.econ.jobs ?? 0 };
     for (let m = 0; m < MONTHS; m++) {
       g = E.advanceQuarter(g, base.parcels, base.bbls, base.adjacency);
       // every month, not annually — a rail that binds for a quarter and lets go
@@ -327,7 +335,13 @@ function measure() {
       row[`rail.cap.${k}.lo`] = +((railAcc[`rail.cap.${k}.lo`] ?? 0) / n).toFixed(4);
       row[`rail.vac.${k}.hi`] = +((railAcc[`rail.vac.${k}.hi`] ?? 0) / n).toFixed(4);
       row[`rail.vac.${k}.lo`] = +((railAcc[`rail.vac.${k}.lo`] ?? 0) / n).toFixed(4);
+      row[`rail.occ.${k}.cap`] = +((railAcc[`rail.occ.${k}.cap`] ?? 0) / n).toFixed(4);
     }
+    // DOES THE CITY GROW INTO ITS DEMAND (MDGA F1): floor area against jobs
+    // over the whole run, as end/start ratios. A city whose jobs grow 60%
+    // while its floor area grows 20% is queueing tenants, not housing them.
+    row["city.floorGrowth"] = +(row["city.floorAreaM"] / Math.max(1e-9, start.floor)).toFixed(4);
+    row["city.jobGrowth"] = +((g.econ.jobs ?? 0) / Math.max(1, start.jobs)).toFixed(4);
     for (const [k, v] of Object.entries(row)) (out[k] ??= []).push(v);
   }
   if (process.env.DUMP) {

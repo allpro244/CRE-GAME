@@ -133,6 +133,8 @@
     "mh:shape": "node tools/mh-shape.mjs",
     "gallery": "node tools/gallery.mjs",
     "baseline": "node tools/baseline.mjs",
+    "mdga": "node test/mkengine.mjs && node tools/mdga/growth.mjs && node tools/mdga/feasibility.mjs && node tools/mdga/landtape.mjs",
+    "mdga:delivered": "node test/mkengine.mjs && node tools/mdga/plan-vs-delivered.mjs",
     "baseline:check": "node tools/baseline.mjs --check",
     "vactape": "node test/vac-tape.mjs",
     "tape": "node test/tape.mjs",

@@ -20,7 +20,7 @@ import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
   specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor,
-  devFundingNeed,
+  devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -234,13 +234,15 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // WHAT IT LOOKS LIKE — yours to choose, and drawn on the lot as you choose
   // it. Looks only: nothing priced reads it (see BuildingDesign).
   const [design, setDesignRaw] = useState<BuildingDesign>(saved?.design ?? {});
+  // HOW THE CONSTRUCTION LOAN COMES OUT (MDGA phase 5). Null = the lender's default.
+  const [takeoutPick, setTakeoutRaw] = useState<"float" | "cap" | "fixed" | null>(saved?.takeout ?? null);
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design });
-  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, ...(takeoutPick ? { takeout: takeoutPick } : {}) });
+  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, takeoutPick]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -308,7 +310,14 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
   // THE BUTTON ASKS WHAT THE ENGINE ASKS: the whole equity, the points and the
   // change-order margin (devFundingNeed), not the equity alone.
-  const need = plan ? devFundingNeed(plan) : { whole: 0, dayOne: 0, margin: 0 };
+  // the takeout the lender will close on: what you picked, unless it is naked
+  // float above their threshold, in which case their default (the cap)
+  const hedgeRequired = plan ? takeoutHedgeRequired(plan) : false;
+  const takeout: "float" | "cap" | "fixed" = !plan || !(plan.commitment > 0) ? "float"
+    : takeoutPick && !(hedgeRequired && takeoutPick === "float") ? takeoutPick
+    : hedgeRequired ? "cap" : "float";
+  const hedgeCost = plan ? takeoutHedgeCost(plan, takeout) : 0;
+  const need = plan ? devFundingNeed(plan, hedgeCost) : { whole: 0, dayOne: 0, margin: 0 };
   const fundableTotal = spendable(game, parcels).total;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
@@ -795,6 +804,27 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               hint={`The lender will go to ${Math.round(plan.ltcMax * 100)}% of cost on this deal. Take less and the equity cheque grows but the takeout loan you inherit at delivery shrinks — an empty building with a small loan survives a slow lease-up; one with a big loan doesn't.`}
             />
           )}
+          {plan && plan.commitment > 0 && (
+            <div className="btn-row" style={{ marginTop: 4 }} role="group" aria-label="Takeout">
+              {(["float", "cap", "fixed"] as const).map((k) => {
+                const off = k === "float" && hedgeRequired;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    className={"btn btn-sm" + (takeout === k ? " btn-on" : "")}
+                    disabled={off}
+                    onClick={() => { dirty.current = true; setTakeoutRaw(k); }}
+                    title={off
+                      ? `The lender requires a cap or a lock above ${Math.round(TAKEOUT_HEDGE_LTC * 100)}% of cost`
+                      : k === "float" ? "Float naked into the mini-perm at index + 2.1%"
+                        : k === "cap" ? "Buy a rate cap at the close: the index is capped 1.5 pts over today's until the mini-perm matures"
+                          : "Lock the takeout fixed today: index + 2.1% + 0.75% for a 1% fee"}
+                  >{k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}</button>
+                );
+              })}
+            </div>
+          )}
           {plan ? (
             <>
               <div className="page-section" style={{ marginTop: 8 }}>
@@ -807,6 +837,32 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   />
                   <Row k="Origination" v={plan.pointsCost > 0 ? `${usd(plan.pointsCost)} at close` : "—"} />
                   <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} — lender carries it` : "—"} />
+                  {plan.commitment > 0 && (() => {
+                    // WHAT THE TAKEOUT WILL COST TO CARRY (MDGA phase 5)
+                    const t = takeoutRead(game.econ, plan, takeout);
+                    const x = (v: number) => Number.isFinite(v) ? v.toFixed(2) + "×" : "—";
+                    return (
+                      <>
+                        <Row
+                          k="Takeout"
+                          v={takeout === "fixed"
+                            ? `forward lock · fixed ${t.ratePct.toFixed(2)}% · ${usd(hedgeCost)} fee`
+                            : takeout === "cap"
+                              ? `capped float · index capped at ${t.strike?.toFixed(2)}% · ${usd(hedgeCost)} premium`
+                              : `floating naked · ${t.ratePct.toFixed(2)}% today`}
+                          title="At delivery the construction loan rolls into a 5-year mini-perm at index + 2.1%, interest-only for two years. A cap limits how far the index can take it; a forward lock fixes it today."
+                        />
+                        <Row k="Mini-perm debt service" v={`${usd(t.debtSvc)}/yr at ${t.ratePct.toFixed(2)}% · ${t.stressPct.toFixed(2)}% if the index rises 3 pts`} />
+                        <Row
+                          k="Stabilised DSCR"
+                          v={`${x(t.dscr)} today · ${x(t.dscrStress)} at +300bp`}
+                          bad={t.dscrStress < 1.05}
+                          title="The plan's stabilised NOI over interest-only debt service on the full commitment. Under 1.05× the mini-perm covenant trips; under 1× the building cannot pay its own loan."
+                        />
+                        <Row k="Finished value / loan" v={x(t.valueToLoan)} bad={t.valueToLoan < 1.25} title="The plan's value on completion over the loan. Under ~1.25× a permanent lender will not take the whole balance out." />
+                      </>
+                    );
+                  })()}
                   <Row k="Land in basis" v={`${usd(plan.landBasis)} · $${(plan.landBasis / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
                   <Row
                     k="All in"
@@ -873,7 +929,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
                   title={!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}

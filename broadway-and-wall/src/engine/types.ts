@@ -760,6 +760,8 @@ export interface DevDraft {
    * ground floor for the main use.
    */
   groundRetail?: "auto" | "on" | "off";
+  /** How the construction loan converts at delivery (MDGA phase 5). Absent = the lender's default. */
+  takeout?: "float" | "cap" | "fixed";
 }
 
 export interface BtsCommitment {
@@ -777,6 +779,13 @@ export interface BtsCommitment {
 
 export interface Development {
   bbl: string;
+  /**
+   * HOW THE CONSTRUCTION LOAN COMES OUT THE OTHER END (MDGA phase 5). The
+   * takeout rolls into a floating mini-perm; bought at the groundbreak, a
+   * `cap` carries into it (index capped at `strike` until `expiresM`) and a
+   * `fixed` forward lock converts it at `ratePct`. Absent = naked float.
+   */
+  takeout?: { kind: "cap"; strike: number; expiresM: number } | { kind: "fixed"; ratePct: number };
   /** what it is being built to, 0..1 with 0.5 as market standard */
   spec?: number;
   /** the look the developer chose (see BuildingDesign); looks only */

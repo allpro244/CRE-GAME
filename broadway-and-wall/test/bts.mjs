@@ -146,8 +146,12 @@ check(!g.btsProspects?.[bbl], "prospect leaves the pre-development desk at closi
 {
   const cur = snap(g);
   const dDev = cur.books.dev - devBefore;
-  check(dDev > 0 && Math.abs((prev.cash - cur.cash) - dDev + (cur.loc - prev.loc)) <= TOL,
-    `the day-one equity cheque is booked to dev ($${Math.round(dDev).toLocaleString()})`);
+  // The cheque has two lines since the takeout hedge (MDGA phase 5): the
+  // equity to dev, and a rate cap or lock premium to debt service. Both left
+  // the account; both must be on the books.
+  const dHedge = (cur.books.debtSvc ?? 0) - (prev.books.debtSvc ?? 0);
+  check(dDev > 0 && Math.abs((prev.cash - cur.cash) - dDev - dHedge + (cur.loc - prev.loc)) <= TOL,
+    `the day-one equity cheque is booked to dev ($${Math.round(dDev).toLocaleString()}${dHedge ? ` + $${Math.round(dHedge).toLocaleString()} takeout hedge to debt service` : ""})`);
   moved.dev += Math.abs(dDev);
   prev = cur;
 }

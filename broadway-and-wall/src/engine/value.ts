@@ -402,6 +402,28 @@ export function heightPremium(floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl > 30 ? 1.85 : fl > 18 ? 1.48 : fl > 8 ? 1.16 : 1;
 }
+/**
+ * WHAT A LOW-RISE APARTMENT IS BUILT OF (MDGA phase 2).
+ *
+ * `HARD_COST_PSF.multifamily` is labelled the low-rise base but sits at $300,
+ * a hair under the $310 national MID-rise average — the price of a concrete
+ * or steel-and-podium building. A three-storey walk-up is not that building:
+ * it is wood frame on a slab, and it costs a good deal less per foot. RSMeans
+ * 2024 secondary-market apartments: 1-3 storeys about $200/sf, 4-7 storeys
+ * (wood over a podium) about $250/sf, against the ~$300 base from eight up.
+ * As multiples of that base: 0.68 and 0.83. The ladder for every other class
+ * is untouched — an office or a shop is not framed in timber.
+ *
+ * Measured before this existed, at the opening bell: a three-storey and a
+ * six-storey apartment block cost the same $313/sf, so the product a young
+ * town actually builds on its edge (the garden walk-up) was priced as a tower
+ * and the outskirts, 85% of the vacant land, never paid in fifty years.
+ */
+export function constructionTypeMult(use: BuiltClass, floors: number): number {
+  if (use !== "multifamily") return 1;
+  const fl = Math.max(1, floors || 1);
+  return fl <= 3 ? 0.68 : fl <= 7 ? 0.83 : 1;
+}
 export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
@@ -799,8 +821,9 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   if (!(noiPsf > 0)) return 0;
 
   // A city's infill is low-rise; the tower is the exception and it prices
-  // itself through `heightPremium` where it is actually planned.
-  const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
+  // itself through `heightPremium` where it is actually planned — and
+  // low-rise apartments are wood frame (constructionTypeMult).
+  const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
   const yoc = noiPsf / Math.max(1, costPsf);
   const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.

@@ -38,7 +38,15 @@ check(landIdx !== undefined && landIdx < 0.7, `the dirt carries a middling index
 // Offices where the zoning hosts them, else the first use it does.
 const use = permittedUse(E, E.resolveRec(parcels, g, l.bbl), g.econ, ["office", "multifamily"]);
 check(!!use, `a use the zoning hosts (${use} on ${rec.zoneDist})`);
-const fl = Math.max(2, Math.round(E.maxFloorsFor(rec, 0.6, use) * 0.8));
+// Four-fifths of the envelope, stepped down until the job fits the firm's
+// purse: the subject here is what a delivered building is graded, not how big
+// a job the fixture's cash can carry — and which lot lists first is the
+// tape's business (a ripe-land tape lists bigger, better sites than it did).
+let fl = Math.max(2, Math.round(E.maxFloorsFor(rec, 0.6, use) * 0.8));
+for (; fl > 2; fl--) {
+  const p = E.planDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
+  if (p && E.devFundingNeed(p, E.takeoutHedgeCost(p, E.takeoutHedgeRequired(p) ? "cap" : "float")).whole <= E.fundableNow(g, parcels)) break;
+}
 const plan = E.planDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");
 check(!!plan, "the desk prices the scheme");
 const r = E.startDevelopment(g, parcels, l.bbl, use, fl, 0.6, "gmp");

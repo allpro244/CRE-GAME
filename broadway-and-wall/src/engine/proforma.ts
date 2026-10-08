@@ -60,7 +60,7 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
 import {
-  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium,
+  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
   TAX_RATE, taxBorneShare, physicalMaxFloors,
 } from "./value";
@@ -729,7 +729,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);

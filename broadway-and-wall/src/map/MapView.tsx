@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
-import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy } from "@/engine/value";
+import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -1000,6 +1000,38 @@ export default function MapView() {
     vacRef.current = next;
   }, [paintSig, parcels, mapReady, lens]);
 
+  // SITES LENS (MDGA phase 6) — vacant lots where a building pays. The land
+  // market's own read: what a builder can pay for the dirt (the residual,
+  // margin included) over what it costs — the asking price when the lot is
+  // listed, its market price otherwise. At or above 1 a scheme clears the
+  // hurdle at that price. Stored as ×100; built lots carry nothing.
+  const siteRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const game = useStore.getState().game;
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    if (lens !== "pencils") return;
+    const asks = new Map(game.listings.map((l) => [l.bbl, l.ask] as const));
+    const next = new Map<string, number>();
+    for (const bbl of Object.keys(parcels)) {
+      if (game.holdings[bbl]) continue;
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || rec.class !== "land" || !rec.lotArea) continue;
+      const read = landRead(rec, game.econ);
+      const price = asks.get(bbl) ?? read.psf * rec.lotArea;
+      const pay = Math.max(0, read.builder) * rec.lotArea;
+      next.set(bbl, Math.round(100 * Math.min(2, price > 0 ? pay / price : 0)));
+    }
+    for (const [bbl, v] of next) {
+      if (siteRef.current.get(bbl) === v) continue;
+      map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { sitePct: v });
+    }
+    for (const bbl of siteRef.current.keys()) {
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "sitePct");
+    }
+    siteRef.current = next;
+  }, [paintSig, parcels, mapReady, lens]);
+
   // name labels: districts, parks, water — DOM markers, no glyph server needed.
   // Photo frame silences them with the rest of the chrome: a model photograph
   // has no captions. They come back with the effect re-run on exit.
@@ -1638,7 +1670,7 @@ export default function MapView() {
     // the district names come up full-strength at every zoom (the CSS side of
     // the class below) and the seams between districts get a dashed line.
     // Both go away with the lens — the normal view keeps its clean model look.
-    const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases" || lens === "vacancy";
+    const hoods = lens === "demand" || lens === "land" || lens === "zoning" || lens === "leases" || lens === "vacancy" || lens === "pencils";
     map.getContainer().classList.toggle("bw-lens-hoods", hoods);
     if (hoods && !map.getLayer("bw-hood-line")) {
       const cityNow = useStore.getState().city;
@@ -1736,6 +1768,20 @@ export default function MapView() {
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
       // only your buildings carry a number; everything else stays pale card
       roofLens(new Map(leaseRef.current), stops, ramp);
+      return;
+    }
+    if (lens === "pencils" && game && parcels) {
+      // grey under 0.8, amber to 1, green at and over 1 — the hurdle
+      const stops = [0, 79, 80, 99, 100, 140];
+      const ramp = ["#cfcac0", "#cfcac0", "#e8c25a", "#d9a032", "#5fae6e", "#1f7a45"];
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "case",
+        ["<", ["coalesce", ["feature-state", "sitePct"], -1], 0], "#ece8df",
+        ["interpolate", ["linear"], ["coalesce", ["feature-state", "sitePct"], 0],
+          ...stops.flatMap((s, i) => [s, ramp[i]])],
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.88 as never);
+      roofLens(new Map(siteRef.current), stops, ramp);
       return;
     }
     if (lens === "vacancy" && game && parcels) {

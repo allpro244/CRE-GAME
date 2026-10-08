@@ -1075,6 +1075,47 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     if (id && !mine.has(id)) mine.set(id, parcels[bbl]?.address ?? bbl);
   }
 
+  // ---- GROWTH SPREADS OUTWARD (MDGA phase 2) --------------------------------
+  //
+  // Measured over fifty years of a young town: jobs +62%, population +66%,
+  // floor +23%, the apartment market short by a third to a half of its stock
+  // for decades — and the outskirts, ~85% of the vacant land, frozen at a
+  // finished value of 0.4x what a building costs, while the handful of
+  // core lots that paid ran out. Rents rose citywide; the location gradient
+  // never moved, so none of it reached the edge.
+  //
+  // Real cities do not fill that way. When the middle is full, the next
+  // tenant takes the next ring, and the ring after that when it fills too
+  // (the bid-rent curve shifting out as a city grows — Alonso-Muth-Mills).
+  // So while the city carries UNHOUSED demand, a block whose neighbours are
+  // more desirable than it is is pulled toward them: its target rises by
+  // SPILL_GAIN x the city's unhoused share x the gap to its neighbourhood's
+  // mean. It never pulls a block down, it is zero when the city can house
+  // its demand, and it rides through the same centring and caps as every
+  // other term — the total the city pays for location is still the macro
+  // engine's, only where it is paid moves outward.
+  //
+  // SPILL_GAIN = 1.5 is a shape parameter: at a 30% unhoused share a block
+  // twenty points under its neighbours targets about nine of them, so the
+  // frontier advances roughly a ring a decade at the momentum below — stated,
+  // not calibrated to a city.
+  const SPILL_GAIN = 1.5;
+  let shortSf = 0, stockSf = 0;
+  for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+    const stk = s.econ.stock?.[k] ?? 0;
+    stockSf += stk;
+    shortSf += Math.max(0, s.econ.structTight?.[k] ?? 0) * stk;
+  }
+  const unhoused = stockSf > 0 ? Math.min(0.5, shortSf / stockSf) : 0;
+  const curD = (id: string) => (model.blocks.get(id)?.baseD ?? 0) + (s.blockD[id] ?? 0);
+  const spill = (b: BlockGeom): number => {
+    if (!(unhoused > 0.01) || !b.neighbours.length) return 0;
+    let wsum = 0, dsum = 0;
+    for (const n of b.neighbours) { wsum += n.w; dsum += n.w * curD(n.id); }
+    if (!(wsum > 0)) return 0;
+    return SPILL_GAIN * unhoused * Math.max(0, dsum / wsum - curD(b.id));
+  };
+
   // ---- what each block's surroundings now justify --------------------------
   const raw = new Map<string, number>();
   const flat = flatOccupancy(model, occ);
@@ -1113,7 +1154,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     const acres = b.nbLandArea / 43_560;
     const mix = intensityOf((j / acres) / model.refJobs, (r / acres) / model.refPop, (a / acres) / model.refAmen);
     const lr = clamp(Math.log(mix / Math.max(1e-6, model.mix0.get(b.id) ?? mix)), -LOG_CAP, LOG_CAP);
-    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + transitLift(s, b) + poleLift(s, b) + constructionLift(s, model, b));
+    raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + transitLift(s, b) + poleLift(s, b) + constructionLift(s, model, b) + spill(b));
   }
 
   // ---- DEMAND IS REDISTRIBUTIVE, NOT ADDITIVE -----------------------------

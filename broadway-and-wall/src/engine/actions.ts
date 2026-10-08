@@ -9,7 +9,7 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
 import { firmBook, snap } from "./aibooks";
@@ -1935,13 +1935,20 @@ export function approachOwner(
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
     : held ? (HOLDER_ASK[held.kind] ?? 0)
     : 0;
+  // RIPE DIRT IS ASKED FOR NEAR WHAT A BUILDER CAN PAY (MDGA phase 3). A
+  // vacant lot earns nothing and pays its taxes; when a builder can pay the
+  // residual for it, the owner knows what the dirt is worth — the appraisal
+  // IS the residual (readLand) — and the call is the sale they were waiting
+  // for. The building owner's 1.06-1.56x premium for disturbing a going
+  // concern does not apply: the base runs 1.00-1.15x on the same draw.
+  const ripeLand = rec.class === "land" && landRead(rec, next.econ).winner === "builder";
   const markup =
     // The LAST deed is the expensive one. A linear premium is a toll; a holdout
     // is a wall, and the difference is entirely in the tail. Cubed, this is
     // negligible while you are buying the first neighbours on a block and
     // ruinous on the one that completes the site — which is the only thing
     // stopping assemblage from being free money now that it pays.
-    1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure + 0.55 * Math.pow(pressure, 3) + styleAsk
+    (ripeLand ? 1.0 + 0.15 * Math.pow(rng(next), 2) : 1.06 + 0.5 * Math.pow(rng(next), 2)) + 0.22 * pressure + 0.55 * Math.pow(pressure, 3) + styleAsk
     - (stressed ? rrange(next, 0.16, 0.30) : 0);
   const unadvised = 1 - 1 / (1 + ageM / 24);
   const quotes = rng(next) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));

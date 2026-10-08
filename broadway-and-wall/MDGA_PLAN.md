@@ -258,22 +258,11 @@ the expected spread — realistic land speculation).
 to a measured, cycle-shaped number; distress land listings peak in
 recessions; the developer bot's "years with no buildable site in reach" falls.
 
-### Phase 4 — Control a site before you buy it (root cause 4)
+### Phase 4 — Control a site before you buy it — DROPPED
 
-**Mechanism: the land option / contract contingent on entitlement.** Pay 2-5%
-of the price (non-refundable, booked to the ledger) for 6-18 months of
-exclusive right to buy at a fixed price. During the option the player can file
-for a variance, assemble neighbours and line up a construction loan; at expiry
-they close or walk and lose the premium. Owners' willingness and premium scale
-with the same seller profile `approachOwner` already uses.
-
-**Realism anchor.** Options and entitlement-contingent purchase contracts are
-how most real developers control land; it is also how a $5M developer
-competes with a balance sheet ten times bigger.
-
-**Acceptance.** Conserve passes; bot run shows options exercised and lapsed
-at plausible rates; no money pump (an option is never cheaper than its time
-value at the seller's discount rate — test it in `pnpm stress`).
+Land options were dropped at the owner's call (2026-10-07). Root cause 4
+stands; the ripe-land tape and the residual-centred approach asks (phase 3)
+cover part of it.
 
 ### Phase 5 — Takeout risk you can manage (root cause 5)
 
@@ -327,7 +316,7 @@ looking, in any phase where one exists.
 | 1 shortage prices space | market.ts | M (calibration) | 0 |
 | 2 growth spreads outward | market.ts / demand | M | 1 |
 | 3 land tape | sim.ts refreshListings, actions.ts approach | S-M | 0 |
-| 4 land options | engine + desk UI | M | 3 |
+| ~~4 land options~~ | dropped | — | — |
 | 5 rate cap / forward takeout / desk disclosure | dev.ts, debt.ts, DevelopDesk | S-M | 0 |
 | 6 lens + site finder + shortage signal | UI | S-M | 0 |
 | 7 verify + docs | — | S | all |
@@ -346,3 +335,51 @@ need the most measurement.
   land a developer buys is the land they see.
 - Auto-lease lets a developer's delivered buildings lease by stance without a
   letter a month.
+
+## 7. What shipped and what it did (2026-10-08)
+
+Phases 0, 1, 2, 3, 5, 6 and 7 shipped; Phase 4 was dropped.
+
+| Phase | What changed | Where |
+|---|---|---|
+| 0 | `tools/mdga/` instruments (`pnpm mdga`, `pnpm mdga:delivered`); bot approaches owners, works a floor ladder, caps floating debt | `tools/mdga/`, `test/playdev.mjs` |
+| 0 | National cycle draws from its own RNG channel (`"nation"`), so local events no longer re-roll the macro path | `market.ts` |
+| 1 | Holder capitulation: a lot priced at the texture floor above what any builder can pay marks down 6% of the gap a quarter (floor 0.25×) | `comps.ts` |
+| 2 | Construction type by height: wood walk-up (≤3 fl) 0.68×, podium (≤7 fl) 0.83× of tower hard cost (RSMeans) in the proforma, replacement cost and site pencils | `value.ts`, `proforma.ts`, `dev.ts` |
+| 2 | Unhoused demand spills to neighbouring blocks when the city cannot house it | `demand.ts` |
+| 3 | Ripe land lists (owners sell into a builder bid near value) and distressed land lists counter-cyclically at 0.72–0.90×; ripe-lot owners quote nearer value | `sim.ts`, `actions.ts` |
+| 5 | Takeout hedge at construction close: float / rate cap (strike index+1.5) / forward lock (+75bp, 1% fee); hedge required above 60% LTC; desk shows mini-perm DSCR today and +300bp | `dev.ts`, `DevelopDesk.tsx` |
+| 6 | Sites map lens, Site finder on the market page, Unhoused demand row on the economy page | `MapView.tsx`, `SiteFinder.tsx`, `EconomyPage.tsx` |
+
+### Developer-only playthrough, before and after
+
+Same harness (`test/playdev.mjs`, $5M start, 50 years, 6 seeds, develop /
+hold / sell only). "Before" is the pre-MDGA run in §1; "after" includes the
+Phase 0 bot levers, so part of the gain is a better-played bot, not a
+different game.
+
+| | Before merchant | After merchant | Before hold | After hold |
+|---|---|---|---|---|
+| Median net worth | $28.9M | $277.5M | $55.9M | $219.4M |
+| Worst / best | −$0.7M / $85.6M | $56.1M / $619.9M | −$0.7M / $112.7M | $25.7M / $869.6M |
+| Failed | 1 | 0 | 1 | 0 |
+| Buildings delivered (6 runs) | 12 | 260 | 20 | 262 |
+| Lot-months that pencilled and fit the purse | 18 | 456 | 29 | 420 |
+| Median rank on the street | 7 | 3 | 6 | 4 |
+
+The $277M median is about 8.4% a year compounded over 50 years on $5M with
+leverage and drawdowns of 41–82% along the way: a good developer's career,
+not a money printer. Starts still clear the hurdle by a little (median
+hurdle about 1.02, best seen 1.27): the margin is earned, not given.
+
+### What did not get fixed
+
+- **City supply is still order-book limited.** Floor area grows +28% over
+  50 years against jobs +85%; residential vacancy sits on its cap
+  (`rail.occ.*.cap` in BASELINE counts those months). This is
+  REALISM_AUDIT #1, the shortage-queue regime: the city's own construction
+  pipeline (`startOwed`, `crewCapacity`) does not scale with demand.
+  Spillover and capitulation widened where building pays but did not lift
+  the city's build rate. That is the next piece of work.
+- Spillover measured small on its own; the bigger fringe move came from
+  pricing low-rise as low-rise.

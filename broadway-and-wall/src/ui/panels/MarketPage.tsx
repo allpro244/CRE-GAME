@@ -15,6 +15,7 @@ import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engi
 import { usd, sf, pct } from "@/ui/format";
 import { BrokerCalls } from "@/ui/panels/broker";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
+import { SiteFinder } from "@/ui/panels/SiteFinder";
 
 export function BuildingDatabase() {
   const parcels = useStore((s) => s.parcels)!;
@@ -594,6 +595,7 @@ export function MarketPage() {
           a schedule; the listings will still be there next month. */}
       <BrokerCalls />
       <BuyBoxEditor />
+      <SiteFinder />
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>

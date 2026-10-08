@@ -54,7 +54,7 @@ import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
-import { productById, bumpLenderRel } from "./debt";
+import { productById, loanLender, bumpLenderRel } from "./debt";
 import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -800,7 +800,7 @@ export function payoffQuote(
   if (!h?.loan || !w) return null;
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
-  const lender = h.loan.holder ?? productById(h.loan.product).lender;
+  const lender = loanLender(h.loan);
   const l = lenderByName(s, lender);
   const p = lenderPressure(l);
   const bal = Math.round(h.loan.balance);
@@ -846,7 +846,7 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
-  const lender = h.loan.holder ?? productById(h.loan.product).lender;
+  const lender = loanLender(h.loan);
   const discount = q.bal - q.px;
   fundAndBook(next, parcels, q.px, "debtSvc", { bbl });
   next.holdings[bbl]!.loan = null;

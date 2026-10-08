@@ -27,7 +27,7 @@ import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
-import { lenderRelOf, bumpLenderRel } from "./debt";
+import { lenderRelOf, bumpLenderRel, payOffDue, productById } from "./debt";
 import {
   cancelSupplyProject,
   programmeSf,
@@ -1289,6 +1289,35 @@ export function takeoutRead(
   };
 }
 
+/**
+ * WHAT IS STILL OWED ON THE DIRT, AND WHO TAKES IT OUT AT GROUNDBREAK.
+ *
+ * The construction loan here is sized on the job's own cost (LTC excludes the
+ * land), so the site is the sponsor's equity in the deal — and equity goes in
+ * unencumbered: no construction lender closes behind somebody else's first
+ * lien on the dirt it is lending against. So a land loan is repaid the day
+ * ground breaks, as part of the cheque at close. That is the job a land loan
+ * actually does — carry a site until it is built on — and its own three-year
+ * term says so.
+ *
+ * It used to stay on the deed through the build. Its balloon could land mid-
+ * construction, and on delivery the mini-perm was written straight over it,
+ * so whatever was left of it was never repaid by anybody: a liability gone
+ * with no cash moving, which is the one fault `pnpm conserve` cannot see.
+ */
+export function siteDebtAtGroundbreak(s: GameState, bbl: string): { due: number; balance: number; penalty: number; lender?: string } {
+  const h = s.holdings[bbl];
+  if (!h?.loan && !(h?.mezz && h.mezz.balance > 0)) return { due: 0, balance: 0, penalty: 0 };
+  const senior = h.loan ? payOffDue(h.loan, s.month) : { balance: 0, penalty: 0, due: 0 };
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, s.month) : { balance: 0, penalty: 0, due: 0 };
+  return {
+    due: senior.due + mezz.due,
+    balance: senior.balance + mezz.balance,
+    penalty: senior.penalty + mezz.penalty,
+    lender: h.loan ? (h.loan.holder ?? productById(h.loan.product).lender) : undefined,
+  };
+}
+
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
@@ -1347,7 +1376,16 @@ export function startDevelopment(
   }
   const hedgeCost = takeoutHedgeCost(plan, takeoutKind);
   const need = devFundingNeed(plan, hedgeCost);   // equity, points, the hedge, and a margin for change orders
-  const commitCap = need.whole;
+  // The land loan comes off at close (siteDebtAtGroundbreak) — it is part of
+  // both the whole-job test and the day-one cheque, because it is cash at the
+  // closing table like everything else on it.
+  const site = siteDebtAtGroundbreak(s, bbl);
+  if (site.due > 0 && s.facility?.bbls.includes(bbl)) {
+    return { s, err: "This site is pledged to your facility. Release it there before a construction lender will take first lien." };
+  }
+  if (site.due > 0 && s.holdings[bbl].jv) return { s, err: JV_CONSENT };
+  const siteNote = site.due > 0 ? ` and the ${money(site.due)} land loan, which the construction lender requires repaid at close` : "";
+  const commitCap = need.whole + site.due;
   const fundable = fundableNow(s, parcels);
   if (fundable < commitCap) {
     const short = commitCap - fundable;
@@ -1355,7 +1393,7 @@ export function startDevelopment(
       s,
       err: `Equity short ${money(short)} to finish this job. `
         + `Needs ${money(plan.equity)} equity all-in (${money(plan.equityAtClose)} at close) `
-        + `plus change-order margin; you can fund ${money(fundable)} including the line. `
+        + `plus change-order margin${siteNote}; you can fund ${money(fundable)} including the line. `
         + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
@@ -1368,13 +1406,13 @@ export function startDevelopment(
   // where they were; a job closed on the line simply starts with less room for
   // the capital call that comes at 90% complete, which is the real discipline.
   const dayOne = need.dayOne;
-  if (fundable < dayOne) {
-    const short = dayOne - fundable;
+  if (fundable < dayOne + site.due) {
+    const short = dayOne + site.due - fundable;
     return {
       s,
       err: `Equity short ${money(short)} at close. `
         + `The bank funds nothing until ${money(dayOne)} is in the ground (equity plus origination) `
-        + `of ${money((plan.equity + plan.pointsCost))} total. Cut the massing or raise cash first.`,
+        + `of ${money((plan.equity + plan.pointsCost))} total${siteNote}. Cut the massing or raise cash first.`,
     };
   }
   const next = clone(s);
@@ -1384,6 +1422,20 @@ export function startDevelopment(
   fundAndBook(next, parcels, dayOne - hedgeCost, "dev", { bbl });
   // the hedge is a financing cost, booked as such, paid at the close
   if (hedgeCost > 0) fundAndBook(next, parcels, hedgeCost, "debtSvc", { bbl });
+  if (site.due > 0) {
+    // Retired the way payOffLoan retires a mortgage: principal and any break
+    // fee, booked as debt service, lien released.
+    fundAndBook(next, parcels, site.due, "debtSvc", { bbl });
+    const nh = next.holdings[bbl];
+    nh.loan = null;
+    if (nh.mezz) nh.mezz = null;
+    if (site.lender) bumpLenderRel(next, site.lender, 0.5);
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `The land loan on ${rec.address} — ${money(site.balance)}${site.penalty > 0 ? ` plus ${money(site.penalty)} to break it` : ""} — `
+        + `was repaid at the construction closing. The construction lender takes first lien on the site.`,
+    });
+  }
   if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
   noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
   // YOUR CRANE IS IN THE SAME SKY AS EVERYBODY ELSE'S. A city job enters
@@ -2225,11 +2277,19 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   const capTk = tk?.kind === "cap" && tk.expiresM > s.month ? tk : null;
   const takeRate = fixedTk ? fixedTk.ratePct
     : +((capTk ? Math.min(s.econ.indexRate, capTk.strike) : s.econ.indexRate) + MINI_PERM_SPREAD).toFixed(2);
+  // ANYTHING STILL OWED ON THE DEED ROLLS INTO THE TAKEOUT. A ground-up job
+  // retires its land loan at groundbreak (siteDebtAtGroundbreak), but a deed
+  // can still reach delivery with paper on it — a takeover, or a save from
+  // before that rule. Assigning the mini-perm over it wrote the old balance
+  // off with no cash moving and nobody repaid. The lender converting the job
+  // takes it out instead, which is what a conversion to permanent does.
+  const carried = Math.max(0, Math.round((h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0)));
+  if (h.mezz) h.mezz = null;
   h.loan = {
     product: "cordage",
     floating: !fixedTk,
-    principal: d.loanBalance,
-    balance: d.loanBalance,
+    principal: d.loanBalance + carried,
+    balance: d.loanBalance + carried,
     ratePct: takeRate,
     spread: MINI_PERM_SPREAD,
     ...(capTk ? { cap: { strike: capTk.strike, expiresM: capTk.expiresM } } : {}),
@@ -2240,7 +2300,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     ioUntilM: s.month + 24,
     amortYears: 30,
     maturityM: s.month + 60,
-    monthlyPmt: Math.round((d.loanBalance * takeRate) / 100 / 12),
+    monthlyPmt: Math.round(((d.loanBalance + carried) * takeRate) / 100 / 12),
     minDSCR: 1.05,
     maxLTV: 0.9,
     sweep: false,

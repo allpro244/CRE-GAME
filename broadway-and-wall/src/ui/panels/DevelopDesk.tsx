@@ -21,7 +21,7 @@ const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
-  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor,
+  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor, siteDebtAtGroundbreak,
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
@@ -317,9 +317,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // happen to read the same field are one edit away from disagreeing, which
   // is exactly what this card was accused of. Every equity read below goes
   // through these two: the whole cheque, and whether you can write it.
-  const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
-  // THE BUTTON ASKS WHAT THE ENGINE ASKS: the whole equity, the points and the
-  // change-order margin (devFundingNeed), not the equity alone.
+  // A land loan on the site is repaid at the construction closing (the
+  // construction lender takes first lien), so it is on the same cheque.
+  const siteDebt = siteDebtAtGroundbreak(game, bbl).due;
+  const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0) + (plan ? siteDebt : 0);   // origination is cash at close, so it belongs on the cheque
+  // THE BUTTON ASKS WHAT THE ENGINE ASKS: the whole equity, the points, the
+  // hedge, the change-order margin (devFundingNeed) and the land loan.
   // the takeout the lender will close on: what you picked, unless it is naked
   // float above their threshold, in which case their default (the cap)
   const hedgeRequired = plan ? takeoutHedgeRequired(plan) : false;
@@ -327,7 +330,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     : takeoutPick && !(hedgeRequired && takeoutPick === "float") ? takeoutPick
     : hedgeRequired ? "cap" : "float";
   const hedgeCost = plan ? takeoutHedgeCost(plan, takeout) : 0;
-  const need = plan ? devFundingNeed(plan, hedgeCost) : { whole: 0, dayOne: 0, margin: 0 };
+  const need0 = plan ? devFundingNeed(plan, hedgeCost) : { whole: 0, dayOne: 0, margin: 0 };
+  const need = plan ? { ...need0, whole: need0.whole + siteDebt, dayOne: need0.dayOne + siteDebt } : need0;
   const fundableTotal = spendable(game, parcels).total;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
@@ -893,6 +897,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <div className="page-section-head">Equity</div>
                 <div className="grid">
                   <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > spendable(game, parcels).total} />
+                  {siteDebt > 0 && <Row k="…of which land loan" v={`${usd(siteDebt)} repaid at close — the construction lender takes first lien`} />}
                   <Row
                     k="Drawn during build"
                     v={`${usd(plan.equity - plan.equityAtClose)} over ~${plan.months} months`}
@@ -996,7 +1001,8 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
     ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail }, bank, spec)
     : null;
   const open = () => useStore.getState().openProperty(bbl, "build");
-  const closeCheque = plan ? plan.equityAtClose + plan.pointsCost : 0;
+  const siteDebt = siteDebtAtGroundbreak(game, bbl).due;
+  const closeCheque = plan ? plan.equityAtClose + plan.pointsCost + siteDebt : 0;
   return (
     <div className="deal">
       <div className="deal-head">
@@ -1009,7 +1015,7 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
           value={`${plan.yieldOnCost.toFixed(2)}%`}
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
-            ? `Pencils against ${plan.requiredYield.toFixed(2)}% required. ${usd(closeCheque)} of your money at groundbreak, ${usd(plan.equity + plan.pointsCost)} all in, ${plan.months} months to deliver.`
+            ? `Pencils against ${plan.requiredYield.toFixed(2)}% required. ${usd(closeCheque)} of your money at groundbreak${siteDebt > 0 ? ` (${usd(siteDebt)} of it retiring the land loan)` : ""}, ${usd(plan.equity + plan.pointsCost + siteDebt)} all in, ${plan.months} months to deliver.`
             : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost. The desk has the height, footprint and programme to move it.${shortNote(plan.hurdleRatio)}`}
         />
       ) : (

@@ -322,7 +322,7 @@ export function PlanEditor() {
           </button>
         </div>
         <div className="hint" style={{ marginTop: 8 }}>
-          Treasury reserve stays {usd(cashReserve)} — the desk refers rather than draws the line.
+          Treasury reserve stays {usd(cashReserve)}. Surplus cash pays the line down after debt service; the desk may draw back the cash parked there, but never borrows past it{lineAuth > 0 ? " or the fit-out authority above" : ""} — beyond that it refers.
           Contiguity holds are set on the building’s stacking list.
         </div>
       </div>

@@ -318,6 +318,10 @@ export interface Facility {
   /** What was drawn at closing, kept so the page can show how far it has amortised. */
   drawn: number;
   ratePct: number;
+  /** Floating paper resets monthly to its index plus `spread` (the single-loan rule); absent: fixed. */
+  floating?: boolean;
+  spread?: number;
+  bench?: "short" | "long";
   lender: string;
   productId: string;
   originM: number;
@@ -2643,6 +2647,11 @@ export interface GameState {
   principalSigned?: { m: number; use: BuiltClass; ne: number }[];
   /** Which desk the firm banks with. See bankOf in lenders.ts. */
   bankId?: string;
+  /**
+   * Cash management: whether idle cash is swept into Treasury bills (on unless
+   * turned off) and the operating balance kept at the bank. See cashSplit.
+   */
+  cashMgmt?: { sweep?: boolean; keep?: number };
   /**
    * Money owed to you by the receiver of a failed bank — uninsured deposits
    * that will come back at 60-90c, in a year or two. It is not cash and it is

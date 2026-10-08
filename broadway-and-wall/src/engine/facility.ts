@@ -63,6 +63,7 @@ import type { BuiltClass, GameState, Holding } from "./types";
 import { logBooks, monthLabel, cloneState, poolDeedLedger } from "./types";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
 import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, statedLtv, stackPayoff } from "./debt";
+import { shortIndexOf } from "./market";
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
@@ -200,7 +201,14 @@ export function poolQuality(
 
 export interface FacilityQuote {
   lender: string;
+  /** The product as the single-building desk names it, so two quotes from one bank are told apart. */
+  label: string;
   productId: string;
+  floating: boolean;
+  bench: "short" | "long";
+  /** Over the bench, for floating paper's monthly reset. */
+  spread: number;
+  recourse: boolean;
   ratePct: number;
   /** The borrowing base: the most this desk will advance against this pool. */
   base: number;
@@ -241,7 +249,14 @@ export interface FacilityQuote {
  * assets and a mezzanine desk sits behind somebody; a POOL is balance-sheet
  * lending and it is the banks and the life company who do it.
  */
-const FACILITY_DESKS = ["savings", "harbor", "life"];
+// THE SAME MENU A BUILDING GETS, LESS WHAT DOES NOT WRITE A POOL. This read
+// ["savings", "harbor", "life"] — and there is no product "life" (the life
+// company's id is "pelican"), so a pool got two fixed bank loans while one of
+// its own buildings could choose from eleven. A portfolio is written by the
+// banks (fixed or floating), by the life company, by CMBS as a single-borrower
+// pool, and by the agencies when every building is apartments. The debt fund's
+// bridge, mezzanine and land loans stay single-asset.
+const FACILITY_DESKS = ["harbor", "savings", "savings25", "pelican", "conduit", "harborFloat", "savingsFloat", "agencyArm"];
 
 /**
  * THE BORROWING BASE. Three tests on the POOL, and the smallest one binds —
@@ -291,6 +306,12 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
     // Recomputing a rate here would be the second answer to a quantity that
     // already has one.
     const single = quote(s, p, q.value, q.noi, undefined);
+    // a program that lends on one class lends on a pool only if every
+    // building in it is that class (the agencies: apartments)
+    const offClass = p.classes
+      ? bbls.find((b) => { const r = resolveRec(parcels, s, b); return !!r && !p.classes!.includes(r.class); })
+      : undefined;
+    const bench = p.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
     const spreadCut = 0.35 * q.score;                       // up to 35bp, earned
     const ratePct = +Math.max(0.5, single.ratePct - spreadCut).toFixed(2);
     // The pool premium, earned, on the ADVANCE RATE — which is the desk's
@@ -316,12 +337,14 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
     const n = bbls.filter((b) => s.holdings[b]).length;
     const why = n < FACILITY_MIN_ASSETS
       ? `${p.label} will not paper a pool of ${n}. Pledge at least ${FACILITY_MIN_ASSETS} buildings.`
+      : offClass ? `${p.label.split(" · ")[0]} lends on ${p.classes!.join(", ")} only, and this pool is not all ${p.classes!.join(", ")}.`
       : !open ? `${p.label} has stopped writing new paper this cycle.`
       : base < FACILITY_MIN_LOAN ? `The base comes to ${Math.round(base / 1e6)}M and nobody documents a facility under $5M.`
       : undefined;
     const atBase = facilityDrawTerms(base, ratePct, p.ioM, p.amortYears, q.noi, q.value);
     out.push({
-      lender: p.lender, productId: p.id, ratePct, base, binding,
+      lender: p.lender, label: p.label, productId: p.id, ratePct, base, binding,
+      floating: !!p.floating, bench: p.floating ? "short" : "long", spread: +(ratePct - bench).toFixed(2), recourse: p.recourse ?? true,
       maxLTV: p.maxLTV, minDSCR: p.minDSCR, advance, spreadCut,
       amortYears: p.amortYears, termM: p.termM, ioM: p.ioM, points: p.points,
       pmtPerDollar,
@@ -394,6 +417,7 @@ export function openFacility(
     bbls: [...pool],
     balance: draw,
     ratePct: qt.ratePct,
+    ...(qt.floating ? { floating: true, spread: qt.spread, bench: qt.bench } : {}),
     lender: qt.lender,
     productId: qt.productId,
     originM: next.month,
@@ -403,7 +427,7 @@ export function openFacility(
     monthlyPmt: pmt,
     minDSCR: qt.minDSCR,
     maxLTV: qt.advance,
-    recourse: true,
+    recourse: qt.recourse,
     drawn: draw,
   };
   next.cash += draw - cost;
@@ -542,6 +566,7 @@ function takeFacilityRoll(
   f.balance = draw;
   f.drawn = draw;
   f.ratePct = qt.ratePct;
+  f.floating = qt.floating || undefined; f.spread = qt.floating ? qt.spread : undefined; f.bench = qt.floating ? qt.bench : undefined;
   f.lender = qt.lender;
   f.productId = qt.productId;
   f.originM = q;
@@ -554,7 +579,7 @@ function takeFacilityRoll(
   // it — retesting a refinanced pool against `product.maxLTV` instead would
   // silently move the wall the moment the paper rolled.
   f.maxLTV = qt.advance;
-  f.recourse = true;
+  f.recourse = qt.recourse;
   // New paper, and the defaults on the old paper died with it: the balance the
   // new desk underwrote is the balance it just funded. Anything unresolved would
   // have stopped the underwriting above.
@@ -745,6 +770,11 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
 
   if (f.accelM !== undefined) return accelerate(s, parcels);
 
+  // floating pool paper reprices off its index every month, as a single loan does
+  if (f.floating && f.spread !== undefined) {
+    const idx = f.bench === "short" ? shortIndexOf(s.econ) : s.econ.indexRate;
+    f.ratePct = +(idx + f.spread).toFixed(2);
+  }
   const io = q < f.ioUntilM;
   const yearsLeft = Math.max(1, f.amortYears - (q - f.originM) / 12);
   f.monthlyPmt = facilityPmt(f.balance, f.ratePct, io ? f.ioUntilM - q : 0, yearsLeft);

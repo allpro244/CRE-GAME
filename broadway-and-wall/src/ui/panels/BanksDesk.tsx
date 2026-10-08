@@ -3,7 +3,8 @@ import { districtLabelOf } from "@/engine/mix";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
-import { lenderHealth, capitalRatio, lenderBlurb, targetCapital } from "@/engine/lenders";
+import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit } from "@/engine/lenders";
+import { sweepApy } from "@/engine/types";
 import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
@@ -29,6 +30,7 @@ export function TheBanks() {
   };
   return (
     <>
+      <YourCash />
       <div className="page-section">The banks</div>
       <div className="hint">
         <b>Underwriting standards today: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)} on a −1 to +1 scale).
@@ -105,7 +107,7 @@ export function TheBanks() {
             return (
               <Fragment key={l.id}>
                 <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
-                  <td>{open === l.id ? "▾ " : "▸ "}{l.name}</td>
+                  <td>{open === l.id ? "▾ " : "▸ "}{l.name}{cashSplit(game).bank?.id === l.id ? <b> · your bank</b> : null}</td>
                   <td className="dim">
                     {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
                       : l.kind === "conduit" ? "selling the paper on" : "committed capital"}
@@ -285,4 +287,61 @@ export function TheBanks() {
       )}
     </>
   );
+}
+
+/**
+ * WHERE YOUR CASH IS, AND WHO IT IS AT RISK WITH. The firm's operating account
+ * sits at one bank — pick it here, the way a treasurer would, off the capital
+ * chart below — and everything above the operating balance is swept nightly
+ * into Treasury bills, which a bank failure cannot touch. Turn the sweep off
+ * and every dollar is a deposit: it earns the deposit rate and stands on the
+ * bank's balance sheet above the insurance limit. Moving either costs nothing.
+ */
+function YourCash() {
+  const game = useStore((s) => s.game)!;
+  const { setDepositBank, setCashMgmt } = useStore.getState();
+  const cs = cashSplit(game);
+  const banks = (game.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit");
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const mult = (l: (typeof banks)[number]) => capitalRatio(l) / Math.max(1e-9, targetCapital(l.name));
+  const [keepIn, setKeepIn] = useState<string>(String(Math.round(cs.keep / 1000)));
+  return (
+    <div className="deal" style={{ marginBottom: 12 }}>
+      <div className="deal-head">Your cash</div>
+      <div className="grid">
+        <Row2 k="Banked with" v={
+          <select value={cs.bank?.id ?? ""} onChange={(e) => setDepositBank(e.target.value)}>
+            {banks.map((l) => (
+              <option key={l.id} value={l.id}>{l.name} · capital {mult(l).toFixed(2)}x target · {lenderHealth(l).word}</option>
+            ))}
+          </select>
+        } />
+        <Row2 k="At the bank" v={`${usd(cs.atBank)} · ${usd(cs.insured)} insured, ${usd(cs.exposed)} exposed if it fails · earns ${pct(depositApy(game.econ))}`} bad={cs.exposed > insuredLimit(game) * 10} />
+        <Row2 k="In Treasury bills" v={`${usd(cs.inBills)} · not the bank's to lose · earns ${pct(sweepApy(game.econ))}`} />
+      </div>
+      <div className="btn-row" style={{ marginTop: 6, alignItems: "center", gap: 8 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="checkbox" checked={cs.sweep} onChange={(e) => setCashMgmt({ sweep: e.target.checked })} />
+          Sweep idle cash into Treasury bills
+        </label>
+        {cs.sweep && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            keep at the bank $
+            <input type="number" min={0} step={100} value={keepIn} style={{ width: 90 }}
+              onChange={(e) => setKeepIn(e.target.value)}
+              onBlur={() => { const v = Math.max(0, Number(keepIn) || 0) * 1000; setCashMgmt({ keep: v }); }} />
+            K
+          </label>
+        )}
+      </div>
+      <div className="hint">
+        Only the operating account is a deposit. If your bank fails, everything there over the {usd(insuredLimit(game))} insurance
+        limit is frozen and the receiver pays back 60-90c on the dollar in one to three years; Treasury bills are untouched.
+        Watch the capital chart below: a bank is closed below 0.22x its own target. You will be warned when yours is under 0.4x.
+      </div>
+    </div>
+  );
+}
+function Row2({ k, v, bad }: { k: string; v: React.ReactNode; bad?: boolean }) {
+  return (<><div className="k">{k}</div><div className={"v mono v-long" + (bad ? " v-bad" : "")}>{v}</div></>);
 }

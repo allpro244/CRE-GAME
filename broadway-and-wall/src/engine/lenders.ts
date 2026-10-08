@@ -305,6 +305,41 @@ export function insuredLimit(s: GameState): number {
   return 100_000 * (s.econ.costIdx ?? 1);
 }
 
+// ---- where the firm's cash actually is -----------------------------------
+//
+// THE INTEREST RULE AND THE FAILURE RULE DISAGREED. sweepApy pays the firm's
+// whole balance the government-money-fund yield because "a treasury desk
+// sweeps idle balances into money funds and T-bills nightly" — and then a bank
+// failure seized the whole balance as an uninsured deposit. One quantity, two
+// answers. A firm's cash is in two places: an operating account at its bank
+// (payroll, payables, the next debt service), which is a deposit and is
+// exposed above the insurance limit; and everything else, swept into Treasury
+// bills, which a bank failure does not touch. The sweep is on unless the
+// player turns it off — keeping everything at the bank earns the deposit rate
+// and puts all of it on the bank's balance sheet.
+
+/** Commercial operating balances price ~100-200bp under fed funds (earnings-credit and MMDA rates); 150bp, floored at zero. */
+export const DEPOSIT_SPREAD_PCT = 1.5;
+export function depositApy(econ: { nat?: { policy?: number } } | undefined): number {
+  const pol = econ?.nat?.policy;
+  if (!Number.isFinite(pol)) return 0.005;
+  return Math.max(0, ((pol as number) - DEPOSIT_SPREAD_PCT) / 100);
+}
+/** The operating balance a firm keeps at its bank unless it sets one: a float of $1M in year-2000 dollars. */
+export function defaultOperatingBalance(s: GameState): number {
+  return Math.round(1_000_000 * (s.econ.costIdx ?? 1));
+}
+export interface CashSplit { bank?: Lender; sweep: boolean; keep: number; atBank: number; inBills: number; insured: number; exposed: number }
+/** Where the firm's cash is today: at the bank (insured / exposed) and in Treasury bills. */
+export function cashSplit(s: GameState): CashSplit {
+  const cash = Math.max(0, s.cash);
+  const sweep = s.cashMgmt?.sweep ?? true;
+  const keep = Math.max(0, s.cashMgmt?.keep ?? defaultOperatingBalance(s));
+  const atBank = sweep ? Math.min(cash, keep) : cash;
+  const insured = Math.min(atBank, insuredLimit(s));
+  return { bank: bankOf(s), sweep, keep, atBank, inBills: cash - atBank, insured, exposed: atBank - insured };
+}
+
 /** Which desk the firm banks with, defaulting to its deepest relationship. */
 export function bankOf(s: GameState): Lender | undefined {
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit");
@@ -313,11 +348,13 @@ export function bankOf(s: GameState): Lender | undefined {
 }
 
 function seizeDeposits(s: GameState, l: Lender) {
-  const here = Math.max(0, s.cash);
+  // only what is AT the bank: swept Treasury bills are not the bank's to lose
+  const split = cashSplit(s);
+  const here = split.atBank;
   if (here <= 0) return;
   const limit = insuredLimit(s);
-  const insured = Math.min(here, limit);
-  const exposed = Math.max(0, here - limit);
+  const insured = split.insured;
+  const exposed = split.exposed;
   if (exposed <= 0) {
     s.news.unshift({
       q: s.month, kind: "info",
@@ -330,7 +367,7 @@ function seizeDeposits(s: GameState, l: Lender) {
   const recovery = clamp(0.60 + rng(s, "lenders") * 0.30, 0.60, 0.90);
   const eventual = Math.round(exposed * recovery);
   const lost = exposed - eventual;
-  s.cash = insured;
+  s.cash -= exposed;
   // THE WHOLE UNINSURED BALANCE LEAVES THE ACCOUNT TODAY, not just the part
   // that never comes back. Booking only the haircut left the receiver's
   // eventual dividend as cash that walked out with no entry behind it —
@@ -358,7 +395,7 @@ function seizeDeposits(s: GameState, l: Lender) {
       + `${usdShort(insured)} is insured and available Monday; ${usdShort(exposed)} was over the limit and you are `
       + `an unsecured creditor of the receiver. They expect to return about ${(recovery * 100).toFixed(0)}c on the dollar — `
       + `${usdShort(eventual)} — but not for another year or two. The ${usdShort(lost)} difference is gone. `
-      + `A balance split across two desks would have been split across two Fridays.`,
+      + (split.inBills > 0 ? `The ${usdShort(split.inBills)} swept into Treasury bills was never the bank's and is untouched.` : `Cash swept into Treasury bills (the Banks page) would not have been the bank's to lose.`),
   });
 }
 

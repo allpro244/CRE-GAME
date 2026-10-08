@@ -14,8 +14,13 @@ const { parcels } = loadCity(0, E.normalizeParcels);
 let fail = 0;
 const ok = (c, m) => { console.log(`  ${c ? "OK  " : "FAIL"}  ${m}`); if (!c) fail++; };
 
+for (const sweep of [false, true]) {
+console.log(sweep ? "\n  sweep ON (default): only the operating account is at the bank" : "  sweep OFF: every dollar is a deposit");
 const s = E.newGame(4242, parcels);
 s.cash = 230_000_000;
+s.cashMgmt = { sweep };
+const split0 = E.cashSplit(s);
+if (sweep) ok(split0.inBills > 200_000_000 && split0.atBank <= split0.keep, `$${(split0.inBills / 1e6).toFixed(1)}M swept into bills, $${(split0.atBank / 1e6).toFixed(1)}M at the bank`);
 const bank = E.bankOf(s);
 const yr = () => s.books?.find((b) => b.yr === Math.floor(s.month / 12)) ?? { ga: 0, bought: 0, sold: 0, interest: 0 };
 const nw0 = E.netWorth(s, parcels), cash0 = s.cash, b0 = { ...yr() };
@@ -42,5 +47,7 @@ const yb = yr();
 ok(Math.abs(s.cash - before - claim.amount) < 1, "the claim comes back as cash");
 ok(Math.abs((yb.sold ?? 0) - (yb.yr === Math.floor(claim.payM / 12) && Math.floor(claim.payM / 12) === Math.floor(claim.seizedM / 12) ? sold0 : 0) - claim.amount) < 1 || (yb.sold ?? 0) >= claim.amount, "redeemed as a balance-sheet inflow, not income");
 ok(Math.abs((yb.interest ?? 0) - (Math.floor(claim.payM / 12) === Math.floor(claim.seizedM / 12) ? int0 : 0)) < 1, "no fake interest income");
+if (sweep) ok(Math.abs((cash0 - exposed) - (split0.inBills + split0.insured)) < 2, "the Treasury bills and the insured balance survive the failure");
+}
 console.log(fail ? `${fail} failed` : "bank seizure books correctly");
 process.exit(fail ? 1 : 0);

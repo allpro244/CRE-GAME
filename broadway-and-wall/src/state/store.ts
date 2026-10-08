@@ -401,6 +401,10 @@ interface AppState {
   autoLease: (bbl: string | string[], on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
+  /** Bank with this desk: the operating account moves there (free; deposits are not a loan). */
+  setDepositBank: (id: string) => void;
+  /** Cash management: sweep idle cash into Treasury bills, and the operating balance kept at the bank. */
+  setCashMgmt: (p: { sweep?: boolean; keep?: number }) => void;
   /** Fold contiguous owned lots into one site; `payoff` retires the loans on them at the filing. */
   assemble: (bbls: string[], opts?: { payoff?: boolean }) => void;
   groundLease: (bbl: string, years: number, review?: import("@/engine/types").GroundReview) => void;
@@ -1824,6 +1828,23 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  setDepositBank: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const l = game.lenders?.find((x) => x.id === id);
+    if (!l || l.failedM !== undefined || l.kind === "conduit") { toast("That desk does not take deposits.", "err"); return; }
+    const next = { ...game, bankId: id };
+    set({ game: next });
+    toast(`The firm banks with ${l.name} now.`);
+    void persist(next);
+  },
+  setCashMgmt: (p) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, cashMgmt: { ...(game.cashMgmt ?? {}), ...p } };
+    set({ game: next });
+    void persist(next);
+  },
   assemble: (bbls, opts) => {
     const { game, parcels, adjacency } = get();
     if (!game || !parcels || !adjacency) return;

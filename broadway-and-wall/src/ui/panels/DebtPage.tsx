@@ -333,7 +333,7 @@ export function DebtPage() {
         <>
           <div className="grid">
             <Row k="Status" v={facilityStatus(game, parcels)} bad={fac.breachedSince !== undefined || fac.accelM !== undefined || fac.noticedM !== undefined} strong />
-            <Row k="Lender" v={`${fac.lender} · ${fac.ratePct.toFixed(2)}%`} />
+            <Row k="Lender" v={`${fac.lender} · ${fac.ratePct.toFixed(2)}%${fac.floating ? " floating" : ""}${fac.recourse ? "" : " · non-recourse"}`} />
             <Row k="Balance" v={`${usd(fac.balance)} of ${usd(fac.drawn)} drawn`} />
             <Row k="Pool" v={`${fac.bbls.length} buildings · ${usd(Math.round(facM.value))} of value`} />
             <Row k="Pool coverage" v={facM.dscr !== null ? `${facM.dscr.toFixed(2)}x against a ${fac.minDSCR.toFixed(2)}x covenant` : "—"} bad={facM.dscr !== null && facM.dscr < fac.minDSCR} />
@@ -381,7 +381,7 @@ export function DebtPage() {
                         style={!x.available ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                         title={x.why ?? `${x.lender} · ${(x.advance * 100).toFixed(0)}% advance`}
                         onClick={() => setRefiProd(x.productId)}>
-                        {x.lender} · {x.available ? `${x.ratePct.toFixed(2)}%` : "won't quote"}
+                        {x.label} · {x.available ? `${x.ratePct.toFixed(2)}%${x.floating ? " floating" : " fixed"}` : "won't quote"}
                       </button>
                     ))}
                   </div>
@@ -395,7 +395,7 @@ export function DebtPage() {
                         <div className="grid">
                           <Row k="New borrowing base" v={`${usd(rqt.base)} · ${(rqt.advance * 100).toFixed(0)}% advance · capped by ${rqt.binding}`} strong />
                           <Row k="Balance to roll" v={`${usd(fac.balance)} at ${fac.ratePct.toFixed(2)}% with ${fac.lender}`} />
-                          <Row k="New coupon" v={`${rqt.ratePct.toFixed(2)}% · ${Math.round(rqt.termM / 12)}-yr term${rqt.ioM ? `, ${Math.round(rqt.ioM / 12)}-yr IO` : ""}`}
+                          <Row k="New coupon" v={`${rqt.ratePct.toFixed(2)}% ${rqt.floating ? "floating (resets monthly)" : "fixed"} · ${Math.round(rqt.termM / 12)}-yr term${rqt.ioM ? `, ${Math.round(rqt.ioM / 12)}-yr IO` : ""} · ${rqt.recourse ? "recourse" : "non-recourse"}`}
                             bad={rqt.ratePct > fac.ratePct} />
                           <DrawTerms qt={rqt} draw={draw} />
                           <Row k="Closing costs" v={`${usd(fees)} of fee and points${paydown > 0 ? ` plus a ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
@@ -520,7 +520,7 @@ export function DebtPage() {
                     style={!x.available ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                     title={x.why ?? `${x.lender} · ${(x.advance * 100).toFixed(0)}% advance`}
                     onClick={() => setProd(x.productId)}>
-                    {x.lender} · {x.available ? `${x.ratePct.toFixed(2)}%` : "won't quote"}
+                    {x.label} · {x.available ? `${x.ratePct.toFixed(2)}%${x.floating ? " floating" : " fixed"}` : "won't quote"}
                   </button>
                 ))}
               </div>

@@ -2751,9 +2751,26 @@ $38.0M expensed, a $191.9M claim, net worth down $38.0M, the payback as cash
 with no interest income. Saves with older claims keep their old booking so
 their books still close.
 
-Not yet modelled, and the honest next step: a firm with $200M does not keep
-it as an uninsured deposit at one bank — it holds Treasury bills or a
-government money-market fund, which a bank failure does not touch. The game
-has no such option (and cannot even split deposits, though the failure news
-says it could), so a cash-rich firm currently has no defence a real treasurer
-would have.
+Cash management (the treasurer's defence). A firm with $200M does not keep it
+as an uninsured deposit at one bank. `cashSplit` divides cash into an operating
+balance at the bank (default $1M × cost index, set on the Banks page) and the
+rest swept into Treasury bills / a government money-market fund. Bills earn
+`sweepApy` (policy − 0.40%); the bank balance earns `depositApy` (policy −
+1.50%, the spread an operating account pays). A failure seizes only the
+uninsured part of the bank balance; bills are untouched. With the sweep off,
+everything sits at the bank and is exposed, as before. The player picks the
+bank on the Banks page (a free move: the account follows), sees each bank's
+capital multiple, and gets an attention item when their bank falls under 0.4×
+its capital target while they have money exposed there. `test/bank-seizure.mjs`
+runs both settings: with the sweep on, $229M in bills survives, $0.1M is lost.
+
+Pool refinancing. A facility could only be refinanced on two fixed bank
+products, because the desk list named a product id that does not exist
+("life" for the life-company desk "pelican") and left out the rest. The pool
+desk now quotes every product that underwrites a stabilised pool: the bank
+fixed loans (5/10/25-year), the life company, the CMBS conduit, the floating
+bank loans and the agency ARM, each gated to the asset classes it lends on.
+Floating pools reset monthly off their bench (SOFR-type short index or the
+long index) plus the quoted spread, as single-asset floaters do. Recourse
+follows the product. Still single-asset only: rate caps, bridge, mezzanine
+and land loans, none of which is written on a cross-collateralised pool.

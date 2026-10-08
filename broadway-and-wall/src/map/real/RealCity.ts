@@ -186,14 +186,17 @@ float tW = clamp((fC.y - (1.0 - uWin.w)) / max(uWin.w - uWin.z, 0.01), 0.0, 1.0)
 float xW = clamp((fC.x - uWin.x) / max(uWin.y - uWin.x, 0.01), 0.0, 1.0);
 float blindK = step(wh1, 0.3) * step(1.0 - tW, 0.2 + 0.7 * wh2);
 float curtK = step(0.3, wh1) * step(wh1, 0.46) * (step(xW, 0.24 + 0.12 * wh2) + step(0.76 - 0.12 * wh2, xW));
+// a curtain wall is one tinted, mirrored sheet: in daylight the blinds and
+// rooms behind it do not show, so its panes do not vary (uGlassy)
+blindK *= 1.0 - uGlassy; curtK *= 1.0 - uGlassy;
 float winShade = clamp(blindK + curtK, 0.0, 1.0);
 vec3 blindCol = mix(vec3(0.74, 0.7, 0.62), vec3(0.58, 0.57, 0.55), wh2);
 vec3 curtCol = mix(vec3(0.62, 0.5, 0.42), vec3(0.5, 0.52, 0.5), wh2);
-vec3 paneCol = diffuseColor.rgb * (0.82 + 0.36 * wh2);
+vec3 paneCol = diffuseColor.rgb * (1.0 + (wh2 - 0.5) * mix(0.36, 0.03, uGlassy));
 paneCol = mix(paneCol, blindCol * 0.42, blindK);
 paneCol = mix(paneCol, curtCol * 0.4, curtK * (1.0 - blindK));
 diffuseColor.rgb = mix(diffuseColor.rgb, paneCol, winM * (1.0 - farK * 0.7));
-roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * 0.14, 0.02, 1.0), 0.85, winShade), winM);
+roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * mix(0.14, 0.01, uGlassy), 0.02, 1.0), 0.85, winShade), winM);
 `;
 
 /**
@@ -244,6 +247,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const alb = makeCanvas(W, H), orm = makeCanvas(W, H), hgt = makeCanvas(W, H), msk = makeCanvas(W, H);
   orm.g.fillStyle = `rgb(0,${Math.round(spec.wallRough * 255)},0)`; orm.g.fillRect(0, 0, W, H);
   hgt.g.fillStyle = "#ffffff"; hgt.g.fillRect(0, 0, W, H);
+  const glassy = spec.glass || GLASSY.has(spec.key.split("#")[0]);
   // the paint mask: R lit room after dark, G trim, B accent (see PAINT_FRAG)
   msk.g.fillStyle = "#000000"; msk.g.fillRect(0, 0, W, H);
   const pc = { m: msk.g, hg: hgt.g };
@@ -316,7 +320,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     }
     // the glass: a vertical sky gradient with a per-pane brightness, so a
     // street of windows does not read as one sheet
-    const k = 0.85 + rnd() * 0.3;
+    // (a curtain wall's panes are one sheet: no per-pane brightness)
+    const k = glassy ? 0.85 : 0.85 + rnd() * 0.3;
     const grad = alb.g.createLinearGradient(0, y0, 0, y1);
     grad.addColorStop(0, spec.glassCol); grad.addColorStop(1, shade(spec.glassCol, 0.62));
     const lit = rnd() < 0.55, lum = 0.55 + rnd() * 0.45;
@@ -376,12 +381,13 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uWallLum = { value: Math.max(0.01, wallLum) };
     sh.uniforms.uTrimLum = { value: trimLum };
     sh.uniforms.uAccLum = { value: accLum };
+    sh.uniforms.uGlassy = { value: glassy ? 1 : 0 };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,

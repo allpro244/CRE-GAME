@@ -31,75 +31,86 @@ const report = (name, ok, lines) => {
   if (!ok) fails++;
 };
 
+// A synthetic, fully-let commercial book of about `sf` feet: one tenant per
+// building at market rent, so EGI (and so the management fee) is real.
+function bookOf(g, parcels, sf) {
+  const holdings = {};
+  let acc = 0;
+  for (const b of bbls) {
+    const r = E.resolveRec(parcels, g, b);
+    if (!r || !r.bldgArea || !["office", "industrial", "retail"].includes(r.class)) continue;
+    const let_ = E.rentableSf(r);
+    holdings[b] = {
+      bbl: b, boughtM: 0, costBasis: 1, assessed: 1, loan: null, condition: "average",
+      condIdx: 0.7, service: 0, stance: 0, plan: 1, cfHistory: [],
+      tenants: [{ name: "T", sf: let_, rentPsf: E.marketRentPsfYr(r, g.econ, "average", 0.7), startM: 0, endM: 120,
+        credit: 1, sector: "professional", use: r.class, staff: 1, net: false }],
+    };
+    acc += r.bldgArea;
+    if (acc >= sf) break;
+  }
+  return { holdings, sf: acc };
+}
+const hireOf = (role, lvl, salary = 110_000) => ({
+  id: 1, name: "x", role, hiredM: 0, salary, band0: 26,
+  attrs: { judgment: lvl, urgency: lvl, diligence: lvl, relationships: lvl }, obs: {},
+});
+
 // ---------------------------------------------------------------------------
-// 1. CAPACITY BINDS
+// 1. THE WORK IS BOUGHT UNTIL SOMEBODY IS HIRED TO DO IT
 // ---------------------------------------------------------------------------
 {
+  // No hire: every building is with the outside firm and runs at exactly the
+  // market standard — the principal is NOT secretly managing it. A hire of
+  // ordinary ability takes it in-house up to their capacity and changes
+  // nothing about how the building runs. Past capacity the rest stays outside;
+  // nothing slips.
+  const parcels = clone();
+  const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
   const rows = [];
-  for (const sf of [50_000, 150_000, 400_000, 900_000, 2_400_000]) {
-    const parcels = clone();
-    const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-    // a synthetic book of exactly this much space, so load is the only variable
-    const fake = { holdings: {} };
-    let acc = 0;
-    for (const b of bbls) {
-      const r = E.resolveRec(parcels, g, b);
-      if (!r || r.class === "land" || !r.bldgArea) continue;
-      fake.holdings[b] = { bbl: b, tenants: [], condition: "fair" };
-      acc += r.bldgArea;
-      if (acc >= sf) break;
-    }
-    const probe = { ...g, holdings: fake.holdings };
-    const pm = E.roleState(probe, parcels, "pm");
-    rows.push({ sf: acc, load: pm.load, slip: pm.slip, opex: E.pmOpexMult(pm) });
+  let neutralOk = true;
+  for (const sf of [150_000, 600_000, 2_400_000]) {
+    const { holdings, sf: acc } = bookOf(g, parcels, sf);
+    const solo = { ...g, holdings: JSON.parse(JSON.stringify(holdings)), staff: [] };
+    E.markStaff(solo, parcels);
+    const soloStamped = Object.values(solo.holdings).some((h) => h.pmCover || h.pmOpexMult || h.leaseCover);
+    const mid = { ...g, holdings: JSON.parse(JSON.stringify(holdings)), staff: [hireOf("pm", 50)] };
+    E.markStaff(mid, parcels);
+    const opex = Object.values(mid.holdings).map((h) => h.pmOpexMult ?? 1);
+    if (soloStamped || opex.some((m) => Math.abs(m - 1) > 0.001)) neutralOk = false;
+    rows.push({ sf: acc, share: E.roleState(mid, parcels, "pm").share, soloStamped });
   }
-  const spread = rows[rows.length - 1].opex / rows[0].opex;
-  report("A. CAPACITY BINDS — does an unmanaged portfolio cost more to run?",
-    rows[0].slip === 0 && rows[rows.length - 1].slip > 0.3 && spread > 1.15,
-    [...rows.map((r) => `${(r.sf / 1000).toFixed(0)}k sf   load ${r.load.toFixed(2)}x   slipping ${(r.slip * 100).toFixed(0)}%   controllable opex x${r.opex.toFixed(3)}`),
-     `smallest to largest: x${spread.toFixed(3)} on the controllable stack   (need > 1.15, and the small book must not slip at all)`]);
+  const shrinking = rows[0].share > rows[2].share && rows[0].share >= 0.999 && rows[2].share < 0.5;
+  report("A. THE WORK IS BOUGHT — a hire brings it in-house up to their hours, and no further",
+    neutralOk && shrinking,
+    [...rows.map((r) => `${(r.sf / 1000).toFixed(0)}k sf   mid-ability PM covers ${(r.share * 100).toFixed(0)}% in-house   (no hire: ${r.soloStamped ? "STAMPED" : "all outside, neutral"})`),
+     `an ordinary hire runs buildings exactly as the outside firm did: ${neutralOk}`]);
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE HIRE HAS TO PAY FOR ITSELF, AND NOT TOO EARLY
 // ---------------------------------------------------------------------------
 {
-  // What a median manager saves against what a median manager costs, by book
-  // size. The crossover is the answer to "when should I hire", and it is an
-  // OUTPUT of the salary curve and the capacity curve, not a target.
+  // The fee a median manager brings in-house, less the back office and the
+  // salary, by book size. The crossover is the answer to "when should I hire",
+  // and it is an OUTPUT of the fee, the in-house cost and the capacity curve.
   const parcels = clone();
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-  const salary = 110_000;                       // mid of the $55k-$210k band
+  const salary = 110_000;
   const rows = [];
-  for (const sf of [100_000, 300_000, 600_000, 1_200_000, 2_400_000]) {
-    const holdings = {};
-    let acc = 0;
-    for (const b of bbls) {
-      const r = E.resolveRec(parcels, g, b);
-      if (!r || r.class === "land" || !r.bldgArea) continue;
-      holdings[b] = { bbl: b, tenants: [], condition: "fair" };
-      acc += r.bldgArea;
-      if (acc >= sf) break;
-    }
-    const solo = { ...g, holdings, staff: [] };
-    const withPm = {
-      ...g, holdings,
-      staff: [{ id: 1, name: "x", role: "pm", hiredM: 0, salary, band0: 26,
-        attrs: { judgment: 60, urgency: 60, diligence: 60, relationships: 60, costControl: 60, tenantCare: 60 },
-        obs: {} }],
-    };
-    const a = E.pmOpexMult(E.roleState(solo, parcels, "pm"));
-    const b2 = E.pmOpexMult(E.roleState(withPm, parcels, "pm"));
-    // saving = the controllable stack x the delta, across the book
-    const ctrl = acc * 6.0;                     // ~$6/sf blended controllable
-    const saved = ctrl * (a - b2);
-    rows.push({ sf: acc, a, b: b2, saved, worth: saved - salary });
+  for (const sf of [40_000, 100_000, 300_000, 600_000, 1_200_000]) {
+    const { holdings, sf: acc } = bookOf(g, parcels, sf);
+    const st = { ...g, holdings, staff: [hireOf("pm", 50, salary)] };
+    E.markStaff(st, parcels);
+    const ec = E.pmDeskEconomics(st, parcels);
+    rows.push({ sf: acc, ec });
   }
-  const crossover = rows.find((r) => r.worth > 0);
+  const crossover = rows.find((r) => r.ec.netYr > 0);
+  const big = rows[rows.length - 1].ec;
   report("B. A HIRE PAYS FOR ITSELF, EVENTUALLY — and not on day one",
-    !!crossover && rows[0].worth < 0 && crossover.sf >= 200_000,
-    [...rows.map((r) => `${(r.sf / 1000).toFixed(0)}k sf   solo x${r.a.toFixed(3)} -> managed x${r.b.toFixed(3)}   saves ${M(r.saved)}/yr against a $110k salary  ->  ${r.worth >= 0 ? "WORTH IT" : "not yet"}`),
-     `crossover at ${crossover ? (crossover.sf / 1000).toFixed(0) + "k sf" : "never"}   (a $110k manager must be a bad idea at 100k sf and a good one before 2.4M sf)`]);
+    !!crossover && rows[0].ec.netYr < 0 && crossover.sf >= 80_000 && big.netYr > 0,
+    [...rows.map((r) => `${(r.sf / 1000).toFixed(0)}k sf   fee kept ${M(r.ec.feeKeptYr)} − back office ${M(r.ec.backOfficeYr)} − salary ${M(r.ec.salaryYr)} = ${M(r.ec.netYr)}  ->  ${r.ec.netYr >= 0 ? "WORTH IT" : "not yet"}`),
+     `crossover at ${crossover ? (crossover.sf / 1000).toFixed(0) + "k sf" : "never"}   (a $110k manager must lose money on a couple of small buildings and earn it on a real book)`]);
 }
 
 // ---------------------------------------------------------------------------
@@ -214,35 +225,35 @@ const report = (name, ok, lines) => {
 }
 
 // ---------------------------------------------------------------------------
-// F. CAPACITY PARKED — overload does not stamp
+// F. PM AND LEASING NEVER SLIP; CONSTRUCTION DOES
 // ---------------------------------------------------------------------------
 {
   const parcels = clone();
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-  const holdings = {};
-  let acc = 0;
-  for (const b of bbls) {
-    const r = E.resolveRec(parcels, g, b);
-    if (!r || r.class === "land" || !r.bldgArea) continue;
-    holdings[b] = { bbl: b, tenants: [], condition: "fair" };
-    acc += r.bldgArea;
-    if (acc >= 2_400_000) break;
-  }
-  const probe = { ...g, holdings };
+  // A huge book with one weak PM: whatever they cannot cover is outside at
+  // neutral, so the building-level opex stamp is the hire's skill diluted by
+  // share — never worse than the hire's own skill.
+  const { holdings } = bookOf(g, parcels, 2_400_000);
+  const probe = { ...g, holdings, staff: [hireOf("pm", 30)] };
   E.markStaff(probe, parcels);
   const rs = E.roleState(probe, parcels, "pm");
-  const any = Object.values(probe.holdings)[0];
-  const stamped = any?.pmOpexMult ?? 1;
-  const slipping = E.pmOpexMult(rs);
-  const parked = E.pmOpexMult({ ...rs, slip: 0 });
-  report("F. CAPACITY PARKED — overload slip does not stamp the month",
-    E.STAFF_CAPACITY_SHIPPED === false
-      && rs.slip > 0.2
-      && Math.abs(stamped - parked) < 0.002
-      && slipping > parked + 0.02,
+  const own = E.pmOpexMult({ ...rs, skill: rs.skill, slip: 0 });
+  const stamps = Object.values(probe.holdings).map((h) => h.pmOpexMult ?? 1);
+  const noSlip = stamps.every((m) => m <= own + 1e-6 && m >= 1 - 1e-6);
+  // Construction: a 300k sf job with nobody hired is past the principal's cover.
+  const jobBbl = Object.keys(holdings)[0];
+  const cm = { ...g, holdings: {}, staff: [], developments: { [jobBbl]: {
+    bbl: jobBbl, use: "office", sf: 300_000, floors: 20, startM: 0, deliverM: 36,
+    costTotal: 1, hardCost: 1, equityBudget: 1, equitySpent: 1, loanBalance: 0, ratePct: 7,
+    contingency: 0, contingencyUsed: 0, events: 0, contract: "costplus" } } };
+  const cmRs = E.roleState(cm, parcels, "construction");
+  const withCm = { ...cm, staff: [hireOf("construction", 60)] };
+  const cmRs2 = E.roleState(withCm, parcels, "construction");
+  report("F. PM AND LEASING NEVER SLIP — the excess stays outside; construction still does",
+    noSlip && rs.share < 0.5 && cmRs.slip > 0.3 && cmRs2.slip < cmRs.slip && E.cmRiskMult(cmRs) > E.cmRiskMult(cmRs2),
     [
-      `flag ${E.STAFF_CAPACITY_SHIPPED}   slip ${(rs.slip * 100).toFixed(0)}%   stamped opex x${stamped.toFixed(3)}`,
-      `skill-only x${parked.toFixed(3)}   would-have-slipped x${slipping.toFixed(3)}`,
+      `weak PM on 2.4M sf: ${(rs.share * 100).toFixed(0)}% in-house, stamps x${Math.min(...stamps).toFixed(3)}..x${Math.max(...stamps).toFixed(3)}, their own skill x${own.toFixed(3)}`,
+      `300k sf job: principal alone slips ${(cmRs.slip * 100).toFixed(0)}% (site risk x${E.cmRiskMult(cmRs).toFixed(3)}); with a CM ${(cmRs2.slip * 100).toFixed(0)}% (x${E.cmRiskMult(cmRs2).toFixed(3)})`,
     ]);
 }
 

@@ -521,6 +521,18 @@ export interface Holding {
   pmRenewalMult?: number;
   /** Stamped by markStaff — assigned leasing skill on rent at this building. */
   leasingRentMult?: number;
+  /**
+   * Share of this building your own property managers have the hours for,
+   * 0..1. The rest is run by the third-party manager the 4% fee has always
+   * paid for. Stamped by markStaff; see staff.ts, "WHAT A HIRE REPLACES".
+   */
+  pmCover?: number;
+  /** Stamped by markStaff — tenant-care factor on renewals at this building. */
+  pmCareMult?: number;
+  /** Share of this building's commercial space your leasing hires cover, 0..1. */
+  leaseCover?: number;
+  /** Stamped by markStaff — prospect arrival at this building from your leasing desk. */
+  leasingOddsMult?: number;
   // A listing exclusive. The house works the phones and is paid 6% of the
   // base rent over the term of every lease signed while they hold the file,
   // in place of the 4%/2% you pay doing it yourself — see exclusiveFeeRate.
@@ -2759,6 +2771,12 @@ export interface GameState {
   leasingRentMult?: number;
   /** PM desk overload, stamped by markStaff for tenant-care reads without parcels. */
   pmDeskSlip?: number;
+  /**
+   * The in-house management company, last month: the 4% fee it earned on the
+   * buildings your PMs cover and what its back office cost. Stamped in the
+   * deed loop, netted into G&A by firmOverheadMonthly. Monthly dollars.
+   */
+  mgmtAffiliate?: { fee: number; cost: number };
   /** How the market reads your hiring history — 0..1, default 0.55. */
   hireReputation?: number;
   /**

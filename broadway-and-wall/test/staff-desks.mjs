@@ -65,7 +65,16 @@ console.log("\nSTAFF DESKS — load-bearing assignment, CM jobs, pen model\n");
   const person = E.personRoleState(g, parcels, g.staff[0]);
   const coverA = E.deskCoverage({ ...g, teamLeasing: true }, a.bbl);
   const coverB = E.deskCoverage({ ...g, teamLeasing: true }, b.bbl);
-  ok("assigned hire loads only their pinned SF", person.covered > 0 && person.covered === E.workSfAt(g, parcels, a.bbl, "leasing"));
+  // Load is work-SF weighted by how well the hire's career knows this class
+  // and district (careerLoadMult), so compare against that, not raw SF.
+  const recA = E.resolveRec(parcels, g, a.bbl);
+  const wantA = E.workSfAt(g, parcels, a.bbl, "leasing")
+    * E.careerLoadMult(g.staff[0].career, recA.class, recA.district ?? "—");
+  ok("assigned hire loads only their pinned SF", person.covered > 0 && Math.abs(person.covered - wantA) < 1e-6);
+  // Unpinned B goes back to the outside brokers: no in-house cover there.
+  const gm = JSON.parse(JSON.stringify(g));
+  E.markStaff(gm, parcels);
+  ok("pinned building is in-house; unpinned is outside", (gm.holdings[a.bbl].leaseCover ?? 0) > 0 && !gm.holdings[b.bbl].leaseCover);
   ok("unpinned building sits on float / owner", (float.uncoveredN ?? 0) >= 1);
   ok("team pen covers pinned building", !!coverA && coverA.kind === "staff");
   ok("team pen does NOT cover unpinned building when every hire is pinned", coverB === null);
@@ -104,7 +113,7 @@ console.log("\nSTAFF DESKS — load-bearing assignment, CM jobs, pen model\n");
 // 4. Firing last leasing hire clears teamLeasing.
 {
   const g = bookWith([star(1, "leasing", undefined)], { teamLeasing: true, cash: 5_000_000 });
-  const r = E.fire(g, 1);
+  const r = E.fire(g, parcels, 1);
   ok("fire last leasing hire clears teamLeasing", !r.err && !r.s.teamLeasing, r.err);
 }
 
@@ -123,15 +132,17 @@ console.log("\nSTAFF DESKS — load-bearing assignment, CM jobs, pen model\n");
   const platform = bookWith([1, 2, 3, 4, 5].map((i) => star(i, "pm", undefined)));
   ok("empty payroll reads hands-on", E.effectiveOwnerStyle(alone) === "handsOn");
   ok("five hires read platform", E.effectiveBenchStyle(platform) === "platform");
+  // The forced override was a free capacity dial and was deleted
+  // (HANDOFF_PRINCIPAL.md); a stale save field must be ignored.
   const forced = bookWith([], { ownerStyle: "delegated" });
-  ok("explicit ownerStyle overrides emergence", E.effectiveOwnerStyle(forced) === "delegated");
+  ok("stale ownerStyle field is ignored", E.effectiveOwnerStyle(forced) === "handsOn");
 }
 
 // 7. deskBacklog surfaces uncovered SF.
 {
   const g = bookWith([star(1, "pm", [a.bbl])]);
-  const bl = E.deskBacklog(g, parcels, "pm", 1_000_000);
-  ok("backlog reports uncovered buildings when every PM is pinned", (bl.uncoveredN ?? 0) >= 1);
+  const bl = E.deskBacklog(g, parcels, "pm");
+  ok("backlog reports outside-managed buildings when every PM is pinned", (bl.uncoveredN ?? 0) >= 1 && bl.share < 1);
 }
 
 console.log(`\n${fails === 0 ? "staff-desks pass" : `${fails} staff-desks failure(s)`}`);

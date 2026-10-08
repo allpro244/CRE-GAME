@@ -55,6 +55,26 @@ Legacy rows may still carry them; readers **fall back** through `temperamentSkil
 
 ---
 
+## 2b · Desk redesign (October 2026) — what a hire replaces
+
+Supersedes the PM/leasing rows of §3 below. Nobody on payroll does not mean
+nobody doing the work — it means the work is **bought**:
+
+| Desk | Bought from (no hire) | Quality when bought | A hire brings in-house… |
+|------|-----------------------|---------------------|--------------------------|
+| PM | third-party manager, the 4% `MGMT_FEE` every building already pays | `OUTSIDE_DESK_SKILL` = 50 → multipliers 1.0 | the fee on the covered share (paid to your management company, less `IN_HOUSE_MGMT_COST` 2.5% of EGI back office; net in G&A) |
+| Leasing | outside brokers on 4%/2% commission | 50 → tours/rent 1.0 | the landlord half of the commission on covered space (`LANDLORD_SIDE_SHARE`) |
+| Construction | **you** — no owner's-rep fee exists in the cost stack | your Rigor + Bandwidth | capacity; float skill is the capacity-weighted mean of you + CMs |
+
+- Coverage is capacity / load per pinned person or float, capped at 1. The
+  rest stays outside at the outside price. **PM and leasing never slip.**
+- Construction keeps slip: past the cover of whoever is watching, `cmRiskMult` rises.
+- Appraisals and the property statement still carry a market 4% fee.
+- Your temperament no longer moves PM opex/renewals or leasing tours/rent —
+  the outside firm was doing that work. It still drives construction cover,
+  the leasing pen, and learning rates.
+- Harnesses: `pnpm staff` (A/B/F rewritten), `node test/staff-desks.mjs`, `pnpm attrs`.
+
 ## 3 · Player = org chart (the hole this closes)
 
 Before: float desk with no hires used **skill = 42**; owner capacity ignored your attrs.  

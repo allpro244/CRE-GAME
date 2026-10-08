@@ -11,7 +11,7 @@ import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
-import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
+import { coverRoleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
@@ -1920,7 +1920,9 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // and it cost an acceptance test once already.
       // Per-job cover: an assigned CM carries this site; otherwise the float desk.
       const cmRaw = coverRoleState(s, parcels, d.bbl, "construction").rs;
-      const cm = cmRiskMult(STAFF_CAPACITY_SHIPPED ? cmRaw : { ...cmRaw, slip: 0 });
+      // Slip is live here, and only here: a job nobody was hired to watch is
+      // watched by the principal, in the gaps (staff.ts, "WHAT A HIRE REPLACES").
+      const cm = cmRiskMult(cmRaw);
       const cmNote = cm > 1.08 ? " The construction desk was underwater and the job went unsupervised." : "";
       if (roll < 0.028 * gmpShield * cm) {
         // change order

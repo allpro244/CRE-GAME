@@ -7,10 +7,10 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale, MGMT_FEE } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, signingFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
@@ -23,7 +23,7 @@ import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
-import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
+import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE, IN_HOUSE_MGMT_COST } from "./staff";
 import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
@@ -695,6 +695,12 @@ function tickMonth(
 
   // holdings: collect NOI, run the debt stack, finish renovations
   let monthCF = 0;
+  // YOUR OWN MANAGEMENT COMPANY. Every building's statement pays the market
+  // 4% fee (MGMT_FEE) — that is what a buyer, a lender and an appraiser all
+  // underwrite. On the share your PMs cover (`pmCover`, see staff.ts) the fee
+  // is paid to you, and you carry the back office that earns it. The net is
+  // overhead, so firmOverheadMonthly books it in G&A.
+  const affiliate = { fee: 0, cost: 0 };
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
@@ -727,7 +733,12 @@ function tickMonth(
     logBooks(s, "noi", noiQ, h.bbl);
     // The income statement's revenue line, off the same operating statement
     // the quarterly report below reads (a leased fee's revenue is its coupon).
-    stampPnlDeed(s, h, noiQ, h.groundLeased ? null : (operatingStatement(rec, s.econ, h, s.month).egi ?? 0));
+    const egiYr = h.groundLeased ? null : (operatingStatement(rec, s.econ, h, s.month).egi ?? 0);
+    stampPnlDeed(s, h, noiQ, egiYr);
+    if (egiYr && h.pmCover) {
+      affiliate.fee += (egiYr / 12) * h.pmCover * MGMT_FEE;
+      affiliate.cost += (egiYr / 12) * h.pmCover * IN_HOUSE_MGMT_COST;
+    }
     logBooks(s, "debtSvc", debtCash, h.bbl);
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
     const cf = noiQ - debtCash;
@@ -772,6 +783,8 @@ function tickMonth(
     }
   }
   s.cash += monthCF;
+  if (affiliate.fee > 0) s.mgmtAffiliate = { fee: Math.round(affiliate.fee), cost: Math.round(affiliate.cost) };
+  else delete s.mgmtAffiliate;
 
   // THE FACILITY, AFTER THE BUILDINGS AND BEFORE THE OVERHEAD.
   //
@@ -1946,7 +1959,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   {
     let committed = 0, vehicle = 0;
     for (const l of s.lois ?? []) {
-      const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
+      const c = loiSigningCost(l, signingFeeRate(s.holdings[l.bbl], l));
       if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c; else committed += c;
     }
     if (vehicle > 0 && vehiclePurse(s) - vehicle < fundReserve(s)) {
@@ -2236,7 +2249,18 @@ export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number 
   // with nobody on the books pays what it always paid, and a firm with a full
   // desk pays that plus its actual salaries rather than a phantom on top.
   const annual = 60_000 * s.econ.costIdx + 0.0028 * gav * NON_PAYROLL_GA_SHARE;
-  return Math.round(annual / 12) + payrollMonthly(s);
+  return Math.round(annual / 12) + payrollMonthly(s) + affiliateNetCostMonthly(s);
+}
+
+/**
+ * The in-house management company's net cost this month: its back office
+ * less the 4% fees it collected from your own buildings (stamped in the deed
+ * loop). Negative when the platform pays for itself, which is the reason to
+ * build one. The manager's salary is in payroll, not here.
+ */
+export function affiliateNetCostMonthly(s: GameState): number {
+  const a = s.mgmtAffiliate;
+  return a ? a.cost - a.fee : 0;
 }
 
 export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {

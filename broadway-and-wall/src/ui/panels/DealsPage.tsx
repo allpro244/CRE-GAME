@@ -6,7 +6,7 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
+import { bumpOf, loiSigningCost, signingFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
 import { saleTaxQuote } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
@@ -98,7 +98,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   }, [loiFocusId, loi.id, setLoiFocus]);
   const h = game.holdings[loi.bbl];
   const market = loiMarketPsf(game, parcels, loi);
-  const fee = exclusiveFeeRate(h);
+  const fee = signingFeeRate(h, loi);
   const cost = loiSigningCost(loi, fee);
   // Whether signing draws the line — the same cash test the interrupt modal
   // passes to respondLoi. `fund: true` unconditionally was drawing the

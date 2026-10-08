@@ -25,23 +25,25 @@ ok("Bandwidth label", E.ATTR_LABEL_PERSON.urgency === "Bandwidth");
 ok("Rigor label", E.ATTR_LABEL_PERSON.diligence === "Rigor");
 ok("Access label", E.ATTR_LABEL_PERSON.relationships === "Access");
 
-const skillMid = E.principalDeskSkill(g, "pm");
-const expected = E.meanAttrs(g.principal.attrs, ["diligence", "judgment"]);
-ok("principalDeskSkill = Rigor+Deal sense mean", Math.abs(skillMid - expected) < 1e-9);
-ok("float skill uses principal (not 42)",
-  Math.abs(E.floatRoleState(g, parcels, "pm").skill - skillMid) < 1e-9);
-ok("empty-book float is not hardcoded 42 when attrs ≠ 42",
-  skillMid === 42 || Math.abs(E.floatRoleState(g, parcels, "pm").skill - 42) > 0.5);
+const skillMid = E.principalDeskSkill(g, "construction");
+const expected = E.meanAttrs(g.principal.attrs, ["diligence", "urgency"]);
+ok("principalDeskSkill = Rigor+Bandwidth mean on construction", Math.abs(skillMid - expected) < 1e-9);
+ok("construction float skill uses principal (not 42)",
+  Math.abs(E.floatRoleState(g, parcels, "construction").skill - skillMid) < 1e-9);
+// PM and leasing with nobody hired are run by the outside firm, not by you —
+// the buildings already pay it the 4% fee (staff.ts, WHAT A HIRE REPLACES).
+ok("empty PM float is the outside firm",
+  E.floatRoleState(g, parcels, "pm").skill === E.OUTSIDE_DESK_SKILL);
 
 g.principal.attrs.urgency = 50;
 const style = E.effectiveOwnerStyle(g);
-const shape = style === "handsOn" ? 1.35 : style === "delegated" ? 0.72 : 1;
-const cap50 = E.ownerCapacitySf(g, "pm");
-ok("Bandwidth 50 centres owner capacity", Math.abs(cap50 / (E.OWNER_SF * shape) - 1) < 0.02);
+const shape = style === "handsOn" ? 1.25 : style === "delegated" ? 0.65 : 1;
+const cap50 = E.ownerCapacitySf(g, "construction");
+ok("Bandwidth 50 centres owner capacity", Math.abs(cap50 / (E.OWNER_CONSTRUCTION_SF * shape) - 1) < 0.02);
 g.principal.attrs.urgency = 90;
-const cap90 = E.ownerCapacitySf(g, "pm");
+const cap90 = E.ownerCapacitySf(g, "construction");
 g.principal.attrs.urgency = 20;
-const cap20 = E.ownerCapacitySf(g, "pm");
+const cap20 = E.ownerCapacitySf(g, "construction");
 ok("Bandwidth 90 > 50 > 20", cap90 > cap50 && cap50 > cap20);
 
 g.principal.attrs.judgment = 90;
@@ -83,14 +85,14 @@ ok("firm capital tier in 0..5", fc.tier >= 0 && fc.tier <= 5);
 ok("process mult in [1, 1.08]", fc.processCapacityMult >= 1 && fc.processCapacityMult <= 1.08 + 1e-9);
 ok("six pillars", fc.pillars.length === 6);
 g.principal.attrs.urgency = 50;
-const capBase = E.ownerCapacitySf(g, "pm");
+const capBase = E.ownerCapacitySf(g, "construction");
 // Bump firm capital score via fake clean exits + hire rep
 g.hireReputation = 0.9;
 g.exits = Array.from({ length: 8 }, (_, i) => ({
   bbl: `x${i}`, address: "x", boughtM: 0, soldM: 1, price: 2e6, basis: 1e6, gain: 1e6,
 }));
 const fc2 = E.firmCapital(g);
-const capMature = E.ownerCapacitySf(g, "pm");
+const capMature = E.ownerCapacitySf(g, "construction");
 ok("mature firm process raises owner cover", capMature >= capBase);
 ok("more exits raise firm capital score", fc2.score > fc.score);
 

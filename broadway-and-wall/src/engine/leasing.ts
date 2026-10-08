@@ -29,7 +29,7 @@ import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { pmTenantCareMult, rentMultFor } from "./staff";
+import { pmTenantCareMult, rentMultFor, LANDLORD_SIDE_SHARE } from "./staff";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 
@@ -3649,7 +3649,30 @@ export interface TrayRow {
 
 /** The fee the principal pays on their own signing: an exclusive's, else the in-house 4%/2%. */
 function principalFee(h: Holding | undefined, loi: LOI): number {
-  return exclusiveFeeRate(h) ?? (loi.kind === "new" ? 0.04 : 0.02);
+  return exclusiveFeeRate(h) ?? ownCommission(h, loi);
+}
+
+/**
+ * WHAT THE COMMISSION IS WHEN NO HOUSE HOLDS THE FILE: 4% on a new lease, 2%
+ * on a renewal, split in life between the landlord's broker and the tenant's.
+ *
+ * A leasing hire IS the landlord's broker. On the share of a building your
+ * own leasing desk covers (`Holding.leaseCover`, stamped by markStaff) that
+ * half of the commission is not paid to anybody — it was paid in salary —
+ * and only the tenant's representative is still owed. The 50/50 co-broke
+ * split is the market convention, not a tuned number (LANDLORD_SIDE_SHARE).
+ *
+ * Exported so every screen that quotes a signing cost quotes this one.
+ */
+export function ownCommission(h: Holding | undefined, loi: LOI): number {
+  const base = loi.kind === "new" ? 0.04 : 0.02;
+  const cover = Math.max(0, Math.min(1, h?.leaseCover ?? 0));
+  return base * (1 - LANDLORD_SIDE_SHARE * cover);
+}
+
+/** The rate the landlord pays on this letter when they (or their staff) sign it. */
+export function signingFeeRate(h: Holding | undefined, loi: LOI): number {
+  return principalFee(h, loi);
 }
 
 /**
@@ -3828,7 +3851,7 @@ function runPlanDesk(
     const signedBefore = digestOf(s).signed;
     const feeRate = cover.kind === "exclusive" && best.kind === "renewal"
       ? RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE
-      : deskFee(cover.kind, best);
+      : deskFee(cover.kind, best, h);
     executePlanLetter(s, rec, h, best, plan, feeRate, cover.who, true, parcels);
     if (digestOf(s).signed > signedBefore) {
       // The space is let; the others lost it.
@@ -3854,7 +3877,7 @@ function runPlanDesk(
     if (!h || !rec) continue;
     const feeRate = cover.kind === "exclusive" && loi.kind === "renewal"
       ? RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE
-      : deskFee(cover.kind, loi);
+      : deskFee(cover.kind, loi, h);
     executePlanLetter(s, rec, h, loi, plan, feeRate, cover.who, false, parcels);
   }
 }
@@ -3885,8 +3908,9 @@ export function deskCoverage(
   return { kind: "staff", who: "Your leasing desk" };
 }
 
-function deskFee(kind: "agent" | "exclusive" | "staff", loi?: LOI): number {
-  if (kind === "staff") return loi?.kind === "renewal" ? 0.02 : 0.04;
+function deskFee(kind: "agent" | "exclusive" | "staff", loi: LOI, h: Holding | undefined): number {
+  // Your own desk is your own commission — the landlord side is in-house.
+  if (kind === "staff") return ownCommission(h, loi);
   return AGENT_FEE;
 }
 
@@ -4354,9 +4378,10 @@ export function respondLOI(
   let drawn = 0;
   // Whoever holds the file the day the letter is signed is who gets paid, and
   // an exclusive on this building takes six points of the base rent over the
-  // term instead of the 4%/2% your own leasing department costs.
-  const fee = exclusiveFeeRate(h);
+  // term instead of the 4%/2% (less the in-house landlord side) you pay
+  // doing it yourself — see ownCommission.
   const sign = (l: LOI): string | null => {
+    const fee = principalFee(h, l);
     const cost = loiSigningCost(l, fee) + Math.max(0, Math.round(l.demiseCost ?? 0));
     // A FUND DEED'S LEASE IS PAID BY THE FUND. The cheque settles through the
     // vehicle (settleVehicleDeedFlow: its cash, then a call on uncalled

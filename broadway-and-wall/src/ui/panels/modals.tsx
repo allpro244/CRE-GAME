@@ -7,7 +7,7 @@ import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRate
 import { ordinal } from "@/engine/standing";
 import { saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES, opportunitiesStop } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
+import { loiSigningCost, signingFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
@@ -797,7 +797,7 @@ function DecisionBody({
     // Market for THIS letter's use — not the blended building ask. Same desk
     // as DealsPage (LoiNegotiate), so the modal and the page never disagree.
     const market = loiMarketPsf(game, parcels, loi);
-    const fee = exclusiveFeeRate(h);
+    const fee = signingFeeRate(h, loi);
     const cost = loiSigningCost(loi, fee);
     const live = game.lois.filter(loiOnDesk);
     const idx = live.findIndex((l) => l.id === loi.id) + 1;

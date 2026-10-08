@@ -468,11 +468,13 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   // asking rent, rather than as a coefficient buried in the odds. Apartments
   // are excluded: setBroker already says brokers work commercial space.
   if (use !== "multifamily") {
-    const m = s.leasingOddsMult ?? 1;
+    // Per building: your own leasing hires on the share of it they cover,
+    // the ordinary outside brokers on the rest — see markStaff.
+    const m = h.leasingOddsMult ?? 1;
     if (Math.abs(m - 1) > 0.005) {
       out.push({
         label: "Leasing desk",
-        detail: m >= 1 ? "somebody is out working this space" : "nobody is chasing prospects for this one",
+        detail: m >= 1 ? "your own leasing team is out working this space" : "your leasing team turns up fewer prospects than the outside brokers would",
         mult: +m.toFixed(3),
       });
     }

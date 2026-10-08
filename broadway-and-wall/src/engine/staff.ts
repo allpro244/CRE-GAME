@@ -46,12 +46,54 @@
  * fixed $200,000 salary in a simulation that runs a century at 5.4x inflation
  * is free money by year sixty, and a wage that ignores the price level is
  * exactly the kind of number this project does not ship.
+ *
+ * WHAT A HIRE REPLACES (the desk redesign, October 2026).
+ *
+ * The first version of this module had two faults that together made every
+ * hire a coin-flip with a salary attached. With the slip penalty parked, the
+ * only thing a hire changed was WHOSE temperament a desk read — yours or
+ * theirs — and you are drawn from the same distribution they are. A median
+ * hire was worth nothing in expectation and cost $100k a year. And it had the
+ * principal personally running buildings that were, at the same time, paying
+ * a third-party manager 4% of collections (MGMT_FEE) to run them: one job,
+ * two people, both billed.
+ *
+ * The fix is to model what a firm actually does when it hires these seats.
+ * Nobody on payroll does not mean nobody doing the work — it means the work
+ * is BOUGHT:
+ *
+ *   Property management — a third-party manager, paid the 4% fee every
+ *     building already carries, of ordinary competence (OUTSIDE_DESK_SKILL).
+ *   Leasing — outside brokers on commission, landlord side and tenant side,
+ *     the 4%/2% every signing already pays.
+ *   Construction — you. There is no owner's-rep fee in the cost stack, so a
+ *     job nobody is hired to watch is watched by the principal, in the gaps.
+ *
+ * A hire brings the work in-house on as much of the book as they have the
+ * hours for (their capacity), and that share stops being bought:
+ *
+ *   PM: the covered share's 4% fee is paid to your own management company,
+ *     which carries a back office (IN_HOUSE_MGMT_COST) and the salary. The
+ *     property statement still shows a market fee — a buyer, a lender and an
+ *     appraiser all underwrite one — and the affiliate's net lands in G&A.
+ *   Leasing: the landlord half of the commission is not paid on covered
+ *     space (LANDLORD_SIDE_SHARE), and the desk works the phones.
+ *   Construction: unchanged in kind — capacity against the principal's own
+ *     thin cover, with slip, because that is the real constraint.
+ *
+ * Quality is then measured against the people the hire replaces: a PM of
+ * ordinary ability runs a building exactly as well as the outside firm did
+ * (multipliers of 1.0), a good one better, a poor one worse. The money a hire
+ * saves is the fee; the money a hire makes or loses on top is their skill.
+ * Past capacity nothing slips on PM or leasing — the excess simply stays with
+ * the outside firm at the outside price. Difficulty is still arithmetic: a
+ * salary against a book too small to carry it loses money, visibly.
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { cloneState } from "./types";
 import { mulberry32Step } from "./market";
-import { resolveRec } from "./value";
+import { resolveRec, operatingStatement, MGMT_FEE } from "./value";
 import {
   careerLoadMult, principalTemperament, queueFounderBid, seedEmployeeCareer,
   type Person,
@@ -102,6 +144,40 @@ function srrange(s: GameState, lo: number, hi: number): number {
  * same person twice.
  */
 export const NON_PAYROLL_GA_SHARE = 0.55;
+
+/**
+ * WHO DOES THE WORK WHEN YOU HAVE NOT HIRED ANYBODY: an outside firm of
+ * ordinary competence. 50 is the middle of the same 1-100 scale every person
+ * in the game is drawn on, so a hire of ordinary ability neither helps nor
+ * hurts a building's running — they save the fee, and that is all.
+ */
+export const OUTSIDE_DESK_SKILL = 50;
+
+/**
+ * WHAT IN-HOUSE MANAGEMENT COSTS BESIDES THE MANAGER, as a share of EGI.
+ *
+ * A third-party fee is the manager's cost plus their margin. Fee-managed
+ * shops run roughly 25-40% operating margins on a 3-4% fee (IREM fee surveys;
+ * the listed managers' segment reporting), so the cost of doing the same work
+ * is ~2.4-3.0% of collections — accounting, AP/AR, the assistant managers,
+ * systems. The senior manager's salary is billed separately as payroll, so
+ * this is the support layer under them. Calibrated to that margin and stated
+ * as such; it is not tuned to make a hire pay.
+ */
+export const IN_HOUSE_MGMT_COST = 0.025;
+
+/**
+ * THE LANDLORD'S HALF OF A COMMISSION. A full commission is split between
+ * the landlord's broker and the tenant's representative, conventionally
+ * 50/50. A leasing hire is the landlord's broker; the tenant rep is owed
+ * either way. A market convention, not a balance number.
+ */
+export const LANDLORD_SIDE_SHARE = 0.5;
+
+/** The principal personally covers this desk's unassigned load (construction only). */
+export function ownerOnDesk(role: StaffRole): boolean {
+  return role === "construction";
+}
 
 /**
  * Temperament — four attrs, every Person. Storage keys are save-stable;
@@ -508,6 +584,14 @@ export interface RoleState {
   load: number;
   slip: number;
   skill: number;
+  /**
+   * Share of `covered` that somebody on this desk has the hours for, 0..1.
+   * For PM and leasing the rest is bought from outside; for construction it
+   * is the principal stretched past their cover (and `slip` prices that).
+   */
+  share: number;
+  /** Tenant care (Rigor + Access) of whoever covers it — PM desks only. */
+  care?: number;
   /** SF with nobody assigned while every hire in the role is pinned elsewhere. */
   uncoveredSf?: number;
   uncoveredN?: number;
@@ -515,7 +599,8 @@ export interface RoleState {
 
 function stateOf(capacity: number, covered: number, skill: number): RoleState {
   const load = capacity > 0 ? covered / capacity : (covered > 0 ? 99 : 0);
-  return { capacity, covered, load, slip: slip(load), skill };
+  const share = covered > 0 ? Math.min(1, capacity / covered) : (capacity > 0 ? 1 : 0);
+  return { capacity, covered, load, slip: slip(load), skill, share };
 }
 
 /** Load on one assigned person — only their pinned assets count. */
@@ -531,19 +616,39 @@ export function personRoleState(s: GameState, parcels: ParcelTable, st: Staff): 
     covered += w * mult;
   }
   const skill = meanAttrs(st.attrs, skillKeys(st.role));
-  return stateOf(capacity, covered, skill);
+  const rs = stateOf(capacity, covered, skill);
+  rs.care = attrValue(st.attrs, "tenantCare");
+  return rs;
 }
 
 /**
- * The float desk: owner cover + every unassigned hire, against every asset
- * that is not pinned to somebody. This is where assignment becomes load-bearing —
- * pin every leasing hire to Tower A and Tower B sits on you alone.
+ * The float desk: every unassigned hire (plus, on construction only, the
+ * principal) against every asset that is not pinned to somebody. This is where
+ * assignment becomes load-bearing — pin every leasing hire to Tower A and
+ * Tower B goes back to the outside brokers.
+ *
+ * Skill is the CAPACITY-WEIGHTED mean of whoever is on the float. It used to
+ * be the floaters' mean with the principal dropped the moment anyone was
+ * hired, so a hire replaced you rather than joining you; a team's quality is
+ * the quality of the hours it actually puts in. With nobody on a PM or
+ * leasing float the work is bought, at OUTSIDE_DESK_SKILL.
  */
 export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRole): RoleState {
   const hired = (s.staff ?? []).filter((x) => x.role === role);
   const floaters = hired.filter(isFloatStaff);
-  let capacity = ownerCapacitySf(s, role);
-  for (const st of floaters) capacity += personCapacitySf(s, st);
+  const keys = skillKeys(role);
+  const ownerCap = ownerOnDesk(role) ? ownerCapacitySf(s, role) : 0;
+  let capacity = ownerCap;
+  let skillAcc = ownerCap * principalDeskSkill(s, role);
+  let careAcc = 0;
+  let careW = 0;
+  for (const st of floaters) {
+    const c = personCapacitySf(s, st);
+    capacity += c;
+    skillAcc += c * meanAttrs(st.attrs, keys);
+    careAcc += c * attrValue(st.attrs, "tenantCare");
+    careW += c;
+  }
 
   const pinned = new Set<string>();
   for (const st of hired) {
@@ -555,6 +660,12 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
   let uncoveredN = 0;
   // Float load: each floater's career weights their share; owner uses principal.
   const ownerCareer = s.principal?.career;
+  // Nobody of yours on this float: construction leaves it with the principal
+  // alone (reported when every hire is pinned elsewhere); PM and leasing leave
+  // it with the outside firm.
+  const bare = ownerOnDesk(role)
+    ? !floaters.length && hired.length > 0
+    : !floaters.length;
   for (const bbl of deskAssetBbls(s, parcels, role)) {
     if (pinned.has(bbl)) continue;
     const w = workSfAt(s, parcels, bbl, role);
@@ -566,22 +677,19 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
         mult = floaters.reduce((a, st) => (
           a + careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
         ), 0) / floaters.length;
-      } else {
+      } else if (ownerOnDesk(role)) {
         mult = careerLoadMult(ownerCareer, rec.class, rec.district ?? "—");
       }
     }
     covered += w * mult;
-    // Uncovered = on the float with ZERO hired float capacity (owner only still counts as cover).
-    if (!floaters.length && hired.length > 0 && hired.every((st) => !isFloatStaff(st))) {
+    if (bare) {
       uncoveredSf += w;
       uncoveredN++;
     }
   }
-  const keys = skillKeys(role);
-  const skill = floaters.length
-    ? floaters.reduce((a, st) => a + meanAttrs(st.attrs, keys), 0) / floaters.length
-    : principalDeskSkill(s, role);
+  const skill = capacity > 0 ? skillAcc / capacity : OUTSIDE_DESK_SKILL;
   const rs = stateOf(capacity, covered, skill);
+  rs.care = careW > 0 ? careAcc / careW : OUTSIDE_DESK_SKILL;
   if (uncoveredN > 0) {
     rs.uncoveredSf = uncoveredSf;
     rs.uncoveredN = uncoveredN;
@@ -591,7 +699,7 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
 
 /** Total capacity still used by UI/harnesses — owner + every hire in the role. */
 export function roleCapacitySf(s: GameState, role: StaffRole): number {
-  let cap = ownerCapacitySf(s, role);
+  let cap = ownerOnDesk(role) ? ownerCapacitySf(s, role) : 0;
   for (const st of s.staff ?? []) {
     if (st.role === role) cap += personCapacitySf(s, st);
   }
@@ -621,6 +729,8 @@ export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): 
   let slipW = 0;
   let skillAcc = 0;
   let skillW = 0;
+  let inHouse = 0;
+  let load = 0;
   for (const st of hired) {
     if (isFloatStaff(st)) continue;
     const pr = personRoleState(s, parcels, st);
@@ -629,6 +739,8 @@ export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): 
     slipW += pr.covered;
     skillAcc += pr.skill * pr.covered;
     skillW += pr.covered;
+    inHouse += pr.covered * pr.share;
+    load += pr.covered;
   }
   if (float.covered > 0 || !hired.length) {
     const w = Math.max(float.covered, hired.length ? 0 : 1);
@@ -637,17 +749,18 @@ export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): 
     skillAcc += float.skill * w;
     skillW += w;
   }
-  const load = capacity > 0 ? covered / capacity : (covered > 0 ? 99 : 0);
+  inHouse += float.covered * float.share;
+  load += float.covered;
   const keys = skillKeys(role);
   const skill = skillW > 0
     ? skillAcc / skillW
     : hired.length
       ? hired.reduce((a, st) => a + meanAttrs(st.attrs, keys), 0) / hired.length
-      : principalDeskSkill(s, role);
+      : ownerOnDesk(role) ? principalDeskSkill(s, role) : OUTSIDE_DESK_SKILL;
   const rs = stateOf(capacity, covered, skill);
   // Prefer SF-weighted slip when assignment splits the book; else classic load slip.
-  rs.slip = slipW > 0 ? slipAcc / slipW : slip(load);
-  rs.load = load;
+  rs.slip = slipW > 0 ? slipAcc / slipW : rs.slip;
+  rs.share = load > 0 ? inHouse / load : (capacity > 0 ? 1 : 0);
   if (float.uncoveredN) {
     rs.uncoveredSf = float.uncoveredSf;
     rs.uncoveredN = float.uncoveredN;
@@ -667,16 +780,20 @@ export function coverRoleState(
 }
 
 /**
- * Work that did not get done — priced in the units the player already reads.
- * Staff page shows these instead of only a slip bar.
+ * Where each desk's work is actually being done, for the Staff page.
+ *
+ * PM and leasing: how much of the load is in-house versus still bought from
+ * the outside firm. Construction: work that did not get done — site risk the
+ * principal is carrying past their own cover.
  */
 export interface DeskBacklog {
   role: StaffRole;
   slip: number;
   load: number;
-  opexDragYr: number;
-  renewalsMissPct: number;
-  prospectsMissPct: number;
+  /** Share of the load your own people cover, 0..1. */
+  share: number;
+  /** Work-SF still with the outside firm (PM / leasing). */
+  outsideSf: number;
   siteRiskExtraPct: number;
   uncoveredSf: number;
   uncoveredN: number;
@@ -684,17 +801,10 @@ export interface DeskBacklog {
 }
 
 export function deskBacklog(
-  s: GameState, parcels: ParcelTable, role: StaffRole, opexBaseYr = 0,
+  s: GameState, parcels: ParcelTable, role: StaffRole,
 ): DeskBacklog {
   const rs = roleState(s, parcels, role);
   const kept = { ...rs, slip: 0 };
-  const opexDragYr = role === "pm" ? Math.max(0, opexBaseYr * (pmOpexMult(rs) - pmOpexMult(kept))) : 0;
-  const renewalsMissPct = role === "pm"
-    ? Math.max(0, (1 - pmRenewalMult(rs) / Math.max(0.01, pmRenewalMult(kept))) * 100)
-    : 0;
-  const prospectsMissPct = role === "leasing"
-    ? Math.max(0, (1 - leasingOddsMult(rs) / Math.max(0.01, leasingOddsMult(kept))) * 100)
-    : 0;
   const siteRiskExtraPct = role === "construction"
     ? Math.max(0, (cmRiskMult(rs) / Math.max(0.01, cmRiskMult(kept)) - 1) * 100)
     : 0;
@@ -707,16 +817,66 @@ export function deskBacklog(
   }
   return {
     role,
-    slip: rs.slip,
+    slip: role === "construction" ? rs.slip : 0,
     load: rs.load,
-    opexDragYr,
-    renewalsMissPct,
-    prospectsMissPct,
+    share: rs.share,
+    outsideSf: role === "construction" ? 0 : Math.max(0, rs.covered * (1 - rs.share)),
     siteRiskExtraPct,
     uncoveredSf: rs.uncoveredSf ?? 0,
     uncoveredN: rs.uncoveredN ?? 0,
     unsupervisedJobSf,
   };
+}
+
+/**
+ * WHAT EACH DESK IS WORTH THIS YEAR, in dollars, off the stamps markStaff
+ * wrote and the same operating statement the property page shows. The Staff
+ * page reads this; it does not re-derive any of it.
+ *
+ *   PM: the 4% fee on the covered share (now paid to you), the back office
+ *     that earns it, and what the people covering it save or cost on the
+ *     controllable stack against the outside firm.
+ *   Outside: the fee still going to the third-party manager.
+ *   Salaries are the role's payroll at today's price level.
+ */
+export interface DeskEconomics {
+  feeKeptYr: number;
+  backOfficeYr: number;
+  opexSavedYr: number;
+  outsideFeeYr: number;
+  salaryYr: number;
+  /** Fee kept − back office + opex saved − salary. */
+  netYr: number;
+}
+
+export function pmDeskEconomics(s: GameState, parcels: ParcelTable): DeskEconomics {
+  let feeKeptYr = 0, backOfficeYr = 0, opexSavedYr = 0, outsideFeeYr = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (h.groundLeased) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    const os = operatingStatement(rec, s.econ, h, s.month);
+    const cover = h.pmCover ?? 0;
+    feeKeptYr += os.egi * cover * MGMT_FEE;
+    backOfficeYr += os.egi * cover * IN_HOUSE_MGMT_COST;
+    outsideFeeYr += os.egi * (1 - cover) * MGMT_FEE;
+    const m = h.pmOpexMult ?? 1;
+    // os.opex is already the managed bill; divide out the stamp for the
+    // bill the outside firm would have run.
+    if (m > 0) opexSavedYr += os.opex / m - os.opex;
+  }
+  const salaryYr = salaryYrFor(s, "pm");
+  return {
+    feeKeptYr, backOfficeYr, opexSavedYr, outsideFeeYr, salaryYr,
+    netYr: feeKeptYr - backOfficeYr + opexSavedYr - salaryYr,
+  };
+}
+
+/** One role's payroll a year at today's price level. */
+export function salaryYrFor(s: GameState, role: StaffRole): number {
+  let a = 0;
+  for (const st of s.staff ?? []) if (st.role === role) a += st.salary;
+  return a * (s.econ.costIdx ?? 1);
 }
 
 /**
@@ -856,79 +1016,62 @@ export function refreshPool(s: GameState, force = false) {
  * differently, and a single stamped number cannot do that.
  */
 /**
- * UI shipped — hire / fire / payroll bind. Capacity and management-load
- * economics are a separate flag: the limit system is parked (Brian: it is
- * bad the way it is; redo later). Hire quality still stamps; overload slip
- * does not. `HIRING_UI_SHIPPED` kept so older saves and comments still read.
+ * PM AND LEASING NEVER SLIP; CONSTRUCTION DOES.
+ *
+ * The first capacity model charged an overloaded PM or leasing desk in
+ * higher opex, missed renewals and missed tours, and was parked because it
+ * was a tax with no honest story behind it: those buildings were paying a
+ * third-party manager the whole time. Now the excess simply stays with the
+ * outside firm at the outside price (see "WHAT A HIRE REPLACES" above), so
+ * there is nothing to slip. Construction keeps slip — the principal really is
+ * the one watching a job nobody was hired to watch, and runs out of hours.
  */
-export const HIRING_UI_SHIPPED = true;
-/** Load / slip / capacity ceilings. Off until the desk is redesigned.
- *  Capacity never takes the leasing pen — that is an explicit player choice. */
-export const STAFF_CAPACITY_SHIPPED = false;
-
-function assignedForBbl(s: GameState, bbl: string, role: StaffRole): Staff | undefined {
-  return (s.staff ?? []).find((st) => st.role === role && st.assignedBbls?.includes(bbl));
+/** Tenant care, before blending by cover — same register as the opex line. */
+function careMult(care: number): number {
+  return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22));
 }
 
+/** Blend an in-house multiplier with the outside firm's 1.0 by covered share. */
+function blend(mult: number, share: number): number {
+  return 1 + Math.max(0, Math.min(1, share)) * (mult - 1);
+}
+
+const MULT_STAMPS = [
+  "pmOpexMult", "pmRenewalMult", "pmCareMult", "pmCover",
+  "leasingRentMult", "leasingOddsMult", "leaseCover",
+] as const;
+
+/**
+ * Once a month, work out who covers each building and stamp the results
+ * where the operating and leasing code can read them without being handed
+ * the whole GameState. Doing it once a tick also means the player's
+ * statement, the appraisal and the leasing panel all quote the SAME desk —
+ * the fault this project keeps finding is two functions answering one
+ * question differently, and a single stamped number cannot do that.
+ */
 export function markStaff(s: GameState, parcels: ParcelTable) {
-  const pm = roleState(s, parcels, "pm");
-  const lease = roleState(s, parcels, "leasing");
-  if (!HIRING_UI_SHIPPED && !(s.staff ?? []).length) {
-    for (const h of Object.values(s.holdings)) {
-      delete h.pmOpexMult;
-      delete h.pmRenewalMult;
-      delete h.leasingRentMult;
-    }
-    delete s.leasingOddsMult; delete s.pmRenewalMult; delete s.leasingRentMult;
-    delete s.pmDeskSlip;
-    return;
-  }
-  // CAPACITY PARKED. Skill still stamps — a hire is still a hire — but slip
-  // is forced to zero so an overloaded book does not quietly tax opex,
-  // renewals or tours. The diagnostic functions (pmOpexMult etc.) still
-  // answer the load question; they are just not written onto the month.
-  if (!STAFF_CAPACITY_SHIPPED) {
-    const pmKept = { ...pm, slip: 0 };
-    const leaseKept = { ...lease, slip: 0 };
-    delete s.pmDeskSlip;
-    s.leasingOddsMult = +leasingOddsMult(leaseKept).toFixed(4);
-    s.pmRenewalMult = +pmRenewalMult(pmKept).toFixed(4);
-    s.leasingRentMult = +leasingRentMult(leaseKept).toFixed(4);
-    for (const h of Object.values(s.holdings)) {
-      if (h.groundLeased) {
-        delete h.pmOpexMult;
-        delete h.pmRenewalMult;
-        delete h.leasingRentMult;
-        continue;
-      }
-      const pmCover = coverRoleState(s, parcels, h.bbl, "pm");
-      const leaseCover = coverRoleState(s, parcels, h.bbl, "leasing");
-      h.pmOpexMult = +pmOpexMult({ ...pmCover.rs, slip: 0 }).toFixed(4);
-      h.pmRenewalMult = +pmRenewalMult({ ...pmCover.rs, slip: 0 }).toFixed(4);
-      h.leasingRentMult = +leasingRentMult({ ...leaseCover.rs, slip: 0 }).toFixed(4);
-    }
-    return;
-  }
-  // Firm tour-odds / renewal defaults still come from the whole desk read.
-  s.pmDeskSlip = +pm.slip.toFixed(4);
-  s.leasingOddsMult = +leasingOddsMult(lease).toFixed(4);
-  s.pmRenewalMult = +pmRenewalMult(pm).toFixed(4);
-  s.leasingRentMult = +leasingRentMult(lease).toFixed(4);
+  // Firm-wide stamps from the first version — every read is per building now.
+  delete s.leasingOddsMult; delete s.pmRenewalMult; delete s.leasingRentMult;
+  delete s.pmDeskSlip;
   for (const h of Object.values(s.holdings)) {
-    // Lessee runs the bricks — do not stamp PM/leasing multipliers onto a coupon fee.
-    if (h.groundLeased) {
-      delete h.pmOpexMult;
-      delete h.pmRenewalMult;
-      delete h.leasingRentMult;
-      continue;
+    for (const k of MULT_STAMPS) delete h[k];
+    // Lessee runs the bricks — do not stamp a desk onto a coupon fee.
+    if (h.groundLeased) continue;
+    const pm = coverRoleState(s, parcels, h.bbl, "pm").rs;
+    if (pm.share > 0 && pm.covered > 0) {
+      const kept = { ...pm, slip: 0 };
+      h.pmCover = +pm.share.toFixed(4);
+      h.pmOpexMult = +blend(pmOpexMult(kept), pm.share).toFixed(4);
+      h.pmRenewalMult = +blend(pmRenewalMult(kept), pm.share).toFixed(4);
+      h.pmCareMult = +blend(careMult(pm.care ?? OUTSIDE_DESK_SKILL), pm.share).toFixed(4);
     }
-    // Per-building stamps use the covering pool's slip AND skill — assignment
-    // changes load, not only a quality chip on top of firm-wide overload.
-    const pmCover = coverRoleState(s, parcels, h.bbl, "pm");
-    h.pmOpexMult = +pmOpexMult(pmCover.rs).toFixed(4);
-    h.pmRenewalMult = +pmRenewalMult(pmCover.rs).toFixed(4);
-    const leaseCover = coverRoleState(s, parcels, h.bbl, "leasing");
-    h.leasingRentMult = +leasingRentMult(leaseCover.rs).toFixed(4);
+    const lease = coverRoleState(s, parcels, h.bbl, "leasing").rs;
+    if (lease.share > 0 && lease.covered > 0 && workSfAt(s, parcels, h.bbl, "leasing") > 0) {
+      const kept = { ...lease, slip: 0 };
+      h.leaseCover = +lease.share.toFixed(4);
+      h.leasingRentMult = +blend(leasingRentMult(kept), lease.share).toFixed(4);
+      h.leasingOddsMult = +blend(leasingOddsMult(kept), lease.share).toFixed(4);
+    }
   }
 }
 
@@ -991,7 +1134,9 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
     const rs = isFloatStaff(st)
       ? floatRoleState(s, parcels, st.role)
       : personRoleState(s, parcels, st);
-    if (rs.slip > 0.25 && roll < 0.07) {
+    // Only construction carries more than it has hours for; a PM or leasing
+    // desk past capacity hands the rest to the outside firm instead.
+    if (ownerOnDesk(st.role) && rs.slip > 0.25 && roll < 0.07) {
       st.attrs.diligence = Math.max(8, (st.attrs.diligence ?? 50) - 1);
       st.attrs.urgency = Math.max(8, (st.attrs.urgency ?? 50) - 1);
     } else if (rs.slip === 0 && tenure > 12 && roll < 0.05) {
@@ -1001,30 +1146,21 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
       }
     }
   }
-  // Overload stories — once a month, if any desk is underwater.
-  const pmRs = roleState(s, parcels, "pm");
-  const leaseRs = roleState(s, parcels, "leasing");
+  // Overload story — and only for the desk that can actually be underwater.
+  // A PM or leasing desk past capacity is not behind; the outside firm has
+  // the rest. (This used to fire for every no-hire owner past 150k sf with
+  // "renewals are being postponed", while nothing was being postponed.)
   const cmRs = roleState(s, parcels, "construction");
-  const slips: { role: StaffRole; slip: number }[] = [
-    { role: "pm", slip: pmRs.slip },
-    { role: "leasing", slip: leaseRs.slip },
-    { role: "construction", slip: cmRs.slip },
-  ];
-  const worst = slips.reduce((a, b) => (b.slip > a.slip ? b : a));
-  if (worst.slip > 0.2 && srng(s) < 0.12) {
-    let addr = "your portfolio";
-    for (const h of Object.values(s.holdings)) {
-      const rec = resolveRec(parcels, s, h.bbl);
+  if (cmRs.slip > 0.2 && srng(s) < 0.12) {
+    let addr = "a live job";
+    for (const bbl of deskAssetBbls(s, parcels, "construction")) {
+      const rec = resolveRec(parcels, s, bbl);
       if (rec?.address) { addr = rec.address; break; }
     }
-    const slipText = worst.role === "pm"
-      ? "renewals are being postponed"
-      : worst.role === "leasing"
-        ? "prospect calls are going unanswered"
-        : "active jobs are going unsupervised";
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `The ${ROLE_LABEL[worst.role]} desk is overloaded — at ${addr}, ${slipText}.`,
+      text: `The construction desk is overloaded — at ${addr}, the job is going unsupervised. `
+        + `Change orders and slipped inspections run hotter until somebody is watching it.`,
     });
   }
 }
@@ -1247,37 +1383,15 @@ export function penNegotiation(
   return deskNegotiation(s);
 }
 
-/** Tenant-care multiplier from the PM on this building or the float desk. */
+/** Tenant-care multiplier on this building — stamped by markStaff. */
 export function pmTenantCareMult(s: GameState, bbl?: string): number {
-  let care: number;
-  let localSlip = s.pmDeskSlip ?? 0;
-  const you = () => {
-    const p = principalTemperament(s);
-    return (p.diligence + p.relationships) / 2;
-  };
-  if (bbl) {
-    const assigned = assignedForBbl(s, bbl, "pm");
-    if (assigned) {
-      care = attrValue(assigned.attrs, "tenantCare");
-    } else {
-      const floaters = (s.staff ?? []).filter((x) => x.role === "pm" && isFloatStaff(x));
-      care = floaters.length
-        ? floaters.reduce((a, st) => a + attrValue(st.attrs, "tenantCare"), 0) / floaters.length
-        : you();
-    }
-  } else {
-    const hired = (s.staff ?? []).filter((x) => x.role === "pm");
-    care = hired.length
-      ? hired.reduce((a, st) => a + attrValue(st.attrs, "tenantCare"), 0) / hired.length
-      : you();
-  }
-  return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22 - localSlip * 0.12));
+  return (bbl ? s.holdings[bbl]?.pmCareMult : undefined) ?? 1;
 }
 
-export function renewalMultFor(s: GameState, h: Holding): number {
-  return h.pmRenewalMult ?? s.pmRenewalMult ?? 1;
+export function renewalMultFor(_s: GameState, h: Holding): number {
+  return h.pmRenewalMult ?? 1;
 }
 
-export function rentMultFor(s: GameState, h: Holding): number {
-  return h.leasingRentMult ?? s.leasingRentMult ?? 1;
+export function rentMultFor(_s: GameState, h: Holding): number {
+  return h.leasingRentMult ?? 1;
 }

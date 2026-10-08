@@ -824,3 +824,36 @@ metropolis against 117 before. `elevationSheet()` on the layer draws the
 whole book on one contact sheet for review. `tools/ground-audit.mjs` on all
 three test towns: 0 floating, every prop on its ground. Looks only; nothing
 here is read by the engine.
+
+# ARCHITECTURAL STYLES, NOT JUST SKINS
+
+After the pattern book, a Beaux-Arts bank and a brutalist office were still
+the same extruded box in two textures. Each building now resolves to an
+architectural style (`styleOf` in `facades.ts`: classical, Chicago, deco,
+Victorian, Spanish, Tudor, modernist, brutalist, moderne, mid-century,
+contemporary, futurist, vernacular) and the style decides its form:
+
+| style | what it does to the building |
+|---|---|
+| classical | a temple front on the main street wall (engaged giant-order columns, architrave, pediment), balustrades round the roof, quoins, rusticated base |
+| Chicago | always the deep projecting bracketed cornice |
+| deco | the parapet steps up twice mid-front; ziggurat / spire / pier crowns |
+| Victorian | a Queen Anne corner turret under its own steep roof, on a street corner |
+| Spanish | the shop row trades behind a stucco arcade; clay tile roofs |
+| modernist | the slab lifted on pilotis over a recessed glass lobby, soffit overhead |
+| brutalist | the ziggurat inverted: recessed base, floors cantilevered out in one or two steps |
+| moderne | rounded corners |
+| mid-century | a thin roof slab run out 1.3 m past the walls, white edge, shaded soffit |
+| contemporary | the top floor set back behind a terrace; boxes of a second cladding pushed out of the front |
+| futurist (2005+ glass) | twisting towers (twelve bands turned about the core) and tapers |
+
+Towers put up during play by rivals (or by the player without a design) now
+take their period's massing too, as the generator's do.
+
+Counts on the metropolis (seed 2): 10 temple fronts, 38 balustrades, 23 on
+pilotis, 28 stepped deco parapets, 43 arcades, 12 rounded moderne, 10 roof
+slabs, 11 set-back tops, 6 with pop-outs, 4 turrets, 2 cantilevered, plus
+crowns. Nine years of play: no page errors, 0 floating volumes;
+`tools/ground-audit.mjs`: 0 floating, every prop on its ground on all three
+test towns. `featureSpots()` on the layer lists where each feature stands,
+for review shots. Looks only.

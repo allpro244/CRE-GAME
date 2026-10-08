@@ -3779,7 +3779,13 @@ export class RealCityLayer {
         this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
       } else {
         this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
-        this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+        // NO TWO CROWNS ALIKE. One canopy, scaled, read as a field of clones;
+        // an open-grown park tree spreads wide and low, a crowded one grows
+        // tall and narrow. The shape is read off the spot (not the draw), so
+        // every tree still stands where it did.
+        const hs = hash01((Math.round(x * 4) * 73856093) ^ (Math.round(y * 4) * 19349663), 53);
+        const stretch = 0.8 + hs * 0.5;
+        this.putInst("crown", x, y, 0, sz * (1.08 - hs * 0.16), rnd() * 6.28, "", leafCol(), stretch);
       }
     }
     // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,

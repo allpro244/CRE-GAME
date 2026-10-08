@@ -926,3 +926,28 @@ back at any time. Checked in the browser: a 300 px drag turned the view
 - **Delivery on the hover card.** A building under construction says when it
   delivers, how long to go and how far along it is ("Delivers Apr 2001 · in
   15 months · 42% built"), or that it has stalled.
+
+# FOURTH PASS — light, and the post stage (October 2026)
+
+1. **Key and fill.** The sky fill sat near the sun's strength, so every face
+   of a block lit within a few per cent of every other and a clear afternoon
+   read as overcast. Sun 3.4 → 4.1, hemisphere 0.6 → 0.36 (sky blue, warm
+   ground bounce), environment 0.5 → 0.38; overcast hands light back to the
+   sky. Building shadows on the ground 0.42 → 0.60.
+2. **The ambient is the sky.** Matte surfaces took their ambient from
+   three's RoomEnvironment (a studio light box). They now take it from
+   `skyEnvironment` minus the sun disc: shade reads cool, sun warm.
+3. **Roof plant by era.** Stair bulkheads, cedar tanks and packaged AC units
+   take a colour each instead of one per kind; bulkheads carry a door.
+4. **Park trees** stretch tall-and-narrow or wide-and-low, hashed off the
+   spot so the planting draw is unchanged.
+5. **Ambient occlusion** (`src/map/real/post.ts`, High only). A half-res
+   depth pass, a tangent-plane (Alchemy-style) occlusion estimate and a
+   depth-aware blur, multiplied onto the finished frame. Off past a 3.2 km
+   view and faded with the haze. A plain in-front-of test darkened every
+   flat street (half-res depth over a kilometre reads as grain) and a tight
+   blur tolerance streaked grazing ground; both are noted in the shader.
+
+Looked at and left: a colour grade or vignette over the frame. Pass one cut
+the chroma lift from ×1.40 to ×1.16 because it read as poster paint;
+"colour is honest rather than graded" stands.

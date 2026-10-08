@@ -13,6 +13,7 @@
  * here writes state.
  */
 import * as THREE from "three";
+import { CityPost } from "./post";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
@@ -923,8 +924,10 @@ export class RealCityLayer {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
     });
+    this.post?.dispose(); this.post = null;
     this.renderer?.dispose();
   }
+  private post: CityPost | null = null;
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
     if (!this.visibleOn) return;
@@ -979,6 +982,11 @@ export class RealCityLayer {
       for (const w of this.waves) w.tex.offset.set((tt * 0.5) / w.tile, (tt * 0.12) / w.tile);
     }
     this.renderer.render(this.scene, this.camera);
+    // the post stage (High only): occlusion in the creases, multiplied onto this frame
+    if (this.quality === "high") {
+      this.post ??= new CityPost(this.renderer);
+      this.post.run(this.scene, this.camera, distM, [this.hazeSheet, this.precip, this.wetSheet]);
+    }
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 

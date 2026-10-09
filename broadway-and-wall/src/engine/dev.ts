@@ -2933,7 +2933,11 @@ const MAINTENANCE_SHARE = 0.45;
 // A town cannot lose its builders entirely and cannot conjure a boomtown's
 // worth of them overnight. These are guards on the workforce index, not
 // policy — `tickCrews` reports how often they bind and they are not meant to.
-const CREW_MIN = 0.5;
+// CREW_MIN was 0.5 and bound 21% of months in a quiet town; that was the
+// maintenance-load bug in `tickCrews`, not a real floor. With the load sized
+// by the stock, a town with no new build settles near 0.45 of its base crew
+// (the maintenance share), so the guard sits below that.
+const CREW_MIN = 0.3;
 const CREW_MAX = 3.0;
 
 /**
@@ -2987,8 +2991,30 @@ function tickCrews(s: GameState, bbls: string[]) {
   // trades bottom out around 45% employed rather than at nothing, which is
   // both the real number and the reason construction costs do not swing as
   // violently as new-build volume does.
-  const steady = capacity * (MAINTENANCE_SHARE / (1 - MAINTENANCE_SHARE));
-  const util = (live + owed / TYPICAL_SF + steady) / Math.max(1, capacity + steady);
+  //
+  // ...AND THAT FLOOR OF WORK IS SIZED BY THE BUILDINGS, NOT BY THE BUILDERS
+  // (2026-10-09). This read `capacity x 0.45/0.55` — repair work proportional
+  // to the size of the WORKFORCE — so with no new build utilisation was
+  // `steady / (capacity + steady)` = 0.45 whatever size the trades shrank
+  // to. The workforce could therefore never shrink to fit its work: crewIdx
+  // slid to its 0.5 guard (21% of months in seed 1000) with utilisation
+  // still under one, and the cost index read permanently idle trades. Measured
+  // over 2 cities x 50 years, `heat` took 0.7-1.9%/yr off real construction
+  // cost for the whole century, and an asserted "fair" real-cost path in
+  // market.ts was pushing 0.1-0.7%/yr back (active in 41-89% of months,
+  // 8 cities). Two rails holding each other up.
+  //
+  // Repair and fit-out are a property of the standing stock: the town's
+  // buildings need the same maintenance however many contractors are in it.
+  // So the load is the stock-sized base crew count's maintenance share, and
+  // the workforce that carries it scales with crewIdx. Utilisation then reads
+  // the order book against the trades actually present, and a town with no
+  // new build sheds builders until the ones left are fully employed —
+  // which is what US construction employment did in 2006-11.
+  const baseNew = capacity / clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX);
+  const steadyLoad = baseNew * (MAINTENANCE_SHARE / (1 - MAINTENANCE_SHARE));
+  const workforce = Math.max(1, capacity + steadyLoad * clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX));
+  const util = (live + owed / TYPICAL_SF + steadyLoad) / workforce;
   // A year's memory: a contractor hires on a book, not on a month.
   e.crewUtil = (e.crewUtil ?? util) + 0.08 * (util - (e.crewUtil ?? util));
   // The workforce that WOULD clear the book is the current one times how

@@ -4465,7 +4465,14 @@ export function tickEcon(s: GameState) {
     // boom while leaving the busts intact, which is the same fault the stale
     // pivot had and arriving through a different door.
     const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
-    const slope = heat < 0 ? 0.0026 : 0.0016;
+    // ONE SLOPE (2026-10-09). This was 0.0026 below full employment and 0.0016
+    // above, each set so its own extreme hit an ENR figure. Two gains on one
+    // signal make the MEAN of an oscillating utilisation a drift: a market
+    // that is as often 10% idle as 10% booked lost real cost every year for
+    // that reason alone. The midpoint keeps the extremes in the record's range
+    // (-4.8%/yr real at the idle floor, +7.8%/yr at the ceiling — 2009-10 and
+    // 2021-22) and puts zero drift where utilisation averages one.
+    const slope = 0.0021;
     // WHAT A BUILDING COSTS IS WHAT ITS INPUTS COST (2026-10-08). The base
     // drift was EXPECTED inflation, which sits near its 2% anchor while
     // realised CPI ran 1.9-3.8%/yr across four 50-year worlds, and it gave
@@ -4484,8 +4491,9 @@ export function tickEcon(s: GameState) {
       ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
       : (e.inflExp ?? 0.02) / 12;
     e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
-    const costDrift = inputGrowth + heat * slope
-      + (e.phase === "recession" || e.phase === "depression" ? -0.0004 : 0);
+    // The recession term (-0.0004/mo whenever the label read recession) is
+    // gone: an idle trade is already in `heat`, and a label is not a cost.
+    const costDrift = inputGrowth + heat * slope;
     // RETIRED (2026-10-08): the office-rent catch-up. This pulled the cost
     // index toward the OFFICE asking level whenever rents ran a quarter ahead
     // of it, for every class — flats and sheds priced their concrete off
@@ -4499,20 +4507,14 @@ export function tickEcon(s: GameState) {
     // vacancy floor. When rents outrun cost now, the residual rises, land
     // pencils, cranes go up, and THEN the trades get dear through `heat`.
     const catchUp = 0;
-    // Real construction cost mean-reverts toward a slow productivity path
-    // (~0.4%/yr above CPI — long-run structure, code, and wage mix). Boom heat
-    // still moves the index at ENR extremes; what it must not do is compound
-    // ~+0.8%/yr real for a century from one-way rent catch-up. Measured before:
-    // costIdx/cpi ~2.3× by y100 against a ~1.5× fair path.
-    const yrs = Math.max(0, (s.month ?? 0) / 12);
-    const fairRealCost = Math.pow(1.004, yrs);
-    const realCostNow = e.costIdx / Math.max(0.35, e.cpi ?? 1);
-    const realStretch = realCostNow / Math.max(0.5, fairRealCost) - 1;
-    const realPull = realStretch > 0.20
-      ? -Math.min(0.0020, 0.005 * (realStretch - 0.20))
-      : realStretch < -0.25
-        ? Math.min(0.0012, 0.003 * (-realStretch - 0.25))
-        : 0;
+    // RETIRED (2026-10-09): the "fair real cost" path. Real cost was pulled
+    // toward an asserted 1.004^years whenever it strayed 20-25% off it — a
+    // number written down rather than discovered, and load-bearing: its floor
+    // push was active in 41-89% of all months over 8 cities x 50 years,
+    // propping up a cost index that the maintenance-load bug in `tickCrews`
+    // was dragging down. Cost is now its inputs (CPI and wages, at the labour
+    // share) plus how booked the trades are, and nothing else.
+    const realPull = 0;
     e.costIdx = clamp(
       e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
       0.6, 400,

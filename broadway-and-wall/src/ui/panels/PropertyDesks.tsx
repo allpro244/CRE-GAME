@@ -575,6 +575,20 @@ export function AssembleSection({
   const addedArea = livePicked.reduce((a, n) => a + siteLotArea(game, parcels, n), 0);
   // the paper on every lot in the filing comes off at the closing
   const payoff = livePicked.length ? assemblyPayoff(game, [bbl, ...livePicked]) : { due: 0, balance: 0, penalty: 0, deeds: [] as string[] };
+  // THE SITE AS THE ENGINE WILL RESOLVE IT: the picked deeds folded in, so the
+  // preview reads the same area-weighted envelope and land price the Build
+  // desk will plan against after the filing — not this lot's FAR stretched
+  // over everybody's dirt.
+  const after = livePicked.length
+    ? resolveRec(parcels, {
+      ...game,
+      merged: {
+        ...(game.merged ?? {}),
+        ...Object.fromEntries(livePicked.flatMap((n) => siteDeeds(game, n)).filter((d) => d !== bbl).map((d) => [d, bbl])),
+      },
+    }, bbl) ?? rec
+    : rec;
+  const farAfter = Math.max(after.farMaxComm, after.farMaxRes);
 
   return (
     <div style={embedded ? undefined : { padding: "8px 2px" }}>
@@ -635,7 +649,7 @@ export function AssembleSection({
           {livePicked.length > 0 && !selfBlocked && (
             <>
               <div className="grid">
-                <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
+                <Row k="Site after merger" v={`${sf(after.lotArea)} · ${sf(Math.round(after.lotArea * farAfter))} buildable`} strong />
                 <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
                 {(() => {
                   const before = plateEfficiency(rec.lotArea * 0.62);
@@ -646,9 +660,8 @@ export function AssembleSection({
                     : null;
                 })()}
                 {(() => {
-                  const mergedRec = { ...rec, lotArea: rec.lotArea + addedArea };
                   const now = landPsfNow(rec, game.econ);
-                  const then = landPsfNow(mergedRec, game.econ);
+                  const then = landPsfNow(after, game.econ);
                   const d = (then / Math.max(1, now) - 1) * 100;
                   return Math.abs(d) > 0.5
                     ? <Row k="The dirt reprices" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf across the whole site`} />

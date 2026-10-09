@@ -35,7 +35,7 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
-import { assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
@@ -223,10 +223,59 @@ const AMORT_SHARE: Record<RivalStyle, number> = {
 // A developer is in the business; an opportunistic shop builds when the money
 // is free and regrets it; core and family capital does not take construction
 // risk, because that is the entire point of core and family capital.
+/**
+ * WHAT PROFIT EACH FIRM NEEDS BEFORE IT BUILDS (2026-10-09). Every city
+ * builder used to need the merchant's 17% margin on value (`DEV_MARGIN`), so
+ * a young town where a building is worth roughly what it costs — yield on
+ * cost at the exit cap, measured on a Landing town at year one — saw nothing
+ * built for years while a player building to hold did fine. Real builders
+ * differ: an owner-user or a family landlord builds to hold and needs little
+ * more than the building being worth its cost; a core fund or REIT a thin
+ * spread; a merchant builder or developer the 15-20% the trade quotes; a
+ * PE or opportunity fund more; a vulture builds only at a discount. Each
+ * firm draws its own number inside its style's band, fixed by its id.
+ */
+const MARGIN_BAND: Record<RivalStyle, [number, number]> = {
+  owneruser: [0.00, 0.05], family: [0.00, 0.06], foreign: [0.03, 0.08],
+  core: [0.04, 0.10], reit: [0.06, 0.12], slumlord: [0.10, 0.20],
+  developer: [0.12, 0.20], merchant: [0.15, 0.22],
+  opportunistic: [0.18, 0.28], pe: [0.18, 0.25], vulture: [0.25, 0.35],
+};
+//
+// AND A BUILDER WITH NOTHING ON THE GROUND TALKS ITSELF INTO THE NEXT ONE. A
+// developer's overhead, team and lender relationships exist to start jobs; one
+// that has gone years without a groundbreak finds a way to believe a thinner
+// deal works. The margin a firm asks erodes with the months since its last
+// start, to 40% of its own number after about three years idle, and resets
+// the day it breaks ground. Busy firms stay picky; idle ones get hungry.
+// The margin sits on top of the exit cap, which already tracks the policy
+// rate — so every firm's hurdle rises and falls with rates.
+export function firmMargin(r: { id: string; style: RivalStyle; lastBuildM?: number }, month?: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < r.id.length; i++) h = Math.imul(h ^ r.id.charCodeAt(i), 16777619);
+  const u = (h >>> 0) / 4294967296;
+  const [lo, hi] = MARGIN_BAND[r.style] ?? [DEV_MARGIN, DEV_MARGIN];
+  const base = lo + (hi - lo) * u;
+  if (month === undefined) return base;
+  const idle = Math.max(0, month - (r.lastBuildM ?? 0));
+  return base * (0.4 + 0.6 * Math.exp(-idle / 18));
+}
+/** The plan's hurdle at a given margin: yield on cost over exit yield x (1 + margin). */
+export function hurdleAt(plan: { yieldOnCost: number; exitCap: number }, margin: number): number {
+  return plan.yieldOnCost / Math.max(1e-6, plan.exitCap * (1 + margin));
+}
+/** The most lenient margin among firms that build — what the street will accept. */
+export function streetMargin(s: GameState): number {
+  let m = DEV_MARGIN;
+  for (const r of livingRivals(s)) if (BUILD_APPETITE[r.style] > 0) m = Math.min(m, firmMargin(r, s.month));
+  return m;
+}
+
 const BUILD_APPETITE: Record<RivalStyle, number> = {
   // Named builders have to actually build. Appetite used to leave the street
   // claiming ~3% of city jobs — noise, not "the rest" the docstring promised.
-  developer: 1.15, opportunistic: 0.45, core: 0.08, family: 0,
+  // Family landlords build to hold — the walk-ups that fill a young town.
+  developer: 1.15, opportunistic: 0.45, core: 0.08, family: 0.25,
   // A merchant builder is MORE of a builder than a developer is — building is
   // the entire business and the hold is an accident. Everybody else has a
   // reason not to take construction risk, and the reason differs.
@@ -433,9 +482,11 @@ export function claimJob(
   if (!rec) return null;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const shared = underwriting
-    ? { plan: underwriting, clears: underwriting.hurdleRatio >= 1 && underwriting.ltcMax > 0 }
+    ? { plan: underwriting, clears: underwriting.ltcMax > 0 }
     : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
-  if (!shared?.clears) return null;
+  // Financeable is the street's test; whether the margin is enough is each
+  // firm's own (`firmMargin`), checked runner by runner below.
+  if (!shared?.plan || !(shared.plan.ltcMax > 0)) return null;
   const plan = shared.plan;
   const cost = plan.costTotal;
   const land = plan.landBasis;
@@ -469,6 +520,7 @@ export function claimJob(
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
     if (want <= 0) return false;
+    if (hurdleAt(plan, firmMargin(r, s.month)) < 1) return false;
     // Jev said no to city work this period.
     if (r.jev && jevHolds(s, r, "claim")) return false;
     const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
@@ -504,6 +556,7 @@ export function claimJob(
   const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
   if (job) {
     job.firmId = best.id;
+    best.lastBuildM = s.month;
     job.cost = projectCost;
     // Day-one equity is in. Remaining work draws the construction facility —
     // leaving a multi-million equityLeft balance orphaned every claimed job

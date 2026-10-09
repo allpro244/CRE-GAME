@@ -1543,6 +1543,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (!s.watch?.includes(li.bbl)) continue;
     out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
   }
+  // YOUR BUILDING IS FINISHED. Years of construction end in one month, and
+  // the lease-up starts the same day: the empty building costs its tax,
+  // opex and debt service from here, and the leasing desk is where the
+  // player has to be. It stops the clock — Play, Yr and Skip alike — in the
+  // month the keys are handed over, and in no other.
+  for (const h of Object.values(s.holdings)) {
+    if (h.deliveredM !== s.month || s.merged?.[h.bbl]) continue;
+    const b = s.built?.[h.bbl];
+    out.push({
+      key: `delivered:${h.bbl}:${h.deliveredM}`,
+      label: `${addr(h.bbl)} delivered${b ? ` — ${Math.round(b.bldgArea / 1000)}k sf, ${b.floors} floors` : ""}. Time to lease it up`,
+    });
+  }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
   }

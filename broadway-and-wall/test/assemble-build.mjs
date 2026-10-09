@@ -6,6 +6,8 @@
 // it and nothing on the folded deeds. Then it dissolves each site's lot
 // outlines (src/map/real/siteRing.ts) the way the renderer does and asserts
 // one footprint comes back — the 3D map draws ONE building, not one per lot.
+// The clock is run with advanceUntilAttention (what Play and Yr run), and it
+// must stop in the month the building is delivered.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
@@ -149,11 +151,22 @@ for (const n of [3, 4, 5]) {
     if (!dev) { fail(n, mode, "no development on root"); continue; }
     for (const c of deeds.slice(1)) if (g.developments[c]) fail(n, mode, "development on child", c);
 
-    for (let m = 0; m < 120 && g.developments[root]; m++) {
-      g = E.advanceMonth(g, parcels, bbls, adjacency);
+    // RUN THE CLOCK THE WAY PLAY AND YR DO, and it has to stop on the delivery.
+    let stoppedOn = null;
+    for (let i = 0; i < 200 && g.developments[root]; i++) {
+      const r = E.advanceUntilAttention(g, parcels, bbls, adjacency, 120);
+      g = r.s;
       if (g.gameOver) g = { ...g, gameOver: null, cash: g.cash + 50e6 };
+      if (r.key?.startsWith(`delivered:${root}:`)) stoppedOn = r;
+      if (r.months === 0) break;
     }
     if (g.developments[root]) { fail(n, mode, "never delivered"); continue; }
+    if (!stoppedOn) {
+      const r = E.advanceUntilAttention(g, parcels, bbls, adjacency, 1);
+      fail(n, mode, "the clock ran past the delivery", { deliveredM: g.holdings[root]?.deliveredM, month: g.month, next: r.key });
+    } else if (g.holdings[root]?.deliveredM !== g.month) {
+      fail(n, mode, "stopped on the delivery in the wrong month", { deliveredM: g.holdings[root]?.deliveredM, month: g.month });
+    }
     if (!g.holdings[root]) { fail(n, mode, "lost the site before delivery"); continue; }
     const after = E.resolveRec(parcels, g, root);
     if (Math.abs(after.lotArea - sumArea) > 1) fail(n, mode, "delivered site area", after.lotArea, sumArea);

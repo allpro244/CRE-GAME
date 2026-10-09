@@ -48,7 +48,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, makeCity, preloadCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 import { monthOffThread } from "@/state/simClient";
 
@@ -2510,6 +2510,7 @@ export const useStore = create<AppState>((set, get) => ({
       // draws. Absent, a fresh one is rolled exactly as before.
       const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
       if (seedIn && seedIn >>> 0) setSeed(seed, island);
+      await preloadCity(island);
       const { built, parcels } = buildTown(island, seed, size, dev);
       get().setData({
         parcels,
@@ -2579,6 +2580,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
+      await preloadCity(r.island);
       const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this

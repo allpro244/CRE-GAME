@@ -543,7 +543,19 @@ function replenishCityBuildPool(s: GameState) {
   // ~$90 per employed resident per month of construction capacity. Generous
   // enough that a normal pipeline finishes; tight enough that a credit crunch
   // with many simultaneous frames can orphan work — the point of a pool.
-  let monthly = Math.max(8_000_000, Math.round(jobs * 90 * credit));
+  // ...IN CONSTRUCTION DOLLARS OF THE DAY (2026-10-08). The $90 and the $8M
+  // floor were struck at year-0 prices and never carried the price level,
+  // while every job they fund is budgeted at `costIdx`. Measured on Manhattan
+  // below Houston, Young town, no player: by year 100 cost had run to 44x,
+  // the refill was still $15.9M a month, and 317 anonymous jobs carried
+  // $31.1B of unspent budget — 1,957 months of refill. Every frame slipped a
+  // month at a time forever, held its crew slot while it did, and the
+  // groundbreak path (capped at `crewCapacity` live jobs) stopped starting
+  // anything: median scheduled build 77 months for walk-ups the schedule
+  // says take 22-34. Capacity is a real quantity of work per employed
+  // resident, so it is priced at what work costs.
+  const costLevel = Math.max(0.35, s.econ.costIdx ?? 1);
+  let monthly = Math.round(Math.max(8_000_000, jobs * 90 * credit) * costLevel);
   // SUPPLY MUST ANSWER EMPLOYMENT (ECONOMY.md §F #2). When office vacancy is
   // already on the frictional rail, the space market has asked for more stock.
   // Orphaning those frames because the pool was sized for a quiet year is how

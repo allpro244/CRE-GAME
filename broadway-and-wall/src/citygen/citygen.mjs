@@ -2419,7 +2419,18 @@ export function generateCity(cfg) {
         // downstream of coverage moves by a square foot.
         const PARTY = 0.12;
         // plan 5: a notched lot is inset along its own shape (offsetEdges)
-        const shrink = (r, dOf) => (PLAN_V >= 5 && !isConvex(r) ? offsetEdges(r, dOf) ?? erode(r, dOf) : erode(r, dOf));
+        //
+        // AND A SETBACK TOO DEEP FOR THE SHAPE IS TOO DEEP, NOT A REASON TO
+        // CLIP. Falling back to `erode` at each failed depth handed the
+        // coverage solve below the very half-plane cut this exists to avoid,
+        // exactly where it hurts most — a tower aims at ~45% coverage, deep
+        // enough to tangle a notched lot's offset, and 130 Greenwich St came
+        // out at 6% of its lot. A failed depth reads as "no building" so the
+        // solve backs off to the deepest one the shape takes; `erode` is the
+        // last resort only when even the party-wall depth fails.
+        const notched = PLAN_V >= 6 && !isConvex(lotRing);
+        const shrink = (r, dOf) => (notched ? offsetEdges(r, dOf)
+          : PLAN_V >= 5 && !isConvex(r) ? offsetEdges(r, dOf) ?? erode(r, dOf) : erode(r, dOf));
         const party = [];
         for (let i = 0; i < lotRing.length; i++) {
           const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
@@ -2430,7 +2441,7 @@ export function generateCity(cfg) {
         if (streetEdges === 0) {
           // Landlocked: no frontage, so there is nothing to set back from.
           footprint = shrink(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
-            ?? insetRingPerp(lotRing, 1.2);
+            ?? shrink(lotRing, 1.2) ?? erode(lotRing, 1.2) ?? insetRingPerp(lotRing, 1.2);
         } else if (FRONTAGE && rearYard(lotRing, party, d)) {
           // THE YARD GOES AT THE BACK (plan 4). The solve below found the
           // coverage by pulling the building back from the STREET — fine on a

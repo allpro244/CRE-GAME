@@ -175,8 +175,14 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * the worst tenth of buildings covered 37% of their lot, now 61%; buildings
  * under 35% coverage on lots over 5,000 sf 239 -> 14. Generated towns cut
  * only convex lots, so plan 5 is byte-identical to plan 4 there.
+ *
+ * Plan 6 finishes it: a notched lot never falls back to the half-plane clip
+ * in the middle of the coverage solve. Plan 5 dropped to `erode` at any
+ * setback too deep for the shape — exactly the depth a tower asks for — so
+ * a tall building on a notched lot still came out a sliver (130 Greenwich
+ * St: 6% of its lot; now 60%). Generated towns unchanged (hashed).
  */
-export const CITY_PLAN = 5;
+export const CITY_PLAN = 6;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

@@ -1206,10 +1206,24 @@ export function generateCity(cfg) {
   if (cfg.plat) {
     const leafOf = (p) => leaves.find((l) => l.hp.every(([nx, ny, d]) => nx * p[0] + ny * p[1] <= d + 1e-6));
     for (const b of cfg.plat.blocks) {
-      const district = leafOf(centroid(b.outline))?.district ?? Object.keys(cfg.districts)[0];
+      const district = b.district ?? leafOf(centroid(b.outline))?.district ?? Object.keys(cfg.districts)[0];
       const grid = cfg.districts[district]?.kind !== "organic";
+      // A CORNER IS WHERE THE STREET TURNS. A surveyed block's outline keeps
+      // every jog in its lot lines, and `cornerLot` counts a lot touching ANY
+      // block vertex as a corner — which flagged 75% of the lots below 14th
+      // Street, against 30% on the old lattice. Only vertices where the kerb
+      // turns by more than 30 degrees, outward, are corners.
+      const o = b.outline, ccw = ringArea(o) > 0;
+      const cornerPts = o.filter((v, i) => {
+        const a = o[(i - 1 + o.length) % o.length], c = o[(i + 1) % o.length];
+        const t1 = Math.atan2(v[1] - a[1], v[0] - a[0]), t2 = Math.atan2(c[1] - v[1], c[0] - v[0]);
+        let turn = t2 - t1;
+        while (turn > Math.PI) turn -= 2 * Math.PI;
+        while (turn < -Math.PI) turn += 2 * Math.PI;
+        return (ccw ? turn : -turn) > (30 * Math.PI) / 180;
+      });
       blocks.push({
-        ring: b.cell, inset: b.outline, district, real: b.n, realLots: b.lots,
+        ring: b.cell, inset: b.outline, district, real: b.n, realLots: b.lots, cornerPts,
         u: grid ? 0 : undefined, uFifth: grid ? 0 : undefined,
       });
     }
@@ -1834,7 +1848,7 @@ export function generateCity(cfg) {
     else { splitLots(street, lotOptOf(d, heat), lots); absorbSlivers(lots); }
 
     let lotNo = 1;
-    const blockCorners = street;
+    const blockCorners = block.cornerPts ?? street;
     for (const [li, lotRing] of lots.entries()) {
       const real = block.realLots?.[li];
       const areaM2 = polygonArea([lotRing]);

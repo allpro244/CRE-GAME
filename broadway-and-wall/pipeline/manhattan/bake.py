@@ -65,15 +65,20 @@ EXTENTS = [
 # Corridors the class ladder reads (a lot on a retail spine is a shop): the
 # avenues, Broadway and the wide crosstown streets. Names as CSCL labels them.
 CORRIDORS = [
-    "BROADWAY", "BOWERY", "12 AVE", "11 AVE", "10 AVE", "9 AVE", "8 AVE", "7 AVE",
+    # the avenues and the pre-grid avenues
+    "BROADWAY", "BOWERY", "12 AVE", "11 AVE", "10 AVE", "9 AVE", "8 AVE", "7 AVE", "7 AVE S",
     "AVE OF THE AMERICAS", "5 AVE", "MADISON AVE", "PARK AVE", "PARK AVE S", "LEXINGTON AVE",
     "3 AVE", "2 AVE", "1 AVE", "YORK AVE", "AVE A", "AVE B", "AVE C", "AVE D",
-    "HUDSON ST", "GREENWICH ST", "WEST ST", "CHURCH ST", "WEST BROADWAY", "LAFAYETTE ST",
-    "CENTRE ST", "WATER ST", "WALL ST", "CANAL ST", "W HOUSTON ST", "E HOUSTON ST",
-    "DELANCEY ST", "W 14 ST", "E 14 ST", "W 23 ST", "E 23 ST", "W 34 ST", "E 34 ST",
-    "W 42 ST", "E 42 ST", "W 57 ST", "E 57 ST", "CHAMBERS ST", "FULTON ST", "GRAND ST",
-    "AVE OF THE AMERICAS", "UNIVERSITY PL", "IRVING PL", "8 ST", "ST MARKS PL",
+    # the wide crosstown streets the 1811 plan and its successors made arterials
+    "CANAL ST", "W HOUSTON ST", "E HOUSTON ST", "DELANCEY ST", "W 14 ST", "E 14 ST",
+    "W 23 ST", "E 23 ST", "W 34 ST", "E 34 ST", "W 42 ST", "E 42 ST", "W 57 ST", "E 57 ST",
 ]
+# NOT every named street. The class ladder (citygen classFor) was calibrated on
+# generated towns where a corridor is a boulevard -- a handful per town -- and
+# reads exp(-distance / 45 m) as frontage. Listing Hudson, Church, Water, Grand
+# and West Street (a highway) as well put the median lot 55 m from a "corridor"
+# and made 31% of built lots below 14th pure store buildings, against 8.5% in
+# PLUTO's own building classes. Measured with this list instead: see the commit.
 
 TH = 29 * math.pi / 180
 UP = (math.sin(TH), math.cos(TH))       # uptown, along the avenues

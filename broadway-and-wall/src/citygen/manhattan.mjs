@@ -334,7 +334,7 @@ export function manhattanConfig(seed = 1, opts = {}) {
     .filter((c) => onLand(c.xy));
 
   const blocks = PLAT.blocks.filter((b) => b.e <= ei).map((b) => ({
-    n: b.n, cell: ring(b.c), outline: ring(b.o),
+    n: b.n, e: b.e, cell: ring(b.c), outline: ring(b.o),
     lots: b.l.map(([r, bbl, address, landuse]) => ({ ring: ring(r), bbl, address, landuse })),
   }));
   const parkRecs = PLAT.parks.filter((p) => p.e <= ei);
@@ -415,10 +415,30 @@ export function manhattanConfig(seed = 1, opts = {}) {
   // measured, 7,172 lots against the Village's 1,116, which is backwards.
   const houstonTo14 = band(SIXTH_AVE, CUT_AVENUE, westOf(SIXTH_AVE), "village",
     band(BOWERY, CUT_AVENUE, westOf(BOWERY), "noho", "lowereast"));
-  const partition = band(CHAMBERS, CUT_STREET, downtownOf(CHAMBERS), "battery",
-    band(HOUSTON, CUT_STREET, downtownOf(HOUSTON),
-      band(BOWERY, CUT_AVENUE, westOf(BOWERY), "soho", "lowereast"),
-      band(ST_14, CUT_STREET, downtownOf(ST_14), houstonTo14, above14)));
+  const belowHouston = band(CHAMBERS, CUT_STREET, downtownOf(CHAMBERS), "battery",
+    band(BOWERY, CUT_AVENUE, westOf(BOWERY), "soho", "lowereast"));
+  const partition = band(HOUSTON, CUT_STREET, downtownOf(HOUSTON), belowHouston,
+    band(ST_14, CUT_STREET, downtownOf(ST_14), houstonTo14, above14));
+
+  // THE UPTOWN/DOWNTOWN BANDS COME FROM THE STREETS, NOT FROM A LINE. A band
+  // drawn as a straight line through one hand-placed corner wanders a block
+  // off the real street across three kilometres of island, and measured on
+  // the first bake it filed 296 East Village lots on Avenues B and C as
+  // "midtown" — office-core flavour on tenement blocks. The bake already
+  // knows which side of Houston and of 14th Street every block is on (it cut
+  // the extents along their real centre lines), so that decides the band, and
+  // the lines only split a band east from west.
+  const walk = (node, p) => (typeof node === "string" ? node
+    : p[0] * node.cut[0] + p[1] * node.cut[1] <= node.cut[2] ? walk(node.neg, p) : walk(node.pos, p));
+  for (const b of blocks) {
+    let cx = 0, cy = 0;
+    for (const [x, y] of b.outline) { cx += x; cy += y; }
+    const c = [cx / b.outline.length, cy / b.outline.length];
+    // The bake stops at 59th Street (its largest extent), so everything above
+    // 14th is Midtown; the 59th Street line would otherwise misfile a block's
+    // width of it as the Upper East and West Sides.
+    b.district = b.e === 0 ? walk(belowHouston, c) : b.e === 1 ? walk(houstonTo14, c) : "midtown";
+  }
 
   return {
     name: `Manhattan ${ext.name}`,

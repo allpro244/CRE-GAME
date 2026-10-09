@@ -14,9 +14,12 @@
 // `CITY_SEEDS=1` is the important one: it makes each run of a multi-seed
 // harness use a DIFFERENT city as well as a different market, which is the
 // only honest way to ask whether a rule holds in general or just on one island.
-import { makeCity, PROCEDURAL, REFERENCE_SEED } from "../src/citygen/index.mjs";
+import { makeCity, preloadCity, PROCEDURAL, REFERENCE_SEED } from "../src/citygen/index.mjs";
 
 const DEFAULT_CITY = process.env.BW_CITY ?? PROCEDURAL;
+// Manhattan's plat is data, loaded once before the first synchronous build
+// (see citygen/manhattan.mjs). A no-op for a generated island.
+await preloadCity(DEFAULT_CITY);
 const cache = new Map();
 
 /** Deterministic town for a run index — stable across harnesses, so a bad seed is reproducible. */

@@ -5,6 +5,7 @@ import { useStore } from "@/state/store";
 import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
+import { mergeLotFeatures } from "./real/siteRing";
 import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
@@ -14,9 +15,33 @@ import { ownerIndex } from "@/engine/ownership";
 import { holderOf } from "@/engine/owners";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
+import type { ParcelTable } from "@/data/types";
 import Badges from "./Badges";
 import { esc, tipHtml } from "./hoverCard";
+
+/**
+ * Where a site is on the ground: an assembled site's middle is the area-weighted
+ * middle of all its deeds, not the parent lot's, which sits off to one side of
+ * the building that now stands across all of them.
+ */
+function siteCentroid(game: GameState | null | undefined, parcels: ParcelTable, bbl: string): [number, number] | null {
+  const rec = parcels[bbl];
+  if (!rec) return null;
+  const deeds = game ? siteDeeds(game, bbl) : [bbl];
+  if (deeds.length === 1) return rec.centroid;
+  let a = 0, x = 0, y = 0;
+  for (const d of deeds) {
+    const r = parcels[d];
+    if (!r?.centroid) continue;
+    const w = Math.max(1, r.lotArea);
+    a += w; x += r.centroid[0] * w; y += r.centroid[1] * w;
+  }
+  return a > 0 ? [x / a, y / a] : rec.centroid;
+}
 import EventPops from "./EventPops";
+
+/** Context features the harbour's surf breaks on (RealCityLayer.buildSea). */
+const SHORE_KINDS = new Set(["beach", "rock", "marsh", "seawall", "pier", "breakwater"]);
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -283,6 +308,8 @@ export default function MapView() {
   const threeRef = useRef<RealCityLayer | null>(null);
   // flipping the preview renderer rebuilds the map with the other 3D layer
   const [mapReady, setMapReady] = useState(false);
+  // the 3D city builds in slices after the map is up; the flat extrusions stand in until it is done
+  const [threeReady, setThreeReady] = useState(false);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
 
@@ -414,6 +441,14 @@ export default function MapView() {
               // park ponds stay level with the lawn; creeks and canals go
               // into a channel of their own (RealCityLayer.buildChannels)
               ponds: ringsOf("pond"),
+              // what the sea breaks on: the shore bands, the flat piers and
+              // the breakwaters, so the surf finds the real waterline
+              shore: (ctx?.features ?? [])
+                .filter((f) => SHORE_KINDS.has(String(f.properties?.kind)) && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  kind: String(f.properties?.kind),
+                })),
               streams: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "stream" && f.geometry.type === "Polygon")
                 .map((f) => ({
@@ -470,6 +505,16 @@ export default function MapView() {
             // asserted from state alone — you have to be able to ask the
             // geometry how tall it still is.
             (window as unknown as { __three?: unknown }).__three = layer;
+            // THE FLAT CITY WHILE THE SKYLINE RISES. A big map's meshes take a
+            // while to build (RealCityLayer.buildAll), and the map is live the
+            // whole time: the plain extrusions hold the buildings' places until
+            // the real ones are ready to take over.
+            map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
+            layer.onReady = () => {
+              if (disposed) return;
+              map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
+              setThreeReady(true);
+            };
             map.addLayer(layer);
             // THE LOT LINE ABOVE THE MODEL. The parcel outline is drawn under
             // the 3D layer, and on a vacant lot the mesh lays grass and hedges
@@ -509,7 +554,7 @@ export default function MapView() {
         // while the 3D layer is still loading.
         const pickAt = (pt: { x: number; y: number }): string | null => {
           const three = threeRef.current;
-          if (three) return three.pickAt(pt.x, pt.y);
+          if (three?.ready) return three.pickAt(pt.x, pt.y);
           const fs = map.queryRenderedFeatures(
             [[pt.x - 8, pt.y - 8], [pt.x + 8, pt.y + 8]], { layers: ["bw-parcel-fill"] });
           return (fs[0]?.properties?.bbl as string | undefined) ?? null;
@@ -582,6 +627,23 @@ export default function MapView() {
   const parcels = useStore((s) => s.parcels);
   // Re-paint the site when an assemble/unmerge changes the plate under the same click.
   const mergedN = useStore((s) => Object.keys(s.game?.merged ?? {}).length);
+  // ONE LOT LINE ROUND AN ASSEMBLED SITE. The parcel source is redrawn with
+  // each site as one dissolved polygon under its parent's id and the folded
+  // deeds gone, so the gold, teal and owned outlines trace the site — not the
+  // lots it used to be.
+  const mergedSig = useStore((s) => Object.entries(s.game?.merged ?? {}).map(([c, p]) => c + ">" + p).sort().join("|"));
+  useEffect(() => {
+    const map = mapRef.current;
+    const city = useStore.getState().city;
+    const fc = city?.parcelFeatures as GeoJSON.FeatureCollection | undefined;
+    const src = map?.getSource("bw-parcels") as maplibregl.GeoJSONSource | undefined;
+    if (!mapReady || !src || !fc) return;
+    const merged = useStore.getState().game?.merged ?? {};
+    src.setData({
+      type: "FeatureCollection",
+      features: mergeLotFeatures(fc.features as never[], merged) as GeoJSON.Feature[],
+    });
+  }, [mapReady, mergedSig]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) {
@@ -668,6 +730,7 @@ export default function MapView() {
     if (!map || !flyTo || !parcels) return;
     const rec = parcels[flyTo.bbl];
     if (!rec) return;
+    const at = siteCentroid(useStore.getState().game, parcels, flyTo.bbl) ?? rec.centroid;
     const layer = threeRef.current;
     const fr = layer?.buildingFrame(flyTo.bbl) ?? null;
     const container = map.getContainer();
@@ -700,7 +763,7 @@ export default function MapView() {
     // pitch, and never less than a small block's worth of context
     const subject = Math.max(34, radius * 2.4, height * 1.05);
     const mpp = subject / (0.36 * Math.min(availW, availH));
-    const lat = rec.centroid[1];
+    const lat = at[1];
     const zoom = Math.max(15.0, Math.min(18.4, Math.log2((78271.517 * Math.cos((lat * Math.PI) / 180)) / mpp)));
     let bearing = map.getBearing();
     if (layer) {
@@ -717,8 +780,8 @@ export default function MapView() {
     const br = (bearing * Math.PI) / 180;
     const mPerDegLat = 111320, mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180);
     const center: [number, number] = [
-      rec.centroid[0] + (Math.sin(br) * lift) / mPerDegLng,
-      rec.centroid[1] + (Math.cos(br) * lift) / mPerDegLat,
+      at[0] + (Math.sin(br) * lift) / mPerDegLng,
+      at[1] + (Math.cos(br) * lift) / mPerDegLat,
     ];
     // FRAME WITH AN OFFSET, NOT WITH PADDING. MapLibre's `padding` shifts
     // the VANISHING POINT, and it stays on the transform after the flight.
@@ -1438,17 +1501,11 @@ export default function MapView() {
         ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}) });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
-    // the parent lot; without this a tower built on three merged lots rose out
-    // of one of them while the other two stayed conspicuously empty, which is
-    // the opposite of what assembling them was for.
-    const merged = game.merged ?? {};
-    if (Object.keys(merged).length) {
-      const byParent = new Map(items.map((i) => [i.bbl, i]));
-      for (const [child, parent] of Object.entries(merged)) {
-        const p = byParent.get(parent);
-        if (p) items.push({ ...p, bbl: child });
-      }
-    }
+    // the parent lot and the renderer draws it on the whole site — one
+    // footprint dissolved from every deed's outline. It used to copy the
+    // parent's building onto each child lot, which put up three towers on a
+    // site assembled precisely so that one could stand there.
+    layer.setSites(game.merged ?? {});
     // meshes are rebuilt only when the skyline actually changed. Construction
     // height is in this string so a rising frame still updates; setPlayerBuildings
     // keeps finished stock on its own layer so that monthly growth does not
@@ -1528,11 +1585,12 @@ export default function MapView() {
     const height = threeRef.current?.buildingFrame(schemeBbl!)?.height || schemeFloors * 3.55;
     const lift = (height * 0.45) * Math.tan((pitch * Math.PI) / 180);
     const br = (bearing * Math.PI) / 180;
-    const lat = rec.centroid[1];
+    const at = siteCentroid(useStore.getState().game, parcels!, schemeBbl!) ?? rec.centroid;
+    const lat = at[1];
     const mPerDegLat = 111320, mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180);
     const center: [number, number] = [
-      rec.centroid[0] + (Math.sin(br) * lift) / mPerDegLng,
-      rec.centroid[1] + (Math.cos(br) * lift) / mPerDegLat,
+      at[0] + (Math.sin(br) * lift) / mPerDegLng,
+      at[1] + (Math.cos(br) * lift) / mPerDegLat,
     ];
     return { center, bearing, pitch, zoom };
   };
@@ -1710,8 +1768,8 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const layer = threeRef.current;
-    if (layer) {
-      // the flat extrusions are the no-mesh fallback only
+    if (layer?.ready) {
+      // the flat extrusions are the no-mesh fallback only (and the stand-in while it builds)
       map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
     }
     // ---- reset: every property any lens touches, straight from the style
@@ -1916,7 +1974,7 @@ export default function MapView() {
     }
     // no lens (or owners, which paints through the tints): the city's own face
     layer?.setLens(null);
-  }, [lens, paintSig, parcels, mapReady]);
+  }, [lens, paintSig, parcels, mapReady, threeReady]);
 
   // hover tooltip: address before you commit to a click. Photo frame drops it
   // with the labels — the effect re-runs on toggle, so it detaches cleanly and

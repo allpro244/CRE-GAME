@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism, residenceVac } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -287,7 +287,50 @@ export function plateOf(rec: { bldgArea: number; floors: number }): number {
   return rec.bldgArea / Math.max(1, rec.floors);
 }
 /** What a bigger floor is worth in rent, per doubling, against the median. */
-export function plateRentMult(rec: { bldgArea: number; floors: number }, use: BuiltClass): number {
+/**
+ * A SHOP IS LET BY ITS FRONT.
+ *
+ * The plate beta above stood in for frontage — "a wide site also buys it" —
+ * because no lot in the city had a frontage to read. Street plan 4 measures
+ * one, and retail is then priced the way retail is actually valued: the
+ * zoning method (RICS; the standard for shop rents in Britain and the logic
+ * of every "price per front foot" quote in America). The first 20 ft back
+ * from the window is Zone A at full rate; each further 20 ft is worth half the
+ * one in front of it; past 60 ft the remainder is an eighth. So a shop's rent
+ * per square foot falls with its depth, and the same floor area laid shallow
+ * along a wide front lets for more than laid deep behind a narrow one — which
+ * is what assembling two 25 ft lots into one 50 ft shop buys.
+ *
+ * Depth is the building's plate over the lot's frontage. Expressed against
+ * REF_SHOP_DEPTH_FT, the median shop's plate depth measured on plan-4 towns
+ * (1,881 standing shops over the twelve harness seeds: median 38.3 ft,
+ * quartiles 25 and 60; per-seed medians 30-50), so the median
+ * shop's rent is unchanged and only the spread around it is new — the same
+ * convention as REF_PLATE_SF. The zone width and halving are the method's own
+ * constants, not tuned. The clamp is a guard: a plate under 20 ft deep is all
+ * Zone A (the ceiling, 1.57) and only a big box past ~250 ft reaches the floor.
+ */
+const ZONE_FT = 20;
+export const REF_SHOP_DEPTH_FT = 38;
+function zonedPerSf(depthFt: number): number {
+  const d = Math.max(1, depthFt);
+  const zoned = Math.min(d, ZONE_FT)
+    + 0.5 * Math.min(Math.max(d - ZONE_FT, 0), ZONE_FT)
+    + 0.25 * Math.min(Math.max(d - 2 * ZONE_FT, 0), ZONE_FT)
+    + 0.125 * Math.max(d - 3 * ZONE_FT, 0);
+  return zoned / d;
+}
+export function shopFrontMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }): number | null {
+  if (!rec.lotFront || rec.lotFront <= 0) return null;
+  const depth = plateOf(rec) / rec.lotFront;
+  const capped = rec.lotDepth && rec.lotDepth > 0 ? Math.min(depth, rec.lotDepth) : depth;
+  return clamp(zonedPerSf(capped) / zonedPerSf(REF_SHOP_DEPTH_FT), 0.3, 1.6);
+}
+export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }, use: BuiltClass): number {
+  if (use === "retail") {
+    const f = shopFrontMult(rec);
+    if (f !== null) return f;
+  }
   const beta = PLATE_RENT_BETA[use] ?? 0;
   if (!beta) return 1;
   const p = plateOf(rec);
@@ -397,10 +440,35 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
  * This is also what stops every lot becoming a tower. A ladder that is too flat
  * makes floor area nearly free above the eighth storey, and then the only thing
  * limiting height is the zoning — which is a rule, not an economy.
+ *
+ * A CURVE, NOT A STAIRCASE. The bands above were written as steps — 1.00 to
+ * eight storeys, 1.16 to eighteen, 1.48 to thirty, 1.85 beyond — and a step
+ * prices the WHOLE building at the new band the moment one floor crosses it:
+ * the 31st storey repriced the thirty below it by 25%, and a plan's yield on
+ * cost fell a full point for one more floor (tools/mdga/floor-scan.mjs). The
+ * cost surveys the bands come from are band AVERAGES of a smooth rise, and
+ * nothing in a building code sits at 9, 19 or 31 storeys. So each band's level
+ * now sits at its middle and the premium runs straight between them: 1.00
+ * through four storeys, 1.16 at thirteen, 1.48 at twenty-four and a half, 1.85
+ * at forty (the tower the RSMeans check above was made on), and on to 2.00 by
+ * sixty — inside the +80-100% the source gives above thirty — flat past it,
+ * where slenderness (maxFloorsFor) governs rather than cost. A real step does
+ * exist where the construction TYPE changes, which is why the wood-frame
+ * apartment ladder below keeps its steps: that one is the building code.
  */
+const HEIGHT_PREMIUM_PTS: [number, number][] = [[4, 1], [13, 1.16], [24.5, 1.48], [40, 1.85], [60, 2.0]];
 export function heightPremium(floors: number): number {
   const fl = Math.max(1, floors || 1);
-  return fl > 30 ? 1.85 : fl > 18 ? 1.48 : fl > 8 ? 1.16 : 1;
+  const pts = HEIGHT_PREMIUM_PTS;
+  if (fl <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    if (fl <= x1) {
+      const [x0, y0] = pts[i - 1];
+      return y0 + ((y1 - y0) * (fl - x0)) / (x1 - x0);
+    }
+  }
+  return pts[pts.length - 1][1];
 }
 /**
  * WHAT A LOW-RISE APARTMENT IS BUILT OF (MDGA phase 2).
@@ -1162,15 +1230,20 @@ export const CONDITION_RENT_MULT: Record<Condition, number> = {
  * specification slider moved cost ±31% and rent not at all. That is not a
  * quality decision, it is a tax on building well.
  *
- * Class A vs B asking-rent spreads in US office and multifamily run about
- * 8–15% for comparable locations. Spec 0..1 maps onto that band around the
- * mid-spec building: ±10% at the extremes. Cost still moves ±31%, so trophy
- * still costs more than it rents — the slight advantage is this rent, a
- * small cap tightener, and the slower wear already in `condCeiling`. It is
- * not a YoC win for gold-plated bones, and it is not meant to be.
+ * Class A over Class B asking rents in US office run ~25-40% in the broker
+ * surveys (CBRE / JLL quarterly, 2015-2024), but much of that gap is location
+ * and age. Holding the submarket fixed — the hedonic office-rent studies, and
+ * the like-for-like A-vs-B spreads inside one CBD — leaves roughly 10-20%
+ * for the building itself, with trophy over commodity at the top of that.
+ * Condition is priced separately (CONDITION_RENT_MULT), so this is only the
+ * permanent part: ±15% at the extremes of spec, +11% for "Signature" (0.88),
+ * −7% for "Box" (0.28). Calibrated against that band, not tuned to an arm.
+ * (It was ±10%, off a cited 8-15% that was the unadjusted multifamily gap;
+ * measured with `pnpm spec-arms`, every dollar of spec then bought 44¢ of
+ * value and the cheapest building was always the right one.)
  */
 export function specRentMult(spec = 0.5): number {
-  return 1 + 0.20 * (spec - 0.5);
+  return 1 + 0.30 * (spec - 0.5);
 }
 
 /**
@@ -1665,7 +1738,24 @@ export function heightCapFloors(
   // Still neutral at rest: at natural vacancy with no capacity shortage both
   // reaches are zero, the branch does not fire, and month zero is unchanged.
   const structReach = clamp((struct - 0.08) / 0.22, 0, 1);
-  const tightReach = clamp((tight - 0.45) / 0.40, 0, 1);
+  // TIGHT AGAINST WHAT THE MARKET CAN REACH, NOT AGAINST ZERO (2026-10-09).
+  // `tight` is measured from natural toward 0% vacancy, but no market gets
+  // near 0%: when every suite that can be let is let, the suites between
+  // tenants are still dark (`residenceVac` — turnover times re-let months).
+  // For flats that point is ~3.5% against a natural 4.5%, so `tight` topped
+  // out at 0.22 and the 0.45 threshold could never be met: the class in
+  // permanent shortage on every measured Manhattan run was the one class
+  // whose cornice no shortage could break, while offices could reach a fifth
+  // of the way to their legal envelope and sheds half. The reach now reads
+  // how far the market has gone from natural toward FULLY LET — the same
+  // 45%/40% shape, on the scale every class can actually traverse.
+  // Measured with the teardown fix, Manhattan below Houston, two seeds,
+  // year 100: 30+ floor buildings 17 -> 32 and 14 -> 58, 20+ floor
+  // 157 -> 186 and 218 -> 329. It overbuilds on the way — office vacancy
+  // 17.6% at year 50 on one seed — which is what a skyline cycle looks like.
+  const fullyLet = Math.min(natural * 0.95, residenceVac(ez, use));
+  const tightLet = clamp((natural - (ez.cityVac?.[use] ?? natural)) / Math.max(0.002, natural - fullyLet), -1, 1);
+  const tightReach = clamp((tightLet - 0.45) / 0.40, 0, 1);
   const reach = Math.max(structReach, tightReach);
   if (reach > 0 && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
     const legal = Math.ceil(farMaxFor({
@@ -1709,18 +1799,34 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
     // merging silently repriced the whole site down to the worst psf in the
     // set: measured over 120 merges, 55% of them DESTROYED land value and the
     // worst lost 16% of the dirt at the moment the deeds were folded together.
+    //
+    // AND ITS ENVELOPE IS THE ENVELOPE THAT WENT INTO IT. A merged zoning lot
+    // carries the floor area of every piece — each lot's area at its own FAR
+    // — not the parent's FAR stretched over everybody's dirt. Taking the
+    // parent's made the buildable area depend on which deed happened to end up
+    // as parent: on the reference map 82% of neighbouring lots on a block
+    // differ in FAR (by up to 28%), so the same three lots assembled in a
+    // different order planned a different building.
     let extra = 0;
     let psfSum = rec.lotArea * rec.landPsf;
+    let commSum = rec.lotArea * rec.farMaxComm;
+    let resSum = rec.lotArea * rec.farMaxRes;
     for (const [child, parent] of Object.entries(m)) {
       if (parent !== bbl) continue;
       const c = parcels[child];
       if (!c) continue;
-      extra += c.lotArea ?? 0;
-      psfSum += (c.lotArea ?? 0) * c.landPsf;
+      const a = c.lotArea ?? 0;
+      extra += a;
+      psfSum += a * c.landPsf;
+      commSum += a * c.farMaxComm;
+      resSum += a * c.farMaxRes;
     }
     if (extra > 0) {
       const area = rec.lotArea + extra;
-      const grown = resolveBase(s, { ...rec, lotArea: area, landPsf: psfSum / Math.max(1, area) });
+      const grown = resolveBase(s, {
+        ...rec, lotArea: area, landPsf: psfSum / Math.max(1, area),
+        farMaxComm: commSum / Math.max(1, area), farMaxRes: resSum / Math.max(1, area),
+      });
       return grown;
     }
   }
@@ -2262,9 +2368,13 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // move, because the buyer is pricing the capital they are about to spend, and
   // an obsolete one is priced as the capital plus a demolition risk
   const qualSpread = condIdx !== undefined ? qualSpreadAt(condIdx) : qualSpreadAt(COND_CENTRE[condition] ?? 0.65);
-  // Permanent bones, not today's paint. Class A trades 15–30 bp tighter than
-  // Class B on the same street; spec 0..1 is that band around mid-spec (±15 bp).
-  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.30;
+  // Permanent bones, not today's paint. Class A office trades ~50-100 bp
+  // tighter than Class B in the CBRE cap-rate surveys (2015-2024), trophy at
+  // the wide end; part of that is the condition gap qualSpread already prices,
+  // so the bones carry ±40 bp across spec 0..1 (Signature ~30 bp tighter than
+  // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
+  // like a commodity building with a nicer lobby.
+  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
   return clamp(base + locSpread + qualSpread + specSpread, 3.2, 13);
 }
 

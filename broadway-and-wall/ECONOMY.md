@@ -2774,3 +2774,75 @@ Floating pools reset monthly off their bench (SOFR-type short index or the
 long index) plus the quoted spread, as single-asset floaters do. Recourse
 follows the product. Still single-asset only: rate caps, bridge, mezzanine
 and land loans, none of which is written on a cross-collateralised pool.
+
+# THE LOAN INDEX WAS THE MOST PREDICTABLE NUMBER IN THE GAME — fixed (2026-10-09)
+
+The loan index was `policy + termPrem`, with the premium reverting to 1.55
+(plus a credit term) on an eight-month half-life. Month to month it was a
+coin flip, as it should be. A year out it was not: the committee's moves are
+predictable (in life too — the Fed telegraphs), and the index inherited them
+point for point. A player who saw the short index climb could lock fixed and
+beat a hiking cycle a bond market would have priced at its first step. The
+curve could not invert, so the signal that preceded eight of the last ten US
+recessions did not exist.
+
+**The fix, two mechanisms in `tickNation`:**
+
+1. **The index is a forecast.** `expectedPolicyAvg` runs the committee
+   forward ten years with its own decision rule (`bankStep`, now shared by
+   the real meeting and the forecast; the real calendar; fiscal pressure for
+   as long as it has left). The rule's prescription (`nat.ruleRate`) decays
+   to its long-run level — r* plus the inflation the market expects, which
+   is the target only as far as the bank is believed — at `RULE_GAP_RHO =
+   0.974`, MEASURED as the least-squares fit to the autocorrelation of that
+   gap in the model's own national economy (40 seeds x 50y, horizons 1-120
+   months). Model-consistent expectations, not a chosen speed.
+2. **The premium reads credibility.** `termPremBase = 4.4 x (1 - cred) - 0.05`
+   (+ the old credit term), CALIBRATED on the ACM ten-year premium at its two
+   ends: ~0 under a believed bank (2010s), ~4 at the top of the Great
+   Inflation (credibility on its floor). The monthly noise (+/-0.30,
+   reversion 0.10) is unchanged; the level it reverts to now moves on
+   credibility's decade-long clock.
+
+**Measured** — 12 cities x 50 years, no player, against FRED (GS10 vs
+FEDFUNDS, 1954-2026, same statistics):
+
+| | before | after | US |
+|---|---|---|---|
+| R2, next-12m index change on last-6m short-index change | 0.13 | 0.03 | 0.01 |
+| sign hit-rate of that signal (moves >= 50bp) | 72% | 58% | 61% |
+| 12m index change per point of 12m policy change | 1.00 | 0.43 | 0.32 |
+| months inverted (index < short) | 0.0% | 30.0% | 20.8% |
+| index - short spread p5 / p50 / p95 | 0.83 / 1.52 / 2.20 | -1.50 / 1.01 / 4.16 | -1.59 / 1.10 / 3.20 |
+| recessions preceded by an inversion (18m) | 0% | 59% | 80% |
+| monthly change sd / lag-1 autocorrelation | 26.0bp / 0.16 | 21.2bp / 0.03 | 26.3bp / 0.31* |
+| index max | 19.5% | 15.3% | 15.3% (1981) |
+| index at its 1.45 floor | 0.9% | 0.0% | — |
+| term premium half-life | 8.5 mo | 91 mo | years |
+
+\* FRED's monthly averages put autocorrelation into the real series.
+
+**What moved, said plainly.** The mean loan index fell 5.54% -> 5.19%
+because the mean premium fell (the old 1.55 was above the 0.98 the US 10y-FF
+spread actually averaged), and the median office cap rate followed it, 7.54%
+-> 7.23%. Floating beat fixed over five years 69% of the time (was 80%), and
+much less often right after the short rate has risen (57%) — the fixed lock is
+now a real decision rather than a near-certain loss or a free option.
+
+**Baseline, paired (12 seeds, `tools/baseline-paired.mjs`).** The six-seed
+check reads large moves (office vacancy -45%, median land +89%); paired, they
+are the re-roll a new rate path causes — office vacancy t -0.8, land t -0.5,
+office rent t 0.06. Two moves are real: industrial rent -10.8% +/- 3.3%
+(t -3.3, 11 of 12 seeds down) and built floor area +1.9% (t 2.0). Both are
+what a 35bp-lower average cost of money should do: more gets built, and the
+class with the cheapest, fastest construction absorbs it in rent. Accept test
+B's lease-up clause reads "never inside 120 months" on its pinned seed; over
+six seeds it fails on two both before and after (it sat at exactly 120 months
+before), so that is the same re-roll. `pnpm gate` passes.
+
+**Still open.** Inversions now precede recessions 59% of the time, not 80%,
+and only 38% of inversion spells are followed by one within two years: the
+national recession is a hazard that the real policy rate raises, so tight
+money makes one likelier without scheduling it. The market's forecast does
+not anticipate recessions it cannot see. That is a statement about the
+recession model, not the bond market.

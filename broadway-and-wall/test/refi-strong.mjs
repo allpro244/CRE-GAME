@@ -105,7 +105,12 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
       if (!perm) continue;
       n++;
       const sizedToSheet = perm.ltvAtMax >= perm.advanceLtv * hair.mult * 0.9 * 0.85;   // sheet × haircut × the desk's own appetite, less a little
-      const sizedToCover = perm.dscrAtMax <= 1.40;
+      // ...and the coverage leg carries the same roll haircut the sheet leg
+      // does: a desk that takes 20% off for a single tenant rolling inside two
+      // years sizes at coverage and then cuts, so the DSCR at the written loan
+      // is the test DSCR over the haircut (1.24 / 0.80 = 1.55). Read without
+      // it, a coverage-bound quote on a short roll looked like neither.
+      const sizedToCover = perm.dscrAtMax * hair.mult <= 1.40;
       const line = `${(rec.address ?? bbl).padEnd(22)} ${rec.class.padEnd(11)} occ ${pc(E.physicalOcc(rec, h))} NOI/mark ${pc(noi / value)} → ${perm.id.padEnd(9)} ${pc(perm.ltvAtMax)} of mark, DSCR ${perm.dscrAtMax.toFixed(2)} (${perm.binding}${perm.bindingWhy ? ": " + perm.bindingWhy : ""}) hair ${hair.mult.toFixed(2)}`;
       lines.push(line);
       if (!(sizedToSheet || sizedToCover)) { bad++; console.log("  ✗ " + line); }

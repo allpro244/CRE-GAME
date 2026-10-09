@@ -344,6 +344,8 @@ export function executePurchase(
     service: s.opsPolicy?.service ?? 0,
     stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
+    // ...and the house minimum new lease, when one is set
+    ...(s.minLeaseDefault ? { minLeaseSf: s.minLeaseDefault } : {}),
     svcIdx: SVC_START,
     tenants: [],
     cfHistory: [],
@@ -367,9 +369,15 @@ export function executePurchase(
     // desk underwrites the building it is actually lending on.
     const grade = conveyedGrade(s, rec, bbl);
     const stab = stabViewFor(rec, next.econ, grade, uwBasis);
+    // ...and the SAME SPONSOR. buyQuote struck the sheet on the buyer's net
+    // worth before the cheque left (a strong name is a tenth off on recourse
+    // paper, a thin one is capped); sizing the closing without it wrote a
+    // different coupon than the card and, on a loan near the $100K floor,
+    // refused one the desk had just quoted (test/levered-close: a $182K shop
+    // quoted $100,570 and closed at $99,724).
     holding.loan = originate(
       next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
-      grade, rec.class, stab,
+      grade, rec.class, stab, { nw: netWorth(s, parcels) },
     );
     // NO LOAN, NO CLOSING. The cheque above was the EQUITY on a quoted
     // principal; if the desk will not write that principal, closing anyway

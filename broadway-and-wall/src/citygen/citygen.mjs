@@ -216,6 +216,59 @@ function erode(ring, dOf) {
   return r ? cleanRing(r) : null;
 }
 
+/**
+ * PER-EDGE INSET THAT FOLLOWS THE SHAPE (street plan 5). `erode` clips the
+ * ring by one half-plane per edge, which is exact for a convex lot and
+ * destructive for any other: on an L-shaped or notched lot the half-plane of
+ * an edge beside the inside corner runs straight across the lot and cuts a
+ * whole wing away. Real tax lots are notched all the time (Manhattan: one lot
+ * in six over 5,000 sf), and that is why opening-day buildings stood in one
+ * corner of their lot behind a forecourt nobody built. This moves each edge
+ * in by its own setback and re-joins neighbouring edges where their offset
+ * lines meet — a mitred offset, the same shape smaller. Returns null when the
+ * offset is too deep for the shape (inverted, self-crossing or outside the
+ * lot), and the caller falls back to `erode`.
+ */
+function offsetEdges(ring, dOf) {
+  const n = ring.length;
+  if (n < 3) return null;
+  const ccw = ringArea(ring) > 0;
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i], b = ring[(i + 1) % n];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-9) return null;
+    const nx = ccw ? -ey / len : ey / len, ny = ccw ? ex / len : -ex / len;   // inward normal
+    const d = typeof dOf === "function" ? dOf(Math.atan2(ey, ex), i) : dOf;
+    lines.push({ p: [a[0] + nx * d, a[1] + ny * d], u: [ex / len, ey / len] });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const L0 = lines[(i + n - 1) % n], L1 = lines[i];
+    const den = L0.u[0] * L1.u[1] - L0.u[1] * L1.u[0];
+    if (Math.abs(den) < 1e-6) { out.push(L1.p); continue; }          // collinear edges: no corner
+    const t = ((L1.p[0] - L0.p[0]) * L1.u[1] - (L1.p[1] - L0.p[1]) * L1.u[0]) / den;
+    const q = [L0.p[0] + L0.u[0] * t, L0.p[1] + L0.u[1] * t];
+    // a mitre past four times the setback at a needle corner is a spike
+    if (Math.hypot(q[0] - ring[i][0], q[1] - ring[i][1]) > 40) return null;
+    out.push(q);
+  }
+  const a1 = ringArea(out), a0 = ringArea(ring);
+  if (Math.sign(a1) !== Math.sign(a0) || Math.abs(a1) < Math.abs(a0) * 0.05 || Math.abs(a1) > Math.abs(a0)) return null;
+  for (const v of out) if (!inRing(v, ring) && distToRing(v, ring) > 0.05) return null;
+  for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+    if (i === 0 && j === n - 1) continue;
+    const p1 = out[i], p2 = out[(i + 1) % n], p3 = out[j], p4 = out[(j + 1) % n];
+    const d1 = (p4[0] - p3[0]) * (p1[1] - p3[1]) - (p4[1] - p3[1]) * (p1[0] - p3[0]);
+    const d2 = (p4[0] - p3[0]) * (p2[1] - p3[1]) - (p4[1] - p3[1]) * (p2[0] - p3[0]);
+    const d3 = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]);
+    const d4 = (p2[0] - p1[0]) * (p4[1] - p1[1]) - (p2[1] - p1[1]) * (p4[0] - p1[0]);
+    if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return null;
+  }
+  return out;
+}
+
 function dilateConvex(ring, d) {
   const ccw = ringArea(ring) > 0;
   const [x0, y0, x1, y1] = bboxOfRing(ring);
@@ -258,6 +311,13 @@ function chamfer(ring, i, cut) {
 // is the game's entire surface and a player needs sites to buy — but at
 // roughly a third rather than a half, which is the difference between a city
 // with gaps in it and a gap with a city in it.
+// Plan 10's tower roll on Manhattan's business cores (see MANHATTAN'S CORES
+// ARE ASSEMBLED FOR TOWERS): the weight a big site adds, the cap, and the
+// top of the tower's heat-driven height spread.
+// Calibrated against MapPLUTO below Chambers Street, pre-2000 stock.
+const TOWER_P_CORE_SITE = 0.16;
+const TOWER_P_CORE_CAP = 0.70;
+const TOWER_H_CORE = 29;
 export const FLAVOR = {
   // `assemble` is how hard the twentieth century bought this district up and
   // threw the lots together. Downtown hardest, row housing barely at all.
@@ -306,7 +366,14 @@ function classFor(flavor, heat, rand, site) {
   const front = site
     ? Math.exp(-(site.corrM ?? 9999) / 45) + (site.corner ? 0.35 : 0)
     : 0.33; // the sweep's mean frontage score, so a siteless call is neutral
-  const mK = Math.min(2.8, 0.30 + 2.10 * front);
+  // THE FRONTAGE BOOST IS FOR SHOPFRONTS, NOT CITY BLOCKS (plan 10). On the
+  // real Manhattan plat nearly every lot is within a few metres of Broadway
+  // or an avenue, so the corridor multiplier ran K2 — a one- or two-storey
+  // retail building — up to 2.8x, and 40 of the 177 lots over 20,000 sf
+  // below Chambers came out as single-storey shops. A site that size on a
+  // real avenue is an office building or a tower with shops in its base; it
+  // keeps K2 only at the ladder's own weight, unboosted.
+  const mK = site?.bigSite ? 1 : Math.min(2.8, 0.30 + 2.10 * front);
   const mO = 0.70 + 0.60 * heat;
   // Widths below multipliers are exactly the old thresholds. "O*" resolves by
   // heat: a hot office lot is a newer, bigger building.
@@ -435,7 +502,9 @@ export const DENSITY = {
 export function generateCity(cfg) {
   // Which street plan the old quarters use: 1 = per-cell splitting (every
   // save made before plan 2 existed), 2 = streets first, 3 = streets first
-  // with vacancy by settlement order (WHERE A YOUNG TOWN IS EMPTY). Read from the config
+  // with vacancy by settlement order (WHERE A YOUNG TOWN IS EMPTY), 4 = the
+  // frontage plat (THE FRONTAGE PLAT; generated islands only), 5 = notched lots
+  // inset along their own shape (offsetEdges). Read from the config
   // so a save rebuilds the exact town it was played in.
   const PLAN_V = cfg.planV ?? 3;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
@@ -449,7 +518,11 @@ export function generateCity(cfg) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length) % arr.length];
   const proj = makeProjection(cfg.center[0], cfg.center[1]);
 
-  const COAST_M = chaikin(crinkle(cfg.coast, rand, cfg.coastAmp ?? 46), cfg.smooth ?? 1);
+  // A SURVEYED COAST IS NOT ROUGHENED. `cfg.plat` is a city baked from the
+  // real cadastre (manhattan.mjs): its shoreline is the bulkhead line as the
+  // city files it, and crinkling or rounding it would move it off the lots
+  // that stand on it.
+  const COAST_M = cfg.plat ? cfg.coast : chaikin(crinkle(cfg.coast, rand, cfg.coastAmp ?? 46), cfg.smooth ?? 1);
   const COAST = COAST_M.map(proj.toLL);
   const ESPLANADE_W = cfg.esplanade ?? 26;
   const innerRing = offsetInward(COAST_M, ESPLANADE_W);
@@ -495,7 +568,10 @@ export function generateCity(cfg) {
   const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
-  const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
+  // A surveyed park (`real`) is drawn to its own property line: the kerb is
+  // already outside it, in the street cell round it, and its outline is not
+  // convex, which `erode` assumes.
+  const PARK_GREEN_M = PARKS_M.map((ring, i) => (cfg.parks[i]?.real ? ring : erode(ring, PARK_KERB) ?? ring));
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
   const STREAMS_M = (cfg.streams ?? [])
     .filter((st) => st.paint === false || st.kind === "pond" || st.kind === "slip")
@@ -509,7 +585,13 @@ export function generateCity(cfg) {
     .filter((st) => !st.cut)
     .map((st) => st.ring).filter((r) => r && r.length >= 3);
   const inWater = (p) => WATER_M.some((r) => inRing(p, r));
-  const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
+  // Box first: a surveyed city has a hundred-odd parks, and the street pass
+  // asks this every eight metres of kerb. Same answer, a fraction of the tests.
+  const PARK_BOX = PARKS_M.map(bboxOfRing);
+  const inPark = (p) => PARKS_M.some((r, i) => {
+    const b = PARK_BOX[i];
+    return p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && inRing(p, r);
+  });
   /** Shortest distance from a point to a closed ring's boundary, in metres. */
   const ringDist = (p, ring) => {
     let best = Infinity;
@@ -1183,7 +1265,26 @@ export function generateCity(cfg) {
   // split from the inside — so they fall through to the same builder. The
   // default is the lattice too, and deliberately: an unknown kind in a config
   // has to come out as a surveyed grid rather than as bare ground.
-  for (const [name, d] of Object.entries(cfg.districts)) {
+  // A SURVEYED CITY HANDS OVER ITS BLOCKS. Nothing is laid out: every block
+  // is a real tax block with its real lots, and its cell is the ground out to
+  // the middle of the streets round it, so the streets are the real streets.
+  // Each block takes the district of the partition leaf its middle falls in,
+  // which is all a district does here — it carries the flavour, the zoning
+  // and the street names, not a street plan. A park's cell goes in as
+  // pavement with no block on it, so the street round a square is paved.
+  if (cfg.plat) {
+    const leafOf = (p) => leaves.find((l) => l.hp.every(([nx, ny, d]) => nx * p[0] + ny * p[1] <= d + 1e-6));
+    for (const b of cfg.plat.blocks) {
+      const district = leafOf(centroid(b.outline))?.district ?? Object.keys(cfg.districts)[0];
+      const grid = cfg.districts[district]?.kind !== "organic";
+      blocks.push({
+        ring: b.cell, inset: b.outline, district, real: b.n, realLots: b.lots,
+        u: grid ? 0 : undefined, uFifth: grid ? 0 : undefined,
+      });
+    }
+    for (const c of cfg.plat.parkCells ?? []) blocks.push({ ring: c, inset: null, district: Object.keys(cfg.districts)[0], u: 0 });
+  }
+  else for (const [name, d] of Object.entries(cfg.districts)) {
     if (d.kind === "organic") organicDistrict(name, d);
     else if (d.kind === "curvi") curviDistrict(name, d);
     else if (d.kind === "radial") radialDistrict(name, d);
@@ -1221,7 +1322,8 @@ export function generateCity(cfg) {
   // apex is 25 deg; nothing was ever built on a sharper point.
   const FLATIRON_W = 14, FLATIRON_DEG = 25, FLATIRON_LEN = 150;
   for (const b of blocks) {
-    if (!b.inset) continue;
+    // a surveyed block is already what was built on it — see cfg.plat
+    if (!b.inset || b.realLots) continue;
     const r = b.inset;
     const ax = longestEdgeAngle(r);
     const s1 = extentAlong(r, ax).span, s2 = extentAlong(r, ax + Math.PI / 2).span;
@@ -1350,6 +1452,397 @@ export function generateCity(cfg) {
       if (!done) stuck.add(r);
     }
   }
+
+  // ------------------------------------------------------- THE FRONTAGE PLAT
+  //
+  // PLAN 4. A SURVEYOR DOES NOT HALVE A BLOCK UNTIL THE PIECES ARE SMALL ENOUGH.
+  //
+  // splitLots above cuts a block in two across its long axis, then each half
+  // in two, until every piece falls under an area target. Halving a rectangle
+  // gives pieces about as long as they are wide, and that is what the town was
+  // made of: median lot aspect 1.4, more than a third of all lots within 30%
+  // of square, three to five deeds a block, and — because every one of five
+  // pieces touches a corner of its block — 40-60% of all lots filed as
+  // corners. None of that is how land is platted. A plat is drawn from the
+  // STREET: the block is split down its spine into two rows that back onto
+  // each other (or onto an alley), and each row is cut into lots of one
+  // frontage — 25 ft in a commercial row, 33-50 ft in housing, 75-150 ft on a
+  // working wharf — each running the full depth of its row. On a long block
+  // the two ends are turned to face the short street, which is why a
+  // Manhattan avenue is lined with lots 100 ft deep FROM the avenue and the
+  // side street with lots 100 ft deep from it.
+  //
+  // What that buys the game is not decoration. A 25 ft lot cannot carry a
+  // tower and three of them side by side can, so ASSEMBLY becomes the
+  // development decision it is in life; a corner is four lots on a block of
+  // twenty, not half the town, so the corner premium means something; and a
+  // shop has a frontage you can measure.
+  //
+  // The frontage bands are the convention, in metres: real platting widths
+  // (25/33/40/50 ft lots; 100-200 ft yard frontages), floored at the 8 m the
+  // sliver rule already enforces. The heavy tail — sites the twentieth century
+  // bought up two, four, a dozen at a time — is the same draw lotOptOf uses,
+  // applied as RUNS of adjacent lots merged on the row, which is what an
+  // assembled site physically is.
+  const FRONT_FLAVOR = {
+    core: [8, 15.2], old: [8, 12.2], resi: [9.1, 15.2], industrial: [22, 46], modern: [15, 30],
+  };
+  const FRONT_WAY = {
+    row: [8, 9.2], burgage: [8, 11], fine: [8, 10.7], villa: [15, 22.5], yard: [30, 60],
+  };
+  // PLAN 8: A NOTCH WIDER. The owner liked the row-house grain and found it a
+  // shade too much: median lot 2.06:1, 7% past 4:1, the narrow conventions
+  // (row, fine, core) at 2.3-2.5. So the narrowest frontage is 30 ft, not
+  // 26, the row, commercial and downtown bands start at 32 ft and widen by
+  // a foot or two at the top, and a lot is cut
+  // no longer than 4:1 rather than 5:1. Still a 30 ft row house and a 40 ft
+  // commercial lot — the grain the plat is for, one step coarser.
+  if (PLAN_V >= 8) {
+    Object.assign(FRONT_FLAVOR, { core: [9.8, 15.2], old: [9.1, 12.8], resi: [10.7, 15.2] });
+    Object.assign(FRONT_WAY, { row: [9.8, 11.3], burgage: [9.8, 12.8], fine: [9.8, 12.8] });
+  }
+  const LOT_ASPECT = PLAN_V >= 8 ? 3.5 : 5;
+  const FRONTAGE = cfg.frontagePlat === true && PLAN_V >= 4;
+  const ALLEYS_M = [];
+
+  /** Oriented bounding rectangle of a convex ring: the axis of its longer side. */
+  function blockFrame(ring) {
+    let best = null;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-6) continue;
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const e1 = extentAlong(ring, ang), e2 = extentAlong(ring, ang + Math.PI / 2);
+      const area = e1.span * e2.span;
+      if (!best || area < best.area) {
+        best = e1.span >= e2.span
+          ? { area, axis: ang, L: e1.span, D: e2.span }
+          : { area, axis: ang + Math.PI / 2, L: e2.span, D: e1.span };
+      }
+    }
+    return best;
+  }
+  const widthOf = (r) => {
+    const f = blockFrame(r);
+    return f ? { w: f.D, l: f.L } : { w: 0, l: 0 };
+  };
+  /**
+   * A piece a surveyor would stake: 8 m across, aspect inside 6.5, no corner
+   * sharper than 22 degrees — the plat harness's sliver rule (tools/platlib),
+   * read on both frames it could be measured in, so nothing this cuts is
+   * a sliver by the ruler that audits it.
+   */
+  const stakeable = (r) => {
+    if (!r || r.length < 3 || polygonArea([r]) < 120) return false;
+    const { w, l } = widthOf(r);
+    const ax = longestEdgeAngle(r);
+    const sA = extentAlong(r, ax).span, sB = extentAlong(r, ax + Math.PI / 2).span;
+    const w2 = Math.min(sA, sB), l2 = Math.max(sA, sB);
+    if (Math.min(w, w2) < 8 || l > w * 6.5 || l2 > w2 * 6.5) return false;
+    const n = r.length;
+    for (let i = 0; i < n; i++) {
+      const a = r[(i + n - 1) % n], b = r[i], c = r[(i + 1) % n];
+      const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+      const l1 = Math.hypot(v1x, v1y), l2b = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2b < 1e-9) continue;
+      if ((v1x * v2x + v1y * v2y) / (l1 * l2b) > Math.cos((22 * Math.PI) / 180)) return false;
+    }
+    return true;
+  };
+  /** What is left of a row after a cut: still 8 m deep, no needle corner. */
+  const rowLeft = (r, dir) => {
+    if (!r || r.length < 3 || polygonArea([r]) < 120) return false;
+    if (extentAlong(r, dir + Math.PI / 2).span < 8 || extentAlong(r, dir).span < 8) return false;
+    const n = r.length;
+    for (let i = 0; i < n; i++) {
+      const a = r[(i + n - 1) % n], b = r[i], c = r[(i + 1) % n];
+      const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+      if (l1 > 1e-9 && l2 > 1e-9 && (v1x * v2x + v1y * v2y) / (l1 * l2) > Math.cos((22 * Math.PI) / 180)) return false;
+    }
+    return true;
+  };
+  /** Cut `ring` at a coordinate along `dir` with a line at `cutDir`; low side first. */
+  function cutAt(ring, dir, at, cutDir) {
+    const e = extentAlong(ring, dir);
+    if (at <= e.lo + 0.5 || at >= e.hi - 0.5) return null;
+    const [a, b] = splitConvex(ring, pointAt(ring, dir, (at - e.lo) / e.span), cutDir);
+    if (!a || !b) return null;
+    const ca = centroid(a), cdx = Math.cos(dir), cdy = Math.sin(dir);
+    return ca[0] * cdx + ca[1] * cdy < at ? [a, b] : [b, a];
+  }
+  /**
+   * How many unit lots each site on a row takes. One per lot unless the row
+   * was bought up: a pair (two 25-footers sold together from the start, the
+   * commonest site on any old block), a four-to-six assembly, or most of the
+   * block. Downtown hardest, as lotOptOf says — the same `assemble` weight
+   * and the same heat scaling, so the tail is where it was.
+   */
+  function groupRun(n, d, heat, narrow, maxG = Infinity) {
+    const fl = flavorOf(d);
+    const k = (fl.assemble ?? 1) * (0.45 + 0.75 * Math.max(0, Math.min(1, heat)));
+    const out = [];
+    for (let i = 0; i < n;) {
+      const u = rand();
+      const m = u > 1 - 0.045 * k ? Math.round(rr(5, 13))
+        : u > 1 - 0.115 * k ? Math.round(rr(2.4, 4.8))
+          : narrow && u < (PLAN_V >= 8 ? 0.18 : 0.10) ? 2
+            : 1;
+      const g = Math.max(1, Math.min(m, maxG, n - i));
+      out.push(g);
+      i += g;
+    }
+    return out;
+  }
+  /**
+   * Cut one strip into lots along `dir` (the frontage direction), each `unit`
+   * wide, grouped by groupRun. A cut that would leave an unstakeable piece —
+   * a row tapering into a chamfer, say — is skipped and its frontage joins
+   * the next lot, which is what a surveyor does with a short end.
+   */
+  function cutRow(strip, dir, w, d, heat, out, maxSpan = Infinity) {
+    const e = extentAlong(strip, dir);
+    const n = Math.max(1, Math.min(Math.round(e.span / w), Math.floor(e.span / 8)));
+    if (n <= 1) { out.push(strip); return; }
+    const unit = e.span / n;
+    // An assembled site is a site, not a terrace: nobody threw a whole
+    // 200 m row of a shallow block together into one deed, and doing it here
+    // would undo the strip fix splitLots carries. A run stops where its
+    // frontage would pass four times its depth.
+    const depth = extentAlong(strip, dir + Math.PI / 2).span;
+    const groups = groupRun(n, d, heat, w < 12, Math.max(1, Math.floor(Math.min(4 * depth, maxSpan) / unit)));
+    let rest = strip, at = e.lo;
+    for (let g = 0; g < groups.length - 1; g++) {
+      at += groups[g] * unit;
+      const pc = cutAt(rest, dir, at, dir + Math.PI / 2);
+      // the lot cut off must be stakeable; what is left of the row is still a
+      // row (long by nature) until its last cut, so it only has to stay a row
+      if (!pc || !stakeable(pc[0]) || !rowLeft(pc[1], dir)) continue;
+      out.push(pc[0]);
+      rest = pc[1];
+    }
+    // The end of a row that tapers (a block narrowing to a point between two
+    // streets) can leave its last piece too long for its width; halve it while
+    // halving makes stakeable lots, the way the strip fix in splitLots does.
+    const halve = (r, k) => {
+      if (stakeable(r) || k > 3) { out.push(r); return; }
+      const e2 = extentAlong(r, dir);
+      for (const f of [0.5, 0.4, 0.6]) {
+        const pc = cutAt(r, dir, e2.lo + e2.span * f, dir + Math.PI / 2);
+        if (pc && rowLeft(pc[0], dir) && rowLeft(pc[1], dir)) { halve(pc[0], k + 1); halve(pc[1], k + 1); return; }
+      }
+      // Narrower than a lot for its whole length — the thin end of a block
+      // pinched between two streets. Nothing stakes on it; like the gores of
+      // the wedge rule it is paved ground, not a deed.
+      // (14 m: FLATIRON_W, the width under which the wedge rule says no two
+      // lots stand back to back — and this one cannot even be cut across)
+      if (widthOf(r).w < FLATIRON_W && widthOf(r).l > widthOf(r).w * 6.5) return;
+      out.push(r);
+    };
+    halve(rest, 0);
+  }
+  /**
+   * THE POINT OF A WEDGE IS PAVED. Where two streets meet at under 22 degrees
+   * no lot can hold the point — every piece containing it is a needle by the
+   * surveyor's own rule — and the whole-block wedge rule above already makes
+   * such a block a gore. A larger block with one needle corner keeps its
+   * body and loses only the point: cut square to the corner's bisector where
+   * the wedge is 10 m across, and leave the tip as the paved island it is in
+   * every gridded city with a diagonal through it.
+   */
+  function trimNeedles(ring) {
+    let r = ring;
+    for (let pass = 0; pass < 3 && r; pass++) {
+      const n = r.length;
+      let hit = -1, best = Math.PI;
+      for (let i = 0; i < n; i++) {
+        const a = r[(i + n - 1) % n], b = r[i], c = r[(i + 1) % n];
+        const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+        const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+        if (l1 < 1e-9 || l2 < 1e-9) continue;
+        const ang = Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2))));
+        if (ang < best) { best = ang; hit = i; }
+      }
+      // 23, not 22: a point a hair under the stake rule must not survive on
+      // rounding — the rule is 22 and the trim is what keeps every lot over it
+      if (hit < 0 || best >= (23 * Math.PI) / 180) return r;
+      const a = r[(hit + n - 1) % n], b = r[hit], c = r[(hit + 1) % n];
+      const u1 = [a[0] - b[0], a[1] - b[1]], u2 = [c[0] - b[0], c[1] - b[1]];
+      const n1 = Math.hypot(...u1), n2 = Math.hypot(...u2);
+      const bis = [u1[0] / n1 + u2[0] / n2, u1[1] / n1 + u2[1] / n2];
+      const bl = Math.hypot(...bis) || 1;
+      const t = Math.max(6, 5 / Math.tan(best / 2));
+      const p = [b[0] + (bis[0] / bl) * t, b[1] + (bis[1] / bl) * t];
+      const [x, y] = splitConvex(r, p, Math.atan2(bis[1], bis[0]) + Math.PI / 2);
+      if (!x || !y) return r;
+      const keep = inRing(b, x) || x.some((q) => Math.hypot(q[0] - b[0], q[1] - b[1]) < 1e-6) ? y : x;
+      if (polygonArea([keep]) < polygonArea([r]) * 0.5) return r;
+      r = keep;
+    }
+    return r;
+  }
+  /**
+   * The plat of one block, or null when the block is not a block a surveyor
+   * would plat by frontage (a wedge, a shore-clipped scrap, an estate slab) —
+   * those keep the old splitter, which is the right tool for an irregular
+   * piece of ground.
+   */
+  function platBlock(ring, d, heat) {
+    const dist = cfg.districts[d] ?? {};
+    if (dist.lotWay === "estate") return null;
+    const fr = blockFrame(ring);
+    if (!fr || fr.D < 8) return null;
+    if (polygonArea([ring]) / fr.area < 0.55) return null;
+    const band = FRONT_WAY[dist.lotWay] ?? FRONT_FLAVOR[dist.flavor] ?? FRONT_FLAVOR.core;
+    const w0 = rr(band[0], band[1]);                     // one surveyor, one frontage
+    const across = fr.axis + Math.PI / 2;
+    const ex = extentAlong(ring, across);
+    const alleyW = dist.alley ?? 0;
+    // TWO ROWS BACK TO BACK, ALWAYS, when the block can hold them. A block is
+    // a row of lots facing one street backed onto a row facing the other —
+    // look down on any Harlem or Brooklyn block and the line of rear yards
+    // runs straight down its middle. The first cut of this only split when
+    // the half-depth was 1.3x the frontage, so every block of wide frontages
+    // (yards, offices, villas) came out as through-lots, one building running
+    // from street to street, and a sixth of the town's lot area was cut that
+    // way. 50 ft (15 m) is the shallowest lot a real plat sells; under that a
+    // block is one row of through-lots, as a shallow block is in life.
+    const rowD = (fr.D - alleyW) / 2;
+    const spine = fr.D / 2 >= 15;
+    const lotD = spine ? rowD : fr.D;
+    // THE CONVENTION'S AREA STILL HOLDS. A frontage is drawn, but a lot is
+    // sold by the square foot, and each convention's area band (FLAVOR.lot /
+    // LOTWAYS: t0..t1) is what this file's lot counts, plates and economy are
+    // calibrated on. On a deep row the frontage band alone keeps the lot
+    // inside it; on a shallow one — an organic quarter's small cell, a short
+    // block — a surveyor widens the front rather than sell 2,000 sf scraps,
+    // and a frontage that would make a lot past the band's top on a very deep
+    // row is narrowed. Measured before this bound: a burgage downtown on
+    // 25 m rows came out at half the convention's area and 55% more lots.
+    const [t0, t1] = dist.lot ?? flavorOf(d).lot;
+    const wArea = Math.min(Math.max(w0, t0 / lotD), Math.max(8, t1 / lotD));
+    // a lot past aspect 5 is not a lot anybody platted; widen rather than slice
+    const w = Math.max(wArea, lotD / LOT_ASPECT);
+    const lots = [];
+    const alleys = [];
+    let middle = ring;
+    // THE ENDS TURN TO THE SHORT STREET on a long block with no alley — the
+    // Manhattan pattern. An alley block runs its rows the whole length (the
+    // Chicago pattern), because the alley has to come out at both ends.
+    const capD = Math.max(18, lotD);
+    if (spine && !alleyW && fr.L / fr.D >= 1.8 && fr.L - 2 * capD >= 2 * w) {
+      const ea = extentAlong(ring, fr.axis);
+      const c1 = cutAt(ring, fr.axis, ea.lo + capD, across);
+      const c2 = c1 && cutAt(c1[1], fr.axis, ea.hi - capD, across);
+      if (c1 && c2 && rowLeft(c1[0], across) && rowLeft(c2[1], across) && rowLeft(c2[0], fr.axis)) {
+        // an end site stops at the spine like every other lot on the block
+        cutRow(c1[0], across, w, d, heat, lots, fr.D / 2);
+        cutRow(c2[1], across, w, d, heat, lots, fr.D / 2);
+        middle = c2[0];
+      }
+    }
+    const rows = [];
+    if (spine) {
+      // the spine sits a little off-centre about as often as not
+      const mid = (ex.lo + ex.hi) / 2 + rr(-0.04, 0.04) * fr.D;
+      let done = false;
+      if (alleyW && (fr.D - alleyW) / 2 >= 15) {
+        const a1 = cutAt(middle, across, mid - alleyW / 2, fr.axis);
+        const a2 = a1 && cutAt(a1[1], across, mid + alleyW / 2, fr.axis);
+        if (a1 && a2 && rowLeft(a1[0], fr.axis) && rowLeft(a2[1], fr.axis)) {
+          rows.push(a1[0], a2[1]);
+          alleys.push(a2[0]);
+          done = true;
+        }
+      }
+      // no room for the lane, or a taper at one end refuses the middle: the
+      // spine still goes in, a little off centre if it has to
+      for (const off of [0, -0.06, 0.06, -0.12, 0.12]) {
+        if (done) break;
+        const s1 = cutAt(middle, across, mid + off * fr.D, fr.axis);
+        if (s1 && rowLeft(s1[0], fr.axis) && rowLeft(s1[1], fr.axis)) { rows.push(s1[0], s1[1]); done = true; }
+      }
+      if (!done) rows.push(middle);
+    } else rows.push(middle);
+    for (const r of rows) cutRow(r, fr.axis, w, d, heat, lots);
+    return { lots, alleys };
+  }
+  /**
+   * Which edges of a lot are its BACK LINE: interior lines running the same
+   * way as its main frontage and standing well behind it. Null when the lot
+   * has no back (a through-lot fronts two streets) or is a yard.
+   */
+  function rearYard(lotRing, party, d) {
+    const dist = cfg.districts[d] ?? {};
+    if (dist.flavor === "industrial" || dist.lotWay === "yard") return null;
+    let fi = -1, fl = 0;
+    for (let i = 0; i < lotRing.length; i++) {
+      if (party[i]) continue;
+      const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l > fl) { fl = l; fi = i; }
+    }
+    if (fi < 0) return null;
+    const fa = lotRing[fi], fb = lotRing[(fi + 1) % lotRing.length];
+    const ux = (fb[0] - fa[0]) / fl, uy = (fb[1] - fa[1]) / fl;
+    const depth = extentAlong(lotRing, Math.atan2(uy, ux) + Math.PI / 2).span;
+    const rear = lotRing.map((a, i) => {
+      if (!party[i]) return false;
+      const b = lotRing[(i + 1) % lotRing.length];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l < 1e-6) return false;
+      const cos = Math.abs(((b[0] - a[0]) * ux + (b[1] - a[1]) * uy) / l);
+      const mx = (a[0] + b[0]) / 2 - fa[0], my = (a[1] + b[1]) / 2 - fa[1];
+      return cos > 0.94 && Math.abs(mx * -uy + my * ux) > depth * 0.4;
+    });
+    if (!rear.some(Boolean)) return null;
+    // A house sets back behind a front garden about a fifth of its depth
+    // (25-30 ft on a 125-150 ft suburban lot, 3 m minimum); a villa stands
+    // free of its neighbours too. A row, a shopfront or an office takes the
+    // street line.
+    const villa = dist.lotWay === "villa";
+    const house = villa || (dist.flavor === "resi" && dist.lotWay !== "row" && dist.lotWay !== "burgage" && dist.lotWay !== "fine");
+    return {
+      rear, depth,
+      frontSB: house ? Math.max(3, Math.min(7.5, depth * 0.2)) : 0.3,
+      sideSB: villa ? 1.5 : 0.12,
+    };
+  }
+  /** A corner is where two streets meet: a block vertex that actually turns. */
+  const turningCorners = (ring) => {
+    const out = [];
+    const n = ring.length;
+    for (let i = 0; i < n; i++) {
+      const a = ring[(i + n - 1) % n], b = ring[i], c = ring[(i + 1) % n];
+      const v1 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+      const l1 = Math.hypot(...v1), l2 = Math.hypot(...v2);
+      if (l1 < 1e-9 || l2 < 1e-9) continue;
+      const ang = Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2))));
+      if (ang <= (150 * Math.PI) / 180) out.push(b);
+    }
+    return out;
+  };
+  /**
+   * The frontage a lot has on a street and the depth behind it, as the tax
+   * roll files them (PLUTO's LotFront / LotDepth): the longest run of lot line
+   * on the street in one direction, and area over that.
+   */
+  const frontageOf = (lotRing, blockRing, areaM2) => {
+    const runs = [];
+    for (let i = 0; i < lotRing.length; i++) {
+      const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 0.5) continue;
+      if (distToRing([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], blockRing) > 0.35) continue;
+      let ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      if (ang < 0) ang += Math.PI;
+      if (ang >= Math.PI) ang -= Math.PI;
+      const hit = runs.find((r) => Math.min(Math.abs(r.ang - ang), Math.PI - Math.abs(r.ang - ang)) < 0.21);
+      if (hit) hit.len += len; else runs.push({ ang, len });
+    }
+    const front = runs.reduce((m, r) => Math.max(m, r.len), 0);
+    return { front, depth: front > 0 ? areaM2 / front : 0 };
+  };
 
   const flavorOf = (name) => FLAVOR[cfg.districts[name].flavor] ?? FLAVOR.core;
   /**
@@ -1585,9 +2078,24 @@ export function generateCity(cfg) {
     }
   }
 
+  // A surveyed city names its retail spines outright — the avenues,
+  // Broadway, the wide crosstown streets — as centre lines with their real
+  // roadway width, and the distance is taken to the kerb, which is what the
+  // distance to a boulevard's reservation edge measures on a generated town.
+  const CORRIDORS_M = cfg.corridors ?? [];
   const corridorDist = (p) => {
     let best = Infinity;
     for (const r of DIAG_M) best = Math.min(best, inRing(p, r) ? 0 : distToRing(p, r));
+    for (const { line, w } of CORRIDORS_M) {
+      for (let i = 0; i + 1 < line.length; i++) {
+        const a = line[i], b = line[i + 1];
+        const ex = b[0] - a[0], ey = b[1] - a[1];
+        const L2 = ex * ex + ey * ey;
+        let t = L2 > 1e-12 ? ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        best = Math.min(best, Math.max(0, Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t) - w / 2));
+      }
+    }
     return Number.isFinite(best) ? best : 9999;
   };
   const cornerLot = (lotRing, blockRing) => lotRing !== blockRing
@@ -1596,6 +2104,7 @@ export function generateCity(cfg) {
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
   const builtLots = [];   // the landmark pass picks its sites out of this
+  const towerSolves = new Map();   // bbl -> the tower's footprint solve (plan 7)
   let blockNo = 1, binNo = 1000001;
 
   // ------------------------------------------------------ THE STREET DIRECTORY
@@ -1780,15 +2289,37 @@ export function generateCity(cfg) {
       const sA = extentAlong(street, ax).span, sB = extentAlong(street, ax + Math.PI / 2).span;
       return Math.max(sA, sB) > 6.5 * Math.min(sA, sB);
     })();
-    if (block.flatiron) lots.push(street);
-    else if (rand() < fullBlockP && !stripBlock) lots.push(street);
-    else { splitLots(street, lotOptOf(d, heat), lots); absorbSlivers(lots); }
+    const ground = FRONTAGE && !block.flatiron && !block.realLots ? trimNeedles(street) : street;
+    // A WHOLE-BLOCK DEED IS A SMALL BLOCK. The department store, the bank,
+    // the estate took a block — a Portland 200 x 200 ft block (3,700 m2) or
+    // the like. On plan 4's real-sized blocks the same roll handed whole
+    // 15,000 m2 blocks to one warehouse; past the small block the roll is
+    // still drawn (same stream) and the block is platted, where the tail of
+    // assembled sites still takes up to a row of it.
+    const wholeOk = !FRONTAGE || polygonArea([ground]) <= 4000;
+    if (block.realLots) for (const rl of block.realLots) lots.push(rl.ring);
+    else if (block.flatiron) lots.push(street);
+    else if (rand() < fullBlockP && !stripBlock && wholeOk) lots.push(ground);
+    else {
+      const pl = FRONTAGE ? platBlock(ground, d, heat) : null;
+      if (pl) { lots.push(...pl.lots); ALLEYS_M.push(...pl.alleys); }
+      else splitLots(ground, lotOptOf(d, heat), lots);
+      absorbSlivers(lots);
+      // The fallback splitter only halves, and halving a wedge leaves the
+      // point on one piece; plan 8 paves that point too, as the block-level
+      // trim already does (a 19.5-degree corner lot on seed 20261 otherwise).
+      if (FRONTAGE && PLAN_V >= 8) for (let i = 0; i < lots.length; i++) lots[i] = trimNeedles(lots[i]);
+    }
 
     let lotNo = 1;
     const blockCorners = street;
-    for (const lotRing of lots) {
+    const turns = FRONTAGE ? turningCorners(street) : null;
+    for (const [li, lotRing] of lots.entries()) {
+      const real = block.realLots?.[li];
       const areaM2 = polygonArea([lotRing]);
-      if (areaM2 < 70) continue;
+      // a surveyed lot is a deed whatever its size; only the cutter's own
+      // crumbs fall under the floor
+      if (areaM2 < (real ? 20 : 70)) continue;
       const lotArea = Math.round(areaM2 * 10.7639);
       const c = centroid(lotRing);
       const h = coreHeat(c);
@@ -1796,18 +2327,29 @@ export function generateCity(cfg) {
       // Frontage facts, computed once: the class ladder reads the same corner
       // flag and corridor distance the tax record files further down.
       const corrM = Math.round(corridorDist(c));
-      const corner = cornerLot(lotRing, blockCorners);
+      // Plan 4: a corner is a lot at a vertex where the street actually turns.
+      // The older test counted ANY shared block vertex, so every lot on a
+      // shore-clipped block — whose kerb is a polyline of near-straight
+      // vertices — filed as a corner.
+      const corner = turns
+        ? lots.length > 1 && turns.some((v) => lotRing.some((q) => Math.abs(q[0] - v[0]) < 0.05 && Math.abs(q[1] - v[1]) < 0.05))
+        : cornerLot(lotRing, blockCorners);
+      const fd = FRONTAGE ? frontageOf(lotRing, street, areaM2) : null;
       // A flatiron never rolls vacancy — the wedge is iconic exactly because
       // it is built, and a triangular grass lot on the sharpest corner in
       // town is the confetti this rule exists to retire.
       const vacant = block.flatiron ? false
         : PLAN_V >= 3 ? rand() < settleP(settleOf.get(block) ?? 0.5) : rand() < vacancyP(d, h);
-      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
-      const bbl = 1000000000 + blockNo * 10000 + lotNo;
+      // A site assembled to Financial District scale is not a shopfront (plan 10): see classFor.
+      const bigSite = PLAN_V >= 10 && !!cfg.districts[d].assembled && areaM2 / 620 >= 2;
+      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner, bigSite });
+      // A surveyed lot keeps its own BBL — borough, block, lot, exactly as
+      // the city files it — so a deed on this map is the deed in life.
+      const bbl = real ? Number(real.bbl) : 1000000000 + blockNo * 10000 + lotNo;
 
       const yearRec = vacant ? null : yearFor(d, c);
       const yearbuilt = 0;
-      let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
+      let floors = 0, bldgArea = 0, footprint = null, heightM = 0, isTower = false;
       if (!vacant) {
         const fl = flavorOf(d);
         // A TOWER GOES WHERE THE SITE IS.
@@ -1822,7 +2364,19 @@ export function generateCity(cfg) {
         // anyone assembles land in the first place.
         const plate = areaM2 / 620;                    // 1.0 = an ordinary site
         const big = Math.max(0, Math.min(3.2, plate - 1));
-        const towerP = Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate * DZ.towerP);
+        // THE FINANCIAL DISTRICT IS ASSEMBLED FOR TOWERS (plan 10). On the
+        // real plat a big lot there is big because somebody assembled it to
+        // build high: below Chambers, MapPLUTO's pre-2000 lots over 20,000 sf
+        // stand a median 21 floors, and the 0.055 site weight gave them 6-7.
+        // The weight and the cap are the ones that put the generated district
+        // back on MapPLUTO's counts. Only a district flagged `assembled`
+        // (manhattan.mjs) takes them: Midtown on the same core preset already
+        // stands taller than the record, and generated islands' lots were cut
+        // by this file rather than assembled.
+        const assembled = PLAN_V >= 10 && !!cfg.districts[d].assembled;
+        const towerP = assembled
+          ? Math.min(TOWER_P_CORE_CAP, (h * h * 0.16 + TOWER_P_CORE_SITE * big) * fl.towerGate * DZ.towerP)
+          : Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate * DZ.towerP);
         // ------------------------------------------------------- THE MAT
         //
         // THE CITY WAS A PLATEAU. Measured across the whole heat surface, in
@@ -1846,8 +2400,13 @@ export function generateCity(cfg) {
         const hSpread = fl.heightSpread ?? 1;
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
+          // An assembled core site's tower reaches further up the heat
+          // (plan 10): the 23-floor top of the spread left the Financial
+          // District with five buildings past fifty against MapPLUTO's
+          // fifteen. Calibrated, as TOWER_P_CORE_* are.
+          floors = Math.round((rr(7, 12) + h * h * rr(10, assembled ? TOWER_H_CORE : 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
+          isTower = true;
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7) * hSpread));
@@ -1909,6 +2468,19 @@ export function generateCity(cfg) {
         // did before — the shape changes, the area does not, and nothing
         // downstream of coverage moves by a square foot.
         const PARTY = 0.12;
+        // plan 5: a notched lot is inset along its own shape (offsetEdges)
+        //
+        // AND A SETBACK TOO DEEP FOR THE SHAPE IS TOO DEEP, NOT A REASON TO
+        // CLIP. Falling back to `erode` at each failed depth handed the
+        // coverage solve below the very half-plane cut this exists to avoid,
+        // exactly where it hurts most — a tower aims at ~45% coverage, deep
+        // enough to tangle a notched lot's offset, and 130 Greenwich St came
+        // out at 6% of its lot. A failed depth reads as "no building" so the
+        // solve backs off to the deepest one the shape takes; `erode` is the
+        // last resort only when even the party-wall depth fails.
+        const notched = PLAN_V >= 6 && !isConvex(lotRing);
+        const shrink = (r, dOf) => (notched ? offsetEdges(r, dOf)
+          : PLAN_V >= 5 && !isConvex(r) ? offsetEdges(r, dOf) ?? erode(r, dOf) : erode(r, dOf));
         const party = [];
         for (let i = 0; i < lotRing.length; i++) {
           const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
@@ -1916,13 +2488,41 @@ export function generateCity(cfg) {
           party.push(distToRing(mid, street) > 0.35);
         }
         const streetEdges = party.filter((x) => !x).length;
+        // The solve, kept per building: a plan-7 tower is solved again at its
+        // era's coverage once the years are settled (see THE PREWAR TOWER).
+        const solveFoot = (coverage) => {
+        let fp = null;
         if (streetEdges === 0) {
           // Landlocked: no frontage, so there is nothing to set back from.
-          footprint = erode(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
-            ?? insetRingPerp(lotRing, 1.2);
+          fp = shrink(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
+            ?? shrink(lotRing, 1.2) ?? erode(lotRing, 1.2) ?? insetRingPerp(lotRing, 1.2);
+        } else if (FRONTAGE && rearYard(lotRing, party, d)) {
+          // THE YARD GOES AT THE BACK (plan 4). The solve below found the
+          // coverage by pulling the building back from the STREET — fine on a
+          // squat lot, where the pull is a metre or two, but on a 25 x 100 ft
+          // lot it set every row house ten metres behind the pavement with
+          // the garden in front and the party walls running to the back
+          // fence: a street of suburban setbacks in the middle of town. An
+          // urban lot builds to the street line and keeps its open space at
+          // the rear, which is what makes the block interior — the yards
+          // backing onto each other or onto the alley — and the continuous
+          // street wall the cornice note above is about. Housing keeps a
+          // front garden in proportion to its depth; the yards are not here
+          // (a working wharf is open to the street by necessity).
+          const ry = rearYard(lotRing, party, d);
+          const want = coverage * areaM2;
+          const cut = (dd) => shrink(lotRing, (_ang, i) => (ry.rear[i] ? dd : party[i] ? ry.sideSB : ry.frontSB));
+          let lo = 0, hi = ry.depth * 0.92, best = cut(0);
+          for (let k = 0; k < 9; k++) {
+            const mid = (lo + hi) / 2;
+            const r = cut(mid);
+            const a = r ? polygonArea([r]) : 0;
+            if (a > want) { lo = mid; best = r; } else { hi = mid; if (a > 0) best = r; }
+          }
+          fp = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
         } else {
           const want = coverage * areaM2;
-          const cut = (dd) => erode(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
+          const cut = (dd) => shrink(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
           let lo = 0, hi = side * 0.6, best = cut(0);
           for (let k = 0; k < 9; k++) {
             const mid = (lo + hi) / 2;
@@ -1930,8 +2530,12 @@ export function generateCity(cfg) {
             const a = r ? polygonArea([r]) : 0;
             if (a > want) { lo = mid; best = r; } else { hi = mid; if (a > 0) best = r; }
           }
-          footprint = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
+          fp = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
         }
+        return fp;
+        };
+        footprint = solveFoot(coverage);
+        if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side, assembled: PLAN_V >= 10 && !!cfg.districts[d].assembled });
         const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
         bldgArea = Math.round(lotArea * realCov * floors);
         heightM = floors * 3.55 + rr(1, 4);
@@ -1945,6 +2549,9 @@ export function generateCity(cfg) {
         ? Math.max(1, Math.round((bldgArea * (cls === "D0" ? 0.9 : 0.45)) / 900)) : 0;
 
       let address;
+      // The address is drawn either way, so a surveyed lot that has one
+      // leaves the stream where it would have been.
+      const realAddr = real?.address;
       if (block.numbered !== undefined && rand() < 0.25) {
         const ave = cfg.avenues[Math.abs(Math.round((block.u - block.uFifth) / 215)) % cfg.avenues.length];
         // An avenue number is keyed to its CROSS STREET: the block of Fifth
@@ -1964,6 +2571,7 @@ export function generateCity(cfg) {
       } else {
         address = `${numberOn(namedStreet, houseNo)} ${namedStreet}`;
       }
+      if (realAddr) address = realAddr;
 
       parcels.features.push({
         type: "Feature",
@@ -1971,7 +2579,8 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...lotRing.map(proj.toLL), proj.toLL(lotRing[0])]] },
         properties: {
           bbl: String(bbl),
-          borough: cfg.abbr ?? "XX", block: String(blockNo), lot: String(lotNo),
+          borough: cfg.abbr ?? "XX",
+          block: String(block.real ?? blockNo), lot: String(real ? Number(real.bbl) % 10000 : lotNo),
           address,
           zonedist1: zone.z, commfar: zone.commfar, resfar: zone.resfar,
           bldgclass: cls, landuse: vacant ? "11" : cls === "G1" ? "10" : cls[0] === "O" ? "05" : "04",
@@ -1982,6 +2591,8 @@ export function generateCity(cfg) {
           shoreamen: blkFl === FLAVOR.industrial ? 0 : 1,
           corridorm: corrM,
           corner: corner ? 1 : 0,
+          // plan 4 only: a plan-3 campaign keeps exactly the record it had
+          ...(FRONTAGE ? { lotfront: Math.round(fd.front * 3.28084), lotdepth: Math.round(fd.depth * 3.28084) } : {}),
         },
       });
 
@@ -2012,6 +2623,66 @@ export function generateCity(cfg) {
 
   // Every lot is cut; now the years can be centred on them. See yearFor.
   settleYears();
+
+  // ------------------------------------------------------ THE PREWAR TOWER
+  //
+  // Street plan 7. Every tower was drawn at 42-58% of its lot, thinned again
+  // with height, whatever year it went up. That is the 1961 Zoning
+  // Resolution's building — a slab standing back behind a bonus plaza — and
+  // it is wrong for everything before it. A tower of 1890-1960 rose off its
+  // whole lot: the 1916 resolution shaped what happened ABOVE the base (the
+  // setbacks and the quarter-lot tower the massing step already draws, see
+  // massing.mjs THE 1916 ENVELOPE), and before 1916 nothing shaped it at all
+  // — 120 Broadway, the Equitable Building, covers its lot to the line and is
+  // why the law was written. Measured on Manhattan below 14th Street before
+  // this: towers of 10-19 floors on lots over 10,000 sf stood on 53% of
+  // their lot at the median and 34% at the tenth percentile, so the
+  // Financial District opened as towers on forecourts.
+  //
+  // The year is only known once every lot is cut (settleYears centres the
+  // ages on the whole plat), so a tower's footprint is solved again here:
+  // a prewar base covers 82-92% of its lot (light courts and a rear strip;
+  // the shape-of-the-lot inset from plan 5), its floor count is held to the
+  // zoning envelope at the new coverage, and its floor area, height, tax and
+  // units follow. Postwar towers keep the plaza. The coverage is hashed from
+  // the deed, not drawn, so nothing downstream of this moves in the stream.
+  if (PLAN_V >= 7) {
+    const byBbl = new Map(builtLots.map((b) => [b.bbl, b]));
+    const hash = (str) => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } x ^= x >>> 13; x = Math.imul(x, 0x5bd1e995); x ^= x >>> 15; return (x >>> 0) / 4294967296; };
+    for (const [bbl, t] of towerSolves) {
+      const b = byBbl.get(bbl);
+      if (!b) continue;
+      const pp = b.pf.properties;
+      if (!(pp.yearbuilt > 0) || pp.yearbuilt >= 1961) continue;
+      const cov = 0.82 + 0.10 * hash(`prewar:${bbl}:${cfg.seed}`);
+      const fp = t.solveFoot(cov);
+      if (!fp) continue;
+      const realCov = polygonArea([fp]) / t.areaM2;
+      // PLAN 10: A PREWAR TOWER KEEPS ITS HEIGHT (in an `assembled`
+      // district — the Financial District). Holding the floor count to
+      // today's FAR at full-lot coverage cut a 30-floor tower on a FAR-15 lot
+      // to 17 — but these buildings went up before FAR existed, and their
+      // height was shaped by the 1916 setbacks the massing step draws, not
+      // by a ratio. Floor area stays what the zoning envelope allows (the
+      // base covers the lot, the setback tower above it is slimmer), so the
+      // economics read the same building; only the chop goes.
+      const keepHeight = t.assembled;
+      const fl = keepHeight ? t.floors
+        : Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
+      const bldg = keepHeight ? (pp.bldgarea || 1) : Math.round(t.lotArea * realCov * fl);
+      const bldgOld = pp.bldgarea || 1;
+      pp.assesstot = pp.assessland + Math.round((pp.assesstot - pp.assessland) * (bldg / bldgOld));
+      if (pp.unitsres) pp.unitsres = Math.max(1, Math.round(pp.unitsres * (bldg / bldgOld)));
+      pp.bldgarea = bldg;
+      pp.numfloors = fl;
+      b.floors = fl;
+      const bf = buildings.features[b.bi];
+      if (bf) {
+        bf.geometry = { type: "Polygon", coordinates: [[...fp.map(proj.toLL), proj.toLL(fp[0])]] };
+        bf.properties.heightroof = +((bf.properties.heightroof * fl) / t.floors).toFixed(1);
+      }
+    }
+  }
 
   // --- decorative waterfront ------------------------------------------------
   //
@@ -2097,6 +2768,7 @@ export function generateCity(cfg) {
   // Every harbor town has one, on the headland the chart says it should be on:
   // the seaward point of the coast furthest from the middle of town.
   const headland = (() => {
+    if (cfg.lighthouse === false) return null;
     if (cfg.lighthouse) return cfg.lighthouse;
     let best = COAST_M[0], bd = 0;
     for (const p2 of COAST_M) {
@@ -2105,7 +2777,7 @@ export function generateCity(cfg) {
     }
     return best;
   })();
-  {
+  if (headland) {
     const [lx, ly] = headland;
     const oct = [];
     for (let k = 0; k < 8; k++) {
@@ -2655,7 +3327,8 @@ export function generateCity(cfg) {
     // a pond in anything big enough to hold one, offset from centre
     const [bx0, by0, bx1, by1] = bboxOfRing(green);
     const pw = bx1 - bx0, ph = by1 - by0;
-    if (Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
+    // No pond is dug in a surveyed park: its water, if it has any, is real.
+    if (!cfg.parks[pi]?.real && Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
       const rA = Math.min(pw, ph) * rr(0.16, 0.2), rB = rA * rr(0.6, 0.78), tilt = rr(0, Math.PI);
       const rel = [];
       for (let k = 0; k < 18; k++) {
@@ -2737,7 +3410,11 @@ export function generateCity(cfg) {
     .filter((x) => x.a < biggestA * 0.92)   // not the principal green — that is the Common
     .sort((x, y2) => y2.heat - x.heat)      // dearest ground first
     .slice(0, 2);
-  civicSquares.forEach((sq, k) => {
+  // A SURVEYED CITY HAS ITS OWN. Manhattan's City Hall is a real building on a
+  // real lot; inventing a New England meeting house on Union Square, a
+  // station head-house in Bryant Park or a college row in a pocket park is
+  // the generated town leaking onto a real one. The same holds below.
+  if (!cfg.plat) civicSquares.forEach((sq, k) => {
     const c = centroid(sq.ring);
     if (inWater(c)) return;
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
@@ -2779,7 +3456,7 @@ export function generateCity(cfg) {
     addDeco(rect(mx, my, 14, 10, ang), 8.5, 0, "civic");
     addDeco(rect(mx, my, 15.2, 11.2, ang), 11.2, 8.5, "civicroof");
   }
-  for (const s of cfg.stations ?? []) {
+  for (const s of cfg.plat ? [] : cfg.stations ?? []) {
     let best = null, bd = Infinity;
     for (const ring of PARKS_M) {
       const c = centroid(ring);
@@ -2800,7 +3477,7 @@ export function generateCity(cfg) {
   // ONE SIGNATURE LANDMARK PER TOWN — not always hall + spire + light + peak.
   // Deco only, on park / fringe ground, so lots do not move. Mill towns already
   // have a mill on the pond; they draw something else.
-  {
+  if (!cfg.plat) {
     const kind = cfg.plan?.landmark ?? "church";
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
     const quietPark = PARKS_M
@@ -3124,7 +3801,7 @@ export function generateCity(cfg) {
   // beach on the open side, seawall downtown, rock under the light.
   const harbourAt = cfg.plan?.harbour ?? [0, 0];
   const coveAt = cfg.plan?.cove ?? harbourAt;
-  const headAt = cfg.plan?.headland ?? cfg.lighthouse ?? harbourAt;
+  const headAt = cfg.plan?.headland ?? (cfg.lighthouse || null) ?? harbourAt;
   const shoreKindAt = (p) => {
     const dH = Math.hypot(p[0] - harbourAt[0], p[1] - harbourAt[1]);
     const dC = Math.hypot(p[0] - coveAt[0], p[1] - coveAt[1]);
@@ -3572,6 +4249,12 @@ export function generateCity(cfg) {
         properties: { kind: "crosswalk" },
       })),
       ...blockFeatures,
+      // plan 4: the back alleys, laid on the block they run through
+      ...ALLEYS_M.map((ring) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        properties: { kind: "alley" },
+      })),
       ...centerFeatures,
       ...streetFeatures,
       ...sidewalkFeatures,
@@ -3614,6 +4297,8 @@ export function generateCity(cfg) {
     source: "fictional", city: cfg.name, district: cfg.district, seed: cfg.seed, lodes: true,
     // leaf key -> display name, so a parcel's district can be printed
     districts: cfg.districtNames ?? {},
+    // street plan 4: lots cut by frontage, demand read per nearest platform
+    ...(FRONTAGE ? { frontagePlat: true } : {}),
   };
 
   // --- coverage -------------------------------------------------------------

@@ -210,7 +210,16 @@ export function fundCashNeed(
   const need = Math.max(0, Math.ceil(amount));
   if (need <= 0) return 0;
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
-  const short = Math.max(0, need - Math.max(0, Math.floor(s.cash)));
+  // A NEGATIVE BALANCE IS A HOLE THE LINE HAS TO FILL AS WELL. Drawing only
+  // `need` into an account already $X overdrawn left it still overdrawn, paid
+  // nothing, and reported the facility cheque "short" with millions undrawn —
+  // for a month or two, until month-end `coverCashShortfall` filled the hole
+  // the draw here should have. Draw for the hole and the payment together, and
+  // when the line cannot cover both, the payment has first call on the draw:
+  // the note gets paid and the hole stays where it was.
+  const cash0 = Math.floor(s.cash);
+  const short = Math.max(0, need - cash0);
+  let drawn = 0;
   if (short > 0 && allowLoc) {
     const draw = Math.min(short, locAvailable(s, parcels));
     if (draw > 0) {
@@ -218,10 +227,11 @@ export function fundCashNeed(
       s.loc.drawnTotal += draw;
       s.cash += draw;
       unpark(s, draw);
+      drawn = draw;
       _locAvailCache = null; // cash and drawn both moved
     }
   }
-  const pay = Math.min(need, Math.max(0, Math.floor(s.cash)));
+  const pay = Math.min(need, Math.max(0, cash0) + drawn);
   if (pay > 0) {
     s.cash -= pay;
     _locAvailCache = null;

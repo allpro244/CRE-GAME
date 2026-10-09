@@ -66,8 +66,9 @@ function run(g0, owned, arm) {
   let mark = 0, cond = 0;
   for (const b of owned) { const h = g.holdings[b]; if (!h) continue; mark += E.ownedHoldingValue(g, parcels, h); cond += h.condIdx ?? 0; }
   const cost = owned.reduce((a, b) => a + hard(g0, b) * E.specCostMult(arm.spec), 0);
+  const pvCf = pv;
   pv += mark / Math.pow(1 + DISC, YEARS);
-  return { cost, net: prevNoi - prevCap, capex: prevCap, mark, pv, rent: rentSum / rentN, cond: cond / owned.length };
+  return { cost, net: prevNoi - prevCap, capex: prevCap, mark, pv, pvCf, rent: rentSum / rentN, cond: cond / owned.length };
 }
 
 const rows = [];
@@ -82,10 +83,10 @@ for (const seed of SEEDS) {
 }
 const M = (x) => `$${(x / 1e6).toFixed(1)}M`;
 console.log(`\nBUILD SPEC ARMS — ${SEEDS.length} seeds x ${YEARS}y x ${N} new offices, unlevered, fund plan, PV at ${DISC * 100}%\n`);
-console.log("arm              build cost  rent÷idx  cond@end  NOI−capex   capex    mark@end   PV(cf+mark) − cost");
+console.log("arm              build cost  rent÷idx  cond@end  NOI−capex   capex    mark@end   PV(cf) − cost   PV(cf+mark) − cost");
 for (const a of ARMS) {
   const avg = (k) => rows.reduce((s, r) => s + r[a.id][k], 0) / rows.length;
-  console.log(`${a.id.padEnd(16)} ${M(avg("cost")).padStart(9)}  ${avg("rent").toFixed(2).padStart(7)}  ${avg("cond").toFixed(2).padStart(8)}  ${M(avg("net")).padStart(9)}  ${M(avg("capex")).padStart(7)}  ${M(avg("mark")).padStart(9)}  ${M(avg("pv") - avg("cost")).padStart(9)}`);
+  console.log(`${a.id.padEnd(16)} ${M(avg("cost")).padStart(9)}  ${avg("rent").toFixed(2).padStart(7)}  ${avg("cond").toFixed(2).padStart(8)}  ${M(avg("net")).padStart(9)}  ${M(avg("capex")).padStart(7)}  ${M(avg("mark")).padStart(9)}  ${M(avg("pvCf") - avg("cost")).padStart(12)}   ${M(avg("pv") - avg("cost")).padStart(9)}`);
 }
-console.log("\nPer seed, PV − cost vs market ($M):");
-for (const r of rows) console.log(String(r.seed).padEnd(8) + ARMS.filter((a) => a.id !== "market").map((a) => `${a.id} ${((r[a.id].pv - r[a.id].cost - (r.market.pv - r.market.cost)) / 1e6).toFixed(1)}`).join("  "));
+console.log("\nPer seed, PV(cf) − cost vs market ($M) — the steadier column:");
+for (const r of rows) console.log(String(r.seed).padEnd(8) + ARMS.filter((a) => a.id !== "market").map((a) => `${a.id} ${((r[a.id].pvCf - r[a.id].cost - (r.market.pvCf - r.market.cost)) / 1e6).toFixed(1)}`).join("  "));

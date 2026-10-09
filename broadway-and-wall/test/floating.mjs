@@ -2,8 +2,10 @@
 //
 //   pnpm engine && node test/floating.mjs
 //
-// 1. The short index sits a little over the policy rate and under the loan
-//    index (no term premium), widening when credit is frightened.
+// 1. The short index sits a little over the policy rate (no term premium),
+//    widening when credit is frightened. The loan index is the expected
+//    policy path plus a term premium, so it can sit under the short index
+//    when the market expects cuts — an inverted curve.
 // 2. A floater prices off the short index; it is SIZED at the stressed rate,
 //    so it never advances more than the same desk's fixed sheet on the same
 //    building just for floating.
@@ -29,7 +31,9 @@ const e = g.econ;
 console.log("the short index");
 ok(Math.abs(e.shortIndex - (e.nat.policy + 0.15 + 0.75 * Math.max(0, 1 - e.creditIdx))) < 0.011,
   `short ${e.shortIndex}% = policy ${e.nat.policy}% + money-market spread (credit window ${e.creditIdx})`);
-ok(e.shortIndex < e.indexRate, `under the loan index ${e.indexRate}% — no term premium`);
+// The opening index was struck in the last month of the pre-history.
+ok(Math.abs(e.indexRate - (E.expectedPolicyAvg(e.nat, e.nat.ruleRate, false, g.month - 1) + e.nat.termPrem)) < 0.01,
+  `loan index ${e.indexRate.toFixed(2)}% = expected policy path + term premium ${e.nat.termPrem.toFixed(2)} (${e.indexRate < e.shortIndex ? "inverted: cuts expected" : "upward-sloping"})`);
 ok(E.shortIndexFor(5, 1) < E.shortIndexFor(5, 0.5), "and it widens when credit is frightened");
 
 console.log("pricing and sizing");

@@ -22,8 +22,19 @@ const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
-const SEEDS = (process.env.SEEDS ?? "550991,12007").split(",").map(Number);
-const MONTHS = (process.env.MONTHS ?? "0,72").split(",").map(Number);
+// FOUR MARKETS AT THREE DATES. Housing wins the residual on nearly every
+// vacant lot that pencils, so two markets at two dates passed the "more than
+// one use" guard on a single retail lot (158 lots: 157 flats, 1 shop) and
+// failed it outright once street plan 4 recut the reference town (280 flats).
+// The identity is only worth asking of every use the residual can choose:
+// this sample reaches all four (764 lots, about a minute).
+// ...and it drifted back to one: by Oct 2026 the four markets at three dates
+// gave 827 flats and a single shop, and smoothing the height premium
+// (value.ts heightPremium) took the shop. Six markets at four dates reach
+// flats, offices and warehouses (1,514 lots, measured), so the identity is
+// asked of three uses again rather than of whichever lot happens to win.
+const SEEDS = (process.env.SEEDS ?? "550991,12007,11,7919,4242,9001").split(",").map(Number);
+const MONTHS = (process.env.MONTHS ?? "0,72,144,216").split(",").map(Number);
 const TOL = 0.03;
 
 console.log("\nRESIDUAL RECON — a lot bought at its builder residual plans at hurdle 1.0\n");

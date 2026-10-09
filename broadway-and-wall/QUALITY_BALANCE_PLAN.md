@@ -195,3 +195,26 @@ not a forced 60%): no 5-of-6 reorder of the middle arms. Institutional 2/3,
 reposition 1/3, programmes 0/3. Leverage amplified the capex hole on
 programmes; it did not crown a new winner on this sample. Three seeds is
 not six — treat that as a read, not a close.
+
+## Build specification (ground-up) — recorded 2026-10
+
+Measured with `pnpm spec-arms` (4 seeds × 30 y × 6 new offices, unlevered,
+fund plan) and a same-world delivery-day comparison. Before: every $1 of
+specification bought 44¢ of stabilised value, and building to a budget was
+the dominant choice; capital programmes could not close the gap because they
+lift condition only to the building's own ceiling, which spec sets for good.
+
+Three channels were under-modelled against the market, not tuned to an arm:
+- rent: `specRentMult` ±10% → ±15% (like-for-like A-over-B office rent once
+  location and condition are taken out: ~10-20%);
+- cap: `specSpread` ±15 bp → ±40 bp (CBRE A-vs-B office spreads 50-100 bp,
+  part of which is condition, priced by `qualSpread`);
+- lease-up: new "Specification" arrival factor exp(0.6 × (spec − 0.5)),
+  flight to quality (the top tier taking most net absorption every cycle).
+
+After: $1 of spec buys ~75¢ on delivery day and the rest back over the hold
+in faster lease-up and slower wear. 30-year PV(cash flow + mark) − cost:
+budget $147M, market $104M, signature $151M; per-seed spreads (±$40M) are
+wider than the arm gaps, so no spec dominates. Budget + every capital
+programme still finishes behind plain budget: capex cannot buy bones.
+Baseline: 0 of 45 metrics moved.

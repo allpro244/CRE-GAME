@@ -23,7 +23,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, hurdleAt, streetMargin } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
@@ -983,7 +983,12 @@ export function refreshDevelopmentFeasibility(
         // Only clearing pencils. Pushing appetite-zero failures from densify
         // sites diluted the P97 and zeroed whole classes (office went to 0
         // while multifamily stayed live — the order book then starved office).
-        if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
+        // The pencil the order book reads is the street's — the most lenient
+        // margin among firms that build (`streetMargin`), not only the merchant's.
+        if (u?.financeable) {
+          const h = hurdleAt(u.plan, streetMargin(s));
+          if (h >= 1) scores[use].push(Math.min(3, Math.pow(h, 1.2)));
+        }
       }
       continue;
     }
@@ -2142,6 +2147,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;
+  if (s.minLeaseDefault && h.minLeaseSf === undefined) h.minLeaseSf = s.minLeaseDefault;
   h.svcIdx = 0.70;   // a building that opens this year opens well run
   h.lastCapM = s.month;
   h.tenants = [];
@@ -2178,10 +2184,12 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // that is a fifth of the building; into a glut it is nearly nobody. This was
   // a flat 0.1 and then, one month later, the 0.4 floor in tickLeasing threw it
   // away entirely — see the note there.
-  if ((dmix.multifamily ?? 0) > 0) {
-    const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
-    h.occ = Math.max(0.01, Math.min(0.22, 0.17 - 1.4 * slack + rrange(s, -0.04, 0.04, "dev")));
-  }
+  //
+  // ...AND THE TRAILER LEASES FROM THE SAME RENTERS EVERYONE ELSE DOES
+  // (2026-10-09). The day-one share was 17-22% of the building whatever its
+  // size — a 21M sf block opened with ~4M sf "let" to households that did not
+  // exist. It opens empty; tickLeasing's finite-mover lease-up is the trailer.
+  if ((dmix.multifamily ?? 0) > 0) h.occ = 0;
   h.costBasis += d.costTotal;
   h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
 
@@ -2210,20 +2218,35 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // room was a rail holding the model up. A repudiated facility has no room in
   // it at all, and a developer whose bank failed is not handed the fit-out
   // money on the way out the door.
+  // AND IT STAYS WITH THE LENDER UNTIL IT IS SPENT. A construction lender
+  // does not wire the fit-out budget to the sponsor on opening day; it holds
+  // the TI/LC and interest lines and advances them as the costs arrive. Paying
+  // it all out at delivery charged the coupon on money sitting idle in the
+  // operating account, and made every lease-up read as the firm bleeding cash
+  // month after month while it was only spending its own budget. Now it rides
+  // on the takeout as undrawn room (Loan.leaseUpRoom) and is drawn at each
+  // signing and for each month the building cannot carry itself. A vehicle
+  // deed keeps the old release: its cash moves through the fund's account.
   const lease = d.leaseUpReserve ?? 0;
+  let heldReserve = 0;
   if (lease > 0) {
     const room = Math.max(0, d.commitment - d.drawn);
     const advance = Math.min(lease, room);
     d.drawn += advance;
-    d.loanBalance += advance;
-    s.cash += advance;
-    logBooks(s, "dev", -advance, d.bbl);
+    if (h.fundOwned) {
+      d.loanBalance += advance;
+      s.cash += advance;
+      logBooks(s, "dev", -advance, d.bbl);
+    } else heldReserve = advance;
     s.news.unshift({
       q: s.month, kind: advance < lease ? "warn" : "info",
       text: advance < lease
         ? `The lease-up reserve at ${rec.address} was ${money(lease)}, and only ${money(advance)} of it `
           + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
-        : `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`,
+        : h.fundOwned
+          ? `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`
+          : `The lease-up reserve at ${rec.address} — ${money(lease)} — stays with the lender and is drawn as tenants are fitted out `
+            + `and while the building cannot carry its loan. Your own cash is not touched until it runs out.`,
     });
   }
 
@@ -2319,8 +2342,16 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     // balance stays on the desk that carried the job, which is what its
     // statement on Research shows and whose capital a default would eat.
     holder: d.lender ?? CONSTRUCTION_LENDER,
+    ...(heldReserve > 0 ? { leaseUpRoom: heldReserve } : {}),
   };
   bumpLenderRel(s, d.lender ?? CONSTRUCTION_LENDER, 2);   // a job delivered is the best line in the file
+  // A NEW BUILDING OPENS ON AUTO-LEASE, at its rent posture with no fit-out
+  // cap — the leasing guidelines every lease-up runs on — unless you took it
+  // off. Major leases still come to you (leasing.ts isMajorLease).
+  if (h.autoLease === undefined && !h.groundLeased) {
+    const built = resolveRec(parcels, s, d.bbl);
+    if (built && leasableUses(built).length) h.autoLease = true;
+  }
   delete s.developments[d.bbl];
   bumpLand(s, d.bbl, 1.06);
 
@@ -3081,9 +3112,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // months (5% skipped in a shortage) and at most one went ahead — a clock,
   // not a decision. Measured over 4 worlds x 50 years: 29-43 of ~865 opening
   // buildings rebuilt (~0.1%/yr against the ~0.5% this block cites), and mean
-  // building age 65 -> 99-107. Every month now looks at its sample, and every
-  // site whose replacement beats what is standing goes ahead, until the
-  // crews are spoken for. RNG-NOTE: one fewer draw per month on "dev".
+  // building age 65 -> 99-107. (A parallel fix on main found the comparison
+  // had also run backwards — skipping 85-95% of months, most in a shortage —
+  // and measured Manhattan's floor area +42-60% by year 100 once it examined
+  // 85-95% of months.) Every month now looks at its sample, and every site
+  // whose replacement beats what is standing goes ahead, until the crews are
+  // spoken for. RNG-NOTE: one fewer draw per month on "dev".
   void chronicShort;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
@@ -4019,7 +4053,12 @@ function startCityJob(
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
   // financing, lease-up reserve, NOI and required margin the player sees.
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, entitleBasis);
-  if (!underwriting?.clears) return false;
+  // The anonymous merchant builds at the trade's margin. Below it, the job
+  // goes ahead only if a firm whose own margin it clears takes it (firmMargin
+  // in rivals.ts) — otherwise it is unwound below.
+  const merchantOk = !!underwriting?.clears;
+  if (!underwriting || !underwriting.financeable) return false;
+  if (!merchantOk && (opts?.backdate || hurdleAt(underwriting.plan, streetMargin(s)) < 1)) return false;
   const plan = underwriting.plan;
   sf = plan.sf;
   floors = plan.floors;
@@ -4066,6 +4105,15 @@ function startCityJob(
   // day-one draw against today's cash, which a job forty per cent built
   // eighteen months ago did not take today.
   const claimed = backM > 0 ? null : claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+  if (!claimed && !merchantOk) {
+    // Nobody whose margin it clears would take it: unwind the start.
+    s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.startM === startM));
+    cancelSupplyProject(s, bbl);
+    for (const [u, usf] of Object.entries(cityProgramme)) {
+      if (s.econ.startOwed) s.econ.startOwed[u as BuiltClass] = (s.econ.startOwed[u as BuiltClass] ?? 0) + usf;
+    }
+    return false;
+  }
   // ANONYMOUS IS NOT FREE. Named firms already stamp cost/equity/commitment
   // in claimJob. An unclaimed job used to deliver on schedule with no capital
   // at all — the largest remaining competitor asymmetry. Stamp the same

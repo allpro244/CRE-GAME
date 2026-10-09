@@ -472,7 +472,7 @@ export default function TopBar() {
                 w={150}
                 onClick={() => setPage("economy")}
                 title={[
-                  `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is the term premium: what certainty costs.`,
+                  `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is what the bond market expects policy to do over ten years plus the term premium, what certainty costs — and when cuts are expected the loan index sits under the short one.`,
                   vacDpp === null
                     ? "Office vacancy change appears after the first year of tape."
                     : vacDpp >= 2

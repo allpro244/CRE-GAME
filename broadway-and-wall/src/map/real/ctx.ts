@@ -23,6 +23,8 @@ export interface CityCtx {
   rails?: Oriented[];
   parks?: { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }[] | [number, number][][];
   ponds?: [number, number][][];
+  /** The shore bands (beach, rock, marsh, seawall) and the flat piers and breakwaters: where the sea stops. */
+  shore?: { ring: [number, number][]; kind: string }[];
   /** Creeks, canals and mill ponds — sunk into a channel with banks. */
   streams?: { ring: [number, number][]; water: string }[];
   /** The generator's crossings: footprint, flow bearing, and the widths spanned. */

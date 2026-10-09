@@ -404,6 +404,16 @@ export interface Loan {
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
   /**
+   * THE UNDRAWN LEASE-UP RESERVE on a construction takeout, $. The lender
+   * holds it and advances it as the costs it was budgeted for arrive — each
+   * lease's fit-out and commission at signing, and the month's shortfall while
+   * the building cannot carry its own coupon (debt.ts drawLeaseUpReserve). It
+   * lives on the loan because it is the loan's commitment: a refinance, a sale
+   * or a payoff ends it, and it closes when the last shell floor is let and
+   * the building covers its debt.
+   */
+  leaseUpRoom?: number;
+  /**
    * WHO IS ACTUALLY HOLDING IT.
    *
    * The product says who wrote the loan. This says who owns it today, and they
@@ -580,12 +590,20 @@ export interface Holding {
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
-   * you by the stance above, and none of it reaches your desk. Fill signs what
-   * comes; Market signs near your ask and counters the rest to it; Push holds
-   * out over your ask. Same terms, same commission and the same tenant
-   * reactions as clicking the buttons yourself (see autoLeaseDesk).
+   * you by the stance above and the fit-out cap below, and none of it reaches
+   * your desk. Fill signs what comes; Market signs near your ask and counters
+   * the rest to it; Push holds out over your ask. Same terms, same commission
+   * and the same tenant reactions as clicking the buttons yourself (see
+   * autoLeaseDesk).
    */
   autoLease?: boolean;
+  /**
+   * AUTO-LEASE FIT-OUT CAP, $/sf per year of term, in OPENING-YEAR dollars
+   * (read × econ.costIdx, so it tracks construction cost the way the asks do).
+   * Undefined: no cap. A letter over it is countered down to it once; a tenant
+   * who will not come under it is passed.
+   */
+  autoTiCapPsfYr?: number;
   /**
    * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
    *
@@ -742,6 +760,8 @@ export interface BuildingDesign {
   roof?: "flat" | "gable" | "hip" | "mansard";
   /** how a tall building finishes */
   crown?: "none" | "setback" | "spire" | "mast" | "cake";
+  /** a landmark form for a tower (a key of src/map/real/signature.ts SIGNATURE_FORMS); it replaces the massing and the crown */
+  signature?: string;
 }
 
 export interface DevDraft {
@@ -1415,7 +1435,7 @@ export interface SwanRecord {
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
-  /** The secular level money is being pulled toward. See recordHistory. */
+  /** The loan index without the premium's monthly noise. See tickNation. */
   rateRegime?: number;
   population?: number;
   jobs?: number;
@@ -1457,7 +1477,8 @@ export interface EconHistoryPoint {
 }
 
 export interface Econ {
-  /** The LOAN INDEX: policy + term premium — what fixed paper prices off. */
+  /** The LOAN INDEX: the expected path of policy over ten years plus a term
+   *  premium — a ten-year yield, what fixed paper prices off. See market.ts. */
   indexRate: number;
   /**
    * THE SHORT INDEX: the policy rate plus a money-market spread that widens
@@ -1715,8 +1736,18 @@ export interface Econ {
      * ~20-25bp for a real index). A market rate is policy plus a premium that
      * mean-reverts around its structural level while real noise hits it every
      * month — that is where retracements inside a trend come from.
+     *
+     * It is now the premium over the EXPECTED path of policy, not over
+     * today's rate, and its level reads how far the bank is believed: see
+     * `termPremBase` and `expectedPolicyAvg` in market.ts.
      */
     termPrem?: number;
+    /**
+     * What the bank's own rule prescribes this month, before gradualism —
+     * the rate it is walking toward. The bond market reads it to price the
+     * path, the way a real one reads the dot plot and the data.
+     */
+    ruleRate?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed
@@ -2385,6 +2416,8 @@ export interface Rival {
   id: string;
   name: string;
   style: RivalStyle;
+  /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
+  lastBuildM?: number;
   cash: number;
   debt: number;
   bbls: string[];        // what they own
@@ -2692,7 +2725,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 39;
+  v: 40;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -2868,6 +2901,12 @@ export interface GameState {
    * it to anything else would silently reprice somebody's whole book on load.
    */
   opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
+  /**
+   * The house minimum new lease, sf (leasing.ts setMinLeaseSfAll): written to
+   * every deed when set, and the floor a building bought or delivered later
+   * opens on. Undefined: no house floor.
+   */
+  minLeaseDefault?: number;
   /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.
    *
@@ -3350,6 +3389,12 @@ export interface GameState {
      * headroom instead of as a deposit (credit.ts parkedOnLine).
      */
     parked?: number;
+    /**
+     * Set the month the line first has to carry debt service because operating
+     * cash ran dry, cleared the first month it does not. One notice per run of
+     * it, not one per month — see sim.ts.
+     */
+    payingNotes?: boolean;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */

@@ -479,6 +479,10 @@ export function requestForbearance(
     : monthlyPayment(nh.loan!.balance, nh.loan!.ratePct, nh.loan!.amortYears));
   nw.stage = "forbearance";
   nw.decideM = nh.loan!.maturityM;
+  // Re-papered paper is current paper: the default-rate keep-alive ends with
+  // the extension, or it charges 15% over a coupon nobody is in default on
+  // and rolls the file's date back to next month.
+  nw.servicing = false;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${w.lender} extended at ${rec.address} to ${monthLabel(nh.loan!.maturityM)}: ${money(fee)} of fees, `
@@ -593,6 +597,7 @@ function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, addres
     w.decideM = l.maturityM;
     w.asks = Math.max(w.asks, 1);
     w.servicedMs = 0;
+    w.servicing = false;   // current again — see requestForbearance
     s.news.unshift({
       q: s.month, kind: "info",
       text: `${w.lender} documented an extension at ${address} to ${monthLabel(l.maturityM)}: a year of holdover on a `

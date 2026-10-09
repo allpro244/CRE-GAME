@@ -17,7 +17,7 @@ import {
   assetGrade, buildAppetite, duressNet, gradeOf, holdClockM, lineRoom, listingOpenTo, liveJobCap,
   markAsset, markRival, redevBasis, rivalCanClose, STYLE_OF, streetDebtRatePct,
 } from "@/engine/rivals";
-import { assetValue, inPlace, occupancy, resolveRec, zoneUseBar } from "@/engine/value";
+import { assetValue, inPlace, landRead, occupancy, resolveRec, zoneUseBar } from "@/engine/value";
 import { cityCoverage, cityInfillCap, MAX_FLOORS_BY_USE, underwriteDevelopment } from "@/engine/dev";
 import { devMix, dominantOf, farMaxFor } from "@/engine/proforma";
 import { landPencils } from "@/engine/buybox";
@@ -223,9 +223,21 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
         // The plate every other autonomous start draws — the use's own
         // coverage limit (cityCoverage), not a flat 0.62 — and the one height
         // rule (cityInfillCap).
-        const plate = cityCoverage(use);
+        //
+        // ...UNLESS THE DIRT HAS A SCHEME OF ITS OWN. On vacant land the
+        // scripted developer builds the scheme the land market prices the lot
+        // on — use, floors and plate from `landRead` (rivals.ts, DIRT BOUGHT
+        // ON THE RESIDUAL IS BUILT ON THE RESIDUAL'S SCHEME). This list asked
+        // only the zoning envelope, the tallest building the lot may carry,
+        // and downtown that is 35-44 floors yielding 3-6% on cost against a
+        // 7-8% hurdle: a Jev developer holding the best dirt in town and $60M
+        // was offered nothing to build in 55 of 56 market-years. Same scheme
+        // the street builds; the envelope stays the fallback.
+        const hbu = land ? landRead(rec, e).scheme : null;
+        const own = hbu && hbu.psf > 0 && hbu.use === use ? hbu : null;
+        const plate = own ? own.coverage : cityCoverage(use);
         const envelope = Math.max(1, Math.floor(farMaxFor(rec) / plate));
-        const floors = Math.max(1, Math.min(envelope, cityInfillCap(s, parcels, rec, lead), MAX_FLOORS_BY_USE[use] ?? Infinity));
+        const floors = Math.max(1, Math.min(own ? own.floors : envelope, cityInfillCap(s, parcels, rec, lead), MAX_FLOORS_BY_USE[use] ?? Infinity));
         if (zoneUseBar(rec, use, e, use === "mixed" ? devMix(use) : undefined, floors)) continue;
         const uw = underwriteDevelopment(s, parcels, b, use, floors, plate, land ? undefined : redevBasis(s, r, rec));
         if (!uw?.clears) continue;

@@ -1421,6 +1421,126 @@ export function stepCredit(s: GameState) {
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
 
+/** The committee's calendar, month-of-year 0-indexed: Jan, Mar, Apr, Jun,
+ *  Jul, Sep, Oct, Dec — close to the real FOMC year. */
+const FOMC = [0, 2, 3, 5, 6, 8, 9, 11];
+const isMeetingMonth = (m: number) => FOMC.includes(((m % 12) + 12) % 12);
+
+/** The maturity the loan index is a yield on: the ten-year, the benchmark
+ *  fixed commercial mortgages price over. */
+const INDEX_HORIZON_M = 120;
+/**
+ * How fast the rule's prescription returns to its long-run level, per month.
+ * MEASURED, not tuned: the least-squares fit of rho^h to the autocorrelation
+ * of (ruleRate - long-run level) at every horizon from 1 to 120 months, in
+ * the model's own national economy (40 seeds x 50 years, national block
+ * alone; it does not read the index, so the fit is not circular). Measured
+ * autocorrelation 0.86 at a year, 0.46 at three, ~0 by seven-and-a-half —
+ * a business cycle. The market knows how persistent this economy's cycles
+ * are because it has lived through them: model-consistent expectations, not
+ * a chosen speed.
+ */
+const RULE_GAP_RHO = 0.974;
+
+/**
+ * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
+ *
+ * It runs the committee forward with the committee's own decision rule
+ * (`bankStep`, on the real meeting calendar, from the real starting rate):
+ * the rule's prescription decays toward its long-run level at the economy's
+ * measured persistence, and the bank walks toward it a meeting at a time,
+ * under fiscal pressure for as long as the pressure has left to run.
+ *
+ * The long-run level is r* plus the inflation the market expects in the long
+ * run — which is the bank's target only as far as the bank is believed. A
+ * bank with no credibility left is expected to let today's inflation become
+ * the trend, and the long end prices that in before the short end moves:
+ * the bond vigilante, as a mechanism.
+ *
+ * Simplification, stated: the market expects the Volcker pace only while the
+ * bank is still more than three points behind its own rule.
+ */
+export function expectedPolicyAvg(
+  n: NonNullable<Econ["nat"]>, want: number, restoring: boolean, month: number,
+): number {
+  const tgt = n.inflTarget ?? 0.02;
+  const cred = n.credibility;
+  const longRun = 100 * (n.neutralReal + cred * tgt + (1 - cred) * n.inflExp);
+  const gap0 = want - longRun;
+  let p = n.policy, sum = 0, decay = 1;
+  const pressure = n.pressureM ?? 0;
+  for (let h = 1; h <= INDEX_HORIZON_M; h++) {
+    decay *= RULE_GAP_RHO;
+    if (isMeetingMonth(month + h)) {
+      const gap = longRun + gap0 * decay - p;
+      p = Math.max(0.25, p + bankStep(gap, restoring && Math.abs(gap) > 3, h < pressure));
+    }
+    sum += p;
+  }
+  return sum / INDEX_HORIZON_M;
+}
+
+/**
+ * THE TERM PREMIUM'S LEVEL — what holding a ten-year bond instead of rolling
+ * cash is paid, which is mostly a price on not knowing what inflation will be.
+ * So it reads the bank's credibility. CALIBRATED against the Adrian-Crump-
+ * Moench ten-year premium at its two ends: about zero under a fully believed
+ * bank (2010s average; credibility 0.99 here) and about four points at the
+ * top of the Great Inflation (1981; credibility on its 0.10 floor here). The
+ * line through those two points is 4.4 x (1 - credibility) - 0.05.
+ *
+ * Plus the credit term this line always had: when the window is frightened
+ * the premium a LOAN index carries widens even while policy is being cut.
+ */
+export function termPremBase(credibility: number, creditIdx: number): number {
+  return 4.4 * (1 - credibility) - 0.05 + 1.85 * Math.max(0, 1 - creditIdx);
+}
+
+/**
+ * ONE MEETING'S DECISION, given the gap between where the rule points and
+ * where policy sits. The committee uses it, and so does the bond market's
+ * forecast of the committee (`expectedPolicyAvg`) — one rule, one answer.
+ */
+function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
+  const abs = Math.abs(gap);
+  let step = 0;
+  if (abs >= 0.15) {
+    // A BANK THAT HAS LOST THE ARGUMENT DOES NOT MOVE IN QUARTER POINTS.
+    // At three-quarters a meeting it took five years to climb from 5% to
+    // 30%, reading trend inflation through a twelve-month smoothing, so
+    // it peaked two years after inflation did and hiked six points a
+    // year into a disinflation already under way (measured across forty
+    // centuries: peak policy 27-32% against 17% inflation and falling).
+    // Volcker took the funds rate from 11% to 17.6% in eight months, cut
+    // it to 9% inside a quarter, and had it at 19% six months later —
+    // a point and a half a meeting, both ways. That pace is the
+    // restore regime's: it reaches the rate that breaks the inflation
+    // while the inflation is still rising, which is the only reason
+    // the peak is lower.
+    const frightened = abs > 7 || restoring;
+    const unit = restoring ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    step = Math.sign(gap) * unit;
+    if (Math.abs(step) > abs) step = gap;
+  }
+  // A LEANED-ON BANK LEANS BACK, SLOWLY. This froze the rate outright for
+  // the whole episode (30-96 months), and measured across forty
+  // centuries that freeze was the entire run-away: policy pinned at 0.3%
+  // or 4.9% for five to eight years while inflation compounded through
+  // easeEma to 20%, credibility hit its floor, expectations pinned their
+  // 16% clamp, and the rule then asked for 30% money into a disinflation
+  // already under way (peak policy 31.9%; one century in ten pinned the
+  // 23% index ceiling). No modern central bank was ever held at zero
+  // against 10% inflation for eight years. The Martin Fed under the
+  // Vietnam build-out took the funds rate from 4% to 9% between 1965 and
+  // 1969 — about a point and a quarter a year, a third of what the rule
+  // wanted — and that is the shape here: under pressure the bank moves a
+  // quarter point, only on a visible miss, never the frightened
+  // three-quarters. Two points a year at most. The mistake still
+  // compounds; it no longer compounds unopposed.
+  if (pressured && step > 0) step = gap > 1.0 ? 0.25 : 0;
+  return step;
+}
+
 /**
  * THE NATION, ONE MONTH. Lifted out of tickEcon whole so the same equations
  * can run the economy's history before the player arrives (regime.ts
@@ -1731,6 +1851,7 @@ export function tickNation(s: GameState) {
   // century could not contain two different monetary worlds.
   const tgt = n.inflTarget ?? 0.02;
   const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
+  n.ruleRate = +want.toFixed(3);
   // Gradualism, except when it is not: a bank moves in quarter points at
   // eight meetings a year, and in three-quarter points when it is frightened.
   //
@@ -1745,8 +1866,7 @@ export function tickNation(s: GameState) {
   //
   // Calendar is month-of-year 0-indexed: Jan, Mar, Apr, Jun, Jul, Sep,
   // Oct, Dec — close to the real FOMC year.
-  const FOMC = [0, 2, 3, 5, 6, 8, 9, 11];
-  const meeting = FOMC.includes(((s.month % 12) + 12) % 12);
+  const meeting = isMeetingMonth(s.month);
   // ...unless it is not free to move. Under fiscal pressure the bank can
   // still cut freely and can barely tighten, which is the whole asymmetry
   // and the whole mechanism: money stays cheap into a real inflation, the
@@ -1762,83 +1882,48 @@ export function tickNation(s: GameState) {
     }
   }
   if (meeting) {
-    const gap = want - n.policy;
-    const abs = Math.abs(gap);
-    let step = 0;
-    if (abs >= 0.15) {
-      // A BANK THAT HAS LOST THE ARGUMENT DOES NOT MOVE IN QUARTER POINTS.
-      // At three-quarters a meeting it took five years to climb from 5% to
-      // 30%, reading trend inflation through a twelve-month smoothing, so
-      // it peaked two years after inflation did and hiked six points a
-      // year into a disinflation already under way (measured across forty
-      // centuries: peak policy 27-32% against 17% inflation and falling).
-      // Volcker took the funds rate from 11% to 17.6% in eight months, cut
-      // it to 9% inside a quarter, and had it at 19% six months later —
-      // a point and a half a meeting, both ways. That pace is the
-      // restore regime's: it reaches the rate that breaks the inflation
-      // while the inflation is still rising, which is the only reason
-      // the peak is lower.
-      const frightened = abs > 7 || restore > 0;
-      const unit = restore > 0 ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
-      step = Math.sign(gap) * unit;
-      if (Math.abs(step) > abs) step = gap;
-    }
-    // A LEANED-ON BANK LEANS BACK, SLOWLY. This froze the rate outright for
-    // the whole episode (30-96 months), and measured across forty
-    // centuries that freeze was the entire run-away: policy pinned at 0.3%
-    // or 4.9% for five to eight years while inflation compounded through
-    // easeEma to 20%, credibility hit its floor, expectations pinned their
-    // 16% clamp, and the rule then asked for 30% money into a disinflation
-    // already under way (peak policy 31.9%; one century in ten pinned the
-    // 23% index ceiling). No modern central bank was ever held at zero
-    // against 10% inflation for eight years. The Martin Fed under the
-    // Vietnam build-out took the funds rate from 4% to 9% between 1965 and
-    // 1969 — about a point and a quarter a year, a third of what the rule
-    // wanted — and that is the shape here: under pressure the bank moves a
-    // quarter point, only on a visible miss, never the frightened
-    // three-quarters. Two points a year at most. The mistake still
-    // compounds; it no longer compounds unopposed.
-    if (n.pressureM > 0 && step > 0) step = gap > 1.0 ? 0.25 : 0;
+    const step = bankStep(want - n.policy, restore > 0, n.pressureM > 0);
     n.policy = Math.max(0.25, n.policy + step);
   }
 
-  // THE LOAN INDEX IS THE POLICY RATE PLUS A TERM PREMIUM. What a borrower
-  // pays was never the central bank's rate; it is that rate plus what the
-  // market charges for time and for risk — and that premium WIDENS when
-  // credit is frightened, which is why spreads blow out in a crisis even as
-  // the policy rate is being cut.
+  // THE LOAN INDEX IS A FORECAST, PLUS A PRICE FOR BEING WRONG ABOUT IT.
   //
-  // AND THE PREMIUM IS A MARKET, NOT A CONSTANT. This line used to EMA the
-  // index toward policy + 1.55 with seven basis points of noise, which undid
-  // the FOMC fix one street over: the committee now holds and steps like a
-  // committee, and then the index glided monotonically toward each new level
-  // for months — the player read next month's print off this month's all the
-  // same (measured: 66-70% of monthly moves continued the previous
-  // direction; monthly change sd 7-8bp against the ~20-25bp a real loan
-  // index runs; runs of one direction to 62 months).
+  // This used to be policy + premium: the index moved point for point with
+  // every step the committee took. Measured over 12 cities x 50 years against
+  // FRED (10-year Treasury vs fed funds, 1954-2026), that made the one rate a
+  // borrower locks in the most predictable number in the game:
+  //   12m change in the index per point of 12m policy change   1.00 (US 0.32)
+  //   R2, next-12m index change on last-6m short-index change  0.13 (US 0.01)
+  //   months the curve was inverted                            0.0% (US 20.8%)
+  //   recessions preceded by an inversion                    0 of 78 (US 8 of 10)
+  // A player who saw the short rate climb could lock fixed and beat a hiking
+  // cycle the bond market would, in life, have priced at its first step.
   //
-  // So the premium is state now: it mean-reverts toward its structural level
-  // — 1.55, widened when credit is frightened — while real market noise hits
-  // it every month. The index IS policy plus that premium, no smoothing: a
-  // bond market reprices a policy step the day it happens, not over a year.
-  // Retracements inside a trend fall out of the mean-reversion arithmetic
-  // (near equilibrium the expected next change opposes this one), which is
-  // exactly the property that makes direction a coin flip in the data.
+  // So the index is what a ten-year bond is: the market's expectation of the
+  // policy rate averaged over the next ten years (`expectedPolicyAvg`, the
+  // committee's own rule run forward), plus a term premium. Expected hikes are
+  // in the price before they happen; at the top of a cycle, with cuts ahead,
+  // the long rate sits under the short one and the curve inverts on its own.
   //
-  // The noise bound is a calibrated shape: +/-0.30 uniform is ~17bp/month
-  // sd, sitting in the 15-25bp a 10-year yield or a loan index shows month
-  // over month. The reversion (0.10/mo) and the level bounds (0.2 to 4.5)
-  // bracket the observed range of term premia without ever binding in an
-  // ordinary decade — they are guards, not rails.
-  const premBase = 1.55 + 1.85 * Math.max(0, 1 - (e.creditIdx ?? 1));
+  // THE PREMIUM IS A MARKET, NOT A CONSTANT. It is state: it mean-reverts
+  // toward `termPremBase` while real market noise hits it every month, so
+  // direction month to month stays a coin flip (the earlier fix: an EMA index
+  // had 66-70% of monthly moves continuing). The noise bound is a calibrated
+  // shape: +/-0.30 uniform is ~17bp/month sd, inside the 15-25bp a 10-year
+  // yield shows month over month. Reversion 0.10/mo is the noise's, not the
+  // premium's: the LEVEL it reverts to moves on credibility's own decade-long
+  // clock. Bounds -1.5..6 bracket the observed range (ACM: about -1 in 2020,
+  // about 5 in 1981) — guards, not rails.
+  const premBase = termPremBase(n.credibility, e.creditIdx ?? 1);
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = clamp(
     n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation"),
-    0.2, 4.5);
-  e.indexRate = clamp(n.policy + n.termPrem, RATE_FLOOR, RATE_CEIL);
+    -1.5, 6.0);
+  const path = expectedPolicyAvg(n, want, restore > 0, s.month);
+  e.indexRate = clamp(path + n.termPrem, RATE_FLOOR, RATE_CEIL);
   e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);
   // the era, for anything that still reads it — now an OUTPUT of the nation
-  e.rateRegime = clamp(n.policy + premBase, RATE_FLOOR, RATE_CEIL);
+  e.rateRegime = clamp(path + premBase, RATE_FLOOR, RATE_CEIL);
 }
 
 

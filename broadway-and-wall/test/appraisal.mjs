@@ -35,8 +35,17 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
 
 // --- 1. a thousandth of condition is a thousandth of value -----------------
 {
-  const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-  const li = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).find((x) => x.rec && x.rec.class === "multifamily" && x.rec.bldgArea > 0 && x.li.roll);
+  // The first let block of flats on an opening tape — searched over the same
+  // four towns section 2 reads, because one town's opening tape is a handful
+  // of listings and need not carry flats at all.
+  let g, li;
+  for (const seed of [550991, 12007, 11, 7919]) {
+    g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    li = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).find((x) => x.rec && x.rec.class === "multifamily" && x.rec.bldgArea > 0 && x.li.roll);
+    if (li) break;
+  }
+  ok(!!li, "an opening tape carries a let block of flats");
+  if (!li) process.exit(1);
   const h = E.asIfOwned(g, li.li.bbl, li.li.ask, E.disclosureFor(g, li.li.bbl), li.rec);
   const at = (idx) => E.holdingValue(li.rec, g.econ, { ...h, condIdx: idx, condition: E.condGrade(idx) }, g.month);
   const below = at(0.5195), above = at(0.5205);

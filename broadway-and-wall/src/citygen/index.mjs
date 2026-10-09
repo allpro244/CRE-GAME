@@ -194,8 +194,25 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * Plan 8 tones the row-house grain down a notch at the owner's request: the
  * narrowest frontage 30 ft (was 26), the narrow bands a foot or two wider, no
  * lot cut past 4:1 (was 5:1). See citygen.mjs PLAN 8: A NOTCH WIDER.
+ *
+ * Plan 9 moves the great park off-centre in half the towns that have one
+ * (island.mjs NOT EVERY TOWN PUT ITS GREAT PARK IN THE MIDDLE): by a later
+ * core or on open ground away from the middle, instead of always between
+ * downtown and the housing. Every other draw is unchanged.
+ *
+ * Plan 10 zones Manhattan below Chambers Street as a business core instead of
+ * an old town (manhattan.mjs THE FINANCIAL DISTRICT IS A CBD): the old-town
+ * ceiling held the Financial District to 14 floors, and on Metropolis its
+ * tallest building was 20. The district is flagged `assembled`, which turns
+ * on a tower roll calibrated to MapPLUTO's pre-2000 stock below Chambers
+ * (citygen.mjs TOWER_P_CORE_*, TOWER_H_CORE), drops the corridor retail
+ * boost on sites over ~13,000 sf, and lets its prewar towers keep their
+ * height. Buildings at 20/30/40/50+ floors, three seeds on Metropolis:
+ * 130/77/32/13 against MapPLUTO's 150/72/26/12 (plus the World Trade Center
+ * towers PLUTO no longer carries); was 0 at 30+. Generated islands and
+ * Midtown are unchanged.
  */
-export const CITY_PLAN = 8;
+export const CITY_PLAN = 10;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -217,7 +234,7 @@ export function makeCity(cityId, seed, opts) {
     ? (opts?.size && EXTENTS[opts.size] ? opts.size : DEFAULT_EXTENT)
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
-    ? manhattanConfig(seed, { extent: sizeId })
+    ? manhattanConfig(seed, { extent: sizeId, planV: opts?.planV ?? CITY_PLAN })
     : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN }), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).

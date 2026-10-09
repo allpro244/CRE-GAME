@@ -37,7 +37,7 @@ if (js.length !== 1 || css.length !== 1) {
   process.exit(1);
 }
 
-const jsSrc = readFileSync(join(ASSETS, js[0]), "utf8");
+let jsSrc = readFileSync(join(ASSETS, js[0]), "utf8");
 // The bundled typefaces (ui/system/fonts.css) come out of vite as separate
 // woff2 files; a file:// page cannot fetch them, so they ride inside the CSS.
 const FONT_MIME = { woff2: "font/woff2", woff: "font/woff" };
@@ -54,6 +54,18 @@ if (/url\(\s*["']?\/assets\//.test(cssSrc)) {
 // classic script — not type=module — so double-clicking the file works in
 // Chromium/Safari/Firefox. Module scripts from file:// are what made the zip
 // launchers necessary in the first place; this file exists to avoid that.
+// `import.meta` is a SyntaxError in a classic script — one occurrence and the
+// whole bundle refuses to parse, which is a blank page. Vite leaves
+// `new URL(asset, import.meta.url)` in the chunk (src/citygen/manhattan.mjs);
+// in this file the page itself is the base, and the plat it points at is read
+// from the inline block below rather than fetched.
+jsSrc = jsSrc.replace(/import\.meta\.url/g, "document.baseURI")
+  // ...and Vite's preload helper probes `import.meta.resolve`, absent here.
+  .replace(/import\.meta\.resolve/g, "(void 0)");
+if (/import\.meta\b/.test(jsSrc)) {
+  console.error("JS chunk still uses import.meta; cannot inline as a classic script.");
+  process.exit(1);
+}
 if (/\b(?:import|export)\b/.test(jsSrc.slice(0, 2000)) || /\bexport\b/.test(jsSrc.slice(-500))) {
   console.error("JS chunk still has import/export; cannot inline as a classic script.");
   process.exit(1);

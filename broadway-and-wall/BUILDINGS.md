@@ -7,6 +7,18 @@
 > references to ThreeBuildings below as history. Current notes:
 > `MAP_VISUAL_AUDIT.md`. The pattern book (painters, families, elevations,
 > paint schemes, `familyFor`, roof tones) is `src/map/real/facades.ts`.
+>
+> **Signature towers (2026-10).** Eighteen landmark forms (bullet, pyramid,
+> Y-plan needle, twin spires, helix, shard, pencil, Gothic cathedral, deco
+> spire...) are catalogued in `src/map/real/signature.ts` and built by
+> `RealCityLayer.signatureTower` (plus `loft`, a skin between rings for
+> faces that lean). Each form carries the year its type was first built:
+> the generated stock (towers from 90 m, `planSignatures`) and rivals'
+> undesigned towers (`autoSignature`) only take forms their own year allows,
+> each form at most once per city; the Build desk offers a form from its
+> year (`BuildingDesign.signature`). Every plan is checked to stand inside
+> the footprint before drawing, and lofts log into `volLog`, so
+> `auditFloating` still covers them. Looks only.
 
 
 What the city is made of, who owns which file, and how to check that any of it

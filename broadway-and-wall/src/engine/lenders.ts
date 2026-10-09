@@ -331,13 +331,23 @@ export function defaultOperatingBalance(s: GameState): number {
 }
 export interface CashSplit { bank?: Lender; sweep: boolean; keep: number; atBank: number; inBills: number; insured: number; exposed: number }
 /** Where the firm's cash is today: at the bank (insured / exposed) and in Treasury bills. */
+//
+// THE CASH IS SAFE, AND THAT IS NOT A SIMPLIFICATION. The owner found the
+// bank choice a mess — pick a desk, set an operating balance, toggle a sweep,
+// watch capital ratios, and still lose money in every regional crisis — and
+// asked for it gone. It goes, and it goes the way a real treasury runs: an
+// operating account kept inside the insurance limit (reciprocal-deposit
+// networks — ICS, CDARS — exist to do exactly this for every balance over
+// it), and everything else in Treasury bills, which no bank failure reaches.
+// A firm's cash is therefore never a creditor of a receiver. Lenders still
+// fail, and a failure still stops the loans and commitments they wrote
+// (repudiateCommitments) — that is where a bank failure actually hurts a
+// developer — but it never takes the money in the account. The old fields
+// (bankId, cashMgmt) are left on saves and ignored.
 export function cashSplit(s: GameState): CashSplit {
   const cash = Math.max(0, s.cash);
-  const sweep = s.cashMgmt?.sweep ?? true;
-  const keep = Math.max(0, s.cashMgmt?.keep ?? defaultOperatingBalance(s));
-  const atBank = sweep ? Math.min(cash, keep) : cash;
-  const insured = Math.min(atBank, insuredLimit(s));
-  return { bank: bankOf(s), sweep, keep, atBank, inBills: cash - atBank, insured, exposed: atBank - insured };
+  const atBank = Math.min(cash, insuredLimit(s));
+  return { bank: bankOf(s), sweep: true, keep: atBank, atBank, inBills: cash - atBank, insured: atBank, exposed: 0 };
 }
 
 /** Which desk the firm banks with, defaulting to its deepest relationship. */
@@ -352,16 +362,10 @@ function seizeDeposits(s: GameState, l: Lender) {
   const split = cashSplit(s);
   const here = split.atBank;
   if (here <= 0) return;
-  const limit = insuredLimit(s);
   const insured = split.insured;
   const exposed = split.exposed;
-  if (exposed <= 0) {
-    s.news.unshift({
-      q: s.month, kind: "info",
-      text: `Your balance at ${l.name} was under the ${usdShort(limit)} insurance limit. It is all covered, and it is available Monday.`,
-    });
-    return;
-  }
+  // Always insured now (cashSplit): nothing to seize and nothing to say.
+  if (exposed <= 0) return;
   // The receiver's advance dividend lands with the insured money; the rest is
   // a certificate and a wait. Recovery drawn from the real range.
   const recovery = clamp(0.60 + rng(s, "lenders") * 0.30, 0.60, 0.90);

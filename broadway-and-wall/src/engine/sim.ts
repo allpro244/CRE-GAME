@@ -153,7 +153,7 @@ export function newGame(
   const setup = setupIn ? normalizeSetup(setupIn) : undefined;
   if (setup?.sandbox) cash0 = SANDBOX_CASH;
   const s: GameState = {
-    v: 39,
+    v: 40,
     seed,
     rng: seed,
     streams: initStreams(seed),

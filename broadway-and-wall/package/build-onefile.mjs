@@ -62,8 +62,19 @@ if (/\b(?:import|export)\b/.test(jsSrc.slice(0, 2000)) || /\bexport\b/.test(jsSr
 let html = readFileSync(join(DIST, "index.html"), "utf8");
 html = html.replace(/<script type="module"[^>]*src="[^"]*"><\/script>/, "");
 html = html.replace(/<link rel="stylesheet"[^>]*>/, () => `<style>${cssSrc}</style>`);
+// MANHATTAN'S PLAT. The bundle asks for it by URL (src/citygen/manhattan.mjs),
+// which a file:// page cannot fetch, so it rides in the document as a JSON
+// data block the loader reads first. `</` is escaped so no string in it can
+// close the script element; `<\/` is still the same JSON.
+const plats = readdirSync(ASSETS).filter((f) => /^manhattan-plat.*\.json$/.test(f));
+if (plats.length !== 1) {
+  console.error(`Expected one manhattan-plat JSON asset, found ${plats.length}.`);
+  process.exit(1);
+}
+const platSrc = readFileSync(join(ASSETS, plats[0]), "utf8").replace(/<\//g, "<\\/");
 // The script goes last, after #root exists in the document.
-html = html.replace("</body>", () => `<script>${jsSrc}</script></body>`);
+html = html.replace("</body>", () =>
+  `<script type="application/json" id="bw-manhattan-plat">${platSrc}</script><script>${jsSrc}</script></body>`);
 
 // Nothing may still be pointing at /assets — that is the whole point of the file.
 if (/(?:src|href)="\/assets\//.test(html)) {

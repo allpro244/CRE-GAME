@@ -1,5 +1,5 @@
 {
-  "commit": "6f22880",
+  "commit": "561341d",
   "city": "somewhere",
   "citySeed": 1,
   "seeds": [
@@ -22,19 +22,19 @@
     "rentIdx.office": 62.4397,
     "vac.retail": 0.0867,
     "rentIdx.retail": 31.4118,
-    "vac.multifamily": 0.0474,
-    "rentIdx.multifamily": 37.4644,
+    "vac.multifamily": 0.0475,
+    "rentIdx.multifamily": 37.0343,
     "vac.industrial": 0.0349,
     "rentIdx.industrial": 12.5644,
     "occGap.office": -0.734,
-    "occGap.retail": -0.185,
+    "occGap.retail": -0.188,
     "occGap.multifamily": -0.738,
     "occGap.industrial": 0.696,
     "city.buildings": 1168,
     "city.floorAreaM": 11.766,
     "city.demolished": 66,
-    "city.employed": 25230,
-    "city.population": 46294,
+    "city.employed": 24987,
+    "city.population": 46212,
     "rail.cap.office.hi": 0,
     "rail.cap.office.lo": 0,
     "rail.vac.office.hi": 0,
@@ -56,6 +56,6 @@
     "rail.vac.industrial.lo": 0,
     "rail.occ.industrial.cap": 0.12,
     "city.floorGrowth": 1.148,
-    "city.jobGrowth": 1.1221
+    "city.jobGrowth": 1.1113
   }
 }

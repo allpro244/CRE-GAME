@@ -3947,7 +3947,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
  * building leaves by. See test/rival-husks.mjs for the before and after.
  */
 function settleEmptyBook(s: GameState, r: Rival) {
-  if (r.bbls.length || !(r.debt > 0)) return;
+  if (r.bbls.length || !(r.debt > 0 || r.cash < 0)) return;
   if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return;
   if (r.cash > 0) {
     const repay = Math.min(r.debt, r.cash);
@@ -3958,7 +3958,14 @@ function settleEmptyBook(s: GameState, r: Rival) {
   // arrears check in tickRivals may already have run for the month (it reads
   // a firm with sale proceeds in the bank as current), so the clock starts
   // here, where the payment was demanded and not made — not a month later.
-  if (r.debt > 0) r.stressMs = Math.max(1, r.stressMs ?? 0);
+  //
+  // ...AND SO IS AN OVERDRAWN ACCOUNT (2026-10-09). A last sale can clear the
+  // loan and still leave the firm short — the payoff and the costs of the
+  // sale came to more than the cash it had — and that shortfall is owed to
+  // somebody this month just as a called balance is. Measured: Fairlead
+  // Capital, seed 22, month 108, sold its last deed and sat at -$430K cash,
+  // no debt, arrears clock at zero (test/rival-husks.mjs).
+  if (r.debt > 0 || r.cash < 0) r.stressMs = Math.max(1, r.stressMs ?? 0);
 }
 
 /**

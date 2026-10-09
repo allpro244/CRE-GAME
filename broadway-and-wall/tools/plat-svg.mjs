@@ -7,7 +7,7 @@
 //
 //   node tools/plat-svg.mjs <seed> [out.svg] [--size city] [--dev village]
 import { writeFileSync } from "node:fs";
-import { makeCity } from "../src/citygen/index.mjs";
+import { makeCity, CITY_PLAN } from "../src/citygen/index.mjs";
 import { makeProjection } from "../src/citygen/geom.mjs";
 import { measurePlat } from "./platlib.mjs";
 
@@ -32,12 +32,13 @@ const KIND_STYLE = {
   pavement: { fill: "#7a7875" },
   street: { fill: "#9b978f" },
   block: { fill: "#e5dcc6" },
+  alley: { fill: "#8d8981" },
   seawall: { fill: "#9a958c" },
   quay: { fill: "#8f8a80" },
 };
 // Drawn in this order; anything not listed is skipped (trees, benches, rail
 // and labels are noise at plat scale).
-const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "street", "park", "apron", "median", "pond", "stream", "bridge", "seawall", "quay"];
+const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "alley", "street", "park", "apron", "median", "pond", "stream", "bridge", "seawall", "quay"];
 
 export function renderPlatSVG(city, { w = 640 } = {}) {
   const proj = makeProjection(...city.manifest.core);
@@ -81,8 +82,9 @@ export function renderPlatSVG(city, { w = 640 } = {}) {
   // gallery circles its own defects.
   for (const l of m._lots) {
     const fill = CLASS_FILL[l.cls] ?? "#b5a67f";
-    const stroke = l.sliver ? "#c8452f" : "#00000030";
-    const sw = l.sliver ? 1.6 : 0.4;
+    // a lot line dark enough to read the plat by — the frontage IS the plat
+    const stroke = l.sliver ? "#c8452f" : "#00000070";
+    const sw = l.sliver ? 1.6 : 0.6;
     parts.push(`<path d="${path(l.ring)}" fill="${fill}" fill-opacity="0.82" stroke="${stroke}" stroke-width="${sw}"/>`);
   }
   const meander = m.streams.length ? Math.min(...m.streams.map((s) => s.meander)).toFixed(2) : "—";
@@ -96,10 +98,10 @@ export function renderPlatSVG(city, { w = 640 } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const seed = Number(args[0]);
-  if (!seed) { console.error("usage: node tools/plat-svg.mjs <seed> [out.svg] [--size city] [--dev village]"); process.exit(1); }
+  if (!seed) { console.error("usage: node tools/plat-svg.mjs <seed> [out.svg] [--size city] [--dev village] [--plan N]"); process.exit(1); }
   const out = args[1] && !args[1].startsWith("--") ? args[1] : `plat-${seed}.svg`;
   const flag = (n, d) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : d; };
-  const city = makeCity("somewhere", seed, { size: flag("size", "city"), density: flag("dev", "village"), planV: Number(flag("plan", "1")) });
+  const city = makeCity("somewhere", seed, { size: flag("size", "city"), density: flag("dev", "village"), planV: Number(flag("plan", String(CITY_PLAN))) });
   const { svg, metrics } = renderPlatSVG(city);
   writeFileSync(out, svg);
   console.log(out, "·", metrics.lots, "lots · sliver", metrics.sliverPct + "%");

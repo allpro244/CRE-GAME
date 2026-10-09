@@ -21,10 +21,19 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
-import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList } from "./manhattan.mjs";
+import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
+
+/**
+ * Fetch whatever a city needs before `makeCity` can build it synchronously.
+ * A generated island needs nothing; Manhattan needs its baked plat, which is
+ * kept out of the main bundle (see manhattan.mjs). Idempotent.
+ */
+export async function preloadCity(cityId) {
+  if (cityId === MANHATTAN) await loadManhattanPlat();
+}
 
 /** The sizes an island can be built at, for the picker. */
 export function sizeList() {
@@ -87,7 +96,7 @@ export function cityList() {
     {
       id: MANHATTAN,
       name: "Manhattan",
-      tagline: "The real one. The Commissioners' grid at its true bearing, Broadway cutting it on the diagonal, and a lot the size of a lot.",
+      tagline: "The real one, lot for lot: every block, tax lot, BBL and street address from the city's own records, the real parks, shoreline and subway.",
       /** A written-down city takes an EXTENT rather than a size — see manhattan.mjs. */
       extents: true,
     },
@@ -142,8 +151,32 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * towns empty on their outskirts and in late neighbourhoods, in whole blocks,
  * instead of salt and pepper over the centre. See WHERE A YOUNG TOWN IS EMPTY
  * in citygen.mjs.
+ *
+ * Plan 4 is the FRONTAGE PLAT (citygen.mjs THE FRONTAGE PLAT). Blocks are the
+ * size real surveyed blocks are (island.mjs), and each is cut the way a
+ * surveyor cuts one: two rows of street-facing lots back to back (or onto a
+ * 16 ft alley, in the districts surveyed with one), ends turned to the short
+ * street on a long block, every lot one frontage wide and the full depth of
+ * its row, assembled sites as runs of adjacent lots. Lots carry their
+ * frontage and depth, buildings stand on the street line with their yards
+ * behind, a corner is a lot where the street turns, and transit demand reads
+ * each lot's own platform rather than a sum over every station in range.
+ * Measured on the harness seeds: median lot aspect 1.4 -> 2.4, near-square
+ * lots 35% -> 11%, corner lots 40-60% -> about a third (organic quarters,
+ * which really are small-blocked, still half), lot count +7% on average.
+ * Plan-3 towns rebuild byte-identical; every change is behind the plan.
+ *
+ * Plan 5 insets a NOTCHED lot along its own shape (citygen.mjs offsetEdges).
+ * The footprint step clipped a lot by one half-plane per edge, exact for a
+ * convex lot and destructive for an L-shaped one: the edge beside the inside
+ * corner cut a whole wing away, so opening-day buildings stood in one corner
+ * of their lot behind a forecourt nobody built. Measured on Manhattan below
+ * 14th Street (real tax lots, a sixth of those over 5,000 sf are notched):
+ * the worst tenth of buildings covered 37% of their lot, now 61%; buildings
+ * under 35% coverage on lots over 5,000 sf 239 -> 14. Generated towns cut
+ * only convex lots, so plan 5 is byte-identical to plan 4 there.
  */
-export const CITY_PLAN = 3;
+export const CITY_PLAN = 5;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -166,7 +199,7 @@ export function makeCity(cityId, seed, opts) {
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId })
-    : scaleCity(islandConfig(seed), SIZES[sizeId].k);
+    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN }), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

@@ -1703,6 +1703,8 @@ export interface Econ {
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
     shockClusterM?: number;
+    /** National unemployment, last 13 months — the credit window's year-on-year read, kept by the nation itself so the pre-history has it too. */
+    uHist?: number[];
     /**
      * The term premium as its own state — what the bond market charges over
      * the policy rate for time and risk, and it WANDERS. The loan index used

@@ -811,7 +811,18 @@ export function concessionTarget(gap: number, _phase?: Econ["phase"]): number {
 export function payrollGrowth12(e: Econ): number {
   const h = e.history ?? [];
   const then = h.length >= 12 ? h[h.length - 12]?.jobs : undefined;
-  return then && e.jobs ? e.jobs / then - 1 : 0;
+  if (then && e.jobs) return e.jobs / then - 1;
+  // A new game has no year of history yet, but the dating window
+  // (`cycHist`, payrolls over the last six months, carried over from the
+  // town's pre-history) does: annualise it rather than read the opening
+  // month as a stalled economy.
+  const c = e.cycHist ?? [];
+  if (c.length >= 2 && c[0] > 0) return Math.pow(c[c.length - 1] / c[0], 12 / (c.length - 1)) - 1;
+  // No payroll record at all (the pre-history, where the town's labour
+  // market IS the nation's): employment grows with the labour force, about
+  // 1%/yr, less whatever the unemployment rate has risen — an identity, not
+  // a fit.
+  return 0.01 - natUnempRise12(e);
 }
 /** Local unemployment over the town's own natural rate (the matching steady state). */
 export function labourSlack(e: Econ): number {
@@ -819,6 +830,8 @@ export function labourSlack(e: Econ): number {
 }
 /** How far national unemployment has risen over the last year — the national credit signal. */
 export function natUnempRise12(e: Econ): number {
+  const u = e.nat?.uHist;
+  if (u && u.length >= 2) return u[u.length - 1] - u[0];
   const h = e.history ?? [];
   const then = h.length >= 12 ? h[h.length - 12]?.natUnemp : undefined;
   return then !== undefined && e.nat ? e.nat.unemp - then : 0;
@@ -1598,6 +1611,11 @@ export function tickNation(s: GameState) {
   // version predicts — while a labour market past full employment bids pay up
   // at an accelerating rate. A straight line through the origin gets both
   // ends wrong.
+  // The nation keeps its own year of unemployment, so the credit window can
+  // read how fast it is rising even in the pre-history, where the town keeps
+  // no record (natUnempRise12).
+  (n.uHist ??= []).push(n.unemp);
+  if (n.uHist.length > 13) n.uHist.shift();
   const uStar = NAT_U_STAR;
   const nGap = uStar - n.unemp;
   const phillips = nGap > 0 ? 0.38 * nGap + 4.5 * nGap * nGap : 0.20 * nGap;

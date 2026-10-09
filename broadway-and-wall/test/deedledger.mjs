@@ -61,6 +61,9 @@ const ALLOWED = {
     resolveAuction: "overbid on your own note's lot — the equity sits in the note",
     buyNote: "a mortgage note, not a deed",
     fundPrivateAsk: "a private loan, not a deed",
+    // First reached on seed 12007 once credit followed bank capital and
+    // national unemployment (2026-10-09): a bank failed mid-run.
+    seizeDeposits: "uninsured deposits frozen in a bank failure, booked as a claim on the receiver — the firm's cash, not a deed",
   },
   sold: {
     registerAuctionBids: "auction registration deposit returned on re-registration",
@@ -68,6 +71,7 @@ const ALLOWED = {
     acceptPortfolioBid: "the crossed facility repaid out of package proceeds — pool principal",
     accelerate: "a receiver's surplus on a crossed pool",
     serviceNotes: "note payoffs and sales", modifyNote: "note paydown", sellNote: "note sale",
+    tickReceivership: "the failed bank's receiver paying out the deposit claim above",
   },
   borrowed: {
     openFacility: "the crossed facility", takeFacilityRoll: "the crossed facility",

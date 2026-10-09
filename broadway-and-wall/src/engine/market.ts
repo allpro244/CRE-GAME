@@ -247,6 +247,8 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  quarters for an office, two for a shop or a shed operator. A household
  *  that arrives in town is looking the same month and has signed inside two.
  *  Shape parameters, from the length of the process; stated, not fitted. */
+/** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
+const SHORT_SENS: Record<BuiltClass, number> = { office: 1.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
  *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks. */
@@ -3140,11 +3142,19 @@ export function tickEcon(s: GameState) {
         [0.0, 2],      // steady state
         [0.005, 1],    // urban retail renaissance
       ],
+      // Weighted to the record (2026-10-09). These are demand for flats PER
+      // ADULT — the adults themselves come from the age model — so their
+      // long-run mean is the headship trend: US households per adult went
+      // 0.455 (1960: 52.8M households, 116M adults) to 0.498 (2020: 128.5M,
+      // 258M), +0.15%/yr. The old weights (1/2/3/1) averaged +0.43%/yr, about
+      // three times that, and measured over 4 worlds x 50 years they added
+      // +0.11 to +0.37 log points of flat demand per adult — a trend nobody
+      // had observed. Same eras, weights 2/3/2/0.5: mean +0.17%/yr.
       multifamily: [
-        [-0.004, 1],   // suburban exodus
-        [0.0, 2],      // steady state
-        [0.007, 3],    // household-formation wave
-        [0.013, 1],    // urbanization surge
+        [-0.004, 2],   // suburban exodus
+        [0.0, 3],      // steady state
+        [0.007, 2],    // household-formation wave
+        [0.013, 0.5],  // urbanization surge
       ],
       industrial: [
         [-0.0172, 3],  // the manufacturing exodus (the old constant, now one era)
@@ -4319,8 +4329,21 @@ export function tickEcon(s: GameState) {
     // side's linear slope and no ceiling of its own. The quadratic and the
     // capitulation hump stay where they were fitted: on gluts.
     const effGap = gap - (e.structTight?.[k] ?? 0);
+    // ...AND HOW HARD A SHORTAGE BITES DEPENDS ON HOW OFTEN THE CLASS REPRICES
+    // (2026-10-09). 0.070 is the office fit; with eight-year leases a tight
+    // office market moves asking about 0.84%/yr per point of vacancy. Flats
+    // reprice every twelve months under revenue management: apartment rent
+    // growth runs about 2.5%/yr per point of occupancy around its neutral
+    // level (RealPage / Axiometrics, 2010-2023), ~3x office. Sheds sat
+    // 3-4 points under natural through 2015-22 with real rent growth of
+    // 5-10%/yr (CBRE / Cushman), ~2%/yr per point, ~2.4x. Measured before
+    // this, flats sat on their vacancy floor 75-83% of months with real rent
+    // rising only ~0.7%/yr — the office slope applied to a market that
+    // reprices every year. Shortage side only: on the soft side apartment and
+    // shed landlords answer with concessions first, which `effRentIdx`
+    // already carries, and the glut curve is fitted on the record as it is.
     const vacTerm = effGap <= 0
-      ? -effGap * 0.070
+      ? -effGap * 0.070 * SHORT_SENS[k]
       : -(effGap <= FIT_MAX
         ? glut(effGap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.

@@ -311,6 +311,13 @@ function chamfer(ring, i, cut) {
 // is the game's entire surface and a player needs sites to buy — but at
 // roughly a third rather than a half, which is the difference between a city
 // with gaps in it and a gap with a city in it.
+// Plan 10's tower roll on Manhattan's business cores (see MANHATTAN'S CORES
+// ARE ASSEMBLED FOR TOWERS): the weight a big site adds, the cap, and the
+// top of the tower's heat-driven height spread.
+// Calibrated against MapPLUTO below Chambers Street, pre-2000 stock.
+const TOWER_P_CORE_SITE = 0.16;
+const TOWER_P_CORE_CAP = 0.70;
+const TOWER_H_CORE = 29;
 export const FLAVOR = {
   // `assemble` is how hard the twentieth century bought this district up and
   // threw the lots together. Downtown hardest, row housing barely at all.
@@ -359,7 +366,14 @@ function classFor(flavor, heat, rand, site) {
   const front = site
     ? Math.exp(-(site.corrM ?? 9999) / 45) + (site.corner ? 0.35 : 0)
     : 0.33; // the sweep's mean frontage score, so a siteless call is neutral
-  const mK = Math.min(2.8, 0.30 + 2.10 * front);
+  // THE FRONTAGE BOOST IS FOR SHOPFRONTS, NOT CITY BLOCKS (plan 10). On the
+  // real Manhattan plat nearly every lot is within a few metres of Broadway
+  // or an avenue, so the corridor multiplier ran K2 — a one- or two-storey
+  // retail building — up to 2.8x, and 40 of the 177 lots over 20,000 sf
+  // below Chambers came out as single-storey shops. A site that size on a
+  // real avenue is an office building or a tower with shops in its base; it
+  // keeps K2 only at the ladder's own weight, unboosted.
+  const mK = site?.bigSite ? 1 : Math.min(2.8, 0.30 + 2.10 * front);
   const mO = 0.70 + 0.60 * heat;
   // Widths below multipliers are exactly the old thresholds. "O*" resolves by
   // heat: a hot office lot is a newer, bigger building.
@@ -2326,7 +2340,9 @@ export function generateCity(cfg) {
       // town is the confetti this rule exists to retire.
       const vacant = block.flatiron ? false
         : PLAN_V >= 3 ? rand() < settleP(settleOf.get(block) ?? 0.5) : rand() < vacancyP(d, h);
-      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
+      // A site assembled to Financial District scale is not a shopfront (plan 10): see classFor.
+      const bigSite = PLAN_V >= 10 && !!cfg.districts[d].assembled && areaM2 / 620 >= 2;
+      const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner, bigSite });
       // A surveyed lot keeps its own BBL — borough, block, lot, exactly as
       // the city files it — so a deed on this map is the deed in life.
       const bbl = real ? Number(real.bbl) : 1000000000 + blockNo * 10000 + lotNo;
@@ -2348,7 +2364,19 @@ export function generateCity(cfg) {
         // anyone assembles land in the first place.
         const plate = areaM2 / 620;                    // 1.0 = an ordinary site
         const big = Math.max(0, Math.min(3.2, plate - 1));
-        const towerP = Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate * DZ.towerP);
+        // THE FINANCIAL DISTRICT IS ASSEMBLED FOR TOWERS (plan 10). On the
+        // real plat a big lot there is big because somebody assembled it to
+        // build high: below Chambers, MapPLUTO's pre-2000 lots over 20,000 sf
+        // stand a median 21 floors, and the 0.055 site weight gave them 6-7.
+        // The weight and the cap are the ones that put the generated district
+        // back on MapPLUTO's counts. Only a district flagged `assembled`
+        // (manhattan.mjs) takes them: Midtown on the same core preset already
+        // stands taller than the record, and generated islands' lots were cut
+        // by this file rather than assembled.
+        const assembled = PLAN_V >= 10 && !!cfg.districts[d].assembled;
+        const towerP = assembled
+          ? Math.min(TOWER_P_CORE_CAP, (h * h * 0.16 + TOWER_P_CORE_SITE * big) * fl.towerGate * DZ.towerP)
+          : Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate * DZ.towerP);
         // ------------------------------------------------------- THE MAT
         //
         // THE CITY WAS A PLATEAU. Measured across the whole heat surface, in
@@ -2372,7 +2400,11 @@ export function generateCity(cfg) {
         const hSpread = fl.heightSpread ?? 1;
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
+          // An assembled core site's tower reaches further up the heat
+          // (plan 10): the 23-floor top of the spread left the Financial
+          // District with five buildings past fifty against MapPLUTO's
+          // fifteen. Calibrated, as TOWER_P_CORE_* are.
+          floors = Math.round((rr(7, 12) + h * h * rr(10, assembled ? TOWER_H_CORE : 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
           isTower = true;
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
@@ -2503,7 +2535,7 @@ export function generateCity(cfg) {
         return fp;
         };
         footprint = solveFoot(coverage);
-        if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side });
+        if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side, assembled: PLAN_V >= 10 && !!cfg.districts[d].assembled });
         const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
         bldgArea = Math.round(lotArea * realCov * floors);
         heightM = floors * 3.55 + rr(1, 4);
@@ -2626,8 +2658,18 @@ export function generateCity(cfg) {
       const fp = t.solveFoot(cov);
       if (!fp) continue;
       const realCov = polygonArea([fp]) / t.areaM2;
-      const fl = Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
-      const bldg = Math.round(t.lotArea * realCov * fl);
+      // PLAN 10: A PREWAR TOWER KEEPS ITS HEIGHT (in an `assembled`
+      // district — the Financial District). Holding the floor count to
+      // today's FAR at full-lot coverage cut a 30-floor tower on a FAR-15 lot
+      // to 17 — but these buildings went up before FAR existed, and their
+      // height was shaped by the 1916 setbacks the massing step draws, not
+      // by a ratio. Floor area stays what the zoning envelope allows (the
+      // base covers the lot, the setback tower above it is slimmer), so the
+      // economics read the same building; only the chop goes.
+      const keepHeight = t.assembled;
+      const fl = keepHeight ? t.floors
+        : Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
+      const bldg = keepHeight ? (pp.bldgarea || 1) : Math.round(t.lotArea * realCov * fl);
       const bldgOld = pp.bldgarea || 1;
       pp.assesstot = pp.assessland + Math.round((pp.assesstot - pp.assessland) * (bldg / bldgOld));
       if (pp.unitsres) pp.unitsres = Math.max(1, Math.round(pp.unitsres * (bldg / bldgOld)));

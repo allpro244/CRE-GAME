@@ -62,20 +62,25 @@ let PLAT = null;
 // and parses it as JSON, which is several times faster than evaluating it as a
 // 3.5 MB JavaScript module. Under Node (harnesses, tools) the same URL is a
 // file: URL and is read off disk.
-const PLAT_URL = new URL("./data/manhattan-plat.json", import.meta.url);
+// Made when asked for, not at load: inside a worker started from a blob (the
+// town worker, in the single-file build) this module's own URL is a blob: URL,
+// a relative URL against it throws, and the worker died before it could run.
+const platUrl = () => new URL("./data/manhattan-plat.json", import.meta.url);
 /** Fetch the baked plat once. Resolves immediately on every later call. */
 export async function loadManhattanPlat() {
   if (!PLAT) {
-    if (PLAT_URL.protocol === "file:") {
-      const fsName = "node:fs/promises";   // a variable, so the browser build never resolves it
-      const { readFile } = await import(/* @vite-ignore */ fsName);
-      PLAT = JSON.parse(await readFile(PLAT_URL, "utf8"));
-    } else if (globalThis.document?.getElementById?.("bw-manhattan-plat")) {
+    if (globalThis.document?.getElementById?.("bw-manhattan-plat")) {
       // The single-file playable (package/build-onefile.mjs) carries the plat
       // inline, because a page opened from file:// cannot fetch a neighbour.
+      // Asked first: that page's URL is a file: URL too, and the Node branch
+      // below is no use to a browser (it refused Manhattan outright).
       PLAT = JSON.parse(globalThis.document.getElementById("bw-manhattan-plat").textContent);
+    } else if (!globalThis.document && platUrl().protocol === "file:") {
+      const fsName = "node:fs/promises";   // a variable, so the browser build never resolves it
+      const { readFile } = await import(/* @vite-ignore */ fsName);
+      PLAT = JSON.parse(await readFile(platUrl(), "utf8"));
     } else {
-      const r = await fetch(PLAT_URL);
+      const r = await fetch(platUrl());
       if (!r.ok) throw new Error(`Manhattan plat ${r.status}`);
       PLAT = await r.json();
     }
@@ -376,8 +381,20 @@ export function manhattanConfig(seed = 1, opts = {}) {
   // `kind: "organic"` survives on the colonial quarter for one reason: it tells
   // the renderer those are lanes nobody ever painted crossings on.
   const district = (flavor, kind = "lattice", extra = {}) => ({ flavor, kind, bearingDeg: BEAR_GRID, numbered: false, fullBlockP: 0, ...extra });
+  // THE FINANCIAL DISTRICT IS A CBD, NOT AN OLD TOWN (plan 10). Everything
+  // below Chambers was "old", whose ceiling is 14 floors — so the second
+  // business district in the country, on Metropolis, topped out at 20 floors
+  // with a median of 4, the owner's "it looks tiny". In 2000, the year the
+  // game opens, that ground held the Twin Towers, 40 Wall (1930, 70 floors),
+  // the Woolworth (1913, 57), 60 Wall, One Chase Plaza, One Liberty Plaza and
+  // dozens more past forty. It takes the core preset — the same one Midtown
+  // has — and keeps `organic` so the colonial lanes still read as lanes.
+  // `assembled` turns on the tower roll calibrated to MapPLUTO below
+  // Chambers (citygen.mjs THE FINANCIAL DISTRICT IS ASSEMBLED FOR TOWERS).
+  // Older plans keep "old" so a saved downtown rebuilds as it was.
+  const plan10 = (opts.planV ?? 9) >= 10;
   const districts = {
-    battery: district("old", "organic"),
+    battery: district(plan10 ? "core" : "old", "organic", plan10 ? { assembled: true } : {}),
     soho: district("old"),
     village: district("old"),
     noho: district("old"),

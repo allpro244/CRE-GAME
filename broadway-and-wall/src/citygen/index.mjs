@@ -175,8 +175,23 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * the worst tenth of buildings covered 37% of their lot, now 61%; buildings
  * under 35% coverage on lots over 5,000 sf 239 -> 14. Generated towns cut
  * only convex lots, so plan 5 is byte-identical to plan 4 there.
+ *
+ * Plan 6 finishes it: a notched lot never falls back to the half-plane clip
+ * in the middle of the coverage solve. Plan 5 dropped to `erode` at any
+ * setback too deep for the shape — exactly the depth a tower asks for — so
+ * a tall building on a notched lot still came out a sliver (130 Greenwich
+ * St: 6% of its lot; now 60%). Generated towns unchanged (hashed).
+ *
+ * Plan 7 builds a tower by its era (citygen.mjs THE PREWAR TOWER). Every
+ * tower stood on 42-58% of its lot, the 1961 plaza building, whatever year
+ * it went up; a tower before 1961 now rises off 82-92% of its lot and the
+ * 1916 setbacks shape it above the base, as in the real Financial District.
+ * Commercial courtyard and light-court buildings stand on a solid one- or
+ * two-storey base (massing.mjs courtBase). Manhattan below 14th Street:
+ * towers of 10-19 floors on lots over 10,000 sf, ground coverage median
+ * 53% -> 69%, tenth percentile 34% -> 49%. Floor area +1-3% a town.
  */
-export const CITY_PLAN = 5;
+export const CITY_PLAN = 7;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

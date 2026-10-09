@@ -1369,7 +1369,19 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
   const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
   const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
-  return CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + flows;
+  // THE GROWTH A BUYER EXPECTS (2026-10-09). A yield is a required return
+  // less expected growth (Gordon; for property, Geltner et al. ch. 12), and
+  // the only growth in this target was expected inflation above 2%, through
+  // `capIndex`. So a class in a decade-long shortage, its real rent rising
+  // 3%/yr, capitalised exactly like a flat one. `growthExp` is each class's
+  // real rent growth as buyers have watched it — a ten-year memory, since
+  // what a yield capitalises is long-run growth — and it enters at half weight,
+  // because rent growth mean-reverts and cap rates are only a weak
+  // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
+  // of the trend, not all of it. Real growth only: the inflation part is
+  // already in `capIndex`.
+  const growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0);
+  return CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + flows - growth;
 }
 
 /**
@@ -4334,7 +4346,18 @@ export function tickEcon(s: GameState) {
     // risk this guarded against is the income anchor's job.
     void underFloor;
     const railEscal = 1;
-    const escalGate = Math.max(firmW, cheapFloor) * railEscal;
+    // RETIRED (2026-10-09): the cheap-rent carry (`cheapFloor`, up to 75% of
+    // CPI on a soft sheet whenever rent sat under the income anchor's
+    // parity). It was the soft-market escalator this block calls fake,
+    // re-admitted through an exception, and it was load-bearing (at its 0.75
+    // ceiling in 75% of calls): nominal effective rent ROSE in 61-76% of
+    // office and industrial months with availability five points over
+    // natural. The anchor it served is gone; a glut now holds asking flat
+    // or cuts it while CPI runs, which is how real rents fall, and the
+    // glut clears through cheap space being taken up (`affordEff`) and
+    // through supply leaving — not through a floor under the quote.
+    void cheapFloor;
+    const escalGate = firmW * railEscal;
     // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
     // EXPECTED inflation, which the central bank anchors near 2%, while the
     // city's own price level ran 0.3-0.8 points a year faster (measured over
@@ -4361,7 +4384,8 @@ export function tickEcon(s: GameState) {
     // real on top of CPI — cycle may help a CHEAP market recover, not keep
     // marking up a clearing one. Growing unmet demand still prices through
     // scarcity → rentPress. Negative cycle terms still cut in every state.
-    const liftGate = (railBound || softW > 0 || dev > -0.08) ? 0 : 1;
+    // (The "near parity" clause read the retired income anchor's parity.)
+    const liftGate = (railBound || softW > 0) ? 0 : 1;
     // The label's own rent drift (+0.37%/mo in an "expansion", -0.47% in a
     // "recession") is gone: the jobs behind the label are already in
     // `cycleJobs`, and the vacancy they leave behind in `vacTerm`.
@@ -4432,6 +4456,16 @@ export function tickEcon(s: GameState) {
       const then = h12?.rent?.[k];
       const g12 = then && then > 0 ? (e.rentIdx[k] / then - 1) * 100 : 0;
       e.retExp[k] += 0.021 * ((g12 + e.capRate[k]) - e.retExp[k]);
+      // Real rent growth as buyers have watched it (see capTargetOf).
+      const realG12 = then && then > 0 && h12?.cpi
+        ? (e.rentIdx[k] / then) / ((e.cpi ?? 1) / h12.cpi) - 1 : 0;
+      if (!e.growthExp) e.growthExp = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+      // A TEN-YEAR memory, not the four of `retExp`: a cap capitalises LONG-run
+      // growth, and survey expectations of it move slowly (Clayton, Ling &
+      // Naranjo 2009). At four years, measured, the term swung caps far
+      // enough to rest office on its 11% ceiling 17% of months and flats on
+      // their floor 11% — trailing noise priced as permanence.
+      e.growthExp[k] += (1 / 120) * (clamp(realG12, -0.15, 0.15) - e.growthExp[k]);
     }
   }
   // THE INFLATION INSIDE A NOMINAL RATE IS ALSO INSIDE NEXT YEAR'S RENT.

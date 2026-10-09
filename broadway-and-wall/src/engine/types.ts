@@ -1515,6 +1515,8 @@ export interface Econ {
    * office won the 50-year crude return on every seed, by 3-4 points.
    */
   retExp?: Record<BuiltClass, number>;
+  /** Each class's real rent growth as buyers have watched it, four-year memory — the g in cap = r - g. */
+  growthExp?: Record<BuiltClass, number>;
   /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
   /**

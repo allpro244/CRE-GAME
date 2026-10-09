@@ -358,13 +358,23 @@ export function massingStack({ ring, lotRing = null, hM, year, klass, u, familie
     // is the epsilon being meaningless at 1e-4 rather than a real result).
     // The guard is here so that stays true rather than being assumed.
     if (!isConvex(ringXY)) return null;
+    // A COURT OPENS ABOVE THE SHOPS. A block of flats is built round its court
+    // from the ground — the court is the garden. A prewar office, store or
+    // loft is not: the banking hall, the lobby and the shop floors take the
+    // whole lot, and the light court opens over them at the second or third
+    // floor (the skylit hall under the court is the type). Without the base a
+    // commercial courtyard building on an acre stood on a quarter of its lot.
+    // Height read off the building's own storey (3.55 m), one floor or two.
+    const courtBase = () => (klass === "multifamily" ? 0 : Math.min(hM * 0.4, 3.55 * (u(154) < 0.5 ? 1 : 2) + 1.0));
     switch (fam) {
       case "courtyard": {
         // A block built solid round a closed well. Eight storeys of flats
         // with every room on either the street or the court.
         const wings = courtyard(9.5 + 4.0 * u(60));
         if (!wings) return null;
-        for (const w of wings) push(w, 0, hM);
+        const z0 = courtBase();
+        if (z0 > 0) push(ringXY, 0, z0);
+        for (const w of wings) push(w, z0, hM);
         return done("courtyard block");
       }
       case "lightcourt": {
@@ -372,7 +382,9 @@ export function massingStack({ ring, lotRing = null, hM, year, klass, u, familie
         // open to the rear, which is where the light was going to come from.
         const wings = lightCourt(9.0 + 3.5 * u(61));
         if (!wings) return null;
-        for (const w of wings) push(w, 0, hM);
+        const z0 = courtBase();
+        if (z0 > 0) push(ringXY, 0, z0);
+        for (const w of wings) push(w, z0, hM);
         return done("light court");
       }
       case "dumbbell": {

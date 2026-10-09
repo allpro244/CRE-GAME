@@ -2078,6 +2078,7 @@ export function generateCity(cfg) {
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
   const builtLots = [];   // the landmark pass picks its sites out of this
+  const towerSolves = new Map();   // bbl -> the tower's footprint solve (plan 7)
   let blockNo = 1, binNo = 1000001;
 
   // ------------------------------------------------------ THE STREET DIRECTORY
@@ -2316,7 +2317,7 @@ export function generateCity(cfg) {
 
       const yearRec = vacant ? null : yearFor(d, c);
       const yearbuilt = 0;
-      let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
+      let floors = 0, bldgArea = 0, footprint = null, heightM = 0, isTower = false;
       if (!vacant) {
         const fl = flavorOf(d);
         // A TOWER GOES WHERE THE SITE IS.
@@ -2357,6 +2358,7 @@ export function generateCity(cfg) {
         if (areaM2 > 240 && rand() < towerP) {
           floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
+          isTower = true;
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7) * hSpread));
@@ -2438,9 +2440,13 @@ export function generateCity(cfg) {
           party.push(distToRing(mid, street) > 0.35);
         }
         const streetEdges = party.filter((x) => !x).length;
+        // The solve, kept per building: a plan-7 tower is solved again at its
+        // era's coverage once the years are settled (see THE PREWAR TOWER).
+        const solveFoot = (coverage) => {
+        let fp = null;
         if (streetEdges === 0) {
           // Landlocked: no frontage, so there is nothing to set back from.
-          footprint = shrink(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
+          fp = shrink(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
             ?? shrink(lotRing, 1.2) ?? erode(lotRing, 1.2) ?? insetRingPerp(lotRing, 1.2);
         } else if (FRONTAGE && rearYard(lotRing, party, d)) {
           // THE YARD GOES AT THE BACK (plan 4). The solve below found the
@@ -2465,7 +2471,7 @@ export function generateCity(cfg) {
             const a = r ? polygonArea([r]) : 0;
             if (a > want) { lo = mid; best = r; } else { hi = mid; if (a > 0) best = r; }
           }
-          footprint = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
+          fp = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
         } else {
           const want = coverage * areaM2;
           const cut = (dd) => shrink(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
@@ -2476,8 +2482,12 @@ export function generateCity(cfg) {
             const a = r ? polygonArea([r]) : 0;
             if (a > want) { lo = mid; best = r; } else { hi = mid; if (a > 0) best = r; }
           }
-          footprint = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
+          fp = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
         }
+        return fp;
+        };
+        footprint = solveFoot(coverage);
+        if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side });
         const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
         bldgArea = Math.round(lotArea * realCov * floors);
         heightM = floors * 3.55 + rr(1, 4);
@@ -2565,6 +2575,56 @@ export function generateCity(cfg) {
 
   // Every lot is cut; now the years can be centred on them. See yearFor.
   settleYears();
+
+  // ------------------------------------------------------ THE PREWAR TOWER
+  //
+  // Street plan 7. Every tower was drawn at 42-58% of its lot, thinned again
+  // with height, whatever year it went up. That is the 1961 Zoning
+  // Resolution's building — a slab standing back behind a bonus plaza — and
+  // it is wrong for everything before it. A tower of 1890-1960 rose off its
+  // whole lot: the 1916 resolution shaped what happened ABOVE the base (the
+  // setbacks and the quarter-lot tower the massing step already draws, see
+  // massing.mjs THE 1916 ENVELOPE), and before 1916 nothing shaped it at all
+  // — 120 Broadway, the Equitable Building, covers its lot to the line and is
+  // why the law was written. Measured on Manhattan below 14th Street before
+  // this: towers of 10-19 floors on lots over 10,000 sf stood on 53% of
+  // their lot at the median and 34% at the tenth percentile, so the
+  // Financial District opened as towers on forecourts.
+  //
+  // The year is only known once every lot is cut (settleYears centres the
+  // ages on the whole plat), so a tower's footprint is solved again here:
+  // a prewar base covers 82-92% of its lot (light courts and a rear strip;
+  // the shape-of-the-lot inset from plan 5), its floor count is held to the
+  // zoning envelope at the new coverage, and its floor area, height, tax and
+  // units follow. Postwar towers keep the plaza. The coverage is hashed from
+  // the deed, not drawn, so nothing downstream of this moves in the stream.
+  if (PLAN_V >= 7) {
+    const byBbl = new Map(builtLots.map((b) => [b.bbl, b]));
+    const hash = (str) => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } x ^= x >>> 13; x = Math.imul(x, 0x5bd1e995); x ^= x >>> 15; return (x >>> 0) / 4294967296; };
+    for (const [bbl, t] of towerSolves) {
+      const b = byBbl.get(bbl);
+      if (!b) continue;
+      const pp = b.pf.properties;
+      if (!(pp.yearbuilt > 0) || pp.yearbuilt >= 1961) continue;
+      const cov = 0.82 + 0.10 * hash(`prewar:${bbl}:${cfg.seed}`);
+      const fp = t.solveFoot(cov);
+      if (!fp) continue;
+      const realCov = polygonArea([fp]) / t.areaM2;
+      const fl = Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
+      const bldg = Math.round(t.lotArea * realCov * fl);
+      const bldgOld = pp.bldgarea || 1;
+      pp.assesstot = pp.assessland + Math.round((pp.assesstot - pp.assessland) * (bldg / bldgOld));
+      if (pp.unitsres) pp.unitsres = Math.max(1, Math.round(pp.unitsres * (bldg / bldgOld)));
+      pp.bldgarea = bldg;
+      pp.numfloors = fl;
+      b.floors = fl;
+      const bf = buildings.features[b.bi];
+      if (bf) {
+        bf.geometry = { type: "Polygon", coordinates: [[...fp.map(proj.toLL), proj.toLL(fp[0])]] };
+        bf.properties.heightroof = +((bf.properties.heightroof * fl) / t.floors).toFixed(1);
+      }
+    }
+  }
 
   // --- decorative waterfront ------------------------------------------------
   //

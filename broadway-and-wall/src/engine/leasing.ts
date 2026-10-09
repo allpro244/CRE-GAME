@@ -2180,33 +2180,78 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 }
 
 /**
- * AUTO-LEASE — the building answers its own letters by its stance.
+ * AUTO-LEASE — the building answers its own letters by a two-line policy.
  *
  * A big building drew a letter a month, and every one was a pop-up asking the
- * same question the stance switch already answers: how hard do you want to
- * hold out on rent? So on a building set to auto, that switch IS the answer.
- * Every letter is scored the way the desks score it — net effective (after
- * free rent, fit-out and bumps) against your current ask, which already sits
- * 8% under the market on Fill and 8% over on Push — and then:
+ * same question. On auto the building answers by the two instructions an owner
+ * actually gives a leasing agent:
  *
- *   Fill    sign what comes. Speed over price; the low ask does the work.
- *   Market  sign at 95% of your ask or better; counter the rest to the ask,
- *           take their counter-back at 95%, pass under it.
- *   Push    sign only at or over your ask; counter to 5% over it, take a
- *           counter-back that reaches the ask, pass under it.
+ *   1. How hard to hold on rent: the stance. Fill / Market / Push sets the
+ *      floor a letter must clear on net effective (after free rent, fit-out
+ *      and bumps) against your current ask, which already sits 8% under the
+ *      market on Fill and 8% over on Push.
+ *          Fill    no floor: sign what comes. Speed over price.
+ *          Market  95% of the ask; counters go to the ask.
+ *          Push    100% of the ask; counters go to 5% over it.
+ *   2. How much fit-out you will fund: the TI cap, in $/sf per year of term
+ *      (the unit broker surveys quote it in, and the one TI_ASK is rolled in,
+ *      so a ten-year lease gets ten times the cap and a two-year renewal two).
+ *      Stored in opening-year dollars and read through costIdx, because an
+ *      allowance is construction and a cap that did not move with the cost of
+ *      building would quietly fall to nothing over a long game.
+ *
+ * Every letter then goes through the same three steps:
+ *   - inside the policy        → sign it.
+ *   - outside it, first time   → counter ONCE: the allowance trimmed to the
+ *                                cap, the rent raised (never lowered, at most
+ *                                35%) until net effective reaches the target.
+ *                                The tenant answers as they answer the Counter
+ *                                button (`tenantCounterOutcome`).
+ *   - their answer             → took: sign. Walked: gone. Countered back:
+ *                                sign if it is inside the policy, else pass.
  *
  * Nothing here is a new economic rule. The commission is the one you pay
- * signing yourself (in-house 4% / 2%, or the exclusive's 6%), the counter is
- * the same tenant reaction the Counter button draws (`tenantCounterOutcome`),
- * and the cheque comes from cash and then the line, as yours does. Competing
- * tours go to the letter that nets most. A letter you cannot fund is passed
- * rather than parked on your desk. Relief and give-back requests: Fill grants
- * them, Market grants a give-back and grants relief only at 95% of your ask
- * or better, Push holds every tenant to their lease.
+ * signing yourself (in-house 4% / 2%, or the exclusive's 6%), and the cheque
+ * comes from cash and then the line, as yours does. Competing tours go to the
+ * letter that nets most. A letter you cannot fund is passed rather than parked
+ * on your desk. Relief and give-back requests: Fill grants them, Market grants
+ * a give-back and grants relief only at 95% of your ask or better, Push holds
+ * every tenant to their lease.
  */
 const AUTO_WHO = "Auto-lease";
-function autoTerms(stance: number): { floor: number; target: number } {
-  return stance < 0 ? { floor: 0, target: 1 } : stance > 0 ? { floor: 1, target: 1.05 } : { floor: 0.95, target: 1 };
+type AutoPolicy = { floor: number; target: number; tiCapPsfYr?: number };
+function autoPolicy(s: GameState, h: Holding): AutoPolicy {
+  const st = h.stance ?? 0;
+  // Fill's target is 0: it counters only to bring the allowance under the cap,
+  // and never asks for more rent while it does.
+  const base = st < 0 ? { floor: 0, target: 0 } : st > 0 ? { floor: 1, target: 1.05 } : { floor: 0.95, target: 1 };
+  const cap = h.autoTiCapPsfYr;
+  return cap === undefined ? base : { ...base, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
+}
+/** The most allowance the policy funds on this letter, $/sf; Infinity when uncapped. */
+function autoTiLimit(p: AutoPolicy, loi: LOI): number {
+  return p.tiCapPsfYr === undefined ? Infinity : Math.round(p.tiCapPsfYr * Math.max(1, loi.termM / 12));
+}
+/** Why this letter is outside the policy, in words for the news; null when it may be signed. */
+function autoMiss(p: AutoPolicy, loi: LOI, score: number): string | null {
+  const lim = autoTiLimit(p, loi);
+  if ((loi.tiPsf ?? 0) > lim) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over your $${lim}/sf cap on ${Math.round(loi.termM / 12)} years`;
+  if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of your ask`;
+  return null;
+}
+/**
+ * The rent that brings this letter's net effective to `target` at the given
+ * allowance. Net effective is linear in face rent (free rent and the bump
+ * premium both scale with it), so two readings solve it exactly.
+ */
+function autoCounterRent(loi: LOI, market: number, tiPsf: number, target: number): number {
+  const at = (r: number) => loiMandateScore({ ...loi, rentPsf: r, tiPsf }, market);
+  const r0 = loi.rentPsf;
+  const s0 = at(r0);
+  if (s0 >= target) return r0;
+  const slope = at(r0 + 1) - s0;
+  const r = slope > 1e-9 ? r0 + (target - s0) / slope : r0 * 1.35;
+  return +Math.min(r0 * 1.35, Math.max(r0, r)).toFixed(2);
 }
 function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, loi: LOI): boolean {
   const fee = principalFee(h, loi);
@@ -2230,6 +2275,7 @@ function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Hold
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `${AUTO_WHO} signed ${loi.name} at ${rec.address}: ${Math.round(loi.sf).toLocaleString()} sf at $${loi.rentPsf.toFixed(2)}/sf`
+      + `${(loi.tiPsf ?? 0) > 0 ? `, $${Math.round(loi.tiPsf)}/sf fit-out` : ""}`
       + `${loi.kind === "renewal" ? " (renewal)" : loi.kind === "expansion" ? " (expansion)" : ""}.`,
   });
   return true;
@@ -2260,21 +2306,22 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
         s.lois = s.lois.filter((l) => !lost.has(l.id));
       }
     }
-    const { floor, target } = autoTerms(h.stance ?? 0);
-    const market = loiMarket(s, rec, h, mine);
-    const score = loiMandateScore(mine, market);
-    // their final, or a letter that already clears: sign it
-    if (mine.stage === "countered" || score + 0.005 >= floor || floor <= 0) {
-      if (score + 0.005 >= floor || floor <= 0) {
-        if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
-      } else autoPass(s, mine, rec, `their final nets ${(score * 100).toFixed(0)}% of your ask`);
-      continue;
-    }
-    if (mine.countered) continue;   // already countered; they are deciding
-    // counter on rent alone, scaled to bring the net effective to the target
-    const rentPsf = +(mine.rentPsf * Math.min(1.35, target / Math.max(0.3, score))).toFixed(2);
+    const pol = autoPolicy(s, h);
+    const miss = () => autoMiss(pol, mine, loiMandateScore(mine, loiMarket(s, rec, h, mine)));
+    // sign inside the policy, pass outside it — the end of every path below
+    const settle = (prefix: string) => {
+      const why = miss();
+      if (why) autoPass(s, mine, rec, prefix + why);
+      else if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
+    };
+    // a letter inside the policy, or their final word: settle it now
+    if (!miss() || mine.stage === "countered") { settle(mine.stage === "countered" ? "on their final, " : ""); continue; }
+    if (mine.countered) continue;   // countered by hand before auto went on; they are deciding
+    // ONE counter: the allowance down to the cap, the rent up to the target
+    const tiPsf = Math.min(mine.tiPsf ?? 0, autoTiLimit(pol, mine));
+    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target);
     const outcome = tenantCounterOutcome(s, rec, h, mine, {
-      rentPsf, tiPsf: mine.tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
+      rentPsf, tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
     });
     if (outcome === "took") {
       if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
@@ -2283,14 +2330,11 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     if (outcome === "walked") {
       digestOf(s).walked += 1;
       s.lois = s.lois.filter((l) => l.id !== mine.id);
-      s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} countered ${mine.name} at ${rec.address} to $${rentPsf.toFixed(2)}/sf and they walked.` });
+      s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} countered ${mine.name} at ${rec.address} at $${rentPsf.toFixed(2)}/sf with $${tiPsf}/sf fit-out, and they walked.` });
       continue;
     }
-    // their counter-back, taken or passed now — nothing waits on you
-    const back = loiMandateScore(mine, loiMarket(s, rec, h, mine));
-    if (back + 0.005 >= floor) {
-      if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
-    } else autoPass(s, mine, rec, `their counter-back nets ${(back * 100).toFixed(0)}% of your ask`);
+    // their counter-back splits the difference; signed only if it still fits
+    settle("on their counter-back, ");
   }
   // relief and give-back requests from sitting tenants
   for (const a of [...(s.asks ?? [])]) {
@@ -2315,6 +2359,49 @@ export function setAutoLease(s: GameState, parcels: ParcelTable, bbl: string, on
   next.holdings[bbl].autoLease = on || undefined;
   if (on) autoLeaseDesk(next, parcels);
   return next;
+}
+
+/**
+ * Set the auto-lease fit-out cap, in TODAY'S $/sf per year of term; undefined
+ * lifts it. Stored deflated by costIdx (see autoLeaseDesk), so the cap you set
+ * keeps buying the same fit-out as construction costs move.
+ */
+export function setAutoTiCap(s: GameState, parcels: ParcelTable, bbl: string, psfYr: number | undefined): GameState {
+  const h = s.holdings[bbl];
+  if (!h || h.groundLeased) return s;
+  const next: GameState = cloneState(s);
+  const v = psfYr === undefined || !Number.isFinite(psfYr) ? undefined : Math.max(0, psfYr);
+  next.holdings[bbl].autoTiCapPsfYr = v === undefined ? undefined : v / Math.max(0.01, next.econ.costIdx ?? 1);
+  if (next.holdings[bbl].autoLease) autoLeaseDesk(next, parcels);
+  return next;
+}
+
+/** The auto-lease fit-out cap in today's $/sf per year of term, or undefined when uncapped. */
+export function autoTiCapToday(s: GameState, h: Holding): number | undefined {
+  return h.autoTiCapPsfYr === undefined ? undefined : h.autoTiCapPsfYr * (s.econ.costIdx ?? 1);
+}
+
+/**
+ * What a second-generation tenant on this use asks for today, $/sf per year
+ * of term — the TI_ASK band through the concession market and the cost index,
+ * as the letters roll it (before credit and first-generation shell). Shown
+ * beside the cap so the player sets it against the market, not a guess.
+ */
+export function marketTiPsfYr(s: GameState, use: string): [number, number] {
+  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const m = tiPressure(concessionPressure(s.econ, use)) * (s.econ.costIdx ?? 1);
+  return [lo * m, hi * m];
+}
+
+/** The building's auto-lease policy in one line, for the panels. */
+export function autoLeaseRule(s: GameState, h: Holding): string {
+  const st = h.stance ?? 0;
+  const rent = st < 0 ? "Fill: signs whatever rent comes"
+    : st > 0 ? "Push: signs at your ask or better, counters to 5% over"
+    : "Market: signs at 95% of your ask, counters to the ask";
+  const cap = autoTiCapToday(s, h);
+  const ti = cap === undefined ? "any fit-out" : `fit-out up to $${cap.toFixed(2)}/sf per lease year ($${Math.round(cap * 10)}/sf on 10 years)`;
+  return `${rent}; ${ti}. One counter, then sign or pass.`;
 }
 
 /**
@@ -4747,6 +4834,27 @@ export function setMinLeaseSf(s: GameState, bbl: string, sf: number): GameState 
   const v = Math.max(0, Math.round(sf));
   // From next month's tours on; letters already on the desk are yours to answer.
   next.holdings[bbl].minLeaseSf = v > 0 ? v : undefined;
+  return next;
+}
+
+/**
+ * THE SAME FLOOR ON EVERY BUILDING, AND ON EVERY ONE YOU ADD. A portfolio of
+ * office buildings is usually run to one rule — "nothing under a full floor",
+ * "no deals under 5,000 feet" — and setting it deed by deed was a chore that
+ * grew with the book. This writes the floor to every deed that lets space
+ * commercially (ground-leased fee is someone else's building) and keeps it
+ * as the house default, so a building bought or delivered later opens on it.
+ * Each building can still be set apart on its own desk afterwards. 0 clears
+ * the floor everywhere and the default with it.
+ */
+export function setMinLeaseSfAll(s: GameState, sf: number): GameState {
+  const v = Math.max(0, Math.round(sf));
+  const next: GameState = cloneState(s);
+  for (const h of Object.values(next.holdings)) {
+    if (h.groundLeased) continue;
+    h.minLeaseSf = v > 0 ? v : undefined;
+  }
+  next.minLeaseDefault = v > 0 ? v : undefined;
   return next;
 }
 

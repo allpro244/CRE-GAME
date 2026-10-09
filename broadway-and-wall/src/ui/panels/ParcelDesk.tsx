@@ -14,7 +14,7 @@ import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renova
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday, marketTiPsfYr } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
@@ -1123,13 +1123,10 @@ function ParcelPanelInner({
             </button>
           </div>
           {holding.autoLease && (
-            <div className="hint" style={{ fontSize: 11 }}>
-              {(holding.stance ?? 0) < 0
-                ? "Fill: every letter is signed as it comes, at an asking rent 8% under the market. Relief and give-back requests are granted."
-                : (holding.stance ?? 0) > 0
-                  ? "Push: asking 8% over the market. Letters at or above the ask are signed; the rest are countered 5% over it, and passed if they will not get there. Tenants are held to their leases."
-                  : "Market: letters at 95% of the ask or better are signed; the rest are countered to the ask, and passed if they will not come to 95%. Give-backs are granted; relief only near the ask."}
-            </div>
+            <>
+              <AutoTiCapRow bbl={selectedBBL} />
+              <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
+            </>
           )}
           <div className="grid">
             <Row k="Service" v={`${serviceSpec(holding.service).label} · tenants read it as ${Math.round(100 * (holding.svcIdx ?? 0.55))} of 100`} />
@@ -1469,6 +1466,50 @@ function StakeSection({ bbl }: { bbl: string }) {
           Sell {Math.round(share * 100)}% · {usd(Math.max(0, q.toOwner))} to you
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * THE AUTO-LEASE FIT-OUT CAP — the second of auto-lease's two instructions.
+ * Three presets read off today's market band for the building's main use, a
+ * box for your own number, and No cap. $/sf per year of term, the unit TI is
+ * quoted and rolled in, so one number covers a ten-year lease and a renewal.
+ */
+function AutoTiCapRow({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const [txt, setTxt] = useState("");
+  const h = game.holdings[bbl];
+  const rec = resolveRec(parcels, game, bbl);
+  if (!h || !rec) return null;
+  const use = leasableUses(rec)[0] ?? "office";
+  const [lo, hi] = marketTiPsfYr(game, use);
+  const cap = autoTiCapToday(game, h);
+  const set = (v: number | undefined) => useStore.getState().autoTiCap(bbl, v);
+  const near = (v: number) => cap !== undefined && Math.abs(cap - v) < 0.01;
+  const presets: [string, number, string][] = [
+    ["Lean", lo, "the bottom of what tenants ask — fewer deals, cheaper ones"],
+    ["Typical", (lo + hi) / 2, "the middle of the market band"],
+    ["Generous", hi, "the top of the band — most second-generation asks clear it"],
+  ];
+  const typed = Number(txt.replace(/[^0-9.]/g, ""));
+  return (
+    <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+      <span className="hint" title={`Most fit-out auto-lease will fund, per year of lease term. Tenants here ask about $${lo.toFixed(2)}–$${hi.toFixed(2)}/sf per year today (a new building's shell asks more).`}>TI cap</span>
+      <button className={"btn btn-mini" + (cap === undefined ? " btn-on" : "")} onClick={() => set(undefined)}>No cap</button>
+      {presets.map(([label, v, why]) => (
+        <button key={label} className={"btn btn-mini" + (near(v) ? " btn-on" : "")} title={`$${v.toFixed(2)}/sf per lease year — ${why}`} onClick={() => set(+v.toFixed(2))}>
+          {label} ${v.toFixed(2)}
+        </button>
+      ))}
+      <input
+        className="mono" style={{ width: 70 }} inputMode="decimal"
+        placeholder={cap !== undefined ? cap.toFixed(2) : "$/sf·yr"}
+        value={txt} onChange={(e) => setTxt(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && txt.trim() && Number.isFinite(typed)) { set(typed); setTxt(""); } }}
+      />
+      <button className="btn btn-mini" disabled={!txt.trim() || !Number.isFinite(typed)} onClick={() => { set(typed); setTxt(""); }}>Set</button>
     </div>
   );
 }

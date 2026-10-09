@@ -242,6 +242,21 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  five to ten year terms. AN APARTMENT LEASE IS TWELVE MONTHS — a housing
  *  market reprices its entire footprint eight times faster than an office
  *  market, and this model had it eight times too slow. */
+/** MONTHS FOR NEW DEMAND TO BECOME A SEARCH. A firm decides it needs more
+ *  floor on a planning cycle — budget, headcount plan, broker — about three
+ *  quarters for an office, two for a shop or a shed operator. A household
+ *  that arrives in town is looking the same month and has signed inside two.
+ *  Shape parameters, from the length of the process; stated, not fitted. */
+const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
+/** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
+ *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks. */
+const MOVE_IN_M: Record<BuiltClass, number> = { office: 6, retail: 4, industrial: 3, multifamily: 1.5 };
+/** MONTHS TO MOVE OUT once space is surplus. Commercial tenants leave at
+ *  lease expiry (subletting meanwhile) or by failing; the 2009 record puts a
+ *  year's office give-back near 0.35 of the payroll drop, a ~24-month time
+ *  constant. Shops and sheds run shorter terms; a renter gives notice. */
+const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industrial: 18, multifamily: 3 };
+
 const AFFORD_ROLL: Record<BuiltClass, number> = {
   office: 1 / 96,        // eight-year terms
   retail: 1 / 84,        // seven
@@ -3714,7 +3729,11 @@ export function tickEcon(s: GameState) {
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
     const poolTarget = Math.min(targetRaw, housable + searchFringe);
     if (!e.pool) e.pool = { ...e.occupied };
-    e.pool[k] += 0.10 * (poolTarget - e.pool[k]);
+    // HOW FAST DEMAND TURNS INTO A SEARCH, BY CLASS (2026-10-09). One rate
+    // (10%/mo) for every class meant a household arriving in town took as long
+    // to start looking for a flat as a firm takes to decide it needs another
+    // floor. See DEMAND_FORM_M.
+    e.pool[k] += (poolTarget - e.pool[k]) / DEMAND_FORM_M[k];
     e.pool[k] -= 0.25 * Math.max(0, e.pool[k] - housable * 1.02);
     // SPACE CAPS PAYROLL DESIRE. Jobs drove the looking pool with no return
     // wire from "there is no floor left" — only from rent via spacePull. So a
@@ -3731,16 +3750,33 @@ export function tickEcon(s: GameState) {
     // The clamps and the noise used to scale with stock — a bigger city of
     // buildings signed leases faster. Now they scale with occupied: a bigger
     // city of tenants does.
+
+    // ABSORPTION RUNS AT THE SPEED OF A LEASE, BY CLASS AND BY DIRECTION
+    // (2026-10-09). This was 5.5%/mo for every class in both directions, slowed
+    // by up to 45% when vacancy was high ("matching friction"), and capped at
+    // +1.0% / -0.6% of occupied a month. Measured over 8 worlds x 50 years,
+    // a year of office job growth showed up as 0.17-0.20 of itself in occupied
+    // office (r ~0.2), occupied office fell in only 44-53% of years in which
+    // payrolls fell, and a year of population growth reached occupied flats
+    // at 0.24-0.36 — against a record in which office absorption tracks
+    // office-using jobs about one-for-one within a year or so and turns
+    // negative in essentially every recession (Wheaton & Torto), and in which
+    // a household that arrives in town is housed within weeks.
     //
-    // MATCHING FRICTION. When empty floors sit beside a looking queue, some of
-    // that queue is the wrong class, size or district — search, not clearing.
-    // Slow the absorb rate with the excess vacancy rather than pretending every
-    // searcher can take every empty suite this month.
-    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
-    const matchFrict = (vacNow > NATURAL_VAC[k] && e.pool[k] > e.occupied[k])
-      ? clamp(1 - (vacNow - NATURAL_VAC[k]) * 2.2, 0.55, 1)
-      : 1;
-    const absorb = clamp(0.055 * matchFrict * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
+    // MOVING IN is the leasing process: tour, LOI, lease, fit-out for offices
+    // and shops; a lease and a set of keys for a flat. MOVING OUT runs at the
+    // speed leases let a tenant leave — a shrinking firm sublets and goes at
+    // expiry (in 2009 office net absorption was about -1.5 to -2% of stock
+    // against -5% office employment, ~0.35 inside the year), a renter gives a
+    // month or two of notice. See MOVE_IN_M / MOVE_OUT_M.
+    //
+    // The vacancy "friction" is gone: in a glut a looking tenant finds space
+    // FASTER, not slower (Wheaton 1990, search with vacancy); a glut's
+    // absorption is limited by how many tenants there are, which is the gap
+    // itself. The old caps become a guard at 3% of occupied a month, a pace no
+    // market has sustained.
+    const gapSf = e.pool[k] - e.occupied[k];
+    const absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
     // FRICTIONAL VACANCY IS RESIDENCE TIME, not a rail. Suites sit dark
     // between tenants for `reletMonths`; new floor sits dark until it

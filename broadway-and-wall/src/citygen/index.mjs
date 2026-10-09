@@ -190,8 +190,12 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * two-storey base (massing.mjs courtBase). Manhattan below 14th Street:
  * towers of 10-19 floors on lots over 10,000 sf, ground coverage median
  * 53% -> 69%, tenth percentile 34% -> 49%. Floor area +1-3% a town.
+ *
+ * Plan 8 tones the row-house grain down a notch at the owner's request: the
+ * narrowest frontage 30 ft (was 26), the narrow bands a foot or two wider, no
+ * lot cut past 4:1 (was 5:1). See citygen.mjs PLAN 8: A NOTCH WIDER.
  */
-export const CITY_PLAN = 7;
+export const CITY_PLAN = 8;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

@@ -11,7 +11,7 @@ import { openResearchOn } from "@/ui/researchTab";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setAutoLease, setAutoTiCap, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -405,6 +405,8 @@ interface AppState {
   autoTiCap: (bbl: string, psfYr: number | undefined) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
+  /** The same minimum new lease on every building, and the house default for new ones. */
+  minLeaseAll: (sf: number) => void;
   /** Bank with this desk: the operating account moves there (free; deposits are not a loan). */
   setDepositBank: (id: string) => void;
   /** Cash management: sweep idle cash into Treasury bills, and the operating balance kept at the bank. */
@@ -1856,6 +1858,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     void persist(next);
+  },
+
+  minLeaseAll: (sf) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setMinLeaseSfAll(game, sf);
+    set({ game: next });
+    void persist(next);
+    toast(sf > 0
+      ? `Minimum new lease set to ${Math.round(sf).toLocaleString("en-US")} sf on every building — and on any you add.`
+      : "Minimum new lease cleared on every building.", "ok");
   },
 
   holdLeasing: (bbl, on) => {

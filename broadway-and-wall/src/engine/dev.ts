@@ -2145,6 +2145,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;
+  if (s.minLeaseDefault && h.minLeaseSf === undefined) h.minLeaseSf = s.minLeaseDefault;
   h.svcIdx = 0.70;   // a building that opens this year opens well run
   h.lastCapM = s.month;
   h.tenants = [];

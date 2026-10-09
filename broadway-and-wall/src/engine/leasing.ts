@@ -4837,6 +4837,27 @@ export function setMinLeaseSf(s: GameState, bbl: string, sf: number): GameState 
   return next;
 }
 
+/**
+ * THE SAME FLOOR ON EVERY BUILDING, AND ON EVERY ONE YOU ADD. A portfolio of
+ * office buildings is usually run to one rule — "nothing under a full floor",
+ * "no deals under 5,000 feet" — and setting it deed by deed was a chore that
+ * grew with the book. This writes the floor to every deed that lets space
+ * commercially (ground-leased fee is someone else's building) and keeps it
+ * as the house default, so a building bought or delivered later opens on it.
+ * Each building can still be set apart on its own desk afterwards. 0 clears
+ * the floor everywhere and the default with it.
+ */
+export function setMinLeaseSfAll(s: GameState, sf: number): GameState {
+  const v = Math.max(0, Math.round(sf));
+  const next: GameState = cloneState(s);
+  for (const h of Object.values(next.holdings)) {
+    if (h.groundLeased) continue;
+    h.minLeaseSf = v > 0 ? v : undefined;
+  }
+  next.minLeaseDefault = v > 0 ? v : undefined;
+  return next;
+}
+
 export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
   const h = s.holdings[bbl];
   if (!h || h.groundLeased) return s;

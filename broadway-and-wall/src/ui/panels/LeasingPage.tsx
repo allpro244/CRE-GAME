@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
@@ -325,6 +326,8 @@ export function LeasingPage() {
       <div className="page-section">
         <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span>By building</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <MinLeaseAll />
           {(() => {
             const all = rows.map((r) => r.h.bbl);
             const allOn = all.length > 0 && rows.every((r) => r.h.autoLease);
@@ -339,6 +342,7 @@ export function LeasingPage() {
               >{allOn ? "Auto-lease: all on ✓" : "Auto-lease every building"}</button>
             );
           })()}
+          </span>
         </div>
         <div>
           <table className="tbl">
@@ -547,3 +551,31 @@ export function LeasingPage() {
  * headlines reads as a month rather than as a list, and filterable because in
  * a bad year the warnings are the only ones you want.
  */
+
+/**
+ * ONE MINIMUM NEW LEASE FOR THE WHOLE BOOK. The per-building floor ("Smallest
+ * deal you'll sign" on each property) set once for every building you own,
+ * and kept as the house default so buildings you buy or deliver later open on
+ * it. Each building can still be set apart on its own desk. 0 clears it.
+ */
+function MinLeaseAll() {
+  const game = useStore((s) => s.game)!;
+  const house = game.minLeaseDefault ?? 0;
+  const [v, setV] = useState<string>(house ? String(house) : "");
+  const n = Number(v === "" ? 0 : v);
+  const valid = Number.isFinite(n) && n >= 0;
+  const changed = valid && Math.round(n) !== house;
+  return (
+    <label className="buybox-field" title="The smallest new tenancy every building will sign: prospects asking for less stop touring. Renewals and expansions of sitting tenants are untouched, and a tenant taking everything still vacant always gets in. Flats let by the unit and are not affected. New buildings you buy or deliver open on the same floor; set any building apart on its own desk.">
+      Min. new lease, all buildings
+      <input type="number" step="500" min="0" value={v} placeholder="any"
+        style={{ width: 80 }}
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && changed) useStore.getState().minLeaseAll(n); }} />sf
+      <button type="button" className="btn btn-mini" disabled={!changed}
+        onClick={() => useStore.getState().minLeaseAll(n)}>
+        {n > 0 ? "Set on all" : "Clear all"}
+      </button>
+    </label>
+  );
+}

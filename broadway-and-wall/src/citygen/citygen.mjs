@@ -1476,6 +1476,18 @@ export function generateCity(cfg) {
   const FRONT_WAY = {
     row: [8, 9.2], burgage: [8, 11], fine: [8, 10.7], villa: [15, 22.5], yard: [30, 60],
   };
+  // PLAN 8: A NOTCH WIDER. The owner liked the row-house grain and found it a
+  // shade too much: median lot 2.06:1, 7% past 4:1, the narrow conventions
+  // (row, fine, core) at 2.3-2.5. So the narrowest frontage is 30 ft, not
+  // 26, the row, commercial and downtown bands start at 32 ft and widen by
+  // a foot or two at the top, and a lot is cut
+  // no longer than 4:1 rather than 5:1. Still a 30 ft row house and a 40 ft
+  // commercial lot — the grain the plat is for, one step coarser.
+  if (PLAN_V >= 8) {
+    Object.assign(FRONT_FLAVOR, { core: [9.8, 15.2], old: [9.1, 12.8], resi: [10.7, 15.2] });
+    Object.assign(FRONT_WAY, { row: [9.8, 11.3], burgage: [9.8, 12.8], fine: [9.8, 12.8] });
+  }
+  const LOT_ASPECT = PLAN_V >= 8 ? 3.5 : 5;
   const FRONTAGE = cfg.frontagePlat === true && PLAN_V >= 4;
   const ALLEYS_M = [];
 
@@ -1560,7 +1572,7 @@ export function generateCity(cfg) {
       const u = rand();
       const m = u > 1 - 0.045 * k ? Math.round(rr(5, 13))
         : u > 1 - 0.115 * k ? Math.round(rr(2.4, 4.8))
-          : narrow && u < 0.10 ? 2
+          : narrow && u < (PLAN_V >= 8 ? 0.18 : 0.10) ? 2
             : 1;
       const g = Math.max(1, Math.min(m, maxG, n - i));
       out.push(g);
@@ -1696,7 +1708,7 @@ export function generateCity(cfg) {
     const [t0, t1] = dist.lot ?? flavorOf(d).lot;
     const wArea = Math.min(Math.max(w0, t0 / lotD), Math.max(8, t1 / lotD));
     // a lot past aspect 5 is not a lot anybody platted; widen rather than slice
-    const w = Math.max(wArea, lotD / 5);
+    const w = Math.max(wArea, lotD / LOT_ASPECT);
     const lots = [];
     const alleys = [];
     let middle = ring;
@@ -2279,6 +2291,10 @@ export function generateCity(cfg) {
       if (pl) { lots.push(...pl.lots); ALLEYS_M.push(...pl.alleys); }
       else splitLots(ground, lotOptOf(d, heat), lots);
       absorbSlivers(lots);
+      // The fallback splitter only halves, and halving a wedge leaves the
+      // point on one piece; plan 8 paves that point too, as the block-level
+      // trim already does (a 19.5-degree corner lot on seed 20261 otherwise).
+      if (FRONTAGE && PLAN_V >= 8) for (let i = 0; i < lots.length; i++) lots[i] = trimNeedles(lots[i]);
     }
 
     let lotNo = 1;

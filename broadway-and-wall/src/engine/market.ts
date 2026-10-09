@@ -956,6 +956,8 @@ const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, r
 const PARTICIPATION = 0.58;
 /** The rate the city opens at, which is what makes the opening state consistent. */
 const OPENING_UNEMP = 0.052;
+/** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay. */
+const NAT_U_STAR = 0.048;
 
 /**
  * THE TOWN'S OPENING SIZE, derived rather than declared.
@@ -1525,7 +1527,7 @@ export function tickNation(s: GameState) {
   // version predicts — while a labour market past full employment bids pay up
   // at an accelerating rate. A straight line through the origin gets both
   // ends wrong.
-  const uStar = 0.048;
+  const uStar = NAT_U_STAR;
   const nGap = uStar - n.unemp;
   const phillips = nGap > 0 ? 0.38 * nGap + 4.5 * nGap * nGap : 0.20 * nGap;
   // AND MONEY ITSELF IS A CHANNEL. A labour-market gap of a point or two can
@@ -2332,7 +2334,12 @@ export function tickEcon(s: GameState) {
     // with no work, and they leave one that has run out — that is what keeps
     // a labour market anchored, and it is now in the model.
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
-    const uGapPop = e.unemployment! - 0.055;
+    // AGAINST THE NATION, NOT AGAINST 5.5% (2026-10-09). People leave a town
+    // whose unemployment is worse than elsewhere and come to one where it is
+    // better; Blanchard & Katz (1992) measure exactly that relative rate. A
+    // fixed 5.5% pivot read a town at 4.4% as permanently attractive even
+    // while the whole nation sat at 4%.
+    const uGapPop = e.unemployment! - (e.nat?.unemp ?? OPENING_UNEMP);
     // PEOPLE MOVE TO WHERE THE UNFILLED JOBS ARE, and this was the wire the
     // block above already claimed to have — "vacancies are how a labour market
     // that has run out of people goes on transmitting pressure to wages and to
@@ -2352,7 +2359,25 @@ export function tickEcon(s: GameState) {
     // unfilled openings closes the gap at ln2/36 a month. It used to be a
     // tenth a year, which left the labour cap to do the work.
     const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * (Math.LN2 / 36);
-    let migration = jobGrowth * pull + vacPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+    // PEOPLE MOVE FOR REAL PAY (2026-10-09). Migration read jobs, unfilled
+    // jobs and unemployment, and never the wage: measured over 4 worlds x 50
+    // years the town's nominal pay ended 1.24-2.08x the nation's, with
+    // nobody moving in for it, and local prices 1.39-1.42x. In the spatial
+    // equilibrium every urban model rests on (Rosen 1979; Roback 1982),
+    // movers equalise REAL wages net of amenity — what pay buys after rent —
+    // and the premium closes because the inflow loosens the labour market.
+    // The real premium here is local pay over local prices against national
+    // pay over national prices, and the price level now carries the town's
+    // rent (see the CPI block), so a dear-to-live-in town is correctly a
+    // less attractive one. Shape parameter, stated: a 10% real premium draws
+    // about 1% of population a year, the order of the migration responses in
+    // Blanchard & Katz (1992) and Kennan & Walker (2011). Read through the
+    // same two-year average the employers use.
+    const realPrem = ((e.wageIdx ?? 1) / Math.max(0.1, e.cpi ?? 1))
+      / Math.max(1e-6, (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1));
+    e.realPremEma = (e.realPremEma ?? realPrem) + (realPrem - (e.realPremEma ?? realPrem)) / 24;
+    const premPull = 0.10 * Math.log(Math.max(0.2, e.realPremEma)) / 12;
+    let migration = jobGrowth * pull + vacPull + premPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
 
     // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
     //
@@ -2388,18 +2413,11 @@ export function tickEcon(s: GameState) {
       // never had literally zero net in-migration.
       migration *= 0.20 + 0.80 * slack;
     }
-    // OUT-MIGRATION WHEN RENT BURDENS AND NOTHING IS EMPTY. In-migration was
-    // already choked by the housing floor; the other direction was open only
-    // through the labour market. Households priced out of a tight flat market
-    // leave — that is how a city sheds people when builders cannot catch up.
-    {
-      const mfBurden = (e.rentIdx.multifamily / RENT_BASE.multifamily) / Math.max(0.35, e.wageIdx ?? 1);
-      const mfVac = e.cityVac?.multifamily ?? NATURAL_VAC.multifamily;
-      const mfTight = mfVac <= NATURAL_VAC.multifamily * 0.55;
-      if (mfBurden > 1.25 && mfTight) {
-        migration -= Math.min(0.0025, (mfBurden - 1.25) * 0.005);
-      }
-    }
+    // RETIRED (2026-10-09): out-migration on a rent-burden threshold
+    // (`mfBurden > 1.25` against the global RENT_BASE table, capped at
+    // 0.25%/mo). Rent now reaches movers through the real wage — it is a third
+    // of the price level the premium is deflated by — continuously and in both
+    // directions, rather than through a step at a ratio nobody measured.
     // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
     // distinction was load-bearing the moment the town's size stopped being a
     // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded
@@ -2500,7 +2518,17 @@ export function tickEcon(s: GameState) {
     // anything, and because the term it feeds is multiplied by a coefficient
     // calibrated for a gap of a point or two.
     const vacRate = Math.min(0.075, (e.jobVac ?? 0) / (1 + (e.jobVac ?? 0)));
-    const tight = Math.max(-0.06, Math.min(0.055, 0.055 - e.unemployment! + vacRate));
+    // AGAINST THIS TOWN'S OWN NATURAL RATE (2026-10-09). The pivot was 0.055,
+    // a third natural rate of unemployment in one engine: the nation reverts
+    // to 4.2% in an expansion and prices off a 4.8% u*, and this town pivoted
+    // on 5.5%. The town's natural rate is not a free number — it is the
+    // steady state its own matching function was calibrated to
+    // (OPENING_UNEMP, where hires exactly replace separations), so that is
+    // the pivot. Whatever this town's labour market does relative to the
+    // nation then shows up as a wage premium, which is what moves hiring
+    // (`wageDemand`) and movers (`wagePremEma`) — the loop that pulls a tight
+    // town back.
+    const tight = Math.max(-0.06, Math.min(0.055, OPENING_UNEMP - e.unemployment! + vacRate));
     // realised inflation over the trailing year, straight off the history the
     // engine already keeps — expectations chase THIS, not a constant
     const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
@@ -2516,14 +2544,55 @@ export function tickEcon(s: GameState) {
     // could sit at 2% while the nation ran at 14%, which is not a thing that
     // has ever happened to anywhere.
     const natInfl = e.nat?.infl ?? e.inflExp;
-    const inflM = (0.72 * natInfl + 0.28 * e.inflExp) / 12
-      + tight * 0.014 + 0.14 * (cost12 - e.inflExp) / 12;
-    // HANDOFF fault: -0.0035/mo (~-4.2%/yr) as the ordinary floor let ordinary
-    // slack months stack into multi-year deflation stretches. Reserve that deep
-    // floor for genuine national deflation; otherwise cap monthly decline at
-    // ~-0.0005 (~-0.6%/yr).
-    const inflFloor = natInfl < 0 ? -0.0035 : -0.0005;
-    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, inflFloor, 0.0115)), 0.8, 400);
+    // A TOWN'S PRICE LEVEL IS THE NATION'S, PLUS WHAT IS MADE AND HOUSED HERE
+    // (2026-10-09).
+    //
+    // This was `0.72 x national + 0.28 x local expectations + 0.014 x tight +
+    // 0.14 x construction-cost push`. Two things were wrong with it, and the
+    // second is the important one. The labour term pivoted on 5.5% while the
+    // town averaged 4.2% unemployment, so it was positive in nearly every
+    // month: measured over 4 worlds x 50 years, local CPI ran 0.5-0.7pp/yr
+    // ahead of the nation and finished 1.27-1.39x the national price level,
+    // out of a term that described nothing anybody buys. And the town's own
+    // RENT — a third of every real CPI basket — was not in its price level at
+    // all, so a housing shortage could never make the town dear to live in.
+    //
+    // Metro CPIs do diverge from the national one, and the record says how:
+    // through shelter and through local services, which are local labour
+    // (BLS metro CPI; the Balassa-Samuelson channel). Goods are traded and
+    // cost what they cost everywhere. So the basket is built from those
+    // three, each read as its trailing-year change against the nation's:
+    //
+    //   shelter  0.33  — the town's apartment rent (BLS relative importance
+    //                    of shelter, ~33-36% of CPI-U)
+    //   services 0.25  — local pay against national pay (services less
+    //                    energy and shelter, ~25%; labour is most of it)
+    //   goods    0.42  — the national rate, untouched
+    //
+    // The national rate already contains national shelter and services, so
+    // only the LOCAL DIFFERENCE is added; a town that looks exactly like the
+    // nation inflates exactly like it. Trailing-year changes because that is
+    // what the index measures — CPI shelter is famously a year behind asking
+    // rents, since it samples sitting tenants. This closes the loop the
+    // engine was missing: a shortage raises rents, rents raise the price
+    // level, the price level is what wages and leases escalate by, and real
+    // pay is what tenants economise against.
+    const SHELTER_W = 0.33, SERVICES_W = 0.25;
+    const natCpiPrev = e.natCpi ?? e.cpi!;
+    e.natCpi = natCpiPrev * (1 + natInfl / 12);
+    const natCpi12 = h12?.natCpi ? e.natCpi / h12.natCpi - 1 : natInfl;
+    const shelter12 = h12?.rent?.multifamily ? e.rentIdx.multifamily / h12.rent.multifamily - 1 : natCpi12;
+    const wage12 = h12?.wageIdx ? (e.wageIdx ?? 1) / h12.wageIdx - 1 : 0;
+    const natWage12 = h12?.natWageIdx ? (e.natWageIdx ?? 1) / h12.natWageIdx - 1 : wage12;
+    const inflM = natInfl / 12
+      + (SHELTER_W * (shelter12 - natCpi12) + SERVICES_W * (wage12 - natWage12)) / 12;
+    void cost12;
+    // The old monthly floor (-0.05%/mo unless the nation deflated) and the
+    // 1.15%/mo ceiling were there to stop the labour term running away. With
+    // the price level built from traded goods and two local relatives, those
+    // are wide guards: a month the town deflates faster than 1% is a month
+    // its rents fell by a third.
+    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.01, 0.02)), 0.5, 1000);
     // ...and expectations follow realised inflation slowly. This is the anchor
     // that keeps the spiral from either exploding or dying: fast enough that a
     // decade of 6% becomes the new normal, slow enough that one bad year is
@@ -2646,7 +2715,28 @@ export function tickEcon(s: GameState) {
     // has frozen pay through a bad year does not claw it all back in the first
     // good month — it grants a thin raise for a while, which is the observed
     // pattern after every freeze.
-    const growth = e.inflExp / 12 + productivity / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004);
+    // PAY IS SET AGAINST THE NATION'S EXPECTED INFLATION, NOT THE TOWN'S
+    // (2026-10-09). With the town's rent inside its price level, reading local
+    // `inflExp` here closed a direct indexation loop — rent up, local CPI up,
+    // local expectations up, local pay up, local services up, local CPI up —
+    // with a gain of about 0.58 per turn, and measured over 4 worlds x 50
+    // years it carried local pay to 1.24-2.08x the national path. Employers
+    // set raises against the price outlook every employer in the country
+    // shares and against how hard it is to hire HERE (`tight`). What a dear
+    // town costs its workers reaches their pay the way it does in life: some
+    // of them leave (the real-wage premium in migration), the labour market
+    // tightens, and pay is bid up through `tight` — the compensating
+    // differential as a consequence, not as an indexation clause.
+    //
+    // ...AND PAY CATCHES UP WITH THE INFLATION IT MISSED. Pure expectations
+    // left a permanent forecast error in pay: measured over 4 worlds x 50
+    // years the nation's expected inflation sat about half a point under
+    // realised, so real pay grew 0.1-1.0%/yr against 1.1% productivity — a
+    // workforce fooled for half a century. Wage setting indexes partly to
+    // last year's prices; Smets & Wouters (2007) estimate the indexation
+    // share at about 0.58, which is used here against the national CPI.
+    const payExp = 0.42 * (e.nat?.inflExp ?? e.inflExp) + 0.58 * natCpi12;
+    const growth = payExp / 12 + productivity / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004);
     if (e.wageDebt === undefined) e.wageDebt = 0;
     if (growth < 0) {
       e.wageDebt -= growth;          // the cut nobody took, owed
@@ -2660,7 +2750,17 @@ export function tickEcon(s: GameState) {
     e.wageDebt = clamp(e.wageDebt, 0, 0.25);
     // What the same worker earns elsewhere: the national path, expectations
     // plus productivity, none of this town's tightness or slack.
-    e.natWageIdx = (e.natWageIdx ?? e.wageIdx!) * (1 + e.inflExp / 12 + productivity / 12);
+    // ...and the NATION's expectations and labour market, not this town's
+    // (2026-10-09). This read the local `inflExp`, so "what a worker earns
+    // elsewhere" moved with this town's own inflation, and a dear town looked
+    // ordinary to its employers. National pay is national expected inflation
+    // plus productivity plus the same Phillips slope on the nation's gap.
+    {
+      const n = e.nat;
+      const natTight = n ? Math.max(-0.06, Math.min(0.055, NAT_U_STAR - n.unemp)) : 0;
+      const natGrowth = (0.42 * (n?.inflExp ?? e.inflExp) + 0.58 * natCpi12) / 12 + productivity / 12 + natTight * 0.012;
+      e.natWageIdx = (e.natWageIdx ?? e.wageIdx!) * (1 + Math.max(0, natGrowth));
+    }
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
@@ -4613,6 +4713,8 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     jobs: e.jobs,
     unemployment: e.unemployment !== undefined ? +e.unemployment.toFixed(4) : undefined,
     wageIdx: e.wageIdx !== undefined ? +e.wageIdx.toFixed(4) : undefined,
+    natWageIdx: e.natWageIdx !== undefined ? +e.natWageIdx.toFixed(4) : undefined,
+    natCpi: e.natCpi !== undefined ? +e.natCpi.toFixed(4) : undefined,
     outputIdx: e.outputIdx,
     cpi: e.cpi !== undefined ? +e.cpi.toFixed(4) : undefined,
     vac: e.cityVac ? {

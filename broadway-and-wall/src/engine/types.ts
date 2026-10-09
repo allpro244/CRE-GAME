@@ -1421,6 +1421,10 @@ export interface EconHistoryPoint {
   jobs?: number;
   unemployment?: number;
   wageIdx?: number;
+  /** National nominal wage path — the services half of the local CPI is read against it. */
+  natWageIdx?: number;
+  /** National price level path, so a local/national gap can be read off history. */
+  natCpi?: number;
   outputIdx?: number;
   cpi?: number;
   landIdx: number;
@@ -1769,6 +1773,10 @@ export interface Econ {
   adults0?: number;
   /** The national wage path (no local tightness), and this town's smoothed premium over it. */
   natWageIdx?: number;
+  /** The national price level, compounded from `nat.infl`; the local `cpi` is it plus local shelter and services. */
+  natCpi?: number;
+  /** This town's real pay over the nation's, two-year average — what movers answer. */
+  realPremEma?: number;
   wagePremEma?: number;
   /** Each class's demand driver last month and its five-year average monthly growth. */
   classDrv?: Record<BuiltClass, number>;

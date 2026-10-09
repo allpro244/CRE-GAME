@@ -21,10 +21,19 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
-import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList } from "./manhattan.mjs";
+import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
+
+/**
+ * Fetch whatever a city needs before `makeCity` can build it synchronously.
+ * A generated island needs nothing; Manhattan needs its baked plat, which is
+ * kept out of the main bundle (see manhattan.mjs). Idempotent.
+ */
+export async function preloadCity(cityId) {
+  if (cityId === MANHATTAN) await loadManhattanPlat();
+}
 
 /** The sizes an island can be built at, for the picker. */
 export function sizeList() {
@@ -87,7 +96,7 @@ export function cityList() {
     {
       id: MANHATTAN,
       name: "Manhattan",
-      tagline: "The real one. The Commissioners' grid at its true bearing, Broadway cutting it on the diagonal, and a lot the size of a lot.",
+      tagline: "The real one, lot for lot: every block, tax lot, BBL and street address from the city's own records, the real parks, shoreline and subway.",
       /** A written-down city takes an EXTENT rather than a size — see manhattan.mjs. */
       extents: true,
     },

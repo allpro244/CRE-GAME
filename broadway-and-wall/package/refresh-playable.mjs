@@ -48,10 +48,11 @@ HOW TO KNOW YOU HAVE THIS BUILD
     build ${commit} · office base $${rent}
   The start screen asks WHICH CITY first:
     Somewhere else - a generated island, a new one every run
-    Manhattan      - the written-down one, with an extent picker
+    Manhattan      - the real one, lot for lot from the city's records,
+                     with an extent picker
                      (below Houston / 14th / 23rd / 34th / 42nd / 59th)
-  Pick Manhattan below 59th Street with the Metropolis build-out for the
-  largest map in the game, about 25,000 parcels.
+  Pick Manhattan below 59th Street for the largest map in the game, about
+  19,000 real tax lots.
   The old hand-drawn fictional islands, New Alden and Kestrel Point, are
   still gone; Manhattan is a real city written down, which is a different
   thing and is why it came back as a named choice rather than as those.

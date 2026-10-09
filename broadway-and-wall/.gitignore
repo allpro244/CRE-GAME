@@ -28,3 +28,6 @@ dist-gallery/
 test/.opening-screen.*
 ai-match-*.json
 jev-lab*.json
+
+# Raw downloads for the Manhattan bake (pipeline/manhattan/fetch.py).
+pipeline/manhattan/raw/

@@ -11,7 +11,7 @@ import { openResearchOn } from "@/ui/researchTab";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setAutoLease, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setAutoLease, setAutoTiCap, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -48,7 +48,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, makeCity, preloadCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 import { monthOffThread } from "@/state/simClient";
 
@@ -401,6 +401,8 @@ interface AppState {
   holdLeasing: (bbl: string, on: boolean) => void;
   /** Auto-lease: the deed answers its own letters by its rent stance. A list sets many at once. */
   autoLease: (bbl: string | string[], on: boolean) => void;
+  /** Auto-lease fit-out cap, today's $/sf per lease year; undefined lifts it. */
+  autoTiCap: (bbl: string, psfYr: number | undefined) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** Bank with this desk: the operating account moves there (free; deposits are not a loan). */
@@ -1833,8 +1835,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     toast(on
-      ? "Auto-lease on. Letters there are answered by the rent posture — nothing will pop up."
+      ? "Auto-lease on. Letters there are answered by the rent posture and fit-out cap — nothing will pop up."
       : "Auto-lease off. Those letters come to you again.");
+    void persist(next);
+  },
+
+  autoTiCap: (bbl, psfYr) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setAutoTiCap(game, parcels, bbl, psfYr);
+    if (next === game) return;
+    set({ game: next });
     void persist(next);
   },
 
@@ -2503,6 +2514,7 @@ export const useStore = create<AppState>((set, get) => ({
       // draws. Absent, a fresh one is rolled exactly as before.
       const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
       if (seedIn && seedIn >>> 0) setSeed(seed, island);
+      await preloadCity(island);
       const { built, parcels } = buildTown(island, seed, size, dev);
       get().setData({
         parcels,
@@ -2572,6 +2584,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
+      await preloadCity(r.island);
       const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this

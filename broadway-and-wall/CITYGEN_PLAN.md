@@ -440,3 +440,45 @@ shore — and then dress that choice so a player can see it from the water,
 from a walk, and from the tape.
 
 That is the 2–3×. Everything else is noise.
+
+---
+
+## 12. Landing 4 — the frontage plat (street plan 4) — DONE
+
+Not in the original three landings; it came out of a "what would make the
+generator better" review. The towns looked right from the water and wrong
+from the pavement: lots were halved out of blocks by area, so the median lot
+was 1.4:1, a third were near-square, half the town filed as corners and a
+quarter of lot area ran from street to street.
+
+What plan 4 does (all behind `CITY_PLAN` 4; plan-3 saves rebuild exactly):
+
+- **Real block sizes** (island.mjs): Portland to Sacramento squares, the
+  ordinary 92-120 m American pitch, Manhattan's real 79 m section. Organic
+  quarters and superblocks capped at their real sizes.
+- **Frontage-first plat** (citygen.mjs `platBlock`): every block at least
+  100 ft deep splits down its spine into two rows; long blocks turn their
+  ends to the short street; each row is cut into one surveyor's frontage
+  (25-50 ft downtown, 30-50 ft housing, 100-200 ft yards), held inside the
+  convention's area band; assembled sites are runs of adjacent lots that
+  stop at the spine. Whole-block deeds only on blocks under 4,000 m2.
+  Needle tips and unstakeable tapers are paved gores.
+- **Alleys**: a 16 ft lane down the spine in about two towns in three, in
+  the districts surveyed with one (own salt).
+- **Street walls**: buildings on the street line, open space at the rear;
+  houses keep a front garden in proportion.
+- **Corners** are lots at a vertex where the street turns.
+- **Frontage on the record**: `lotFront` / `lotDepth` (feet). Retail rent
+  reads shop depth by the zoning method (value.ts `shopFrontMult`).
+- **Demand**: transit is each lot's best platform, not a sum over every
+  station in range (build.mjs). Median correlation of demand with distance
+  from the best lot ~0.78 -> ~0.56.
+
+Rulers: `pnpm variety` now fails if median lot aspect drops under 1.7,
+corners pass 42%, or alleys go to none/all; `tools/plat-svg.mjs` draws
+alleys and readable lot lines and defaults to the current plan. Economy
+moves are in BASELINE_ATTRIBUTION.md.
+
+Open: corners are still ~36% (organic quarters ~55% — small blocks are
+real there); the plan-4 town opens with ~8% less floor area until lots
+are assembled.

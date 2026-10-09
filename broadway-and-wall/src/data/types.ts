@@ -60,6 +60,14 @@ export interface ParcelRecord {
   shoreM?: number;
   corridorM?: number;
   corner?: boolean;
+  /**
+   * Street frontage of the lot and the depth behind it, in feet (PLUTO's
+   * LotFront / LotDepth). Frontage is the longest run of lot line on one
+   * street; depth is area over that. Absent on towns cut before street plan 4
+   * had them measured, and on lots with no street line at all.
+   */
+  lotFront?: number;
+  lotDepth?: number;
   landPsf: number;      // $/sf of land, engine-evolved in later phases
   landPsfHistory: number[];
   imputed: string[];

@@ -23,7 +23,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, hurdleAt, streetMargin } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
@@ -983,7 +983,12 @@ export function refreshDevelopmentFeasibility(
         // Only clearing pencils. Pushing appetite-zero failures from densify
         // sites diluted the P97 and zeroed whole classes (office went to 0
         // while multifamily stayed live — the order book then starved office).
-        if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
+        // The pencil the order book reads is the street's — the most lenient
+        // margin among firms that build (`streetMargin`), not only the merchant's.
+        if (u?.financeable) {
+          const h = hurdleAt(u.plan, streetMargin(s));
+          if (h >= 1) scores[use].push(Math.min(3, Math.pow(h, 1.2)));
+        }
       }
       continue;
     }
@@ -3049,7 +3054,20 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // thousand-building town replaced ~0.1%/yr against a ~0.5% real-world
   // anchor and mean age climbed with the calendar. The roll is the same
   // draw as before (RNG-NOTE: more months now enter the sample below).
-  if (rng(s, "dev") > (chronicShort ? 0.05 : 0.15)) return;
+  //
+  // ...AND THE COMPARISON WAS BACKWARDS (2026-10-09). `> 0.15` skipped 85% of
+  // months, which is the old rate this paragraph says it replaced, and `> 0.05`
+  // skipped 95% of months in a CHRONIC SHORTAGE — the state the line above
+  // exists to examine more often, not less. Measured on Manhattan below
+  // Houston, Young town, no player: 97 of 120 calls skipped in a quiet decade,
+  // 239 of 253 in a short one, and the city replaced one or two buildings a
+  // year out of ~5,000 — while each replacement densified its lot 5-7x.
+  // The skip is now the stated 15%, 5% when short. Measured after, year 100,
+  // two seeds: floor area +42%/+60%, prime-lot median height 4 -> 9 / 7
+  // floors, 20+ floor buildings 17 -> 157 / 35 -> 218, real flat rent
+  // 5.1x -> 2.1x / 2.8x -> 1.0x of opening, ~10 demolitions a year (0.2% of
+  // stock, still under the 0.5% anchor above).
+  if (rng(s, "dev") < (chronicShort ? 0.05 : 0.15)) return;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
   // This path is 96% of all the square footage this city builds, and it broke
@@ -3976,7 +3994,12 @@ function startCityJob(
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
   // financing, lease-up reserve, NOI and required margin the player sees.
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, entitleBasis);
-  if (!underwriting?.clears) return false;
+  // The anonymous merchant builds at the trade's margin. Below it, the job
+  // goes ahead only if a firm whose own margin it clears takes it (firmMargin
+  // in rivals.ts) — otherwise it is unwound below.
+  const merchantOk = !!underwriting?.clears;
+  if (!underwriting || !underwriting.financeable) return false;
+  if (!merchantOk && (opts?.backdate || hurdleAt(underwriting.plan, streetMargin(s)) < 1)) return false;
   const plan = underwriting.plan;
   sf = plan.sf;
   floors = plan.floors;
@@ -4023,6 +4046,15 @@ function startCityJob(
   // day-one draw against today's cash, which a job forty per cent built
   // eighteen months ago did not take today.
   const claimed = backM > 0 ? null : claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+  if (!claimed && !merchantOk) {
+    // Nobody whose margin it clears would take it: unwind the start.
+    s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.startM === startM));
+    cancelSupplyProject(s, bbl);
+    for (const [u, usf] of Object.entries(cityProgramme)) {
+      if (s.econ.startOwed) s.econ.startOwed[u as BuiltClass] = (s.econ.startOwed[u as BuiltClass] ?? 0) + usf;
+    }
+    return false;
+  }
   // ANONYMOUS IS NOT FREE. Named firms already stamp cost/equity/commitment
   // in claimJob. An unclaimed job used to deliver on schedule with no capital
   // at all — the largest remaining competitor asymmetry. Stamp the same

@@ -2200,6 +2200,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
  *      allowance is construction and a cap that did not move with the cost of
  *      building would quietly fall to nothing over a long game.
  *
+ * MEASURED AGAINST THE MARKET'S OWN DEAL, NOT THE FACE RENT. "95% of the
+ * ask" means 95% of what an ordinary market deal for THIS space nets — the
+ * ask, the full allowance the space draws (first-generation on a shell), and
+ * the free rent the concession market is giving for that term — built by the
+ * same rules that roll the tenants' letters (`marketDealShare`). Scored
+ * against face it was a different instruction from the one on the button: on
+ * a newly delivered office floor a letter at 97% of the ask with a standard
+ * shell allowance netted 0.69 of face (tools/mdga/office-vs-mf.mjs), so
+ * Market refused the market and new office never leased on auto.
+ *
  * Every letter then goes through the same three steps:
  *   - inside the policy        → sign it.
  *   - outside it, first time   → counter ONCE: the allowance trimmed to the
@@ -2228,6 +2238,33 @@ function autoPolicy(s: GameState, h: Holding): AutoPolicy {
   const cap = h.autoTiCapPsfYr;
   return cap === undefined ? base : { ...base, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
 }
+/**
+ * WHAT AN ORDINARY MARKET DEAL FOR THIS SPACE NETS, as a share of the ask.
+ * The tenant-side rules of the letter roll, with every draw at its middle: a
+ * bid at the ask (so the full allowance), TI at the middle of TI_ASK through
+ * the concession market, the cost index and the shell premium on whatever
+ * part of the space is shell, free rent at the middle of its band for this
+ * letter's term. Nothing new is asserted — it is the street's own deal.
+ */
+export function marketDealShare(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  const use = loi.use ?? leasableUses(rec)[0] ?? "office";
+  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const concession = concessionPressure(s.econ, use);
+  const years = Math.max(1, loi.termM / 12);
+  const shell = loi.kind === "new" ? shellShare(rec, h, use, s.month) : 0;
+  const tiPsf = ((lo + hi) / 2) * years * tiPressure(concession) * (s.econ.costIdx ?? 1)
+    * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
+  const freeM = years * 0.55 * concession;
+  const ref = loiMandateScore({ ...loi, rentPsf: 1, tiPsf: 0, freeM, bumpPct: DEFAULT_BUMP_PCT }, 1)
+    - (TI_VALUE * tiPsf) / years / Math.max(1, loiMarket(s, rec, h, loi));
+  // a guard, not a lever: a market so soft the standard deal nets under a
+  // quarter of face is not a reference, it is a market with no price
+  return Math.max(0.25, ref);
+}
+/** The letter's net effective as a share of the market deal's — 1.0 is the market. */
+function autoScore(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  return loiMandateScore(loi, loiMarket(s, rec, h, loi)) / marketDealShare(s, rec, h, loi);
+}
 /** The most allowance the policy funds on this letter, $/sf; Infinity when uncapped. */
 function autoTiLimit(p: AutoPolicy, loi: LOI): number {
   return p.tiCapPsfYr === undefined ? Infinity : Math.round(p.tiCapPsfYr * Math.max(1, loi.termM / 12));
@@ -2236,7 +2273,7 @@ function autoTiLimit(p: AutoPolicy, loi: LOI): number {
 function autoMiss(p: AutoPolicy, loi: LOI, score: number): string | null {
   const lim = autoTiLimit(p, loi);
   if ((loi.tiPsf ?? 0) > lim) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over your $${lim}/sf cap on ${Math.round(loi.termM / 12)} years`;
-  if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of your ask`;
+  if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of a market deal`;
   return null;
 }
 /**
@@ -2307,7 +2344,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
       }
     }
     const pol = autoPolicy(s, h);
-    const miss = () => autoMiss(pol, mine, loiMandateScore(mine, loiMarket(s, rec, h, mine)));
+    const miss = () => autoMiss(pol, mine, autoScore(s, rec, h, mine));
     // sign inside the policy, pass outside it — the end of every path below
     const settle = (prefix: string) => {
       const why = miss();
@@ -2319,7 +2356,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     if (mine.countered) continue;   // countered by hand before auto went on; they are deciding
     // ONE counter: the allowance down to the cap, the rent up to the target
     const tiPsf = Math.min(mine.tiPsf ?? 0, autoTiLimit(pol, mine));
-    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target);
+    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target * marketDealShare(s, rec, h, mine));
     const outcome = tenantCounterOutcome(s, rec, h, mine, {
       rentPsf, tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
     });
@@ -2397,8 +2434,8 @@ export function marketTiPsfYr(s: GameState, use: string): [number, number] {
 export function autoLeaseRule(s: GameState, h: Holding): string {
   const st = h.stance ?? 0;
   const rent = st < 0 ? "Fill: signs whatever rent comes"
-    : st > 0 ? "Push: signs at your ask or better, counters to 5% over"
-    : "Market: signs at 95% of your ask, counters to the ask";
+    : st > 0 ? "Push: signs at a market deal or better, counters to 5% over it"
+    : "Market: signs at 95% of a market deal, counters to the market";
   const cap = autoTiCapToday(s, h);
   const ti = cap === undefined ? "any fit-out" : `fit-out up to $${cap.toFixed(2)}/sf per lease year ($${Math.round(cap * 10)}/sf on 10 years)`;
   return `${rent}; ${ti}. One counter, then sign or pass.`;

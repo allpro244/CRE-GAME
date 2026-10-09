@@ -18,6 +18,9 @@ import Badges from "./Badges";
 import { esc, tipHtml } from "./hoverCard";
 import EventPops from "./EventPops";
 
+/** Context features the harbour's surf breaks on (RealCityLayer.buildSea). */
+const SHORE_KINDS = new Set(["beach", "rock", "marsh", "seawall", "pier", "breakwater"]);
+
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
  * a new `game` every click; subscribing to that identity re-rendered the whole
@@ -414,6 +417,14 @@ export default function MapView() {
               // park ponds stay level with the lawn; creeks and canals go
               // into a channel of their own (RealCityLayer.buildChannels)
               ponds: ringsOf("pond"),
+              // what the sea breaks on: the shore bands, the flat piers and
+              // the breakwaters, so the surf finds the real waterline
+              shore: (ctx?.features ?? [])
+                .filter((f) => SHORE_KINDS.has(String(f.properties?.kind)) && f.geometry.type === "Polygon")
+                .map((f) => ({
+                  ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
+                  kind: String(f.properties?.kind),
+                })),
               streams: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "stream" && f.geometry.type === "Polygon")
                 .map((f) => ({

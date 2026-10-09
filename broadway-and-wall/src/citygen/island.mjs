@@ -2374,7 +2374,31 @@ export function islandConfig(seed, opts = {}) {
   const bigShape = programme.key === "squares" && Dp.rand() < 0.55 ? "round"
     : programme.key === "commons" && Dp.rand() < 0.35 ? "round"
       : "square";
-  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: bigShape });
+  // NOT EVERY TOWN PUT ITS GREAT PARK IN THE MIDDLE (plan 9). Every town
+  // whose programme carries a dominant park (great, greens) dropped it on
+  // the same spot — between downtown and the housing — so the commonest
+  // thing about a generated city was a big green rectangle at its heart.
+  // The owner: "a large central park spawns a tad too often... I want more
+  // randomness in how each city feels." Real ones are scattered: Prospect
+  // Park sits at the edge of its borough, Golden Gate runs out to the ocean,
+  // Forest Park is on the far side of St Louis, Fairmount follows a river.
+  // 58% of those towns now site it off-centre — by a later core, or on
+  // open ground away from the middle — which halves the share of towns with
+  // a great park at their heart (300 seeds: 46% -> ~23%; some of the moves
+  // land near the middle anyway). The halving is the owner's ask, not a
+  // measurement. Its own stream so every other draw in the town is unchanged.
+  let bigAim = midCore;
+  if ((opts.planV ?? 3) >= 9 && (programme.key === "great" || programme.key === "greens")) {
+    const Dcp = dice(stream(s, 0xce47a1));
+    if (Dcp.rand() < 0.58) {
+      const span = Math.sqrt(land.length) * STEP;
+      const away = land.filter((l) => l.edge > bigW * 0.45 && dist(l.p, midCore) > span * 0.32);
+      const later = cores.slice(2).map((c) => c.xy);
+      if (later.length && Dcp.rand() < 0.4) bigAim = later[Math.floor(Dcp.rand() * later.length) % later.length];
+      else if (away.length) bigAim = away[Math.floor(Dcp.rand() * away.length) % away.length].p;
+    }
+  }
+  placePark(bigAim, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: bigShape });
 
   // THE ESPLANADE, which a harbour town has and this one could not.
   //

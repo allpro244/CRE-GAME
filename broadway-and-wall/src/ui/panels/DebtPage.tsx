@@ -401,6 +401,51 @@ export function DebtPage() {
                           <Row k="Closing costs" v={`${usd(fees)} of fee and points${paydown > 0 ? ` plus a ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
                           <Row k="Cash out" v={out > 0 ? `${usd(out)} to the operating account` : "none — the same balance rolls"} />
                         </div>
+                        {/* WHAT YOU PAY NOW AGAINST WHAT YOU WOULD PAY. The single-asset
+                            desk pairs every number with today's; the pool desk quoted
+                            only the new paper, so a refinance that raised the cheque
+                            read the same as one that cut it. Both columns are struck
+                            on the same pool NOI and value the new quote underwrites. */}
+                        {(() => {
+                          const noi = rqt.quality.noi;
+                          const value = rqt.quality.value;
+                          const t = facilityDrawTerms(draw, rqt.ratePct, rqt.ioM, rqt.amortYears, noi, value);
+                          const curDs = fac.monthlyPmt * 12;
+                          const cfNow = noi - curDs;
+                          const cfAfter = noi - t.annualDs;
+                          const signed = (n: number) => `${n < 0 ? "−" : ""}${usd(Math.abs(Math.round(n)))}`;
+                          const pct = (n: number, d = 0) => `${(n * 100).toFixed(d)}%`;
+                          const cell = (k: string, now: string, after: string, bad?: boolean) => (
+                            <tr>
+                              <td>{k}</td>
+                              <td className="num dim">{now}</td>
+                              <td className={"num" + (bad ? " neg" : "")}><strong>{after}</strong></td>
+                            </tr>
+                          );
+                          return (
+                            <table className="tbl" style={{ marginTop: 6 }}>
+                              <thead>
+                                <tr><th>At {usd(draw)}</th><th className="num">Today</th><th className="num">After</th></tr>
+                              </thead>
+                              <tbody>
+                                {cell("Debt on the pool", usd(fac.balance), usd(draw))}
+                                {cell("Rate", `${fac.ratePct.toFixed(2)}%${fac.floating ? " fl" : ""}`,
+                                  `${rqt.ratePct.toFixed(2)}%${rqt.floating ? " fl" : ""}`, rqt.ratePct > fac.ratePct)}
+                                {cell("LTV", value > 0 ? pct(fac.balance / value) : "—", pct(t.ltv), t.ltv > rqt.advance)}
+                                {cell("Coverage (DSCR)", curDs > 0 ? `${(noi / curDs).toFixed(2)}x` : "—",
+                                  t.annualDs > 0 ? `${t.dscr.toFixed(2)}x` : "—", t.annualDs > 0 && t.dscr < rqt.minDSCR)}
+                                {cell("Debt yield", fac.balance > 0 ? pct(noi / fac.balance, 1) : "—",
+                                  draw > 0 ? pct(noi / draw, 1) : "—")}
+                                {cell("Debt service / mo", `−${usd(Math.round(fac.monthlyPmt))}`, `−${usd(t.monthlyPmt)}`,
+                                  t.monthlyPmt > fac.monthlyPmt)}
+                                {cell("Debt service / yr", `−${usd(Math.round(curDs))}`, `−${usd(Math.round(t.annualDs))}`,
+                                  t.annualDs > curDs)}
+                                {cell("Cash flow after debt / yr", signed(cfNow), signed(cfAfter), cfAfter < 0)}
+                                {cell("...per month", signed(cfNow / 12), signed(cfAfter / 12), cfAfter < 0)}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
                         <Slider
                           label="New draw"
                           value={refiLev}

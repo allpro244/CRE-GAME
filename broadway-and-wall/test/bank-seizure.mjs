@@ -1,10 +1,12 @@
-// A BANK FAILURE WITH THE FIRM'S MONEY IN IT: only the haircut is a loss.
+// A BANK FAILURE NEVER TAKES THE FIRM'S CASH.
 //
-// Reported from play: a firm holding ~$230M of sale proceeds lost all of it to
-// "Firm overhead" the month its bank failed. The uninsured balance is frozen
-// (it leaves the account) but the receiver pays most of it back, so the books
-// must expense only the haircut, carry the claim as an asset in net worth, and
-// redeem it as cash later — and the cash identity must close throughout.
+// The owner asked for the deposit choice to go: picking a bank, an operating
+// balance and a sweep was a mess, and in a regional crisis nearly every desk
+// failed with the firm's money in it. Cash now sits inside the insurance limit
+// and in Treasury bills (cashSplit in lenders.ts), the way a real treasury
+// keeps it, so a failing desk stops lending but never seizes a deposit. And a
+// claim on a receiver already carried by an OLD save still pays out, books as
+// a balance-sheet inflow and closes the cash identity.
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -14,40 +16,41 @@ const { parcels } = loadCity(0, E.normalizeParcels);
 let fail = 0;
 const ok = (c, m) => { console.log(`  ${c ? "OK  " : "FAIL"}  ${m}`); if (!c) fail++; };
 
-for (const sweep of [false, true]) {
-console.log(sweep ? "\n  sweep ON (default): only the operating account is at the bank" : "  sweep OFF: every dollar is a deposit");
-const s = E.newGame(4242, parcels);
-s.cash = 230_000_000;
-s.cashMgmt = { sweep };
-const split0 = E.cashSplit(s);
-if (sweep) ok(split0.inBills > 200_000_000 && split0.atBank <= split0.keep, `$${(split0.inBills / 1e6).toFixed(1)}M swept into bills, $${(split0.atBank / 1e6).toFixed(1)}M at the bank`);
-const bank = E.bankOf(s);
-const yr = () => s.books?.find((b) => b.yr === Math.floor(s.month / 12)) ?? { ga: 0, bought: 0, sold: 0, interest: 0 };
-const nw0 = E.netWorth(s, parcels), cash0 = s.cash, b0 = { ...yr() };
-// drive the bank under until the regulator closes it
-for (let i = 0; i < 400 && bank.failedM === undefined; i++) { bank.capital = -1; E.tickLenders(s); }
-ok(bank.failedM !== undefined, `${bank.name} failed`);
-const claim = s.receivership?.[0];
-ok(!!claim, "a claim on the receiver was filed");
-const b1 = yr();
-const exposed = cash0 - s.cash;
-const ga = b1.ga - (b0.ga ?? 0), bought = b1.bought - (b0.bought ?? 0);
-console.log(`  frozen ${(exposed / 1e6).toFixed(1)}M · expensed ${(ga / 1e6).toFixed(1)}M · claim ${(claim.amount / 1e6).toFixed(1)}M · lost ${(claim.lost / 1e6).toFixed(1)}M`);
-ok(Math.abs(ga - claim.lost) < 1, "only the haircut is expensed under overhead");
-ok(Math.abs(bought - claim.amount) < 1, "the claim is booked as an asset exchanged for the cash");
-ok(Math.abs(ga + bought - exposed) < 1, "every frozen dollar is booked (cash identity)");
-const nw1 = E.netWorth(s, parcels);
-ok(Math.abs((nw0 - nw1) - claim.lost) < 2, `net worth falls by the haircut only (${((nw0 - nw1) / 1e6).toFixed(1)}M)`);
-ok(E.attentionItems(s, parcels).some((a) => a.critical && a.key.startsWith("bank-seized:")), "it stops the clock as a critical item");
-// the receiver pays
-const before = s.cash, sold0 = yr().sold ?? 0, int0 = yr().interest ?? 0;
-s.month = claim.payM;
-E.tickReceivership(s);
-const yb = yr();
-ok(Math.abs(s.cash - before - claim.amount) < 1, "the claim comes back as cash");
-ok(Math.abs((yb.sold ?? 0) - (yb.yr === Math.floor(claim.payM / 12) && Math.floor(claim.payM / 12) === Math.floor(claim.seizedM / 12) ? sold0 : 0) - claim.amount) < 1 || (yb.sold ?? 0) >= claim.amount, "redeemed as a balance-sheet inflow, not income");
-ok(Math.abs((yb.interest ?? 0) - (Math.floor(claim.payM / 12) === Math.floor(claim.seizedM / 12) ? int0 : 0)) < 1, "no fake interest income");
-if (sweep) ok(Math.abs((cash0 - exposed) - (split0.inBills + split0.insured)) < 2, "the Treasury bills and the insured balance survive the failure");
+// ---- a failure with $230M of sale proceeds in the account
+{
+  const s = E.newGame(4242, parcels);
+  s.cash = 230_000_000;
+  s.cashMgmt = { sweep: false };          // an old save's "every dollar a deposit" is ignored
+  const split = E.cashSplit(s);
+  ok(split.exposed === 0 && split.atBank <= E.insuredLimit(s) && split.inBills > 229_000_000,
+    `$${(split.inBills / 1e6).toFixed(1)}M in Treasury bills, $${(split.atBank / 1e3).toFixed(0)}K operating, nothing exposed`);
+  const bank = E.bankOf(s);
+  const yr = () => s.books?.find((b) => b.yr === Math.floor(s.month / 12)) ?? { ga: 0, bought: 0 };
+  const nw0 = E.netWorth(s, parcels), cash0 = s.cash, b0 = { ...yr() };
+  for (let i = 0; i < 400 && bank.failedM === undefined; i++) { bank.capital = -1; E.tickLenders(s); }
+  ok(bank.failedM !== undefined, `${bank.name} failed`);
+  ok(s.cash === cash0, "the firm's cash is untouched");
+  ok(!(s.receivership ?? []).length, "no claim on a receiver");
+  const b1 = yr();
+  ok((b1.ga ?? 0) === (b0.ga ?? 0) && (b1.bought ?? 0) === (b0.bought ?? 0), "nothing booked");
+  ok(Math.abs(E.netWorth(s, parcels) - nw0) < 1, "net worth unchanged");
+  ok(!E.attentionItems(s, parcels).some((a) => a.key.startsWith("bank-")), "no bank alert stops the clock");
 }
-console.log(fail ? `${fail} failed` : "bank seizure books correctly");
+
+// ---- an old save's claim on a receiver still pays out
+{
+  const s = E.newGame(4242, parcels);
+  s.cash = 5_000_000;
+  const claim = { from: "First Harbor Bank", amount: 4_000_000, payM: s.month + 12, seizedM: s.month, lost: 1_000_000 };
+  s.receivership = [claim];
+  const yr = () => s.books?.find((b) => b.yr === Math.floor(s.month / 12)) ?? { sold: 0, interest: 0 };
+  const before = s.cash;
+  s.month = claim.payM;
+  E.tickReceivership(s);
+  const yb = yr();
+  ok(Math.abs(s.cash - before - claim.amount) < 1, "an old claim comes back as cash");
+  ok((yb.sold ?? 0) >= claim.amount, "redeemed as a balance-sheet inflow, not income");
+  ok((yb.interest ?? 0) === 0, "no fake interest income");
+}
+console.log(fail ? `${fail} failed` : "a bank failure never takes the firm's cash");
 process.exit(fail ? 1 : 0);

@@ -30,6 +30,8 @@ declare module "@/citygen/index.mjs" {
     };
   }
 
+  /** Fetch a city's baked data (Manhattan's plat) before makeCity. Idempotent. */
+  export function preloadCity(cityId: string): Promise<void>;
   export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number }): GeneratedCity;
   /** The street plan new towns are cut with (see GameState.cityPlan). */
   export const CITY_PLAN: number;

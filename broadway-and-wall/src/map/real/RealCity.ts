@@ -56,6 +56,17 @@ function insetRing(r: P2[], d: number): P2[] | null {
   }
   return ringArea(out) > 1 ? out : null;
 }
+/** Metres from (x, y) to the nearest edge of a ring. */
+function shoreGap(ring: P2[], x: number, y: number): number {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i];
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+    best = Math.min(best, Math.hypot(ax + dx * t - x, ay + dy * t - y));
+  }
+  return best;
+}
 function ringArea(r: P2[]): number {
   let a = 0;
   for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; }
@@ -142,6 +153,187 @@ function rippleNormal(): THREE.CanvasTexture {
   }
   g.putImageData(img, 0, 0);
   return normalFromHeight(c, 3.0);
+}
+
+/**
+ * HOW FAR TO THE SHORE. Every point of the harbour near the island, as metres
+ * to the nearest dry thing — the land, the shore bands, the flat piers and the
+ * breakwaters — and whether that thing is a hard edge (a seawall, a pier) or a
+ * soft one the swell can run up (a beach, rock, marsh). The sea shader reads
+ * it for the colour of the bottom it sees through, where the surf breaks, and
+ * the swash at the waterline. A nearest-point sweep (two passes, eight
+ * neighbours) rather than a blur, so the distance is metres, not a glow.
+ *
+ * Packed as RGBA8: r = sqrt(d / 400 m), which spends the precision at the
+ * waterline where the foam needs it; g = 1 on a hard edge.
+ */
+const SHORE_FAR_M = 400;
+function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: THREE.DataTexture; box: THREE.Vector4 } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of land) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const pad = SHORE_FAR_M + 40;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const span = Math.max(x1 - x0, y1 - y0);
+  // ~2-3 m a texel: the distance is linear between texels, so the filtered
+  // field stays smooth well inside one; bigger only costs load time
+  const N = Math.min(1536, Math.max(256, Math.ceil(span / 2.2)));
+  const px = span / N;   // metres a texel
+  const { g } = makeCanvas(N, N);
+  g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+  const trace = (r: P2[]) => { g.beginPath(); r.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, (x - x0) / px, (y - y0) / px)); g.closePath(); g.fill(); };
+  g.fillStyle = "#f00"; trace(land);
+  for (const d of dry) if (!d.hard && d.ring.length >= 3) trace(d.ring);
+  g.fillStyle = "#ff0";
+  for (const d of dry) if (d.hard && d.ring.length >= 3) trace(d.ring);
+  const src = g.getImageData(0, 0, N, N).data;
+  // nearest dry texel, propagated forward then back
+  const sx = new Int32Array(N * N).fill(-1), sy = new Int32Array(N * N);
+  for (let i = 0; i < N * N; i++) if (src[i * 4] > 127) { sx[i] = i % N; sy[i] = (i / N) | 0; }
+  const relax = (x: number, y: number, nx: number, ny: number, best: number) => {
+    if (nx < 0 || ny < 0 || nx >= N || ny >= N) return best;
+    const j = ny * N + nx, i = y * N + x;
+    if (sx[j] < 0) return best;
+    const d = (sx[j] - x) ** 2 + (sy[j] - y) ** 2;
+    if (d < best) { sx[i] = sx[j]; sy[i] = sy[j]; return d; }
+    return best;
+  };
+  const dist2 = (i: number, x: number, y: number) => (sx[i] < 0 ? Infinity : (sx[i] - x) ** 2 + (sy[i] - y) ** 2);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let b = dist2(y * N + x, x, y);
+    if (b === 0) continue;
+    b = relax(x, y, x - 1, y, b); b = relax(x, y, x - 1, y - 1, b); b = relax(x, y, x, y - 1, b); b = relax(x, y, x + 1, y - 1, b);
+  }
+  for (let y = N - 1; y >= 0; y--) for (let x = N - 1; x >= 0; x--) {
+    let b = dist2(y * N + x, x, y);
+    if (b === 0) continue;
+    b = relax(x, y, x + 1, y, b); b = relax(x, y, x + 1, y + 1, b); b = relax(x, y, x, y + 1, b); b = relax(x, y, x - 1, y + 1, b);
+  }
+  const out = new Uint8Array(N * N * 4);
+  for (let i = 0; i < N * N; i++) {
+    const x = i % N, y = (i / N) | 0;
+    const dm = sx[i] < 0 ? SHORE_FAR_M : Math.min(SHORE_FAR_M, Math.sqrt(dist2(i, x, y)) * px);
+    out[i * 4] = Math.round(Math.sqrt(dm / SHORE_FAR_M) * 255);
+    out[i * 4 + 1] = sx[i] >= 0 && src[(sy[i] * N + sx[i]) * 4 + 1] > 127 ? 255 : 0;
+    out[i * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(out, N, N, THREE.RGBAFormat);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return { tex, box: new THREE.Vector4(x0, y0, 1 / span, 1 / span) };
+}
+
+// The sea's clock, advanced every frame in render().
+const SEA = { seaTime: { value: 0 } };
+
+/**
+ * THE HARBOUR. A stock physically based surface — so the sun lays a road on
+ * it, the sky reflects at a low angle, the buildings shade it and the night
+ * takes it like everything else — with four things the stock one cannot do:
+ *
+ * - **A bottom.** The colour is the floor seen through the water: pale
+ *   turquoise over the sand at the waterline, green-blue over the shelf, a
+ *   deep blue past a couple of hundred metres, mottled by sandbars and weed.
+ * - **Surf.** Swell lines roll in toward every soft shore, steepen and break
+ *   in the last thirty metres, and the swash runs up the beach and drains
+ *   back, leaving lace. Hard edges — seawalls, piers, breakwaters — get a
+ *   narrow churn instead.
+ * - **Wind.** Three ripple scales crossing at different bearings and speeds,
+ *   so the tile never repeats where the eye can find it, and gusts: patches
+ *   of ruffled water sliding downwind across glassier stretches. Calmer in
+ *   the lee of the shore, and smoothing out into a sheen with distance.
+ * - **Foam is matte.** It takes the light, not the sky.
+ */
+function seaMaterial(field: { tex: THREE.DataTexture; box: THREE.Vector4 }, ripple: THREE.Texture, env: THREE.Texture | null): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.07, metalness: 0.0, transparent: true, depthWrite: false,
+    envMap: env, envMapIntensity: 1.0,
+  });
+  const rip = ripple.clone();
+  rip.repeat.set(1, 1); rip.offset.set(0, 0); rip.wrapS = rip.wrapT = THREE.RepeatWrapping;
+  rip.needsUpdate = true;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, SEA, { seaShore: { value: field.tex }, seaBox: { value: field.box }, seaRipple: { value: rip } });
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vSeaW;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvSeaW = (modelMatrix * vec4(transformed, 1.0)).xy;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", `#include <common>
+varying vec2 vSeaW;
+uniform sampler2D seaShore, seaRipple;
+uniform vec4 seaBox;
+uniform float seaTime;
+float seaD, seaHard, seaFoam;
+float sHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
+float sNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(sHash(i), sHash(i + vec2(1.0, 0.0)), u.x), mix(sHash(i + vec2(0.0, 1.0)), sHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * sNoise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(1.7, 9.2); a *= 0.5; } return s; }`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+{
+  vec4 sf = texture2D(seaShore, (vSeaW - seaBox.xy) * seaBox.zw);
+  seaD = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)};
+  seaHard = sf.g;
+  float t = seaTime;
+  float camD = length(vViewPosition);
+  float near = 1.0 - smoothstep(700.0, 2400.0, camD);
+  // the bottom: sand at the waterline, the shelf, then deep water; sandbars and weed beds mottle it
+  float mott = sFbm(vSeaW * 0.0045);
+  float shelf = clamp((seaD + (mott - 0.5) * 120.0) / 300.0, 0.0, 1.0);
+  vec3 cSand = vec3(0.30, 0.56, 0.50), cShelf = vec3(0.07, 0.33, 0.40), cDeep = vec3(0.022, 0.12, 0.22);
+  vec3 wc = mix(cSand, cShelf, smoothstep(0.0, 0.16, shelf));
+  wc = mix(wc, cDeep, smoothstep(0.1, 0.85, shelf));
+  wc *= 0.9 + 0.2 * sFbm(vSeaW * 0.02 + 3.0);
+  float soft = 1.0 - seaHard;
+  // swell lines rolling in, steepening and breaking in the surf zone
+  float ph = seaD * 0.15 + t * 0.85 + sNoise(vSeaW * 0.008) * 7.0;
+  float crest = pow(0.5 + 0.5 * sin(ph), 7.0);
+  float zone = 1.0 - smoothstep(4.0, 46.0, seaD);
+  float breakup = sFbm(vSeaW * vec2(0.09, 0.09) + vec2(t * 0.04, -t * 0.03));
+  float surf = crest * zone * smoothstep(0.3, 0.55, breakup + 0.3 * zone) * soft;
+  // whitecaps out where a gust is blowing
+  float gustF = smoothstep(0.45, 0.8, sFbm(vSeaW * 0.0055 + vec2(t * 0.011, t * 0.004)));
+  // small and streaked along the wind; each lives a few seconds
+  float caps = smoothstep(0.9, 0.98, sNoise(vSeaW * vec2(0.42, 0.16) + vec2(t * 0.5, t * 0.05)))
+    * smoothstep(0.55, 0.8, sNoise(vSeaW * 0.05 - vec2(t * 0.2, 0.0)))
+    * gustF * near * smoothstep(60.0, 160.0, seaD);
+  // the swash runs up the beach and drains back
+  float reach = 2.2 + 1.8 * (0.5 + 0.5 * sin(t * 0.85 + sNoise(vSeaW * 0.015) * 6.28));
+  float swash = 1.0 - smoothstep(reach * 0.35, reach, seaD);
+  // lace: the foam a broken wave leaves behind it
+  float lace = smoothstep(0.5, 0.72, sFbm(vSeaW * 0.3 + vec2(t * 0.11, -t * 0.08))) * (1.0 - smoothstep(2.0, 18.0, seaD)) * soft * near;
+  // hard edges only churn
+  float churn = seaHard * (1.0 - smoothstep(0.4, 2.2, seaD)) * smoothstep(0.35, 0.65, sNoise(vSeaW * 0.5 + vec2(t * 0.4, t * 0.25)));
+  seaFoam = max(max(surf, swash * mix(0.6, 1.0, soft)), max(max(lace * 0.75, churn), caps * 0.55));
+  seaFoam *= smoothstep(0.15, 0.55, sFbm(vSeaW * 0.22 + vec2(t * 0.12, 0.0)) + seaFoam * 0.35);
+  seaFoam = clamp(seaFoam, 0.0, 1.0);
+  diffuseColor.rgb = mix(wc, vec3(0.9, 0.93, 0.94), seaFoam);
+  // clear at the very edge, so the wet sand shows through, then deepening
+  float wet = smoothstep(0.0, 0.9, seaD);
+  float body = mix(0.72, 0.97, smoothstep(0.0, 30.0, seaD));
+  diffuseColor.a = wet * max(body, seaFoam * 0.95);
+}`)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.85, seaFoam);")
+      .replace("#include <normal_fragment_maps>", `{
+  vec2 w = vSeaW;
+  float camD = length(vViewPosition);
+  float detail = 1.0 - smoothstep(500.0, 2600.0, camD);
+  vec2 n1 = texture2D(seaRipple, w / 29.0 + vec2(seaTime * 0.017, seaTime * 0.004)).xy * 2.0 - 1.0;
+  vec2 n2 = texture2D(seaRipple, mat2(0.8, -0.6, 0.6, 0.8) * w / 11.0 + vec2(-seaTime * 0.031, seaTime * 0.038)).xy * 2.0 - 1.0;
+  vec2 n3 = texture2D(seaRipple, mat2(0.28, 0.96, -0.96, 0.28) * w / 91.0 + vec2(seaTime * 0.005, -seaTime * 0.003)).xy * 2.0 - 1.0;
+  // gusts: ruffled patches sliding downwind over glassier water
+  float gust = smoothstep(0.32, 0.72, sFbm(w * 0.0055 + vec2(seaTime * 0.011, seaTime * 0.004)));
+  vec2 g = n3 * 0.8 + (n1 * 0.6 + n2 * 0.45 * detail) * (0.45 + 1.0 * gust);
+  g *= mix(0.3, 1.0, smoothstep(0.0, 30.0, seaD));   // calmer in the lee of the shore
+  g *= mix(0.4, 1.0, detail);                          // far off, the ripples average into a sheen
+  g *= 1.0 - seaFoam * 0.8;                            // foam lies flat
+  // the light's space is the world's, eye-centred and unrotated
+  normal = normalize(vec3(g * 0.5, 1.0));
+}`);
+  };
+  mat.customProgramCacheKey = () => "bw-sea";
+  return mat;
 }
 
 /**
@@ -733,9 +925,62 @@ class PolyGrid {
   }
 }
 
+/**
+ * A GROWABLE FLOAT32 COLUMN. The vertex buffers used to be plain `number[]`,
+ * which V8 stores as 8-byte doubles with up to half again of growth slack —
+ * and a Buf writes 22 of them per vertex. Manhattan below 14th Street at
+ * Metropolis build-out is 11.8 million vertices, and the plain arrays alone
+ * took the tab's heap to 4.3 GB before a single one reached the GPU, which is
+ * at Chrome's per-tab ceiling; below 59th Street went over it and the tab died.
+ * The GPU only ever sees float32, so storing float32 here loses nothing.
+ */
+class F32 {
+  // FILLED IN CHUNKS, NOT BY DOUBLING. A doubled array is on average a third
+  // empty and briefly held twice while it is copied, which on a 23-million-
+  // vertex city was a gigabyte of heap holding nothing. Chunks grow to 4 MB and
+  // are only ever joined once, when the column is taken.
+  private full: Float32Array[] = [];
+  private done = 0;
+  private cur = new Float32Array(256);
+  private at = 0;
+  get length() { return this.done + this.at; }
+  push(x: number, y?: number, z?: number, w?: number) {
+    const n = arguments.length;
+    if (this.at + n > this.cur.length) {
+      this.full.push(this.cur.subarray(0, this.at)); this.done += this.at;
+      this.cur = new Float32Array(Math.min(this.cur.length * 2, 1 << 20)); this.at = 0;
+    }
+    const a = this.cur; let i = this.at;
+    a[i++] = x; if (n > 1) a[i++] = y!; if (n > 2) a[i++] = z!; if (n > 3) a[i++] = w!;
+    this.at = i;
+  }
+  /** Overwrite one value already written (the newest ones, in practice). */
+  put(i: number, v: number) {
+    if (i >= this.done) { this.cur[i - this.done] = v; return; }
+    let o = this.done;
+    for (let k = this.full.length - 1; k >= 0; k--) {
+      o -= this.full[k].length;
+      if (i >= o) { this.full[k][i - o] = v; return; }
+    }
+  }
+  /** The written values, exactly sized; the column is spent afterwards. */
+  take(): Float32Array {
+    let out: Float32Array;
+    if (!this.full.length) out = this.cur.length - this.at > 4096 ? this.cur.slice(0, this.at) : this.cur.subarray(0, this.at);
+    else {
+      out = new Float32Array(this.length);
+      let o = 0;
+      for (const c of this.full) { out.set(c, o); o += c.length; }
+      out.set(this.cur.subarray(0, this.at), o);
+    }
+    this.full = []; this.done = 0; this.cur = new Float32Array(0); this.at = 0;
+    return out;
+  }
+}
+
 class Buf {
-  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = []; ao: number[] = [];
-  pt: number[] = []; tc: number[] = []; ac: number[] = [];
+  pos = new F32(); nrm = new F32(); uv = new F32(); col = new F32(); ao = new F32();
+  pt = new F32(); tc = new F32(); ac = new F32();
   /** how high (m) the street's shade climbs the walls written next (see the facade shader) */
   aoH = 3.5;
   /** the paint scheme of the walls written next (PAINT_FRAG): wall rgb + amount, trim, accent (r < 0: as drawn) */
@@ -753,7 +998,8 @@ class Buf {
     try { f(); } finally { this.paint = NO_PAINT.wall; this.trimc = NO_PAINT.trim; this.accent = NO_PAINT.accent; }
   }
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], uvs: number[][], col: number[]) {
-    for (const [p, t] of [[a, uvs[0]], [b, uvs[1]], [c, uvs[2]], [a, uvs[0]], [c, uvs[2]], [d, uvs[3]]] as [number[], number[]][]) this.v(p, n, t, col);
+    this.v(a, n, uvs[0], col); this.v(b, n, uvs[1], col); this.v(c, n, uvs[2], col);
+    this.v(a, n, uvs[0], col); this.v(c, n, uvs[2], col); this.v(d, n, uvs[3], col);
   }
   tri(a: number[], b: number[], c: number[], n: number[], col: number[]) {
     for (const p of [a, b, c]) this.v(p, n, [p[0] * 0.25, p[1] * 0.25], col);
@@ -769,21 +1015,33 @@ class Buf {
       for (const p of [pts[0], pts[i], pts[i + 1]]) this.v(p, [nx, ny, nz], uvOf(p), col);
     }
   }
+  /**
+   * Hand the vertices over as a geometry. This SPENDS the buffer: its columns
+   * move into the attributes rather than being copied, so a city's worth of
+   * vertices is held once and not twice.
+   */
   geometry(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nrm, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
-    g.setAttribute("aoh", new THREE.Float32BufferAttribute(this.ao.length === this.count ? this.ao : new Array(this.count).fill(3.5), 1));
+    const n = this.count;
     // the paint scheme rides only on walls; a buffer filled by hand (ground,
     // water) carries none, and gets the plain one at every vertex
-    const n = this.count, fill = (a: number[], d: number[]) => a.length === n * d.length ? a : Array.from({ length: n }, () => d).flat();
-    g.setAttribute("paint", new THREE.Float32BufferAttribute(fill(this.pt, NO_PAINT.wall), 4));
-    g.setAttribute("trimc", new THREE.Float32BufferAttribute(fill(this.tc, NO_PAINT.trim), 3));
-    g.setAttribute("accent", new THREE.Float32BufferAttribute(fill(this.ac, NO_PAINT.accent), 3));
+    const col = (c: F32, d: number[]) => {
+      if (c.length === n * d.length) return c.take();
+      c.take();
+      const out = new Float32Array(n * d.length);
+      for (let i = 0; i < out.length; i++) out[i] = d[i % d.length];
+      return out;
+    };
+    g.setAttribute("position", new THREE.BufferAttribute(this.pos.take(), 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(this.nrm.take(), 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(this.uv.take(), 2));
+    g.setAttribute("color", new THREE.BufferAttribute(this.col.take(), 3));
+    g.setAttribute("aoh", new THREE.BufferAttribute(col(this.ao, [3.5]), 1));
+    g.setAttribute("paint", new THREE.BufferAttribute(col(this.pt, NO_PAINT.wall), 4));
+    g.setAttribute("trimc", new THREE.BufferAttribute(col(this.tc, NO_PAINT.trim), 3));
+    g.setAttribute("accent", new THREE.BufferAttribute(col(this.ac, NO_PAINT.accent), 3));
     // how many of this building's rooms are lit after dark (see setOccupancy)
-    g.setAttribute("lit", new THREE.Float32BufferAttribute(new Float32Array(this.count).fill(1), 1));
+    g.setAttribute("lit", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
     g.computeBoundingSphere();
     return g;
   }
@@ -808,7 +1066,7 @@ export interface SchemeModel {
 export let activeCity: RealCityLayer | null = null;
 
 interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
-interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
+interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: Float32Array }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 /**
  * How far a building's reading may drift before it is repainted. Display
@@ -1010,6 +1268,7 @@ export class RealCityLayer {
       // about half a metre a second downwind, a little across
       const tt = performance.now() / 1000;
       for (const w of this.waves) w.tex.offset.set((tt * 0.5) / w.tile, (tt * 0.12) / w.tile);
+      SEA.seaTime.value = tt % 3600;
     }
     this.renderer.render(this.scene, this.camera);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
@@ -2062,6 +2321,11 @@ export class RealCityLayer {
         if (!sg || sg.L < 1) continue;
         const ux = (sg.b[0] - sg.a[0]) / sg.L, uy = (sg.b[1] - sg.a[1]) / sg.L;
         const t = d - sg.s0, x = sg.a[0] + ux * t, y = sg.a[1] + uy * t;
+        // The quay line closes on itself, and its closing leg (and any jump
+        // between two runs of seawall) is a chord across open water: a pier
+        // there stood out in the harbour joined to nothing. Only where the
+        // line actually runs along the shore.
+        if (land && shoreGap(land, x, y) > 6) continue;
         // the water side
         let ox = -uy, oy = ux;
         if (onLand(x + ox * 25, y + oy * 25)) { ox = -ox; oy = -oy; }
@@ -2736,7 +3000,7 @@ export class RealCityLayer {
       B.quad([a[0], a[1], Z], [b[0], b[1], Z], [b[0] + nx * w, b[1] + ny * w, Z], [a[0] + nx * w, a[1] + ny * w, Z], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [A, 0, 0]);
       // fix the far edge to transparent: the quad's last two vertices carry alpha 0
       const end = B.col.length;
-      for (const vi of [2, 4, 5]) B.col[end - (6 - vi) * 3] = 0;
+      for (const vi of [2, 4, 5]) B.col.put(end - (6 - vi) * 3, 0);
       // the convex corner after this edge: a fan between the two bands
       const [mx, my] = nOf((i + 1) % n);
       const cr = nx * my - ny * mx;
@@ -2747,7 +3011,7 @@ export class RealCityLayer {
           const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
           B.tri([b[0], b[1], Z], [b[0] + (d1[0] / l1) * w, b[1] + (d1[1] / l1) * w, Z], [b[0] + (d2[0] / l2) * w, b[1] + (d2[1] / l2) * w, Z], [0, 0, 1], [A, 0, 0]);
           const e2 = B.col.length;
-          B.col[e2 - 6] = 0; B.col[e2 - 3] = 0;
+          B.col.put(e2 - 6, 0); B.col.put(e2 - 3, 0);
         }
       }
     }
@@ -3411,20 +3675,19 @@ export class RealCityLayer {
     catcher.visible = this.quality !== "low";
     this.catcher = catcher;
     this.scene.add(catcher);
-    // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
-    // glossy veneer over it — the land cut out — gives the sun a road on the
-    // sea and the sky something to reflect in, and leaves the shoal colours
-    // underneath showing through.
+    // THE HARBOUR. MapLibre paints the water flat; over it, the land cut out,
+    // goes a sea with a bottom, a surf and a wind (seaMaterial), drawn nearly
+    // opaque out on the open water and clearing at the waterline so the wet
+    // sand of the shore bands shows through.
     const landLL = (this.ctx as { land?: P2[] }).land;
     if (landLL && landLL.length >= 4) {
       const land = landLL.map((q) => this.project(q));
       const outer = new THREE.Shape([new THREE.Vector2(-30000, -30000), new THREE.Vector2(30000, -30000), new THREE.Vector2(30000, 30000), new THREE.Vector2(-30000, 30000)]);
       const holePts = (ringArea(land) > 0 ? land.slice().reverse() : land).map(([x, y]) => new THREE.Vector2(x, y));
       outer.holes.push(new THREE.Path(holePts));
-      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), new THREE.MeshStandardMaterial({
-        color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
-        normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
-      }));
+      const dry = ((this.ctx as { shore?: { ring: P2[]; kind: string }[] }).shore ?? [])
+        .map((d) => ({ ring: d.ring.map((q) => this.project(q)), hard: d.kind === "seawall" || d.kind === "pier" || d.kind === "breakwater" }));
+      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), seaMaterial(shoreField(land, dry), this.waves[0]?.tex ?? rippleNormal(), this.skyEnv));
       sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
       this.scene.add(sea);
       // the park ponds take the same glossy, rippled skin
@@ -3435,7 +3698,10 @@ export class RealCityLayer {
         if (r.length >= 3) shapes.push(new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))));
       }
       if (shapes.length) {
-        const pm = new THREE.Mesh(new THREE.ShapeGeometry(shapes), sea.material);
+        const pm = new THREE.Mesh(new THREE.ShapeGeometry(shapes), new THREE.MeshStandardMaterial({
+          color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
+          normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
+        }));
         pm.position.z = 0.025; pm.receiveShadow = true; pm.renderOrder = -3;
         this.scene.add(pm);
       }
@@ -3452,22 +3718,38 @@ export class RealCityLayer {
         : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
-      const mesh = new THREE.Mesh(b.geometry(), mat);
+      const geo = b.geometry();
+      // THE GPU KEEPS ITS OWN COPY. Position, colour and lit are rewritten
+      // after the build (a demolition flattens, a tint repaints, occupancy
+      // lights rooms); nothing reads the rest again, so their arrays are let
+      // go once uploaded instead of sitting in the heap for the whole session.
+      for (const k of ["normal", "uv", "aoh", "paint", "trimc", "accent"]) {
+        (geo.getAttribute(k) as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) {
+          this.array = new Float32Array(0);
+        });
+      }
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
       if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
+    // the buffers are spent (Buf.geometry); a later build starts on fresh ones
+    this.bufs = new Map();
     this.bindRanges(this.deeds, this.meshes);
   }
 
   /** Point each deed's ranges at the mesh they live in, and keep their base colours so state tints can be undone. */
   private bindRanges(deeds: Map<string, Deed>, meshes: Map<string, THREE.Mesh>) {
+    // one float32 copy of each mesh's colours, and every range a window on it:
+    // a copied number[] per range was 24 bytes a vertex across the whole city
+    const bases = new Map<THREE.Mesh, Float32Array>();
     for (const [, d] of deeds) {
       for (const r of d.ranges) {
         r.mesh = meshes.get(r.buf);
         if (!r.mesh) continue;
-        const col = r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-        r.base = Array.from((col.array as Float32Array).slice(r.start * 3, (r.start + r.count) * 3));
+        let all = bases.get(r.mesh);
+        if (!all) bases.set(r.mesh, (all = ((r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute).array as Float32Array).slice()));
+        r.base = all.subarray(r.start * 3, (r.start + r.count) * 3);
       }
     }
   }

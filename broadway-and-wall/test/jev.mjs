@@ -136,7 +136,14 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
   const offered = (x) => E.buildJevRequest(E.setJevFirms(g0, { firms: [{ id: x, charter: "valueadd" }] }), parcels, x).ctx.buy.length;
   const ranked = E.defaultJevFirms(g0, parcels, 99);
   const id = ranked.find((x) => offered(x) > 0) ?? ranked[0];
-  let g = E.setJevFirms(g0, { firms: [{ id, charter: "valueadd" }] });
+  // NO REFUSAL HERE IS ABOUT MONEY. The shortlist is struck on the firm's
+  // cash and line today and the act lands next month; a firm sitting on its
+  // $500K reserve (r10 on the plan-4 reference town: $469K against a $309K
+  // pick) can lose the close to the month in between, which jevBuy rightly
+  // refuses and logs. What this asserts is that the ANSWER drives the buy, so
+  // the firm is given the headroom levered-close gives its buyer.
+  const g1 = { ...g0, rivals: g0.rivals.map((x) => (x.id === id ? { ...x, cash: x.cash + 5_000_000 } : x)) };
+  let g = E.setJevFirms(g1, { firms: [{ id, charter: "valueadd" }] });
   const built = E.buildJevRequest(g, parcels, id);
   const pick = built.ctx.buy[0];
   check(!!pick, `the firm is offered ${built.ctx.buy.length} affordable listings`);
@@ -169,21 +176,25 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
   // SELL — a sure sale lists at the mapped ask. (A year in, so the book has been held twelve months.)
   let gy = fresh();
   for (let m = 0; m < 13; m++) gy = step(gy);
-  gy = E.setJevFirms(gy, { firms: [{ id, charter: "valueadd" }] });
-  const builtY = E.buildJevRequest(gy, parcels, id);
+  // The firm asked about selling is one with a year-old book: the buyer above
+  // was chosen for buying power and may hold nothing it has had twelve months.
+  const sellable = (x) => E.buildJevRequest(E.setJevFirms(gy, { firms: [{ id: x, charter: "valueadd" }] }), parcels, x).ctx.sell.length;
+  const sid = E.defaultJevFirms(gy, parcels, 99).find((x) => sellable(x) > 0) ?? id;
+  gy = E.setJevFirms(gy, { firms: [{ id: sid, charter: "valueadd" }] });
+  const builtY = E.buildJevRequest(gy, parcels, sid);
   const sellQ = Object.keys(builtY.request.questions).find((q) => q.startsWith("sell_"));
   check(!!sellQ, `a year in, the firm is asked about ${builtY.ctx.sell.length} holdings`);
   const sbbl = sellQ.slice(5);
   let s4 = await E.runJevPeriod(gy, parcels, { answer: fixture({ [sellQ]: { type: "noul", noul: 0.95 } }) });
   s4 = step(s4);
-  const li = s4.listings.find((l) => l.bbl === sbbl && l.sellerId === id);
+  const li = s4.listings.find((l) => l.bbl === sbbl && l.sellerId === sid);
   const rec = E.resolveRec(parcels, s4, sbbl);
-  const conv = E.conveyedValue(s4, rec, sbbl, false, E.assetGrade(rival(s4, id), rec));
+  const conv = E.conveyedValue(s4, rec, sbbl, false, E.assetGrade(rival(s4, sid), rec));
   const mult = 1.14 - 0.14 * (0.95 - 0.8) / 0.2;
   check(!!li && li.ask === Math.round(conv * mult / 1000) * 1000, `sell p=0.95 lists ${sbbl} at ${mult.toFixed(3)}x conveyed value (${li?.ask})`);
   let s5 = await E.runJevPeriod(gy, parcels, { answer: fixture(Object.fromEntries(Object.keys(builtY.request.questions).filter((q) => q.startsWith("sell_")).map((q) => [q, { type: "noul", noul: 0.05 }]))) });
   s5 = step(s5);
-  check(s5.jev.log.some((l) => l.firmId === id && l.point === "sell" && l.path === "pass"), "every holding at p=0.05 is a hold: the scripted trim is skipped");
+  check(s5.jev.log.some((l) => l.firmId === sid && l.point === "sell" && l.path === "pass"), "every holding at p=0.05 is a hold: the scripted trim is skipped");
 }
 
 // (a) REFI, BUILD, DISTRESS — found by walking a scripted run to where each is asked.

@@ -84,7 +84,7 @@ function migrateNoAge(state: GameState) {
   for (const b of state.founderBids ?? []) strip(b);
 }
 
-export const SAVE_VERSION = 39 as const;
+export const SAVE_VERSION = 40 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
@@ -151,7 +151,13 @@ const GROUND_MOVED_AT: Record<string, number> = {
   // bearing, a re-cut partition — bump SAVE_VERSION and set this to the new
   // number IN THE SAME COMMIT. That is the whole contract, and the reason this
   // table exists instead of one global constant.
-  manhattan: 39,
+  //
+  // v40: IT MOVED. Manhattan's plat is now the city's real cadastre (every
+  // block and lot from MapPLUTO, BBLs and addresses included) instead of
+  // lattices over a traced coast — see manhattan.mjs. No deed in a v39
+  // Manhattan campaign exists on the new ground. The generated island's plat
+  // is untouched, so its watermark stays at 39 and its saves still open.
+  manhattan: 40,
 };
 
 /**

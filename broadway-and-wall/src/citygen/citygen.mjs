@@ -216,6 +216,59 @@ function erode(ring, dOf) {
   return r ? cleanRing(r) : null;
 }
 
+/**
+ * PER-EDGE INSET THAT FOLLOWS THE SHAPE (street plan 5). `erode` clips the
+ * ring by one half-plane per edge, which is exact for a convex lot and
+ * destructive for any other: on an L-shaped or notched lot the half-plane of
+ * an edge beside the inside corner runs straight across the lot and cuts a
+ * whole wing away. Real tax lots are notched all the time (Manhattan: one lot
+ * in six over 5,000 sf), and that is why opening-day buildings stood in one
+ * corner of their lot behind a forecourt nobody built. This moves each edge
+ * in by its own setback and re-joins neighbouring edges where their offset
+ * lines meet — a mitred offset, the same shape smaller. Returns null when the
+ * offset is too deep for the shape (inverted, self-crossing or outside the
+ * lot), and the caller falls back to `erode`.
+ */
+function offsetEdges(ring, dOf) {
+  const n = ring.length;
+  if (n < 3) return null;
+  const ccw = ringArea(ring) > 0;
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i], b = ring[(i + 1) % n];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-9) return null;
+    const nx = ccw ? -ey / len : ey / len, ny = ccw ? ex / len : -ex / len;   // inward normal
+    const d = typeof dOf === "function" ? dOf(Math.atan2(ey, ex), i) : dOf;
+    lines.push({ p: [a[0] + nx * d, a[1] + ny * d], u: [ex / len, ey / len] });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const L0 = lines[(i + n - 1) % n], L1 = lines[i];
+    const den = L0.u[0] * L1.u[1] - L0.u[1] * L1.u[0];
+    if (Math.abs(den) < 1e-6) { out.push(L1.p); continue; }          // collinear edges: no corner
+    const t = ((L1.p[0] - L0.p[0]) * L1.u[1] - (L1.p[1] - L0.p[1]) * L1.u[0]) / den;
+    const q = [L0.p[0] + L0.u[0] * t, L0.p[1] + L0.u[1] * t];
+    // a mitre past four times the setback at a needle corner is a spike
+    if (Math.hypot(q[0] - ring[i][0], q[1] - ring[i][1]) > 40) return null;
+    out.push(q);
+  }
+  const a1 = ringArea(out), a0 = ringArea(ring);
+  if (Math.sign(a1) !== Math.sign(a0) || Math.abs(a1) < Math.abs(a0) * 0.05 || Math.abs(a1) > Math.abs(a0)) return null;
+  for (const v of out) if (!inRing(v, ring) && distToRing(v, ring) > 0.05) return null;
+  for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+    if (i === 0 && j === n - 1) continue;
+    const p1 = out[i], p2 = out[(i + 1) % n], p3 = out[j], p4 = out[(j + 1) % n];
+    const d1 = (p4[0] - p3[0]) * (p1[1] - p3[1]) - (p4[1] - p3[1]) * (p1[0] - p3[0]);
+    const d2 = (p4[0] - p3[0]) * (p2[1] - p3[1]) - (p4[1] - p3[1]) * (p2[0] - p3[0]);
+    const d3 = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]);
+    const d4 = (p2[0] - p1[0]) * (p4[1] - p1[1]) - (p2[1] - p1[1]) * (p4[0] - p1[0]);
+    if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return null;
+  }
+  return out;
+}
+
 function dilateConvex(ring, d) {
   const ccw = ringArea(ring) > 0;
   const [x0, y0, x1, y1] = bboxOfRing(ring);
@@ -436,7 +489,8 @@ export function generateCity(cfg) {
   // Which street plan the old quarters use: 1 = per-cell splitting (every
   // save made before plan 2 existed), 2 = streets first, 3 = streets first
   // with vacancy by settlement order (WHERE A YOUNG TOWN IS EMPTY), 4 = the
-  // frontage plat (THE FRONTAGE PLAT; generated islands only). Read from the config
+  // frontage plat (THE FRONTAGE PLAT; generated islands only), 5 = notched lots
+  // inset along their own shape (offsetEdges). Read from the config
   // so a save rebuilds the exact town it was played in.
   const PLAN_V = cfg.planV ?? 3;
   // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
@@ -2364,6 +2418,8 @@ export function generateCity(cfg) {
         // did before — the shape changes, the area does not, and nothing
         // downstream of coverage moves by a square foot.
         const PARTY = 0.12;
+        // plan 5: a notched lot is inset along its own shape (offsetEdges)
+        const shrink = (r, dOf) => (PLAN_V >= 5 && !isConvex(r) ? offsetEdges(r, dOf) ?? erode(r, dOf) : erode(r, dOf));
         const party = [];
         for (let i = 0; i < lotRing.length; i++) {
           const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
@@ -2373,7 +2429,7 @@ export function generateCity(cfg) {
         const streetEdges = party.filter((x) => !x).length;
         if (streetEdges === 0) {
           // Landlocked: no frontage, so there is nothing to set back from.
-          footprint = erode(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
+          footprint = shrink(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
             ?? insetRingPerp(lotRing, 1.2);
         } else if (FRONTAGE && rearYard(lotRing, party, d)) {
           // THE YARD GOES AT THE BACK (plan 4). The solve below found the
@@ -2390,7 +2446,7 @@ export function generateCity(cfg) {
           // (a working wharf is open to the street by necessity).
           const ry = rearYard(lotRing, party, d);
           const want = coverage * areaM2;
-          const cut = (dd) => erode(lotRing, (_ang, i) => (ry.rear[i] ? dd : party[i] ? ry.sideSB : ry.frontSB));
+          const cut = (dd) => shrink(lotRing, (_ang, i) => (ry.rear[i] ? dd : party[i] ? ry.sideSB : ry.frontSB));
           let lo = 0, hi = ry.depth * 0.92, best = cut(0);
           for (let k = 0; k < 9; k++) {
             const mid = (lo + hi) / 2;
@@ -2401,7 +2457,7 @@ export function generateCity(cfg) {
           footprint = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
         } else {
           const want = coverage * areaM2;
-          const cut = (dd) => erode(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
+          const cut = (dd) => shrink(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
           let lo = 0, hi = side * 0.6, best = cut(0);
           for (let k = 0; k < 9; k++) {
             const mid = (lo + hi) / 2;

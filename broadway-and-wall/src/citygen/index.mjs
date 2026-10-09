@@ -165,8 +165,18 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * lots 35% -> 11%, corner lots 40-60% -> about a third (organic quarters,
  * which really are small-blocked, still half), lot count +7% on average.
  * Plan-3 towns rebuild byte-identical; every change is behind the plan.
+ *
+ * Plan 5 insets a NOTCHED lot along its own shape (citygen.mjs offsetEdges).
+ * The footprint step clipped a lot by one half-plane per edge, exact for a
+ * convex lot and destructive for an L-shaped one: the edge beside the inside
+ * corner cut a whole wing away, so opening-day buildings stood in one corner
+ * of their lot behind a forecourt nobody built. Measured on Manhattan below
+ * 14th Street (real tax lots, a sixth of those over 5,000 sf are notched):
+ * the worst tenth of buildings covered 37% of their lot, now 61%; buildings
+ * under 35% coverage on lots over 5,000 sf 239 -> 14. Generated towns cut
+ * only convex lots, so plan 5 is byte-identical to plan 4 there.
  */
-export const CITY_PLAN = 4;
+export const CITY_PLAN = 5;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

@@ -2216,20 +2216,35 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // room was a rail holding the model up. A repudiated facility has no room in
   // it at all, and a developer whose bank failed is not handed the fit-out
   // money on the way out the door.
+  // AND IT STAYS WITH THE LENDER UNTIL IT IS SPENT. A construction lender
+  // does not wire the fit-out budget to the sponsor on opening day; it holds
+  // the TI/LC and interest lines and advances them as the costs arrive. Paying
+  // it all out at delivery charged the coupon on money sitting idle in the
+  // operating account, and made every lease-up read as the firm bleeding cash
+  // month after month while it was only spending its own budget. Now it rides
+  // on the takeout as undrawn room (Loan.leaseUpRoom) and is drawn at each
+  // signing and for each month the building cannot carry itself. A vehicle
+  // deed keeps the old release: its cash moves through the fund's account.
   const lease = d.leaseUpReserve ?? 0;
+  let heldReserve = 0;
   if (lease > 0) {
     const room = Math.max(0, d.commitment - d.drawn);
     const advance = Math.min(lease, room);
     d.drawn += advance;
-    d.loanBalance += advance;
-    s.cash += advance;
-    logBooks(s, "dev", -advance, d.bbl);
+    if (h.fundOwned) {
+      d.loanBalance += advance;
+      s.cash += advance;
+      logBooks(s, "dev", -advance, d.bbl);
+    } else heldReserve = advance;
     s.news.unshift({
       q: s.month, kind: advance < lease ? "warn" : "info",
       text: advance < lease
         ? `The lease-up reserve at ${rec.address} was ${money(lease)}, and only ${money(advance)} of it `
           + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
-        : `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`,
+        : h.fundOwned
+          ? `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`
+          : `The lease-up reserve at ${rec.address} — ${money(lease)} — stays with the lender and is drawn as tenants are fitted out `
+            + `and while the building cannot carry its loan. Your own cash is not touched until it runs out.`,
     });
   }
 
@@ -2325,8 +2340,16 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     // balance stays on the desk that carried the job, which is what its
     // statement on Research shows and whose capital a default would eat.
     holder: d.lender ?? CONSTRUCTION_LENDER,
+    ...(heldReserve > 0 ? { leaseUpRoom: heldReserve } : {}),
   };
   bumpLenderRel(s, d.lender ?? CONSTRUCTION_LENDER, 2);   // a job delivered is the best line in the file
+  // A NEW BUILDING OPENS ON AUTO-LEASE, at its rent posture with no fit-out
+  // cap — the leasing guidelines every lease-up runs on — unless you took it
+  // off. Major leases still come to you (leasing.ts isMajorLease).
+  if (h.autoLease === undefined && !h.groundLeased) {
+    const built = resolveRec(parcels, s, d.bbl);
+    if (built && leasableUses(built).length) h.autoLease = true;
+  }
   delete s.developments[d.bbl];
   bumpLand(s, d.bbl, 1.06);
 

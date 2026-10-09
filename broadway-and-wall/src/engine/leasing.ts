@@ -24,6 +24,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
+import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
@@ -2223,6 +2224,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
  *      allowance is construction and a cap that did not move with the cost of
  *      building would quietly fall to nothing over a long game.
  *
+ * MEASURED AGAINST THE MARKET'S OWN DEAL, NOT THE FACE RENT. "95% of the
+ * ask" means 95% of what an ordinary market deal for THIS space nets — the
+ * ask, the full allowance the space draws (first-generation on a shell), and
+ * the free rent the concession market is giving for that term — built by the
+ * same rules that roll the tenants' letters (`marketDealShare`). Scored
+ * against face it was a different instruction from the one on the button: on
+ * a newly delivered office floor a letter at 97% of the ask with a standard
+ * shell allowance netted 0.69 of face (tools/mdga/office-vs-mf.mjs), so
+ * Market refused the market and new office never leased on auto.
+ *
  * Every letter then goes through the same three steps:
  *   - inside the policy        → sign it.
  *   - outside it, first time   → counter ONCE: the allowance trimmed to the
@@ -2251,6 +2262,33 @@ function autoPolicy(s: GameState, h: Holding): AutoPolicy {
   const cap = h.autoTiCapPsfYr;
   return cap === undefined ? base : { ...base, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
 }
+/**
+ * WHAT AN ORDINARY MARKET DEAL FOR THIS SPACE NETS, as a share of the ask.
+ * The tenant-side rules of the letter roll, with every draw at its middle: a
+ * bid at the ask (so the full allowance), TI at the middle of TI_ASK through
+ * the concession market, the cost index and the shell premium on whatever
+ * part of the space is shell, free rent at the middle of its band for this
+ * letter's term. Nothing new is asserted — it is the street's own deal.
+ */
+export function marketDealShare(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  const use = loi.use ?? leasableUses(rec)[0] ?? "office";
+  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const concession = concessionPressure(s.econ, use);
+  const years = Math.max(1, loi.termM / 12);
+  const shell = loi.kind === "new" ? shellShare(rec, h, use, s.month) : 0;
+  const tiPsf = ((lo + hi) / 2) * years * tiPressure(concession) * (s.econ.costIdx ?? 1)
+    * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
+  const freeM = years * 0.55 * concession;
+  const ref = loiMandateScore({ ...loi, rentPsf: 1, tiPsf: 0, freeM, bumpPct: DEFAULT_BUMP_PCT }, 1)
+    - (TI_VALUE * tiPsf) / years / Math.max(1, loiMarket(s, rec, h, loi));
+  // a guard, not a lever: a market so soft the standard deal nets under a
+  // quarter of face is not a reference, it is a market with no price
+  return Math.max(0.25, ref);
+}
+/** The letter's net effective as a share of the market deal's — 1.0 is the market. */
+function autoScore(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  return loiMandateScore(loi, loiMarket(s, rec, h, loi)) / marketDealShare(s, rec, h, loi);
+}
 /** The most allowance the policy funds on this letter, $/sf; Infinity when uncapped. */
 function autoTiLimit(p: AutoPolicy, loi: LOI): number {
   return p.tiCapPsfYr === undefined ? Infinity : Math.round(p.tiCapPsfYr * Math.max(1, loi.termM / 12));
@@ -2259,7 +2297,7 @@ function autoTiLimit(p: AutoPolicy, loi: LOI): number {
 function autoMiss(p: AutoPolicy, loi: LOI, score: number): string | null {
   const lim = autoTiLimit(p, loi);
   if ((loi.tiPsf ?? 0) > lim) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over your $${lim}/sf cap on ${Math.round(loi.termM / 12)} years`;
-  if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of your ask`;
+  if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of a market deal`;
   return null;
 }
 /**
@@ -2282,8 +2320,10 @@ function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Hold
   if (vehicleSigns(s, h)) {
     if (vehiclePurse(s) < cost) return false;
   } else {
-    if (Math.max(0, s.cash) + locAvailable(s, parcels) < cost) return false;
-    const short = Math.ceil(cost - s.cash);
+    // the lease-up reserve pays first (signLoi); only the rest is the firm's
+    const own = Math.max(0, cost - leaseUpRoom(h));
+    if (Math.max(0, s.cash) + locAvailable(s, parcels) < own) return false;
+    const short = Math.ceil(own - s.cash);
     if (short > 0) drawLineInPlace(s, parcels, short);
   }
   const before = h.tenants.length;
@@ -2308,6 +2348,11 @@ function autoPass(s: GameState, loi: LOI, rec: ParcelRecord, why: string) {
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} passed on ${loi.name} at ${rec.address} — ${why}.` });
 }
+/** A quarter of the building's commercial space and at least 10,000 sf — referred to the owner on auto-lease. */
+export function isMajorLease(rec: ParcelRecord, loi: LOI): boolean {
+  const commercial = leasableUses(rec).reduce((a, u) => a + useRentableSf(rec, u), 0);
+  return loi.sf >= 10_000 && loi.sf >= 0.25 * commercial;
+}
 export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
   const auto = (bbl: string) => !!s.holdings[bbl]?.autoLease && !s.holdings[bbl]?.groundLeased;
   // competing tours: the letter that nets most takes the space
@@ -2329,8 +2374,21 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
         s.lois = s.lois.filter((l) => !lost.has(l.id));
       }
     }
+    // A MAJOR LEASE IS THE OWNER'S CALL. Leasing guidelines delegate the
+    // ordinary suite; a tenant big enough to move the building's value — a
+    // quarter of its space and at least 10,000 sf — comes to the owner for
+    // approval, which is the one leasing decision owners keep in practice.
+    if (mine.referred) continue;
+    if (isMajorLease(rec, mine)) {
+      mine.referred = true;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${AUTO_WHO} referred ${mine.name} at ${rec.address} to you — ${Math.round(mine.sf).toLocaleString()} sf is a major lease, and that is the owner's call.`,
+      });
+      continue;
+    }
     const pol = autoPolicy(s, h);
-    const miss = () => autoMiss(pol, mine, loiMandateScore(mine, loiMarket(s, rec, h, mine)));
+    const miss = () => autoMiss(pol, mine, autoScore(s, rec, h, mine));
     // sign inside the policy, pass outside it — the end of every path below
     const settle = (prefix: string) => {
       const why = miss();
@@ -2342,7 +2400,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     if (mine.countered) continue;   // countered by hand before auto went on; they are deciding
     // ONE counter: the allowance down to the cap, the rent up to the target
     const tiPsf = Math.min(mine.tiPsf ?? 0, autoTiLimit(pol, mine));
-    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target);
+    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target * marketDealShare(s, rec, h, mine));
     const outcome = tenantCounterOutcome(s, rec, h, mine, {
       rentPsf, tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
     });
@@ -2379,7 +2437,8 @@ export function setAutoLease(s: GameState, parcels: ParcelTable, bbl: string, on
   const h = s.holdings[bbl];
   if (!h || h.groundLeased) return s;
   const next: GameState = cloneState(s);
-  next.holdings[bbl].autoLease = on || undefined;
+  // An explicit false, so a building you took off auto stays off at delivery.
+  next.holdings[bbl].autoLease = on;
   if (on) autoLeaseDesk(next, parcels);
   return next;
 }
@@ -2405,14 +2464,18 @@ export function autoTiCapToday(s: GameState, h: Holding): number | undefined {
 }
 
 /**
- * What a second-generation tenant on this use asks for today, $/sf per year
- * of term — the TI_ASK band through the concession market and the cost index,
- * as the letters roll it (before credit and first-generation shell). Shown
- * beside the cap so the player sets it against the market, not a guess.
+ * What a tenant on this use asks for today, $/sf per year of term — the TI_ASK
+ * band through the concession market and the cost index, as the letters roll
+ * it (before credit). With a holding, the shell premium is blended in for the
+ * part of the space still a shell: a new building's floors draw the
+ * first-generation allowance, and presets read off the second-generation band
+ * alone would cap away most of the market on exactly the building that needs
+ * leasing. Shown beside the cap so the player sets it against the market.
  */
-export function marketTiPsfYr(s: GameState, use: string): [number, number] {
+export function marketTiPsfYr(s: GameState, use: string, rec?: ParcelRecord, h?: Holding): [number, number] {
   const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
-  const m = tiPressure(concessionPressure(s.econ, use)) * (s.econ.costIdx ?? 1);
+  const shell = rec && h ? shellShare(rec, h, use, s.month) : 0;
+  const m = tiPressure(concessionPressure(s.econ, use)) * (s.econ.costIdx ?? 1) * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
   return [lo * m, hi * m];
 }
 
@@ -2420,8 +2483,8 @@ export function marketTiPsfYr(s: GameState, use: string): [number, number] {
 export function autoLeaseRule(s: GameState, h: Holding): string {
   const st = h.stance ?? 0;
   const rent = st < 0 ? "Fill: signs whatever rent comes"
-    : st > 0 ? "Push: signs at your ask or better, counters to 5% over"
-    : "Market: signs at 95% of your ask, counters to the ask";
+    : st > 0 ? "Push: signs at a market deal or better, counters to 5% over it"
+    : "Market: signs at 95% of a market deal, counters to the market";
   const cap = autoTiCapToday(s, h);
   const ti = cap === undefined ? "any fit-out" : `fit-out up to $${cap.toFixed(2)}/sf per lease year ($${Math.round(cap * 10)}/sf on 10 years)`;
   return `${rent}; ${ti}. One counter, then sign or pass.`;
@@ -2499,7 +2562,8 @@ export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
   // Fee owner is not the landlord — never interrupt for the lessee's paper.
   if (s.holdings[l.bbl]?.groundLeased) return false;
   // standing instructions: answered in the tick, never put in front of you
-  if (s.holdings[l.bbl]?.autoLease) return false;
+  // …except a major lease, which auto-lease refers to the owner (autoLeaseDesk)
+  if (s.holdings[l.bbl]?.autoLease) return !!l.referred;
   if (l.referred) return true;
   // Above the three delegations, because it overrides all three.
   if (overDeskAuthority(s, l)) return true;
@@ -3123,7 +3187,8 @@ function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE, parce
   // against the GP's own account docketed every fund lease the month the GP
   // ran thin while the vehicle sat on the money.
   if (vehicleSigns(s, s.holdings[loi.bbl])) return vehiclePurse(s) - cost >= fundReserve(s);
-  return s.cash + lineDeskMayDraw(s, parcels) - cost >= agentCashReserve(s);
+  const own = Math.max(0, cost - leaseUpRoom(s.holdings[loi.bbl]));
+  return s.cash + lineDeskMayDraw(s, parcels) - own >= agentCashReserve(s);
 }
 
 /**
@@ -4211,16 +4276,21 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     if (h.specSuites.sf < 800) delete h.specSuites;
   }
   const cost = loiSigningCost(l, feeRate);
-  s.cash -= cost;
-  logBooks(s, "leasing", cost, h.bbl);
-  partnerFunds(s, h, cost);
   // Demising walls are construction. $9/sf of the smaller piece × costIdx,
   // booked as capex so conserve can see it.
   const demise = Math.max(0, Math.round(l.demiseCost ?? 0));
+  // A NEW BUILDING'S FIT-OUT COMES FROM ITS LEASE-UP RESERVE FIRST — the
+  // lender advances it against this lease (debt.ts drawLeaseUpReserve). A JV
+  // partner funds its share only of what the reserve did not cover.
+  const drawn = drawLeaseUpReserve(s, h, cost + demise);
+  const fromReserveCost = Math.min(cost, drawn);
+  s.cash -= cost;
+  logBooks(s, "leasing", cost, h.bbl);
+  partnerFunds(s, h, cost - fromReserveCost);
   if (demise > 0) {
     s.cash -= demise;
     logBooks(s, "capex", demise, h.bbl);
-    partnerFunds(s, h, demise);
+    partnerFunds(s, h, demise - (drawn - fromReserveCost));
   }
   if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     // THE SPACE NEXT DOOR. The old floor keeps its rent and the new floor takes
@@ -4474,7 +4544,7 @@ export function respondLOI(
     // the vehicle cannot raise is the sponsor's, as a GP advance. This used to
     // test the sponsor's cash and line alone and refused the letter — 736
     // refusals on one run, fund occupancy 0.76 → 0.15.
-    const own = vehicleSigns(next, next.holdings[l.bbl]) ? Math.max(0, cost - vehiclePurse(next)) : cost;
+    const own = vehicleSigns(next, next.holdings[l.bbl]) ? Math.max(0, cost - vehiclePurse(next)) : Math.max(0, cost - leaseUpRoom(next.holdings[l.bbl]));
     if (next.cash < own) {
       const short = Math.ceil((own - next.cash) / 1000) * 1000;
       const avail = locAvailable(next, parcels);

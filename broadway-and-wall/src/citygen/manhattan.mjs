@@ -62,20 +62,25 @@ let PLAT = null;
 // and parses it as JSON, which is several times faster than evaluating it as a
 // 3.5 MB JavaScript module. Under Node (harnesses, tools) the same URL is a
 // file: URL and is read off disk.
-const PLAT_URL = new URL("./data/manhattan-plat.json", import.meta.url);
+// Made when asked for, not at load: inside a worker started from a blob (the
+// town worker, in the single-file build) this module's own URL is a blob: URL,
+// a relative URL against it throws, and the worker died before it could run.
+const platUrl = () => new URL("./data/manhattan-plat.json", import.meta.url);
 /** Fetch the baked plat once. Resolves immediately on every later call. */
 export async function loadManhattanPlat() {
   if (!PLAT) {
-    if (PLAT_URL.protocol === "file:") {
-      const fsName = "node:fs/promises";   // a variable, so the browser build never resolves it
-      const { readFile } = await import(/* @vite-ignore */ fsName);
-      PLAT = JSON.parse(await readFile(PLAT_URL, "utf8"));
-    } else if (globalThis.document?.getElementById?.("bw-manhattan-plat")) {
+    if (globalThis.document?.getElementById?.("bw-manhattan-plat")) {
       // The single-file playable (package/build-onefile.mjs) carries the plat
       // inline, because a page opened from file:// cannot fetch a neighbour.
+      // Asked first: that page's URL is a file: URL too, and the Node branch
+      // below is no use to a browser (it refused Manhattan outright).
       PLAT = JSON.parse(globalThis.document.getElementById("bw-manhattan-plat").textContent);
+    } else if (!globalThis.document && platUrl().protocol === "file:") {
+      const fsName = "node:fs/promises";   // a variable, so the browser build never resolves it
+      const { readFile } = await import(/* @vite-ignore */ fsName);
+      PLAT = JSON.parse(await readFile(platUrl(), "utf8"));
     } else {
-      const r = await fetch(PLAT_URL);
+      const r = await fetch(platUrl());
       if (!r.ok) throw new Error(`Manhattan plat ${r.status}`);
       PLAT = await r.json();
     }

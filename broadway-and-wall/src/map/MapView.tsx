@@ -308,6 +308,8 @@ export default function MapView() {
   const threeRef = useRef<RealCityLayer | null>(null);
   // flipping the preview renderer rebuilds the map with the other 3D layer
   const [mapReady, setMapReady] = useState(false);
+  // the 3D city builds in slices after the map is up; the flat extrusions stand in until it is done
+  const [threeReady, setThreeReady] = useState(false);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
 
@@ -503,6 +505,16 @@ export default function MapView() {
             // asserted from state alone — you have to be able to ask the
             // geometry how tall it still is.
             (window as unknown as { __three?: unknown }).__three = layer;
+            // THE FLAT CITY WHILE THE SKYLINE RISES. A big map's meshes take a
+            // while to build (RealCityLayer.buildAll), and the map is live the
+            // whole time: the plain extrusions hold the buildings' places until
+            // the real ones are ready to take over.
+            map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
+            layer.onReady = () => {
+              if (disposed) return;
+              map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
+              setThreeReady(true);
+            };
             map.addLayer(layer);
             // THE LOT LINE ABOVE THE MODEL. The parcel outline is drawn under
             // the 3D layer, and on a vacant lot the mesh lays grass and hedges
@@ -542,7 +554,7 @@ export default function MapView() {
         // while the 3D layer is still loading.
         const pickAt = (pt: { x: number; y: number }): string | null => {
           const three = threeRef.current;
-          if (three) return three.pickAt(pt.x, pt.y);
+          if (three?.ready) return three.pickAt(pt.x, pt.y);
           const fs = map.queryRenderedFeatures(
             [[pt.x - 8, pt.y - 8], [pt.x + 8, pt.y + 8]], { layers: ["bw-parcel-fill"] });
           return (fs[0]?.properties?.bbl as string | undefined) ?? null;
@@ -1756,8 +1768,8 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const layer = threeRef.current;
-    if (layer) {
-      // the flat extrusions are the no-mesh fallback only
+    if (layer?.ready) {
+      // the flat extrusions are the no-mesh fallback only (and the stand-in while it builds)
       map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
     }
     // ---- reset: every property any lens touches, straight from the style
@@ -1962,7 +1974,7 @@ export default function MapView() {
     }
     // no lens (or owners, which paints through the tints): the city's own face
     layer?.setLens(null);
-  }, [lens, paintSig, parcels, mapReady]);
+  }, [lens, paintSig, parcels, mapReady, threeReady]);
 
   // hover tooltip: address before you commit to a click. Photo frame drops it
   // with the labels — the effect re-runs on toggle, so it detaches cleanly and

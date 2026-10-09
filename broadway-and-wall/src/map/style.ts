@@ -627,6 +627,20 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        // THE BACK ALLEY (street plan 4). A 16 ft service lane down the spine
+        // of an alley block: poured concrete gone grey, a step lighter than the
+        // carriageway and a step darker than the yards either side of it, so
+        // the two rows of lots read as backing onto something rather than
+        // onto each other.
+        id: "alley",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "alley"],
+        paint: {
+          "fill-color": "#6d6b66",
+        },
+      },
+      {
         // THE FOOTWAY. A ring of concrete outside every block's kerb line, in
         // metres and as wide as the street it fronts warrants (citygen sizes
         // it) — the lightest ground surface in town, because a street is read

@@ -450,7 +450,11 @@ export function generateCity(cfg) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length) % arr.length];
   const proj = makeProjection(cfg.center[0], cfg.center[1]);
 
-  const COAST_M = chaikin(crinkle(cfg.coast, rand, cfg.coastAmp ?? 46), cfg.smooth ?? 1);
+  // A SURVEYED COAST IS NOT ROUGHENED. `cfg.plat` is a city baked from the
+  // real cadastre (manhattan.mjs): its shoreline is the bulkhead line as the
+  // city files it, and crinkling or rounding it would move it off the lots
+  // that stand on it.
+  const COAST_M = cfg.plat ? cfg.coast : chaikin(crinkle(cfg.coast, rand, cfg.coastAmp ?? 46), cfg.smooth ?? 1);
   const COAST = COAST_M.map(proj.toLL);
   const ESPLANADE_W = cfg.esplanade ?? 26;
   const innerRing = offsetInward(COAST_M, ESPLANADE_W);
@@ -496,7 +500,10 @@ export function generateCity(cfg) {
   const PARKS_M = cfg.parks.map((p) => p.ring ?? rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
   // Turf the map and the 3D lawn actually paint. Kept inside the reservation
   // so the apron ring reads as pavement, not as more park.
-  const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
+  // A surveyed park (`real`) is drawn to its own property line: the kerb is
+  // already outside it, in the street cell round it, and its outline is not
+  // convex, which `erode` assumes.
+  const PARK_GREEN_M = PARKS_M.map((ring, i) => (cfg.parks[i]?.real ? ring : erode(ring, PARK_KERB) ?? ring));
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
   const STREAMS_M = (cfg.streams ?? [])
     .filter((st) => st.paint === false || st.kind === "pond" || st.kind === "slip")
@@ -510,7 +517,13 @@ export function generateCity(cfg) {
     .filter((st) => !st.cut)
     .map((st) => st.ring).filter((r) => r && r.length >= 3);
   const inWater = (p) => WATER_M.some((r) => inRing(p, r));
-  const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
+  // Box first: a surveyed city has a hundred-odd parks, and the street pass
+  // asks this every eight metres of kerb. Same answer, a fraction of the tests.
+  const PARK_BOX = PARKS_M.map(bboxOfRing);
+  const inPark = (p) => PARKS_M.some((r, i) => {
+    const b = PARK_BOX[i];
+    return p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && inRing(p, r);
+  });
   /** Shortest distance from a point to a closed ring's boundary, in metres. */
   const ringDist = (p, ring) => {
     let best = Infinity;
@@ -1184,7 +1197,26 @@ export function generateCity(cfg) {
   // split from the inside — so they fall through to the same builder. The
   // default is the lattice too, and deliberately: an unknown kind in a config
   // has to come out as a surveyed grid rather than as bare ground.
-  for (const [name, d] of Object.entries(cfg.districts)) {
+  // A SURVEYED CITY HANDS OVER ITS BLOCKS. Nothing is laid out: every block
+  // is a real tax block with its real lots, and its cell is the ground out to
+  // the middle of the streets round it, so the streets are the real streets.
+  // Each block takes the district of the partition leaf its middle falls in,
+  // which is all a district does here — it carries the flavour, the zoning
+  // and the street names, not a street plan. A park's cell goes in as
+  // pavement with no block on it, so the street round a square is paved.
+  if (cfg.plat) {
+    const leafOf = (p) => leaves.find((l) => l.hp.every(([nx, ny, d]) => nx * p[0] + ny * p[1] <= d + 1e-6));
+    for (const b of cfg.plat.blocks) {
+      const district = leafOf(centroid(b.outline))?.district ?? Object.keys(cfg.districts)[0];
+      const grid = cfg.districts[district]?.kind !== "organic";
+      blocks.push({
+        ring: b.cell, inset: b.outline, district, real: b.n, realLots: b.lots,
+        u: grid ? 0 : undefined, uFifth: grid ? 0 : undefined,
+      });
+    }
+    for (const c of cfg.plat.parkCells ?? []) blocks.push({ ring: c, inset: null, district: Object.keys(cfg.districts)[0], u: 0 });
+  }
+  else for (const [name, d] of Object.entries(cfg.districts)) {
     if (d.kind === "organic") organicDistrict(name, d);
     else if (d.kind === "curvi") curviDistrict(name, d);
     else if (d.kind === "radial") radialDistrict(name, d);
@@ -1222,7 +1254,8 @@ export function generateCity(cfg) {
   // apex is 25 deg; nothing was ever built on a sharper point.
   const FLATIRON_W = 14, FLATIRON_DEG = 25, FLATIRON_LEN = 150;
   for (const b of blocks) {
-    if (!b.inset) continue;
+    // a surveyed block is already what was built on it — see cfg.plat
+    if (!b.inset || b.realLots) continue;
     const r = b.inset;
     const ax = longestEdgeAngle(r);
     const s1 = extentAlong(r, ax).span, s2 = extentAlong(r, ax + Math.PI / 2).span;
@@ -1965,9 +1998,24 @@ export function generateCity(cfg) {
     }
   }
 
+  // A surveyed city names its retail spines outright — the avenues,
+  // Broadway, the wide crosstown streets — as centre lines with their real
+  // roadway width, and the distance is taken to the kerb, which is what the
+  // distance to a boulevard's reservation edge measures on a generated town.
+  const CORRIDORS_M = cfg.corridors ?? [];
   const corridorDist = (p) => {
     let best = Infinity;
     for (const r of DIAG_M) best = Math.min(best, inRing(p, r) ? 0 : distToRing(p, r));
+    for (const { line, w } of CORRIDORS_M) {
+      for (let i = 0; i + 1 < line.length; i++) {
+        const a = line[i], b = line[i + 1];
+        const ex = b[0] - a[0], ey = b[1] - a[1];
+        const L2 = ex * ex + ey * ey;
+        let t = L2 > 1e-12 ? ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        best = Math.min(best, Math.max(0, Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t) - w / 2));
+      }
+    }
     return Number.isFinite(best) ? best : 9999;
   };
   const cornerLot = (lotRing, blockRing) => lotRing !== blockRing
@@ -2160,7 +2208,7 @@ export function generateCity(cfg) {
       const sA = extentAlong(street, ax).span, sB = extentAlong(street, ax + Math.PI / 2).span;
       return Math.max(sA, sB) > 6.5 * Math.min(sA, sB);
     })();
-    const ground = FRONTAGE && !block.flatiron ? trimNeedles(street) : street;
+    const ground = FRONTAGE && !block.flatiron && !block.realLots ? trimNeedles(street) : street;
     // A WHOLE-BLOCK DEED IS A SMALL BLOCK. The department store, the bank,
     // the estate took a block — a Portland 200 x 200 ft block (3,700 m2) or
     // the like. On plan 4's real-sized blocks the same roll handed whole
@@ -2168,7 +2216,8 @@ export function generateCity(cfg) {
     // still drawn (same stream) and the block is platted, where the tail of
     // assembled sites still takes up to a row of it.
     const wholeOk = !FRONTAGE || polygonArea([ground]) <= 4000;
-    if (block.flatiron) lots.push(street);
+    if (block.realLots) for (const rl of block.realLots) lots.push(rl.ring);
+    else if (block.flatiron) lots.push(street);
     else if (rand() < fullBlockP && !stripBlock && wholeOk) lots.push(ground);
     else {
       const pl = FRONTAGE ? platBlock(ground, d, heat) : null;
@@ -2180,9 +2229,12 @@ export function generateCity(cfg) {
     let lotNo = 1;
     const blockCorners = street;
     const turns = FRONTAGE ? turningCorners(street) : null;
-    for (const lotRing of lots) {
+    for (const [li, lotRing] of lots.entries()) {
+      const real = block.realLots?.[li];
       const areaM2 = polygonArea([lotRing]);
-      if (areaM2 < 70) continue;
+      // a surveyed lot is a deed whatever its size; only the cutter's own
+      // crumbs fall under the floor
+      if (areaM2 < (real ? 20 : 70)) continue;
       const lotArea = Math.round(areaM2 * 10.7639);
       const c = centroid(lotRing);
       const h = coreHeat(c);
@@ -2204,7 +2256,9 @@ export function generateCity(cfg) {
       const vacant = block.flatiron ? false
         : PLAN_V >= 3 ? rand() < settleP(settleOf.get(block) ?? 0.5) : rand() < vacancyP(d, h);
       const cls = vacant ? "V1" : classFor(cfg.districts[d].flavor, h, rand, { corrM, corner });
-      const bbl = 1000000000 + blockNo * 10000 + lotNo;
+      // A surveyed lot keeps its own BBL — borough, block, lot, exactly as
+      // the city files it — so a deed on this map is the deed in life.
+      const bbl = real ? Number(real.bbl) : 1000000000 + blockNo * 10000 + lotNo;
 
       const yearRec = vacant ? null : yearFor(d, c);
       const yearbuilt = 0;
@@ -2370,6 +2424,9 @@ export function generateCity(cfg) {
         ? Math.max(1, Math.round((bldgArea * (cls === "D0" ? 0.9 : 0.45)) / 900)) : 0;
 
       let address;
+      // The address is drawn either way, so a surveyed lot that has one
+      // leaves the stream where it would have been.
+      const realAddr = real?.address;
       if (block.numbered !== undefined && rand() < 0.25) {
         const ave = cfg.avenues[Math.abs(Math.round((block.u - block.uFifth) / 215)) % cfg.avenues.length];
         // An avenue number is keyed to its CROSS STREET: the block of Fifth
@@ -2389,6 +2446,7 @@ export function generateCity(cfg) {
       } else {
         address = `${numberOn(namedStreet, houseNo)} ${namedStreet}`;
       }
+      if (realAddr) address = realAddr;
 
       parcels.features.push({
         type: "Feature",
@@ -2396,7 +2454,8 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...lotRing.map(proj.toLL), proj.toLL(lotRing[0])]] },
         properties: {
           bbl: String(bbl),
-          borough: cfg.abbr ?? "XX", block: String(blockNo), lot: String(lotNo),
+          borough: cfg.abbr ?? "XX",
+          block: String(block.real ?? blockNo), lot: String(real ? Number(real.bbl) % 10000 : lotNo),
           address,
           zonedist1: zone.z, commfar: zone.commfar, resfar: zone.resfar,
           bldgclass: cls, landuse: vacant ? "11" : cls === "G1" ? "10" : cls[0] === "O" ? "05" : "04",
@@ -2524,6 +2583,7 @@ export function generateCity(cfg) {
   // Every harbor town has one, on the headland the chart says it should be on:
   // the seaward point of the coast furthest from the middle of town.
   const headland = (() => {
+    if (cfg.lighthouse === false) return null;
     if (cfg.lighthouse) return cfg.lighthouse;
     let best = COAST_M[0], bd = 0;
     for (const p2 of COAST_M) {
@@ -2532,7 +2592,7 @@ export function generateCity(cfg) {
     }
     return best;
   })();
-  {
+  if (headland) {
     const [lx, ly] = headland;
     const oct = [];
     for (let k = 0; k < 8; k++) {
@@ -3082,7 +3142,8 @@ export function generateCity(cfg) {
     // a pond in anything big enough to hold one, offset from centre
     const [bx0, by0, bx1, by1] = bboxOfRing(green);
     const pw = bx1 - bx0, ph = by1 - by0;
-    if (Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
+    // No pond is dug in a surveyed park: its water, if it has any, is real.
+    if (!cfg.parks[pi]?.real && Math.min(pw, ph) > 130 && !inWater([c[0] + pw * 0.14, c[1] - ph * 0.1])) {
       const rA = Math.min(pw, ph) * rr(0.16, 0.2), rB = rA * rr(0.6, 0.78), tilt = rr(0, Math.PI);
       const rel = [];
       for (let k = 0; k < 18; k++) {
@@ -3164,7 +3225,11 @@ export function generateCity(cfg) {
     .filter((x) => x.a < biggestA * 0.92)   // not the principal green — that is the Common
     .sort((x, y2) => y2.heat - x.heat)      // dearest ground first
     .slice(0, 2);
-  civicSquares.forEach((sq, k) => {
+  // A SURVEYED CITY HAS ITS OWN. Manhattan's City Hall is a real building on a
+  // real lot; inventing a New England meeting house on Union Square, a
+  // station head-house in Bryant Park or a college row in a pocket park is
+  // the generated town leaking onto a real one. The same holds below.
+  if (!cfg.plat) civicSquares.forEach((sq, k) => {
     const c = centroid(sq.ring);
     if (inWater(c)) return;
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
@@ -3206,7 +3271,7 @@ export function generateCity(cfg) {
     addDeco(rect(mx, my, 14, 10, ang), 8.5, 0, "civic");
     addDeco(rect(mx, my, 15.2, 11.2, ang), 11.2, 8.5, "civicroof");
   }
-  for (const s of cfg.stations ?? []) {
+  for (const s of cfg.plat ? [] : cfg.stations ?? []) {
     let best = null, bd = Infinity;
     for (const ring of PARKS_M) {
       const c = centroid(ring);
@@ -3227,7 +3292,7 @@ export function generateCity(cfg) {
   // ONE SIGNATURE LANDMARK PER TOWN — not always hall + spire + light + peak.
   // Deco only, on park / fringe ground, so lots do not move. Mill towns already
   // have a mill on the pond; they draw something else.
-  {
+  if (!cfg.plat) {
     const kind = cfg.plan?.landmark ?? "church";
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
     const quietPark = PARKS_M
@@ -3551,7 +3616,7 @@ export function generateCity(cfg) {
   // beach on the open side, seawall downtown, rock under the light.
   const harbourAt = cfg.plan?.harbour ?? [0, 0];
   const coveAt = cfg.plan?.cove ?? harbourAt;
-  const headAt = cfg.plan?.headland ?? cfg.lighthouse ?? harbourAt;
+  const headAt = cfg.plan?.headland ?? (cfg.lighthouse || null) ?? harbourAt;
   const shoreKindAt = (p) => {
     const dH = Math.hypot(p[0] - harbourAt[0], p[1] - harbourAt[1]);
     const dC = Math.hypot(p[0] - coveAt[0], p[1] - coveAt[1]);

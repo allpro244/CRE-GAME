@@ -30,7 +30,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf } from "./rivals";
-import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy, capitalRatio, targetCapital } from "./lenders";
+import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
@@ -1485,21 +1485,6 @@ export type AttentionItem = {
 export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
   const out: AttentionItem[] = [];
   const addr = (bbl: string) => parcelAddr(s, bbl, parcels);
-  // YOUR BANK IS WALKING TOWARD THE SEIZURE LINE with your money in it. The
-  // Banks page chart shows every desk's capital against its own target; the
-  // regulator closes a desk below 0.22x. At 0.4x, with an exposed balance,
-  // say so once — the money can be moved for nothing.
-  {
-    const cs = cashSplit(s), b = cs.bank;
-    if (b && cs.exposed > 0) {
-      const mult = capitalRatio(b) / Math.max(1e-9, targetCapital(b.name));
-      if (mult < 0.4) out.push({
-        key: `bank-weak:${b.id}:${Math.floor(s.month / 6)}`,
-        label: `Your bank, ${b.name}, is at ${mult.toFixed(2)}x its capital target — the regulator closes desks below 0.22x. `
-          + `$${(cs.exposed / 1e6).toFixed(1)}M of your cash there is uninsured: move banks or sweep it into Treasury bills on the Banks page`,
-      });
-    }
-  }
   // YOUR BANK FAILED WITH YOUR MONEY IN IT. The single largest one-day loss a
   // cash-rich firm can take arrived as a line of news; it stops the clock now,
   // once, keyed on the seizure, with what is frozen and what is expected back.

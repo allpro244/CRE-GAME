@@ -1487,7 +1487,7 @@ export function generateCity(cfg) {
    * a row tapering into a chamfer, say — is skipped and its frontage joins
    * the next lot, which is what a surveyor does with a short end.
    */
-  function cutRow(strip, dir, w, d, heat, out) {
+  function cutRow(strip, dir, w, d, heat, out, maxSpan = Infinity) {
     const e = extentAlong(strip, dir);
     const n = Math.max(1, Math.min(Math.round(e.span / w), Math.floor(e.span / 8)));
     if (n <= 1) { out.push(strip); return; }
@@ -1497,7 +1497,7 @@ export function generateCity(cfg) {
     // would undo the strip fix splitLots carries. A run stops where its
     // frontage would pass four times its depth.
     const depth = extentAlong(strip, dir + Math.PI / 2).span;
-    const groups = groupRun(n, d, heat, w < 12, Math.max(1, Math.floor((4 * depth) / unit)));
+    const groups = groupRun(n, d, heat, w < 12, Math.max(1, Math.floor(Math.min(4 * depth, maxSpan) / unit)));
     let rest = strip, at = e.lo;
     for (let g = 0; g < groups.length - 1; g++) {
       at += groups[g] * unit;
@@ -1521,7 +1521,9 @@ export function generateCity(cfg) {
       // Narrower than a lot for its whole length — the thin end of a block
       // pinched between two streets. Nothing stakes on it; like the gores of
       // the wedge rule it is paved ground, not a deed.
-      if (widthOf(r).w < 10 && widthOf(r).l > widthOf(r).w * 6.5) return;
+      // (14 m: FLATIRON_W, the width under which the wedge rule says no two
+      // lots stand back to back — and this one cannot even be cut across)
+      if (widthOf(r).w < FLATIRON_W && widthOf(r).l > widthOf(r).w * 6.5) return;
       out.push(r);
     };
     halve(rest, 0);
@@ -1583,12 +1585,17 @@ export function generateCity(cfg) {
     const across = fr.axis + Math.PI / 2;
     const ex = extentAlong(ring, across);
     const alleyW = dist.alley ?? 0;
-    // Two rows back to back when the block is deep enough to hold two lots
-    // of at least 60 ft (18 m) and the frontage is not wider than the depth
-    // it would get — otherwise one row of through-lots, as a shallow block is
-    // platted in life.
+    // TWO ROWS BACK TO BACK, ALWAYS, when the block can hold them. A block is
+    // a row of lots facing one street backed onto a row facing the other —
+    // look down on any Harlem or Brooklyn block and the line of rear yards
+    // runs straight down its middle. The first cut of this only split when
+    // the half-depth was 1.3x the frontage, so every block of wide frontages
+    // (yards, offices, villas) came out as through-lots, one building running
+    // from street to street, and a sixth of the town's lot area was cut that
+    // way. 50 ft (15 m) is the shallowest lot a real plat sells; under that a
+    // block is one row of through-lots, as a shallow block is in life.
     const rowD = (fr.D - alleyW) / 2;
-    const spine = rowD >= Math.max(18, w0 * 1.3);
+    const spine = fr.D / 2 >= 15;
     const lotD = spine ? rowD : fr.D;
     // THE CONVENTION'S AREA STILL HOLDS. A frontage is drawn, but a lot is
     // sold by the square foot, and each convention's area band (FLAVOR.lot /
@@ -1615,8 +1622,9 @@ export function generateCity(cfg) {
       const c1 = cutAt(ring, fr.axis, ea.lo + capD, across);
       const c2 = c1 && cutAt(c1[1], fr.axis, ea.hi - capD, across);
       if (c1 && c2 && rowLeft(c1[0], across) && rowLeft(c2[1], across) && rowLeft(c2[0], fr.axis)) {
-        cutRow(c1[0], across, w, d, heat, lots);
-        cutRow(c2[1], across, w, d, heat, lots);
+        // an end site stops at the spine like every other lot on the block
+        cutRow(c1[0], across, w, d, heat, lots, fr.D / 2);
+        cutRow(c2[1], across, w, d, heat, lots, fr.D / 2);
         middle = c2[0];
       }
     }
@@ -1624,18 +1632,24 @@ export function generateCity(cfg) {
     if (spine) {
       // the spine sits a little off-centre about as often as not
       const mid = (ex.lo + ex.hi) / 2 + rr(-0.04, 0.04) * fr.D;
-      if (alleyW) {
+      let done = false;
+      if (alleyW && (fr.D - alleyW) / 2 >= 15) {
         const a1 = cutAt(middle, across, mid - alleyW / 2, fr.axis);
         const a2 = a1 && cutAt(a1[1], across, mid + alleyW / 2, fr.axis);
         if (a1 && a2 && rowLeft(a1[0], fr.axis) && rowLeft(a2[1], fr.axis)) {
           rows.push(a1[0], a2[1]);
           alleys.push(a2[0]);
-        } else rows.push(middle);
-      } else {
-        const s1 = cutAt(middle, across, mid, fr.axis);
-        if (s1 && rowLeft(s1[0], fr.axis) && rowLeft(s1[1], fr.axis)) rows.push(s1[0], s1[1]);
-        else rows.push(middle);
+          done = true;
+        }
       }
+      // no room for the lane, or a taper at one end refuses the middle: the
+      // spine still goes in, a little off centre if it has to
+      for (const off of [0, -0.06, 0.06, -0.12, 0.12]) {
+        if (done) break;
+        const s1 = cutAt(middle, across, mid + off * fr.D, fr.axis);
+        if (s1 && rowLeft(s1[0], fr.axis) && rowLeft(s1[1], fr.axis)) { rows.push(s1[0], s1[1]); done = true; }
+      }
+      if (!done) rows.push(middle);
     } else rows.push(middle);
     for (const r of rows) cutRow(r, fr.axis, w, d, heat, lots);
     return { lots, alleys };
@@ -2147,8 +2161,15 @@ export function generateCity(cfg) {
       return Math.max(sA, sB) > 6.5 * Math.min(sA, sB);
     })();
     const ground = FRONTAGE && !block.flatiron ? trimNeedles(street) : street;
+    // A WHOLE-BLOCK DEED IS A SMALL BLOCK. The department store, the bank,
+    // the estate took a block — a Portland 200 x 200 ft block (3,700 m2) or
+    // the like. On plan 4's real-sized blocks the same roll handed whole
+    // 15,000 m2 blocks to one warehouse; past the small block the roll is
+    // still drawn (same stream) and the block is platted, where the tail of
+    // assembled sites still takes up to a row of it.
+    const wholeOk = !FRONTAGE || polygonArea([ground]) <= 4000;
     if (block.flatiron) lots.push(street);
-    else if (rand() < fullBlockP && !stripBlock) lots.push(ground);
+    else if (rand() < fullBlockP && !stripBlock && wholeOk) lots.push(ground);
     else {
       const pl = FRONTAGE ? platBlock(ground, d, heat) : null;
       if (pl) { lots.push(...pl.lots); ALLEYS_M.push(...pl.alleys); }

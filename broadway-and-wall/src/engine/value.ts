@@ -303,15 +303,15 @@ export function plateOf(rec: { bldgArea: number; floors: number }): number {
  *
  * Depth is the building's plate over the lot's frontage. Expressed against
  * REF_SHOP_DEPTH_FT, the median shop's plate depth measured on plan-4 towns
- * (1,769 standing shops over the twelve harness seeds: median 38.8 ft,
- * quartiles 26 and 60; per-seed medians 29-54), so the median
+ * (1,881 standing shops over the twelve harness seeds: median 38.3 ft,
+ * quartiles 25 and 60; per-seed medians 30-50), so the median
  * shop's rent is unchanged and only the spread around it is new — the same
  * convention as REF_PLATE_SF. The zone width and halving are the method's own
  * constants, not tuned. The clamp is a guard: a plate under 20 ft deep is all
  * Zone A (the ceiling, 1.57) and only a big box past ~250 ft reaches the floor.
  */
 const ZONE_FT = 20;
-export const REF_SHOP_DEPTH_FT = 39;
+export const REF_SHOP_DEPTH_FT = 38;
 function zonedPerSf(depthFt: number): number {
   const d = Math.max(1, depthFt);
   const zoned = Math.min(d, ZONE_FT)

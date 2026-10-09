@@ -27,11 +27,16 @@ const M = (x) => `$${(x / 1e6).toFixed(2)}M`;
 // negative cash behind the firm.
 function setUp(seed) {
   let g = E.firstListings(E.newGame(seed, parcels, 6_000_000), parcels, bbls);
-  for (let m = 0; m < 6; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
-  const li = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) }))
+  // Six months in, or as long after as it takes for such an office to list
+  // (up to three years): which buildings come to market is the town's luck,
+  // and a re-cut plat re-deals it.
+  const pick = (gg) => gg.listings.map((l) => ({ l, rec: E.resolveRec(parcels, gg, l.bbl) }))
     .filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000)
     .sort((a, b) => b.l.ask - a.l.ask)[0];
-  if (!li) throw new Error("no office on the tape");
+  let li;
+  for (let m = 0; m < 36 && !(m >= 6 && (li = pick(g))); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
+  li ??= pick(g);
+  if (!li) throw new Error("no office on the tape in three years");
   const r = E.executePurchase(g, parcels, li.l.bbl, li.l.ask, "harbor", false, 1);
   if (r.err) throw new Error(r.err);
   g = JSON.parse(JSON.stringify(r.s));

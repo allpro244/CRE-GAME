@@ -18,7 +18,7 @@ import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
@@ -30,7 +30,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf } from "./rivals";
-import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy, capitalRatio, targetCapital } from "./lenders";
+import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
@@ -153,7 +153,7 @@ export function newGame(
   const setup = setupIn ? normalizeSetup(setupIn) : undefined;
   if (setup?.sandbox) cash0 = SANDBOX_CASH;
   const s: GameState = {
-    v: 39,
+    v: 40,
     seed,
     rng: seed,
     streams: initStreams(seed),
@@ -608,6 +608,7 @@ function tickMonth(
 ): void {
   if (s.gameOver) return;
   s.month++;
+  const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 
   // ONE SETTLEMENT MOMENT. Physical funding can slip or orphan a job this
   // month; those mutations used to land AFTER settleSupplyDeliveries inside
@@ -791,6 +792,27 @@ function tickMonth(
   // before the workout desk looks at anybody, then let that desk auto-cure any
   // file the firm can fund. Order matters: NOI → debt → line → workouts.
   coverCashShortfall(s, parcels);
+  // ONE NOTICE, NOT A MONTHLY ALARM. A firm that runs its operating account dry
+  // and lets the revolver carry the notes is not missing payments, and should
+  // not be told it is — but it should be told once that it is now borrowing at
+  // index+400 to make them. Any draw this month counts: once the account is
+  // overdrawn the first cheque of the month draws for the whole hole, so by
+  // the time the notes fall due the line has usually already been used.
+  if (s.loc) {
+    const lineDrew = (s.loc.drawnTotal ?? 0) - drawnAtOpen;
+    if (lineDrew > 0 && monthlyDebtService(s) > 0) {
+      if (!s.loc.payingNotes) {
+        s.loc.payingNotes = true;
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `You are out of operating cash. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
+            + `to keep your notes current and will keep paying them while it has room — at ${locRate(s).toFixed(2)}%.`,
+        });
+      }
+    } else if (s.loc.payingNotes && s.cash > 0) {
+      delete s.loc.payingNotes;
+    }
+  }
   tickWorkouts(s, parcels);
 
   // --- the firm's own overhead ----------------------------------------------
@@ -1485,21 +1507,6 @@ export type AttentionItem = {
 export function attentionItems(s: GameState, parcels?: ParcelTable | null): AttentionItem[] {
   const out: AttentionItem[] = [];
   const addr = (bbl: string) => parcelAddr(s, bbl, parcels);
-  // YOUR BANK IS WALKING TOWARD THE SEIZURE LINE with your money in it. The
-  // Banks page chart shows every desk's capital against its own target; the
-  // regulator closes a desk below 0.22x. At 0.4x, with an exposed balance,
-  // say so once — the money can be moved for nothing.
-  {
-    const cs = cashSplit(s), b = cs.bank;
-    if (b && cs.exposed > 0) {
-      const mult = capitalRatio(b) / Math.max(1e-9, targetCapital(b.name));
-      if (mult < 0.4) out.push({
-        key: `bank-weak:${b.id}:${Math.floor(s.month / 6)}`,
-        label: `Your bank, ${b.name}, is at ${mult.toFixed(2)}x its capital target — the regulator closes desks below 0.22x. `
-          + `$${(cs.exposed / 1e6).toFixed(1)}M of your cash there is uninsured: move banks or sweep it into Treasury bills on the Banks page`,
-      });
-    }
-  }
   // YOUR BANK FAILED WITH YOUR MONEY IN IT. The single largest one-day loss a
   // cash-rich firm can take arrived as a line of news; it stops the clock now,
   // once, keyed on the seizure, with what is frozen and what is expected back.
@@ -1542,6 +1549,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const li of s.listings ?? []) {
     if (!s.watch?.includes(li.bbl)) continue;
     out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
+  }
+  // YOUR BUILDING IS FINISHED. Years of construction end in one month, and
+  // the lease-up starts the same day: the empty building costs its tax,
+  // opex and debt service from here, and the leasing desk is where the
+  // player has to be. It stops the clock — Play, Yr and Skip alike — in the
+  // month the keys are handed over, and in no other.
+  for (const h of Object.values(s.holdings)) {
+    if (h.deliveredM !== s.month || s.merged?.[h.bbl]) continue;
+    const b = s.built?.[h.bbl];
+    out.push({
+      key: `delivered:${h.bbl}:${h.deliveredM}`,
+      label: `${addr(h.bbl)} delivered${b ? ` — ${Math.round(b.bldgArea / 1000)}k sf, ${b.floors} floors` : ""}. Time to lease it up`,
+    });
   }
   for (const b of s.portfolioSale?.bids ?? []) {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });

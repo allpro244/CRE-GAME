@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
-  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
 } from "@/engine/leasing";
 import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
@@ -325,6 +326,8 @@ export function LeasingPage() {
       <div className="page-section">
         <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span>By building</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <MinLeaseAll />
           {(() => {
             const all = rows.map((r) => r.h.bbl);
             const allOn = all.length > 0 && rows.every((r) => r.h.autoLease);
@@ -339,6 +342,7 @@ export function LeasingPage() {
               >{allOn ? "Auto-lease: all on ✓" : "Auto-lease every building"}</button>
             );
           })()}
+          </span>
         </div>
         <div>
           <table className="tbl">
@@ -362,7 +366,7 @@ export function LeasingPage() {
                     <div className="dim" style={{ fontSize: 11 }}>
                       {/* named, so "Market · Market · Fund" reads as three settings */}
                       rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
-                      {r.h.autoLease ? " · auto" : ""}
+                      {r.h.autoLease ? (autoTiCapToday(game, r.h) !== undefined ? ` · auto, TI ≤ $${autoTiCapToday(game, r.h)!.toFixed(2)}/yr` : " · auto") : ""}
                       {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
                       {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
                       {r.h.broker ? " · broker" : ""}
@@ -380,7 +384,7 @@ export function LeasingPage() {
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? "Answering its own letters by its rent posture. Click to take them back." : "Let this building answer its own letters by its rent posture — no pop-ups."}
+                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back. Set the fit-out cap on the building.` : "Let this building answer its own letters by its rent posture and fit-out cap — no pop-ups."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
                       >{r.h.autoLease ? "auto ✓" : "auto"}</button>
                       {r.commercial && (
@@ -547,3 +551,31 @@ export function LeasingPage() {
  * headlines reads as a month rather than as a list, and filterable because in
  * a bad year the warnings are the only ones you want.
  */
+
+/**
+ * ONE MINIMUM NEW LEASE FOR THE WHOLE BOOK. The per-building floor ("Smallest
+ * deal you'll sign" on each property) set once for every building you own,
+ * and kept as the house default so buildings you buy or deliver later open on
+ * it. Each building can still be set apart on its own desk. 0 clears it.
+ */
+function MinLeaseAll() {
+  const game = useStore((s) => s.game)!;
+  const house = game.minLeaseDefault ?? 0;
+  const [v, setV] = useState<string>(house ? String(house) : "");
+  const n = Number(v === "" ? 0 : v);
+  const valid = Number.isFinite(n) && n >= 0;
+  const changed = valid && Math.round(n) !== house;
+  return (
+    <label className="buybox-field" title="The smallest new tenancy every building will sign: prospects asking for less stop touring. Renewals and expansions of sitting tenants are untouched, and a tenant taking everything still vacant always gets in. Flats let by the unit and are not affected. New buildings you buy or deliver open on the same floor; set any building apart on its own desk.">
+      Min. new lease, all buildings
+      <input type="number" step="500" min="0" value={v} placeholder="any"
+        style={{ width: 80 }}
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && changed) useStore.getState().minLeaseAll(n); }} />sf
+      <button type="button" className="btn btn-mini" disabled={!changed}
+        onClick={() => useStore.getState().minLeaseAll(n)}>
+        {n > 0 ? "Set on all" : "Clear all"}
+      </button>
+    </label>
+  );
+}

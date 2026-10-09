@@ -1142,14 +1142,17 @@ const STAB_LTV = 0.65;
 // `lev` scales the loan down from the lender's maximum — the player's dial.
 // Pass the same `stab` the quote screen used — without it, bridge paper sizes
 // on in-place income at close after showing a stabilised takeout on the card.
+// `guarantor` is the sponsor the term sheet was struck on: a recourse desk
+// prices a strong name a tenth under and caps a thin one, so a closing that
+// sizes without it writes a different coupon and principal than it quoted.
 export function originate(
   s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
-  condition?: string, klass?: string, stab?: StabView,
+  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor,
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (!conditionOk(product, condition)) return null;
-  const full = quote(s, product, price, noiYr, klass, false, stab, condition);
+  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0

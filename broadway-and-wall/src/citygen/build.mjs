@@ -301,7 +301,7 @@ export function buildCityData(src) {
     nearStations(c, 840, (s, d) => { const v = s.w * gauss(d, 280); if (v > b) b = v; return 0; });
     return b;
   };
-  const perPlatform = manifest?.frontagePlat === true && !globalThis.process?.env?.XX_NOTRANSIT;
+  const perPlatform = manifest?.frontagePlat === true;
   const raws = lots.map((l) => ({
     transit: perPlatform ? bestStation(l.c) : nearStations(l.c, 840, (s, d) => s.w * gauss(d, 280)),
     office: nearJobs(l.c, 780, (j, d) => j.office * gauss(d, 260)),

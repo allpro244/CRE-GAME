@@ -327,7 +327,7 @@ export function shopFrontMult(rec: { bldgArea: number; floors: number; lotFront?
   return clamp(zonedPerSf(capped) / zonedPerSf(REF_SHOP_DEPTH_FT), 0.3, 1.6);
 }
 export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }, use: BuiltClass): number {
-  if (use === "retail" && !(globalThis as any).process?.env?.XX_NOSHOP) {
+  if (use === "retail") {
     const f = shopFrontMult(rec);
     if (f !== null) return f;
   }

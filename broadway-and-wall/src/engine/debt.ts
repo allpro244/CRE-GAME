@@ -838,6 +838,32 @@ export function paydownLoan(
   };
 }
 
+/**
+ * DRAW THE LEASE-UP RESERVE — up to `want`, no further than the room left.
+ * The advance goes on the loan's balance (tickLoan re-prices the payment from
+ * the balance every month) and is booked as borrowing, so the reserve is
+ * financed, never minted. With `toCash` false the caller carries the dollars
+ * into the month's cash flow itself. Returns what was drawn.
+ */
+export function drawLeaseUpReserve(s: GameState, h: Holding, want: number, toCash = true): number {
+  const loan = h.loan;
+  const room = loan?.leaseUpRoom ?? 0;
+  if (!loan || !(room > 0) || !(want > 0) || h.fundOwned) return 0;
+  const draw = Math.min(room, Math.round(want));
+  if (draw <= 0) return 0;
+  loan.leaseUpRoom = room - draw;
+  if (loan.leaseUpRoom < 1) delete loan.leaseUpRoom;
+  loan.balance += draw;
+  if (toCash) s.cash += draw;
+  logBooks(s, "borrowed", draw, h.bbl);
+  return draw;
+}
+
+/** What the lease-up reserve can still fund on this deed, $. */
+export function leaseUpRoom(h: Holding | undefined): number {
+  return h && !h.fundOwned ? Math.max(0, h.loan?.leaseUpRoom ?? 0) : 0;
+}
+
 export function monthlyPayment(principal: number, ratePct: number, years: number): number {
   const i = ratePct / 100 / 12;
   const n = years * 12;
@@ -1432,7 +1458,8 @@ export function tickLoan(
   // (portfolio accounting); this clock only asks whether the sponsor could
   // fund it. One bad month is a timing problem; a quarter of them is a file.
   const gap = Math.max(0, Math.ceil(loan.monthlyPmt - assetCF));
-  const short = gap > 0 && s.cash < 0 && fundableNow(s, parcels) < gap;
+  // the lease-up reserve funds the gap before the sponsor is asked to (sim.ts)
+  const short = gap > 0 && gap > leaseUpRoom(h) && s.cash < 0 && fundableNow(s, parcels) < gap - leaseUpRoom(h);
   loan.arrearsMs = short ? (loan.arrearsMs ?? 0) + 1 : 0;
   // MONTHS ONE AND TWO USED TO SAY NOTHING AT ALL. The three-month clock that
   // ends with a lender's file, a notice period and a July auction started in

@@ -796,6 +796,12 @@ function ParcelPanelInner({
             {holding.loan.holder && <Row k="Holder" v={holding.loan.holder} />}
             {game.month < holding.loan.ioUntilM && <Row k="Interest-only" v={"until " + monthLabel(holding.loan.ioUntilM)} />}
             <Row k="Debt service / yr" v={usd(holding.loan.monthlyPmt * 12)} strong />
+            {(holding.loan.leaseUpRoom ?? 0) > 0 && !holding.fundOwned && (
+              <Row
+                k="Lease-up reserve"
+                v={usd(holding.loan.leaseUpRoom!) + " undrawn — pays fit-out, commissions and any month the building cannot carry its loan"}
+              />
+            )}
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
             {holding.mezz && holding.mezz.balance > 0 && (
               <Row
@@ -1484,7 +1490,7 @@ function AutoTiCapRow({ bbl }: { bbl: string }) {
   const rec = resolveRec(parcels, game, bbl);
   if (!h || !rec) return null;
   const use = leasableUses(rec)[0] ?? "office";
-  const [lo, hi] = marketTiPsfYr(game, use);
+  const [lo, hi] = marketTiPsfYr(game, use, rec, h);
   const cap = autoTiCapToday(game, h);
   const set = (v: number | undefined) => useStore.getState().autoTiCap(bbl, v);
   const near = (v: number) => cap !== undefined && Math.abs(cap - v) < 0.01;
@@ -1496,7 +1502,7 @@ function AutoTiCapRow({ bbl }: { bbl: string }) {
   const typed = Number(txt.replace(/[^0-9.]/g, ""));
   return (
     <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-      <span className="hint" title={`Most fit-out auto-lease will fund, per year of lease term. Tenants here ask about $${lo.toFixed(2)}–$${hi.toFixed(2)}/sf per year today (a new building's shell asks more).`}>TI cap</span>
+      <span className="hint" title={`Most fit-out auto-lease will fund, per year of lease term. Tenants here ask about $${lo.toFixed(2)}–$${hi.toFixed(2)}/sf per year today, shell floors included.`}>TI cap</span>
       <button className={"btn btn-mini" + (cap === undefined ? " btn-on" : "")} onClick={() => set(undefined)}>No cap</button>
       {presets.map(([label, v, why]) => (
         <button key={label} className={"btn btn-mini" + (near(v) ? " btn-on" : "")} title={`$${v.toFixed(2)}/sf per lease year — ${why}`} onClick={() => set(+v.toFixed(2))}>

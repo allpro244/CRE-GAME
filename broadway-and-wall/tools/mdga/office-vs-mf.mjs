@@ -37,7 +37,7 @@ cands.sort((a, b) => b.s - a.s);
 function arm(b, use, auto) {
   let g = structuredClone(w);
   const rec = E.resolveRec(parcels, g, b);
-  g.holdings[b] = { bbl: b, costBasis: Math.round(E.landValue(rec, g.econ)), tenants: [], boughtM: g.month, condition: "good", loan: null, cfHistory: [], autoLease: auto || undefined, stance: 0 };
+  g.holdings[b] = { bbl: b, costBasis: Math.round(E.landValue(rec, g.econ)), tenants: [], boughtM: g.month, condition: "good", loan: null, cfHistory: [], autoLease: auto, stance: 0 };
   g.cash = 1e9;
   const cov = E.MAX_COVERAGE[use] ?? 0.7;
   const fl = Math.min(8, E.maxFloorsFor(rec, cov, use));

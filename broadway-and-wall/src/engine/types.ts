@@ -742,6 +742,8 @@ export interface BuildingDesign {
   roof?: "flat" | "gable" | "hip" | "mansard";
   /** how a tall building finishes */
   crown?: "none" | "setback" | "spire" | "mast" | "cake";
+  /** a landmark form for a tower (a key of src/map/real/signature.ts SIGNATURE_FORMS); it replaces the massing and the crown */
+  signature?: string;
 }
 
 export interface DevDraft {

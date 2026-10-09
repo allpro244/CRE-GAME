@@ -3049,7 +3049,20 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // thousand-building town replaced ~0.1%/yr against a ~0.5% real-world
   // anchor and mean age climbed with the calendar. The roll is the same
   // draw as before (RNG-NOTE: more months now enter the sample below).
-  if (rng(s, "dev") > (chronicShort ? 0.05 : 0.15)) return;
+  //
+  // ...AND THE COMPARISON WAS BACKWARDS (2026-10-09). `> 0.15` skipped 85% of
+  // months, which is the old rate this paragraph says it replaced, and `> 0.05`
+  // skipped 95% of months in a CHRONIC SHORTAGE — the state the line above
+  // exists to examine more often, not less. Measured on Manhattan below
+  // Houston, Young town, no player: 97 of 120 calls skipped in a quiet decade,
+  // 239 of 253 in a short one, and the city replaced one or two buildings a
+  // year out of ~5,000 — while each replacement densified its lot 5-7x.
+  // The skip is now the stated 15%, 5% when short. Measured after, year 100,
+  // two seeds: floor area +42%/+60%, prime-lot median height 4 -> 9 / 7
+  // floors, 20+ floor buildings 17 -> 157 / 35 -> 218, real flat rent
+  // 5.1x -> 2.1x / 2.8x -> 1.0x of opening, ~10 demolitions a year (0.2% of
+  // stock, still under the 0.5% anchor above).
+  if (rng(s, "dev") < (chronicShort ? 0.05 : 0.15)) return;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
   // This path is 96% of all the square footage this city builds, and it broke

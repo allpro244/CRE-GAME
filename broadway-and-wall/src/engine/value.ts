@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism, residenceVac } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -1713,7 +1713,24 @@ export function heightCapFloors(
   // Still neutral at rest: at natural vacancy with no capacity shortage both
   // reaches are zero, the branch does not fire, and month zero is unchanged.
   const structReach = clamp((struct - 0.08) / 0.22, 0, 1);
-  const tightReach = clamp((tight - 0.45) / 0.40, 0, 1);
+  // TIGHT AGAINST WHAT THE MARKET CAN REACH, NOT AGAINST ZERO (2026-10-09).
+  // `tight` is measured from natural toward 0% vacancy, but no market gets
+  // near 0%: when every suite that can be let is let, the suites between
+  // tenants are still dark (`residenceVac` — turnover times re-let months).
+  // For flats that point is ~3.5% against a natural 4.5%, so `tight` topped
+  // out at 0.22 and the 0.45 threshold could never be met: the class in
+  // permanent shortage on every measured Manhattan run was the one class
+  // whose cornice no shortage could break, while offices could reach a fifth
+  // of the way to their legal envelope and sheds half. The reach now reads
+  // how far the market has gone from natural toward FULLY LET — the same
+  // 45%/40% shape, on the scale every class can actually traverse.
+  // Measured with the teardown fix, Manhattan below Houston, two seeds,
+  // year 100: 30+ floor buildings 17 -> 32 and 14 -> 58, 20+ floor
+  // 157 -> 186 and 218 -> 329. It overbuilds on the way — office vacancy
+  // 17.6% at year 50 on one seed — which is what a skyline cycle looks like.
+  const fullyLet = Math.min(natural * 0.95, residenceVac(ez, use));
+  const tightLet = clamp((natural - (ez.cityVac?.[use] ?? natural)) / Math.max(0.002, natural - fullyLet), -1, 1);
+  const tightReach = clamp((tightLet - 0.45) / 0.40, 0, 1);
   const reach = Math.max(structReach, tightReach);
   if (reach > 0 && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
     const legal = Math.ceil(farMaxFor({

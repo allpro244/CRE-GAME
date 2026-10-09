@@ -404,6 +404,16 @@ export interface Loan {
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
   /**
+   * THE UNDRAWN LEASE-UP RESERVE on a construction takeout, $. The lender
+   * holds it and advances it as the costs it was budgeted for arrive — each
+   * lease's fit-out and commission at signing, and the month's shortfall while
+   * the building cannot carry its own coupon (debt.ts drawLeaseUpReserve). It
+   * lives on the loan because it is the loan's commitment: a refinance, a sale
+   * or a payoff ends it, and it closes when the last shell floor is let and
+   * the building covers its debt.
+   */
+  leaseUpRoom?: number;
+  /**
    * WHO IS ACTUALLY HOLDING IT.
    *
    * The product says who wrote the loan. This says who owns it today, and they

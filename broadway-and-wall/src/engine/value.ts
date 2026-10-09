@@ -440,10 +440,35 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
  * This is also what stops every lot becoming a tower. A ladder that is too flat
  * makes floor area nearly free above the eighth storey, and then the only thing
  * limiting height is the zoning — which is a rule, not an economy.
+ *
+ * A CURVE, NOT A STAIRCASE. The bands above were written as steps — 1.00 to
+ * eight storeys, 1.16 to eighteen, 1.48 to thirty, 1.85 beyond — and a step
+ * prices the WHOLE building at the new band the moment one floor crosses it:
+ * the 31st storey repriced the thirty below it by 25%, and a plan's yield on
+ * cost fell a full point for one more floor (tools/mdga/floor-scan.mjs). The
+ * cost surveys the bands come from are band AVERAGES of a smooth rise, and
+ * nothing in a building code sits at 9, 19 or 31 storeys. So each band's level
+ * now sits at its middle and the premium runs straight between them: 1.00
+ * through four storeys, 1.16 at thirteen, 1.48 at twenty-four and a half, 1.85
+ * at forty (the tower the RSMeans check above was made on), and on to 2.00 by
+ * sixty — inside the +80-100% the source gives above thirty — flat past it,
+ * where slenderness (maxFloorsFor) governs rather than cost. A real step does
+ * exist where the construction TYPE changes, which is why the wood-frame
+ * apartment ladder below keeps its steps: that one is the building code.
  */
+const HEIGHT_PREMIUM_PTS: [number, number][] = [[4, 1], [13, 1.16], [24.5, 1.48], [40, 1.85], [60, 2.0]];
 export function heightPremium(floors: number): number {
   const fl = Math.max(1, floors || 1);
-  return fl > 30 ? 1.85 : fl > 18 ? 1.48 : fl > 8 ? 1.16 : 1;
+  const pts = HEIGHT_PREMIUM_PTS;
+  if (fl <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    if (fl <= x1) {
+      const [x0, y0] = pts[i - 1];
+      return y0 + ((y1 - y0) * (fl - x0)) / (x1 - x0);
+    }
+  }
+  return pts[pts.length - 1][1];
 }
 /**
  * WHAT A LOW-RISE APARTMENT IS BUILT OF (MDGA phase 2).

@@ -16,7 +16,7 @@ import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
 import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
-import { tickLoan, productById, loanLender, stackPayoff, balloonLadder } from "./debt";
+import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
@@ -733,9 +733,25 @@ function tickMonth(
     stampPnlDeed(s, h, noiQ, h.groundLeased ? null : (operatingStatement(rec, s.econ, h, s.month).egi ?? 0));
     logBooks(s, "debtSvc", debtCash, h.bbl);
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
-    const cf = noiQ - debtCash;
+    let cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
+    // A NEW BUILDING THAT CANNOT CARRY ITS LOAN DRAWS ITS LEASE-UP RESERVE
+    // (Loan.leaseUpRoom) — the deficit line a construction budget finances,
+    // advanced by the lender rather than paid from the firm's account. The
+    // reserve closes once the last shell floor is let and the building covers
+    // its debt: what was never drawn is never borrowed.
+    if (h.loan?.leaseUpRoom) {
+      if (cf < 0) cf += drawLeaseUpReserve(s, h, -cf, false);
+      else if (!h.shellSf) {
+        const left = h.loan.leaseUpRoom;
+        delete h.loan.leaseUpRoom;
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${rec.address} is let and carrying its loan — the lender has closed the lease-up reserve with ${money(left)} undrawn, never borrowed.`,
+        });
+      }
+    }
     // Vehicle deeds keep their cash in the vehicle — promote needs a
     // counterparty, and GP liquidity is not LP capital. The two `logBooks`
     // lines above already settled this month's NOI into `fund.cash` and the
@@ -1969,7 +1985,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     let committed = 0, vehicle = 0;
     for (const l of s.lois ?? []) {
       const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
-      if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c; else committed += c;
+      if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c;
+      else committed += Math.max(0, c - leaseUpRoom(s.holdings[l.bbl]));
     }
     if (vehicle > 0 && vehiclePurse(s) - vehicle < fundReserve(s)) {
       out.push({

@@ -191,7 +191,11 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
   const rec = E.resolveRec(parcels, s4, sbbl);
   const conv = E.conveyedValue(s4, rec, sbbl, false, E.assetGrade(rival(s4, sid), rec));
   const mult = 1.14 - 0.14 * (0.95 - 0.8) / 0.2;
-  check(!!li && li.ask === Math.round(conv * mult / 1000) * 1000, `sell p=0.95 lists ${sbbl} at ${mult.toFixed(3)}x conveyed value (${li?.ask})`);
+  // A listing at the ask can clear the same month it goes up; the ask is then
+  // the comp's price, from a listed seller, this month. Same number either way.
+  const soldNow = !li && (s4.comps ?? []).find((c) => c.bbl === sbbl && c.m === s4.month && c.seller === "a listed seller");
+  const askSeen = li?.ask ?? soldNow?.price;
+  check(askSeen === Math.round(conv * mult / 1000) * 1000, `sell p=0.95 lists ${sbbl} at ${mult.toFixed(3)}x conveyed value (${askSeen}${soldNow ? ", sold the month it listed" : ""})`);
   let s5 = await E.runJevPeriod(gy, parcels, { answer: fixture(Object.fromEntries(Object.keys(builtY.request.questions).filter((q) => q.startsWith("sell_")).map((q) => [q, { type: "noul", noul: 0.05 }]))) });
   s5 = step(s5);
   check(s5.jev.log.some((l) => l.firmId === sid && l.point === "sell" && l.path === "pass"), "every holding at p=0.05 is a hold: the scripted trim is skipped");

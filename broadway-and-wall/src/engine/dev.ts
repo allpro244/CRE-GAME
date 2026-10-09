@@ -989,10 +989,9 @@ export function refreshDevelopmentFeasibility(
     }
     if (redevCount >= REDEV_N) continue;
     if (!rec.bldgArea) continue;
-    const age = yrNow - (rec.yearBuilt || 1900);
-    if (age < 45) continue;
-    const cond = gradeOf(s, rec);
-    if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
+    // Same question the wrecking ball asks (tickTeardowns): no birthday, no
+    // grade filter — the standing building's value is charged below instead.
+    void yrNow;
     // Only sites that can grow housable floor under today's cornice/shortage.
     const leadGuess = rec.class as BuiltClass;
     const infill = cityInfillCap(s, parcels, rec, leadGuess);
@@ -1000,8 +999,9 @@ export function refreshDevelopmentFeasibility(
     if (targetSf < rec.bldgArea * 1.12) continue;
     chosen.add(bbl);
     redevCount++;
-    // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
-    const opp = landValue(rec, s.econ);
+    // Same basis tickTeardowns uses: the higher of the land and the building
+    // as it stands (+ demo in plan).
+    const opp = Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, gradeOf(s, rec)));
     for (const use of BUILT_CLASSES) {
       if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
       const plate = cityCoverage(use);
@@ -3075,7 +3075,14 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // thousand-building town replaced ~0.1%/yr against a ~0.5% real-world
   // anchor and mean age climbed with the calendar. The roll is the same
   // draw as before (RNG-NOTE: more months now enter the sample below).
-  if (rng(s, "dev") > (chronicShort ? 0.05 : 0.15)) return;
+  // RETIRED (2026-10-09): the monthly skip. Teardowns were examined in 15% of
+  // months (5% skipped in a shortage) and at most one went ahead — a clock,
+  // not a decision. Measured over 4 worlds x 50 years: 29-43 of ~865 opening
+  // buildings rebuilt (~0.1%/yr against the ~0.5% this block cites), and mean
+  // building age 65 -> 99-107. Every month now looks at its sample, and every
+  // site whose replacement beats what is standing goes ahead, until the
+  // crews are spoken for. RNG-NOTE: one fewer draw per month on "dev".
+  void chronicShort;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
   // This path is 96% of all the square footage this city builds, and it broke
@@ -3098,7 +3105,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // starts stop being a relay pinned at hard zero (45.2% of months -> 12.7%).
   // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
   // retail 0.497 -> 0.259.
-  if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls, s.econ)) return;
+  const liveJobs = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
+  const crewRoom = crewCapacity(bbls, s.econ) - liveJobs;
+  if (crewRoom <= 0) return;
   // Score by DENSIFICATION SURPLUS, not land/building alone. A cash-flowing
   // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
   // a shortage; the old land/built ratio only found husks, and century nulls
@@ -3127,13 +3136,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (ownerOf(s, bbl)) continue;                               // named firm path is startOwnJob
-    const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
-    if (age < 45) continue;                                      // nobody knocks down a young building
-    // `gradeOf` is the OWNER'S stewardship, not the building's birthday — a
-    // shed a slumlord has milked for thirty years is a teardown at sixty and
-    // the same shed in a core fund is not.
+    // NO BIRTHDAY AND NO GRADE TEST (2026-10-09). `age < 45` and "worn or
+    // worse" were rules standing where a price belongs: a young or good
+    // building is spared because what it is worth AS IT STANDS — the
+    // opportunity cost the underwriting below now charges — is more than any
+    // replacement can earn over its cost. That is the teardown test, and it
+    // already says no to a sound building without being told to.
     const cond = gradeOf(s, rec);
-    if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
     const land = landValue(rec, e);
     const built = Math.max(1, assetValue(rec, e, cond));
     const ratio = land / built;
@@ -3185,11 +3194,11 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // untouched, because office happened to be soft at the time.
   const yr0 = START_YEAR + Math.floor(s.month / 12);
 
-  let chosen: {
+  const chosen: {
     rec: TearCand["rec"]; ratio: number; bbl: string; oldSf: number;
     nextUse: DevUse; lead: BuiltClass; nsf: number; nfl: number;
     opportunityCost: number; plan: DevPlan;
-  } | null = null;
+  }[] = [];
 
   for (const cand of pool) {
     const rec = cand.rec;
@@ -3217,8 +3226,11 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // appraisers and BOMA use the longer life). Anonymous fabric never
     // starts obsolete, so "worn and 70" left the wrecking ball waiting on
     // a grade that nobody can earn. Sixty is the birthday, not a volume dial.
-    const recycle = stood === "obsolete" || stoodAge >= 60;
-    if ((e.startOwed?.[lead] ?? 0) <= 0 && !classPinnedOwed(e, lead) && !recycle) continue;
+    // The order book and the age rule no longer gate this: a replacement that
+    // beats the standing building's value is worth building whether or not
+    // the space market has filed an order for it, and one that does not is
+    // not, at any age. Vacancy reaches it through rent, exit cap and lease-up.
+    void stood; void stoodAge;
     const leadShort = classPinnedOwed(e, lead)
       || ((e.structTight?.[lead] ?? 0) > 0.06
         && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
@@ -3299,7 +3311,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // Unowned fabric only (player / named firms skipped above). Land is the
     // opportunity cost; demo is inside the shared plan. Rival-owned densify
     // keeps the discounted as-is bid in startOwnJob.
-    const opportunityCost = landValue(rec, e);
+    // WHAT IS SACRIFICED IS THE BUILDING, NOT JUST THE DIRT (2026-10-09). This
+    // charged land value alone, which is the right basis only for a husk. A
+    // site's owner sells to whoever pays most: the redeveloper must beat the
+    // building's value AS IT STANDS (income capitalised, at its condition) or
+    // the land's residual, whichever is higher. That one number is what
+    // spares a sound young building and condemns an obsolete one.
+    const opportunityCost = Math.max(landValue(rec, e), assetValue(rec, e, gradeOf(s, rec)));
     // ...AND A REPLACEMENT CAN BUY HEIGHT TOO. The greenfield and rival paths
     // could go over the cornice by paying for the permission and this one
     // could not, which would have made a teardown the one trade in the city
@@ -3322,29 +3340,25 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       s, parcels, bbl, nextUse, nfl, plate, densifyBasis,
     );
     if (!underwriting) continue;
-    const ownerRecycle = recycle
-      && underwriting.financeable
-      && underwriting.plan.yieldOnCostExLand >= underwriting.plan.exitCap;
-    const merchant = underwriting.clears;
-    if (!merchant && !ownerRecycle) continue;
-    const rollGate = leadShort ? 0.88 : stood === "obsolete" ? 0.80 : ownerRecycle ? 0.80 : 0.62;
-    if (merchant) {
-      if (teardownRoll > rollGate * underwriting.appetite) continue;
-    } else if (teardownRoll > 0.80) {
-      continue;
-    }
+    // ONE TEST: the replacement clears the common hurdle carrying the full
+    // value of what it replaces. The owner-recycle second test (ex-land YoC
+    // over exit cap, for buildings 60+) and the coin-flip gates (0.62-0.88 x
+    // appetite) are gone — the first double-counted the owner's dirt as free,
+    // the second was a volume dial.
+    if (!underwriting.clears) continue;
+    void teardownRoll;
     const plan = underwriting.plan;
     nsf = plan.sf;
     nfl = plan.floors;
     if (leadShort && nsf < oldSf * 1.05) continue;
-    chosen = {
+    chosen.push({
       rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
       opportunityCost, plan,
-    };
-    break;
+    });
+    if (chosen.length >= crewRoom) break;
   }
-  if (!chosen) return;
-  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan } = chosen;
+  for (const pick of chosen) {
+  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan } = pick;
   const yr = yr0;
   const tprog = plan.mix;
   const months = plan.months;
@@ -3425,6 +3439,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     });
   }
   void yr;
+  }
 }
 
 /**

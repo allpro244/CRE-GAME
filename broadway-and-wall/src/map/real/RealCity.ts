@@ -105,7 +105,12 @@ const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "park
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
-  return { c, g: c.getContext("2d")! };
+  // READ BACK, SO KEPT ON THE CPU. Every elevation is measured after it is
+  // painted (meanLum, normalFromHeight), and a GPU-backed canvas pays for a
+  // read with a flush of everything drawn so far: the first one measured
+  // 6.8s in a headless Chromium, and the family textures as a whole were most
+  // of a big city's build. Chrome's own console asks for exactly this flag.
+  return { c, g: c.getContext("2d", { willReadFrequently: true })! };
 }
 
 /** Height field → tangent-space normal map (Sobel), for the window reveals. */
@@ -963,19 +968,36 @@ class F32 {
     }
   }
   /** The written values, exactly sized; the column is spent afterwards. */
-  take(): Float32Array {
+  take(): Float32Array { return runSteps(this.takeSteps()); }
+  /** take(), pausing after each chunk it joins (see paceSteps). */
+  *takeSteps(): Generator<void, Float32Array> {
     let out: Float32Array;
     if (!this.full.length) out = this.cur.length - this.at > 4096 ? this.cur.slice(0, this.at) : this.cur.subarray(0, this.at);
     else {
       out = new Float32Array(this.length);
       let o = 0;
-      for (const c of this.full) { out.set(c, o); o += c.length; }
+      for (const c of this.full) { out.set(c, o); o += c.length; yield; }
       out.set(this.cur.subarray(0, this.at), o);
     }
     this.full = []; this.done = 0; this.cur = new Float32Array(0); this.at = 0;
     return out;
   }
 }
+
+/** Run a stepped job straight through. */
+function runSteps<T>(g: Generator<void, T>): T {
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+/** Run a stepped job, letting `pace` decide at every step whether to give the thread back. */
+async function paceSteps<T>(g: Generator<void, T>, pace: () => Promise<void>): Promise<T> {
+  let r = g.next();
+  while (!r.done) { await pace(); r = g.next(); }
+  return r.value;
+}
+/** How many floats a stepped loop walks between steps: about a millisecond of work. */
+const STEP_FLOATS = 1 << 20;
 
 class Buf {
   pos = new F32(); nrm = new F32(); uv = new F32(); col = new F32(); ao = new F32();
@@ -1019,29 +1041,55 @@ class Buf {
    * move into the attributes rather than being copied, so a city's worth of
    * vertices is held once and not twice.
    */
-  geometry(): THREE.BufferGeometry {
+  geometry(): THREE.BufferGeometry { return runSteps(this.geometrySteps()); }
+  /**
+   * geometry(), in steps. On a big map one family's buffer is millions of
+   * vertices, and joining its columns and sizing its bounds in one go held the
+   * page for seconds at a time; the build paces this (flushBufs).
+   */
+  *geometrySteps(): Generator<void, THREE.BufferGeometry> {
     const g = new THREE.BufferGeometry();
     const n = this.count;
     // the paint scheme rides only on walls; a buffer filled by hand (ground,
     // water) carries none, and gets the plain one at every vertex
-    const col = (c: F32, d: number[]) => {
-      if (c.length === n * d.length) return c.take();
+    const col = function* (c: F32, d: number[]): Generator<void, Float32Array> {
+      if (c.length === n * d.length) return yield* c.takeSteps();
       c.take();
       const out = new Float32Array(n * d.length);
-      for (let i = 0; i < out.length; i++) out[i] = d[i % d.length];
+      for (let i = 0; i < out.length; i++) { out[i] = d[i % d.length]; if (i % STEP_FLOATS === 0) yield; }
       return out;
     };
-    g.setAttribute("position", new THREE.BufferAttribute(this.pos.take(), 3));
-    g.setAttribute("normal", new THREE.BufferAttribute(this.nrm.take(), 3));
-    g.setAttribute("uv", new THREE.BufferAttribute(this.uv.take(), 2));
-    g.setAttribute("color", new THREE.BufferAttribute(this.col.take(), 3));
-    g.setAttribute("aoh", new THREE.BufferAttribute(col(this.ao, [3.5]), 1));
-    g.setAttribute("paint", new THREE.BufferAttribute(col(this.pt, NO_PAINT.wall), 4));
-    g.setAttribute("trimc", new THREE.BufferAttribute(col(this.tc, NO_PAINT.trim), 3));
-    g.setAttribute("accent", new THREE.BufferAttribute(col(this.ac, NO_PAINT.accent), 3));
+    const pos = yield* this.pos.takeSteps();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(yield* this.nrm.takeSteps(), 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(yield* this.uv.takeSteps(), 2));
+    g.setAttribute("color", new THREE.BufferAttribute(yield* this.col.takeSteps(), 3));
+    g.setAttribute("aoh", new THREE.BufferAttribute(yield* col(this.ao, [3.5]), 1));
+    g.setAttribute("paint", new THREE.BufferAttribute(yield* col(this.pt, NO_PAINT.wall), 4));
+    g.setAttribute("trimc", new THREE.BufferAttribute(yield* col(this.tc, NO_PAINT.trim), 3));
+    g.setAttribute("accent", new THREE.BufferAttribute(yield* col(this.ac, NO_PAINT.accent), 3));
     // how many of this building's rooms are lit after dark (see setOccupancy)
     g.setAttribute("lit", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
-    g.computeBoundingSphere();
+    // computeBoundingSphere's own two passes — the box's centre, then the
+    // farthest vertex from it — walked a step at a time
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+      if (i % STEP_FLOATS === 0) yield;
+    }
+    const sphere = new THREE.Sphere(new THREE.Vector3(), 0);
+    if (pos.length) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2;
+      let r2 = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        const dx = pos[i] - cx, dy = pos[i + 1] - cy, dz = pos[i + 2] - cz;
+        const d2 = dx * dx + dy * dy + dz * dz; if (d2 > r2) r2 = d2;
+        if (i % STEP_FLOATS === 0) yield;
+      }
+      sphere.center.set(cx, cy, cz); sphere.radius = Math.sqrt(r2);
+    }
+    g.boundingSphere = sphere;
     return g;
   }
 }
@@ -1083,6 +1131,22 @@ interface DynLayer {
 }
 
 // ---- the layer -------------------------------------------------------------
+
+/** Where built meshes wait, undrawn, until the hand-over reaches them (RealCityLayer.stageSome). */
+const STAGE_LAYER = 31;
+/** How much joins the drawing per frame: vertices, and objects (each may compile a shader). */
+const STAGE_VERTS = 2_000_000, STAGE_MAX = 8;
+/** Thrown through a build whose layer was removed mid-way, to unwind it quietly. */
+const ABANDONED = Symbol("layer removed mid-build");
+/**
+ * Let the browser paint and take input, then carry on. A plain task at the
+ * back of the queue, not scheduler.yield: a yield() continuation is queued
+ * ahead of everything else, and measured that way the build still held off
+ * every frame for 16s at a stretch.
+ */
+function yieldThread(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
 
 export class RealCityLayer {
   id = "bw-three-buildings";
@@ -1191,20 +1255,108 @@ export class RealCityLayer {
     pm.dispose();
     this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv; });
     this.setupLights();
-    this.buildCity();
-    this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
-    this.buildGround();
-    this.buildChannels();
-    this.buildBridges();
-    this.buildStreetLife();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
     const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
     measure(); map.on("resize", measure);
     map.on("moveend", () => this.map.triggerRepaint());
+    this.queue = new Map();
+    void this.buildAll();
+  }
+
+  /**
+   * THE CITY IS BUILT A SLICE AT A TIME. A big map is tens of millions of
+   * vertices, and built in one go it held the page for most of a minute —
+   * Manhattan below 14th Street at Metropolis build-out measured 31s in a
+   * headless Chromium, with the map, the clock and every button dead the
+   * whole time. Now the build hands the thread back every few milliseconds:
+   * the flat map is up and usable while the skyline rises, and the 3D layer
+   * takes over when it is done (onReady). Nothing is drawn from a half-built
+   * scene, and whatever the page asks of the layer meanwhile waits in
+   * `queue` — the latest call to each method, in the order they came — and is
+   * applied when the build finishes.
+   */
+  private async buildAll() {
+    this.sliceEnd = performance.now() + RealCityLayer.SLICE_MS;
+    try {
+      await this.buildCity();
+      this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
+      await this.buildGround();
+      await this.breathe(true);
+      this.buildChannels();
+      this.buildBridges();
+      await this.breathe(true);
+      await this.buildStreetLife();
+    } catch (e) {
+      if (e === ABANDONED) return;
+      throw e;
+    }
+    const q = this.queue;
+    this.queue = null;
+    for (const f of q?.values() ?? []) f();
+    // THE HAND-OVER, A FEW MESHES A FRAME. Everything built so far reaches the
+    // GPU the first frame it is drawn — its buffers uploaded, its material's
+    // shader compiled — and on a big map that is a gigabyte and dozens of
+    // shaders in one frame. Parked on a layer the camera does not see, the
+    // meshes join the drawing a few million vertices at a time (stageSome).
+    this.stage = [];
+    this.scene.traverse((o) => {
+      if (!(o as THREE.Mesh).geometry) return;
+      o.layers.set(STAGE_LAYER);
+      this.stage!.push(o);
+    });
+    this.map.triggerRepaint();
+  }
+
+  /** Objects built but not yet drawn, in the order they will join (null once all have). */
+  private stage: THREE.Object3D[] | null = null;
+  private live = false;
+  private stageSome() {
+    const st = this.stage!;
+    let verts = 0, n = 0;
+    while (st.length && verts < STAGE_VERTS && n < STAGE_MAX) {
+      const o = st.shift()!;
+      o.layers.set(0);
+      verts += (o as THREE.Mesh).geometry.getAttribute("position")?.count ?? 0;
+      n++;
+    }
+    if (st.length) { requestAnimationFrame(() => this.map?.triggerRepaint()); return; }
+    this.stage = null;
+    this.live = true;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.onReady?.();
+  }
+
+  /** How long a slice of the build may hold the thread before it gives it back. */
+  private static readonly SLICE_MS = 12;
+  private sliceEnd = 0;
+  private gone = false;
+  /** Calls that arrived mid-build, one per method, in order of their latest call. */
+  private queue: Map<string, () => void> | null = null;
+  /** Called once, when the whole city is built and drawn. */
+  onReady: (() => void) | null = null;
+  /** Whether the city is built and all of it on screen (false before onAdd, while it builds, and while it is handed over). */
+  get ready(): boolean { return this.live; }
+
+  /** Give the thread back if this slice is spent (or `force`), and stop here if the layer was removed. */
+  private async breathe(force = false) {
+    if (this.gone) throw ABANDONED;
+    if (!force && performance.now() < this.sliceEnd) return;
+    await yieldThread();
+    if (this.gone) throw ABANDONED;
+    this.sliceEnd = performance.now() + RealCityLayer.SLICE_MS;
+  }
+
+  /** Mid-build, hold the call for when the city is up; true if it was held. */
+  private defer(key: string, f: () => void): boolean {
+    if (!this.queue) return false;
+    this.queue.delete(key);
+    this.queue.set(key, f);
+    return true;
   }
 
   onRemove() {
+    this.gone = true;
     if (activeCity === this) activeCity = null;
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -1214,7 +1366,8 @@ export class RealCityLayer {
   }
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
-    if (!this.visibleOn) return;
+    if (!this.visibleOn || this.queue) return;
+    if (this.stage) this.stageSome();
     // where the eye is, in local metres (same derivation ThreeBuildings uses)
     const c = this.map.getCenter();
     const z = this.map.getZoom();
@@ -3039,7 +3192,7 @@ export class RealCityLayer {
     l.push({ x, y, z, s, r, bbl, col, sz });
   }
 
-  private buildCity() {
+  private async buildCity() {
     // the top volume per deed takes the cornice and the plant
     const topZ = new Map<string, number>();
     for (const v of this.volumes) if (v.b && !v.k) topZ.set(v.b, Math.max(topZ.get(v.b) ?? 0, v.z1));
@@ -3050,6 +3203,7 @@ export class RealCityLayer {
     const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
     const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
     for (const v of this.volumes) {
+      await this.breathe();
       // a residential lot in town stays MapLibre's lawn; out on the fringe it is country like the rest
       if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62 && (v.ds ?? 50) >= 38)) continue;
       let ring = v.r.map((p) => this.project(p));
@@ -3119,6 +3273,7 @@ export class RealCityLayer {
       m.receiveShadow = true; this.scene.add(m);
     }
     for (const v of this.volumes) {
+      await this.breathe();
       if (v.k) continue;                                   // vacant lots: dressed above
       const ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
@@ -3188,8 +3343,10 @@ export class RealCityLayer {
       if (!d.ring) d.ring = ring;
     }
     this.buildWaterfront();
-    this.flushBufs();
+    await this.flushBufs();
+    await this.breathe(true);
     this.flushInst();
+    await this.breathe(true);
     // a shadow catcher over MapLibre's ground: transparent except where a
     // building or a tree stands between it and the sun
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
@@ -3209,7 +3366,10 @@ export class RealCityLayer {
       outer.holes.push(new THREE.Path(holePts));
       const dry = ((this.ctx as { shore?: { ring: P2[]; kind: string }[] }).shore ?? [])
         .map((d) => ({ ring: d.ring.map((q) => this.project(q)), hard: d.kind === "seawall" || d.kind === "pier" || d.kind === "breakwater" }));
-      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), seaMaterial(shoreField(land, dry), this.waves[0]?.tex ?? rippleNormal(), this.skyEnv));
+      const field = shoreField(land, dry);
+      await this.breathe(true);
+      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), seaMaterial(field, this.waves[0]?.tex ?? rippleNormal(), this.skyEnv));
+      await this.breathe(true);
       sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
       this.scene.add(sea);
       // the park ponds take the same glossy, rippled skin
@@ -3233,14 +3393,15 @@ export class RealCityLayer {
     this.scene.add(veil);
   }
 
-  private flushBufs() {
+  private async flushBufs() {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
+      await this.breathe();
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
         : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
-      const geo = b.geometry();
+      const geo = await paceSteps(b.geometrySteps(), () => this.breathe());
       // THE GPU KEEPS ITS OWN COPY. Position, colour and lit are rewritten
       // after the build (a demolition flattens, a tint repaints, occupancy
       // lights rooms); nothing reads the rest again, so their arrays are let
@@ -3257,20 +3418,23 @@ export class RealCityLayer {
     }
     // the buffers are spent (Buf.geometry); a later build starts on fresh ones
     this.bufs = new Map();
-    this.bindRanges(this.deeds, this.meshes);
+    await paceSteps(this.bindRangesSteps(this.deeds, this.meshes), () => this.breathe());
   }
 
   /** Point each deed's ranges at the mesh they live in, and keep their base colours so state tints can be undone. */
-  private bindRanges(deeds: Map<string, Deed>, meshes: Map<string, THREE.Mesh>) {
+  private bindRanges(deeds: Map<string, Deed>, meshes: Map<string, THREE.Mesh>) { runSteps(this.bindRangesSteps(deeds, meshes)); }
+  private *bindRangesSteps(deeds: Map<string, Deed>, meshes: Map<string, THREE.Mesh>): Generator<void, void> {
     // one float32 copy of each mesh's colours, and every range a window on it:
     // a copied number[] per range was 24 bytes a vertex across the whole city
     const bases = new Map<THREE.Mesh, Float32Array>();
+    let n = 0;
     for (const [, d] of deeds) {
+      if (++n % 2048 === 0) yield;
       for (const r of d.ranges) {
         r.mesh = meshes.get(r.buf);
         if (!r.mesh) continue;
         let all = bases.get(r.mesh);
-        if (!all) bases.set(r.mesh, (all = ((r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute).array as Float32Array).slice()));
+        if (!all) { bases.set(r.mesh, (all = ((r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute).array as Float32Array).slice())); yield; }
         r.base = all.subarray(r.start * 3, (r.start + r.count) * 3);
       }
     }
@@ -3487,7 +3651,7 @@ export class RealCityLayer {
   // footway is a real slab fifteen centimetres up, paved in flags, with a
   // granite kerb face along the street edge, and every gridded corner gets
   // painted zebra bars standing on the carriageway.
-  private buildGround() {
+  private async buildGround() {
     const c = this.ctx as {
       sidewalks?: { ring: P2[]; holes: P2[][] }[]; kerbs?: P2[][]; zebras?: P2[][];
     };
@@ -3495,6 +3659,7 @@ export class RealCityLayer {
     const pave = new Buf(), kerb = new Buf();
     const white = [1, 1, 1];
     for (const sw of c.sidewalks ?? []) {
+      await this.breathe();
       const ring = sw.ring.map((q) => this.project(q));
       const holes = sw.holes.map((h) => h.map((q) => this.project(q)));
       if (ring.length < 3) continue;
@@ -3520,6 +3685,7 @@ export class RealCityLayer {
     // round the inside of every park outline, with its kerb on the road side.
     const parkKerbs: P2[][] = [];
     for (const pk of (this.ctx.parks ?? []) as ({ ring: P2[] } | P2[])[]) {
+      await this.breathe();
       const ringLL = Array.isArray(pk) ? pk : pk.ring;
       if (!ringLL || ringLL.length < 3) continue;
       let ring = ringLL.map((q) => this.project(q));
@@ -3550,6 +3716,7 @@ export class RealCityLayer {
       }
     }
     for (const line of c.kerbs ?? []) {
+      await this.breathe();
       const pts = line.map((q) => this.project(q));
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], b = pts[i + 1];
@@ -3574,6 +3741,7 @@ export class RealCityLayer {
     // in the direction the traffic runs
     const bars: { x: number; y: number; r: number }[] = [];
     for (const line of c.zebras ?? []) {
+      await this.breathe();
       if (line.length < 2) continue;
       const A = this.project(line[0]), B = this.project(line[line.length - 1]);
       const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
@@ -3915,9 +4083,10 @@ export class RealCityLayer {
    * footway with its crown clear of every wall, a lamp on the footway, a
    * parked car wholly on the carriageway with a running lane beside it.
    */
-  private dressFootways(rnd: () => number, leafCol: () => number[], CAR: number[][], COAT: number[][]) {
+  private async dressFootways(rnd: () => number, leafCol: () => number[], CAR: number[][], COAT: number[][]) {
     const c = this.ctx as { sidewalks?: { ring: P2[]; holes: P2[][] }[] };
     for (const sw of c.sidewalks ?? []) {
+      await this.breathe();
       let ring = sw.ring.map((q) => this.project(q));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();   // counter-clockwise: the band is on the left
@@ -4003,17 +4172,18 @@ export class RealCityLayer {
   }
 
   // ---- street life --------------------------------------------------------
-  private buildStreetLife() {
+  private async buildStreetLife() {
     let s = (this.seed * 7919) % 2147483646 + 1;
     const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
     // a street tree is a deeper, cleaner green than the grey-olive it was
     const leafCol = () => [0.24 + rnd() * 0.08, 0.42 + rnd() * 0.1, 0.13 + rnd() * 0.05];
     const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
-    this.dressFootways(rnd, leafCol, CAR, COAT);
+    await this.dressFootways(rnd, leafCol, CAR, COAT);
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
     for (const pk of (this.ctx as { parks?: { ring: P2[]; flavour?: string }[] }).parks ?? []) {
+      await this.breathe();
       if (!pk.ring || pk.ring.length < 3) continue;
       if (pk.flavour === "cemetery" || pk.flavour === "market" || pk.flavour === "battery") continue;
       const r = pk.ring.map((q) => this.project(q));
@@ -4074,6 +4244,7 @@ export class RealCityLayer {
       .filter((pk) => pk.ring.length >= 3);
     const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
+      await this.breathe();
       const [x, y] = this.project(p);
       const pk = parksP.find((q) => inRingP(x, y, q.ring));
       const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
@@ -4248,12 +4419,14 @@ export class RealCityLayer {
   }
 
   setOwned(owned: Set<string>, _status?: Map<string, { listed?: boolean; distress?: 0 | 1 | 2 }>) {
+    if (this.defer("setOwned", () => this.setOwned(owned, _status))) return;
     const touched = new Set<string>([...this.owned, ...owned]);
     this.owned = new Set(owned);
     for (const b of touched) this.refreshDeed(b);
     this.map?.triggerRepaint();
   }
   setHighlight(selected: string[], hover: string | null) {
+    if (this.defer("setHighlight", () => this.setHighlight(selected, hover))) return;
     const touched = new Set<string>([...this.selected, ...selected]);
     if (this.hover) touched.add(this.hover);
     if (hover) touched.add(hover);
@@ -4263,6 +4436,7 @@ export class RealCityLayer {
     this.map?.triggerRepaint();
   }
   setLens(values: Map<string, number> | null, ramp: string[] = []) {
+    if (this.defer("setLens", () => this.setLens(values, ramp))) return;
     const had = this.lens;
     this.lens = values ? new Map(values) : null;
     this.lensRamp = ramp.map((h) => new THREE.Color(h));
@@ -4272,6 +4446,7 @@ export class RealCityLayer {
     this.map?.triggerRepaint();
   }
   setTints(tints: Map<string, [number, number, number]>) {
+    if (this.defer("setTints", () => this.setTints(tints))) return;
     const touched = new Set<string>([...this.tints.keys(), ...tints.keys()]);
     this.tints = new Map(tints);
     for (const b of touched) this.refreshDeed(b);
@@ -4322,6 +4497,7 @@ export class RealCityLayer {
    * viewer renders it; nothing on the map changes.
    */
   schemeModel(it: PlayerItem): SchemeModel | null {
+    if (this.queue) return null;   // still building
     const lot = this.lotRing(it.bbl) ?? this.deeds.get(it.bbl)?.ring ?? null;
     if (!lot || !(it.heightM > 0)) return null;
     let cx = 0, cy = 0;
@@ -4382,6 +4558,7 @@ export class RealCityLayer {
    * change. Cleared when the desk closes or the ground breaks.
    */
   setPreview(item: PlayerItem | null) {
+    if (this.defer("setPreview", () => this.setPreview(item))) return;
     const sig = item ? JSON.stringify(item) : "";
     if (sig === this.previewSig) return;
     this.previewSig = sig;
@@ -4454,6 +4631,7 @@ export class RealCityLayer {
   }
 
   setPlayerBuildings(items0: PlayerItem[], force = false) {
+    if (this.defer("setPlayerBuildings", () => this.setPlayerBuildings(items0, force))) return;
     this.lastItems = items0;
     const pv = this.preview;
     const items = pv ? [...items0.filter((i) => i.bbl !== pv.bbl), pv] : items0;
@@ -4676,6 +4854,7 @@ export class RealCityLayer {
   }
   /** The lot under a pointer at (px, py) CSS pixels in the map container, building first. */
   pickAt(px: number, py: number): string | null {
+    if (this.queue) return null;   // still building
     const el = this.map?.getContainer();
     if (!el) return null;
     const w = el.clientWidth || 1, h = el.clientHeight || 1;
@@ -4725,6 +4904,7 @@ export class RealCityLayer {
   }
 
   buildingFrame(bbl: string): { radius: number; height: number } | null {
+    if (this.queue) return null;   // still building
     const ring = this.lotRing(bbl);
     if (!ring || ring.length < 3) return null;
     let cx = 0, cy = 0;
@@ -4738,6 +4918,7 @@ export class RealCityLayer {
 
   // ---- sun, season, hour, weather -----------------------------------------
   setMonth(m: number) {
+    if (this.defer("setMonth", () => this.setMonth(m))) return;
     if (!Number.isFinite(m)) return;
     this.month = ((Math.floor(m) % 12) + 12) % 12;
     this.applyMonth();
@@ -4786,6 +4967,7 @@ export class RealCityLayer {
   }
 
   setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
+    if (this.defer("setWeather", () => this.setWeather(kind, precipitation, overcast))) return;
     this.snow = kind === "snow" ? 0.3 + Math.max(0, Math.min(1, precipitation)) * 0.5 : 0;
     this.overcast = Math.max(0, Math.min(1, overcast || 0));
     const pr = Math.max(0, Math.min(1, precipitation || 0));
@@ -4797,6 +4979,7 @@ export class RealCityLayer {
   private overcast = 0;
 
   setDayPhase(target: number, instant = false) {
+    if (this.defer("setDayPhase", () => this.setDayPhase(target, instant))) return;
     this.duskTarget = Math.max(0, Math.min(1, Number.isFinite(target) ? target : 0));
     if (instant) this.dusk = this.duskTarget;
     this.applyLight();
@@ -4852,6 +5035,7 @@ export class RealCityLayer {
    * on every wall; a refit is a touch cleaner.
    */
   setCondition(c: Map<string, number>) {
+    if (this.defer("setCondition", () => this.setCondition(c))) return;
     const touched = RealCityLayer.settle(this.cond, c, (a, b) => Math.abs(a - b) > COND_EPS);
     for (const b of touched) this.refreshDeed(b);
     if (touched.length) this.map?.triggerRepaint();
@@ -4877,6 +5061,7 @@ export class RealCityLayer {
   private cond = new Map<string, number>();
   /** Share of each building that is let (read only): sets how much of it is lit after dark. */
   setOccupancy(o: Map<string, number>) {
+    if (this.defer("setOccupancy", () => this.setOccupancy(o))) return;
     const touched = RealCityLayer.settle(this.occ, o, (a, b) => Math.abs(a - b) > OCC_EPS);
     for (const bbl of touched) for (const d of [this.deeds.get(bbl), this.dynDeeds.get(bbl)]) if (d) this.paintLit(bbl, d);
     if (touched.length) this.map?.triggerRepaint();
@@ -4895,6 +5080,7 @@ export class RealCityLayer {
   }
   /** Let share of each building's shopfronts (read only): a dead frontage is papered over and dark. */
   setRetail(r: Map<string, number>) {
+    if (this.defer("setRetail", () => this.setRetail(r))) return;
     // a bay boards up or opens the month the count of empty bays changes,
     // however small the move that tipped it
     const dead = (v: number, b: string) => Math.round((1 - Math.max(0, Math.min(1, v))) * (this.bays.get(b)?.length ?? 0));
@@ -4914,11 +5100,12 @@ export class RealCityLayer {
    * thins in a slump (cityVisuals' activity, 0.38-1.05).
    */
   setActivity(a: number) {
+    if (this.defer("setActivity", () => this.setActivity(a))) return;
     this.activity = Math.max(0.2, Math.min(1.1, a));
     this.applyCrowd();
   }
   private activity = 0.8;
-  setDemandMap(m: Record<string, number>) { this.demand = m; this.demandGrid = null; }
+  setDemandMap(m: Record<string, number>) { if (this.defer("setDemandMap", () => this.setDemandMap(m))) return; this.demand = m; this.demandGrid = null; }
   private demand: Record<string, number> = {};
   private demandGrid: Map<string, number> | null = null;
   /** Demand (0-1) near a point, from the lots' scores averaged on an 80 m grid. */
@@ -4956,6 +5143,7 @@ export class RealCityLayer {
     this.map?.triggerRepaint();
   }
   setPreferFps(on: boolean) {
+    if (this.defer("setPreferFps", () => this.setPreferFps(on))) return;
     this.preferFps = on;
     const sz = on ? 2048 : 4096;
     if (this.sun.shadow.mapSize.x !== sz) {
@@ -4972,6 +5160,7 @@ export class RealCityLayer {
    * game state, and the city underneath is the same city.
    */
   setQuality(q: "low" | "medium" | "high") {
+    if (this.defer("setQuality", () => this.setQuality(q))) return;
     this.quality = q;
     this.setPreferFps(q !== "high");
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
@@ -4986,6 +5175,7 @@ export class RealCityLayer {
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {
+    if (this.defer("setOpacity", () => this.setOpacity(o))) return;
     this.visibleOn = o > 0.01;
     this.map?.triggerRepaint();
   }

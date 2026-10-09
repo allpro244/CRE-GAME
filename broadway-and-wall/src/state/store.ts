@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
-import { newGame, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -38,7 +38,6 @@ import {
   setSearchTier, assignStaff, unassignStaff,
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
-import { normalizeParcels } from "@/engine/mix";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import { usdSigned } from "@/ui/format";
@@ -48,8 +47,10 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, preloadCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
 import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
+import { cutTownOffThread } from "@/state/townClient";
+import type { TownRequest } from "@/state/townWorker";
 import { monthOffThread } from "@/state/simClient";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
@@ -721,13 +722,15 @@ function painted(): Promise<void> {
  * Handing the parcel table to the store is a separate act because a continue
  * has to test the save against the town BEFORE the map mounts on it — a map
  * built for a town the campaign does not fit is a worse failure than a refusal.
+ *
+ * Off the page's thread (state/townWorker.ts), and with the opening market
+ * dealt there too when `deal` asks for it: on a big map the two together held
+ * the page for tens of seconds.
  */
-function buildTown(island: string, seed: number, size: string, dev: string, plan?: number) {
-  const built = makeCity(island, seed, { size, density: dev, planV: plan });
-  // Any record the pipeline still files as "mixed" becomes its dominant use
-  // plus an explicit mix, once, at the door.
-  const parcels = normalizeParcels(built.parcels as ParcelTable);
-  return { built, parcels };
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"]) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal });
+  // normalised in the worker, in place: the table is built.parcels
+  return { built, parcels: built.parcels as ParcelTable, game };
 }
 /**
  * AUTOSAVE WITHOUT PUTTING INDEXEDDB BACK ON THE CLICK PATH.
@@ -2523,14 +2526,6 @@ export const useStore = create<AppState>((set, get) => ({
       // draws. Absent, a fresh one is rolled exactly as before.
       const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
       if (seedIn && seedIn >>> 0) setSeed(seed, island);
-      await preloadCity(island);
-      const { built, parcels } = buildTown(island, seed, size, dev);
-      get().setData({
-        parcels,
-        adjacency: built.adjacency as Adjacency,
-        manifest: built.manifest as DataManifest,
-        city: built,
-      });
       // Jev-run firms and spectator mode, if the start screen asked for them.
       // THE SETUP IS RECORDED ON THE SAVE, including the parts the store
       // applies itself (town, cash, goal), so Saves and the run record can say
@@ -2548,7 +2543,15 @@ export const useStore = create<AppState>((set, get) => ({
       // name the setup page showed for this seed.
       if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
-      const g = seedRunWithJev(firstListings(newGame(runSeed, parcels, money, setup), parcels, Object.keys(parcels)), parcels);
+      // the town and its opening market, dealt together off the page's thread
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup });
+      get().setData({
+        parcels,
+        adjacency: built.adjacency as Adjacency,
+        manifest: built.manifest as DataManifest,
+        city: built,
+      });
+      const g = seedRunWithJev(dealt!, parcels);
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;
@@ -2593,8 +2596,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      await preloadCity(r.island);
-      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

@@ -64,17 +64,23 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 // --- 2. A facility month on an overdrawn account: no arrears, one notice --
 {
   let g = E.firstListings(E.newGame(77101, parcels, 80_000_000), parcels, bbls);
-  const picks = [];
-  for (const L of g.listings ?? []) {
-    const rec = E.resolveRec(parcels, g, L.bbl);
-    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    picks.push(L);
-    if (picks.length >= 8) break;
-  }
-  for (const L of picks) {
-    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
-    if (r.err) throw new Error(r.err);
-    g = r.s;
+  // A POOL BIG ENOUGH TO BE A FACILITY (2026-10-09). This took the first
+  // eight built listings on the opening tape, and one opening's tape carried
+  // five worth $6.6M — a $4M borrowing base, under the $5M nobody documents a
+  // facility below, so the desk correctly quoted nothing. Buy built listings
+  // (largest first, month by month if the tape is thin) until the asks reach
+  // $12M or eight deeds, whichever is first.
+  let spent = 0, bought = 0;
+  for (let m = 0; m < 24 && spent < 12_000_000 && bought < 8; m++) {
+    const built = (g.listings ?? []).filter((L) => { const rec = E.resolveRec(parcels, g, L.bbl); return rec && rec.class !== "land" && rec.bldgArea && !L.halfBuilt; })
+      .sort((a, b) => b.ask - a.ask);
+    for (const L of built) {
+      if (spent >= 12_000_000 || bought >= 8) break;
+      const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+      if (r.err) continue;
+      g = r.s; spent += L.ask; bought++;
+    }
+    if (spent < 12_000_000 && bought < 8) g = E.advanceMonth(g, parcels, bbls);
   }
   const pool = Object.keys(g.holdings);
   const qt = E.facilityQuotes(g, parcels, pool).find((x) => x.available);

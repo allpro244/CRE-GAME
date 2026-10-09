@@ -1427,6 +1427,8 @@ export interface EconHistoryPoint {
   natWageIdx?: number;
   /** National price level path, so a local/national gap can be read off history. */
   natCpi?: number;
+  /** Local prices less shelter — what rents escalate by. */
+  cpiXS?: number;
   outputIdx?: number;
   cpi?: number;
   landIdx: number;
@@ -1781,6 +1783,8 @@ export interface Econ {
   natCpi?: number;
   /** This town's real pay over the nation's, two-year average — what movers answer. */
   realPremEma?: number;
+  /** Local prices less shelter (goods + local services). Rents escalate by this, not by a CPI that contains them. */
+  cpiXS?: number;
   wagePremEma?: number;
   /** Each class's demand driver last month and its five-year average monthly growth. */
   classDrv?: Record<BuiltClass, number>;

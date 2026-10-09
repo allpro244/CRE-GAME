@@ -2670,6 +2670,15 @@ export function tickEcon(s: GameState) {
     // are wide guards: a month the town deflates faster than 1% is a month
     // its rents fell by a third.
     e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.01, 0.02)), 0.5, 1000);
+    // ...AND THE SAME BASKET WITHOUT THE RENT, which is what rents escalate
+    // by (see `escalation` in the rent block). Asking rents marked to a price
+    // level that contains them index themselves: measured over 4 worlds x 50
+    // years, that loop (gain ~0.33) carried one town's price level to 1.63x
+    // the nation's, beyond any US metro on record (San Francisco's CPI-U
+    // outran the national index by about 12% over 1984-2023). BLS publishes
+    // this series — "all items less shelter" — for the same reason.
+    const inflXS = natInfl / 12 + (SERVICES_W / (1 - SHELTER_W)) * (wage12 - natWage12) / 12;
+    e.cpiXS = clamp((e.cpiXS ?? e.cpi!) * (1 + clamp(inflXS, -0.01, 0.02)), 0.5, 1000);
     // ...and expectations follow realised inflation slowly. This is the anchor
     // that keeps the spiral from either exploding or dying: fast enough that a
     // decade of 6% becomes the new normal, slow enough that one bad year is
@@ -4310,7 +4319,10 @@ export function tickEcon(s: GameState) {
     // does this. The soft-market gate is unchanged: empty floors still do not
     // escalate.
     const hRent = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
-    const realised12 = hRent?.cpi ? (e.cpi ?? 1) / hRent.cpi - 1 : (e.inflExp ?? 0.02);
+    // Prices LESS SHELTER (see the CPI block): a rent marked to a price
+    // level that contains it indexes itself.
+    const realised12 = hRent?.cpiXS ? (e.cpiXS ?? 1) / hRent.cpiXS - 1
+      : hRent?.cpi ? (e.cpi ?? 1) / hRent.cpi - 1 : (e.inflExp ?? 0.02);
     const escalation = (realised12 / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
@@ -4681,7 +4693,10 @@ export function tickEcon(s: GameState) {
     // inputs, not a target: a wage boom makes building dearer, a deflation
     // cheaper. `heat` stays the premium for how busy the trades are.
     const LABOUR_SHARE = 0.45;
-    const cpiNow = Math.max(0.35, e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
+    // Materials are traded goods: they cost what they cost nationally
+    // (2026-10-09; this read the local CPI, which now carries local rent, so a
+    // housing shortage would have raised the price of steel).
+    const cpiNow = Math.max(0.35, e.natCpi ?? e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
     const prevIn = e.costInputsPrev;
     const inputGrowth = prevIn
       ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
@@ -4812,6 +4827,7 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     wageIdx: e.wageIdx !== undefined ? +e.wageIdx.toFixed(4) : undefined,
     natWageIdx: e.natWageIdx !== undefined ? +e.natWageIdx.toFixed(4) : undefined,
     natCpi: e.natCpi !== undefined ? +e.natCpi.toFixed(4) : undefined,
+    cpiXS: e.cpiXS !== undefined ? +e.cpiXS.toFixed(4) : undefined,
     outputIdx: e.outputIdx,
     cpi: e.cpi !== undefined ? +e.cpi.toFixed(4) : undefined,
     vac: e.cityVac ? {

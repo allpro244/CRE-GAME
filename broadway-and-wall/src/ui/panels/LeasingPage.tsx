@@ -3,7 +3,7 @@ import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types"
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
-  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
 } from "@/engine/leasing";
 import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
@@ -362,7 +362,7 @@ export function LeasingPage() {
                     <div className="dim" style={{ fontSize: 11 }}>
                       {/* named, so "Market · Market · Fund" reads as three settings */}
                       rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
-                      {r.h.autoLease ? " · auto" : ""}
+                      {r.h.autoLease ? (autoTiCapToday(game, r.h) !== undefined ? ` · auto, TI ≤ $${autoTiCapToday(game, r.h)!.toFixed(2)}/yr` : " · auto") : ""}
                       {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
                       {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
                       {r.h.broker ? " · broker" : ""}
@@ -380,7 +380,7 @@ export function LeasingPage() {
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? "Answering its own letters by its rent posture. Click to take them back." : "Let this building answer its own letters by its rent posture — no pop-ups."}
+                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back. Set the fit-out cap on the building.` : "Let this building answer its own letters by its rent posture and fit-out cap — no pop-ups."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
                       >{r.h.autoLease ? "auto ✓" : "auto"}</button>
                       {r.commercial && (

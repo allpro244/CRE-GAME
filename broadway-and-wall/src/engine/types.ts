@@ -580,12 +580,20 @@ export interface Holding {
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
-   * you by the stance above, and none of it reaches your desk. Fill signs what
-   * comes; Market signs near your ask and counters the rest to it; Push holds
-   * out over your ask. Same terms, same commission and the same tenant
-   * reactions as clicking the buttons yourself (see autoLeaseDesk).
+   * you by the stance above and the fit-out cap below, and none of it reaches
+   * your desk. Fill signs what comes; Market signs near your ask and counters
+   * the rest to it; Push holds out over your ask. Same terms, same commission
+   * and the same tenant reactions as clicking the buttons yourself (see
+   * autoLeaseDesk).
    */
   autoLease?: boolean;
+  /**
+   * AUTO-LEASE FIT-OUT CAP, $/sf per year of term, in OPENING-YEAR dollars
+   * (read × econ.costIdx, so it tracks construction cost the way the asks do).
+   * Undefined: no cap. A letter over it is countered down to it once; a tenant
+   * who will not come under it is passed.
+   */
+  autoTiCapPsfYr?: number;
   /**
    * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
    *

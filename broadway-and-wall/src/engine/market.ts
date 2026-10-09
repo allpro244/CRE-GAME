@@ -3723,7 +3723,18 @@ export function tickEcon(s: GameState) {
      */
     unmet[k] = Math.max(0, (e.pool[k] - housable - (e.sublet[k] ?? 0)) / Math.max(1, e.stock[k]));
     if (!e.structTight) e.structTight = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    e.structTight[k] = Math.max(0, (targetRaw - housable) / Math.max(1, e.stock[k]));
+    // THE QUEUE IS PRICED AT TODAY'S RENT (2026-10-09). It read `targetRaw`,
+    // demand at the hundred-month `affordEff` — what sitting tenants hold, which
+    // can only reprice as leases roll. Once the queue began to bid (see
+    // `effGap` in the rent block) that lag made a cobweb: measured, seed 8919
+    // industrial asking tripled in five years against a queue that did not
+    // shrink as the price rose, then a quarter of the demand left town and
+    // vacancy sat at 45% for thirty years. The people in a queue are
+    // searchers, and a searcher answers the asking rent the month it is
+    // quoted — the same distinction the give-back draws for marketed space.
+    // So the queue is `wantedNow` (today's price, today's income) over what
+    // the city can house.
+    e.structTight[k] = Math.max(0, (wantedNow - housable) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
@@ -4030,12 +4041,36 @@ export function tickEcon(s: GameState) {
     // market is short, including on the floor. The income anchor below still
     // bounds the LEVEL against what tenants earn.
     void railSat; void supplyShut;
-    const vacTerm = gap <= 0
-      ? clamp(-gap * 0.045, 0, 0.0045)
-      : -(gap <= FIT_MAX
-        ? glut(gap)
+    // THE QUEUE IS NEGATIVE AVAILABILITY, AND IT BIDS (2026-10-09).
+    //
+    // Once direct vacancy reaches its frictional floor it cannot fall further,
+    // and the excess demand went into `structTight` — tenants the city cannot
+    // house — which reached rent only through a ten-year EMA (`scarcity`) and
+    // a shortage slope of 0.045/mo per unit of gap, clamped at 0.45%/mo. That
+    // is a queue, and a queue is quantity rationing: measured over 4 worlds x
+    // 50 years, office sat on its floor 33-55% of months and flats 52-72%,
+    // real rents rose only ~3%/yr while pinned, and the best vacant site in
+    // the city could not pay for its building even on FREE land (office P97
+    // 6-68% of the required yield). In a market the people in the queue are
+    // bidders. Unhoused demand is exactly availability below zero, so it
+    // joins the gap, and the rent moves until enough of it is priced out
+    // (`affordEff`, migration, firms leaving) or until a building pencils.
+    //
+    // ONE SLOPE THROUGH ZERO. The glut side's linear term is 0.070/mo per
+    // unit of gap (0.84%/yr of rent per point of vacancy), fitted to the
+    // overbuilds in the notes above; the shortage side was 0.045 with a clamp,
+    // so the curve had a kink at natural vacancy and a ceiling on one side.
+    // Wheaton & Torto (1988) estimate the rent adjustment as symmetric and
+    // linear in the vacancy deviation, so the shortage side takes the glut
+    // side's linear slope and no ceiling of its own. The quadratic and the
+    // capitulation hump stay where they were fitted: on gluts.
+    const effGap = gap - (e.structTight?.[k] ?? 0);
+    const vacTerm = effGap <= 0
+      ? -effGap * 0.070
+      : -(effGap <= FIT_MAX
+        ? glut(effGap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
-        : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
+        : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (effGap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
     if (!e.structTightPrev) {
@@ -4069,7 +4104,10 @@ export function tickEcon(s: GameState) {
     const RENT_PRESS_TAU: Record<BuiltClass, number> = {
       office: 8, retail: 6, multifamily: 5, industrial: 10,
     };
-    const instant = vacTerm + scarcity;
+    // `scarcity` (the on-rail level tax and the flow of new tightness) priced
+    // the same queue a second time; the queue is in `effGap` now.
+    void scarcity;
+    const instant = vacTerm;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];
@@ -4093,7 +4131,12 @@ export function tickEcon(s: GameState) {
     // by the income anchor below and by tenants economising on dear space
     // (affordEff), which is where a shortage really stops.
     // Hard rail on the EMA itself — see the press clamp at the drift line.
-    e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
+    // A GUARD, NOT THE ADJUSTMENT SPEED (2026-10-09). This was -0.8%/+0.75% a
+    // month — the speed limit on how fast a market may reprice, and with the
+    // queue joining the gap it would have been the number doing the work.
+    // At 3%/mo either way it is a statement that no asking sheet moves 40% in
+    // a year, which none has.
+    e.rentPress[k] = clamp(e.rentPress[k], -0.03, 0.03);
 
     // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.
     //
@@ -4171,11 +4214,22 @@ export function tickEcon(s: GameState) {
     // cannot hold a ratio against ~1.4%/yr real pay), then stop once there.
     const rtiFloor = 0.65;
     const belowFloor = rentToIncome / rtiFloor - 1; // negative when under the floor
-    const anchor = dev > 0
-      ? -0.018 * Math.min(2.0, dev)           // outrunning incomes: pulled down hard
-      : railBound
-        ? (belowFloor < 0 ? 0.008 * Math.min(0.55, -belowFloor) : 0)
-        : -0.0007 * Math.max(-0.65, dev);
+    // RETIRED (2026-10-09): the income anchor as a force on the price. It
+    // pulled rent down up to 3.6%/mo whenever rent-to-income outran an
+    // "earned" ratio, and pushed it up toward a 0.65 floor on the rail — a
+    // second price rule on top of a demand side that already prices the same
+    // thing: tenants take less of dear space (`affordEff`), households leave
+    // a town whose rent eats its pay (the real-wage premium in migration, now
+    // that rent is in the price level), firms hire elsewhere (`wageDemand`),
+    // and builders build into a rent that clears replacement cost. A level
+    // held by those is discovered; a level held by this was asserted. Measured
+    // before removal (counterfactual X1, 4 worlds x 50 years): taking away its
+    // downward pull moved nothing, because the shortage slope was so slow that
+    // rent never reached it — once the queue bids, it would have been the
+    // ceiling. `dev` is still computed: the cycle-lift gate and the
+    // cheap-rent CPI carry read it.
+    void belowFloor; void sustain;
+    const anchor = 0;
 
     // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
     //
@@ -4232,8 +4286,8 @@ export function tickEcon(s: GameState) {
     const escalation = (realised12 / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
-    const press = clamp(e.rentPress[k], -0.008, 0.0075);
-    const clampBound = pressEma <= -0.008 + 1e-12;
+    const press = e.rentPress[k];
+    const clampBound = pressEma <= -0.03 + 1e-12;
     // Phase / job / sector sentiment must not LIFT asking while soft, on/near
     // the frictional rail, or once rent is already near earned pay. Soft:
     // empty floors on the shelf. Rail-bound: availability is saturated (same

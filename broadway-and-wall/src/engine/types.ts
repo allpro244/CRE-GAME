@@ -2375,6 +2375,8 @@ export interface Rival {
   id: string;
   name: string;
   style: RivalStyle;
+  /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
+  lastBuildM?: number;
   cash: number;
   debt: number;
   bbls: string[];        // what they own

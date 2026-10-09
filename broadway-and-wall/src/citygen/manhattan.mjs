@@ -381,8 +381,20 @@ export function manhattanConfig(seed = 1, opts = {}) {
   // `kind: "organic"` survives on the colonial quarter for one reason: it tells
   // the renderer those are lanes nobody ever painted crossings on.
   const district = (flavor, kind = "lattice", extra = {}) => ({ flavor, kind, bearingDeg: BEAR_GRID, numbered: false, fullBlockP: 0, ...extra });
+  // THE FINANCIAL DISTRICT IS A CBD, NOT AN OLD TOWN (plan 10). Everything
+  // below Chambers was "old", whose ceiling is 14 floors — so the second
+  // business district in the country, on Metropolis, topped out at 20 floors
+  // with a median of 4, the owner's "it looks tiny". In 2000, the year the
+  // game opens, that ground held the Twin Towers, 40 Wall (1930, 70 floors),
+  // the Woolworth (1913, 57), 60 Wall, One Chase Plaza, One Liberty Plaza and
+  // dozens more past forty. It takes the core preset — the same one Midtown
+  // has — and keeps `organic` so the colonial lanes still read as lanes.
+  // `assembled` turns on the tower roll calibrated to MapPLUTO below
+  // Chambers (citygen.mjs THE FINANCIAL DISTRICT IS ASSEMBLED FOR TOWERS).
+  // Older plans keep "old" so a saved downtown rebuilds as it was.
+  const plan10 = (opts.planV ?? 9) >= 10;
   const districts = {
-    battery: district("old", "organic"),
+    battery: district(plan10 ? "core" : "old", "organic", plan10 ? { assembled: true } : {}),
     soho: district("old"),
     village: district("old"),
     noho: district("old"),

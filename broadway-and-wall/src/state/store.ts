@@ -883,10 +883,14 @@ export const useStore = create<AppState>((set, get) => ({
   building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl) => {
+  select: (bbl0) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
     const st = get();
+    // A folded deed of an assemblage IS the site: clicking any part of the
+    // building (or the dirt) opens the site's desk, not a dead-end page that
+    // says "this lot is part of a site".
+    const bbl = bbl0 ? (st.game?.merged?.[bbl0] ?? bbl0) : bbl0;
     const page = bbl && st.page !== "property" ? "none" as const : st.page;
     const nav = pushNav(st, page, bbl);
     if (bbl !== st.selectedBBL) {

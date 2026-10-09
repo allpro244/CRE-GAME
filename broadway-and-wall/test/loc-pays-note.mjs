@@ -85,8 +85,18 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   g = opened.s;
 
   let arrears = 0, notices = 0, shortNews = 0;
+  // The hole is sized to the line, not to a constant: the claim is "never in
+  // arrears WHILE THE LINE HAS ROOM", and a flat $300K a month for four months
+  // against a $1.37M line left $70K at the end — a 4% move in building values
+  // emptied it in month four and the test was asserting about a dry line.
+  // The room also falls by more than the hole each month (the limit reads net
+  // worth, which the overdraft and the coupon both take), so an eighth of the
+  // opening room a month keeps room in hand through month four.
+  // Read at a zero balance: the account opens flush, which reads as room the
+  // overdraft below takes straight back.
+  const hole = Math.min(300_000, Math.round(E.locAvailable({ ...g, cash: 0 }, parcels) / 8));
   for (let m = 0; m < 4; m++) {
-    g = { ...g, cash: -300_000, loc: { ...g.loc } };
+    g = { ...g, cash: -hole, loc: { ...g.loc } };
     g = E.advanceMonth(g, parcels, bbls);
     arrears = Math.max(arrears, g.facility?.arrearsMs ?? 0);
     const fresh = g.news.filter((x) => x.q === g.month);

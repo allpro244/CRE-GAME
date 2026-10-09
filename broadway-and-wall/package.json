@@ -48,6 +48,7 @@
     "extleak": "node test/extleak.mjs",
     "swanfork": "node test/swanfork.mjs",
     "conserve": "node test/conserve.mjs",
+    "assemble": "node test/assemble.mjs && node test/assemble-build.mjs",
     "concessions": "node test/concessions.mjs",
     "deedledger": "node test/deedledger.mjs",
     "rentable": "node test/rentable.mjs",

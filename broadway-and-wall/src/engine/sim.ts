@@ -18,7 +18,7 @@ import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
@@ -608,6 +608,7 @@ function tickMonth(
 ): void {
   if (s.gameOver) return;
   s.month++;
+  const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 
   // ONE SETTLEMENT MOMENT. Physical funding can slip or orphan a job this
   // month; those mutations used to land AFTER settleSupplyDeliveries inside
@@ -791,6 +792,27 @@ function tickMonth(
   // before the workout desk looks at anybody, then let that desk auto-cure any
   // file the firm can fund. Order matters: NOI → debt → line → workouts.
   coverCashShortfall(s, parcels);
+  // ONE NOTICE, NOT A MONTHLY ALARM. A firm that runs its operating account dry
+  // and lets the revolver carry the notes is not missing payments, and should
+  // not be told it is — but it should be told once that it is now borrowing at
+  // index+400 to make them. Any draw this month counts: once the account is
+  // overdrawn the first cheque of the month draws for the whole hole, so by
+  // the time the notes fall due the line has usually already been used.
+  if (s.loc) {
+    const lineDrew = (s.loc.drawnTotal ?? 0) - drawnAtOpen;
+    if (lineDrew > 0 && monthlyDebtService(s) > 0) {
+      if (!s.loc.payingNotes) {
+        s.loc.payingNotes = true;
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `You are out of operating cash. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
+            + `to keep your notes current and will keep paying them while it has room — at ${locRate(s).toFixed(2)}%.`,
+        });
+      }
+    } else if (s.loc.payingNotes && s.cash > 0) {
+      delete s.loc.payingNotes;
+    }
+  }
   tickWorkouts(s, parcels);
 
   // --- the firm's own overhead ----------------------------------------------

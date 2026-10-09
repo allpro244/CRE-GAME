@@ -3348,6 +3348,12 @@ export interface GameState {
      * headroom instead of as a deposit (credit.ts parkedOnLine).
      */
     parked?: number;
+    /**
+     * Set the month the line first has to carry debt service because operating
+     * cash ran dry, cleared the first month it does not. One notice per run of
+     * it, not one per month — see sim.ts.
+     */
+    payingNotes?: boolean;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */

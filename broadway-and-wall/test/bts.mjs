@@ -129,8 +129,15 @@ check(bts.use === "industrial", "the anchor signs for the programme that was lis
 
 const anchored = E.planDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp",
   undefined, { bts });
-check(anchored.leaseUp < spec.leaseUp, "anchor reduces speculative lease-up reserve");
-check(anchored.ltcMax >= spec.ltcMax, "signed lease supports at least as much construction financing");
+// AGAINST THE SAME BUILDING, SPECULATIVE, THE SAME MONTH (2026-10-09). `spec`
+// was priced the month the site was listed and the anchor signs months later,
+// so this compared a signed lease against a credit market that had moved in
+// between. It passed while the credit window stepped with the phase label and
+// failed once credit followed national unemployment; neither said anything
+// about the lease. The claim is about the lease, so both sides are priced now.
+const specNow = E.planDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp");
+check(anchored.leaseUp < specNow.leaseUp, "anchor reduces speculative lease-up reserve");
+check(anchored.ltcMax >= specNow.ltcMax, `signed lease supports at least as much construction financing (LTC ${anchored.ltcMax.toFixed(3)} vs ${specNow.ltcMax.toFixed(3)} speculative, same month)`);
 
 // ---- break ground -----------------------------------------------------------
 const devBefore = prev.books.dev;

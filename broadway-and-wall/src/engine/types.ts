@@ -1415,7 +1415,7 @@ export interface SwanRecord {
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
-  /** The secular level money is being pulled toward. See recordHistory. */
+  /** The loan index without the premium's monthly noise. See tickNation. */
   rateRegime?: number;
   population?: number;
   jobs?: number;
@@ -1449,7 +1449,8 @@ export interface EconHistoryPoint {
 }
 
 export interface Econ {
-  /** The LOAN INDEX: policy + term premium — what fixed paper prices off. */
+  /** The LOAN INDEX: the expected path of policy over ten years plus a term
+   *  premium — a ten-year yield, what fixed paper prices off. See market.ts. */
   indexRate: number;
   /**
    * THE SHORT INDEX: the policy rate plus a money-market spread that widens
@@ -1703,8 +1704,18 @@ export interface Econ {
      * ~20-25bp for a real index). A market rate is policy plus a premium that
      * mean-reverts around its structural level while real noise hits it every
      * month — that is where retracements inside a trend come from.
+     *
+     * It is now the premium over the EXPECTED path of policy, not over
+     * today's rate, and its level reads how far the bank is believed: see
+     * `termPremBase` and `expectedPolicyAvg` in market.ts.
      */
     termPrem?: number;
+    /**
+     * What the bank's own rule prescribes this month, before gradualism —
+     * the rate it is walking toward. The bond market reads it to price the
+     * path, the way a real one reads the dot plot and the data.
+     */
+    ruleRate?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed

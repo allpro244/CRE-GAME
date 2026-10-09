@@ -21,10 +21,12 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
-import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat } from "./manhattan.mjs";
+import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat, setManhattanPlat } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
+// for the town worker, which cannot fetch the plat itself from the single-file build
+export { loadManhattanPlat, setManhattanPlat };
 
 /**
  * Fetch whatever a city needs before `makeCity` can build it synchronously.

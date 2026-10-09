@@ -4215,73 +4215,20 @@ export function tickEcon(s: GameState) {
     // a year, which none has.
     e.rentPress[k] = clamp(e.rentPress[k], -0.03, 0.03);
 
-    // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.
+    // THE INCOME ANCHOR AND ITS EARNED PREMIUM — RETIRED (2026-10-09).
     //
-    // Every other term here is a FLOW: sentiment, momentum, vacancy, jobs.
-    // Flows have no opinion about the LEVEL, which is why fifty years of them
-    // compounded to a rent-to-income ratio of 9.87x and nothing anywhere
-    // objected. Rent is a payment out of a wage. When the rent per square foot
-    // has outrun the income of the people paying it, tenants take less space,
-    // they take worse space, they leave — and the landlord discovers the
-    // number he can actually get. That discovery is this term.
+    // A rent-to-income ratio, measured against the town's opening print and
+    // an "earned" premium built from a ten-year memory of shortage
+    // (`scarcity`, up to +60%), pulled asking down up to 3.6%/mo when rent
+    // outran it and up toward a 0.65 floor on the rail. It held the LEVEL of
+    // rent by rule. The level is now held by what holds it in life: tenants
+    // economise on dear space (`affordEff`), households leave a town whose
+    // rent eats its real pay (migration, with rent inside the price level),
+    // firms hire elsewhere (`wageDemand`), and builders build once rent
+    // clears replacement cost. See `anchor` below for the measurement.
     //
-    // It is not a clamp: it is a pull whose strength grows with the overshoot,
-    // and the ratio it pulls toward is EARNED. A city chronically short of
-    // space sustains a higher one — that is the Manhattan premium, and
-    // tightEma is a twenty-year memory of having genuinely been tight rather
-    // than a constant somebody typed. A city with a permanent glut loses it.
-    const income = Math.max(0.35, e.wageIdx ?? 1);
-    // Parity is the town's OWN opening print (rentAnchor), not RENT_BASE.
-    // Density-scaled openings sit well below the global table; measuring
-    // against RENT_BASE made every young town look "cheap" and the under-
-    // shoot term HELPED rents compound until they hit the table — measured
-    // as hot seeds at +3–4%/yr real and land residuals from $50 to $3,000/sf.
-    const base = e.rentAnchor?.[k] ?? RENT_BASE[k];
-    const rentToIncome = (e.rentIdx[k] / Math.max(1e-6, base)) / income;
-    // HOW MUCH OF A PREMIUM A CHRONICALLY SHORT CITY EARNS (2026-10-08).
-    //
-    // This read an office-only `tightEma` that REFUSED to grow while a class
-    // sat on its vacancy floor ("a Manhattan premium is earned by demand, not
-    // by a supply failure"), loaded at 0.28 x the city-class factor and capped
-    // at 0.55 — at most +15% rent-to-income, less in a secondary town. That is
-    // the economics backwards. A price above replacement cost is what a supply
-    // shortfall looks like: Manhattan and San Francisco sit far above cost
-    // because supply cannot answer (Glaeser & Gyourko 2005; Saiz 2010), and
-    // the premium lasts as long as the shortfall does. Measured with the old
-    // rule, new space at the city's AVERAGE location was worth only 1.00-1.09x
-    // its full cost on free land for twenty years while classes sat on their
-    // vacancy floor 30-50% of months — so nothing beyond the best dirt could
-    // ever be built, and the shortage could not end.
-    //
-    // Now each class keeps its own memory of how short it has been: on the
-    // floor, how much desired demand the city cannot house (`structTight`, 10%
-    // of stock counting as fully short — a shape parameter, stated); off it,
-    // availability against natural, as before; a glut reads negative. A decade
-    // to build or lose (1/120 a month): long enough that one tight year earns
-    // nothing, short enough that the premium goes once supply catches up. At
-    // full shortage the sustainable rent-to-income is +60%, about the spread
-    // between the most supply-constrained US metros and ordinary ones
-    // (rent-to-income, rounded). A small town that cannot build prices like
-    // any other place that cannot build; the city-class haircut is gone.
-    // The level is still held where it should be: tenants economise on dear
-    // space (`affordEff`), households leave (migration), firms hire elsewhere
-    // (the wage and space pulls on employment) — and builders build.
-    if (!e.scarcity) e.scarcity = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    {
-      const short = pinned
-        ? clamp((e.structTight?.[k] ?? 0) / 0.10, 0, 1)
-        : clamp(-gap / NATURAL_VAC[k], -0.3, 1);
-      e.scarcity[k] += (short - e.scarcity[k]) / 120;
-    }
-    const sustain = 1 + 0.6 * e.scarcity[k];
-    const dev = rentToIncome / sustain - 1;
-    // Pull hard when rent outruns pay; barely nudge when rent is cheap —
-    // cheap space is what supply is for, not a reason to reprice the city up.
     // Soft weight fades asking's CPI/cycle lift over the first ~3pp of surplus
-    // availability (ECONOMY.md soft-market escalator). Keep the cheap-side
-    // undershoot nudge even while soft — muting it trapped some seeds at
-    // absurdly low rent-to-income because vacTerm's hump dies and nothing
-    // reconstituted a clearing face rate.
+    // availability (ECONOMY.md soft-market escalator).
     const softW = clamp(gap / 0.03, 0, 1);   // 0 at natural, 1 by +3pp soft
     const firmW = 1 - softW;
     // Cheap-side pull is weak off-rail (supply is what clears a glut of cheap
@@ -4289,8 +4236,6 @@ export function tickEcon(s: GameState) {
     // that reminted pin-month real growth once scarcity was muted. Pull only
     // toward a floor RTI, hard enough to track wages (partial CPI alone
     // cannot hold a ratio against ~1.4%/yr real pay), then stop once there.
-    const rtiFloor = 0.65;
-    const belowFloor = rentToIncome / rtiFloor - 1; // negative when under the floor
     // RETIRED (2026-10-09): the income anchor as a force on the price. It
     // pulled rent down up to 3.6%/mo whenever rent-to-income outran an
     // "earned" ratio, and pushed it up toward a 0.65 floor on the rail — a
@@ -4303,9 +4248,8 @@ export function tickEcon(s: GameState) {
     // before removal (counterfactual X1, 4 worlds x 50 years): taking away its
     // downward pull moved nothing, because the shortage slope was so slow that
     // rent never reached it — once the queue bids, it would have been the
-    // ceiling. `dev` is still computed: the cycle-lift gate and the
-    // cheap-rent CPI carry read it.
-    void belowFloor; void sustain;
+    // ceiling. (The earned-ratio memory `scarcity`, its `sustain`, the 0.65
+    // floor and the deviation they produced are gone with it.)
     const anchor = 0;
 
     // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
@@ -4328,7 +4272,6 @@ export function tickEcon(s: GameState) {
     // plus the vacTerm hump dying produced a rent-to-income death spiral on
     // some seeds (~0.2x RTI) — asking cannot forget the price level entirely
     // once it has already under-shot wages by that much.
-    const cheapFloor = dev < 0 ? clamp(-dev / 0.30, 0, 0.75) : 0;
     // RAIL-BOUND ESCALATOR. Soft markets already refuse full CPI in asking.
     // On/near the frictional rail, firmW=1 (gap≤0) used to keep full inflExp
     // forever on practically saturated availability. In-place leases keep
@@ -4337,14 +4280,12 @@ export function tickEcon(s: GameState) {
     // On the rail at/above the RTI floor: lease-roll fraction of CPI only.
     // Below the floor: track the price level (and a bit more) so the floor is
     // reachable against rising wages; once restored, the mute returns.
-    const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
     // RETIRED (2026-10-08): the rail escalator. Asking carried 35% of CPI on
     // or near the frictional floor, which made a tight market the one place
     // where a dollar's falling value was NOT passed on — real asking fell in
     // a shortage. A firm market passes on the price level in full (it is the
     // soft market that cannot, and `softW` above already says so). The level
     // risk this guarded against is the income anchor's job.
-    void underFloor;
     const railEscal = 1;
     // RETIRED (2026-10-09): the cheap-rent carry (`cheapFloor`, up to 75% of
     // CPI on a soft sheet whenever rent sat under the income anchor's
@@ -4356,7 +4297,6 @@ export function tickEcon(s: GameState) {
     // or cuts it while CPI runs, which is how real rents fall, and the
     // glut clears through cheap space being taken up (`affordEff`) and
     // through supply leaving — not through a floor under the quote.
-    void cheapFloor;
     const escalGate = firmW * railEscal;
     // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
     // EXPECTED inflation, which the central bank anchors near 2%, while the

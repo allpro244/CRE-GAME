@@ -84,17 +84,27 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   check(!opened.err && !!opened.s.facility, "facility opens");
   g = opened.s;
 
-  let arrears = 0, notices = 0, shortNews = 0;
+  // "While the line has room" is measured, not assumed: four $300K holes
+  // run a ~$1.3M line close to empty, and how close depends on what the
+  // collateral is marked at that month — i.e. on the rate path. A month that
+  // opens without room for the hole AND the note is a month the line cannot
+  // pay, and arrears there are correct, so only months with room are judged.
+  // At least two must qualify, or the check has stopped testing anything.
+  let arrears = 0, notices = 0, shortNews = 0, judged = 0;
   for (let m = 0; m < 4; m++) {
     g = { ...g, cash: -300_000, loc: { ...g.loc } };
+    const roomy = E.locAvailable(g, parcels) >= 300_000 + (g.facility?.monthlyPmt ?? 0) * 1.25;
     g = E.advanceMonth(g, parcels, bbls);
-    arrears = Math.max(arrears, g.facility?.arrearsMs ?? 0);
     const fresh = g.news.filter((x) => x.q === g.month);
     notices += fresh.filter((x) => /line of credit drew/.test(x.text)).length;
+    if (!roomy) continue;
+    judged++;
+    arrears = Math.max(arrears, g.facility?.arrearsMs ?? 0);
     shortNews += fresh.filter((x) => /payment came up .* short/.test(x.text)).length;
   }
+  check(judged >= 2, `the line had room for the hole and the note in ${judged} of 4 months (need >= 2)`);
   check(arrears === 0, `facility never in arrears while the line has room (max ${arrears})`);
-  check(shortNews === 0, `no "payment came up short" news (${shortNews})`);
+  check(shortNews === 0, `no "payment came up short" news while the line has room (${shortNews})`);
   check(notices === 1, `exactly one "line is paying your notes" notice over four dry months (${notices})`);
 }
 

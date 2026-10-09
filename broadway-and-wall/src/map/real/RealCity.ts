@@ -77,6 +77,13 @@ interface Family {
   glass: boolean;    // gets a dark lobby base and a parapet cap
 }
 
+/**
+ * THE STREET WALL SWITCH. True: a building put up in play holds its street
+ * line and party walls with the yard behind it (streetWallPlate). False: the
+ * pre-October-2026 plate, the lot shrunk toward its own middle. Looks only —
+ * floor area and every engine number are the same either way.
+ */
+const STREET_WALL = true;
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
 const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
@@ -1656,6 +1663,132 @@ export class RealCityLayer {
       }
     }
   }
+  /**
+   * THE STREET WALL. A building on a city lot is built out to the street line
+   * and to both party walls, and whatever the lot does not cover is left as a
+   * yard at the back — which is how a block gets a street wall in front and
+   * a hollow of yards behind. The new building used to be the lot shrunk
+   * toward its own middle, so every one stood marooned with a strip of yard
+   * all the way round, its front set back from its neighbours' and a gap at
+   * each party wall.
+   *
+   * The plate here is the lot with its back cut off: the longest edge that
+   * faces open ground (no lot six metres out) is the front, and a line
+   * parallel to it moves in from the rear until the plate covers exactly the
+   * share of the lot the old shrink did (`share`), so floor area, coverage
+   * and every number the engine sees are unchanged — only where the yard is.
+   * A corner lot keeps both street walls; a lot with no street edge (an
+   * interior parcel, a lot by the water) returns null and keeps the old plate.
+   */
+  private streetWallPlate(lot: P2[], share: number): P2[] | null {
+    if (!STREET_WALL) return null;
+    if (lot.length < 3 || !(share > 0) || share >= 0.995) return null;
+    const area = Math.abs(ringArea(lot));
+    if (area < 40) return null;
+    const inPoly = (r: P2[], x: number, y: number) => { let ins = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+    // every edge with its inward normal; the open-facing ones are street fronts
+    type Edge = { a: P2; b: P2; nx: number; ny: number; L: number; front: boolean };
+    const edges: Edge[] = [];
+    for (let i = 0; i < lot.length; i++) {
+      const a = lot[i], b = lot[(i + 1) % lot.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 0.5) continue;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if (!inPoly(lot, mx + nx * 0.5, my + ny * 0.5)) { nx = -nx; ny = -ny; }
+      edges.push({ a, b, nx, ny, L, front: L >= 4 && !this.lotAt2D(mx - nx * 6, my - ny * 6) });
+    }
+    const fronts = edges.filter((e) => e.front);
+    if (!fronts.length) return null;
+    const front = fronts.reduce((m, e) => (e.L > m.L ? e : m));
+    // keep the part of a ring on the inner side of a line (a point and an
+    // inward normal), `t` metres in from it
+    const clipIn = (ring: P2[], o: P2, nx: number, ny: number, t: number): P2[] => {
+      const out: P2[] = [];
+      const dep = (p: P2) => (p[0] - o[0]) * nx + (p[1] - o[1]) * ny - t;
+      for (let i = 0; i < ring.length; i++) {
+        const p = ring[i], q = ring[(i + 1) % ring.length];
+        const dp = dep(p), dq = dep(q);
+        if (dp >= 0) out.push(p);
+        if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) { const f = dp / (dp - dq); out.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+      }
+      return out;
+    };
+    // 1 · OFF THE FOOTWAY. The lot line is not always the back of the
+    // footway: at a corner the kerb rounds into the lot, and the zebras are
+    // painted across it. Each street front steps back, a quarter metre at a
+    // time, until the wall line is clear of footway and crossings. (Sampled
+    // along the middle 80% of the edge; a rounded kerb at the very corner is
+    // taken off the corner below, not by setting the whole front back.)
+    const zeb = this.zebraRings();
+    const paved = (x: number, y: number) => this.groundAt(x, y) === "walk" || zeb.some((z) => x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1 && inPoly(z.r, x, y));
+    let plate = lot;
+    for (const e of fronts) {
+      let t = 0;
+      for (; t < 6; t += 0.25) {
+        let hit = false;
+        for (let k = 1; k <= 9 && !hit; k++) {
+          const f = 0.1 + (0.8 * (k - 1)) / 8;
+          hit = paved(e.a[0] + (e.b[0] - e.a[0]) * f + e.nx * (t + 0.2), e.a[1] + (e.b[1] - e.a[1]) * f + e.ny * (t + 0.2));
+        }
+        if (!hit) break;
+      }
+      if (t > 0) plate = clipIn(plate, e.a, e.nx, e.ny, t);
+    }
+    // a corner still standing on the rounded kerb loses that corner: a
+    // chamfer across it, stepped in until both its ends are clear
+    for (let pass = 0; pass < 2 && plate.length >= 3; pass++) {
+      const out: P2[] = [];
+      for (let i = 0; i < plate.length; i++) {
+        const p = plate[i];
+        if (!paved(p[0], p[1])) { out.push(p); continue; }
+        const pr = plate[(i + plate.length - 1) % plate.length], nx = plate[(i + 1) % plate.length];
+        const la = Math.hypot(pr[0] - p[0], pr[1] - p[1]) || 1, lb = Math.hypot(nx[0] - p[0], nx[1] - p[1]) || 1;
+        let d = 0.5;
+        for (; d < 7 && (paved(p[0] + (pr[0] - p[0]) / la * d, p[1] + (pr[1] - p[1]) / la * d) || paved(p[0] + (nx[0] - p[0]) / lb * d, p[1] + (nx[1] - p[1]) / lb * d)); d += 0.5);
+        d = Math.min(d, la * 0.45, lb * 0.45);
+        out.push([p[0] + (pr[0] - p[0]) / la * d, p[1] + (pr[1] - p[1]) / la * d], [p[0] + (nx[0] - p[0]) / lb * d, p[1] + (nx[1] - p[1]) / lb * d]);
+      }
+      plate = out;
+    }
+    if (plate.length < 3) return null;
+    // 2 · THE REAR YARD is measured from the rear lot line, so it runs square
+    // to it: the back of the plate is parallel to the lot's rear edge (the
+    // edge whose middle lies deepest behind the front), not to the front —
+    // on a lot whose front runs on the slant, a cut parallel to the front
+    // left a wedge of yard. Bisected so the plate covers the share of the
+    // lot the old shrink did; if the footway trim already took more than
+    // that, the plate is what the trim left.
+    const depth = (p: P2) => (p[0] - front.a[0]) * front.nx + (p[1] - front.a[1]) * front.ny;
+    const rear = edges.filter((e) => e !== front).reduce((m, e) => {
+      const dm = depth([(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]);
+      return !m || dm > m.d ? { e, d: dm } : m;
+    }, null as { e: Edge; d: number } | null)?.e;
+    if (!rear) return null;
+    const want = area * share;
+    if (Math.abs(ringArea(plate)) <= want) return plate;
+    let D = 0;
+    for (const p of plate) D = Math.max(D, (p[0] - rear.a[0]) * rear.nx + (p[1] - rear.a[1]) * rear.ny);
+    let lo = 0, hi = D;
+    for (let k = 0; k < 24; k++) {
+      const mid = (lo + hi) / 2;
+      if (Math.abs(ringArea(clipIn(plate, rear.a, rear.nx, rear.ny, mid))) > want) lo = mid; else hi = mid;
+    }
+    // at high coverage the yard is a light well a metre or two deep: still
+    // the street wall, never the old marooned plate
+    const cut = clipIn(plate, rear.a, rear.nx, rear.ny, lo);
+    return cut.length >= 3 ? cut : plate;
+  }
+  /** The painted crossings, in local metres (built once). */
+  private zebraRings(): { r: P2[]; x0: number; y0: number; x1: number; y1: number }[] {
+    if (!this.zebraLocal) this.zebraLocal = ((this.ctx as { zebras?: P2[][] }).zebras ?? []).filter((z) => z.length >= 3).map((z) => {
+      const r = z.map((q) => this.project(q));
+      return { r, x0: Math.min(...r.map((q) => q[0])), y0: Math.min(...r.map((q) => q[1])), x1: Math.max(...r.map((q) => q[0])), y1: Math.max(...r.map((q) => q[1])) };
+    });
+    return this.zebraLocal;
+  }
+  private zebraLocal: { r: P2[]; x0: number; y0: number; x1: number; y1: number }[] | null = null;
+
   /** The walls of a ring that front a street: six metres out is nobody's lot. */
   private streetEdges(ring: P2[], minL: number) {
     const out: { a: P2; ux: number; uy: number; L: number; r: number }[] = [];
@@ -2812,7 +2945,8 @@ export class RealCityLayer {
           const x = a[0] + ux * t + nx * row, y = a[1] + uy * t + ny * row;
           if (!inP(x, y) || !inP(x + nx * 2.4, y + ny * 2.4) || !inP(x - nx * 2.4, y - ny * 2.4) || lrnd() < 0.3) continue;
           if (!this.clearOfBuildings(x, y, 2.6)) continue;
-          this.putInst(lrnd() < 0.62 ? "lotcar" : "lotsuv", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, "", CARC[(lrnd() * CARC.length) | 0]);
+          // tagged with the lot, so when the lot is built on its cars go with the car park
+          this.putInst(lrnd() < 0.62 ? "lotcar" : "lotsuv", x, y, 0.04, 1, Math.atan2(uy, ux) + Math.PI / 2, v.b || "", CARC[(lrnd() * CARC.length) | 0]);
         }
       }
     }
@@ -4109,7 +4243,12 @@ export class RealCityLayer {
     for (const [x, y] of lot) { cx += x; cy += y; }
     cx /= lot.length; cy /= lot.length;
     const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
-    const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    const ring = this.streetWallPlate(lot, B * B) ?? lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    // everything after this (the cake's terraces, the job site, the crane)
+    // centres on the building, not on the lot it no longer sits in the middle of
+    cx = 0; cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
     const h = Math.max(3, it.heightM);
     let fam = it.construction ? "frame" : familyFor(it.cls, it.year && it.year > 1800 ? it.year : 2000, h, hash01(keyOf(it.bbl) ^ 0x3c1f, this.seed));
     const k = keyOf(it.bbl);

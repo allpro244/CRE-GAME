@@ -194,8 +194,13 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * Plan 8 tones the row-house grain down a notch at the owner's request: the
  * narrowest frontage 30 ft (was 26), the narrow bands a foot or two wider, no
  * lot cut past 4:1 (was 5:1). See citygen.mjs PLAN 8: A NOTCH WIDER.
+ *
+ * Plan 9 moves the great park off-centre in half the towns that have one
+ * (island.mjs NOT EVERY TOWN PUT ITS GREAT PARK IN THE MIDDLE): by a later
+ * core or on open ground away from the middle, instead of always between
+ * downtown and the housing. Every other draw is unchanged.
  */
-export const CITY_PLAN = 8;
+export const CITY_PLAN = 9;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

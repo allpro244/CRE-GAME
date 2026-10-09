@@ -18,6 +18,7 @@ import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
+import { siteOutline, ringCentroid } from "./siteRing";
 import { SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
@@ -4763,6 +4764,50 @@ export class RealCityLayer {
     return this.deeds.get(bbl)?.ring ?? null;
   }
 
+  // ---- assembled sites --------------------------------------------------------
+  // AN ASSEMBLAGE IS ONE LOT ON SEVERAL DEEDS (engine/actions.assembleLots).
+  // The building on it stands on the whole site: one footprint dissolved from
+  // every deed's outline (siteRing.ts), not a copy of the tower on each lot.
+  private siteKids = new Map<string, string[]>();
+  private siteParent = new Map<string, string>();
+  private siteRingCache = new Map<string, P2[] | null>();
+  private sitesSig = "";
+
+  /** The game's child -> parent map. Rebuilds the new stock when the sites changed. */
+  setSites(merged: Record<string, string>) {
+    const sig = Object.entries(merged).sort(([a], [b]) => (a < b ? -1 : 1)).map(([c, p]) => c + ">" + p).join("|");
+    if (sig === this.sitesSig) return;
+    this.sitesSig = sig;
+    this.siteKids = new Map();
+    this.siteParent = new Map(Object.entries(merged));
+    for (const [child, parent] of Object.entries(merged)) {
+      const arr = this.siteKids.get(parent);
+      if (arr) arr.push(child); else this.siteKids.set(parent, [child]);
+    }
+    for (const arr of this.siteKids.values()) arr.sort();
+    this.siteRingCache.clear();
+    this.pickGrid = null;
+    this.setPlayerBuildings(this.lastItems, true);
+  }
+
+  /** Every deed a building on `bbl` stands on: the lot itself, plus its children if it is a site. */
+  private siteOf(bbl: string): string[] {
+    return [bbl, ...(this.siteKids.get(bbl) ?? [])];
+  }
+
+  /** The footprint a building on `bbl` gets: the lot, or the whole site's dissolved outline. */
+  private siteRing(bbl: string, fallback: Map<string, Deed>): P2[] | null {
+    const kids = this.siteKids.get(bbl);
+    if (!kids?.length) return this.lotRing(bbl) ?? fallback.get(bbl)?.ring ?? null;
+    if (this.siteRingCache.has(bbl)) return this.siteRingCache.get(bbl)!;
+    const rings = this.siteOf(bbl)
+      .map((b) => this.lotRing(b) ?? fallback.get(b)?.ring ?? null)
+      .filter((r): r is P2[] => !!r && r.length >= 3);
+    const ring = siteOutline(rings) ?? rings[0] ?? null;
+    this.siteRingCache.set(bbl, ring);
+    return ring;
+  }
+
   private flatten(bbl: string) {
     if (this.flattened.has(bbl)) return;
     this.flattened.add(bbl);
@@ -4800,10 +4845,11 @@ export class RealCityLayer {
    * viewer renders it; nothing on the map changes.
    */
   schemeModel(it: PlayerItem): SchemeModel | null {
-    const lot = this.lotRing(it.bbl) ?? this.deeds.get(it.bbl)?.ring ?? null;
+    const lot = this.siteRing(it.bbl, this.deeds);
     if (!lot || !(it.heightM > 0)) return null;
     let cx = 0, cy = 0;
     for (const [x, y] of lot) { cx += x / lot.length; cy += y / lot.length; }
+    if (this.siteKids.has(it.bbl)) [cx, cy] = ringCentroid(lot);
     const saveBufs = this.bufs, saveDeeds = this.deeds, saveInst = this.instItems, saveDyn = new Map(this.dynHeight);
     this.bufs = new Map(); this.deeds = new Map(); this.instItems = new Map(); this.sandbox = true;
     const group = new THREE.Group();
@@ -4841,7 +4887,7 @@ export class RealCityLayer {
     const reach = Math.max(90, height * 0.9);
     const neighbours: { ring: P2[]; h: number }[] = [];
     for (const [b, d] of this.deeds) {
-      if (b === it.bbl || !d.ring || this.flattened.has(b)) continue;
+      if (this.siteOf(it.bbl).includes(b) || !d.ring || this.flattened.has(b)) continue;
       let nx = 0, ny = 0; for (const [x, y] of d.ring) { nx += x / d.ring.length; ny += y / d.ring.length; }
       if (Math.hypot(nx - cx, ny - cy) > reach) continue;
       neighbours.push({ ring: d.ring.map(([x, y]) => [x - cx, y - cy] as P2), h: this.dynHeight.get(b) ?? d.height });
@@ -4873,11 +4919,14 @@ export class RealCityLayer {
   /** One player or rival building into the current buffers: a job site by stage, or the finished building in its design. */
   private buildItem(it: PlayerItem, saveDeeds: Map<string, Deed>, craneAt: { x: number; y: number; r: number }[]) {
     if (!(it.heightM > 0) || it.cls === "land") return;
-    const lot = this.lotRing(it.bbl) ?? saveDeeds.get(it.bbl)?.ring ?? null;
+    const lot = this.siteRing(it.bbl, saveDeeds);
     if (!lot) return;
     let cx = 0, cy = 0;
     for (const [x, y] of lot) { cx += x; cy += y; }
     cx /= lot.length; cy /= lot.length;
+    // a site's outline has more corners down one side than the other; inset
+    // it toward its true centre, not the average corner
+    if (this.siteKids.has(it.bbl)) [cx, cy] = ringCentroid(lot);
     const B = it.cov && it.cov > 0 ? Math.min(0.97, Math.sqrt(it.cov)) : 0.82;
     const ring = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
     const h = Math.max(3, it.heightM);
@@ -4902,7 +4951,7 @@ export class RealCityLayer {
     if (it.construction) {
       // a job site goes up in stages, not as a grey box (buildSite)
       this.buildSite(ring, it, k, cx, cy);
-      this.dynHeight.set(it.bbl, h);
+      for (const b of this.siteOf(it.bbl)) this.dynHeight.set(b, h);
       craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
       return;
     }
@@ -4938,7 +4987,10 @@ export class RealCityLayer {
       const kind = d?.crown && d.crown !== "cake" && it.floors >= CROWN_MIN_FLOORS ? d.crown : "auto";
       this.towerTop(topRing, h, h, fam, tint, it.bbl, k, kind as "auto" | "none" | "setback" | "spire" | "mast", ov);
     }
-    this.dynHeight.set(it.bbl, h);
+    // every deed of the site carries the building's height, so a pointer on
+    // any part of it picks the building (pickAt) and nothing is drawn as an
+    // empty lot under it
+    for (const b of this.siteOf(it.bbl)) this.dynHeight.set(b, h);
     if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
   }
 
@@ -4972,7 +5024,7 @@ export class RealCityLayer {
     const craneAt: { x: number; y: number; r: number }[] = [];
     layer.cranes = null;
     for (const it of items) {
-      this.flattenStatic(saveDeeds, it.bbl);
+      for (const b of this.siteOf(it.bbl)) this.flattenStatic(saveDeeds, b);
       this.buildItem(it, saveDeeds, craneAt);
     }
     const dynMeshes = new Map<string, THREE.Mesh>();
@@ -5014,7 +5066,7 @@ export class RealCityLayer {
       this.registerBays(dynInst, this.instItems, false);
       layer.bays = [...this.bays.keys()].filter((b) => !before.has(b));
       // the new bays, and the street's own on any lot this layer just flattened
-      for (const b of new Set([...layer.bays, ...items.map((i) => i.bbl)])) this.applyBays(b);
+      for (const b of new Set([...layer.bays, ...items.flatMap((i) => this.siteOf(i.bbl))])) this.applyBays(b);
     }
     this.bindRanges(this.deeds, dynMeshes);
     layer.deeds = this.deeds;
@@ -5214,7 +5266,7 @@ export class RealCityLayer {
   }
 
   buildingFrame(bbl: string): { radius: number; height: number } | null {
-    const ring = this.lotRing(bbl);
+    const ring = this.siteRing(this.siteParent.get(bbl) ?? bbl, this.deeds);
     if (!ring || ring.length < 3) return null;
     let cx = 0, cy = 0;
     for (const [x, y] of ring) { cx += x; cy += y; }

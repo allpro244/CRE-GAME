@@ -81,8 +81,16 @@ console.log("\nINSOLVENCY SALE — a filed building is the last thing taken, not
   let g = JSON.parse(JSON.stringify(g0));
   g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
   const lim = E.locLimit(g, parcels);
+  // THE PREMISE IS THAT THE LINE IS BIGGER THAN THE HOLE (2026-10-09). The
+  // hole was a fixed $150K while the line is sized off whatever office the
+  // town listed: on one world a $2.6M office with an $815K line, on another
+  // a $713K one with $259K, landing in tax season, where the line was
+  // drawn to exhaustion and the deed then went — which is the rule working.
+  // The hole is now half the undrawn line, so the case under test is the
+  // case being run.
+  g.cash = -Math.round(lim * 0.5);
   g = E.advanceMonth(g, parcels, bbls, adjacency);
-  check(!!g.holdings[bbl], `with ${M(lim)} of line undrawn the deed is not touched`);
+  check(!!g.holdings[bbl], `with ${M(lim)} of line undrawn against a ${M(lim * 0.5)} hole, the deed is not touched`);
   check(g.cash >= 0 || (g.loc?.balance ?? 0) > 0, `the line covered the hole first (cash ${M(g.cash)}, drawn ${M(g.loc?.balance ?? 0)})`);
   check(!g.gameOver, "the run continues");
 }

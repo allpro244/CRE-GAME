@@ -1441,6 +1441,14 @@ export interface EconHistoryPoint {
   jobs?: number;
   unemployment?: number;
   wageIdx?: number;
+  /** National unemployment, for the credit window's year-on-year read. */
+  natUnemp?: number;
+  /** National nominal wage path — the services half of the local CPI is read against it. */
+  natWageIdx?: number;
+  /** National price level path, so a local/national gap can be read off history. */
+  natCpi?: number;
+  /** Local prices less shelter — what rents escalate by. */
+  cpiXS?: number;
   outputIdx?: number;
   cpi?: number;
   landIdx: number;
@@ -1530,6 +1538,8 @@ export interface Econ {
    * office won the 50-year crude return on every seed, by 3-4 points.
    */
   retExp?: Record<BuiltClass, number>;
+  /** Each class's real rent growth as buyers have watched it, four-year memory — the g in cap = r - g. */
+  growthExp?: Record<BuiltClass, number>;
   /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
   /**
@@ -1714,6 +1724,8 @@ export interface Econ {
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
     shockClusterM?: number;
+    /** National unemployment, last 13 months — the credit window's year-on-year read, kept by the nation itself so the pre-history has it too. */
+    uHist?: number[];
     /**
      * The term premium as its own state — what the bond market charges over
      * the policy rate for time and risk, and it WANDERS. The loan index used
@@ -1800,6 +1812,12 @@ export interface Econ {
   adults0?: number;
   /** The national wage path (no local tightness), and this town's smoothed premium over it. */
   natWageIdx?: number;
+  /** The national price level, compounded from `nat.infl`; the local `cpi` is it plus local shelter and services. */
+  natCpi?: number;
+  /** This town's real pay over the nation's, two-year average — what movers answer. */
+  realPremEma?: number;
+  /** Local prices less shelter (goods + local services). Rents escalate by this, not by a CPI that contains them. */
+  cpiXS?: number;
   wagePremEma?: number;
   /** Each class's demand driver last month and its five-year average monthly growth. */
   classDrv?: Record<BuiltClass, number>;

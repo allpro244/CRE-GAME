@@ -277,7 +277,14 @@ console.log("\nJEV — TypeSafe System One informs the street's own decisions\n"
     let s = await E.runJevPeriod(d, parcels, { answer: fixture({ distress_pick: (q) => E.choiceOf(want, Object.keys(q.criteria), 0.8) }) });
     s = step(s);
     const li = s.listings.find((l) => l.bbl === want && l.sellerId === t.id && l.distress);
-    check(!!li, `the distress pick (0.8) goes on the tape: ${want}${li ? "" : " — " + JSON.stringify(s.jev.log.filter((l) => l.point === "distress"))}`);
+    // ...or it has already SOLD. A distress listing can clear inside the
+    // month it is posted, and then it is no longer on the tape — which is the
+    // pick going to market, faster. What must not happen is a different
+    // building leaving, or nothing leaving at all.
+    const tAfter = s.rivals.find((x) => x.id === t.id);
+    const soldPick = !!tAfter && !tAfter.bbls.includes(want) && t.bbls.includes(want);
+    const othersKept = !!tAfter && t.bbls.filter((x) => x !== want).every((x) => tAfter.bbls.includes(x));
+    check(!!li || (soldPick && othersKept), `the distress pick (0.8) goes to market: ${want}${li ? " (listed)" : soldPick && othersKept ? " (already sold, nothing else left the book)" : " — " + JSON.stringify(s.jev.log.filter((l) => l.point === "distress"))}`);
   }
 }
 

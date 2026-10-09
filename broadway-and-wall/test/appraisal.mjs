@@ -90,9 +90,14 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
 }
 
 // --- 3. the ask sits in a band around the appraisal, by phase ---------------
+// Four seeds, not three (2026-10-09): the n > 200 floor on clean asks is a
+// sample-size guard, and once listing volume and distress share were read off
+// measured slack instead of the phase label, three ten-year windows gave 197
+// clean asks with the band itself comfortably met (p50 1.06, p90 1.14). The
+// bands and the floor are unchanged; the estimator gets a fourth window.
 {
   const rows = [];
-  for (const seed of [550991, 4242, 91117]) {
+  for (const seed of [550991, 4242, 91117, 12007]) {
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     for (let q = 0; q <= 40; q++) {
       if (q % 4 === 0) for (const li of g.listings) {

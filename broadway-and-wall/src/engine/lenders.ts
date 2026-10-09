@@ -19,7 +19,7 @@
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
-import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
+import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, labourSlack } from "./market";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -729,8 +729,9 @@ export function tickLenders(s: GameState) {
     // owners burn reserves, then they stop paying. A recession alone is not
     // enough — it is a recession with vacancy behind it that does this.
     const badTarget = 0.006 + stress * 0.55 * k.brittle
-      + (e.phase === "recession" ? 0.018 : e.phase === "depression" ? 0.014
-        : e.phase === "recovery" ? 0.008 : 0) * k.brittle
+      // borrowers whose tenants are laying off: 0.6 x slack reads 1.8% at a
+      // three-point recession trough, as the old recession term did
+      + 0.6 * Math.max(0, labourSlack(e)) * k.brittle
       + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
     l.delinquent = Math.max(0.002, Math.min(0.35, l.delinquent + 0.10 * (badTarget - l.delinquent) + rrange(s, -0.0015, 0.0015, "lenders")));
 

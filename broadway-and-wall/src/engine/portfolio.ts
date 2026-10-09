@@ -211,7 +211,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // largest term in a real downturn and the reason distressed sellers sell one
   // building at a time.
   const ci = s.econ.creditIdx ?? 1;
-  const credit = -Math.max(0, 1 - ci) * 0.18 - (s.econ.phase === "recession" ? 0.035 : 0);
+  const credit = -Math.max(0, 1 - ci) * 0.18;   // the credit window is the term; no label on top
   if (credit < -0.004) {
     why.push({ label: ci < 0.8 ? "Credit is tight — nobody is funding a portfolio right now" : "Financing markets are soft", pct: credit });
   }

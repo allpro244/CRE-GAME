@@ -302,7 +302,7 @@ export function varianceQuote(
   // A site the neighbourhood already accepts as dense is an easier hearing
   // than one on a quiet street.
   const dense = clamp(demandLinear(rec.demandScore) / 130, 0.1, 0.75);
-  const ordinaryOdds = clamp(0.30 + dense - (s.econ.phase === "recession" ? 0.08 : 0), 0.08, 0.82);
+  const ordinaryOdds = clamp(0.30 + dense, 0.08, 0.82);
   // Asking beyond the old one-third request is possible, not free. Opposition
   // compounds with the magnitude of relief; a 2× envelope has roughly half
   // the ordinary odds and a 3× ask is a genuine long shot.

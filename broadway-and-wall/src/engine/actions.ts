@@ -8,7 +8,7 @@ import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, c
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
+import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
@@ -1388,9 +1388,7 @@ function defaultCityGroundLease(s: GameState, bbl: string, gl: GroundLease): voi
 }
 
 function groundDefaultOdds(s: GameState, duringBuild: boolean): number {
-  const cycle = s.econ.phase === "recession" ? 3.5
-    : s.econ.phase === "recovery" ? 1.4
-      : s.econ.phase === "peak" ? 0.75 : 1;
+  const cycle = Math.max(0.5, Math.min(3.5, Math.exp(35 * labourSlack(s.econ))));
   const credit = Math.max(0.75, Math.min(2, 1 / Math.max(0.5, s.econ.creditIdx ?? 1)));
   // Construction is riskier than a stabilised leasehold; operating defaults
   // stay rare because losing the improvement is catastrophic for the lessee.
@@ -1951,7 +1949,7 @@ export function approachOwner(
     * (stressed ? 0.46 : 1)                               // was -0.42
     * (owner && owner.cash < 0 ? 0.81 : 1)                // was -0.15
     * (rec.class === "land" ? 0.85 : 1)                   // was -0.12
-    * (next.econ.phase === "recession" ? 0.87 : 1)        // was -0.10
+    * (1 - 0.13 * cycleDown(next.econ))                   // was a recession-label 0.87
     * (1 + (demandLinear(rec.demandScore) - 50) / 390)    // was +(d-50)/500
     // ...and who you are to THEM. Above 1 is harder. See owners.relMult: it
     // takes several clean closings to undo one bad conversation, which is the
@@ -2238,7 +2236,7 @@ export function buyOffMarket(
   // an owner who wasn't selling in the first place has no reason to bend:
   // off-market discounts come much harder than they do on the open tape
   const disc = 1 - price / Math.max(1, a.ask);
-  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + (next.econ.phase === "recession" ? 0.12 : 0)));
+  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + 0.12 * cycleDown(next.econ)));
   const roll = rng(next);
   if (roll < p) {
     const done = executePurchase(next, parcels, bbl, price, product, true, lev);
@@ -2302,8 +2300,8 @@ export function counterOffMarket(
     - (named ? 0.10 : 0)                                       // they know you want it
     - (cut - ref) * 2.6                                        // the reference cut
     - 0.35 * pressure                                          // holdouts don't blink
-    + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
-    - (next.econ.phase === "expansion" ? 0.08 : 0),
+    + 0.18 * cycleDown(next.econ)                              // fear is your friend
+    - 0.08 * cycleHot(next.econ),
   ));
   // Split the old "hold firm" mass into a real soft counter and a true hold.
   // Owners who will not take your number still often move a little — that is
@@ -2515,8 +2513,8 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   const value = ownedHoldingValue(s, parcels, h);
   const ratio = sale.ask / Math.max(1, value);
   const appetite = marketAppetite(s);
-  const phase = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.25
-    : s.econ.phase === "recovery" ? 0.8 : 0.35;
+  const hotA = cycleHot(s.econ), downA = cycleDown(s.econ);
+  const phase = 0.35 + 1.0 * hotA + 0.45 * (1 - hotA) * (1 - downA);
   // how many people actually turned up
   const expected = Math.max(0, 3.4 * phase * Math.max(0.3, appetite) * Math.max(0.25, 2.1 - ratio));
   let n = Math.floor(expected) + (rng(s, "sales") < expected % 1 ? 1 : 0);
@@ -2637,7 +2635,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   let walked = 0, lifted = 0;
   for (const b of live) {
     // The ones who can afford to be patient are the ones who walk.
-    const pWalk = 0.30 * (1 - b.credibility) + (next.econ.phase === "recession" ? 0.18 : 0);
+    const pWalk = 0.30 * (1 - b.credibility) + 0.18 * cycleDown(next.econ);
     if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
     const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
@@ -3175,12 +3173,12 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // A broker's interest in you scales with what you already own — the first
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;
-  const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
+  const hotB = cycleHot(s.econ);
   // A real broker with a real off-market file calls a few times a YEAR, not
   // most months. The old rate — up to 30% a month — meant the phone rang
   // thirty-odd times a decade and the calls stopped being events. A fifth of
   // that: an occasional knock, worth picking up.
-  const base = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  const base = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (0.7 + 0.55 * hotB) * Math.max(0.5, s.econ.creditIdx ?? 1));
   // ...AND HOW QUIET YOUR DESK IS.
   //
   // Every other inbound channel in this engine is gated on the size of your
@@ -3333,7 +3331,8 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     // the quiet-desk hazard would be a free seven-point discount handed to
     // whoever does the least.
     const idle = (s.quietMs ?? 0) > 2 ? 0.07 : 0;
-    const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90, "sales") : rrange(s, 0.84, 0.92, "sales")) + idle;
+    const dnM = cycleDown(s.econ);
+    const motivated = rrange(s, 0.84 - 0.06 * dnM, 0.92 - 0.02 * dnM, "sales") + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
     who = held && (relOf(s, held.id).deals ?? 0) > 0
       ? `${held.name} gave your broker the first look because you have closed together before.`
@@ -3423,9 +3422,8 @@ export function counterSale(
   const value = ownedHoldingValue(next, parcels, h);
   // how far a buyer will stretch past appraisal: a boom with open credit buys
   // aggressively, a downturn with shut credit does not buy at all
-  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
   const creditEase = Math.max(0.4, next.econ.creditIdx ?? 1);
-  const stretch = (hot ? 1.10 : 0.99) * (0.94 + 0.12 * creditEase);
+  const stretch = (0.99 + 0.11 * cycleHot(next.econ)) * (0.94 + 0.12 * creditEase);
   const reservation = Math.max(offer.price, Math.round(value * stretch * rrange(next, 0.97, 1.05)));
 
   if (px <= reservation) {
@@ -3484,9 +3482,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         || (s.portfolioSale?.bbls.includes(h.bbl) ?? false);
       const quiet = s.month - (s.lastUnsolicitedM ?? -60) > 30;
       if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
-        const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
         const creditEase = Math.max(0.4, s.econ.creditIdx ?? 1);
-        const p = (hot ? 0.0020 : 0.0006) * creditEase * (1 + rec0.demandScore / 140);
+        const p = (0.0006 + 0.0014 * cycleHot(s.econ)) * creditEase * (1 + rec0.demandScore / 140);
         if (rng(s, "sales") < p) {
           s.lastUnsolicitedM = s.month;
           const v = ownedHoldingValue(s, parcels, h);
@@ -3500,7 +3497,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // same number as a fund rebalancing into your asset class, because
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
-          const px = Math.round(v * bidder.mult * (hot ? rrange(s, 1.00, 1.10, "sales") : rrange(s, 0.86, 0.98, "sales")));
+          const px = Math.round(v * bidder.mult * (() => { const hw = cycleHot(s.econ); return rrange(s, 0.86 + 0.14 * hw, 0.98 + 0.12 * hw, "sales"); })());
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({
@@ -3638,7 +3635,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
 export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
   // settle any private windows that closed with nothing to show for them
   tickEarlyLooks(s);
-  const base = s.econ.phase === "expansion" ? 0.10 : s.econ.phase === "peak" ? 0.07 : s.econ.phase === "recovery" ? 0.05 : 0.02;
+  const hotL = cycleHot(s.econ), downL = cycleDown(s.econ);
+  const base = 0.02 + 0.08 * hotL + 0.03 * (1 - hotL) * (1 - downL);
   const survivors: typeof s.listings = [];
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
@@ -3924,8 +3922,7 @@ export function counterBid(
   // the institution that bid with a committee behind it has room, and the
   // syndicate that bid to be in the running does not.
   const value = ownedHoldingValue(next, parcels, next.holdings[bbl]!);
-  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
-  const headroom = (0.02 + b0.credibility * 0.09) * (hot ? 1.25 : 0.85);
+  const headroom = (0.02 + b0.credibility * 0.09) * (0.85 + 0.40 * cycleHot(next.econ));
   const limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));
 
   if (px <= limit) {

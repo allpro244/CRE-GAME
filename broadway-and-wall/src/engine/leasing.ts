@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, labourSlack, payrollGrowth12, useGap } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -983,9 +983,8 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   const c = e.concIdx?.[k];
   if (c !== undefined) return 0.22 + 1.88 * c;
   const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-  const phase = e.phase === "recession" ? 0.22 : e.phase === "depression" ? 0.16
-    : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
-  return Math.max(0.22, Math.min(2.1, 1 + gap * 11 + phase));
+  // Same package rule as the market's (concessionTarget), not a label nudge.
+  return Math.max(0.22, Math.min(2.1, 1 + 11 * gap));
 }
 
 /**
@@ -1330,7 +1329,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const age = START_YEAR + Math.floor(q / 12) - rec.yearBuilt;
       const wear = (COND_DECAY[rec.class as BuiltClass] ?? 0.0024)
         * (1 + Math.min(0.50, age / 220))
-        * (s.econ.phase === "recession" || s.econ.phase === "depression" ? 1.2 : 1);
+        // (a recession-label 1.2x on wear is gone: deferred maintenance is
+        // an owner's capex decision, which is modelled where it is taken)
+        ;
       h.condIdx -= wear;
 
       // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
@@ -1428,8 +1429,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // Downtime is the expensive half of rollover and nobody underwrites it
       // honestly. A suite handed back in a soft office market is dark for the
       // better part of a year: demo, demise, permit, market, build out.
-      const soft = s.econ.phase === "recession" ? 1.7 : s.econ.phase === "depression" ? 1.5
-        : s.econ.phase === "recovery" ? 1.3 : s.econ.phase === "peak" ? 0.95 : 0.8;
+      // How long a suite sits dark is how much else is on the market for its
+      // use: availability over natural, not the cycle's label. Three points
+      // tight reads the old expansion's 0.8; nine points soft the old
+      // recession's 1.7.
+      const soft = Math.max(0.7, Math.min(2.0, 1 + 8 * useGap(s.econ, dominantUse(rec))));
       // Downtime is a property of the SPACE, not the building: a shop relets
       // faster than a floor, and each turns on its own clock.
       const lagFor = (u: BuiltClass | undefined) => reletMonths(u ?? dominantUse(rec));
@@ -1496,8 +1500,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     for (let i = h.tenants.length - 1; i >= 0; i--) {
       const t = h.tenants[i];
       if (q - t.startM < 6) continue;                       // give them a quarter to fail
-      const cycle = s.econ.phase === "recession" ? 3.4 : s.econ.phase === "depression" ? 2.6
-        : s.econ.phase === "recovery" ? 1.7 : s.econ.phase === "peak" ? 0.9 : 0.55;
+      // Business failures follow the labour market (Altman's failure series
+      // and unemployment move together): exp(35 x slack) reads 0.7 a point
+      // under the natural rate — the old expansion's 0.55-0.9 — and 2.9 three
+      // points over it, the old recession's 3.4, continuously.
+      const cycle = Math.max(0.4, Math.min(4, Math.exp(35 * labourSlack(s.econ))));
       const grade = t.credit === 2 ? 0.14 : t.credit === 1 ? 0.55 : 1.6;   // investment grade rarely goes dark
       const sectorStress = Math.max(0, -(s.econ.sectorMom?.[rec.class as "office"] ?? 0)) * 40;
       // AND THE TENANT'S OWN TRADE. This is the whole point of modelling
@@ -1643,7 +1650,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const stress = industryStress(s.econ, t.sector);
         const shrinking = (t.staff ?? 1) < 0.85 ? 0.5 : 0;
         const squeeze = stress * 3
-          + (s.econ.phase === "recession" ? 0.7 : s.econ.phase === "depression" ? 0.45 : 0)
+          + 25 * Math.max(0, labourSlack(s.econ))
           + shrinking + Math.max(0, over - 1) * 2;
         if (squeeze <= 0.65) continue;                      // healthy trades honour their paper
         if (rng(s, "leasing") >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
@@ -1850,8 +1857,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // reverse and asks for a cut — and in a soft market they get it.
       const overMarket = t.rentPsf / Math.max(1, market);
       const leverage = overMarket > 1.05 ? 0.82 : overMarket < 0.9 ? 1.0 : 0.94;
-      const soft = s.econ.phase === "recession" ? 0.88 : s.econ.phase === "depression" ? 0.90
-        : s.econ.phase === "recovery" ? 0.95 : 1;
+      const soft = Math.max(0.85, Math.min(1, 1 - 1.5 * Math.max(0, useGap(s.econ, dominantUse(rec)))));
       // Credit tenants are worth keeping and they know it.
       const creditDisc = t.credit === 2 ? 0.97 : t.credit === 1 ? 1.0 : 1.02;
       // AND WHAT THEIR OWN TRADE IS DOING. A firm in a booming industry is
@@ -1921,7 +1927,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // flatten; a soft market helps them.
         bumpPct: Math.round(clampL(
           bumpOf(t) + rrange(s, -0.5, 0.25, "leasing")
-            + (s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.25 : 0),
+            - Math.min(0.35, 8 * Math.max(0, labourSlack(s.econ))),
           0, 5,
         ) * 4) / 4,
         net: t.net,
@@ -2088,7 +2094,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const termM = Math.round(
           rrange(s, band.loM, band.hiM, "leasing")
           * (sf > typicalSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
-          * (s.econ.phase === "recession" || s.econ.phase === "depression" ? 0.85 : 1) * termBias,
+          * Math.max(0.8, 1 - 5 * Math.max(0, labourSlack(s.econ))) * termBias,
         );
         // WHAT THIS TENANT IS OFFERING against a fair ask for this space. Drawn
         // once because BOTH the rent and the allowance read it — a prospect
@@ -2940,8 +2946,7 @@ export function bumpPremiumPsf(rentPsf: number, bumpPct: number, termM: number):
 
 /** What a prospect opens at — credit tenants push for flatter paper. */
 function rollBumpPct(s: GameState, credit: Credit): number {
-  const soft = s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.35
-    : s.econ.phase === "recovery" ? -0.15 : 0;
+  const soft = -Math.min(0.35, 12 * Math.max(0, labourSlack(s.econ)));
   const base = credit === 2 ? rrange(s, 1.5, 2.5, "leasing")
     : credit === 1 ? rrange(s, 2.0, 3.0, "leasing")
     : rrange(s, 2.25, 3.5, "leasing");
@@ -3037,8 +3042,7 @@ export function tenantIndifferenceMult(
   const softDrag = Math.max(0, -tight) * 0.12;
   return 1 + TENANT_SWITCH + stick + tight * 0.35 - softDrag + loi.credit * 0.015
     + termIndifferenceShift(loi, askTerm)
-    + (s.econ.phase === "expansion" ? 0.05
-      : s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.06 : 0);
+    + Math.max(-0.06, Math.min(0.05, 2.5 * payrollGrowth12(s.econ)));
 }
 
 /**

@@ -924,9 +924,62 @@ class PolyGrid {
   }
 }
 
+/**
+ * A GROWABLE FLOAT32 COLUMN. The vertex buffers used to be plain `number[]`,
+ * which V8 stores as 8-byte doubles with up to half again of growth slack —
+ * and a Buf writes 22 of them per vertex. Manhattan below 14th Street at
+ * Metropolis build-out is 11.8 million vertices, and the plain arrays alone
+ * took the tab's heap to 4.3 GB before a single one reached the GPU, which is
+ * at Chrome's per-tab ceiling; below 59th Street went over it and the tab died.
+ * The GPU only ever sees float32, so storing float32 here loses nothing.
+ */
+class F32 {
+  // FILLED IN CHUNKS, NOT BY DOUBLING. A doubled array is on average a third
+  // empty and briefly held twice while it is copied, which on a 23-million-
+  // vertex city was a gigabyte of heap holding nothing. Chunks grow to 4 MB and
+  // are only ever joined once, when the column is taken.
+  private full: Float32Array[] = [];
+  private done = 0;
+  private cur = new Float32Array(256);
+  private at = 0;
+  get length() { return this.done + this.at; }
+  push(x: number, y?: number, z?: number, w?: number) {
+    const n = arguments.length;
+    if (this.at + n > this.cur.length) {
+      this.full.push(this.cur.subarray(0, this.at)); this.done += this.at;
+      this.cur = new Float32Array(Math.min(this.cur.length * 2, 1 << 20)); this.at = 0;
+    }
+    const a = this.cur; let i = this.at;
+    a[i++] = x; if (n > 1) a[i++] = y!; if (n > 2) a[i++] = z!; if (n > 3) a[i++] = w!;
+    this.at = i;
+  }
+  /** Overwrite one value already written (the newest ones, in practice). */
+  put(i: number, v: number) {
+    if (i >= this.done) { this.cur[i - this.done] = v; return; }
+    let o = this.done;
+    for (let k = this.full.length - 1; k >= 0; k--) {
+      o -= this.full[k].length;
+      if (i >= o) { this.full[k][i - o] = v; return; }
+    }
+  }
+  /** The written values, exactly sized; the column is spent afterwards. */
+  take(): Float32Array {
+    let out: Float32Array;
+    if (!this.full.length) out = this.cur.length - this.at > 4096 ? this.cur.slice(0, this.at) : this.cur.subarray(0, this.at);
+    else {
+      out = new Float32Array(this.length);
+      let o = 0;
+      for (const c of this.full) { out.set(c, o); o += c.length; }
+      out.set(this.cur.subarray(0, this.at), o);
+    }
+    this.full = []; this.done = 0; this.cur = new Float32Array(0); this.at = 0;
+    return out;
+  }
+}
+
 class Buf {
-  pos: number[] = []; nrm: number[] = []; uv: number[] = []; col: number[] = []; ao: number[] = [];
-  pt: number[] = []; tc: number[] = []; ac: number[] = [];
+  pos = new F32(); nrm = new F32(); uv = new F32(); col = new F32(); ao = new F32();
+  pt = new F32(); tc = new F32(); ac = new F32();
   /** how high (m) the street's shade climbs the walls written next (see the facade shader) */
   aoH = 3.5;
   /** the paint scheme of the walls written next (PAINT_FRAG): wall rgb + amount, trim, accent (r < 0: as drawn) */
@@ -944,7 +997,8 @@ class Buf {
     try { f(); } finally { this.paint = NO_PAINT.wall; this.trimc = NO_PAINT.trim; this.accent = NO_PAINT.accent; }
   }
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], uvs: number[][], col: number[]) {
-    for (const [p, t] of [[a, uvs[0]], [b, uvs[1]], [c, uvs[2]], [a, uvs[0]], [c, uvs[2]], [d, uvs[3]]] as [number[], number[]][]) this.v(p, n, t, col);
+    this.v(a, n, uvs[0], col); this.v(b, n, uvs[1], col); this.v(c, n, uvs[2], col);
+    this.v(a, n, uvs[0], col); this.v(c, n, uvs[2], col); this.v(d, n, uvs[3], col);
   }
   tri(a: number[], b: number[], c: number[], n: number[], col: number[]) {
     for (const p of [a, b, c]) this.v(p, n, [p[0] * 0.25, p[1] * 0.25], col);
@@ -960,21 +1014,33 @@ class Buf {
       for (const p of [pts[0], pts[i], pts[i + 1]]) this.v(p, [nx, ny, nz], uvOf(p), col);
     }
   }
+  /**
+   * Hand the vertices over as a geometry. This SPENDS the buffer: its columns
+   * move into the attributes rather than being copied, so a city's worth of
+   * vertices is held once and not twice.
+   */
   geometry(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nrm, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
-    g.setAttribute("aoh", new THREE.Float32BufferAttribute(this.ao.length === this.count ? this.ao : new Array(this.count).fill(3.5), 1));
+    const n = this.count;
     // the paint scheme rides only on walls; a buffer filled by hand (ground,
     // water) carries none, and gets the plain one at every vertex
-    const n = this.count, fill = (a: number[], d: number[]) => a.length === n * d.length ? a : Array.from({ length: n }, () => d).flat();
-    g.setAttribute("paint", new THREE.Float32BufferAttribute(fill(this.pt, NO_PAINT.wall), 4));
-    g.setAttribute("trimc", new THREE.Float32BufferAttribute(fill(this.tc, NO_PAINT.trim), 3));
-    g.setAttribute("accent", new THREE.Float32BufferAttribute(fill(this.ac, NO_PAINT.accent), 3));
+    const col = (c: F32, d: number[]) => {
+      if (c.length === n * d.length) return c.take();
+      c.take();
+      const out = new Float32Array(n * d.length);
+      for (let i = 0; i < out.length; i++) out[i] = d[i % d.length];
+      return out;
+    };
+    g.setAttribute("position", new THREE.BufferAttribute(this.pos.take(), 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(this.nrm.take(), 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(this.uv.take(), 2));
+    g.setAttribute("color", new THREE.BufferAttribute(this.col.take(), 3));
+    g.setAttribute("aoh", new THREE.BufferAttribute(col(this.ao, [3.5]), 1));
+    g.setAttribute("paint", new THREE.BufferAttribute(col(this.pt, NO_PAINT.wall), 4));
+    g.setAttribute("trimc", new THREE.BufferAttribute(col(this.tc, NO_PAINT.trim), 3));
+    g.setAttribute("accent", new THREE.BufferAttribute(col(this.ac, NO_PAINT.accent), 3));
     // how many of this building's rooms are lit after dark (see setOccupancy)
-    g.setAttribute("lit", new THREE.Float32BufferAttribute(new Float32Array(this.count).fill(1), 1));
+    g.setAttribute("lit", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
     g.computeBoundingSphere();
     return g;
   }
@@ -996,7 +1062,7 @@ export interface SchemeModel {
 export let activeCity: RealCityLayer | null = null;
 
 interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
-interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: number[] }
+interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: Float32Array }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 /**
  * How far a building's reading may drift before it is repainted. Display
@@ -2472,7 +2538,7 @@ export class RealCityLayer {
       B.quad([a[0], a[1], Z], [b[0], b[1], Z], [b[0] + nx * w, b[1] + ny * w, Z], [a[0] + nx * w, a[1] + ny * w, Z], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [A, 0, 0]);
       // fix the far edge to transparent: the quad's last two vertices carry alpha 0
       const end = B.col.length;
-      for (const vi of [2, 4, 5]) B.col[end - (6 - vi) * 3] = 0;
+      for (const vi of [2, 4, 5]) B.col.put(end - (6 - vi) * 3, 0);
       // the convex corner after this edge: a fan between the two bands
       const [mx, my] = nOf((i + 1) % n);
       const cr = nx * my - ny * mx;
@@ -2483,7 +2549,7 @@ export class RealCityLayer {
           const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
           B.tri([b[0], b[1], Z], [b[0] + (d1[0] / l1) * w, b[1] + (d1[1] / l1) * w, Z], [b[0] + (d2[0] / l2) * w, b[1] + (d2[1] / l2) * w, Z], [0, 0, 1], [A, 0, 0]);
           const e2 = B.col.length;
-          B.col[e2 - 6] = 0; B.col[e2 - 3] = 0;
+          B.col.put(e2 - 6, 0); B.col.put(e2 - 3, 0);
         }
       }
     }
@@ -3174,22 +3240,38 @@ export class RealCityLayer {
         : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
-      const mesh = new THREE.Mesh(b.geometry(), mat);
+      const geo = b.geometry();
+      // THE GPU KEEPS ITS OWN COPY. Position, colour and lit are rewritten
+      // after the build (a demolition flattens, a tint repaints, occupancy
+      // lights rooms); nothing reads the rest again, so their arrays are let
+      // go once uploaded instead of sitting in the heap for the whole session.
+      for (const k of ["normal", "uv", "aoh", "paint", "trimc", "accent"]) {
+        (geo.getAttribute(k) as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) {
+          this.array = new Float32Array(0);
+        });
+      }
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
       if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
+    // the buffers are spent (Buf.geometry); a later build starts on fresh ones
+    this.bufs = new Map();
     this.bindRanges(this.deeds, this.meshes);
   }
 
   /** Point each deed's ranges at the mesh they live in, and keep their base colours so state tints can be undone. */
   private bindRanges(deeds: Map<string, Deed>, meshes: Map<string, THREE.Mesh>) {
+    // one float32 copy of each mesh's colours, and every range a window on it:
+    // a copied number[] per range was 24 bytes a vertex across the whole city
+    const bases = new Map<THREE.Mesh, Float32Array>();
     for (const [, d] of deeds) {
       for (const r of d.ranges) {
         r.mesh = meshes.get(r.buf);
         if (!r.mesh) continue;
-        const col = r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-        r.base = Array.from((col.array as Float32Array).slice(r.start * 3, (r.start + r.count) * 3));
+        let all = bases.get(r.mesh);
+        if (!all) bases.set(r.mesh, (all = ((r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute).array as Float32Array).slice()));
+        r.base = all.subarray(r.start * 3, (r.start + r.count) * 3);
       }
     }
   }

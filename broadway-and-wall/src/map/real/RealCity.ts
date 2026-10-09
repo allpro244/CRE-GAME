@@ -55,6 +55,17 @@ function insetRing(r: P2[], d: number): P2[] | null {
   }
   return ringArea(out) > 1 ? out : null;
 }
+/** Metres from (x, y) to the nearest edge of a ring. */
+function shoreGap(ring: P2[], x: number, y: number): number {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i];
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+    best = Math.min(best, Math.hypot(ax + dx * t - x, ay + dy * t - y));
+  }
+  return best;
+}
 function ringArea(r: P2[]): number {
   let a = 0;
   for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; }
@@ -141,6 +152,187 @@ function rippleNormal(): THREE.CanvasTexture {
   }
   g.putImageData(img, 0, 0);
   return normalFromHeight(c, 3.0);
+}
+
+/**
+ * HOW FAR TO THE SHORE. Every point of the harbour near the island, as metres
+ * to the nearest dry thing — the land, the shore bands, the flat piers and the
+ * breakwaters — and whether that thing is a hard edge (a seawall, a pier) or a
+ * soft one the swell can run up (a beach, rock, marsh). The sea shader reads
+ * it for the colour of the bottom it sees through, where the surf breaks, and
+ * the swash at the waterline. A nearest-point sweep (two passes, eight
+ * neighbours) rather than a blur, so the distance is metres, not a glow.
+ *
+ * Packed as RGBA8: r = sqrt(d / 400 m), which spends the precision at the
+ * waterline where the foam needs it; g = 1 on a hard edge.
+ */
+const SHORE_FAR_M = 400;
+function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: THREE.DataTexture; box: THREE.Vector4 } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of land) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const pad = SHORE_FAR_M + 40;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const span = Math.max(x1 - x0, y1 - y0);
+  // ~2-3 m a texel: the distance is linear between texels, so the filtered
+  // field stays smooth well inside one; bigger only costs load time
+  const N = Math.min(1536, Math.max(256, Math.ceil(span / 2.2)));
+  const px = span / N;   // metres a texel
+  const { g } = makeCanvas(N, N);
+  g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+  const trace = (r: P2[]) => { g.beginPath(); r.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, (x - x0) / px, (y - y0) / px)); g.closePath(); g.fill(); };
+  g.fillStyle = "#f00"; trace(land);
+  for (const d of dry) if (!d.hard && d.ring.length >= 3) trace(d.ring);
+  g.fillStyle = "#ff0";
+  for (const d of dry) if (d.hard && d.ring.length >= 3) trace(d.ring);
+  const src = g.getImageData(0, 0, N, N).data;
+  // nearest dry texel, propagated forward then back
+  const sx = new Int32Array(N * N).fill(-1), sy = new Int32Array(N * N);
+  for (let i = 0; i < N * N; i++) if (src[i * 4] > 127) { sx[i] = i % N; sy[i] = (i / N) | 0; }
+  const relax = (x: number, y: number, nx: number, ny: number, best: number) => {
+    if (nx < 0 || ny < 0 || nx >= N || ny >= N) return best;
+    const j = ny * N + nx, i = y * N + x;
+    if (sx[j] < 0) return best;
+    const d = (sx[j] - x) ** 2 + (sy[j] - y) ** 2;
+    if (d < best) { sx[i] = sx[j]; sy[i] = sy[j]; return d; }
+    return best;
+  };
+  const dist2 = (i: number, x: number, y: number) => (sx[i] < 0 ? Infinity : (sx[i] - x) ** 2 + (sy[i] - y) ** 2);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let b = dist2(y * N + x, x, y);
+    if (b === 0) continue;
+    b = relax(x, y, x - 1, y, b); b = relax(x, y, x - 1, y - 1, b); b = relax(x, y, x, y - 1, b); b = relax(x, y, x + 1, y - 1, b);
+  }
+  for (let y = N - 1; y >= 0; y--) for (let x = N - 1; x >= 0; x--) {
+    let b = dist2(y * N + x, x, y);
+    if (b === 0) continue;
+    b = relax(x, y, x + 1, y, b); b = relax(x, y, x + 1, y + 1, b); b = relax(x, y, x, y + 1, b); b = relax(x, y, x - 1, y + 1, b);
+  }
+  const out = new Uint8Array(N * N * 4);
+  for (let i = 0; i < N * N; i++) {
+    const x = i % N, y = (i / N) | 0;
+    const dm = sx[i] < 0 ? SHORE_FAR_M : Math.min(SHORE_FAR_M, Math.sqrt(dist2(i, x, y)) * px);
+    out[i * 4] = Math.round(Math.sqrt(dm / SHORE_FAR_M) * 255);
+    out[i * 4 + 1] = sx[i] >= 0 && src[(sy[i] * N + sx[i]) * 4 + 1] > 127 ? 255 : 0;
+    out[i * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(out, N, N, THREE.RGBAFormat);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return { tex, box: new THREE.Vector4(x0, y0, 1 / span, 1 / span) };
+}
+
+// The sea's clock, advanced every frame in render().
+const SEA = { seaTime: { value: 0 } };
+
+/**
+ * THE HARBOUR. A stock physically based surface — so the sun lays a road on
+ * it, the sky reflects at a low angle, the buildings shade it and the night
+ * takes it like everything else — with four things the stock one cannot do:
+ *
+ * - **A bottom.** The colour is the floor seen through the water: pale
+ *   turquoise over the sand at the waterline, green-blue over the shelf, a
+ *   deep blue past a couple of hundred metres, mottled by sandbars and weed.
+ * - **Surf.** Swell lines roll in toward every soft shore, steepen and break
+ *   in the last thirty metres, and the swash runs up the beach and drains
+ *   back, leaving lace. Hard edges — seawalls, piers, breakwaters — get a
+ *   narrow churn instead.
+ * - **Wind.** Three ripple scales crossing at different bearings and speeds,
+ *   so the tile never repeats where the eye can find it, and gusts: patches
+ *   of ruffled water sliding downwind across glassier stretches. Calmer in
+ *   the lee of the shore, and smoothing out into a sheen with distance.
+ * - **Foam is matte.** It takes the light, not the sky.
+ */
+function seaMaterial(field: { tex: THREE.DataTexture; box: THREE.Vector4 }, ripple: THREE.Texture, env: THREE.Texture | null): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.07, metalness: 0.0, transparent: true, depthWrite: false,
+    envMap: env, envMapIntensity: 1.0,
+  });
+  const rip = ripple.clone();
+  rip.repeat.set(1, 1); rip.offset.set(0, 0); rip.wrapS = rip.wrapT = THREE.RepeatWrapping;
+  rip.needsUpdate = true;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, SEA, { seaShore: { value: field.tex }, seaBox: { value: field.box }, seaRipple: { value: rip } });
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vSeaW;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvSeaW = (modelMatrix * vec4(transformed, 1.0)).xy;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", `#include <common>
+varying vec2 vSeaW;
+uniform sampler2D seaShore, seaRipple;
+uniform vec4 seaBox;
+uniform float seaTime;
+float seaD, seaHard, seaFoam;
+float sHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
+float sNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(sHash(i), sHash(i + vec2(1.0, 0.0)), u.x), mix(sHash(i + vec2(0.0, 1.0)), sHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * sNoise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(1.7, 9.2); a *= 0.5; } return s; }`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+{
+  vec4 sf = texture2D(seaShore, (vSeaW - seaBox.xy) * seaBox.zw);
+  seaD = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)};
+  seaHard = sf.g;
+  float t = seaTime;
+  float camD = length(vViewPosition);
+  float near = 1.0 - smoothstep(700.0, 2400.0, camD);
+  // the bottom: sand at the waterline, the shelf, then deep water; sandbars and weed beds mottle it
+  float mott = sFbm(vSeaW * 0.0045);
+  float shelf = clamp((seaD + (mott - 0.5) * 120.0) / 300.0, 0.0, 1.0);
+  vec3 cSand = vec3(0.30, 0.56, 0.50), cShelf = vec3(0.07, 0.33, 0.40), cDeep = vec3(0.022, 0.12, 0.22);
+  vec3 wc = mix(cSand, cShelf, smoothstep(0.0, 0.16, shelf));
+  wc = mix(wc, cDeep, smoothstep(0.1, 0.85, shelf));
+  wc *= 0.9 + 0.2 * sFbm(vSeaW * 0.02 + 3.0);
+  float soft = 1.0 - seaHard;
+  // swell lines rolling in, steepening and breaking in the surf zone
+  float ph = seaD * 0.15 + t * 0.85 + sNoise(vSeaW * 0.008) * 7.0;
+  float crest = pow(0.5 + 0.5 * sin(ph), 7.0);
+  float zone = 1.0 - smoothstep(4.0, 46.0, seaD);
+  float breakup = sFbm(vSeaW * vec2(0.09, 0.09) + vec2(t * 0.04, -t * 0.03));
+  float surf = crest * zone * smoothstep(0.3, 0.55, breakup + 0.3 * zone) * soft;
+  // whitecaps out where a gust is blowing
+  float gustF = smoothstep(0.45, 0.8, sFbm(vSeaW * 0.0055 + vec2(t * 0.011, t * 0.004)));
+  // small and streaked along the wind; each lives a few seconds
+  float caps = smoothstep(0.9, 0.98, sNoise(vSeaW * vec2(0.42, 0.16) + vec2(t * 0.5, t * 0.05)))
+    * smoothstep(0.55, 0.8, sNoise(vSeaW * 0.05 - vec2(t * 0.2, 0.0)))
+    * gustF * near * smoothstep(60.0, 160.0, seaD);
+  // the swash runs up the beach and drains back
+  float reach = 2.2 + 1.8 * (0.5 + 0.5 * sin(t * 0.85 + sNoise(vSeaW * 0.015) * 6.28));
+  float swash = 1.0 - smoothstep(reach * 0.35, reach, seaD);
+  // lace: the foam a broken wave leaves behind it
+  float lace = smoothstep(0.5, 0.72, sFbm(vSeaW * 0.3 + vec2(t * 0.11, -t * 0.08))) * (1.0 - smoothstep(2.0, 18.0, seaD)) * soft * near;
+  // hard edges only churn
+  float churn = seaHard * (1.0 - smoothstep(0.4, 2.2, seaD)) * smoothstep(0.35, 0.65, sNoise(vSeaW * 0.5 + vec2(t * 0.4, t * 0.25)));
+  seaFoam = max(max(surf, swash * mix(0.6, 1.0, soft)), max(max(lace * 0.75, churn), caps * 0.55));
+  seaFoam *= smoothstep(0.15, 0.55, sFbm(vSeaW * 0.22 + vec2(t * 0.12, 0.0)) + seaFoam * 0.35);
+  seaFoam = clamp(seaFoam, 0.0, 1.0);
+  diffuseColor.rgb = mix(wc, vec3(0.9, 0.93, 0.94), seaFoam);
+  // clear at the very edge, so the wet sand shows through, then deepening
+  float wet = smoothstep(0.0, 0.9, seaD);
+  float body = mix(0.72, 0.97, smoothstep(0.0, 30.0, seaD));
+  diffuseColor.a = wet * max(body, seaFoam * 0.95);
+}`)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.85, seaFoam);")
+      .replace("#include <normal_fragment_maps>", `{
+  vec2 w = vSeaW;
+  float camD = length(vViewPosition);
+  float detail = 1.0 - smoothstep(500.0, 2600.0, camD);
+  vec2 n1 = texture2D(seaRipple, w / 29.0 + vec2(seaTime * 0.017, seaTime * 0.004)).xy * 2.0 - 1.0;
+  vec2 n2 = texture2D(seaRipple, mat2(0.8, -0.6, 0.6, 0.8) * w / 11.0 + vec2(-seaTime * 0.031, seaTime * 0.038)).xy * 2.0 - 1.0;
+  vec2 n3 = texture2D(seaRipple, mat2(0.28, 0.96, -0.96, 0.28) * w / 91.0 + vec2(seaTime * 0.005, -seaTime * 0.003)).xy * 2.0 - 1.0;
+  // gusts: ruffled patches sliding downwind over glassier water
+  float gust = smoothstep(0.32, 0.72, sFbm(w * 0.0055 + vec2(seaTime * 0.011, seaTime * 0.004)));
+  vec2 g = n3 * 0.8 + (n1 * 0.6 + n2 * 0.45 * detail) * (0.45 + 1.0 * gust);
+  g *= mix(0.3, 1.0, smoothstep(0.0, 30.0, seaD));   // calmer in the lee of the shore
+  g *= mix(0.4, 1.0, detail);                          // far off, the ripples average into a sheen
+  g *= 1.0 - seaFoam * 0.8;                            // foam lies flat
+  // the light's space is the world's, eye-centred and unrotated
+  normal = normalize(vec3(g * 0.5, 1.0));
+}`);
+  };
+  mat.customProgramCacheKey = () => "bw-sea";
+  return mat;
 }
 
 /**
@@ -1006,6 +1198,7 @@ export class RealCityLayer {
       // about half a metre a second downwind, a little across
       const tt = performance.now() / 1000;
       for (const w of this.waves) w.tex.offset.set((tt * 0.5) / w.tile, (tt * 0.12) / w.tile);
+      SEA.seaTime.value = tt % 3600;
     }
     this.renderer.render(this.scene, this.camera);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
@@ -1600,6 +1793,11 @@ export class RealCityLayer {
         if (!sg || sg.L < 1) continue;
         const ux = (sg.b[0] - sg.a[0]) / sg.L, uy = (sg.b[1] - sg.a[1]) / sg.L;
         const t = d - sg.s0, x = sg.a[0] + ux * t, y = sg.a[1] + uy * t;
+        // The quay line closes on itself, and its closing leg (and any jump
+        // between two runs of seawall) is a chord across open water: a pier
+        // there stood out in the harbour joined to nothing. Only where the
+        // line actually runs along the shore.
+        if (land && shoreGap(land, x, y) > 6) continue;
         // the water side
         let ox = -uy, oy = ux;
         if (onLand(x + ox * 25, y + oy * 25)) { ox = -ox; oy = -oy; }
@@ -2933,20 +3131,19 @@ export class RealCityLayer {
     catcher.visible = this.quality !== "low";
     this.catcher = catcher;
     this.scene.add(catcher);
-    // THE HARBOUR CATCHES THE LIGHT. MapLibre paints the water flat; a thin
-    // glossy veneer over it — the land cut out — gives the sun a road on the
-    // sea and the sky something to reflect in, and leaves the shoal colours
-    // underneath showing through.
+    // THE HARBOUR. MapLibre paints the water flat; over it, the land cut out,
+    // goes a sea with a bottom, a surf and a wind (seaMaterial), drawn nearly
+    // opaque out on the open water and clearing at the waterline so the wet
+    // sand of the shore bands shows through.
     const landLL = (this.ctx as { land?: P2[] }).land;
     if (landLL && landLL.length >= 4) {
       const land = landLL.map((q) => this.project(q));
       const outer = new THREE.Shape([new THREE.Vector2(-30000, -30000), new THREE.Vector2(30000, -30000), new THREE.Vector2(30000, 30000), new THREE.Vector2(-30000, 30000)]);
       const holePts = (ringArea(land) > 0 ? land.slice().reverse() : land).map(([x, y]) => new THREE.Vector2(x, y));
       outer.holes.push(new THREE.Path(holePts));
-      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), new THREE.MeshStandardMaterial({
-        color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
-        normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
-      }));
+      const dry = ((this.ctx as { shore?: { ring: P2[]; kind: string }[] }).shore ?? [])
+        .map((d) => ({ ring: d.ring.map((q) => this.project(q)), hard: d.kind === "seawall" || d.kind === "pier" || d.kind === "breakwater" }));
+      const sea = new THREE.Mesh(new THREE.ShapeGeometry(outer), seaMaterial(shoreField(land, dry), this.waves[0]?.tex ?? rippleNormal(), this.skyEnv));
       sea.position.z = 0.02; sea.receiveShadow = true; sea.renderOrder = -3;
       this.scene.add(sea);
       // the park ponds take the same glossy, rippled skin
@@ -2957,7 +3154,10 @@ export class RealCityLayer {
         if (r.length >= 3) shapes.push(new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))));
       }
       if (shapes.length) {
-        const pm = new THREE.Mesh(new THREE.ShapeGeometry(shapes), sea.material);
+        const pm = new THREE.Mesh(new THREE.ShapeGeometry(shapes), new THREE.MeshStandardMaterial({
+          color: 0x14425e, roughness: 0.1, metalness: 0.0, transparent: true, opacity: 0.4, envMapIntensity: 1.5, depthWrite: false,
+          normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
+        }));
         pm.position.z = 0.025; pm.receiveShadow = true; pm.renderOrder = -3;
         this.scene.add(pm);
       }

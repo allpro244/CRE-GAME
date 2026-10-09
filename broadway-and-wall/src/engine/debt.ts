@@ -657,8 +657,8 @@ export function productOpen(s: GameState, p: LoanProduct): boolean {
  * form (balance x coupon x years x 0.62) ignored the market entirely: it
  * charged a 7% note's full coupon whether rates had fallen to 4% or risen to
  * 9%, so breaking a loan in a rising market cost millions when the real
- * clause costs the floor. The reinvestment yield is the loan index — policy
- * plus term premium, what fixed paper prices off here, i.e. the Treasury the
+ * clause costs the floor. The reinvestment yield is the loan index — the
+ * expected policy path plus term premium, what fixed paper prices off here, i.e. the Treasury the
  * clause names; a floater is measured against the short index it resets on.
  */
 const YM_FLOOR = 0.01;   // the customary 1%-of-balance minimum in a yield-maintenance clause

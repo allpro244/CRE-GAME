@@ -284,7 +284,28 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
  *  the bound entirely measured office sd(log) 0.263 -> 0.235 — calmer because
  *  manufactured demand is a stabiliser built on a fiction. The cheap-side rail
  *  stays; only the dear side opens to the densification floor. */
-const AFFORD_BAND: [number, number] = [0.76, 1.12];
+/**
+ *  WIDENED TO A GUARD (2026-10-09), because measured it was the demand curve.
+ *  Forked worlds at year 15 (3 seeds x 10 years): a 20% rise in office rent
+ *  moved occupied office by 0.0% after one year and +0.3% after ten, and the
+ *  rent was STILL 12.6% higher a decade on — the price level had become
+ *  path-dependent, because nothing on the demand side answered it. Industrial
+ *  did not move at all. The cause is this bracket: once real rent sits more
+ *  than ~25% under the town's opening print (most office and shed months in
+ *  a fifty-year run), `burden^-0.4` is already over 1.12, so a 20% rise is
+ *  still clamped to 1.12 and the demand curve is flat. tools/rails.mjs had it
+ *  at its ceiling in 42% of office calls.
+ *
+ *  The cross-section says the elasticity holds over a far wider range than
+ *  the bracket allowed, in both directions: office space per worker runs
+ *  ~150 sf in New York and San Francisco against 250+ in cheap secondary
+ *  markets — about 1.7x across a ~3x rent gap, which is an elasticity near
+ *  -0.4 all the way across, and the dear end is denser than the 0.76 floor.
+ *  "Cheapness cannot manufacture tenants" is true of HEADCOUNT, which this
+ *  term does not touch (it scales feet per worker; jobs come from the
+ *  labour block). So the bracket is now a guard outside anything a market
+ *  has recorded: 0.45 is a rent 7x the opening in real terms, 2.2 one-seventh. */
+const AFFORD_BAND: [number, number] = [0.45, 2.2];
 
 /**
  * THE INCOME ELASTICITY OF DEMAND FOR SPACE — the argument this model did not have.
@@ -2182,8 +2203,16 @@ export function tickEcon(s: GameState) {
   // is cheap space, cheap space attracts firms, firms fill the space) and by
   // which an expensive one stagnates. Without it, "the rent is too high" was
   // a fact about the player's spreadsheet and about nothing else in the world.
+  // ...MEASURED AGAINST THIS TOWN'S OWN OPENING, NOT A GLOBAL TABLE
+  // (2026-10-09). This was rent over RENT_BASE over the wage index — so a town
+  // whose opening rents print at ~58% of the reference table (a low-density
+  // one) read as 40% "cheap" on its first day and every day after, and drew
+  // a standing employer subsidy out of a table mismatch. The rent block moved
+  // its parity to `rentAnchor` for exactly this reason. Rent-to-pay against
+  // the opening's rent-to-pay is the question an employer is asking.
   const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
-  const costOfSpace = (e.rentIdx.office / RENT_BASE.office) / incomeNow;
+  const wageOpen = Math.max(0.35, e.history?.[0]?.wageIdx ?? incomeNow);
+  const costOfSpace = (e.rentIdx.office / Math.max(1e-6, e.rentAnchor?.office ?? RENT_BASE.office)) / (incomeNow / wageOpen);
   // ...AND THE RETURN WIRE SATURATED, WHICH IS THE SAME BUG THE GLUT SIDE OF
   // THE RENT TERM ALREADY HAD.
   //
@@ -4445,8 +4474,18 @@ export function tickEcon(s: GameState) {
     // "recession") is gone: the jobs behind the label are already in
     // `cycleJobs`, and the vacancy they leave behind in `vacTerm`.
     const cycleRent = 0;
-    const cycleJobs = jobDrift * 0.28 * (jobDrift > 0 ? liftGate : 1);
-    const cycleMom = e.sectorMom[k] * 0.42 * (e.sectorMom[k] > 0 ? liftGate : 1);
+    // RENT MOVES ON THE BALANCE OF SPACE, NOT ON THE NEWS (2026-10-09). Job
+    // growth (x0.28) and the class's demand momentum (x0.42) were added to
+    // the rent directly, on top of the vacancy and queue they produce — the
+    // same demand priced twice — and gated one way: a positive lift only in
+    // a firm market off its floor, a negative one always, which is a
+    // downward bias over any cycle. The rent adjustment literature (Wheaton &
+    // Torto 1988; Hendershott 1996) has rent answer the vacancy gap and the
+    // gap to equilibrium rent, not employment directly; demand reaches rent
+    // here the same way, through absorption, the queue and `effGap`.
+    void liftGate; void jobDrift;
+    const cycleJobs = 0;
+    const cycleMom = 0;
     const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the

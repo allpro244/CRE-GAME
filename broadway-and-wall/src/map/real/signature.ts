@@ -22,7 +22,9 @@ type P2 = [number, number];
 
 export type SignatureKey =
   | "cathedral" | "sunburst" | "obelisk" | "pyramid" | "halo" | "telescope" | "prisms" | "crystal" | "gate"
-  | "petronas" | "needle" | "bullet" | "torso" | "shard" | "helix" | "walkie" | "jenga" | "pencil";
+  | "petronas" | "needle" | "bullet" | "torso" | "shard" | "helix" | "walkie" | "jenga" | "pencil"
+  | "flatiron" | "dome" | "setbackslab" | "cruciform" | "fluted" | "bundled" | "stilts" | "pediment" | "lattice"
+  | "lean" | "sail" | "hourglass";
 
 export interface SignatureForm {
   key: SignatureKey;
@@ -62,6 +64,18 @@ export const SIGNATURE_FORMS: SignatureForm[] = [
   { key: "helix", name: "Helix", blurb: "A rounded triangle that twists a third of a turn and tapers as it rises", from: 2005, minFloors: 40, fams: ["blueglass", "glass", "silverglass"] },
   { key: "walkie", name: "Flared top", blurb: "Faces that lean out as it rises, a sky garden on the roof", from: 2008, minFloors: 28, fams: ["glass", "greenglass", "silverglass"] },
   { key: "jenga", name: "Stacked boxes", blurb: "Glass boxes cantilevered off one another, no two floors alike", from: 2010, minFloors: 30, fams: ["pixel", "glass", "silverglass"] },
+  { key: "flatiron", name: "Flatiron", blurb: "A triangular block with a rounded prow, filling a wedge of the street plan", from: 1902, until: 1935, minFloors: 18, fams: ["terracotta", "stone", "buff"] },
+  { key: "dome", name: "Domed tower", blurb: "A Beaux-Arts shaft on a full-lot base, ending in a drum, a copper dome and a lantern", from: 1908, until: 1932, minFloors: 25, fams: ["stone", "terracotta"] },
+  { key: "setbackslab", name: "Setback slab", blurb: "A thin limestone slab that steps in only at its narrow ends", from: 1931, until: 1955, minFloors: 35, long: 1.6, fams: ["deco", "decobrick", "stone"] },
+  { key: "cruciform", name: "Cruciform", blurb: "A glass cross in plan, every office near a window", from: 1958, minFloors: 25, fams: ["ribbon", "grid", "blackglass", "glass", "silverglass"] },
+  { key: "fluted", name: "Fluted column", blurb: "A round tower scalloped into flutes like a classical column", from: 1972, minFloors: 25, fams: ["precast", "stone", "silverglass"] },
+  { key: "bundled", name: "Bundled tubes", blurb: "Nine square tubes bundled together, dropping off at different heights", from: 1974, minFloors: 40, fams: ["blackglass", "bronze", "glass"] },
+  { key: "stilts", name: "Stilts and wedge", blurb: "A tower lifted on four giant columns over a plaza, its roof sliced at a slope", from: 1977, minFloors: 35, fams: ["silverglass", "precast", "glass"] },
+  { key: "pediment", name: "Broken pediment", blurb: "A granite slab topped by a split gable, postmodernism's grandfather clock", from: 1984, minFloors: 25, fams: ["pomo", "stone"] },
+  { key: "lattice", name: "Gilded lattice", blurb: "A chamfered shaft crowned by a gold pyramid and a needle", from: 1990, minFloors: 35, fams: ["pomo", "stone", "bronze"] },
+  { key: "lean", name: "Leaning tower", blurb: "A shaft that leans out over its base, held by its core", from: 1996, minFloors: 25, fams: ["glass", "blueglass", "silverglass"] },
+  { key: "sail", name: "Sail", blurb: "A curved glass sail leaning back to a single spine", from: 1999, minFloors: 30, fams: ["silverglass", "precast", "glass"] },
+  { key: "hourglass", name: "Hourglass", blurb: "A round diagrid that pinches at the waist and twists as it rises", from: 2008, minFloors: 30, fams: ["diagrid", "glass", "blueglass"] },
   { key: "pencil", name: "Pencil", blurb: "A slender supertall square, open plant floors every dozen storeys", from: 2012, minFloors: 50, fams: ["grid", "precast", "blackglass"] },
 ];
 

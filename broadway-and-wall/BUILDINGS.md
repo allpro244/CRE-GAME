@@ -8,9 +8,10 @@
 > `MAP_VISUAL_AUDIT.md`. The pattern book (painters, families, elevations,
 > paint schemes, `familyFor`, roof tones) is `src/map/real/facades.ts`.
 >
-> **Signature towers (2026-10).** Eighteen landmark forms (bullet, pyramid,
+> **Signature towers (2026-10).** Thirty landmark forms (bullet, pyramid,
 > Y-plan needle, twin spires, helix, shard, pencil, Gothic cathedral, deco
-> spire...) are catalogued in `src/map/real/signature.ts` and built by
+> spire, flatiron, domed tower, bundled tubes, stilts and wedge, broken
+> pediment, sail, hourglass...) are catalogued in `src/map/real/signature.ts` and built by
 > `RealCityLayer.signatureTower` (plus `loft`, a skin between rings for
 > faces that lean). Each form carries the year its type was first built:
 > the generated stock (towers from 90 m, `planSignatures`) and rivals'

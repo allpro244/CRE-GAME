@@ -1104,6 +1104,7 @@ const TRIM_LIN = (() => { const c = new THREE.Color(0xd8d0be); return [c.r, c.g,
 /** A landmark's metal, as trim vertex colours: brushed stainless steel for a spire, weathered copper for a pyramid roof. */
 const SIG_STEEL = [0.80, 0.82, 0.86].map((c, i) => c / TRIM_LIN[i]);
 const SIG_COPPER = [0.30, 0.52, 0.44].map((c, i) => c / TRIM_LIN[i]);
+const SIG_GOLD = [0.86, 0.68, 0.30].map((c, i) => c / TRIM_LIN[i]);
 
 /** A scheme built as a model for the Build desk's viewer (RealCityLayer.schemeModel). Metres, lot-centred, z up. */
 export interface SchemeModel {
@@ -2040,7 +2041,8 @@ export class RealCityLayer {
       type Sec = { r: P2[]; z: number };
       type Op = { t: "vol"; r: P2[]; z0: number; z1: number; fam: string; crown: boolean; plant: boolean }
         | { t: "loft"; secs: Sec[]; fam: string; cap: boolean; log: boolean; col?: number[]; soffit?: boolean }
-        | { t: "inst"; kind: string; u: number; v: number; z: number; s: number; r: number; sz?: number; col?: number[] };
+        | { t: "inst"; kind: string; u: number; v: number; z: number; s: number; r: number; sz?: number; col?: number[] }
+        | { t: "wedge"; q: P2[]; z: number; rise: number };
       const ops: Op[] = [];
       const vol = (r: P2[], z0: number, z1: number, crown = false, plant = false, f = fam) => { if (z1 - z0 > 0.3) ops.push({ t: "vol", r, z0, z1, fam: f, crown, plant }); };
       const loft = (secs: Sec[], cap = true, f = fam, col?: number[]) => ops.push({ t: "loft", secs, fam: f, cap, log: true, col });
@@ -2281,6 +2283,133 @@ export class RealCityLayer {
           }
           break;
         }
+        case "flatiron": {
+          // a triangular block with its prow rounded off: the shape a
+          // diagonal avenue cuts out of a grid, filled to the lot lines
+          const a = A, b = B;
+          const tri = chamferRing([[-a, -b], [a, 0], [-a, b]], 0.14, 4, true);
+          vol(tri, 0, H, true, true);
+          break;
+        }
+        case "dome": {
+          // a full-lot base, a square shaft, then a drum, a copper dome and a
+          // lantern: the Beaux-Arts tower that ended in a civic flourish
+          const a = Math.min(A, B * 1.5), b = B, s = Math.min(a, b) * 0.62, r = s * 0.82;
+          vol(rect(a, b), 0, H * 0.55, true);
+          vol(rect(s, s), H * 0.55, H * 0.8, true);
+          for (const [u, v] of rect(s * 0.92, s * 0.92)) inst("pinnacle", u, v, H * 0.8, 0.9);
+          vol(ellipse(24, r, r), H * 0.8, H * 0.85, true);
+          const secs: Sec[] = [];
+          for (const f of [0, 0.3, 0.55, 0.75, 0.9, 1]) secs.push({ r: ellipse(24, r * Math.max(0.12, Math.cos((f * Math.PI) / 2)), r * Math.max(0.12, Math.cos((f * Math.PI) / 2))), z: H * 0.85 + H * 0.08 * Math.sin((f * Math.PI) / 2) });
+          loft(secs, true, fam, SIG_COPPER);
+          vol(ellipse(12, r * 0.12, r * 0.12), H * 0.93, H * 0.97, true);
+          mast(H * 0.97, H * 0.03 + 2, 0.3);
+          break;
+        }
+        case "setbackslab": {
+          // a slab a fifth as deep as it is long, stepping in only at its
+          // narrow ends so the broad faces rise sheer: the 1933 slab
+          const a = A, b = B * 0.96;
+          const tiers: [number, number, number][] = [[0, 0.42, 1], [0.42, 0.66, 0.86], [0.66, 0.84, 0.74], [0.84, 1, 0.64]];
+          tiers.forEach(([z0, z1, f], i) => vol(rect(a * f, b * (i ? 0.97 : 1)), H * z0, H * z1, true, i === tiers.length - 1));
+          break;
+        }
+        case "cruciform": {
+          // a cross in plan: four arms off a core, no desk far from a window
+          const w = R * 0.36, L = Math.sqrt(R * R - w * w) * 0.98;
+          const cross: P2[] = [[-w, -L], [w, -L], [w, -w], [L, -w], [L, w], [w, w], [w, L], [-w, L], [-w, w], [-L, w], [-L, -w], [-w, -w]];
+          vol(cross, 0, H * 0.95, true);
+          vol(turn(cross, 0, 0.72), H * 0.95, H, true, true);
+          break;
+        }
+        case "fluted": {
+          // a round tower cut into flutes, a column the height of a skyline
+          const fl = (r: number) => Array.from({ length: 40 }, (_, i) => { const a = (i / 40) * Math.PI * 2, k = i % 2 ? 0.9 : 1; return [Math.cos(a) * r * k, Math.sin(a) * r * k] as P2; });
+          vol(fl(R), 0, H * 0.93, true);
+          vol(fl(R * 0.82), H * 0.93, H, true, true);
+          break;
+        }
+        case "bundled": {
+          // nine square tubes braced as one, dropping off at different
+          // heights so the tower narrows as the wind load does: the 1974 tube
+          const s = sq, c = s / 3;
+          vol(rect(s, s), 0, zL);
+          const hf = [[0.5, 0.66, 0.5], [0.82, 1, 0.66], [0.66, 1, 0.82]];
+          const flip = h(0xb7) < 0.5;
+          for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+            const f = hf[flip ? 2 - i : i][j];
+            vol(rect(c, c, (j - 1) * 2 * c, (i - 1) * 2 * c), zL, H * f, true, f === 1);
+          }
+          mast(H, H * 0.12, 0.6, 0, (flip ? -1 : 1) * 0.7 * c);
+          mast(H, H * 0.12, 0.6, 0, (flip ? -1 : 1) * 2 * c * 0.9);
+          break;
+        }
+        case "stilts": {
+          // the tower lifted nine storeys on four columns at the middle of its
+          // sides and a central core, a plaza underneath, the roof cut at a slope
+          const s = sq, zS = Math.min(H * 0.14, 36), cs = s * 0.13, rise = Math.min(s * 1.4, H * 0.14);
+          vol(rect(s * 0.32, s * 0.32), 0, zS);
+          for (const [u, v] of [[s - cs, 0], [-(s - cs), 0], [0, s - cs], [0, -(s - cs)]]) vol(rect(cs, cs, u, v), 0, zS);
+          ops.push({ t: "loft", secs: [{ r: rect(s, s), z: zS }, { r: rect(s, s), z: zS + 0.01 }], fam, cap: false, log: false, soffit: true });
+          vol(rect(s, s), zS, H - rise, true);
+          ops.push({ t: "wedge", q: [[-s, s], [-s, -s], [s, -s], [s, s]], z: H - rise, rise });
+          break;
+        }
+        case "pediment": {
+          // a granite slab under a gable split down the middle: the
+          // postmodern tower that put a pediment back on the skyline
+          const a = Math.min(A, B * 1.7), b = B * 0.9, g = a * 0.12, rise = Math.min((a - g) * 0.7, H * 0.12);
+          vol(rect(a, b), 0, H - rise, true);
+          ops.push({ t: "wedge", q: [[-a, b], [-a, -b], [-g, -b], [-g, b]], z: H - rise, rise });
+          ops.push({ t: "wedge", q: [[a, -b], [a, b], [g, b], [g, -b]], z: H - rise, rise });
+          break;
+        }
+        case "lattice": {
+          // a chamfered shaft stepping in twice, then a pyramid of gilded
+          // lattice and a needle: the 1990s tower that wanted a crown again
+          const s = sq;
+          vol(chamfered(s, s, s * 0.28), 0, H * 0.72, true);
+          vol(chamfered(s * 0.84, s * 0.84, s * 0.24), H * 0.72, H * 0.8, true);
+          const top = chamfered(s * 0.7, s * 0.7, s * 0.2);
+          vol(top, H * 0.8, H * 0.84, true);
+          loft([{ r: top, z: H * 0.84 }, { r: turn(top, 0, 0.08), z: H * 0.95 }], false, fam, SIG_GOLD);
+          spire(H * 0.95, H, s * 0.06, 6, SIG_GOLD);
+          break;
+        }
+        case "lean": {
+          // a shaft leaning out over its base, its core carrying it, the lean
+          // as far as the lot allows on both sides
+          const a = A * 0.58, b = B, d = A - a;
+          vol(rect(a, b, -d), 0, zL);
+          loft([{ r: rect(a, b, -d), z: zL }, { r: rect(a, b, -d + (2 * d * (H * 0.5 - zL)) / (H - zL)), z: H * 0.5 }, { r: rect(a, b, d), z: H }], true);
+          break;
+        }
+        case "sail": {
+          // a half-ellipse whose curve closes back towards a straight spine as
+          // it rises, so the tower reads as a sail filled with wind
+          const plan: P2[] = [];
+          const m = 18;
+          for (let i = 0; i <= m; i++) { const t = -Math.PI / 2 + (i / m) * Math.PI; plan.push([-A + 2 * A * Math.cos(t), B * Math.sin(t)]); }
+          vol(plan, 0, zL);
+          const secs: Sec[] = [];
+          for (let i = 0; i <= 10; i++) {
+            const tt = i / 10, ku = Math.max(0.06, Math.pow(Math.cos((tt * Math.PI) / 2), 0.65)), kv = 1 - 0.35 * tt;
+            secs.push({ z: zL + (H - zL) * tt, r: plan.map(([u, v]) => [-A + (u + A) * ku, v * kv] as P2) });
+          }
+          loft(secs, true);
+          mast(H, H * 0.08, 0.5, -A + 2 * A * 0.06, 0);
+          break;
+        }
+        case "hourglass": {
+          // a round diagrid pinched to two thirds of its width at the waist,
+          // turned a little on its way up, the hyperboloid of the 2000s
+          const c = ellipse(28, R, R), m = 14, total = turnDir * 0.6;
+          vol(c, 0, zL);
+          const secs: Sec[] = [];
+          for (let i = 0; i <= m; i++) { const tt = i / m; secs.push({ z: zL + (H - zL) * tt, r: turn(c, total * tt, 0.64 + 0.36 * Math.pow(Math.abs(2 * tt - 1), 1.5)) }); }
+          loft(secs, true);
+          break;
+        }
         case "pencil": {
           // as slender as the lot and the engineers allow, with an open plant
           // floor every dozen storeys for the wind to pass through
@@ -2300,7 +2429,7 @@ export class RealCityLayer {
       // nothing may stand outside its own footprint
       const lot = ring0.map(([x, y]) => [cx + (x - cx) * 1.03, cy + (y - cy) * 1.03] as P2);
       const inside = (r: P2[]) => W(r).every(([x, y]) => PolyGrid.inRing(lot, x, y));
-      if (ops.some((o) => o.t === "vol" ? !inside(o.r) : o.t === "loft" && o.log && !o.secs.every((s) => inside(s.r)))) continue;
+      if (ops.some((o) => o.t === "vol" || o.t === "wedge" ? !inside(o.t === "vol" ? o.r : o.q) : o.t === "loft" && o.log && !o.secs.every((s) => inside(s.r)))) continue;
       if (dry) return true;
       let top = H;
       for (const o of ops) {
@@ -2311,6 +2440,10 @@ export class RealCityLayer {
         } else if (o.t === "loft") {
           this.loft(o.secs.map((s) => ({ r: W(s.r), z: s.z })), o.fam, o.fam === fam ? t : [1, 1, 1], bbl, k, o.fam === fam ? ov : undefined, o.cap, o.log, o.col, o.soffit);
           top = Math.max(top, o.secs[o.secs.length - 1].z);
+        } else if (o.t === "wedge") {
+          const [qa, qb, qc, qd] = W(o.q);
+          this.prismTop(qa, qb, qc, qd, o.z, o.rise, fam, t, bbl, k, ov);
+          top = Math.max(top, o.z + o.rise);
         } else {
           const [x, y] = W([[o.u, o.v]])[0];
           this.putInst(o.kind, x, y, o.z, o.s, o.r + bear, bbl, o.col, o.sz);

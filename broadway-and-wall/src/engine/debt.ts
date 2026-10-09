@@ -853,7 +853,18 @@ export function drawLeaseUpReserve(s: GameState, h: Holding, want: number, toCas
   if (draw <= 0) return 0;
   loan.leaseUpRoom = room - draw;
   if (loan.leaseUpRoom < 1) delete loan.leaseUpRoom;
+  // funded principal: the commitment is advanced, so the note's principal
+  // grows with it (a balance over principal is an invariant breach)
   loan.balance += draw;
+  loan.principal += draw;
+  // re-price the cheque on the new balance now, the way tickLoan does monthly
+  {
+    const io = s.month < loan.ioUntilM;
+    const yearsLeft = Math.max(1, loan.amortYears - (s.month - loan.originM) / 12);
+    loan.monthlyPmt = io
+      ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
+      : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
+  }
   if (toCash) s.cash += draw;
   logBooks(s, "borrowed", draw, h.bbl);
   return draw;

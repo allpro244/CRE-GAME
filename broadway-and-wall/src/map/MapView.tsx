@@ -5,6 +5,7 @@ import { useStore } from "@/state/store";
 import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLensColor, lightSpec, LIVE_DEMAND, resolveBaseStyle, skySpec } from "./style";
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
+import { mergeLotFeatures } from "./real/siteRing";
 import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
@@ -603,6 +604,23 @@ export default function MapView() {
   const parcels = useStore((s) => s.parcels);
   // Re-paint the site when an assemble/unmerge changes the plate under the same click.
   const mergedN = useStore((s) => Object.keys(s.game?.merged ?? {}).length);
+  // ONE LOT LINE ROUND AN ASSEMBLED SITE. The parcel source is redrawn with
+  // each site as one dissolved polygon under its parent's id and the folded
+  // deeds gone, so the gold, teal and owned outlines trace the site — not the
+  // lots it used to be.
+  const mergedSig = useStore((s) => Object.entries(s.game?.merged ?? {}).map(([c, p]) => c + ">" + p).sort().join("|"));
+  useEffect(() => {
+    const map = mapRef.current;
+    const city = useStore.getState().city;
+    const fc = city?.parcelFeatures as GeoJSON.FeatureCollection | undefined;
+    const src = map?.getSource("bw-parcels") as maplibregl.GeoJSONSource | undefined;
+    if (!mapReady || !src || !fc) return;
+    const merged = useStore.getState().game?.merged ?? {};
+    src.setData({
+      type: "FeatureCollection",
+      features: mergeLotFeatures(fc.features as never[], merged) as GeoJSON.Feature[],
+    });
+  }, [mapReady, mergedSig]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) {

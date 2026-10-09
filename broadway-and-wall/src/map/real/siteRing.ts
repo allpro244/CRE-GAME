@@ -201,3 +201,46 @@ export function siteOutline(rings: P2[][], tol = 0.5): P2[] | null {
   const hull = convexHull(src.flat());
   return hull.length >= 3 ? hull : null;
 }
+
+type LotFeature = { id?: string | number; type: "Feature"; properties: Record<string, unknown> | null; geometry: { type: string; coordinates: unknown } };
+
+/**
+ * THE MAP'S LOT LINES FOR ASSEMBLED SITES. The parcel source carries every
+ * deed's own polygon, so a site of three lots was outlined as three lots —
+ * gold when selected, teal for the join — long after the deeds were folded
+ * into one. This returns the collection with each site drawn as one polygon
+ * (the dissolved outline, under the parent's id, so feature-state keyed on
+ * the parent still applies) and its folded deeds removed. Rings are lon/lat;
+ * the dissolve runs in local metres so the snapping tolerance means metres.
+ */
+export function mergeLotFeatures<F extends LotFeature>(
+  features: F[], merged: Record<string, string>,
+): F[] {
+  const kids = new Map<string, string[]>();
+  for (const [c, p] of Object.entries(merged)) {
+    const arr = kids.get(p);
+    if (arr) arr.push(c); else kids.set(p, [c]);
+  }
+  if (!kids.size) return features;
+  const byBbl = new Map<string, F>();
+  for (const f of features) {
+    const b = f.properties?.bbl;
+    if (typeof b === "string") byBbl.set(b, f);
+  }
+  const out: F[] = [];
+  for (const f of features) {
+    const b = f.properties?.bbl as string | undefined;
+    if (b && merged[b]) continue;   // folded into its site
+    const ks = b ? kids.get(b) : undefined;
+    if (!ks || f.geometry?.type !== "Polygon") { out.push(f); continue; }
+    const deeds = [f, ...ks.map((k) => byBbl.get(k)).filter((x): x is F => !!x && x.geometry?.type === "Polygon")];
+    const ll = deeds.map((d) => (d.geometry.coordinates as P2[][])[0].slice(0, -1));
+    const [lon0, lat0] = ll[0][0];
+    const kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 111320;
+    const ring = siteOutline(ll.map((r) => r.map(([x, y]) => [(x - lon0) * kx, (y - lat0) * ky] as P2)));
+    if (!ring) { out.push(f); continue; }
+    const back = ring.map(([x, y]) => [lon0 + x / kx, lat0 + y / ky] as P2);
+    out.push({ ...f, geometry: { type: "Polygon", coordinates: [[...back, back[0]]] } });
+  }
+  return out;
+}

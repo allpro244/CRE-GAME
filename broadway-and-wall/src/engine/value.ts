@@ -1799,18 +1799,34 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
     // merging silently repriced the whole site down to the worst psf in the
     // set: measured over 120 merges, 55% of them DESTROYED land value and the
     // worst lost 16% of the dirt at the moment the deeds were folded together.
+    //
+    // AND ITS ENVELOPE IS THE ENVELOPE THAT WENT INTO IT. A merged zoning lot
+    // carries the floor area of every piece — each lot's area at its own FAR
+    // — not the parent's FAR stretched over everybody's dirt. Taking the
+    // parent's made the buildable area depend on which deed happened to end up
+    // as parent: on the reference map 82% of neighbouring lots on a block
+    // differ in FAR (by up to 28%), so the same three lots assembled in a
+    // different order planned a different building.
     let extra = 0;
     let psfSum = rec.lotArea * rec.landPsf;
+    let commSum = rec.lotArea * rec.farMaxComm;
+    let resSum = rec.lotArea * rec.farMaxRes;
     for (const [child, parent] of Object.entries(m)) {
       if (parent !== bbl) continue;
       const c = parcels[child];
       if (!c) continue;
-      extra += c.lotArea ?? 0;
-      psfSum += (c.lotArea ?? 0) * c.landPsf;
+      const a = c.lotArea ?? 0;
+      extra += a;
+      psfSum += a * c.landPsf;
+      commSum += a * c.farMaxComm;
+      resSum += a * c.farMaxRes;
     }
     if (extra > 0) {
       const area = rec.lotArea + extra;
-      const grown = resolveBase(s, { ...rec, lotArea: area, landPsf: psfSum / Math.max(1, area) });
+      const grown = resolveBase(s, {
+        ...rec, lotArea: area, landPsf: psfSum / Math.max(1, area),
+        farMaxComm: commSum / Math.max(1, area), farMaxRes: resSum / Math.max(1, area),
+      });
       return grown;
     }
   }

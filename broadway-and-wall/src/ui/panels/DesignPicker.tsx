@@ -1,6 +1,6 @@
 // THE LOOK OF A NEW BUILDING. The Build desk's Design tab: facade (a style,
 // then one of its four elevations, shown as swatches), trim paint, roof and,
-// on a tower, its crown. Every choice is drawn on the lot in the 3D city as
+// on a tower, its crown — or a signature form that is the whole tower. Every choice is drawn on the lot in the 3D city as
 // it is made (MapView's design preview). Looks only — what the building costs
 // and how it wears is the build-quality dial below this; see BuildingDesign.
 import { useEffect, useState } from "react";
@@ -8,6 +8,9 @@ import type { BuildingDesign } from "@/engine/types";
 import {
   FACADE_STYLES, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, facadeSwatches,
 } from "@/map/real/RealCity";
+import { SIGNATURE_FORMS, SIGNATURE_MIN_FLOORS, type SignatureForm } from "@/map/real/signature";
+import { START_YEAR } from "@/engine/types";
+import { useStore } from "@/state/store";
 
 const rgbCss = (c: number[]) => `rgb(${Math.round(Math.min(1, c[0] * 0.85) * 255)},${Math.round(Math.min(1, c[1] * 0.83) * 255)},${Math.round(Math.min(1, c[2] * 0.75) * 255)})`;
 
@@ -32,6 +35,12 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
     onChange(next);
   };
   const st = FACADE_STYLES.find((f) => f.key === style);
+  // a landmark form is offered from the year the first of its kind went up
+  const year = useStore((s) => START_YEAR + Math.floor((s.game?.month ?? 0) / 12));
+  const sigBlock = (f: SignatureForm) =>
+    floors < f.minFloors ? `${f.name} needs ${f.minFloors} floors or more`
+      : year < f.from ? `${f.name} — nobody builds one until about ${f.from}`
+        : "";
 
   return (
     <div className="design-picker">
@@ -114,7 +123,35 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
         })}
       </div>
 
-      {floors >= CROWN_MIN_FLOORS && (
+      {floors >= SIGNATURE_MIN_FLOORS && (
+        <>
+          <div className="page-section">Signature tower</div>
+          <div className="btn-row" style={{ flexWrap: "wrap" }}>
+            <button type="button" className={"btn" + (!design.signature ? " btn-on" : "")}
+              title="An ordinary tower of its period, with the crown below"
+              onClick={() => set({ signature: undefined })}>None</button>
+            {SIGNATURE_FORMS.map((f) => {
+              const why = sigBlock(f);
+              const revival = f.until !== undefined && year > f.until;
+              return (
+                <button key={f.key} type="button" disabled={!!why}
+                  className={"btn" + (design.signature === f.key ? " btn-on" : "")}
+                  title={why || `${f.name} — ${f.blurb}${revival ? ` (a revival: the type was last built about ${f.until})` : ""}`}
+                  onClick={() => set({ signature: f.key, crown: undefined })}>
+                  {f.name}
+                </button>
+              );
+            })}
+          </div>
+          {design.signature && (
+            <div className="hint" style={{ marginTop: 4 }}>
+              {SIGNATURE_FORMS.find((f) => f.key === design.signature)?.blurb}. The form is the whole tower, top included.
+            </div>
+          )}
+        </>
+      )}
+
+      {floors >= CROWN_MIN_FLOORS && !design.signature && (
         <>
           <div className="page-section">Crown</div>
           <div className="btn-row" style={{ flexWrap: "wrap" }}>

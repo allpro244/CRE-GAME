@@ -18,7 +18,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, leaseUpCurve, LEASE_UP_YEARS, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
@@ -117,6 +117,11 @@ function rollCredit(s: GameState, demand: number): Credit {
   const r = rng(s, "leasing") + demand / 250;
   return r > 0.95 ? 2 : r > 0.55 ? 1 : 0;
 }
+
+/** Share of renters who move in a year — US renter turnover runs ~45-50% (NMHC, Census AHS). */
+const MF_TURNOVER = 0.45;
+/** A fast real lease-up signs ~8% of a building's units a month (20-30 a month on a 300-unit block). */
+const MF_LEASEUP_MAX = 0.08;
 
 export function isCommercial(rec: ParcelRecord): boolean {
   // A block of flats with shops underneath has a commercial rent roll. It also
@@ -1235,29 +1240,47 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // pace is ~9%/mo of the remaining gap, which stabilises a new building in
       // about 18 months; in a soft market it halves, which is how a delivery
       // into a glut ends up in front of a workout desk.
-      const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
-      const pace = Math.max(0.030, 0.090 - 0.75 * slack);
-      // ONE LEASE-UP, NOT TWO. `target` above is the market's as-is read, and
-      // for a building under LEASE_UP_YEARS old that read already carries the
-      // market's lease-up curve (leaseUpFactor). Walking a share of the gap
-      // towards a target that is itself still climbing lagged the lag: a
-      // block of flats delivered into a 4% market reached 90% let in 34-48
-      // months, against the 19 the curve gives every other new building in
-      // town — and past twice that span the appraiser stops treating it as a
-      // lease-up (leaseUpWeight), so the slow fill also cut its mark and its
-      // takeout. The walk heads for the STABILISED level, and while the
-      // building is inside the market's lease-up span it is let at least as
-      // far as that curve says a building its age is. The age is read from
-      // the month it delivered when there is one: `yearBuilt` is a whole
-      // year, which made a December opening eleven months old on day one.
-      const stab = useOccupancy(rec, s.econ, "multifamily", true);
-      const ageY = h.deliveredM !== undefined
-        ? (q - h.deliveredM) / 12
-        : rec.yearBuilt ? START_YEAR + q / 12 - rec.yearBuilt : Infinity;
-      const market = stab * leaseUpCurve(ageY, true);
-      const now = h.occ ?? target;
-      const walked = now + (stab - now) * pace + rrange(s, -0.006, 0.006, "leasing");
-      h.occ = Math.min(0.99, Math.max(0, ageY < LEASE_UP_YEARS(true) ? Math.max(walked, market) : walked));
+      // RENTERS ARE A FINITE FLOW, AND A NEW BUILDING HAS TO WIN THEM
+      // (2026-10-09). This walked occupancy toward a formula target and
+      // floored it at a fixed lease-up curve — a new block opened a fifth let
+      // and was full in 1.6 years whatever its size and whoever was looking.
+      // Measured: a player building a third the size of the city's whole
+      // apartment stock was 23% let in month one and 85% by month 24, while
+      // the city's renters grew by a seventh of that over four years. Nobody
+      // moved in; they were asserted.
+      //
+      // Offices, shops and sheds already lease from a finite requirement
+      // (absorption.ts). Flats now do too, in aggregate: each month the city
+      // has movers (about 45% of renters move a year — US renter turnover,
+      // NMHC/Census) plus the new households its own looking pool is
+      // absorbing, and they choose among every vacant flat in town. This
+      // building wins its share of the vacant flats, weighted by how it
+      // stacks up (its location/quality read against the city's, and its
+      // asking rent against the market), capped at a real lease-up velocity
+      // of ~8% of the building a month; its own renters move out at the same
+      // turnover. In equilibrium it sits at the market's occupancy, adjusted
+      // for quality — and a building that floods a soft market fills only by
+      // emptying everyone else's, slowly.
+      const e = s.econ;
+      const resSf = useRentableSf(rec, "multifamily");
+      const stab = useOccupancy(rec, e, "multifamily", true);
+      const now = h.occ ?? (h.deliveredM !== undefined && q - h.deliveredM < 1 ? 0 : target);
+      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - NATURAL_VAC.multifamily);
+      const poolMF = e.pool?.multifamily ?? occCity;
+      const vacCity = e.cityVac?.multifamily ?? NATURAL_VAC.multifamily;
+      const match = (vacCity > NATURAL_VAC.multifamily && poolMF > occCity)
+        ? Math.max(0.55, Math.min(1, 1 - (vacCity - NATURAL_VAC.multifamily) * 2.2)) : 1;
+      const movers = occCity * MF_TURNOVER / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
+      const vacantCity = Math.max(1, (e.stock?.multifamily ?? 0) - occCity);
+      const mine = Math.max(0, resSf * (1 - now));
+      const quality = Math.max(0.3, stab / (1 - NATURAL_VAC.multifamily));
+      const askRatio = managedRentPsfYr(rec, e, h, "multifamily")
+        / Math.max(0.01, managedRentPsfYr(rec, e, { ...h, stance: 0 }, "multifamily"));
+      const weight = quality * Math.pow(Math.max(0.5, askRatio), -3);
+      const share = Math.min(1, (mine * weight) / Math.max(mine, vacantCity));
+      const won = Math.min(movers * share, resSf * MF_LEASEUP_MAX, mine);
+      const left = resSf * now * MF_TURNOVER / 12;
+      h.occ = Math.min(0.99, Math.max(0, now + (won - left) / Math.max(1, resSf) + rrange(s, -0.002, 0.002, "leasing")));
       // AND THE RENT ROLL TURNS OVER. A twelfth of the leases reach the market
       // each month; the rest pay what they signed. So in-place rent closes a
       // twelfth of its gap to the market a month — loss-to-lease on the way

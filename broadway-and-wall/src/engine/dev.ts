@@ -2182,10 +2182,12 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // that is a fifth of the building; into a glut it is nearly nobody. This was
   // a flat 0.1 and then, one month later, the 0.4 floor in tickLeasing threw it
   // away entirely — see the note there.
-  if ((dmix.multifamily ?? 0) > 0) {
-    const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
-    h.occ = Math.max(0.01, Math.min(0.22, 0.17 - 1.4 * slack + rrange(s, -0.04, 0.04, "dev")));
-  }
+  //
+  // ...AND THE TRAILER LEASES FROM THE SAME RENTERS EVERYONE ELSE DOES
+  // (2026-10-09). The day-one share was 17-22% of the building whatever its
+  // size — a 21M sf block opened with ~4M sf "let" to households that did not
+  // exist. It opens empty; tickLeasing's finite-mover lease-up is the trailer.
+  if ((dmix.multifamily ?? 0) > 0) h.occ = 0;
   h.costBasis += d.costTotal;
   h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
 

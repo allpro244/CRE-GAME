@@ -96,7 +96,15 @@ function ParcelPanelInner({
   const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
   const dev = game.developments[selectedBBL];
-  const neighbors = adjacency?.[selectedBBL] ?? [];
+  // AN ASSEMBLED SITE'S NEIGHBOURS ARE THE SITE'S: every lot touching any of
+  // its deeds, less the deeds themselves — not the parent lot's old neighbours,
+  // which listed the site's own folded lots as "adjoining".
+  const neighbors = (() => {
+    const deeds = siteDeeds(game, selectedBBL);
+    if (deeds.length === 1) return adjacency?.[selectedBBL] ?? [];
+    const mine = new Set(deeds);
+    return [...new Set(deeds.flatMap((d) => adjacency?.[d] ?? []))].filter((n) => !mine.has(n));
+  })();
   const holding = game.holdings[selectedBBL];
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
   const appr = game.approaches[selectedBBL];

@@ -142,8 +142,22 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * towns empty on their outskirts and in late neighbourhoods, in whole blocks,
  * instead of salt and pepper over the centre. See WHERE A YOUNG TOWN IS EMPTY
  * in citygen.mjs.
+ *
+ * Plan 4 is the FRONTAGE PLAT (citygen.mjs THE FRONTAGE PLAT). Blocks are the
+ * size real surveyed blocks are (island.mjs), and each is cut the way a
+ * surveyor cuts one: two rows of street-facing lots back to back (or onto a
+ * 16 ft alley, in the districts surveyed with one), ends turned to the short
+ * street on a long block, every lot one frontage wide and the full depth of
+ * its row, assembled sites as runs of adjacent lots. Lots carry their
+ * frontage and depth, buildings stand on the street line with their yards
+ * behind, a corner is a lot where the street turns, and transit demand reads
+ * each lot's own platform rather than a sum over every station in range.
+ * Measured on the harness seeds: median lot aspect 1.4 -> 2.4, near-square
+ * lots 35% -> 11%, corner lots 40-60% -> about a third (organic quarters,
+ * which really are small-blocked, still half), lot count +7% on average.
+ * Plan-3 towns rebuild byte-identical; every change is behind the plan.
  */
-export const CITY_PLAN = 3;
+export const CITY_PLAN = 4;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -166,7 +180,7 @@ export function makeCity(cityId, seed, opts) {
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId })
-    : scaleCity(islandConfig(seed), SIZES[sizeId].k);
+    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN }), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

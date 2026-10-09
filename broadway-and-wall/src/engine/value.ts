@@ -287,7 +287,50 @@ export function plateOf(rec: { bldgArea: number; floors: number }): number {
   return rec.bldgArea / Math.max(1, rec.floors);
 }
 /** What a bigger floor is worth in rent, per doubling, against the median. */
-export function plateRentMult(rec: { bldgArea: number; floors: number }, use: BuiltClass): number {
+/**
+ * A SHOP IS LET BY ITS FRONT.
+ *
+ * The plate beta above stood in for frontage — "a wide site also buys it" —
+ * because no lot in the city had a frontage to read. Street plan 4 measures
+ * one, and retail is then priced the way retail is actually valued: the
+ * zoning method (RICS; the standard for shop rents in Britain and the logic
+ * of every "price per front foot" quote in America). The first 20 ft back
+ * from the window is Zone A at full rate; each further 20 ft is worth half the
+ * one in front of it; past 60 ft the remainder is an eighth. So a shop's rent
+ * per square foot falls with its depth, and the same floor area laid shallow
+ * along a wide front lets for more than laid deep behind a narrow one — which
+ * is what assembling two 25 ft lots into one 50 ft shop buys.
+ *
+ * Depth is the building's plate over the lot's frontage. Expressed against
+ * REF_SHOP_DEPTH_FT, the median shop's plate depth measured on plan-4 towns
+ * (1,769 standing shops over the twelve harness seeds: median 38.8 ft,
+ * quartiles 26 and 60; per-seed medians 29-54), so the median
+ * shop's rent is unchanged and only the spread around it is new — the same
+ * convention as REF_PLATE_SF. The zone width and halving are the method's own
+ * constants, not tuned. The clamp is a guard: a plate under 20 ft deep is all
+ * Zone A (the ceiling, 1.57) and only a big box past ~250 ft reaches the floor.
+ */
+const ZONE_FT = 20;
+export const REF_SHOP_DEPTH_FT = 39;
+function zonedPerSf(depthFt: number): number {
+  const d = Math.max(1, depthFt);
+  const zoned = Math.min(d, ZONE_FT)
+    + 0.5 * Math.min(Math.max(d - ZONE_FT, 0), ZONE_FT)
+    + 0.25 * Math.min(Math.max(d - 2 * ZONE_FT, 0), ZONE_FT)
+    + 0.125 * Math.max(d - 3 * ZONE_FT, 0);
+  return zoned / d;
+}
+export function shopFrontMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }): number | null {
+  if (!rec.lotFront || rec.lotFront <= 0) return null;
+  const depth = plateOf(rec) / rec.lotFront;
+  const capped = rec.lotDepth && rec.lotDepth > 0 ? Math.min(depth, rec.lotDepth) : depth;
+  return clamp(zonedPerSf(capped) / zonedPerSf(REF_SHOP_DEPTH_FT), 0.3, 1.6);
+}
+export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }, use: BuiltClass): number {
+  if (use === "retail" && !(globalThis as any).process?.env?.XX_NOSHOP) {
+    const f = shopFrontMult(rec);
+    if (f !== null) return f;
+  }
   const beta = PLATE_RENT_BETA[use] ?? 0;
   if (!beta) return 1;
   const p = plateOf(rec);

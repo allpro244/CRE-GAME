@@ -90,11 +90,14 @@ const pct = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => 
 //
 // Each returns { key: value } and says, in its comment, what going wrong looks
 // like. `id` in the name marks an identity: it is not allowed to move at all.
-const CITY = "somewhere", CITY_SEED = 1;
+// `CITY_SEED` and `PLAN` measure another town or street plan (attribution
+// only; the committed baseline is the reference town at the current plan).
+const CITY = "somewhere", CITY_SEED = Number(process.env.CITY_SEED ?? 1);
+const PLAN = process.env.PLAN ? Number(process.env.PLAN) : undefined;
 const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(",").map(Number) : [550991, 12007, 73303, 4242, 91117, 20603];
 
 function freshCity() {
-  const built = makeCity(CITY, CITY_SEED);
+  const built = makeCity(CITY, CITY_SEED, PLAN ? { planV: PLAN } : {});
   E.normalizeParcels(built.parcels);
   return { parcels: built.parcels, adjacency: built.adjacency, bbls: Object.keys(built.parcels) };
 }

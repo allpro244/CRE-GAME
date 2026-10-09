@@ -280,8 +280,30 @@ export function buildCityData(src) {
   // A WORKING DOCK IS NOT A WATERFRONT — `shoreamen` is 0 on the industrial
   // shore, because nobody pays to overlook a container yard. Same water,
   // opposite sign.
+  // THE PLATFORM YOU WALK TO, NOT EVERY PLATFORM IN RANGE (street plan 4).
+  //
+  // Transit was a SUM over every station within 840 m. On a railway that
+  // runs up the town's spine with a stop every few hundred metres, the sum
+  // peaks wherever the most stops crowd together — the middle of the line,
+  // which is downtown — and it was the single most hill-shaped term in the
+  // blend (correlation 0.47-0.88 with distance from the best lot, against
+  // 0.0-0.4 for parks and the high street). Stations were already weighted by
+  // what makes a platform busy rather than by heat; the summing put the heat
+  // back. Nobody uses three stations: the rail premium in the hedonic
+  // literature is distance to the NEAREST station and that station's service
+  // (Debrezion, Pels & Rietveld 2007, meta-analysis of 57 studies), so each
+  // lot reads its best platform within walking range — a local bump around
+  // every stop, highest at the interchanges, the ferry and the mill wharf.
+  // Same kernel (sigma 280 m), same reach; only the sum becomes a max.
+  // Gated on the plan so a plan-3 town keeps its demand surface exactly.
+  const bestStation = (c) => {
+    let b = 0;
+    nearStations(c, 840, (s, d) => { const v = s.w * gauss(d, 280); if (v > b) b = v; return 0; });
+    return b;
+  };
+  const perPlatform = manifest?.frontagePlat === true && !globalThis.process?.env?.XX_NOTRANSIT;
   const raws = lots.map((l) => ({
-    transit: nearStations(l.c, 840, (s, d) => s.w * gauss(d, 280)),
+    transit: perPlatform ? bestStation(l.c) : nearStations(l.c, 840, (s, d) => s.w * gauss(d, 280)),
     office: nearJobs(l.c, 780, (j, d) => j.office * gauss(d, 260)),
     mill: nearJobs(l.c, 900, (j, d) => j.industrial * gauss(d, 340)),
     shop: nearJobs(l.c, 480, (j, d) => j.retail * gauss(d, 160)),
@@ -512,6 +534,10 @@ export function buildCityData(src) {
       shoreM: num(p.shorem) ?? 9999,
       corridorM: num(p.corridorm) ?? 9999,
       corner: (num(p.corner) ?? 0) === 1,
+      // street frontage and the depth behind it, feet, as the tax roll files
+      // them (PLUTO LotFront / LotDepth); absent on a source that never cut
+      // its own lots
+      ...(num(p.lotfront) > 0 ? { lotFront: num(p.lotfront), lotDepth: num(p.lotdepth) ?? 0 } : {}),
       locPremium: +locPremium.toFixed(4),
       landPsf,
       landPsfHistory: [landPsf],

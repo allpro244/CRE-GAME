@@ -20,13 +20,14 @@
 // ground. If any single row of these distributions goes back to 100%, the
 // generator has stopped generating.
 import { islandConfig } from "../src/citygen/island.mjs";
+import { CITY_PLAN } from "../src/citygen/index.mjs";
 import { isConvex, bboxOfRing } from "../src/citygen/geom.mjs";
 const N = Number(process.env.N ?? 40);
 const q=(a,p)=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(p*(b.length-1))];};
 const rows=[];
 for(let i=0;i<N;i++){
   const seed=(2166136261 ^ ((i+1)*2654435761))>>>0;
-  let cfg; try { cfg = islandConfig(seed); } catch(e){ console.log("fail",seed,e.message); continue; }
+  let cfg; try { cfg = islandConfig(seed, { planV: CITY_PLAN }); } catch(e){ console.log("fail",seed,e.message); continue; }
   const parks=cfg.parks??[], dg=cfg.diagonals??[];
   const areas=parks.map(p=>p.w*p.h);
   const shapes=parks.map(p=>p.shape??"square");
@@ -34,7 +35,7 @@ for(let i=0;i<N;i++){
     boul:cfg.plan?.boulevards, kind:cfg.plan?.boulevardKind, prog:cfg.plan?.parkProgramme, seams:dg.length-(cfg.plan?.boulevards??0), dw:dg.map(d=>d.h),
     flavours:parks.map(p=>p.flavour??"park"),
     coast:cfg.plan?.coastProgramme, grain:cfg.plan?.grainProgramme,
-    rail:cfg.plan?.railProgramme, landmark:cfg.plan?.landmark});
+    rail:cfg.plan?.railProgramme, landmark:cfg.plan?.landmark, alleys:cfg.plan?.alleys ?? 0});
 }
 console.log(`\nPARKS AND BOULEVARDS ACROSS ${rows.length} GENERATED ISLANDS\n`);
 const counts={}; for(const r of rows) counts[r.nPark]=(counts[r.nPark]??0)+1;
@@ -99,7 +100,7 @@ if (districtFails) { console.log(`\nFAIL  ${districtFails} seed(s) — exchange 
 const streams = [];
 for (let i = 0; i < N; i++) {
   const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
-  let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+  let cfg; try { cfg = islandConfig(seed, { planV: CITY_PLAN }); } catch { continue; }
   streams.push({
     seed,
     prog: cfg.plan?.streamProgramme ?? "?",
@@ -153,7 +154,7 @@ if (topShare > 0.72) {
   let folded = 0, coarsePond = 0, huge = 0, nPond = 0, nCut = 0, nPaint = 0, spiky = 0, blocky = 0;
   for (let i = 0; i < N; i++) {
     const seed = (2166136261 ^ ((i + 1) * 2654435761)) >>> 0;
-    let cfg; try { cfg = islandConfig(seed); } catch { continue; }
+    let cfg; try { cfg = islandConfig(seed, { planV: CITY_PLAN }); } catch { continue; }
     let paintedWater = 0;
     for (const st of cfg.streams ?? []) {
       const ring = st.ring;
@@ -253,4 +254,42 @@ if ((fc.battery ?? 0) < 2 || (fc.market ?? 0) < 2) {
   process.exit(1);
 }
 
-console.log("\nvariety pass (parks + flavours + coast + grain + rail + landmark + streams)");
+// THE PLAT ITSELF (street plan 4). Plan 3 halved blocks by area: median lot
+// aspect 1.4, a third of lots near-square, 40-60% of lots filed as corners.
+// A frontage plat cuts rows of street-facing lots, so a lot is deeper than it
+// is wide and a corner is a few lots a block. If either number drifts back,
+// the plat has gone back to halving.
+{
+  const alleyTowns = rows.filter((r) => r.alleys > 0).length;
+  console.log(`\nALLEYS: ${alleyTowns}/${rows.length} towns have at least one alley district`);
+  const nPlat = Math.min(8, rows.length);
+  const asp = [], corners = [], fronts = [];
+  for (const r of rows.slice(0, nPlat)) {
+    const c = makeCity(PROCEDURAL, r.seed, {});
+    const f = c.parcelFeatures.features;
+    const lat0 = f[0].geometry.coordinates[0][0][1], M = 111320, kx = M * Math.cos((lat0 * Math.PI) / 180);
+    for (const ft of f) {
+      const pts = ft.geometry.coordinates[0].map(([x, y]) => [x * kx, y * M]);
+      let best = Infinity, ar = 1;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = Math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0]), cs = Math.cos(a), sn = Math.sin(a);
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const [x, y] of pts) { const u = x * cs + y * sn, v = -x * sn + y * cs; x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); }
+        const b = (x1 - x0) * (y1 - y0);
+        if (b < best) { best = b; ar = Math.max(x1 - x0, y1 - y0) / Math.max(1e-6, Math.min(x1 - x0, y1 - y0)); }
+      }
+      asp.push(ar);
+    }
+    const ps = Object.values(c.parcels);
+    corners.push(ps.filter((p) => p.corner).length / ps.length);
+    for (const p of ps) if (p.lotFront) fronts.push(p.lotFront);
+  }
+  const aspMed = q(asp, 0.5), sq = asp.filter((a) => a < 1.3).length / asp.length, cMed = q(corners, 0.5);
+  console.log(`LOT SHAPE (${nPlat} towns): aspect p50 ${aspMed.toFixed(2)} p90 ${q(asp, 0.9).toFixed(2)}  near-square ${(sq * 100).toFixed(0)}%  corner share median ${(cMed * 100).toFixed(0)}%  frontage p50 ${q(fronts, 0.5)} ft`);
+  if (aspMed < 1.7) { console.error(`\nFAIL  median lot aspect ${aspMed.toFixed(2)} — the plat is halving blocks again`); process.exit(1); }
+  if (cMed > 0.42) { console.error(`\nFAIL  ${(cMed * 100).toFixed(0)}% of lots are corners — a corner is every lot again`); process.exit(1); }
+  if (!fronts.length) { console.error("\nFAIL  no lot carries a frontage"); process.exit(1); }
+  if (alleyTowns === 0 || alleyTowns === rows.length) { console.error(`\nFAIL  alleys on ${alleyTowns}/${rows.length} towns — not a choice any more`); process.exit(1); }
+}
+
+console.log("\nvariety pass (parks + flavours + coast + grain + rail + landmark + streams + plat)");

@@ -6,7 +6,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Exit, GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
-import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
+import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
@@ -124,11 +124,10 @@ export function hangUpOnCall(s: GameState, bbl: string): GameState {
  * for the bottom should be a skill that costs you patience, not a free option.
  */
 function targetListings(s: GameState, totalLots: number): number {
-  const base = s.econ.phase === "peak" ? 0.013
-    : s.econ.phase === "expansion" ? 0.010
-    : s.econ.phase === "recovery" ? 0.006
-    : s.econ.phase === "depression" ? 0.004
-    : 0.004;                                  // recession: the market goes quiet
+  // Owners list into rising payrolls and go quiet in a downturn: 0.4% of
+  // lots a month at a standstill, ~1.2% in a full boom (the old table's
+  // recession and peak), continuously in between.
+  const base = 0.004 + 0.008 * cycleHot(s.econ) * (1 - 0.5 * cycleDown(s.econ));
   // and the credit window gates it further — no debt, no buyers, no listings
   const ci = Math.max(0.4, Math.min(1.15, s.econ.creditIdx ?? 1));
   return Math.max(4, Math.round(totalLots * base * (0.55 + 0.5 * ci)));
@@ -415,8 +414,9 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     (l.expiresM > s.month || s.talks?.[l.bbl]) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
-  const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "depression" ? 0.32
-    : s.econ.phase === "recovery" ? 0.18 : 0.03;
+  // Distress on the tape is owners who have run out of road: slack and
+  // shrinking payrolls (cycleDown) and a shut credit window.
+  const pDistress = Math.min(0.5, 0.03 + 0.33 * cycleDown(s.econ) + 0.15 * Math.max(0, 1 - (s.econ.creditIdx ?? 1)));
   let guard = 0;
   // Cap consecutive rejects so a city whose deeds are mostly on hold clocks
   // does not burn thousands of assetValue calls filling a short tape — that
@@ -465,10 +465,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // to the new cap rate; they hold last year's number and wait. So in a
     // downturn the honest asks vanish and the tape fills with either dreamers
     // or people who have run out of road — and telling those apart is the job.
-    const denial = s.econ.phase === "recession" ? rrange(s, 1.10, 1.28)
-      : s.econ.phase === "depression" ? rrange(s, 1.06, 1.20)
-      : s.econ.phase === "recovery" ? rrange(s, 1.02, 1.14)
-      : rrange(s, 0.94, 1.10);
+    const dn = cycleDown(s.econ);
+    const denial = rrange(s, 0.94 + 0.16 * dn, 1.10 + 0.18 * dn);
     // A lender clearing troubled paper prices at loan basis, not appraisal.
     const cl = distress ? s.cityLoans?.[bbl] : undefined;
     let ask: number;
@@ -546,7 +544,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
  */
 const RIPE_CHECK_SHARE = 1 / 12;
 const RIPE_LIST_P = 0.25;
-const DISTRESS_LAND_HAZARD: Partial<Record<string, number>> = { recession: 0.004, depression: 0.006, recovery: 0.0015 };
+// Forced land sales follow distress — slack and shrinking payrolls — at up to
+// 0.6% of vacant lots a month in a full downturn (the old depression row).
 function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
   const vacant: { bbl: string; rec: ParcelRecord }[] = [];
   for (const bbl of bbls) {
@@ -587,7 +586,7 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, v.rec, false);
   }
   // forced sellers clear land through a slump
-  const h = DISTRESS_LAND_HAZARD[s.econ.phase] ?? 0;
+  const h = 0.006 * cycleDown(s.econ);
   if (h > 0) {
     const want = Math.min(3, Math.floor(vacant.length * h + rng(s, "land")));
     for (let i = 0; i < want; i++) {

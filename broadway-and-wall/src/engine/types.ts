@@ -1421,6 +1421,8 @@ export interface EconHistoryPoint {
   jobs?: number;
   unemployment?: number;
   wageIdx?: number;
+  /** National unemployment, for the credit window's year-on-year read. */
+  natUnemp?: number;
   /** National nominal wage path — the services half of the local CPI is read against it. */
   natWageIdx?: number;
   /** National price level path, so a local/national gap can be read off history. */

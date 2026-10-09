@@ -23,7 +23,7 @@ import { resolveRec, marketAppraisal } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
 import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
-import { rrange } from "./market";
+import { rrange, payrollGrowth12 } from "./market";
 import { executePurchase } from "./actions";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -119,7 +119,7 @@ export function reserveMidOf(
 
 /** The cycle's shift on every seller's reservation — one number for the tape and the negotiation. */
 export function phaseShift(s: GameState): number {
-  return s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
+  return Math.max(-0.035, Math.min(0.025, 1.75 * payrollGrowth12(s.econ)));
 }
 
 /** Typical close as a share of ask — kind + distress, not this month's cycle. */

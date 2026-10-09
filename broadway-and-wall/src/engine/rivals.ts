@@ -34,7 +34,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
+import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
@@ -1306,7 +1306,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (r.condIdx === undefined) r.condIdx = 0.72;
   // Buildings age faster than anyone budgets for, which is why 'well kept'
   // tops out just short of new rather than at it.
-  r.condIdx -= 0.0024 * (s.econ.phase === "recession" || s.econ.phase === "depression" ? 1.25 : 1);
+  r.condIdx -= 0.0024;
   const aum = r.aum ?? 0;
   // LEASING BEFORE BRICKS when the book is behind the market. Capex alone
   // could not fill empty floors — Wrenfield's century tutorial was a giant
@@ -3196,7 +3196,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // trims into strength — it is where their returns are realised, it is what
     // their investors are waiting for, and it is why there is anything on the
     // tape in a good market at all. Without it the street simply ate the city.
-    const hot = s.econ.phase === "peak" || s.econ.phase === "expansion";
+    const hotW = cycleHot(s.econ);
     // THE CLOCK, and it is the loudest personality difference on this street.
     //
     // Trimming into strength is what every firm does. What a fund with a life
@@ -3296,7 +3296,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
                 + (r.style === "merchant"
                   ? "They build to sell; they were never going to keep it."
                   : `The fund is ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years into this one and the clock has run out — `
-                    + `they are selling into ${s.econ.phase === "recession" || s.econ.phase === "depression" ? "a market that does not want it" : "this market"} because the mandate says so.`),
+                    + `they are selling into ${cycleDown(s.econ) > 0.5 ? "a market that does not want it" : "this market"} because the mandate says so.`),
             });
           }
         }
@@ -3307,7 +3307,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const softBook = (r.occ ?? 1) < (r.mktOcc ?? 1) - 0.05;
     // Thicker tape: slightly higher trim hazard, and books of 5+ (was 7+) can
     // put a weak ticket out — same rng() call, lower length gate.
-    const trimBase = (hot ? 0.07 : 0.018) * (softBook ? 1.85 : 1)
+    const trimBase = (0.018 + 0.052 * hotW) * (softBook ? 1.85 : 1)
       * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
     // SELL. A Jev-run firm lists the holding Jev most wants sold if the answer
     // clears the bar (asking across the scripted seller's own 1.00-1.14x range,

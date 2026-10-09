@@ -205,7 +205,10 @@ export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, a
   const safeLtc = 0.70;
   const specLtc = 0.70;
   const base = specLtc * spec + safeLtc * (1 - spec);
-  const tight = phase === "recession" || phase === "depression" ? 0.72 : phase === "peak" ? 0.94 : 1;
+  // The label multiplier (0.72 in a recession) priced the credit window a
+  // second time: `creditIdx` below already is the window. `phase` is unread.
+  void phase;
+  const tight = 1;
   // Construction paper in this town is written by the regional bank, and the
   // regional bank has a balance sheet you can read on Research. When it is
   // eating losses it does not tighten the market's terms — it tightens YOURS,

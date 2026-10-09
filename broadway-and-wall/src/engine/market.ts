@@ -786,11 +786,60 @@ export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, i
  * opening of a game, so the town a player walks into is already at the
  * package its own vacancy implies — see `createEcon`.
  */
-export function concessionTarget(gap: number, phase: Econ["phase"]): number {
-  const phaseNudge = phase === "recession" ? 0.22 : phase === "depression" ? 0.16
-    : phase === "recovery" ? 0.08 : phase === "peak" ? -0.04 : -0.10;
-  return clamp(gap * 11 + phaseNudge, 0, 1);
+export function concessionTarget(gap: number, _phase?: Econ["phase"]): number {
+  // The package is what a tenant can extract, and that is availability. The
+  // label nudge (+0.22 in a recession, -0.10 in an expansion) priced the
+  // same slack a second time and stepped when the label flipped. Weighted by
+  // how often each label occurred (4 worlds x 50 years) the nudge averaged
+  // about -0.01, so dropping it moves the typical package by nothing.
+  return clamp(gap * 11, 0, 1);
 }
+
+// --- THE CYCLE AS MEASURED (2026-10-09) --------------------------------------
+//
+// `e.phase` is DATED from payrolls (derivePhase) — a description, the way NBER
+// dates a recession. About sixty readers then used that label as a CAUSE,
+// through tables keyed on it: a tenant's default hazard jumped 6x, the credit
+// target halved, the share of distress on the tape went from 3% to 42%, the
+// month payroll growth crossed a threshold. A label cannot cause anything, and
+// a step at a threshold is a number nobody measured. These are the quantities
+// the label summarised; every former reader reads one of them instead, each
+// mapped so that a typical boom and a typical recession land where the old
+// table put them — the magnitudes were calibrated, the steps were not.
+
+/** Filled payrolls, trailing twelve months, as a growth rate. */
+export function payrollGrowth12(e: Econ): number {
+  const h = e.history ?? [];
+  const then = h.length >= 12 ? h[h.length - 12]?.jobs : undefined;
+  return then && e.jobs ? e.jobs / then - 1 : 0;
+}
+/** Local unemployment over the town's own natural rate (the matching steady state). */
+export function labourSlack(e: Econ): number {
+  return (e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP;
+}
+/** How far national unemployment has risen over the last year — the national credit signal. */
+export function natUnempRise12(e: Econ): number {
+  const h = e.history ?? [];
+  const then = h.length >= 12 ? h[h.length - 12]?.natUnemp : undefined;
+  return then !== undefined && e.nat ? e.nat.unemp - then : 0;
+}
+/** 0..1: payrolls growing at 1.2%/yr or more reads as a full boom. */
+export function cycleHot(e: Econ): number {
+  return clamp(payrollGrowth12(e) / 0.012, 0, 1);
+}
+/**
+ * 0..1: how much of a downturn this is — payrolls shrinking (1.5%/yr is a full
+ * recession) or labour slack lingering (3 points over natural is a recession
+ * trough), whichever is worse. A recovery with slack still reads partly down.
+ */
+export function cycleDown(e: Econ): number {
+  return clamp(Math.max(-payrollGrowth12(e) / 0.015, labourSlack(e) / 0.03), 0, 1);
+}
+/** A class's availability (vacancy + sublet) over its natural vacancy. */
+export function useGap(e: Econ, k: BuiltClass): number {
+  return (e.cityVac?.[k] ?? NATURAL_VAC[k]) + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]) - NATURAL_VAC[k];
+}
+
 
 /**
  * THE FLOOR UNDER VACANCY, and the one rail in this engine that actually binds.
@@ -1330,9 +1379,19 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
  */
 export function stepCredit(s: GameState) {
   const e = s.econ;
-  const creditTarget = clamp((e.phase === "expansion" ? 1.12 : e.phase === "peak" ? 1.0
-    : e.phase === "recession" ? 0.54 : e.phase === "depression" ? 0.62 : 0.88)
-    - ((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.26 : 0.13) : 0), 0.4, 1.25);
+  // CREDIT READS WHAT LENDERS READ (2026-10-09), not the label: whether the
+  // town's payrolls are growing (+2%/yr opens the window to the old
+  // expansion's 1.12) and how fast unemployment is rising nationally — the
+  // single best predictor of loan officers tightening in the Fed's senior
+  // loan officer survey. Calibrated to the endpoints the old table carried,
+  // which were measured: a typical recession (national unemployment up 2.5
+  // points, local payrolls down 1.5%) lands at ~0.55, the old recession row;
+  // a deep one (6 points, -4%) reaches the 0.4 floor, as recession plus the
+  // deep-national event did. A first cut at 6 per point of unemployment left
+  // the 10th-percentile window at 0.90 — credit crunches had disappeared.
+  // Lender capital (lenders.ts) still drags it as before.
+  const g12 = clamp(payrollGrowth12(e), -0.08, 0.04);
+  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)), 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
@@ -1963,7 +2022,13 @@ export function tickEcon(s: GameState) {
 
   // cycle deviation drifts with phase, spring-loaded toward zero at the extremes
   // instead of pinning on hard rails — the restoring force is the mechanism.
-  const step = c2.devDrift + rrange(s, -0.03, 0.03);
+  // ...and what moves it is payrolls, not the label (2026-10-09). The table
+  // stepped it +0.027/mo in an "expansion" and -0.054 in a "recession"; the
+  // same sentiment now builds at 1.8x trailing-year payroll growth, which is
+  // those two numbers at +1.5%/yr and -3%/yr, continuously. It feeds cap
+  // rates and land through `cycleDev`, so that channel is now caused.
+  void c2;
+  const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06) + rrange(s, -0.03, 0.03);
   const spring = -0.048 * e.cycleDev;
   e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);
 
@@ -4297,7 +4362,10 @@ export function tickEcon(s: GameState) {
     // marking up a clearing one. Growing unmet demand still prices through
     // scarcity → rentPress. Negative cycle terms still cut in every state.
     const liftGate = (railBound || softW > 0 || dev > -0.08) ? 0 : 1;
-    const cycleRent = c2.rentDrift * 0.48 * (c2.rentDrift > 0 ? liftGate : 1);
+    // The label's own rent drift (+0.37%/mo in an "expansion", -0.47% in a
+    // "recession") is gone: the jobs behind the label are already in
+    // `cycleJobs`, and the vacancy they leave behind in `vacTerm`.
+    const cycleRent = 0;
     const cycleJobs = jobDrift * 0.28 * (jobDrift > 0 ? liftGate : 1);
     const cycleMom = e.sectorMom[k] * 0.42 * (e.sectorMom[k] > 0 ? liftGate : 1);
     const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
@@ -4766,6 +4834,7 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     population: e.population,
     jobs: e.jobs,
     unemployment: e.unemployment !== undefined ? +e.unemployment.toFixed(4) : undefined,
+    natUnemp: e.nat?.unemp !== undefined ? +e.nat.unemp.toFixed(4) : undefined,
     wageIdx: e.wageIdx !== undefined ? +e.wageIdx.toFixed(4) : undefined,
     natWageIdx: e.natWageIdx !== undefined ? +e.natWageIdx.toFixed(4) : undefined,
     natCpi: e.natCpi !== undefined ? +e.natCpi.toFixed(4) : undefined,

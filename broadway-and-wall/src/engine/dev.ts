@@ -10,7 +10,7 @@ import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Devel
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
+import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock, payrollGrowth12 } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
@@ -1172,11 +1172,9 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     const demand = demandNow(s, rec) / 100;
     // Bigger shells need rarer anchors. A 40k pad turns over; a 250k HQ does not.
     const sizeHard = Math.max(0.55, Math.min(2.4, plan.sf / 90_000));
-    const phaseHit = s.econ.phase === "depression" ? 0.45
-      : s.econ.phase === "recession" ? 0.55
-      : s.econ.phase === "recovery" ? 0.8
-      : s.econ.phase === "peak" ? 1.1
-      : 1;
+    // An anchor commits to a new building when it is hiring: exp(30 x payroll
+    // growth) reads 0.55 at -2%/yr (the old recession) and tops out at 1.1.
+    const phaseHit = Math.max(0.45, Math.min(1.1, Math.exp(30 * payrollGrowth12(s.econ))));
     const p = Math.min(0.09, (0.004 + 0.045 * demand * climate) * phaseHit / sizeHard);
     if (rng(s, "leasing") >= p) continue;
     const bts = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage);
@@ -1899,7 +1897,11 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // is what the four-point premium bought.
     if (d.contract === "costplus" && s.month > d.startM) {
       const remaining = Math.max(0, d.hardCost * (1 - curve(t1)));
-      const drift = s.econ.phase === "expansion" || s.econ.phase === "peak" ? rrange(s, 0.0012, 0.0038, "dev") : rrange(s, -0.001, 0.0016, "dev");
+      // Cost-plus carries what the trades are actually charging this month —
+      // the market's own cost index move — not a label's guess at it.
+      const hc = s.econ.history ?? [];
+      const prevCost = hc.length ? hc[hc.length - 1]?.costIdx : undefined;
+      const drift = (prevCost ? s.econ.costIdx / prevCost - 1 : 0) + rrange(s, -0.0008, 0.0008, "dev");
       const escal = Math.round(remaining * drift);
       if (escal > 0) { d.costTotal += escal; d.hardCost += escal; d.equityBudget += escal; }
     }

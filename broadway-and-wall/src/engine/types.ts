@@ -2861,6 +2861,12 @@ export interface GameState {
    */
   opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
   /**
+   * The house minimum new lease, sf (leasing.ts setMinLeaseSfAll): written to
+   * every deed when set, and the floor a building bought or delivered later
+   * opens on. Undefined: no house floor.
+   */
+  minLeaseDefault?: number;
+  /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.
    *
    * refreshListings picked a random parcel with no memory of what had just

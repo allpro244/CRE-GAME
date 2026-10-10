@@ -10,7 +10,7 @@
  *
  *  - WHO CALLS. How hard a style hunts is its appetite (STYLE.appetite) moved
  *    by the credit window the way its listed buying is (procyclical, contra).
- *    A firm under stress, or one whose decisions Jev makes, does not cold-call.
+ *    A firm under stress, or one Jev has told to hold, does not cold-call.
  *  - WHAT THEY RING ABOUT. A handful of privately held lots sampled from the
  *    map, kept to what the style buys and can afford, and the one the firm
  *    can pay most for against its appraisal (`firmMaxPrice`) gets the call.
@@ -39,6 +39,7 @@ import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
 import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt } from "./rivals";
 import { money } from "./money";
+import { jevHolds } from "./jev";
 
 /**
  * Calls a month for a firm of appetite 1 in an ordinary credit market. A
@@ -68,7 +69,11 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
   if (!keys.length) return;
   const ci = s.econ.creditIdx ?? 1;
   for (const r of livingRivals(s)) {
-    if (r.stressMs || r.jev) continue;
+    // A firm whose decisions Jev makes stays off the phone only when Jev has
+    // ruled on buying this period — the same test its listed buying uses. A
+    // Jev firm whose answers fell back behaves as its scripted self, draws
+    // and all (test/jev.mjs holds it to that).
+    if (r.stressMs || (r.jev && jevHolds(s, r, "buy"))) continue;
     const st = styleHunt(r.style);
     const cyc = Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci));
     if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc)) continue;

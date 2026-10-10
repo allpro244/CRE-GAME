@@ -3933,6 +3933,7 @@ function startCityJob(
   // all. A developer hunting for a site looks at sites; the draw cap is a
   // guard for a town with almost no vacant land left.
   let examined = 0;
+  const sampled: { bbl: string; rec: (typeof parcels)[string] }[] = [];
   for (let draw = 0; draw < 36 * 8 && examined < 36; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
@@ -3949,6 +3950,7 @@ function startCityJob(
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
     examined++;
+    sampled.push({ bbl, rec });
     // THE CITY PICKED THE MOST EXPENSIVE DIRT IN THE SAMPLE, EVERY TIME.
     //
     // This scored candidates on DEMAND — "the city builds where the
@@ -4013,10 +4015,51 @@ function startCityJob(
     }
     if (pick) best = pick;
   }
+  // THE DEVELOPER TAKES THE BEST DEAL IN THE SAMPLE, BY ITS OWN PRO FORMA
+  // (2026-10-10). The lots above are ranked on the land read's surplus,
+  // builder residual less asking price — and the asking price IS the builder
+  // residual wherever a builder wins and is above it everywhere else, so
+  // that score is zero or negative on essentially every lot and the $0-12/sf
+  // tie-break noise picked the site. Measured over two worlds x 30 years:
+  // 90% of the city's groundbreak attempts failed the desk, at a median
+  // hurdle of 0.29-0.39, in years when the annual sampler of the same
+  // dirt found sites clearing. The design this function states is "36 lots
+  // for each crane, take the best"; for the class the order book is short
+  // of, that is the lot and height (`schemeFloorLadder`) whose street
+  // hurdle is highest, which is the statistic `sitePencil` publishes.
+  let forced: { use: BuiltClass; floors: number; plate: number } | null = null;
+  {
+    let target: BuiltClass | null = null, amt = 0;
+    for (const k of BUILT_CLASSES) {
+      const a = owedBook?.[k] ?? 0;
+      if (a > amt && (classPinnedOwed(s.econ, k) || classIsShort(s.econ, k))) { amt = a; target = k; }
+    }
+    if (!target) for (const k of BUILT_CLASSES) { const a = owedBook?.[k] ?? 0; if (a > amt) { amt = a; target = k; } }
+    if (target) {
+      const plate = cityCoverage(target);
+      const margin = streetMargin(s);
+      let bestH = -Infinity;
+      for (const c of sampled) {
+        if (!zonePermits(c.rec.zoneDist, target, c.rec.demandScore, s.econ)) continue;
+        const env = Math.max(1, Math.min(cityInfillCap(s, parcels, c.rec, target), maxFloorsFor(c.rec, plate, target)));
+        for (const fl of schemeFloorLadder(target, env)) {
+          const u = underwriteDevelopment(s, parcels, c.bbl, target, fl, plate);
+          if (!u?.financeable) continue;
+          const h = hurdleAt(u.plan, margin);
+          if (h > bestH + 1e-9 || (Math.abs(h - bestH) <= 1e-9 && forced && fl > forced.floors)) {
+            bestH = h; best = c; forced = { use: target, floors: fl, plate };
+          }
+        }
+      }
+      // Nothing in the sample pays: the order waits for rent, or expires.
+      if (!(bestH >= 1)) forced = null;
+    }
+  }
   if (!best) return false;
   const { bbl, rec } = best;
   const dNow = demandNow(s, rec);
   let use = useForZone(rec.zoneDist, dNow, rng(s, "dev"), s.econ);
+  if (forced) use = forced.use;
   // A corner that carries twenty floors does not get a two-storey shop on
   // it: it gets shops at grade with something above them.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
@@ -4038,7 +4081,7 @@ function startCityJob(
   // the building; elsewhere the old path stands (the desk below still has
   // the last word either way, so nothing is built that does not underwrite).
   const siteRead = landRead(rec, s.econ);
-  const scheme = siteRead.scheme && siteRead.builder >= siteRead.psf ? siteRead.scheme : null;
+  const scheme = !forced && siteRead.scheme && siteRead.builder >= siteRead.psf ? siteRead.scheme : null;
   if (scheme) use = scheme.use;
   const cmix = devMix(use);
   const lead = dominantOf(cmix);
@@ -4052,10 +4095,10 @@ function startCityJob(
   // young town builds small; a mature one builds to the envelope
   const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s, "dev") * 0.15);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  const plate = scheme ? scheme.coverage : cityCoverage(use);
+  const plate = forced ? forced.plate : scheme ? scheme.coverage : cityCoverage(use);
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
-  if (scheme) {
-    floors = scheme.floors;
+  if (forced || scheme) {
+    floors = forced ? forced.floors : scheme!.floors;
     sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
   // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
@@ -4069,7 +4112,7 @@ function startCityJob(
   // the entitlement premium — never at the cost of a project that would
   // have gone ahead by right.
   let entitleBasis: number | undefined;
-  if (!scheme && floors > infill) {
+  if (!forced && !scheme && floors > infill) {
     const base = s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
     const premium = entitlementPremium(floors, infill, sf, base, s.econ.costIdx ?? 1);
     const tall = premium > 0
@@ -4089,6 +4132,31 @@ function startCityJob(
   if (cap !== undefined && floors > cap) {
     floors = cap;
     sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
+  }
+  // A BUILDER WITHOUT A SCHEME FROM THE LAND READ STILL PICKS ITS HEIGHT
+  // (2026-10-10). Where the lot's land read names no clearing building, the
+  // size above came from a share of the zoning envelope ("a mature town
+  // builds to the envelope") and that one height went to the desk. A
+  // developer sizes the building to what pays, from the same ladder the land
+  // residual and the site sampler read (`schemeFloorLadder`), up to the
+  // height this lot was sized to. Measured over two worlds x 30 years before
+  // this: 94% of the city's groundbreak attempts failed the desk, every one
+  // of them on this path, and flats orders of 2.0-2.3M sf turned into
+  // 0.2-1.0M sf of groundbreaks — the rest expired in the book while flats
+  // sat on their vacancy floor.
+  if (!forced && !scheme && entitleBasis === undefined) {
+    let bestH = -Infinity, bestFl = floors;
+    for (const fl of schemeFloorLadder(lead, floors)) {
+      const ui = underwriteDevelopment(s, parcels, bbl, use, fl, plate);
+      if (!ui?.financeable) continue;
+      const hi = hurdleAt(ui.plan, streetMargin(s));
+      // Ties go to the bigger building: the market ordered feet.
+      if (hi > bestH + 1e-9 || (Math.abs(hi - bestH) <= 1e-9 && fl > bestFl)) { bestH = hi; bestFl = fl; }
+    }
+    if (bestFl !== floors) {
+      floors = bestFl;
+      sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
+    }
   }
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
   // financing, lease-up reserve, NOI and required margin the player sees.

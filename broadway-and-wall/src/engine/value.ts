@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism, residenceVac, concessionTarget, CONC_DEPTH } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -19,29 +19,18 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export const FAR_CEILING = 40;
 
 /**
- * WHAT A LOT'S ZONING WILL HOST. One function, because the pencil, the
- * shovel, the residual and the planning board were each restating this
- * and drifting.
- *
- * R is housing. M is sheds, and housing only as the conversion path once
- * industry has left — while industrial is short the map that was drawn
- * for bays does not get taken by flats. C hosts everything except sheds
- * on prime ground: light industrial is an as-of-right or special-permit
- * use on low-rent commercial corridors (demand < 45), which is where
- * 2018–2024 put last-mile build-out. Nobody permits a loading dock on
- * the hundred block.
+ * WHAT A LOT MAY HOST: ANYTHING (2026-10-10). This town has no zoning, like
+ * Houston — the owner's call, and a real regime (Houston has never adopted
+ * use zoning; voters rejected it in 1948, 1962 and 1993). What a lot becomes
+ * is what pays there. The plat's district letters survive as a record of what
+ * the generator drew and what the neighbourhood was; nothing reads them as
+ * law. Kept as one function because every reader — the pencil, the shovel,
+ * the residual, the desk — asks it, and one answer is what keeps them agreed.
  */
 export function zonePermits(
   zone: string | undefined, use: BuiltClass, demand = 100, econ?: Econ,
 ): boolean {
-  const z = (zone ?? "C")[0];
-  if (z === "R") return use === "multifamily";
-  if (z === "M") {
-    if (use === "industrial") return true;
-    if (use === "multifamily") return !(econ && classIsShort(econ, "industrial"));
-    return false;
-  }
-  if (use === "industrial") return demand < 45;
+  void zone; void use; void demand; void econ;
   return true;
 }
 
@@ -69,27 +58,8 @@ export function zoneUseBar(
   rec: { zoneDist?: string; demandScore?: number }, use: BuiltClass | "mixed",
   econ?: Econ, mix?: UseMix, floors = 1,
 ): string | null {
-  const zone = rec.zoneDist ?? "C";
-  const demand = rec.demandScore ?? 100;
-  const programme: UseMix = use === "mixed" ? (mix ?? {}) : { [use]: 1 };
-  const atGrade = Math.min(1, RETAIL_FLOORS_MAX / Math.max(1, floors), 1.25 / Math.max(1, floors));
-  for (const [k, share] of Object.entries(programme) as [BuiltClass, number][]) {
-    if (!(share > 0)) continue;
-    if (use === "mixed" && k === "retail" && share <= atGrade + 1e-6) continue;
-    if (zonePermits(zone, k, demand, econ)) continue;
-    const word = k === "multifamily" ? "flats" : k === "industrial" ? "sheds" : k === "retail" ? "shops" : "offices";
-    const z = zone[0];
-    const why = z === "R"
-      ? `a residential district hosts housing only`
-      : z === "M"
-        ? (k === "multifamily"
-          ? `a manufacturing district takes housing only once industry has left, and the city is short of industrial space`
-          : `a manufacturing district hosts industry, and housing only once industry has left`)
-        : k === "industrial"
-          ? `a commercial district permits light industrial only on low-rent corridors (demand under 45; this street is ${demand.toFixed(0)})`
-          : `the district does not host it`;
-    return `Zoned ${zone}: ${word} are not permitted here — ${why}.`;
-  }
+  // No zoning: no programme is barred. See zonePermits.
+  void rec; void use; void econ; void mix; void floors;
   return null;
 }
 
@@ -162,17 +132,8 @@ export function demandBeta(demandScore: number): number {
 //   LAND        Dirt is worth what can be built on it. A lot too narrow to
 //               reach the envelope it is zoned for is not worth its zoning,
 //               and that discount is exactly what an assembler is buying up.
-const ABS_MAX_FLOORS_V = 90;
-/** The tallest structure a plate this size can carry: slenderness, and core. */
-export function physicalMaxFloors(plateSf: number): number {
-  if (plateSf < 400) return 1;                       // below this it is not a building
-  const slender = 1.2 * Math.sqrt(plateSf);          // MAX_SLENDERNESS / FLOOR_HEIGHT_FT
-  // The core ramp: a 1,200 ft² plate carries about six floors, and the ability
-  // to serve height grows roughly linearly with the area left over after the
-  // core takes its fixed bite.
-  const core = 1 + (plateSf - 400) / 135;
-  return Math.max(1, Math.min(ABS_MAX_FLOORS_V, Math.floor(Math.min(slender, core))));
-}
+export { physicalMaxFloors } from "./structure";
+import { physicalMaxFloors } from "./structure";
 
 /**
  * The plate a median NEW building in this city actually carries — measured at
@@ -1707,101 +1668,13 @@ export function heightCapFloors(
   rec: { lotArea: number; farMaxComm?: number; farMaxRes?: number },
   use: BuiltClass = "office",
 ): number {
-  // one increment above the datum; the increment itself grows as the town
-  // matures and its comps deepen — 2 floors in year one, 6 by year 65
-  //
-  // ...AND CONTEXT YIELDS TO ECONOMICS. This was the whole story, and it meant
-  // the city answered a shortage with MORE buildings and never with TALLER
-  // ones: a district at 3.7% vacancy with rents tripling got exactly as much
-  // height over its cornice line as one sitting half empty. That is the reason
-  // supply could not answer price anywhere in this model — the crane count
-  // responds to demand through startOwed, the envelope on each crane did not,
-  // so the median city building stayed at 26,000 sf however desperate the
-  // market got. `sim:accept` F and H are both downstream of it.
-  //
-  // A cornice datum is real — most of any city is uniform height because
-  // building in context is cheaper, easier to finance and easier to permit.
-  // But it is a behavioural cap sitting well below the LEGAL one (farMaxFor
-  // times the district's zoneAdj, which the return below still enforces), and
-  // what breaks it is scarcity. When land is dear enough somebody builds the
-  // tower that ignores the street, and then the street has a new datum. That
-  // is how every skyline that exists got made.
-  //
-  // Neutral by construction: at natural vacancy with rent at parity to income
-  // the push is zero and nothing about the old calibration moves.
-  const ez = econ;
-  // THE PROJECT'S MARKET, not office by default. Apartment supply was reading
-  // office vacancy and office rent here, so a housing shortage raised the
-  // number of apartment orders but never the size of an apartment building.
-  // The result was multifamily vacancy sitting on its frictional floor for
-  // more than a third of measured months while perfectly usable FAR went
-  // untouched.
-  const natural = NATURAL_VAC[use];
-  const tight = clamp(
-    (natural - (ez.cityVac?.[use] ?? natural)) / natural, -1, 1);
-  // EFFECTIVE, not asking — a tenant pays net of concessions, so scoring the
-  // envelope off the face rate read a concession-soaked market as dear and
-  // raised the cornice into a glut. Same fix as the rezoning trigger.
-  const rentPress = clamp(
-    ((ez.effRentIdx?.[use] ?? ez.rentIdx[use]) / RENT_BASE[use])
-      / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
-  // When vacancy is pinned, vacancy-tightness alone saturates — structural
-  // capacity shortage (desired demand vs housable) still says "build taller."
-  const struct = clamp(ez.structTight?.[use] ?? 0, 0, 0.45);
-  const push = clamp(tight * 0.9 + rentPress * 0.5 + struct * 1.1, -0.35, 2.0);
-  const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
-  const physical = physicalMaxFloors(rec.lotArea * 0.62);
-  let cap = Math.max(2, Math.min(Math.max(1, datum) + step, physical));
-  // CHRONIC EMPLOYMENT SHORTAGE BREAKS THE CORNICE. ECONOMY.md §F #2: stock
-  // grew at half the jobs rate because each crane stayed cornice-bound while
-  // `structTight` said the market needed more housable floor. Scarcity that
-  // has already saturated the vacancy rail is exactly when real cities put up
-  // the building that ignores the street — the legal envelope, not another
-  // two floors of context. Blend toward zoning/physical; do not free the
-  // friction floor or mint demand.
-  // EITHER SIGNAL OPENS IT, NOT BOTH AT ONCE. This required a chronic capacity
-  // shortage AND vacancy 45% below natural, simultaneously. Measured over 3
-  // seeds x 50 years: `struct` alone qualifies on 40.0% of lot-reads and
-  // `tight` alone on 56.7%, but the conjunction only on 33.3% — the AND was
-  // throwing away most of both signals.
-  //
-  // No city waits for two emergencies. A market where space is simply not
-  // there is one argument for the building that ignores the street; a market
-  // where rent has run away is a different and equally sufficient one, and
-  // 1920s Manhattan, 1980s Hong Kong and present-day Austin each broke their
-  // cornice on one of them without the other. Whichever signal is louder sets
-  // how far the reach goes.
-  //
-  // Still neutral at rest: at natural vacancy with no capacity shortage both
-  // reaches are zero, the branch does not fire, and month zero is unchanged.
-  const structReach = clamp((struct - 0.08) / 0.22, 0, 1);
-  // TIGHT AGAINST WHAT THE MARKET CAN REACH, NOT AGAINST ZERO (2026-10-09).
-  // `tight` is measured from natural toward 0% vacancy, but no market gets
-  // near 0%: when every suite that can be let is let, the suites between
-  // tenants are still dark (`residenceVac` — turnover times re-let months).
-  // For flats that point is ~3.5% against a natural 4.5%, so `tight` topped
-  // out at 0.22 and the 0.45 threshold could never be met: the class in
-  // permanent shortage on every measured Manhattan run was the one class
-  // whose cornice no shortage could break, while offices could reach a fifth
-  // of the way to their legal envelope and sheds half. The reach now reads
-  // how far the market has gone from natural toward FULLY LET — the same
-  // 45%/40% shape, on the scale every class can actually traverse.
-  // Measured with the teardown fix, Manhattan below Houston, two seeds,
-  // year 100: 30+ floor buildings 17 -> 32 and 14 -> 58, 20+ floor
-  // 157 -> 186 and 218 -> 329. It overbuilds on the way — office vacancy
-  // 17.6% at year 50 on one seed — which is what a skyline cycle looks like.
-  const fullyLet = Math.min(natural * 0.95, residenceVac(ez, use));
-  const tightLet = clamp((natural - (ez.cityVac?.[use] ?? natural)) / Math.max(0.002, natural - fullyLet), -1, 1);
-  const tightReach = clamp((tightLet - 0.45) / 0.40, 0, 1);
-  const reach = Math.max(structReach, tightReach);
-  if (reach > 0 && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
-    const legal = Math.ceil(farMaxFor({
-      farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
-    }) / 0.62);
-    const ceiling = Math.min(physical, Math.max(cap, legal));
-    cap = Math.max(cap, Math.round(cap + (ceiling - cap) * reach));
-  }
-  return Math.max(2, Math.min(cap, physical));
+  // NO HEIGHT LIMIT BUT THE ENGINEERING (2026-10-10). This was the cornice
+  // rule: as-of-right to one step above the block's datum, discretionary
+  // review (with its cost, its wait and its odds) above it. Houston has no
+  // such review. What stops a building there is what it costs to go up —
+  // `heightPremium` in the pro forma — and what the plate can stand up.
+  void datum; void maturity; void econ; void use;
+  return physicalMaxFloors(rec.lotArea * 0.62);
 }
 
 

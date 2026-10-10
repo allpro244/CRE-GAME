@@ -21,6 +21,10 @@
 // way round.
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, UseMix } from "./types";
+import { physicalMaxFloors } from "./structure";
+
+/** The densest plate any use takes on a lot (shops and sheds, MAX_COVERAGE). */
+const PHYSICAL_COVERAGE = 0.85;
 
 export type { UseMix };
 
@@ -106,6 +110,21 @@ export function mixOf(rec: Pick<ParcelRecord, "class" | "bbl" | "floors" | "unit
 export function normalizeParcels(table: Record<string, ParcelRecord>): Record<string, ParcelRecord> {
   for (const bbl of Object.keys(table)) {
     const rec = table[bbl];
+    // THIS TOWN HAS NO ZONING (owner, Oct 2026: "Make this game like Houston,
+    // no zoning ... what if we took away height restrictions entirely?").
+    // Houston has no use zoning and no floor-area limit; what governs how much
+    // goes on a lot there is the economics and the engineering. So the
+    // allowance on every lot is what its footprint can physically carry —
+    // the tallest structure the largest plate the lot takes can stand up
+    // (`physicalMaxFloors`: slenderness and core) — and the pro forma, with
+    // its cost curve for height, decides what is actually worth building.
+    // The generator's FAR is a plat it drew, not a law anybody here passed.
+    if (rec.lotArea > 0) {
+      const plate = rec.lotArea * PHYSICAL_COVERAGE;
+      const far = +(physicalMaxFloors(plate) * PHYSICAL_COVERAGE).toFixed(2);
+      rec.farMaxComm = far;
+      rec.farMaxRes = far;
+    }
     if ((rec.class as string) !== "mixed") continue;
     const m = deriveMix(rec);
     rec.mix = m;

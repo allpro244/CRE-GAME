@@ -954,8 +954,32 @@ export function housableStock(e: Econ, k: BuiltClass): number {
  * under vacancy — the months a moved-out suite is dark. Scales with the
  * occupied book, because only occupied space can roll.
  */
-export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
-  return Math.max(0, occupied) * (1 / LEASE_TERM_YR / 12) * reletMonths(k);
+export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): number {
+  return Math.max(0, occupied) * (1 / LEASE_TERM_YR / 12) * reletMonths(k) * reletLag(e, k);
+}
+
+/**
+ * HOW LONG A SUITE SITS DARK DEPENDS ON WHO IS WAITING FOR IT (2026-10-10).
+ * How much else is on the market for its use: availability over natural, not
+ * the cycle's label. Three points tight reads the old expansion's 0.8, nine
+ * points soft the old recession's 1.7; in a tight market the next tenant
+ * signs during the outgoing one's notice period, and it cannot go below
+ * 0.7 of an ordinary turn because make-ready still takes the time it takes.
+ *
+ * This was the player's downtime alone (leasing.ts). The city's stock sat
+ * dark between tenants for a fixed `reletMonths` whatever the market, so its
+ * frictional floor was a constant — 5.4% office, 3.5% shops and flats, 2.5%
+ * sheds — and in 8 worlds x 40 years flats rested exactly on it in ~55% of
+ * months, office 16-64% and sheds 9-38%, while the player's own suites in
+ * the same market re-let 30% faster. One downtime, read by both. In a tight
+ * market the floor now falls to ~0.7 of the ordinary turn: office ~4%, shops
+ * ~2.5%, sheds ~1.8%, flats ~3.2% (where natural sits close to the floor),
+ * against tight-market prints of 3-4% for apartments in 2021-22 and 1-3% for
+ * US industrial in 2021-22.
+ */
+export function reletLag(e: Econ | undefined, k: BuiltClass): number {
+  if (!e) return 1;
+  return Math.max(0.7, Math.min(2.0, 1 + 8 * useGap(e, k)));
 }
 
 /**
@@ -965,7 +989,7 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
  */
 export function residenceVac(e: Econ, k: BuiltClass): number {
   const stk = Math.max(1, e.stock?.[k] ?? 0);
-  return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k)) / stk;
+  return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k, e)) / stk;
 }
 
 /**
@@ -3861,7 +3885,7 @@ export function tickEcon(s: GameState) {
     // has been a suite. Occupied cannot eat either. The hard floor on how
     // fast a market can empty is still the -0.006 × occupied absorb bound;
     // vacancy itself is 1 − occ/stock, allowed to print what the flows did.
-    const inTransit = betweenTenantsSf(e.occupied[k], k);
+    const inTransit = betweenTenantsSf(e.occupied[k], k, e);
     e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(0, housable - inTransit));
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it

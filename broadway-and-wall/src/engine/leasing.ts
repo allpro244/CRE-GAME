@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, labourSlack, payrollGrowth12, useGap } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -1433,7 +1433,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // use: availability over natural, not the cycle's label. Three points
       // tight reads the old expansion's 0.8; nine points soft the old
       // recession's 1.7.
-      const soft = Math.max(0.7, Math.min(2.0, 1 + 8 * useGap(s.econ, dominantUse(rec))));
+      const soft = reletLag(s.econ, dominantUse(rec));
       // Downtime is a property of the SPACE, not the building: a shop relets
       // faster than a floor, and each turns on its own clock.
       const lagFor = (u: BuiltClass | undefined) => reletMonths(u ?? dominantUse(rec));

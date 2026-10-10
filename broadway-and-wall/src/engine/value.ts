@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism, residenceVac } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, RENT_BASE, classIsShort, developerOptimism, residenceVac, concessionTarget, CONC_DEPTH } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -867,7 +867,36 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // Developers chase the trend; the residual does not. developerOptimism
   // already said so and was unused. A jobs shock (spot above rentExp) now
   // underwrites above today's rent, which is how a pipeline overshoots.
-  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
+  // THE BUILDING OPENS INTO THE MARKET AT DELIVERY, NOT TODAY'S (2026-10-09).
+  // Every developer and every construction lender reads the pipeline: space
+  // under construction is vacancy on the day it opens, less whatever the
+  // market absorbs meanwhile. This read today's vacancy and today's
+  // concessions, which in a pinned market stay pinned until the first
+  // deliveries land, so every start in that window underwrote the same
+  // shortage. Measured on industrial (3 worlds x 50 years): each time sheds
+  // finally pencilled, 15-20% of stock started inside five years against a
+  // shortage of ~4.5% of stock, and vacancy went to 15-25% for a decade.
+  // What the market can absorb by delivery is the unhoused queue plus the
+  // tenant base's trend growth over a typical build (18 months), at its own
+  // demand elasticity.
+  const nat = NATURAL_VAC[k];
+  const vacNow = e.cityVac?.[k] ?? nat;
+  const stkNow = Math.max(1, e.stock?.[k] ?? 0);
+  const pipe = Math.max(0, e.pipeline?.[k] ?? 0);
+  // Occupancy as the market publishes it — the vacancy every other line of
+  // this pro forma reads — not a second, separately-kept quantity.
+  const occNow = stkNow * (1 - vacNow);
+  const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
+  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
+  const vac = e.stock?.[k]
+    ? clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1)
+    : vacNow;
+  // ...and the concession package that vacancy will command, against the one
+  // today's vacancy commands. Both read off the same schedule, so with
+  // nothing in the pipeline and nothing to absorb the rent is untouched.
+  const effAt = (1 - CONC_DEPTH * concessionTarget(vac - nat))
+    / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vacNow - nat));
+  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * effAt * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for
   // flats) whatever the market was doing, so the pipeline kept starting into
@@ -876,8 +905,6 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // assumption is the market's, with a margin: untouched up to one and a
   // half times the natural vacancy, then down to half at three times it —
   // at which point nothing pencils, which is what a glut is for.
-  const nat = NATURAL_VAC[k];
-  const vac = e.cityVac?.[k] ?? nat;
   const excess = Math.max(0, vac - 1.5 * nat);
   const leaseUp = Math.max(0.5, 1 - excess / (1.5 * nat));
   const occ = (k === "multifamily" ? 0.95 : 0.90) * leaseUp;

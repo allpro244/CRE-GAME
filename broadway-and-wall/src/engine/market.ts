@@ -924,17 +924,57 @@ export function frictionFloor(k: BuiltClass): number {
 }
 
 /**
- * MONTHS A SUITE SITS BETWEEN TENANTS. Same clock the player's make-ready
- * uses in leasing.ts — a shop relets faster than a floor, a shed faster
- * than either. The city stock has to sit on this clock too, or frictional
- * vacancy is a clamp in one place and a residence time in the other.
+ * MONTHS A SUITE SITS BETWEEN TENANTS IN AN ORDINARY MARKET. Same clock the
+ * player's make-ready uses in leasing.ts — a shop relets faster than a floor,
+ * a shed faster than either. The city stock sits on this clock too, or
+ * frictional vacancy is a clamp in one place and a residence time in the
+ * other.
+ *
+ * FLATS WERE ON THE SHOPS' CLOCK (2026-10-10): three and a half months dark
+ * between households. An apartment turns in about a month — RealPage's "days
+ * vacant" runs ~25-40 through the cycle — with a make-ready of one to two
+ * weeks. The three and a half months had been standing in for the turnover
+ * this model did not have (see TURNOVER_YR): 12.5% of flats turning a year
+ * at 3.5 months and 47% at one month both print ~3.7-3.9% frictional, which
+ * is why the error never showed in the vacancy.
  */
 export function reletMonths(k: BuiltClass): number {
-  return k === "office" ? 5.5 : k === "industrial" ? 2.5 : 3.5;
+  return k === "office" ? 5.5 : k === "industrial" ? 2.5 : k === "multifamily" ? 1.0 : 3.5;
 }
 
-/** Ordinary commercial term. Sector exit and between-tenants both roll on it. */
+/**
+ * THE PART OF A TURN NO QUEUE OF TENANTS CAN SHORTEN — make-ready: paint and
+ * clean a flat (one to two weeks), demise and fit out an office floor for
+ * the next tenant even when the lease is signed before the last one leaves
+ * (~10 weeks for a second-generation suite), re-rack and repair a shed, refit
+ * a shop. Months. The rest of `reletMonths` is search, and search is what a
+ * tight market shortens.
+ */
+const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.4, industrial: 1.0 };
+
+/** Ordinary commercial term. Sector exit rolls on it. */
 export const LEASE_TERM_YR = 8;
+
+/**
+ * THE SHARE OF OCCUPIED SPACE WHOSE TENANT LEAVES IN A YEAR — the flow that
+ * makes frictional vacancy. Commercial space rolls when its lease expires
+ * (one eighth a year on an eight-year term) and only the tenants who do not
+ * renew leave it dark: office renewal runs about 55% of expiring space (CBRE
+ * and JLL lease-expiry studies), shops about 65%, and logistics retention
+ * about 75% (Prologis has reported 70-80% for two decades). Flats are let for
+ * a year and about 47% of households move out of their unit each year (NMHC /
+ * RealPage resident turnover, 2015-2023 range 44-52%).
+ *
+ * This was every expiry treated as a move-out, at one eighth a year for every
+ * class — flats included — which overstated commercial frictional vacancy by
+ * the renewal rate and understated flats' turnover four-fold.
+ */
+const TURNOVER_YR: Record<BuiltClass, number> = {
+  office: (1 / LEASE_TERM_YR) * 0.45,
+  retail: (1 / LEASE_TERM_YR) * 0.35,
+  industrial: (1 / LEASE_TERM_YR) * 0.25,
+  multifamily: 0.47,
+};
 
 /**
  * Space that is standing but not yet a suite: new deliveries in lease-up.
@@ -950,12 +990,57 @@ export function housableStock(e: Econ, k: BuiltClass): number {
 }
 
 /**
- * Expected vacant sf from ordinary turnover × re-let latency. Not a floor
- * under vacancy — the months a moved-out suite is dark. Scales with the
- * occupied book, because only occupied space can roll.
+ * Vacant sf from ordinary turnover × the time a turned suite is dark. Not a
+ * floor under vacancy: the flow of tenants leaving times how long their space
+ * waits, which is how frictional vacancy is defined. Scales with the occupied
+ * book, because only occupied space can roll.
  */
-export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
-  return Math.max(0, occupied) * (1 / LEASE_TERM_YR / 12) * reletMonths(k);
+export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): number {
+  return Math.max(0, occupied) * (TURNOVER_YR[k] / 12) * reletMonths(k) * reletLag(e, k);
+}
+
+/**
+ * HOW LONG A TURNED SUITE WAITS DEPENDS ON WHO IS LOOKING FOR IT (2026-10-10),
+ * as a multiple of an ordinary turn.
+ *
+ * A suite is dark for its make-ready (MAKE_READY_M), which nothing shortens,
+ * and then until a tenant takes it. That second part is search, and search is
+ * a matching process: the rate at which a vacancy meets a tenant rises with
+ * the number of tenants looking per vacancy, with an elasticity of about 0.5
+ * (Petrongolo & Pissarides 2001, constant returns; Wheaton 1990 for office).
+ * Its ordinary length is `reletMonths` at searchers-per-vacancy in balance —
+ * the tenants who are moving anyway, against natural vacancy.
+ *
+ * Searchers are the tenants who are moving this month plus demand the city
+ * is not housing (the looking pool above occupied space); vacancies are the
+ * space not occupied. So a queue of tenants shortens every turn toward its
+ * make-ready, and a glut stretches it.
+ *
+ * This replaces an availability rule shared with the player's leasing desk,
+ * which bounded a turn at 0.7 of ordinary however long the queue — a fixed
+ * floor one level down. Here the floor is the make-ready itself, a physical
+ * time: turnover x make-ready reads ~1.6% for flats, ~1.2% offices, ~0.5%
+ * shops and ~0.2% sheds at an infinite queue, against record lows near 2%
+ * for apartments, 1-3% for primary office in 2000 and 0.6-1% for industrial
+ * (Inland Empire, 2022). Rent rations the queue long before then.
+ *
+ * The glut side is bounded at twice an ordinary turn — searchers per vacancy
+ * at a quarter of balance — which is the old rule's ceiling; past it a suite
+ * is simply vacant, which the vacancy already says.
+ */
+export function reletLag(e: Econ | undefined, k: BuiltClass): number {
+  if (!e?.stock || !e.occupied) return 1;
+  const stk = Math.max(1, e.stock[k] ?? 0);
+  const occ = Math.max(0, e.occupied[k] ?? 0);
+  const nat = NATURAL_VAC[k];
+  const movers = occ * (TURNOVER_YR[k] / 12);
+  const unhoused = Math.max(0, (e.pool?.[k] ?? occ) - occ);
+  const vacant = Math.max(stk * 0.001, housableStock(e, k) - occ);
+  const theta = (movers + unhoused) / vacant;
+  const theta0 = (stk * (1 - nat) * (TURNOVER_YR[k] / 12)) / (stk * nat);
+  const ratio = Math.max(theta, theta0 / 4) / theta0;
+  const d0 = reletMonths(k), dm = Math.min(d0, MAKE_READY_M[k]);
+  return (dm + (d0 - dm) * Math.pow(ratio, -0.5)) / d0;
 }
 
 /**
@@ -965,7 +1050,7 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass): number {
  */
 export function residenceVac(e: Econ, k: BuiltClass): number {
   const stk = Math.max(1, e.stock?.[k] ?? 0);
-  return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k)) / stk;
+  return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k, e)) / stk;
 }
 
 /**
@@ -1793,9 +1878,20 @@ export function tickNation(s: GameState) {
   // months in 2008, then ten years to walk back down — and a symmetric
   // mean-reverting process cannot produce it. Firms fire in weeks and hire
   // over years.
+  // ...AND IT KEEPS FALLING UNTIL SOMETHING ENDS THE EXPANSION (2026-10-10).
+  // The pull aimed at 4.2%, the AVERAGE late-cycle low, and an exponential
+  // approach never reaches its target, so expansions ended with unemployment
+  // at 5.9% on average against 4.7% at US cycle peaks (1948-2020), and only
+  // 20% of them ended under 4.5% (US: half). The lows themselves run to
+  // 3.4-3.8% (1969, 2000, 2019) and 2.5% (1953): a long expansion keeps
+  // drawing people in until the recession comes. Aimed at 3.5%, the national
+  // block alone (40 seeds x 100 years, tools/econprobe/nation.mjs) reads mean
+  // 5.84% / p50 5.3% / p10 3.8% / 38% of months under 4.8%, against the US
+  // 1948-2024 record of 5.7% / 5.5% / 3.9% / ~33%. Was 6.35% / 5.7% / 4.4%
+  // / 25%, which held the nation 1.5 points over its natural rate on average.
   const uMove = inRec
     ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
-    : 0.025 * (0.042 - n.unemp);
+    : 0.025 * (0.035 - n.unemp);
   n.unemp = clamp(n.unemp + uMove
     + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
     + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0.026, 0.26);
@@ -3850,7 +3946,7 @@ export function tickEcon(s: GameState) {
     // has been a suite. Occupied cannot eat either. The hard floor on how
     // fast a market can empty is still the -0.006 × occupied absorb bound;
     // vacancy itself is 1 − occ/stock, allowed to print what the flows did.
-    const inTransit = betweenTenantsSf(e.occupied[k], k);
+    const inTransit = betweenTenantsSf(e.occupied[k], k, e);
     e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(0, housable - inTransit));
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it

@@ -271,6 +271,149 @@ export function streetMargin(s: GameState): number {
   return m;
 }
 
+// ---------------------------------------------------------------- who builds when
+//
+// EVERY FIRM ASKED ONE QUESTION AT ONE MOMENT (2026-10-10). The margin was
+// already each firm's own, but the rest of the decision was the street's: one
+// lender desk set everybody's leverage, so a family office that pays cash
+// stopped the day the banks stopped quoting, and every firm read today's rent
+// the same way. The street turned on and off as one. Real builders differ in
+// the two things that set WHEN they build, not only how much margin they ask:
+//
+// 1. HOW MUCH THEY BORROW. A merchant builder runs a construction loan at
+//    60-75% of cost (bank construction LTC); a REIT builds off a balance sheet
+//    carried at 35-45% debt to assets (Nareit); an open-end core fund runs
+//    ~20-30% (NCREIF ODCE); a family office or an owner-user builds largely
+//    with its own money. A firm that does not need the construction desk can
+//    break ground when the desk is shut — a credit crunch, when crews are idle
+//    and nobody else is building — and is the one counter-cyclical builder a
+//    real town has. The leverage below is each style's ceiling: a firm takes
+//    the lesser of it and what the desk will lend.
+const BUILD_LTC_CAP: Record<RivalStyle, number> = {
+  family: 0.25, owneruser: 0.35, core: 0.30, reit: 0.40, foreign: 0.40,
+  slumlord: 0.60, developer: 0.65, merchant: 0.70, opportunistic: 0.65, pe: 0.65, vulture: 0.50,
+};
+/** Builds out of its own pocket when the construction desk will not lend. */
+const OWN_MONEY_LTC = 0.40;
+export function buildLtcCap(style: RivalStyle): number { return BUILD_LTC_CAP[style] ?? 0.65; }
+export function buildsWithoutBank(style: RivalStyle): boolean { return buildLtcCap(style) <= OWN_MONEY_LTC; }
+//
+// 2. WHAT THEY BELIEVE RENT WILL DO. Surveys of buyers and of developers find
+//    expectations that extrapolate recent growth (Case, Shiller & Thompson
+//    2012; Glaeser & Nathanson 2017), and the boom-bust in investment that
+//    follows when builders extrapolate demand and neglect each other's supply
+//    (Greenwood & Hanson 2015, ship building; the same shape in office
+//    starts). Others build against the cycle: a vulture buys and builds when
+//    rent is below its long-run level and expects it back. Each firm carries
+//    one lean, fixed at founding: +1 extrapolates the last three years of real
+//    rent growth through delivery; -1 expects the gap to the ten-year average
+//    to close at the speed rent gaps close (Wheaton & Torto: about a quarter
+//    of the gap a year). Zero reads today's rent as the desk does. The style
+//    tilts the draw — merchant builders extrapolate, vultures and patient
+//    family money lean the other way — and the rest is the firm. Shape
+//    parameters, stated as such.
+const OUTLOOK_TILT: Partial<Record<RivalStyle, number>> = {
+  merchant: 0.35, developer: 0.25, opportunistic: 0.2, pe: 0.1,
+  family: -0.2, core: -0.1, vulture: -0.5,
+};
+const REVERT_PER_YR = 0.25;
+function idHash(id: string, salt: string): number {
+  let h = 2166136261;
+  const str = id + salt;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  h ^= h >>> 15; h = Math.imul(h, 2246822507); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+/** -1 contrarian .. +1 extrapolator. Fixed by the firm's id; no rng draw. */
+export function firmOutlook(r: { id: string; style: RivalStyle }): number {
+  const lean = (OUTLOOK_TILT[r.style] ?? 0) + (idHash(r.id, ":outlook") - 0.5) * 1.2;
+  return Math.max(-1, Math.min(1, lean));
+}
+/** Real-rent momentum (3-year annualised) and level against the 10-year mean, per class. */
+let rentSigCache: { h: unknown; n: number; sig: Record<BuiltClass, { g: number; dev: number }> } | null = null;
+export function rentSignals(s: GameState): Record<BuiltClass, { g: number; dev: number }> {
+  const h = s.econ.history ?? [];
+  if (rentSigCache && rentSigCache.h === h && rentSigCache.n === h.length) return rentSigCache.sig;
+  const real = (p: (typeof h)[number] | undefined, k: BuiltClass) =>
+    p?.rent?.[k] && (p.cpi ?? 1) > 0 ? p.rent[k] / (p.cpi ?? 1) : NaN;
+  const sig = {} as Record<BuiltClass, { g: number; dev: number }>;
+  for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+    const now = real(h[h.length - 1], k);
+    const then = real(h[h.length - 37], k);
+    const g = Number.isFinite(now) && Number.isFinite(then) && then > 0 ? Math.pow(now / then, 1 / 3) - 1 : 0;
+    let sum = 0, n = 0;
+    for (let i = Math.max(0, h.length - 120); i < h.length; i++) { const v = real(h[i], k); if (Number.isFinite(v)) { sum += v; n++; } }
+    const dev = n >= 36 && Number.isFinite(now) ? now / (sum / n) - 1 : 0;
+    sig[k] = { g: Math.max(-0.15, Math.min(0.15, g)), dev: Math.max(-0.6, Math.min(1.5, dev)) };
+  }
+  rentSigCache = { h, n: h.length, sig };
+  return sig;
+}
+/** What a builder with this lean thinks rent at stabilisation will be, as a multiple of today's. */
+export function outlookMult(s: GameState, r: { id: string; style: RivalStyle }, use: DevUse, months: number): number {
+  return leanMult(s, firmOutlook(r), use, months);
+}
+function leanMult(s: GameState, lean: number, use: DevUse, months: number): number {
+  if (lean === 0) return 1;
+  const k: BuiltClass = use === "mixed" ? "multifamily" : use;
+  const { g, dev } = rentSignals(s)[k];
+  // Delivery plus the first year let.
+  const H = Math.max(1, months / 12 + 1);
+  const m = lean > 0
+    ? Math.pow(1 + lean * g, H)
+    : 1 + (-lean) * (1 / (1 + dev) - 1) * (1 - Math.pow(1 - REVERT_PER_YR, H));
+  return Math.max(0.7, Math.min(1.4, m));
+}
+/** The firm's own hurdle on a plan: its margin, its idle hunger, its read of rent. */
+export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse): number {
+  return hurdleAt(plan, firmMargin(r, s.month)) * outlookMult(s, r, use, plan.months);
+}
+/** Whether this firm would break ground on the plan — financed its own way. */
+export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): boolean {
+  if (!(BUILD_APPETITE[r.style] > 0)) return false;
+  if (!financeable && !buildsWithoutBank(r.style)) return false;
+  return firmHurdle(s, r, plan, use) >= 1;
+}
+//
+// AND THE BUILDERS NOBODY HAS HEARD OF ARE NOT ONE PERSON EITHER. The
+// anonymous merchant — the local contractors and one-building developers who,
+// measured over a century on a Frontier town, lay 89% of all the space the
+// city starts — read the market at the trade margin and with one mind. They
+// are a population, so they carry the population's spread of leans: four
+// builders standing for the quartiles of a distribution centred on reading
+// today's rent as it is. A plan goes ahead when the one it suits best — the
+// optimist in a boom, the bargain hunter in a slump — would build it, which
+// is who builds in a market of differing beliefs (Miller 1977; Harrison &
+// Kreps 1978). How MUCH gets built is still the order book's, not theirs.
+const ANON_LEANS = [-0.6, -0.2, 0.2, 0.6];
+/** The anonymous merchants' best read on a plan; they need the desk. */
+export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): number {
+  if (!financeable) return -Infinity;
+  const base = hurdleAt(plan, DEV_MARGIN);
+  let best = -Infinity;
+  for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months));
+  return best;
+}
+/**
+ * The street's pencil on a plan: the best hurdle any builder in town reads on
+ * it, each with its own margin, outlook and money — or the anonymous
+ * merchants' at the trade margin when the desk will lend. Replaces one margin
+ * applied to everybody (`streetMargin`).
+ */
+export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): number {
+  let best = anonHurdle(s, plan, use, financeable);
+  for (const r of livingRivals(s)) {
+    if (!(BUILD_APPETITE[r.style] > 0)) continue;
+    if (!financeable && !buildsWithoutBank(r.style)) continue;
+    best = Math.max(best, firmHurdle(s, r, plan, use));
+  }
+  return best;
+}
+/** Whether any living firm can build without the construction desk. */
+export function streetHasOwnMoney(s: GameState): boolean {
+  return livingRivals(s).some((r) => BUILD_APPETITE[r.style] > 0 && buildsWithoutBank(r.style));
+}
+
 const BUILD_APPETITE: Record<RivalStyle, number> = {
   // Named builders have to actually build. Appetite used to leave the street
   // claiming ~3% of city jobs — noise, not "the rest" the docstring promised.
@@ -484,10 +627,13 @@ export function claimJob(
   const shared = underwriting
     ? { plan: underwriting, clears: underwriting.ltcMax > 0 }
     : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
-  // Financeable is the street's test; whether the margin is enough is each
-  // firm's own (`firmMargin`), checked runner by runner below.
-  if (!shared?.plan || !(shared.plan.ltcMax > 0)) return null;
+  // Whether the margin is enough, and whether the job needs the bank at all,
+  // is each firm's own (`firmWouldBuild`), checked runner by runner below. A
+  // plan the construction desk will not lend on can still go to a firm that
+  // builds with its own money.
+  if (!shared?.plan) return null;
   const plan = shared.plan;
+  const financeable = plan.ltcMax > 0 && plan.commitment > 0;
   const cost = plan.costTotal;
   const land = plan.landBasis;
   const ltc = plan.ltc;
@@ -514,13 +660,16 @@ export function claimJob(
   // equity", which double-counted the site and left named firms at ~3% of
   // groundbreaks against median land of several million.
   const projectCost = cost + land;
-  const equity = Math.round(projectCost * (1 - ltc));
-  const dayOneEquity = Math.round(equity * 0.40);
+  // Each firm borrows the lesser of what the desk will lend and what its own
+  // style carries (`BUILD_LTC_CAP`); nothing at all when the desk is shut.
+  const ltcOf = (r: Rival) => financeable ? Math.min(ltc, buildLtcCap(r.style)) : 0;
+  const equityOf = (r: Rival) => Math.round(projectCost * (1 - ltcOf(r)));
+  const dayOneOf = (r: Rival) => Math.round(equityOf(r) * 0.40);
 
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
     if (want <= 0) return false;
-    if (hurdleAt(plan, firmMargin(r, s.month)) < 1) return false;
+    if (!firmWouldBuild(s, r, plan, use, financeable)) return false;
     // Jev said no to city work this period.
     if (r.jev && jevHolds(s, r, "claim")) return false;
     const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
@@ -532,8 +681,11 @@ export function claimJob(
     // The firm's own cheque: all of the day-one equity, or a deal-by-deal
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
-    const need = Math.round(dayOneEquity * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.04);
+    const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.04);
     if (r.cash + lineDrawFor(s, parcels, r, need) < need) return false;
+    // A firm building mostly with its own money has to HAVE it: the whole of
+    // its equity, called or callable, not only the first draw.
+    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShare(r.style)) return false;
     // Named builders should claim a real share of the pipeline. Near the
     // player is still hotter (comp + tenant risk), but far sites are no longer
     // a coin-flip against a 0.5× haircut that left them at ~3%.
@@ -545,10 +697,12 @@ export function claimJob(
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
   for (const r of runners) {
-    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, dayOneEquity * sponsorShare(r.style))) * (0.6 + rng(s, "rivals") * 0.8);
+    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, dayOneOf(r) * sponsorShare(r.style))) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
 
+  const dayOneEquity = dayOneOf(best);
+  const bestLtc = ltcOf(best);
   drawLine(best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000, best.cash * 0.04)));
   best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
   best.basis = Math.round((best.basis ?? 0) + land);
@@ -562,14 +716,24 @@ export function claimJob(
     // leaving a multi-million equityLeft balance orphaned every claimed job
     // once sponsor cash ran dry before the loan ever advanced (debt stayed 0).
     job.spent = dayOneEquity;
-    job.equityLeft = 0;
     job.debt = 0;
-    // Facility covers the unpaid balance plus a thin interest reserve — without
-    // it, capitalised interest fills the commitment and the next month orphans
-    // a nearly finished frame.
-    job.commitment = Math.round(Math.max(0, projectCost - dayOneEquity) * 1.12);
-    job.ratePct = plan.ratePct;
-    job.lender = plan.lender;
+    if (bestLtc < ltc) {
+      // BUILT WITH ITS OWN MONEY, OR MOSTLY. The firm pays its equity as the
+      // work goes in and borrows only its own style's share — none at all
+      // when it went ahead with the desk shut.
+      job.equityLeft = Math.max(0, equityOf(best) - dayOneEquity);
+      job.commitment = Math.round(projectCost * bestLtc * 1.12);
+      job.ratePct = bestLtc > 0 ? plan.ratePct : 0;
+      job.lender = bestLtc > 0 ? plan.lender : undefined;
+    } else {
+      job.equityLeft = 0;
+      // Facility covers the unpaid balance plus a thin interest reserve — without
+      // it, capitalised interest fills the commitment and the next month orphans
+      // a nearly finished frame.
+      job.commitment = Math.round(Math.max(0, projectCost - dayOneEquity) * 1.12);
+      job.ratePct = plan.ratePct;
+      job.lender = plan.lender;
+    }
   }
   s.news.unshift({
     q: s.month, kind: "event",
@@ -1040,10 +1204,33 @@ function rosterFor(s: GameState): typeof FIRMS {
   }
   // A town with four landlords is not a market. If the draw thinned the field
   // too far, take the population as it stands — still sized to this island.
-  return out.length >= floor ? out : pool.map((f) => ({
+  const field = out.length >= floor ? out : pool.map((f) => ({
     ...f,
     equity: Math.round(f.equity * area / 100_000) * 100_000,
   }));
+  // A BIGGER ISLAND HAS MORE LANDLORDS, NOT RICHER ONES ONLY (2026-10-10).
+  // The roster was ~30 firms on every map and only their cheques scaled. Deal
+  // flow — what a firm count answers to (DEPLOY_YR) — goes with the stock,
+  // so a Metro or Giant map opens with more shops: the field times the
+  // square root of the area, the rest of the gap left for entry to fill as
+  // the tape shows it. Maps at or under the standard city draw nothing here
+  // and open exactly as they did.
+  if (area > 1) {
+    const extra = Math.round(field.length * (Math.sqrt(area) - 1));
+    const used = new Set(field.map((f) => f.name));
+    for (let i = 0; i < extra; i++) {
+      const fresh = NEW_FIRMS.filter((f) => !used.has(f.name));
+      const f = fresh.length ? fresh[Math.floor(rng(s, "rivals") * fresh.length)] : coinFirm(s, used);
+      if (!f) break;
+      used.add(f.name);
+      field.push({
+        name: f.name, style: f.style,
+        equity: Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * area / 100_000) * 100_000,
+        ltv: +(STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88, "rivals")).toFixed(3),
+      });
+    }
+  }
+  return field;
 }
 
 export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): Rival[] {
@@ -1679,7 +1866,7 @@ const DEPLOY_YR = 2;
  * Exported so `pnpm firms` can assert the raise is still able to say no.
  */
 export function firmEntryPitch(s: GameState): {
-  leverage: number; product: number; thin: number; pitch: number; traded: number; firms: number;
+  leverage: number; product: number; thin: number; pitch: number; traded: number; firms: number; slots: number;
 } {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
@@ -1694,7 +1881,10 @@ export function firmEntryPitch(s: GameState): {
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
   const pitch = Math.min(1, leverage * product * thin);
-  return { leverage, product, thin, pitch, traded, firms };
+  // How many shops the tape carries that the town does not have: the year's
+  // product at DEPLOY_YR a shop, less the shops standing.
+  const slots = Math.max(0, traded / DEPLOY_YR - firms);
+  return { leverage, product, thin, pitch, traded, firms, slots };
 }
 
 function styleFromFounderRole(role: FounderBid["role"]): RivalStyle {
@@ -1771,8 +1961,19 @@ function tickRivalSpinouts(s: GameState) {
   }
 }
 
+// ONE SPONSOR AT A TIME WAS A QUEUE THE BUSINESS DOES NOT HAVE (2026-10-10).
+// The hazard was pitch / RAISE_M: at most one first close every fourteen
+// months however many shops the tape could carry. Measured over a century on
+// a Frontier town, no player: the tape traded 27-47 deeds and starts a year —
+// product for 14-23 shops at DEPLOY_YR — while the street fell from 28 firms
+// to 6-9 and stayed there for fifty years, product saturated (1.0) in every
+// sampled year from year 30 on. Firms failing were not being replaced. Every
+// open slot is somebody pitching LPs at the same time, so the hazard is the
+// pitch times the slots open, each at the fourteen-month raise — still zero
+// on an empty tape, a shut credit market or a crowded street, and still
+// lagging a bust, because the leverage term closes in one.
 function maybeNewFirm(s: GameState) {
-  const { leverage, product, pitch } = firmEntryPitch(s);
+  const { leverage, product, pitch, slots } = firmEntryPitch(s);
   const streetOpen = leverage > 0 && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
@@ -1790,7 +1991,7 @@ function maybeNewFirm(s: GameState) {
 
   if (!streetOpen) return;
 
-  if (rng(s, "rivals") > pitch / RAISE_M) {
+  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M)) {
     // Not this month. Founders keep the slot and try again — a single roll
     // must not erase a career. Only the window expiring sends them elsewhere.
     if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {

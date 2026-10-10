@@ -23,7 +23,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, hurdleAt, streetMargin } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
@@ -921,6 +921,7 @@ export function refreshDevelopmentFeasibility(
   const LAND_N = 96;
   const REDEV_N = 72;
   const infillRatios: number[] = [];
+  const ownMoney = streetHasOwnMoney(s);
   const chosen = new Set<string>();
   // nothing in this pass builds, demolishes or merges, so the cornice of a
   // block is the same number every time it is asked
@@ -1000,10 +1001,11 @@ export function refreshDevelopmentFeasibility(
         let h = -Infinity;
         for (const fl of schemeFloorLadder(use, floors)) {
           const ui = underwriteDevelopment(s, parcels, bbl, use, fl, plate);
-          if (!ui?.financeable) continue;
-          // The pencil the order book reads is the street's — the most lenient
-          // margin among firms that build (`streetMargin`), not only the merchant's.
-          const hi = hurdleAt(ui.plan, streetMargin(s));
+          if (!ui || (!ui.financeable && !ownMoney)) continue;
+          // The pencil the order book reads is the street's — the best read
+          // any builder in town takes of it, each on its own margin, outlook
+          // and money (`streetHurdle`), not only the merchant's.
+          const hi = streetHurdle(s, ui.plan, use, ui.financeable);
           if (hi > h) { h = hi; u = ui; }
         }
         // Only clearing pencils. Pushing appetite-zero failures from densify
@@ -4002,7 +4004,7 @@ function startCityJob(
     if (!target) for (const k of BUILT_CLASSES) { const a = owedBook?.[k] ?? 0; if (a > amt) { amt = a; target = k; } }
     if (target) {
       const plate = cityCoverage(target);
-      const margin = streetMargin(s);
+      const ownMoney = streetHasOwnMoney(s);
       // THE DIRT THAT COSTS MOST TO HOLD EMPTY GETS BUILT FIRST (2026-10-10).
       // Each sampled lot gets its best height within the order, and the crane
       // goes to a lot that clears with odds in proportion to the value of the
@@ -4032,8 +4034,8 @@ function startCityJob(
           // order is space nobody asked for; see the cap below the desk.
           if (fl > 1 && c.rec.lotArea * plate * fl > amt) continue;
           const u = underwriteDevelopment(s, parcels, c.bbl, target, fl, plate);
-          if (!u?.financeable) continue;
-          const h = hurdleAt(u.plan, margin);
+          if (!u || (!u.financeable && !ownMoney)) continue;
+          const h = streetHurdle(s, u.plan, target, u.financeable);
           // Within a lot, the most building that still pays: the order is
           // for feet.
           if (h >= 1 && fl > bestFl) { bestFl = fl; bestH = h; }
@@ -4144,8 +4146,8 @@ function startCityJob(
     let bestH = -Infinity, bestFl = floors;
     for (const fl of schemeFloorLadder(lead, floors)) {
       const ui = underwriteDevelopment(s, parcels, bbl, use, fl, plate);
-      if (!ui?.financeable) continue;
-      const hi = hurdleAt(ui.plan, streetMargin(s));
+      if (!ui || (!ui.financeable && !streetHasOwnMoney(s))) continue;
+      const hi = streetHurdle(s, ui.plan, use, ui.financeable);
       // Ties go to the bigger building: the market ordered feet.
       if (hi > bestH + 1e-9 || (Math.abs(hi - bestH) <= 1e-9 && fl > bestFl)) { bestH = hi; bestFl = fl; }
     }
@@ -4174,12 +4176,15 @@ function startCityJob(
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
   // financing, lease-up reserve, NOI and required margin the player sees.
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, entitleBasis);
-  // The anonymous merchant builds at the trade's margin. Below it, the job
-  // goes ahead only if a firm whose own margin it clears takes it (firmMargin
-  // in rivals.ts) — otherwise it is unwound below.
-  const merchantOk = !!underwriting?.clears;
-  if (!underwriting || !underwriting.financeable) return false;
-  if (!merchantOk && (opts?.backdate || hurdleAt(underwriting.plan, streetMargin(s)) < 1)) return false;
+  // The anonymous merchants build at the trade's margin, each on its own read
+  // of rent (`anonHurdle`). Below that, the job goes ahead only if a named
+  // firm that would build it takes it (`firmWouldBuild` in rivals.ts) —
+  // otherwise it is unwound below.
+  const merchantOk = !!underwriting && anonHurdle(s, underwriting.plan, use, underwriting.financeable) >= 1;
+  // A plan the desk will not lend on can still be built by a firm with its
+  // own money; claimJob decides who, and the start unwinds if nobody does.
+  if (!underwriting) return false;
+  if (!merchantOk && (opts?.backdate || streetHurdle(s, underwriting.plan, use, underwriting.financeable) < 1)) return false;
   const plan = underwriting.plan;
   sf = plan.sf;
   floors = plan.floors;

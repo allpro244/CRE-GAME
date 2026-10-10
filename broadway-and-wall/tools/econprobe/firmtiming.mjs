@@ -34,7 +34,7 @@ for (let m = 0; m < HZ; m++) {
     const p = E.firmEntryPitch(g);
     const live = (g.rivals ?? []).filter((r) => r.failedM === undefined);
     const st = {}; for (const r of live) st[r.style] = (st[r.style] ?? 0) + 1;
-    years.push({ y: (m + 1) / 12, ovac: +(g.econ.cityVac?.office ?? 0).toFixed(3), firms: live.length, styles: st, traded: p.traded, lev: +p.leverage.toFixed(2), prod: +p.product.toFixed(2), pitch: +p.pitch.toFixed(2),
+    years.push({ y: (m + 1) / 12, ovac: +(g.econ.cityVac?.office ?? 0).toFixed(3), mvac: +(g.econ.cityVac?.multifamily ?? 0).toFixed(3), u: +((g.econ.unemployment ?? 0) * 100).toFixed(1), firms: live.length, styles: st, traded: p.traded, lev: +p.leverage.toFixed(2), prod: +p.product.toFixed(2), pitch: +p.pitch.toFixed(2),
       phase: g.econ.phase, ci: +(g.econ.creditIdx ?? 1).toFixed(2), pop: Math.round(g.econ.population ?? 0) });
   }
   if (m % 120 === 119) process.stderr.write(`year ${(m + 1) / 12} ${((Date.now() - t0) / 1000).toFixed(0)}s firms ${years.at(-1).firms}\n`);
@@ -55,5 +55,6 @@ for (const y of years.filter((y) => y.y % 10 === 0)) console.log(`y${y.y} firms 
 const fb = buys.filter((b) => b.firm);
 console.log(`trades ${buys.length} (${(buys.length / (HZ / 12)).toFixed(1)}/yr)  firm buys ${fb.length}  off-market ${fb.filter((b) => b.off).length} (${(100 * fb.filter((b) => b.off).length / Math.max(1, fb.length)).toFixed(0)}% of firm buys; from private holders ${fb.filter((b) => b.off && !b.sellerFirm).length})  all off-market ${buys.filter((b) => b.off).length}`);
 console.log(`office vacancy, year-end: max ${(Math.max(...years.map((y) => y.ovac)) * 100).toFixed(1)}%  years over 20%: ${years.filter((y) => y.ovac > 0.2).length}`);
+console.log(`flats vacancy, year-end: max ${(Math.max(...years.map((y) => y.mvac)) * 100).toFixed(1)}%  years over 10%: ${years.filter((y) => y.mvac > 0.1).length}   unemployment max ${Math.max(...years.map((y) => y.u))}%  pop y50 ${years[49]?.pop} y100 ${years.at(-1).pop}`);
 console.log(`office cap swing: ${g.econ.capRate.office}`);
 if (process.env.OUT) writeFileSync(process.env.OUT, JSON.stringify({ starts, years }));

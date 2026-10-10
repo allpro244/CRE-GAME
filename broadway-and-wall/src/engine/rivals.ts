@@ -370,9 +370,9 @@ function leanMult(s: GameState, lean: number, use: DevUse, months: number): numb
     : 1 + (-lean) * (1 / (1 + dev) - 1) * (1 - Math.pow(1 - REVERT_PER_YR, H));
   return Math.max(0.7, Math.min(1.4, m));
 }
-/** The firm's own hurdle on a plan: its margin, its idle hunger, its read of rent. */
-export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse): number {
-  return hurdleAt(plan, firmMargin(r, s.month)) * outlookMult(s, r, use, plan.months);
+/** The firm's own hurdle on a plan: its margin, its idle hunger, and (unless asked not to) its read of rent. */
+export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, withOutlook = true): number {
+  return hurdleAt(plan, firmMargin(r, s.month)) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
 }
 /** Whether this firm would break ground on the plan — financed its own way. */
 export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): boolean {
@@ -393,9 +393,10 @@ export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: numb
 // Kreps 1978). How MUCH gets built is still the order book's, not theirs.
 const ANON_LEANS = [-0.6, -0.2, 0.2, 0.6];
 /** The anonymous merchants' best read on a plan; they need the desk. */
-export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): number {
+export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true): number {
   if (!financeable) return -Infinity;
   const base = hurdleAt(plan, DEV_MARGIN);
+  if (!withOutlook) return base;
   let best = -Infinity;
   for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months));
   return best;
@@ -405,13 +406,21 @@ export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: n
  * it, each with its own margin, outlook and money — or the anonymous
  * merchants' at the trade margin when the desk will lend. Replaces one margin
  * applied to everybody (`streetMargin`).
+ *
+ * `withOutlook = false` is the desk's read — every builder's own margin and
+ * money, today's rent for all of them — and it is what the ORDER BOOK sizes
+ * against (`refreshDevelopmentFeasibility`). The first cut sized the book on
+ * the most optimistic builder's read, so optimism set how MUCH the town
+ * built and not only who moved first: one 100-year Frontier run took flats
+ * stock 70% higher in a decade and flats vacancy to 42%. Beliefs decide which
+ * site clears this month and who builds it; demand decides the quantity.
  */
-export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): number {
-  let best = anonHurdle(s, plan, use, financeable);
+export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true): number {
+  let best = anonHurdle(s, plan, use, financeable, withOutlook);
   for (const r of livingRivals(s)) {
     if (!(BUILD_APPETITE[r.style] > 0)) continue;
     if (!financeable && !buildsWithoutBank(r.style)) continue;
-    best = Math.max(best, firmHurdle(s, r, plan, use));
+    best = Math.max(best, firmHurdle(s, r, plan, use, withOutlook));
   }
   return best;
 }

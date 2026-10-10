@@ -1003,9 +1003,10 @@ export function refreshDevelopmentFeasibility(
           const ui = underwriteDevelopment(s, parcels, bbl, use, fl, plate);
           if (!ui || (!ui.financeable && !ownMoney)) continue;
           // The pencil the order book reads is the street's — the best read
-          // any builder in town takes of it, each on its own margin, outlook
-          // and money (`streetHurdle`), not only the merchant's.
-          const hi = streetHurdle(s, ui.plan, use, ui.financeable);
+          // any builder in town takes of it, each on its own margin and money
+          // (`streetHurdle`), at today's rent: outlooks pick the moment, not
+          // the quantity.
+          const hi = streetHurdle(s, ui.plan, use, ui.financeable, false);
           if (hi > h) { h = hi; u = ui; }
         }
         // Only clearing pencils. Pushing appetite-zero failures from densify

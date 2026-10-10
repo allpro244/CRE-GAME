@@ -66,6 +66,7 @@ export const DESKS: readonly Desk[] = [
       { page: "economy", label: "Economy", note: "Cycle, space markets and construction" },
       { page: "research", label: "Research", note: "Comps, submarkets, rivals and owners" },
       { page: "news", label: "News", note: "What the city wrote this month" },
+      { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
     ],
   },
   {

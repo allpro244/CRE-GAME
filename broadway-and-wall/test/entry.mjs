@@ -62,6 +62,8 @@ export const MODULES = [
   "owners",
   // offmarket is the firms' acquisitions desks: the calls they make to holders who have not listed.
   "offmarket",
+  // peers is the league table: real US cities, read relative to the US and laid on this game's nation.
+  "peers",
   // ownership is the merged view over both registers — every deed in town, its
   // owner, and that owner's balance sheet and income statement.
   "ownership",

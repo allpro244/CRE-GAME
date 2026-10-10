@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -1030,7 +1030,7 @@ export function refreshDevelopmentFeasibility(
     redevCount++;
     // Same basis tickTeardowns uses: the higher of the land and the building
     // as it stands (+ demo in plan).
-    const opp = Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, gradeOf(s, rec)));
+    const opp = redevelopmentBasis(rec, s.econ, gradeOf(s, rec));
     for (const use of BUILT_CLASSES) {
       if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
       const plate = cityCoverage(use);
@@ -3120,6 +3120,29 @@ const TYPICAL_SF = 26_000;
  * `structTight` alone missed the other seeds: vacancy on the rail with a
  * full book but employment-gap under 0.06. Either instrument is enough.
  */
+/**
+ * WHAT A REDEVELOPMENT GIVES UP (2026-10-10): the standing building as a
+ * building — its income, capitalised — or, where no builder can use the dirt,
+ * what a holder would pay for it. Not the land's builder residual.
+ *
+ * This was max(land value, asset value). A standing building's asset value is
+ * floored at its land value, and where a builder wins the auction that land
+ * value IS the residual of the best new building on the vacant lot, the
+ * developer's margin already taken. So a replacement was charged its own value
+ * as the price of the site, then the demolition on top, and read just under
+ * its hurdle on exactly the lots that most needed redeveloping: cheap old
+ * buildings on dear land. Measured on a 100-year Frontier town: in the ring
+ * 300-450 m from the towers, 141-167 buildings of two storeys or less stood
+ * on land priced at $1,700-5,900/sf with a 13-floor allowance, at year 100.
+ * The redevelopment pays when the new building is worth more than the old
+ * one plus the cost of clearing it, which is the teardown test in life.
+ */
+function redevelopmentBasis(rec: NonNullable<ReturnType<typeof resolveRec>>, e: Econ, grade: ReturnType<typeof gradeOf>): number {
+  const asBuilding = incomeValueAsIs(rec, e, grade);
+  const lr = landRead(rec, e);
+  return lr.winner === "builder" ? asBuilding : Math.max(asBuilding, lr.psf * rec.lotArea);
+}
+
 function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
   if (vac > frictionFloor(k) + slack) return false;
@@ -3276,6 +3299,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     opportunityCost: number; plan: DevPlan;
   }[] = [];
 
+  let examinedRedev = 0;
   for (const cand of pool) {
     const rec = cand.rec;
     let nextUse = cand.probeUse;
@@ -3327,106 +3351,47 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // the entire reason the old building came down — and it is bound by the same
     // cornice datum and per-use floor caps every other city job respects, so a
     // three-storey town does not sprout a tower on one cleared lot.
-    const farMax = farMaxFor(rec);
-    // A redevelopment goes bigger than what it replaced — that is the arithmetic
-    // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
-    // QUESTION, and the first cut of this did not ask it. It took 45-80% of the
-    // envelope unconditionally, so every teardown added floor area whether or
-    // not anybody wanted the space. Measured: the city grew its floor area
-    // ~50% in fifty years regardless of vacancy, and sim:accept F went bimodal —
-    // office rent at year 50 landed anywhere from $34 to $505 across seven
-    // seeds, because in half the runs the supply response ran away from demand
-    // and real rents fell 3-5% a year for half a century.
+    void farMaxFor;
+    // HOW MUCH BIGGER IS A MARKET QUESTION. An unconditional 45-80% of the
+    // envelope once grew the city's floor area ~50% in fifty years whatever
+    // the vacancy (office rent at year 50 anywhere from $34 to $505 across
+    // seven seeds). A share read off vacancy replaced it; the replacement
+    // below answers the same question through the pro forma itself, which
+    // prices a glut in effective rent and lease-up, so a building into slack
+    // does not clear.
+    // THE REPLACEMENT IS THE BEST BUILDING THE SITE WILL TAKE (2026-10-10),
+    // not a use rolled off the zoning table's programme mix and sized as a
+    // share of the envelope. A redeveloper asks what pays most here — every
+    // use the zoning hosts, at every height on the shared ladder that adds at
+    // least 8% to what stands — and builds that, if anything clears.
     //
-    // Nobody builds fifty per cent more space into a glut. A developer facing
-    // slack takes the smallest building that justifies clearing the site — or
-    // walks — and the same site in a shortage gets the full envelope. So the
-    // share is read off how far this class's vacancy sits from its natural
-    // rate, which is the same signal the rest of the pipeline already uses.
-    //
-    // These two are SHAPE PARAMETERS and, per CLAUDE.md, they get to say which.
-    // The elasticity (7) is anchored on how hard real starts respond to slack:
-    // about five points of vacancy above natural roughly halves them, and ten
-    // points very nearly stops them — 1 - 7*slack reads 0.65 and 0.30 at those
-    // two points, which is the right shape. The 0.30 floor is the smallest
-    // building that still justifies mobilising a site at all. Neither was
-    // iterated against a test: they were chosen once from that anchor. What DID
-    // come from measurement is that the previous unconditional 0.45-0.80 share
-    // was wrong, and the evidence is in the paragraph above.
-    const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
-    const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
-    const shareFloor = leadShort ? 0.55 : 0.30;
-    const share = shareFloor + (0.80 - shareFloor) * appetite * (0.75 + shareJitter * 0.5);
-    let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
-    const plate = cityCoverage(nextUse);
-    let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * plate)));
-    const infill = cityInfillCap(s, parcels, rec, lead);
-    const wantedFl = nfl;   // what the envelope asked for, before the cornice
-    if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100); }
-    const ucap = MAX_FLOORS_BY_USE[nextUse];
-    if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100); }
-    if (leadShort && nsf < oldSf * 1.12) {
-      const needFl = Math.min(
-        infill,
-        ucap ?? infill,
-        Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * plate)),
-      );
-      if (needFl > nfl) {
-        nfl = needFl;
-        nsf = Math.max(3000, Math.round((rec.lotArea * plate * nfl) / 100) * 100);
-      }
-      if (nsf < oldSf * 1.08) continue;
-    }
-
-    // TWO HURDLES, BECAUSE THEY ARE TWO DECISIONS.
-    //
-    // A merchant densifies: YoC on the land-inclusive basis must clear exit ×
-    // (1 + DEV_MARGIN). An owner replacing a husk already owns the dirt —
-    // yieldOnCostExLand ≥ exit, no developer profit. `appetite` is zero when
-    // the merchant test fails, so recycle must not read it.
-    // Unowned fabric only (player / named firms skipped above). Land is the
-    // opportunity cost; demo is inside the shared plan. Rival-owned densify
-    // keeps the discounted as-is bid in startOwnJob.
-    // WHAT IS SACRIFICED IS THE BUILDING, NOT JUST THE DIRT (2026-10-09). This
-    // charged land value alone, which is the right basis only for a husk. A
-    // site's owner sells to whoever pays most: the redeveloper must beat the
-    // building's value AS IT STANDS (income capitalised, at its condition) or
-    // the land's residual, whichever is higher. That one number is what
-    // spares a sound young building and condemns an obsolete one.
-    const opportunityCost = Math.max(landValue(rec, e), assetValue(rec, e, gradeOf(s, rec)));
-    // ...AND A REPLACEMENT CAN BUY HEIGHT TOO. The greenfield and rival paths
-    // could go over the cornice by paying for the permission and this one
-    // could not, which would have made a teardown the one trade in the city
-    // that still met a wall. Same rule: the taller scheme stands only if it
-    // clears the same hurdle carrying the premium, and the premium ADDS to
-    // the opportunity cost of what is standing rather than replacing it.
-    let densifyBasis = opportunityCost;
-    {
-      const ceilFl = ucap !== undefined ? Math.min(wantedFl, ucap) : wantedFl;
-      if (ceilFl > nfl) {
-        const tallSf = Math.max(3000, Math.round((rec.lotArea * plate * ceilFl) / 100) * 100);
-        const premium = entitlementPremium(ceilFl, infill, tallSf, opportunityCost, e.costIdx ?? 1);
-        const tall = premium > 0
-          ? underwriteDevelopment(s, parcels, bbl, nextUse, ceilFl, plate, opportunityCost + premium)
-          : null;
-        if (tall?.clears) { nfl = ceilFl; nsf = tallSf; densifyBasis = opportunityCost + premium; }
+    // Measured on a 100-year Frontier town over its first 50 years: 6,897
+    // replacement plans examined, 2 approved, the rejected ones at a median
+    // hurdle of 0.43 — while vacant lots in the same ring cleared at 1.6-2.8
+    // on free land. The rolled use was often a class in glut and the share-
+    // of-envelope height was rarely the one that pays, so the two-storey
+    // fabric around the towers (141-168 buildings in the ring 300-450 m out,
+    // on land at $1,700-15,000/sf) stood for a century. Ten candidates a
+    // pass, in the order of the teardown score above.
+    if (examinedRedev++ >= 10) break;
+    const opportunityCost = redevelopmentBasis(rec, e, gradeOf(s, rec));
+    let bestU: ReturnType<typeof underwriteDevelopment> = null;
+    for (const k of BUILT_CLASSES) {
+      if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
+      const plate = cityCoverage(k);
+      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, rec, k), maxFloorsFor(rec, plate, k)));
+      for (const fl of schemeFloorLadder(k, env)) {
+        if (rec.lotArea * plate * fl < oldSf * 1.08) continue;
+        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost);
+        if (!u?.clears) continue;
+        if (!bestU || u.plan.hurdleRatio > bestU.plan.hurdleRatio) { bestU = u; nextUse = k; lead = k; }
       }
     }
-    const underwriting = underwriteDevelopment(
-      s, parcels, bbl, nextUse, nfl, plate, densifyBasis,
-    );
-    if (!underwriting) continue;
-    // ONE TEST: the replacement clears the common hurdle carrying the full
-    // value of what it replaces. The owner-recycle second test (ex-land YoC
-    // over exit cap, for buildings 60+) and the coin-flip gates (0.62-0.88 x
-    // appetite) are gone — the first double-counted the owner's dirt as free,
-    // the second was a volume dial.
-    if (!underwriting.clears) continue;
-    void teardownRoll;
-    const plan = underwriting.plan;
-    nsf = plan.sf;
-    nfl = plan.floors;
-    if (leadShort && nsf < oldSf * 1.05) continue;
+    if (!bestU) continue;
+    void teardownRoll; void shareJitter; void stood; void stoodAge; void leadShort;
+    const plan = bestU.plan;
+    const nsf = plan.sf;
+    const nfl = plan.floors;
     chosen.push({
       rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
       opportunityCost, plan,
@@ -4038,21 +4003,52 @@ function startCityJob(
     if (target) {
       const plate = cityCoverage(target);
       const margin = streetMargin(s);
-      let bestH = -Infinity;
+      // THE DIRT THAT COSTS MOST TO HOLD EMPTY GETS BUILT FIRST (2026-10-10).
+      // Each sampled lot gets its best height within the order, and the crane
+      // goes to a lot that clears with odds in proportion to the value of the
+      // dirt sitting idle on it.
+      //
+      // Ranking by hurdle was ranking noise: land prices itself at the
+      // builder's residual, so at market land every lot a builder can use
+      // reads ~1.0 and the tie-break ("ties go to the bigger building") sent
+      // every crane to the core lot with the tallest envelope — towers of
+      // 15-19 floors downtown while the ring 300-450 m out (land $5,900/sf, a
+      // 13-floor allowance, 22 of 38 vacant lots clearing) stayed 167
+      // two-storey buildings and 38 empty lots (100-year Frontier town).
+      // Drawing evenly among lots that clear was tried next and scattered
+      // building outward: 95 vacant lots within 450 m of the towers at year
+      // 100, against 54. A developer is indifferent between sites once the
+      // land has absorbed the surplus; the OWNER is not. Empty land earns
+      // nothing and pays tax on its value, so the pressure to build or sell
+      // rises with what the dirt is worth — which is why a growing city fills
+      // in outward from its core and the edge can wait.
+      const clearing: { c: (typeof sampled)[number]; floors: number; w: number }[] = [];
       for (const c of sampled) {
         if (!zonePermits(c.rec.zoneDist, target, c.rec.demandScore, s.econ)) continue;
         const env = Math.max(1, Math.min(cityInfillCap(s, parcels, c.rec, target), maxFloorsFor(c.rec, plate, target)));
+        let bestH = -Infinity, bestFl = 0;
         for (const fl of schemeFloorLadder(target, env)) {
+          // THE MARKET ORDERED SO MANY FEET (2026-10-10). A scheme past the
+          // order is space nobody asked for; see the cap below the desk.
+          if (fl > 1 && c.rec.lotArea * plate * fl > amt) continue;
           const u = underwriteDevelopment(s, parcels, c.bbl, target, fl, plate);
           if (!u?.financeable) continue;
           const h = hurdleAt(u.plan, margin);
-          if (h > bestH + 1e-9 || (Math.abs(h - bestH) <= 1e-9 && forced && fl > forced.floors)) {
-            bestH = h; best = c; forced = { use: target, floors: fl, plate };
-          }
+          // Within a lot, the most building that still pays: the order is
+          // for feet.
+          if (h >= 1 && fl > bestFl) { bestFl = fl; bestH = h; }
+          else if (bestFl === 0 && h > bestH) bestH = h;
         }
+        if (bestFl > 0) clearing.push({ c, floors: bestFl, w: Math.max(1, landValue(c.rec, s.econ)) });
+      }
+      if (clearing.length) {
+        const total = clearing.reduce((a, x) => a + x.w, 0);
+        let r = rng(s, "dev") * total, pickC = clearing[clearing.length - 1];
+        for (const x of clearing) { r -= x.w; if (r <= 0) { pickC = x; break; } }
+        best = pickC.c;
+        forced = { use: target, floors: pickC.floors, plate };
       }
       // Nothing in the sample pays: the order waits for rent, or expires.
-      if (!(bestH >= 1)) forced = null;
     }
   }
   if (!best) return false;
@@ -4156,6 +4152,23 @@ function startCityJob(
     if (bestFl !== floors) {
       floors = bestFl;
       sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
+    }
+  }
+  // A CRANE BUILDS WHAT THE MARKET ORDERED, NOT WHAT THE LOT CAN HOLD
+  // (2026-10-10). The order book is the space the market asked for; once the
+  // start path could take a lot's best height, nothing tied the building to
+  // the order, and a tall scheme on a big lot delivered several times what
+  // was owed. Measured on a 100-year Frontier town (~1.7M sf of office at the
+  // opening): a single 909,600 sf office tower, and office stock doubling
+  // from 3.8M to 7.5M sf in ten years while vacancy ran 30-39%. A developer
+  // sizes a spec building to the absorption it can see, so the building is
+  // capped at what is owed for its use — one storey is always allowed.
+  {
+    const owedLead = Math.max(0, owedBook?.[lead] ?? 0);
+    const oneFloor = rec.lotArea * plate;
+    if (entitleBasis === undefined && sf > Math.max(owedLead, oneFloor)) {
+      floors = Math.max(1, Math.floor(Math.max(owedLead, oneFloor) / Math.max(1, oneFloor)));
+      sf = Math.max(3000, Math.round((oneFloor * floors) / 100) * 100);
     }
   }
   // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,

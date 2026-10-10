@@ -26,7 +26,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, classIsShort } from "./market";
-import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
+import { resolveRec, landValue, landRead, landPsfNow, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
 import { districtLabelOf } from "./mix";
@@ -201,25 +201,28 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const isUp = rng(s) < up;
   const step = isUp ? rrange(s, 1.12, 1.45) : rrange(s, 0.86, 0.96);
   const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);
-  if (Math.abs(next - cur) < 0.02) return;
-  s.zoneAdj[dist] = +next.toFixed(3);
-  if (!s.zoneLog) s.zoneLog = {};
-  s.zoneLog[dist] = { m: s.month, dir: isUp ? 1 : -1, adj: s.zoneAdj[dist] };
+  // The envelope moves only if the step is worth recording; the use map
+  // below is the same hearing and runs either way.
+  if (Math.abs(next - cur) >= 0.02) {
+    s.zoneAdj[dist] = +next.toFixed(3);
+    if (!s.zoneLog) s.zoneLog = {};
+    s.zoneLog[dist] = { m: s.month, dir: isUp ? 1 : -1, adj: s.zoneAdj[dist] };
 
-  // Land reprices the day it passes, because the envelope IS the land value.
-  for (const bbl of bbls) {
-    if (parcels[bbl]?.district !== dist) continue;
-    s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * (isUp ? 1 + (step - 1) * 0.45 : 1 - (1 - step) * 0.4));
+    // Land reprices the day it passes, because the envelope IS the land value.
+    for (const bbl of bbls) {
+      if (parcels[bbl]?.district !== dist) continue;
+      s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * (isUp ? 1 + (step - 1) * 0.45 : 1 - (1 - step) * 0.4));
+    }
+    const yours = Object.keys(s.holdings).filter((b) => parcels[b]?.district === dist).length;
+    s.news.unshift({
+      q: s.month, kind: isUp ? "event" : "warn",
+      text: isUp
+        ? `${districtLabelOf(parcels, dist)} has been upzoned — the envelope goes to ${(next * 100).toFixed(0)}% of what it was at the start. `
+          + `Every lot there is worth more this morning than it was last night${yours ? `, and you own ${yours} of them` : ""}.`
+        : `${districtLabelOf(parcels, dist)} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
+          + `The neighbourhood fought it and won${yours ? `, and you are holding ${yours} lots there` : ""}.`,
+    });
   }
-  const yours = Object.keys(s.holdings).filter((b) => parcels[b]?.district === dist).length;
-  s.news.unshift({
-    q: s.month, kind: isUp ? "event" : "warn",
-    text: isUp
-      ? `${districtLabelOf(parcels, dist)} has been upzoned — the envelope goes to ${(next * 100).toFixed(0)}% of what it was at the start. `
-        + `Every lot there is worth more this morning than it was last night${yours ? `, and you own ${yours} of them` : ""}.`
-      : `${districtLabelOf(parcels, dist)} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
-        + `The neighbourhood fought it and won${yours ? `, and you are holding ${yours} lots there` : ""}.`,
-  });
 
   // A SHORTAGE OF BAYS IS A MAP, NOT AN ENVELOPE. Warehouses are one or two
   // storeys; upzoning FAR does not house them. The plat shipped zero M
@@ -244,6 +247,13 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if ((live.zoneDist ?? "C")[0] !== "C") continue;
       if ((live.demandScore ?? 100) >= 45) continue;
       if (s.zoneUse[bbl]) continue;
+      // ...ONLY WHERE A SHED IS WHAT THE DIRT IS FOR (2026-10-10). A board maps
+      // land for manufacturing where manufacturing is its best use, not every
+      // low-demand lot in the district. Mapped on demand alone, a 100-year
+      // Frontier town had 118 vacant lots within 600 m of its towers turned to
+      // M during shed shortages, and then frozen there.
+      const lr = landRead(live, ez);
+      if (lr.builder > 0 && lr.scheme?.use !== "industrial") continue;
       s.zoneUse[bbl] = "M";
       mapped++;
     }
@@ -254,6 +264,45 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
           + `lot${mapped === 1 ? "" : "s"} ${mapped === 1 ? "is" : "are"} M now, because there is nowhere to put a shed.`,
       });
     }
+  }
+  // AND MANUFACTURING LAND THE TOWN HAS GROWN AROUND IS REZONED FOR WHAT IT IS
+  // NOW WORTH (2026-10-10). Use zoning only ever moved one way: commercial to
+  // manufacturing when sheds were short, and nothing back. So industrial land
+  // that a growing downtown reached stayed warehouse land for good, offices
+  // never permitted and housing only while sheds were not short. Measured on
+  // a 100-year Frontier town: 146 of 205 vacant lots within 600 m of the
+  // towers were zoned M at year 50, with a two-storey shed the only legal
+  // building on them. In life this is the most common big rezoning there is
+  // — Williamsburg and Greenpoint (2005), Long Island City, SoMa, Hudson
+  // Yards, South Lake Union — and it passes where the land is worth far more
+  // as housing or offices than as industry. The same hearing reads it: an M
+  // lot in the urban part of the district (demand at or above the 45 where
+  // commercial land already hosts light industry) whose builder residual as
+  // commercial land is at least half again what it trades for as M. The
+  // half-again is a shape parameter, not a measured one: a rezoning is a
+  // long fight and nobody starts it over a small difference.
+  if (!s.zoneUse) s.zoneUse = {};
+  let upzoned = 0;
+  for (const bbl of bbls) {
+    const rec = parcels[bbl];
+    if (!rec || rec.district !== dist) continue;
+    const live = resolveRec(parcels, s, bbl);
+    if (!live || (live.zoneDist ?? "C")[0] !== "M") continue;
+    if ((live.demandScore ?? 0) < 45) continue;
+    if (s.landmarks?.[bbl] !== undefined) continue;
+    const asM = landPsfNow(live, ez);
+    const asC = landRead({ ...live, zoneDist: "C-4" }, ez);
+    if (!(asC.builder > 0) || asC.scheme?.use === "industrial") continue;
+    if (asC.builder < 1.5 * Math.max(1, asM)) continue;
+    s.zoneUse[bbl] = "C-4";
+    upzoned++;
+  }
+  if (upzoned) {
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${districtLabelOf(parcels, dist)}: ${upzoned} manufacturing lot${upzoned === 1 ? " has" : "s have"} been rezoned for `
+        + `commercial and residential use. The town grew around them, and the dirt is worth more as housing and offices than as sheds.`,
+    });
   }
 }
 

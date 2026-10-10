@@ -2949,6 +2949,24 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   const land = landValue(rec, econ);
   if (rec.class === "land" || !rec.bldgArea) return land;
+  const sinceM = rec.yearBuilt && econ.m !== undefined
+    ? Math.round((START_YEAR + econ.m / 12 - rec.yearBuilt) * 12) : 999;
+  // an underbuilt lot is worth the greater of its income or its dirt.
+  // A building still in lease-up is never worth less than the lot. The weight
+  // is the same fade holdingValue applies; here it is 1 whenever there is a
+  // mark at all, because a record read off the market's own lease-up curve
+  // reaches its stabilised occupancy exactly when the curve ends.
+  return Math.max(incomeValueAsIs(rec, econ, condition, condIdx), landAppraisalFloor(rec, econ, leaseUpWeight(rec, sinceM)));
+}
+
+/**
+ * WHAT THE BUILDING IS WORTH AS A BUILDING — its income capitalised, with no
+ * floor at the land under it. `assetValue` is this or the dirt, whichever is
+ * more, which is the right price for a buyer; it is the wrong cost for a
+ * redevelopment, because the dirt's residual IS the redevelopment.
+ */
+export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
+  if (rec.class === "land" || !rec.bldgArea) return 0;
   // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
   // triple-net building bills its tax bill to its tenants, so loading the full
   // rate onto every class priced net-leased retail as if it paid its own taxes.
@@ -2968,13 +2986,7 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
     rec, econ, condition, sinceM, occupancy(rec, econ),
     clamp(capRateFor(rec, econ, condition, condIdx), 2.8, 13) / 100,
   );
-  // an underbuilt lot is worth the greater of its income or its dirt.
-  // A building still in lease-up is never worth less than the lot. The weight
-  // is the same fade holdingValue applies; here it is 1 whenever there is a
-  // mark at all, because a record read off the market's own lease-up curve
-  // reaches its stabilised occupancy exactly when the curve ends.
-  const marked = asIs === null ? income : income + leaseUpWeight(rec, sinceM) * Math.max(0, asIs - income);
-  return Math.max(marked, landAppraisalFloor(rec, econ, leaseUpWeight(rec, sinceM)));
+  return asIs === null ? income : income + leaseUpWeight(rec, sinceM) * Math.max(0, asIs - income);
 }
 
 /**

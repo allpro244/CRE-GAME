@@ -874,6 +874,11 @@ export function refreshDevelopmentFeasibility(
   const scores: Record<BuiltClass, number[]> = {
     office: [], retail: [], multifamily: [], industrial: [],
   };
+  // Every vacant site's hurdle, clearing or not: how far rent stands from the
+  // level at which a competitor builds next door. See `siteHurdle`.
+  const hurdles: Record<BuiltClass, number[]> = {
+    office: [], retail: [], multifamily: [], industrial: [],
+  };
   // DO NOT WALK THE WHOLE CITY WITH A FULL PRO FORMA. A Great City has nearly
   // six thousand lots; four plans per lot blocked the browser's main thread
   // for seconds on every annual advance. The actual city examines 36 lots for
@@ -988,6 +993,7 @@ export function refreshDevelopmentFeasibility(
         if (u?.financeable) {
           const h = hurdleAt(u.plan, streetMargin(s));
           if (h >= 1) scores[use].push(Math.min(3, Math.pow(h, 1.2)));
+          hurdles[use].push(h);
         }
       }
       continue;
@@ -1042,6 +1048,16 @@ export function refreshDevelopmentFeasibility(
     const xs = scores[use].sort((a, b) => a - b);
     const at = xs.length ? Math.floor((xs.length - 1) * (36 / 37)) : 0;
     s.econ.sitePencil[use] = xs[at] ?? 0;
+    // THE SUPPLY PRICE, AS A DISTANCE. The P97 hurdle of the vacant sites the
+    // city would actually examine, including the ones that fail: 0.7 says rent
+    // must rise about 40% before anybody builds; 1.0 says somebody is building
+    // now. Investors read it (capTargetOf) because it bounds the rent growth
+    // they can rationally pay for. Absent when no vacant site permits the use:
+    // supply cannot answer at any rent, so nothing bounds the trend.
+    const hs = hurdles[use].sort((a, b) => a - b);
+    if (!s.econ.siteHurdle) s.econ.siteHurdle = {};
+    if (hs.length >= 4) s.econ.siteHurdle[use] = +hs[Math.floor((hs.length - 1) * (36 / 37))].toFixed(4);
+    else delete s.econ.siteHurdle[use];
   }
 }
 

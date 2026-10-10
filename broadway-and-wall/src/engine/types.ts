@@ -2027,6 +2027,14 @@ export interface Econ {
    * the city examines for each crane (36/37 ≈ 97th percentile).
    */
   sitePencil?: Record<BuiltClass, number>;
+  /** P97 development hurdle over the vacant sites sampled each year, clearing
+   *  or not (dev.ts refreshDevelopmentFeasibility). Missing for a use no
+   *  vacant site permits. */
+  siteHurdle?: Partial<Record<BuiltClass, number>>;
+  /** Loan index at the opening, the reference for tenure choice (market.ts). */
+  tenureRef?: number;
+  /** Renter share of households against the opening, rolled (market.ts). */
+  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only

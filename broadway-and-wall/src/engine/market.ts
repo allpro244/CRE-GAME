@@ -360,6 +360,14 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
  *    here: retail floor space per capita is 23.5 sf in the US, 5.0 in France,
  *    4.6 in the UK, under 5 in Germany and Japan (ICSC 2018). That ordering is
  *    planning and land, not income.
+ *    Re-examined 2026-10-09 against the US TIME SERIES, which looks like an
+ *    income effect (shopping-centre space per head roughly tripled 1970-2005
+ *    while real income per head about doubled) and is not one: the run-up
+ *    tracks the 1954-86 accelerated-depreciation regime for new commercial
+ *    construction and stalled when the 1986 Act withdrew it, and the
+ *    e-commerce era has since cut space per head while real income kept
+ *    rising. Spending does rise with income, but sales per square foot rise
+ *    with it, so what is left for floor space is ~0. It stays at zero.
  *  multifamily 0.25 — the housing literature's income elasticity is the best
  *    measured of any class (~0.7 short-run, ~1.0 long-run; Mulford, RAND
  *    R-2449-HUD 1979) and this number is deliberately far below it, because US
@@ -378,6 +386,9 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
  * turned until a harness passes: `pnpm income` reports the consequence, and a
  * consequence outside its band is a finding about the rest of the model.
  */
+/** Renter demand per point of the loan index over the town's opening rate.
+ *  See the tenure note at the multifamily demand driver. */
+const TENURE_PER_PT = 0.008;
 const INCOME_ELAST: Record<BuiltClass, number> = {
   office: 0.45, retail: 0.00, multifamily: 0.25, industrial: 0.40,
 };
@@ -1431,8 +1442,35 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
   // of the trend, not all of it. Real growth only: the inflation part is
   // already in `capIndex`.
-  const growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0);
-  return CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + flows - growth;
+  const base = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + flows;
+  let growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0);
+  // ...BUT NOBODY PAYS FOR GROWTH PAST THE RENT AT WHICH A RIVAL BUILDS NEXT
+  // DOOR (2026-10-09). A trend is only worth a lower yield while rent has
+  // room to run, and the room ends at the supply price: once new space
+  // pencils, more of it comes and the growth stops (DiPasquale & Wheaton
+  // 1996, ch. 10 — rents are bounded above by replacement cost in a market
+  // that can build). Extrapolated alone, a decade of shortage at 6%/yr real
+  // drove industrial caps onto their 2.75% floor in measured runs (4 worlds
+  // x 50 years), and that collapse — not rent reaching replacement cost —
+  // is what finally made sheds pencil: everyone broke ground at once at the
+  // peak and vacancy went to 16-25% for a decade. `siteHurdle` is how far
+  // the best sites the city would examine stand from building; at its cap
+  // rate today, a rent rise of 1/hurdle would make them clear. The most a
+  // buyer can rationally pay for growth that a competitor's building will
+  // end, even if the rise came tomorrow, is a yield of base x e^-room, so
+  // the trend's discount is bounded by base x (1 - e^-room) — and by nothing
+  // at all once the best site pencils. A falling trend is untouched: no
+  // supply price bounds a decline. A use no vacant site permits has no
+  // hurdle, and nothing bounds its trend either.
+  const siteH = e.siteHurdle?.[k];
+  if (growth > 0 && siteH !== undefined && siteH > 0) {
+    // The hurdle was struck at the cap rate in force; restate it at the cap
+    // this buyer would pay with no growth in it.
+    const atBase = siteH * Math.max(0.5, e.capRate?.[k] ?? base) / Math.max(0.5, base);
+    const room = Math.max(0, -Math.log(atBase));
+    growth = Math.min(growth, base * (1 - Math.exp(-room)));
+  }
+  return base - growth;
 }
 
 /**
@@ -1731,7 +1769,15 @@ export function tickNation(s: GameState) {
       // Most downturns are downturns. About one in fourteen is 1929 or 2008,
       // and those are the ones that redraw a career.
       n.deep = rng(s, "nation") < 0.07;
-      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
+      // HOW LONG THEY LAST is the NBER record (2026-10-09). Postwar
+      // contractions other than 2008 and 2020 ran 6 to 16 months, mean ~10
+      // (1948 11, 1953 10, 1957 8, 1960 10, 1969 11, 1973 16, 1980 6, 1981 16,
+      // 1990 8, 2001 8); the deep ones are 2008's 18 and 1929's 43. This drew
+      // 7-19 and 26-48, which put 17.5% of months in recession against 13.7%
+      // in the record and helped hold the nation's unemployment ~1.5 points
+      // over its natural rate on average, where the US ran ~0.8 (1970-2024
+      // mean 6.2% against CBO's NAIRU averaging ~5.4%).
+      n.recM = Math.round(n.deep ? rrange(s, 18, 43, "nation") : rrange(s, 6, 16, "nation"));
       // EVERY RECESSION IS AIMED, not integrated. A rate of rise applied for
       // a drawn duration compounds two dice into a third, and a long draw and
       // a fast draw together produced 27 points of unemployment — the model
@@ -3662,7 +3708,26 @@ export function tickEcon(s: GameState) {
     // an ageing town with fewer children forms more, smaller households per
     // head. Adults against the opening's adults.
     const hhIdx = e.ages && e.adults0 ? (e.ages.work + e.ages.old) / e.adults0 : popIdx;
-    const driver = (k === "multifamily" ? hhIdx
+    // ...AND HOW MANY OF THOSE HOUSEHOLDS RENT RATHER THAN BUY (2026-10-09).
+    // A flat competes with a mortgage. When the mortgage rate rises the
+    // first-time buyer's monthly payment rises with it, and the marginal
+    // household keeps renting; when it falls, it buys and moves out. Nothing
+    // in this model read that, so flats were the one class whose demand never
+    // heard of the bond market. Calibrated on the cleanest episode in the US
+    // record: as mortgage rates went from ~9.6% (1978) to 13-16% (1980-85),
+    // the homeownership rate fell 65.6% -> 63.9% (Census HVS) — renter
+    // households up ~5% of themselves on ~4.5 points, about 1.1% per point.
+    // 2022-24 (+4 points, ownership roughly flat while renter formation rose)
+    // reads lower, so 0.8% per point of the loan index against the town's
+    // opening rate (1.0 in month zero, like every demand argument). Tenure
+    // is decided at moves, not monthly: rolled over three years, which is
+    // also how long the 1980s shift took to show in the survey.
+    if (k === "multifamily") {
+      const ref = (e.tenureRef ??= e.indexRate ?? 5.4);
+      const raw = 1 + TENURE_PER_PT * ((e.indexRate ?? ref) - ref);
+      e.tenureIdx = (e.tenureIdx ?? 1) + (raw - (e.tenureIdx ?? 1)) / 36;
+    }
+    const driver = (k === "multifamily" ? hhIdx * (e.tenureIdx ?? 1)
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
       : jobIdx * tradeMix) * secIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth

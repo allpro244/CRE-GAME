@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -984,14 +984,32 @@ export function refreshDevelopmentFeasibility(
           const legalFl = maxFloorsFor(rec, plate, use);
           if (legalFl > 0) infillRatios.push(Math.max(0.05, Math.min(1, floors / legalFl)));
         }
-        const u = underwriteDevelopment(s, parcels, bbl, use, floors, plate);
+        // ...BUT THE ENVELOPE IS THE CEILING OF THE QUESTION, NOT THE ANSWER
+        // (2026-10-10). A builder picks the height that pays best, and the
+        // land residual and the city's own start path already do
+        // (`schemeFloorLadder`, `landRead().scheme`); this sampler priced only
+        // the envelope. So it asked whether a fourteen-storey tower pencils on
+        // a lot where a four-storey walk-up would, answered no, and the order
+        // book it feeds read zero. Measured over 8 worlds x 40 years: in the
+        // months a class sat on its vacancy floor, starts were zero in 45-100%
+        // of them, and in every such month the cause was this pencil reading
+        // zero while the class pro forma (low-rise, at the ninth-decile site)
+        // read 0.7-2.9. On a pinned flats month the best site's envelope
+        // scheme read 0.93 at free land against 1.90 for the walk-up.
+        let u: ReturnType<typeof underwriteDevelopment> = null;
+        let h = -Infinity;
+        for (const fl of schemeFloorLadder(use, floors)) {
+          const ui = underwriteDevelopment(s, parcels, bbl, use, fl, plate);
+          if (!ui?.financeable) continue;
+          // The pencil the order book reads is the street's — the most lenient
+          // margin among firms that build (`streetMargin`), not only the merchant's.
+          const hi = hurdleAt(ui.plan, streetMargin(s));
+          if (hi > h) { h = hi; u = ui; }
+        }
         // Only clearing pencils. Pushing appetite-zero failures from densify
         // sites diluted the P97 and zeroed whole classes (office went to 0
         // while multifamily stayed live — the order book then starved office).
-        // The pencil the order book reads is the street's — the most lenient
-        // margin among firms that build (`streetMargin`), not only the merchant's.
-        if (u?.financeable) {
-          const h = hurdleAt(u.plan, streetMargin(s));
+        if (u) {
           if (h >= 1) scores[use].push(Math.min(3, Math.pow(h, 1.2)));
           hurdles[use].push(h);
         }
@@ -1017,9 +1035,15 @@ export function refreshDevelopmentFeasibility(
       if (!zonePermits(rec.zoneDist, use, rec.demandScore, s.econ)) continue;
       const plate = cityCoverage(use);
       const floors = Math.min(infill, maxFloorsFor(rec, plate, use));
-      if (rec.lotArea * plate * floors < rec.bldgArea * 1.08) continue;
-      const u = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opp);
-      if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
+      // The same height ladder as vacant dirt, among the heights that still
+      // add floor over what stands.
+      let best = 0;
+      for (const fl of schemeFloorLadder(use, floors)) {
+        if (rec.lotArea * plate * fl < rec.bldgArea * 1.08) continue;
+        const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, opp);
+        if (u?.clears && u.appetite > best) best = u.appetite;
+      }
+      if (best > 0) scores[use].push(best);
     }
   }
   s.econ.sitePencil = { office: 0, retail: 0, multifamily: 0, industrial: 0 };

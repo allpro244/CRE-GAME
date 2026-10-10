@@ -567,7 +567,6 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  * applies, and the scheme reports what it actually drew.
  */
 function residualFloorChoices(use: BuiltClass, far: number): { floors: number; coverage: number }[] {
-  const cap = USE_FLOORS_MAX[use];
   // THE COVERAGE IS THE USE'S, AND THE DESK'S (MAX_COVERAGE, proforma.ts). The
   // residual held offices and flats to 70% and shops and sheds to 85% while
   // the desk let all four cover 90%, so the desk's land value ran 1.2-1.9x
@@ -577,7 +576,22 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
   // Shops and sheds: every storey up to the use's cap — the one-storey box has
   // no stair to pay for (see the note below), and the two-storey one is drawn
   // even where it cannot fill its plate, because the desk can draw it too.
-  const floors = cap !== undefined
+  const floors = schemeFloorLadder(use, envelopeFl);
+  return floors.map((fl) => {
+    const usable = Math.min(far, fl * covMax);
+    return { floors: fl, coverage: usable / fl };
+  }).filter((c) => c.coverage > 0);
+}
+
+/**
+ * THE HEIGHTS A BUILDER CONSIDERS on a lot whose envelope reaches `envelopeFl`
+ * storeys — the land residual's ladder, exported so every reader that asks
+ * "does anything pencil here" asks it of the same buildings (dev.ts's site
+ * sampler did not, and priced only the envelope).
+ */
+export function schemeFloorLadder(use: BuiltClass, envelopeFl: number): number[] {
+  const cap = USE_FLOORS_MAX[use];
+  return cap !== undefined
     ? Array.from({ length: cap }, (_, i) => i + 1)
     // A builder picks the height that maximises residual, not the zoning
     // maximum. Pricing every office/multifamily lot as a tower made
@@ -596,10 +610,6 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
     // builder at all (measured: 21 of 434 vacant 3-5k sf lots, 20 of 287
     // 5-8k, at coverage the residual also uses; tools/smalllot-lines.mjs).
     : [...new Set([1, 2, 4, 8, 14].map((f) => Math.min(f, envelopeFl)).concat(envelopeFl))];
-  return floors.map((fl) => {
-    const usable = Math.min(far, fl * covMax);
-    return { floors: fl, coverage: usable / fl };
-  }).filter((c) => c.coverage > 0);
 }
 
 /**

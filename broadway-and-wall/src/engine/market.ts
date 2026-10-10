@@ -1793,9 +1793,20 @@ export function tickNation(s: GameState) {
   // months in 2008, then ten years to walk back down — and a symmetric
   // mean-reverting process cannot produce it. Firms fire in weeks and hire
   // over years.
+  // ...AND IT KEEPS FALLING UNTIL SOMETHING ENDS THE EXPANSION (2026-10-10).
+  // The pull aimed at 4.2%, the AVERAGE late-cycle low, and an exponential
+  // approach never reaches its target, so expansions ended with unemployment
+  // at 5.9% on average against 4.7% at US cycle peaks (1948-2020), and only
+  // 20% of them ended under 4.5% (US: half). The lows themselves run to
+  // 3.4-3.8% (1969, 2000, 2019) and 2.5% (1953): a long expansion keeps
+  // drawing people in until the recession comes. Aimed at 3.5%, the national
+  // block alone (40 seeds x 100 years, tools/econprobe/nation.mjs) reads mean
+  // 5.84% / p50 5.3% / p10 3.8% / 38% of months under 4.8%, against the US
+  // 1948-2024 record of 5.7% / 5.5% / 3.9% / ~33%. Was 6.35% / 5.7% / 4.4%
+  // / 25%, which held the nation 1.5 points over its natural rate on average.
   const uMove = inRec
     ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
-    : 0.025 * (0.042 - n.unemp);
+    : 0.025 * (0.035 - n.unemp);
   n.unemp = clamp(n.unemp + uMove
     + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
     + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0.026, 0.26);

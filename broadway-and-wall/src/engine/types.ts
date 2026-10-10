@@ -2426,6 +2426,10 @@ export interface Rival {
   style: RivalStyle;
   /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
   lastBuildM?: number;
+  /** Off-market calls this firm made: a building it will not ring again before the month given. */
+  doors?: Record<string, number>;
+  /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
+  coldHolders?: Record<string, number>;
   cash: number;
   debt: number;
   bbls: string[];        // what they own

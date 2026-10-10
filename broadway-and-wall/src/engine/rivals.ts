@@ -344,7 +344,13 @@ export function rentSignals(s: GameState): Record<BuiltClass, { g: number; dev: 
     let sum = 0, n = 0;
     for (let i = Math.max(0, h.length - 120); i < h.length; i++) { const v = real(h[i], k); if (Number.isFinite(v)) { sum += v; n++; } }
     const dev = n >= 36 && Number.isFinite(now) ? now / (sum / n) - 1 : 0;
-    sig[k] = { g: Math.max(-0.15, Math.min(0.15, g)), dev: Math.max(-0.6, Math.min(1.5, dev)) };
+    // AN UNDERWRITER CARRIES A TREND, NOT A SPIKE. Investor surveys of the
+    // market rent growth professionals assume (PwC / Korpacz; RERC) run from
+    // about nothing to about 6% a year across markets and cycles, booms
+    // included. A three-year run of 40% a year, carried as 15% (the first
+    // clip), had extrapolating builders pricing a third more rent than the
+    // desk and took office vacancy to 33% in a single 100-year run.
+    sig[k] = { g: Math.max(-0.06, Math.min(0.06, g)), dev: Math.max(-0.6, Math.min(1.5, dev)) };
   }
   rentSigCache = { h, n: h.length, sig };
   return sig;
@@ -3906,12 +3912,45 @@ export function rivalTemperamentWeight(s: GameState, r: Rival): number {
   return band * access;
 }
 
+/**
+ * THE MOST A FIRM WOULD PAY FOR A BUILDING NOBODY HAS LISTED. The same tests
+ * `rivalBuys` puts a listed building through, solved for the price: an
+ * income building at the price where the firm's own yield over the coupon
+ * (YIELD_OVER_COUPON, with the growth it underwrites) just passes; dirt, for a
+ * firm that builds, at the builder's residual. Zero when the style does not
+ * buy the class at all. The guard at 1.4x appraisal only catches a coupon
+ * that has fallen through the floor — a required yield near zero.
+ */
+export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number {
+  if (rec.class === "land" || !(rec.bldgArea > 0)) {
+    if (!(BUILD_APPETITE[r.style] > 0)) return 0;
+    const lr = landRead(rec, s.econ);
+    return lr.winner === "builder" ? lr.psf * rec.lotArea : 0;
+  }
+  const st = STYLE[r.style];
+  if (st.classes && !st.classes.includes(rec.class)) return 0;
+  const v = assetValue(rec, s.econ, initialCondition(rec));
+  const noi = inPlace(rec, s, rec.bbl, v).noi;
+  if (!(noi > 0) || !(v > 0)) return 0;
+  const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
+  const need = (YIELD_OVER_COUPON[r.style] ?? 0.8) - 0.15;
+  const reqYield = coupon + (need - underwrittenGrowthPct(s.econ)) / 100;
+  return Math.min(v * 1.4, reqYield > 0.005 ? noi / reqYield : v * 1.4);
+}
+/** How hard a style hunts, and how the credit window moves it — for the off-market desk. */
+export function styleHunt(style: RivalStyle): { appetite: number; procyclical: number; contra: number } {
+  const st = STYLE[style];
+  return { appetite: st.appetite, procyclical: st.procyclical, contra: st.contra };
+}
+
 export function rivalBuys(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number,
   // THE FIRM THAT BID IS THE FIRM THAT BUYS. When the player takes a named
   // firm's bid, that firm takes the deed — if it can still close. The
   // appetite draw below is for the tape, where nobody has bid yet.
   prefer?: Rival, sellerName?: string,
+  /** Struck on a call to an owner who had not listed — the deed history says so. */
+  offMarket?: boolean,
 ): Rival | null {
   // A listing may already belong to somebody — a firm selling out of a
   // position, or a receiver clearing a failed one. Whoever holds the deed is
@@ -4086,7 +4125,7 @@ export function rivalBuys(
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
   recordComp(s, rec, price, best.name, seller?.name ?? sellerName ?? "a private owner",
-    s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined);
+    s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined, offMarket);
   return best;
 }
 

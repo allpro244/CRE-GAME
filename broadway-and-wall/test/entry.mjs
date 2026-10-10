@@ -60,6 +60,8 @@ export const MODULES = [
   // owners carries the register of named private holders: who owns what, what
   // they think of you, and when they leave the market.
   "owners",
+  // offmarket is the firms' acquisitions desks: the calls they make to holders who have not listed.
+  "offmarket",
   // ownership is the merged view over both registers — every deed in town, its
   // owner, and that owner's balance sheet and income statement.
   "ownership",

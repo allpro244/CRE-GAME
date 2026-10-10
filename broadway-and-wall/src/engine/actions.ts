@@ -8,7 +8,7 @@ import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, c
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack } from "./market";
+import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
@@ -1637,17 +1637,17 @@ const VALUATION_AGE_M: Record<RivalStyle, number> = {
 const PRIVATE_VALUATION_AGE_M = 132;
 
 /** Box-Muller, the same way demand.ts draws its normals. */
-function gauss(s: GameState): number {
-  const u1 = Math.max(1e-9, rng(s, "sales"));
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s, "sales"));
+function gauss(s: GameState, ch: RngChannel = "sales"): number {
+  const u1 = Math.max(1e-9, rng(s, ch));
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s, ch));
 }
 
-function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean): number {
+function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean, ch: RngChannel = "sales"): number {
   // A firm in trouble has had a broker through the building THIS quarter,
   // because that is what being in trouble looks like from the inside: you are
   // getting opinions of value whether you want them or not.
   const mean = stressed ? 2 : (style ? VALUATION_AGE_M[style] : PRIVATE_VALUATION_AGE_M);
-  return -mean * Math.log(Math.max(1e-9, rng(s, "sales")));
+  return -mean * Math.log(Math.max(1e-9, rng(s, ch)));
 }
 
 /**
@@ -1725,10 +1725,10 @@ const ANCHOR_STICKY_DOWN = 0.38;   // of a stale HIGH view survives the news
 const ANCHOR_STICKY_UP = 0.25;     // of a stale LOW view does
 const OPINION_SD = 0.16;           // lognormal sigma, from the self-assessment spread
 
-function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number): number {
+function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number, ch: RngChannel = "sales"): number {
   const r = levelRatioSinceLooking(s.econ, rec, ageM);
   const anchored = value * Math.pow(r, r > 1 ? ANCHOR_STICKY_DOWN : ANCHOR_STICKY_UP);
-  return anchored * Math.exp(OPINION_SD * gauss(s));
+  return anchored * Math.exp(OPINION_SD * gauss(s, ch));
 }
 
 /**
@@ -1828,6 +1828,48 @@ function shutDoorWithOwner(
       parcels,
     );
   }
+}
+
+const REFUSE_BASE = 0.26;
+/** What a private holder of each kind wants on top for the trouble. See approachOwner. */
+const HOLDER_ASK: Record<string, number> = {
+  local: 0.13, estate: -0.08, institution: 0.05, partnership: 0.07, developer: 0.02, lender: -0.04,
+};
+
+/**
+ * THE SAME OWNER, RUNG BY A FIRM (2026-10-10).
+ *
+ * Firms bought only what was listed; the off-market call was the player's
+ * alone, though in a small or mid-sized market something like a third to a
+ * half of trades never reach a listing. A firm's acquisitions desk rings the
+ * same private holders, and the holder answers it the way it answers the
+ * player: the same refusal (less the player's own assemblage pressure and
+ * standing, which are the player's), the same stale private valuation, the
+ * same premium for a holder of that kind, the same chance of "make me an
+ * offer". Draws come from the stream the caller names, so the player's own
+ * conversations keep theirs.
+ */
+export function ownerAnswersCall(
+  s: GameState, rec: ParcelRecord, held: { kind: string } | null, ch: RngChannel,
+): { refused: true } | { refused: false; reserve: number; quotes: boolean; value: number } {
+  const refuseP = Math.min(0.92, Math.max(0.02,
+    REFUSE_BASE
+    * (rec.class === "land" ? 0.85 : 1)
+    * (1 - 0.13 * cycleDown(s.econ))
+    * (1 + (demandLinear(rec.demandScore) - 50) / 390),
+  ));
+  if (rng(s, ch) < refuseP) return { refused: true };
+  const value = assetValue(rec, s.econ, initialCondition(rec));
+  const ageM = valuationAgeM(s, null, false, ch);
+  const view = ownersView(s, rec, value, ageM, ch);
+  const styleAsk = held ? (HOLDER_ASK[held.kind] ?? 0) : 0;
+  const ripeLand = rec.class === "land" && landRead(rec, s.econ).winner === "builder";
+  const markup = (ripeLand ? 1.0 + 0.15 * Math.pow(rng(s, ch), 2) : 1.06 + 0.5 * Math.pow(rng(s, ch), 2)) + styleAsk;
+  const unadvised = 1 - 1 / (1 + ageM / 24);
+  const quotes = rng(s, ch) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));
+  const dream = 1 + DREAM_MAX * unadvised * (quotes ? 1 : 1 + BLIND_LICENCE) * Math.pow(rng(s, ch), 3);
+  const reserve = Math.round(Math.max(value * OWNER_FLOOR, view * markup * dream) / 1000) * 1000;
+  return { refused: false, reserve, quotes, value };
 }
 
 export function approachOwner(
@@ -1940,7 +1982,6 @@ export function approachOwner(
   // additive term expressed as what it did to the old base — stressed took
   // 0.78 to 0.36, so it is 0.46 — which preserves every modifier's meaning and
   // makes all of them matter more against a smaller base, not less.
-  const REFUSE_BASE = 0.26;
   const refuseP = Math.min(0.92, Math.max(0.02,
     REFUSE_BASE
     * (1 + 0.449 * pressure)                              // was +0.35 x pressure
@@ -1992,9 +2033,6 @@ export function approachOwner(
   // the premium is theirs: a family that does not need the money asks for two
   // generations of not needing it, and an estate with executors and a clock
   // asks for less than the market because what they want is a closing date.
-  const HOLDER_ASK: Record<string, number> = {
-    local: 0.13, estate: -0.08, institution: 0.05, partnership: 0.07, developer: 0.02, lender: -0.04,
-  };
   const styleAsk = owner
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
     : held ? (HOLDER_ASK[held.kind] ?? 0)

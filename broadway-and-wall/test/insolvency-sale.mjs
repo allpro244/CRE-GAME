@@ -32,6 +32,10 @@ function setUp(seed) {
   // and a re-cut plat re-deals it.
   const pick = (gg) => gg.listings.map((l) => ({ l, rec: E.resolveRec(parcels, gg, l.bbl) }))
     .filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000)
+    // ...that a lender will actually put a note on. The premise is a building
+    // carrying debt; in a tight-money year (a 10-11% loan index) a thinly let
+    // office supports none at a 1.25x coverage, and closes all-cash.
+    .filter((x) => (E.buyQuote(gg, parcels, x.l.bbl, x.l.ask, "harbor", 1).principal ?? 0) > 0)
     .sort((a, b) => b.l.ask - a.l.ask)[0];
   let li;
   for (let m = 0; m < 36 && !(m >= 6 && (li = pick(g))); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);

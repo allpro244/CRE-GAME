@@ -407,6 +407,27 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
 
   // --- 1. does anything on the tape find a buyer this month? ---------------
   for (const p of [...s.portfolios]) {
+    // A PACKAGE CONVEYS ONLY WHAT ITS SELLER STILL OWNS (2026-10-10). A deed
+    // can leave the seller while the package sits on the tape — sold on its
+    // own, taken by a lender, bought out of a receivership — and the register
+    // move below then took it from whoever held it by then, for nothing.
+    // Measured: seed 22, month 189, a building Alden Development had bought on
+    // its own in month 185 went to Granite Mutual inside a package Alden never
+    // listed, and Alden kept the $725K mortgage with no deed and no proceeds
+    // (test/rival-husks.mjs).
+    const stillTheirs = (b: string) => p.player
+      ? !!s.holdings[b]
+      : p.sellerId
+        ? ownerOf(s, b)?.id === p.sellerId
+        : !ownerOf(s, b) && !s.holdings[b];
+    if (!p.bbls.every(stillTheirs)) {
+      const all = grossOf(s, parcels, p.bbls);
+      p.bbls = p.bbls.filter(stillTheirs);
+      if (!p.bbls.length) { s.portfolios = s.portfolios.filter((x) => x.id !== p.id); continue; }
+      // ...and asks for what is left, at the share of today's value it is.
+      const kept = grossOf(s, parcels, p.bbls);
+      if (all > 0 && kept > 0) p.ask = Math.max(1000, Math.round((p.ask * kept / all) / 1000) * 1000);
+    }
     // Re-mark: a package sitting unsold for three years is not still worth what
     // it was when it was listed, and the ask has to be read against today.
     p.gross = grossOf(s, parcels, p.bbls) || p.gross;

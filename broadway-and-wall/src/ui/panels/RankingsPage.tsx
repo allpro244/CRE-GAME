@@ -13,8 +13,8 @@ const COLS: { key: Key; label: string; title: string; better: "high" | "low" }[]
   { key: "pop", label: "Population", title: "People living in the city", better: "high" },
   { key: "growth10", label: "Growth, 10 yr", title: "Population growth per year over the last ten years", better: "high" },
   { key: "unemp", label: "Unemployment", title: "Share of the labour force out of work", better: "low" },
-  { key: "pay", label: "Average pay", title: "Average annual pay per job, dollars of the day", better: "high" },
-  { key: "rent2br", label: "Two-bed rent", title: "Monthly rent for a two-bedroom flat, dollars of the day", better: "low" },
+  { key: "pay", label: "Average pay", title: "Average annual pay per job, in 2000 dollars", better: "high" },
+  { key: "rent2br", label: "Two-bed rent", title: "Monthly rent for a two-bedroom flat, in 2000 dollars", better: "low" },
   { key: "afford", label: "Rent / pay", title: "A year of two-bed rent as a share of a year's average pay", better: "low" },
 ];
 
@@ -60,7 +60,7 @@ export function RankingsPage() {
         Against 32 real US cities that ranged from about 18,000 to 230,000 people in 2000.{" "}
         {past
           ? `The real record ends in ${table.recordEnds}; after that each city carries its own recent growth forward, fading toward the nation's over a few decades. Rows marked * are projected.`
-          : `Population is the Census record for ${table.year}. Unemployment, pay and rent are each city's real gap to the US that year, laid on this game's national economy.`}
+          : `Population is the Census record for ${table.year}. Unemployment, pay and rent are each city's real gap to the US that year, laid on this game's national economy.`}{" "}Pay and rent are in 2000 dollars.
       </div>
       <div className="seg" role="radiogroup" aria-label="Rank by" style={{ margin: "10px 0" }}>
         {COLS.map((c) => (

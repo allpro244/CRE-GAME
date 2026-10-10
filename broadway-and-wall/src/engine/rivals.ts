@@ -420,6 +420,14 @@ export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap:
   for (const r of livingRivals(s)) {
     if (!(BUILD_APPETITE[r.style] > 0)) continue;
     if (!financeable && !buildsWithoutBank(r.style)) continue;
+    // ONLY BUILDERS WHO CAN TAKE A JOB THIS MONTH (2026-10-10). This read
+    // every living firm's margin, including firms at their live-job limit,
+    // in arrears or out of cash. A site cleared on their numbers, nobody
+    // could claim it, and the start unwound — up to 158 of 221 attempts in
+    // a decade on one Frontier town, each a month's start slot spent. claimJob
+    // still runs every other test (size fit, cash for the cheque, appetite).
+    if (r.stressMs || !(r.cash > 0)) continue;
+    if ((s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= maxLiveJobs(r.style)) continue;
     best = Math.max(best, firmHurdle(s, r, plan, use, withOutlook));
   }
   return best;

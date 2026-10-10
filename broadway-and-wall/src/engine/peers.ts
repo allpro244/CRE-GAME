@@ -22,12 +22,20 @@
  * gap, its pay and rent as a share of the nation's — and laid on this game's
  * national path. Population is the record itself through 2024.
  *
- * AFTER THE RECORD ENDS, A PROJECTION, AND IT SAYS SO. A city's own growth
- * over its last ten years of record carries forward and fades toward the
- * nation's 2000-2020 rate with a 30-year half-life — Blanchard & Katz (1992)
- * find regional growth differences persist for decades, not forever; the
- * half-life is a shape parameter, stated as such. Unemployment gap, pay share
- * and rent share hold at their last five years' average.
+ * AFTER THE RECORD ENDS, A PROJECTION, AND IT SAYS SO. The nation follows
+ * the Census Bureau's 2023 projection (main series: 336M in 2024, a peak of
+ * 369M about 2080, 366M in 2100), flat after it. A city's growth OVER the
+ * nation's in its last ten years of record carries forward and fades with a
+ * 17-year half-life — measured on these 32 cities: regressing each one's
+ * 2014-24 excess growth on its 2000-10 excess growth gives 0.56 over 14
+ * years. (A first cut used 30 years, a state-level persistence; it took
+ * Frisco to 1.8M people by 2100. Cities build out faster than regions.)
+ * Unemployment gap, pay share and rent share hold at their last five years'
+ * average.
+ *
+ * MONEY IN 2000 DOLLARS. A century of this game's inflation makes "dollars
+ * of the day" unreadable by 2100, so pay and rent are deflated by the
+ * nation's price level.
  */
 import PEERS from "@/data/peerCities.json";
 import type { GameState } from "./types";
@@ -39,13 +47,20 @@ type Peer = { name: string; state: string; county: string; pop: Series; unemp: S
 const DATA = PEERS as unknown as {
   sources: { series: string; url: string; retrieved?: string }[];
   usPop: Record<string, number>;
+  usPopProj: Record<string, number>;
   us: { unemp: Series; avgPay: Series; rent2br: Series };
   cities: Peer[];
 };
 
-/** US population growth, Census 2000 to Census 2020, per year (log). */
-const US_GROWTH = Math.log(DATA.usPop["2020"] / DATA.usPop["2000"]) / 20;
-const TREND_HALF_LIFE_Y = 30;
+/** US population growth over the last census decade, per year (log) — the base a city's recent excess is read against. */
+const US_GROWTH_RECENT = Math.log(DATA.usPop["2020"] / DATA.usPop["2010"]) / 10;
+const TREND_HALF_LIFE_Y = 17;
+/** The US population in a year past the record: the Census projection, flat after its last year. */
+function usPopProj(year: number): number {
+  const ys = Object.keys(DATA.usPopProj).map(Number);
+  const last = Math.max(...ys), first = Math.min(...ys);
+  return DATA.usPopProj[String(Math.min(last, Math.max(first, year)))];
+}
 
 export type RankRow = {
   name: string; state: string; you?: boolean;
@@ -73,10 +88,10 @@ export function peerPop(p: Peer, year: number): number {
   const g = Math.log(p.pop[String(L)] / p.pop[String(L - 10)]) / 10;
   const n = year - L;
   const H = TREND_HALF_LIFE_Y;
-  // Growth fades from the city's own toward the nation's: the integral of
-  // (g - gUS) x 0.5^(t/H) over n years, plus gUS x n.
-  const excess = (g - US_GROWTH) * (H / Math.LN2) * (1 - Math.pow(0.5, n / H));
-  return p.pop[String(L)] * Math.exp(US_GROWTH * n + excess);
+  // The nation's path, times the city's excess fading: the integral of
+  // (g - gUS) x 0.5^(t/H) over n years.
+  const excess = (g - US_GROWTH_RECENT) * (H / Math.LN2) * (1 - Math.pow(0.5, n / H));
+  return p.pop[String(L)] * (usPopProj(year) / usPopProj(L)) * Math.exp(excess);
 }
 
 /** The peer's gap or share against the US in a year — the record, or its last five years' mean. */
@@ -97,10 +112,13 @@ function nationNow(s: GameState): { unemp: number; pay: number; rent: number } {
   const e = s.econ;
   const payIdx = (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(1e-6, e.wage0 ?? e.wageIdx ?? 1);
   const priceIdx = e.natCpi ?? e.cpi ?? 1;
+  // In 2000 dollars: pay deflated by the nation's prices; rent is the 2000
+  // rent, since the nation's real rent is flat in this game's world.
+  void priceIdx;
   return {
     unemp: (e.nat?.unemp ?? e.unemployment ?? 0.05) * 100,
-    pay: DATA.us.avgPay["2000"] * payIdx,
-    rent: DATA.us.rent2br["2000"] * priceIdx,
+    pay: DATA.us.avgPay["2000"] * payIdx / Math.max(0.1, e.natCpi ?? e.cpi ?? 1),
+    rent: DATA.us.rent2br["2000"],
   };
 }
 

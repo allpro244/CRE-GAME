@@ -1,7 +1,7 @@
 // The town has no zoning (Houston rules): any use on any lot, an allowance
 // equal to what the lot's footprint can physically carry, no rezoning
-// process and no variance desk. Replaces test/zoning.mjs, test/variance.mjs
-// and test/permitted-use.mjs, whose subject no longer exists.
+// process and no variance desk. Replaces test/zoning.mjs and test/variance.mjs
+//, whose subject no longer exists.
 //   pnpm engine && pnpm zoning
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();

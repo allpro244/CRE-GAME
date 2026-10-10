@@ -883,16 +883,19 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   const vacNow = e.cityVac?.[k] ?? nat;
   const stkNow = Math.max(1, e.stock?.[k] ?? 0);
   const pipe = Math.max(0, e.pipeline?.[k] ?? 0);
-  const occNow = e.occupied?.[k] ?? stkNow * (1 - vacNow);
+  // Occupancy as the market publishes it — the vacancy every other line of
+  // this pro forma reads — not a second, separately-kept quantity.
+  const occNow = stkNow * (1 - vacNow);
   const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
   const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
-  const vac = e.occupied && e.stock
+  const vac = e.stock?.[k]
     ? clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1)
     : vacNow;
-  // ...and the concession package that vacancy commands, in place of today's.
-  const concNow = e.concIdx?.[k] ?? 0;
-  const concAt = concessionTarget(vac - nat);
-  const effAt = (1 - CONC_DEPTH * concAt) / Math.max(0.05, 1 - CONC_DEPTH * concNow);
+  // ...and the concession package that vacancy will command, against the one
+  // today's vacancy commands. Both read off the same schedule, so with
+  // nothing in the pipeline and nothing to absorb the rent is untouched.
+  const effAt = (1 - CONC_DEPTH * concessionTarget(vac - nat))
+    / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vacNow - nat));
   const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * effAt * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for

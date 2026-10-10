@@ -1769,15 +1769,7 @@ export function tickNation(s: GameState) {
       // Most downturns are downturns. About one in fourteen is 1929 or 2008,
       // and those are the ones that redraw a career.
       n.deep = rng(s, "nation") < 0.07;
-      // HOW LONG THEY LAST is the NBER record (2026-10-09). Postwar
-      // contractions other than 2008 and 2020 ran 6 to 16 months, mean ~10
-      // (1948 11, 1953 10, 1957 8, 1960 10, 1969 11, 1973 16, 1980 6, 1981 16,
-      // 1990 8, 2001 8); the deep ones are 2008's 18 and 1929's 43. This drew
-      // 7-19 and 26-48, which put 17.5% of months in recession against 13.7%
-      // in the record and helped hold the nation's unemployment ~1.5 points
-      // over its natural rate on average, where the US ran ~0.8 (1970-2024
-      // mean 6.2% against CBO's NAIRU averaging ~5.4%).
-      n.recM = Math.round(n.deep ? rrange(s, 18, 43, "nation") : rrange(s, 6, 16, "nation"));
+      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
       // EVERY RECESSION IS AIMED, not integrated. A rate of rise applied for
       // a drawn duration compounds two dice into a third, and a long draw and
       // a fast draw together produced 27 points of unemployment — the model

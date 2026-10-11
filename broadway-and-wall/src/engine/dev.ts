@@ -3383,8 +3383,19 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
       const plate = cityCoverage(k);
       const env = Math.max(1, Math.min(cityInfillCap(s, parcels, rec, k), maxFloorsFor(rec, plate, k)));
+      // THE MARKET ORDERED SO MANY FEET, HERE TOO (2026-10-10). The start path
+      // caps a building at what is owed for its use; this path took the
+      // best-clearing height whatever the book said and netted it off after.
+      // Measured on a 100-year Frontier town: one replacement put 1.65M sf of
+      // flats in the pipeline in a three-year window when the book had
+      // ordered 92k and owed none, and flats vacancy went to 44%. The space a
+      // replacement ADDS — less what stood, when it stood in the same use — is
+      // held to the order, one storey always allowed.
+      const owedK = Math.max(0, e.startOwed?.[k] ?? 0);
+      const standsAsK = cls === k ? oldSf : 0;
       for (const fl of schemeFloorLadder(k, env)) {
         if (rec.lotArea * plate * fl < oldSf * 1.08) continue;
+        if (fl > 1 && rec.lotArea * plate * fl - standsAsK > Math.max(owedK, rec.lotArea * plate)) continue;
         const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost);
         if (!u?.clears) continue;
         if (!bestU || u.plan.hurdleRatio > bestU.plan.hurdleRatio) { bestU = u; nextUse = k; lead = k; }

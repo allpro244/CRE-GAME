@@ -1806,6 +1806,10 @@ export interface Econ {
   cycPeak?: number;
   phaseAge?: number;
   exportIdx?: number;
+  /** This town's own persistent growth over the nation's, per year — the region it sits in. See `regionalPull`. */
+  regionTrend?: number;
+  /** The last month's regional pull on the export base, per year, after the cost brake. */
+  regionPull?: number;
   /** The population by age: children, working age, over 65. */
   ages?: { kids: number; work: number; old: number };
   /** Adults (working age + over 65) at the opening, for household formation. */

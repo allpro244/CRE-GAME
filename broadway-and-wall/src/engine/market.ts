@@ -1384,6 +1384,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
+  econ.regionTrend = parcels ? openingRegionTrend(s.seed, parcels) : 0;
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
@@ -2142,6 +2143,69 @@ const IND_SHOCK_HAZ = 1 / 120, IND_SHOCK_HALF_M = 18;
  */
 const MOM_UNITS = 4;
 
+// ---------------------------------------------------------------------------
+// THE TOWN'S OWN GROWTH, AND WHAT STOPS IT (2026-10-10).
+//
+// Every trade here grew at its NATIONAL trend, so every town grew like the
+// average American town — about 1% a year, 2.5x in a century — and nothing
+// made an employer choose this one. Measured over six 100-year Frontier towns:
+// population 58.6k at year 100 from 22k, the outskirts still empty.
+//
+// Places do not grow at the national rate. Blanchard & Katz (1992) find US
+// states' employment growth differs from the nation's by persistent amounts —
+// over 1950-90 Arizona, Florida and Nevada ran about 3% a year over it and
+// New York about 1% under, with the differences lasting decades — and young
+// regions are the fast ones: the West and South grew while the old cores
+// lagged. So the town draws one persistent regional trend at founding, the
+// mean set by how young the town is (the share of its lots still empty: a
+// Frontier town ~0.56 opens about +1.1%/yr, a settled one ~0.15 a little
+// under nil) and a spread of 0.8%/yr across towns, the order of the
+// cross-state spread. Drawn from the seed, not a stream: no other draw moves.
+//
+// AND IT DOES NOT RUN FOREVER, because employers come for what the town
+// costs. The pull is braked by the town's unit cost against the nation's —
+// pay against national pay (~85% of the bill), rent on offices and sheds
+// against national rent (~15%) — less what its size adds to output.
+// Firms' location responds to business costs with a long-run elasticity of
+// about 0.2-0.6 reached over a decade or so (Bartik 1991); 0.4 over ten years
+// is a pull of 4% of the log cost gap a year. Agglomeration: output per
+// worker rises about 4% per doubling of the town's employment (Ciccone & Hall
+// 1996 ~5% for density; Combes et al. 2008 2-4% after sorting). A town that
+// grows dear stops being chosen; one that grows big and stays cheap keeps
+// being chosen. Shape parameters with sources, stated as such.
+// ---------------------------------------------------------------------------
+const REGION_YOUTH_SLOPE = 0.03;      // per unit of vacant-lot share over 0.2
+const REGION_SD = 0.008;              // per year, across towns
+const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
+const AGGLOM = 0.04;                  // output elasticity to employment
+const WAGE_SHARE = 0.85;
+
+function openingRegionTrend(seed: number, parcels: ParcelTable): number {
+  let lots = 0, vacant = 0;
+  for (const r of Object.values(parcels)) {
+    if (!r || !(r.lotArea > 0)) continue;
+    lots++;
+    if (r.class === "land" || !(r.bldgArea > 0)) vacant++;
+  }
+  const youth = lots ? vacant / lots : 0.2;
+  const u1 = Math.max(1e-9, mulberry32Step(((seed ^ 0x51ed270b) >>> 0) || 1).value);
+  const u2 = mulberry32Step(((seed ^ 0x2b1f6a3d) >>> 0) || 1).value;
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return clamp(REGION_YOUTH_SLOPE * (youth - 0.2) + REGION_SD * z, -0.015, 0.04);
+}
+
+/** The town's pull on employers over the nation's trend, per year, after the cost brake. */
+export function regionalPull(e: Econ): number {
+  const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+  const rentOf = (k: "office" | "industrial") =>
+    Math.max(0.05, (e.effRentIdx?.[k] ?? e.rentIdx[k]) / (RENT_BASE[k] * natP));
+  const rentRatio = Math.sqrt(rentOf("office") * rentOf("industrial"));
+  const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
+  const logCost = WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
+  return (e.regionTrend ?? 0) - LOCATION_PULL * logCost;
+}
+
 export function tickIndustryCycle(s: GameState) {
   const e = s.econ;
   const n = e.nat;
@@ -2162,6 +2226,8 @@ export function tickIndustryCycle(s: GameState) {
   if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
   if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
   const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
+  const pull = clamp(regionalPull(e), -0.03, 0.05);
+  e.regionPull = pull;
   let base = 0, wsum = 0;
   for (const k of SECTORS) {
     const vol = INDUSTRY_VOL[k];
@@ -2179,7 +2245,7 @@ export function tickIndustryCycle(s: GameState) {
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
     const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
-    e.indIdx[k] *= 1 + INDUSTRY_TREND[k] / 12 + dev;
+    e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + pull) / 12 + dev;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
     const was = e.industryPhase[k];

@@ -14,6 +14,7 @@ import { MarketPage } from "@/ui/panels/MarketPage";
 import { ResearchPage } from "@/ui/panels/ResearchPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
+import { RankingsPage } from "@/ui/panels/RankingsPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
@@ -131,6 +132,7 @@ export default function GamePanels() {
     : page === "property" ? "Property"
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "Economy"
+    : page === "rankings" ? "Rankings"
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
     : page === "staff" ? "The Desk"
@@ -155,6 +157,7 @@ export default function GamePanels() {
     : page === "property" ? "The complete operating, financing and development record."
     : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
     : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
+    : page === "rankings" ? "Size, growth, jobs, pay and rent against thirty-two real US cities."
     : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
     : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
@@ -203,6 +206,7 @@ export default function GamePanels() {
             {page === "research" && <ResearchPage />}
             {page === "notes" && <NotesPage />}
             {page === "economy" && <EconomyPage />}
+            {page === "rankings" && <RankingsPage />}
             {page === "books" && <BooksPage />}
             {page === "news" && <NewsPage />}
             {page === "saves" && <SavesPage />}

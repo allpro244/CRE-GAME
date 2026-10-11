@@ -1470,7 +1470,16 @@ const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> 
   // citywide index on Metropolis fabric; location should not also mint
   // Midtown on every seed's best block.
   office:      { exp: 1.28, max: 2.20, min: 0.40 },
-  multifamily: { exp: 1.10, max: 1.95, min: 0.52 },
+  // THE FRINGE FLAT FLOOR IS THE SPREAD THIS FILE STATES (2026-10-10).
+  // "Multifamily: two to two and a half" is written in locationRentMult; the
+  // floor of 0.52 made it 3.75x (1.95 / 0.52) across an island a mile wide,
+  // where the commute that rent gradients price (Alonso-Muth-Mills) is a
+  // fifteen-minute walk. 0.80 makes it 2.4x. Tried before alongside the
+  // other classes and rejected on supply that did not move; measured now on
+  // its own, after replacements were held to the order book, over six
+  // 100-year Frontier towns: peak flats vacancy 11.4% against 10.8% without
+  // it, population at year 100 56.3k against 53.8k.
+  multifamily: { exp: 1.10, max: 1.95, min: 0.80 },
   industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
 };
 

@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -3024,7 +3024,43 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
   // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
   // triple-net building bills its tax bill to its tenants, so loading the full
   // rate onto every class priced net-leased retail as if it paid its own taxes.
-  const income = noiYr(rec, econ, condition, false, condIdx) / (capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec));
+  const capY = capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec);
+  // ...AT MARKET, PLUS OR MINUS THE LEASES IT ACTUALLY HAS (2026-10-11).
+  //
+  // A building you own is marked on its rent roll — contract rent, lease by
+  // lease (`holdingValue`). Every other building in town was marked as if its
+  // whole roll re-signed at this month's effective rent, every month: the
+  // same quantity with two answers, and the one ninety-five per cent of the
+  // stock got turned every rent cycle straight into a value cycle. Measured
+  // over five 100-year towns on income value alone (no land in it): office
+  // fell 81% peak to trough in real terms against a 58% fall in effective
+  // rent, industrial 76% against 53%.
+  //
+  // An appraiser capitalises market rent and then adds or subtracts what the
+  // leases in place are worth above or below it over their remaining term —
+  // the above/below-market lease adjustment of the income approach
+  // (Appraisal Institute, The Appraisal of Real Estate, ch. 22). The roll's
+  // rent is the market's own in-place index (`inPlaceReal`, effective rent
+  // rolled at the class's lease term, carrying the price level); the average
+  // lease has half a term to run; the gap is discounted at the asset's yield.
+  // Housing re-lets every year and barely moves; a ten-year office roll
+  // signed below the peak keeps a boom's value below the hype, and one signed
+  // above the trough holds a bust's value up while it runs.
+  let leaseAdj = 0;
+  if (econ.inPlaceReal) {
+    const cpiNow = Math.max(0.35, econ.cpi ?? 1);
+    for (const use of uses(rec)) {
+      const sf = useRentableSf(rec, use);
+      const spot = econ.effRentIdx?.[use] ?? econ.rentIdx[use];
+      const roll = (econ.inPlaceReal[use] ?? 0) * cpiNow;
+      if (!(sf > 0) || !(spot > 0) || !(roll > 0)) continue;
+      const gapPsf = useRentPsfYr(rec, econ, condition, use, condIdx) * (roll / spot - 1);
+      const yrs = LEASE_TERM_M[use] / 24;
+      const annuity = (1 - Math.pow(1 + capY, -yrs)) / capY;
+      leaseAdj += sf * useOccupancy(rec, econ, use) * gapPsf * annuity;
+    }
+  }
+  const income = Math.max(0, noiYr(rec, econ, condition, false, condIdx) / capY + leaseAdj);
   // A BUILDING STILL FILLING IS NOT PRICED OFF THE MONTH IT IS HAVING.
   //
   // Capitalising a lease-up roll at a stabilised cap rate counts the same risk

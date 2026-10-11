@@ -259,11 +259,14 @@ const MOVE_IN_M: Record<BuiltClass, number> = { office: 6, retail: 4, industrial
  *  constant. Shops and sheds run shorter terms; a renter gives notice. */
 const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industrial: 18, multifamily: 3 };
 
+/** The typical lease term by class, months — eight years of office paper,
+ *  seven of retail, six of industrial, one of housing. */
+export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
 const AFFORD_ROLL: Record<BuiltClass, number> = {
-  office: 1 / 96,        // eight-year terms
-  retail: 1 / 84,        // seven
-  industrial: 1 / 72,    // six
-  multifamily: 1 / 12,   // one
+  office: 1 / LEASE_TERM_M.office,
+  retail: 1 / LEASE_TERM_M.retail,
+  industrial: 1 / LEASE_TERM_M.industrial,
+  multifamily: 1 / LEASE_TERM_M.multifamily,
 };
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is

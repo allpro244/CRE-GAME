@@ -25,11 +25,10 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, classIsShort } from "./market";
+import { rng } from "./market";
 import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
-import { districtLabelOf } from "./mix";
 import { money } from "./money";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -49,212 +48,22 @@ export const FAR_FLOOR = 0.72;
 // is the same number with three answers; there is one now, and it lives here
 // with the process that enforces it.
 export const FAR_CEIL = 3.8;
-/**
- * The probability at which the rezoning walk neither grows nor shrinks the
- * city's envelope, derived from the two step sizes rather than chosen:
- * an up step averages x1.285, a down step x0.91, and
- *     p·ln(1.285) + (1 - p)·ln(0.91) = 0  =>  p = 0.273.
- * Change either step range and this number changes with it.
- */
-const NEUTRAL_P = 0.273;
+/** The town is unzoned (see tickZoning); the variance desk has nothing to hear. */
+const UNZONED = true;
 
 // ------------------------------------------------------------------ rezoning
 
 /**
- * The city looks at a district and decides what it should be allowed to
- * become. It reads the same things a planning department reads: how much of
- * the district is actually built out against what it is permitted, and whether
- * the place has become somewhere people want to be.
+ * THERE IS NO ZONING TO REVISE (2026-10-10). This town is unzoned, like
+ * Houston (see zonePermits in value.ts): every lot may host any use, and its
+ * allowance is what its footprint can physically carry (normalizeParcels).
+ * The district rezoning walk, the manufacturing map and its reverse had
+ * nothing left to act on, and are gone. The function stays because the
+ * planning tick calls it, and so that a save carrying `zoneAdj` or `zoneUse`
+ * from before still reads (resolveRec applies them; nothing writes them).
  */
 export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
-  if (!s.zoneAdj) s.zoneAdj = {};
-  // A SHORTAGE IS A POLITICS, and nothing here could see one.
-  //
-  // This read how much of a district's envelope was used and a STATIC
-  // locational score, and nothing else — so a town at 3.7% vacancy with rents
-  // tripling rezoned at exactly the rate of a town drowning in empty space,
-  // and in the same direction. That is not how a planning board works. Scarcity
-  // is the thing that puts people in the room: rents that have outrun what the
-  // city earns are the argument for more envelope, they are why the argument
-  // gets made more often, and a glut is why it stops being made at all.
-  //
-  // This is the supply side of the income anchor. With no wire from the price
-  // of space back to permission to build more of it, a market that got tight
-  // stayed tight for fifty years, and rent took the whole adjustment forever —
-  // which is exactly what `sim:accept` F was measuring.
-  const ez = s.econ;
-  // TIGHTNESS, THE SAME WAY `cityInfillCap` MEASURES IT. This was a raw
-  // percentage-point difference while dev.ts divided the same difference by
-  // the natural rate — one quantity with two answers, and the two were an
-  // order of magnitude apart. Measured over 3 seeds x 50 years the raw form
-  // gave a median `scarcity` of -0.067 against a cap of 0.45, so the term
-  // that is supposed to represent "the city cannot house what wants to be in
-  // it" was contributing essentially nothing even when the market was short.
-  // Normalised, a market 1.6pp inside its natural rate reads 0.14 rather than
-  // 0.016, which is a signal a planning board would actually hear.
-  const tight = clamp(
-    (NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office,
-    -1, 1);   // + when short
-  // EFFECTIVE, not asking. Rent-to-income is a claim about what a tenant PAYS,
-  // and a tenant pays net of concessions. In a glut the asking index holds its
-  // face while concIdx maxes out — reading asking here scored the glutted
-  // market as ~14% dearer than it was and upzoned into the glut.
-  const rentPress = clamp(
-    ((ez.effRentIdx?.office ?? ez.rentIdx.office) / RENT_BASE.office)
-      / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
-  const scarcity = clamp(tight * 2.2 + rentPress * 0.30, -0.30, 0.45);
-  // A rezoning is a multi-year political process — roughly one district every
-  // four or five years across the whole town, and MORE OFTEN when the town
-  // cannot house what wants to be in it. The draw happens either way, so the
-  // RNG stream is untouched and every paired run in the audits still lines up.
-  if (rng(s) > 0.019 * clamp(1 + scarcity * 2.4, 0.45, 2.4)) return;
-
-  // gather districts and how they are doing
-  const byDist = new Map<string, { built: number; envelope: number; demand: number; n: number }>();
-  for (const bbl of bbls) {
-    const rec = parcels[bbl];
-    if (!rec || !rec.lotArea) continue;
-    const live = resolveRec(parcels, s, bbl);
-    if (!live) continue;
-    const d = rec.district || "—";
-    const e = byDist.get(d) ?? { built: 0, envelope: 0, demand: 0, n: 0 };
-    // COUNTED ON THE PARCELS THAT HAVE BUILDINGS, which is the question a
-    // planning board is actually asking: has this neighbourhood used the
-    // allowance it already has. The old ratio divided by the whole district
-    // INCLUDING its vacant lots — the comment below even said so, "a third of
-    // every district is vacant lots and the ratio is structurally low" — and
-    // the base probability was then raised to compensate for a denominator
-    // that was wrong. Fixing the ratio is what lets the base be honest.
-    if (live.bldgArea > 0) {
-      e.built += live.bldgArea;
-      e.envelope += live.lotArea * Math.max(live.farMaxComm, live.farMaxRes, 2);
-    }
-    e.demand += live.demandScore;
-    e.n++;
-    byDist.set(d, e);
-  }
-  const rows = [...byDist.entries()].filter(([, v]) => v.n >= 20);
-  if (!rows.length) return;
-
-  const pick = rows[Math.floor(rng(s) * rows.length)];
-  const [dist, v] = pick;
-  const usedUp = v.envelope > 0 ? v.built / v.envelope : 0;
-  const demand = v.demand / v.n;
-  const cur = s.zoneAdj[dist] ?? 1;
-
-  // A district that has built out its envelope and is somewhere people want to
-  // be gets more envelope. One that is half empty does not need any, and a
-  // place going backwards gets held down.
-  // CITIES DENSIFY. Over a century upzonings comfortably outnumber
-  // downzonings — a growing town keeps finding it needs more room, and the
-  // downzonings are the exceptions that make the news. The first cut of this
-  // read `usedUp` straight and biased hard the other way, because a third of
-  // every district is vacant lots and the ratio is structurally low: nine
-  // districts were downzoned for every three upzoned across three centuries.
-  // WHERE THIS PROCESS IS NEUTRAL, which nothing here had worked out.
-  //
-  // The walk is multiplicative: an up step averages x1.285 and a down step
-  // x0.91. So it is flat only where
-  //     p·ln(1.285) + (1-p)·ln(0.91) = 0   =>   p = 0.273
-  // and ANY base above that compounds without limit. The base was 0.42 before
-  // the other three terms were even added, so every district in every town
-  // drifted upward for ever, and the only thing stopping it was FAR_CEIL.
-  //
-  // Measured on the shipped island: 58.7% of the city was upzoned within TEN
-  // YEARS and 99.8% by year 50, with the median parcel's envelope pinned at
-  // exactly 2.6x its generated value — the ceiling, to the digit. A variable
-  // resting on its rail in normal play is the rail holding up the model.
-  //
-  // That mattered far beyond zoning, because LAND IS PRICED OFF THE ENVELOPE
-  // YOU ARE ALLOWED TO BUILD. With the whole city permanently upzoned 2.6x,
-  // the residual concluded that essentially every parcel was a teardown: by
-  // year 10, 69% of built parcels were worth more as bare dirt than as
-  // standing buildings, and real land ran from $98/sf to $1,918/sf in a decade.
-  // This is the mechanism behind the owner's report that land prices become
-  // "too inflated and deflated", and the compounding is the whole of it.
-  //
-  // So the probability is CENTRED on neutral and moves with the one thing a
-  // planning board actually responds to: whether the neighbourhood has used
-  // the allowance it already has. A district that has built out asks for more
-  // and gets it; a district sitting on unused envelope does not, which is what
-  // makes the process self-limiting instead of a ratchet.
-  // WHERE "BUILT OUT" ACTUALLY SITS. This pivoted at 0.45 — a district was
-  // judged to be asking for more envelope only once it had built to nearly
-  // half of the one it had. No American city is near that. Built floor area
-  // runs about 20-40% of zoned capacity across US cities, and the ratio is low
-  // precisely because envelope is granted in places and shapes that nobody
-  // builds: the paper allowance is not a queue of projects waiting.
-  //
-  // At a 0.45 pivot the term contributed -0.22 at this city's median of 0.25
-  // and the process ran 26 downzonings to 3 upzonings over fifty years, with
-  // `zoneAdj` walking down to p10 0.73 against a 0.72 floor. The comment above
-  // states the fact — "CITIES DENSIFY. Over a century upzonings comfortably
-  // outnumber downzonings" — and the arithmetic below it did the opposite.
-  //
-  // 0.30 is the middle of the documented 20-40% band, NOT this model's own
-  // median of 0.25. Fitting the pivot to the number the engine happens to
-  // produce would make the term measure the engine; anchoring it to the real
-  // ratio leaves the engine free to sit above or below, and today it sits
-  // slightly below, which is honest.
-  const BUILT_OUT_PIVOT = 0.30;
-  const up = clamp(NEUTRAL_P + (usedUp - BUILT_OUT_PIVOT) * 1.1 + (demand - 50) / 150 + scarcity, 0.05, 0.95);
-  const isUp = rng(s) < up;
-  const step = isUp ? rrange(s, 1.12, 1.45) : rrange(s, 0.86, 0.96);
-  const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);
-  if (Math.abs(next - cur) < 0.02) return;
-  s.zoneAdj[dist] = +next.toFixed(3);
-  if (!s.zoneLog) s.zoneLog = {};
-  s.zoneLog[dist] = { m: s.month, dir: isUp ? 1 : -1, adj: s.zoneAdj[dist] };
-
-  // Land reprices the day it passes, because the envelope IS the land value.
-  for (const bbl of bbls) {
-    if (parcels[bbl]?.district !== dist) continue;
-    s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * (isUp ? 1 + (step - 1) * 0.45 : 1 - (1 - step) * 0.4));
-  }
-  const yours = Object.keys(s.holdings).filter((b) => parcels[b]?.district === dist).length;
-  s.news.unshift({
-    q: s.month, kind: isUp ? "event" : "warn",
-    text: isUp
-      ? `${districtLabelOf(parcels, dist)} has been upzoned — the envelope goes to ${(next * 100).toFixed(0)}% of what it was at the start. `
-        + `Every lot there is worth more this morning than it was last night${yours ? `, and you own ${yours} of them` : ""}.`
-      : `${districtLabelOf(parcels, dist)} has been downzoned to ${(next * 100).toFixed(0)}% of its original envelope. `
-        + `The neighbourhood fought it and won${yours ? `, and you are holding ${yours} lots there` : ""}.`,
-  });
-
-  // A SHORTAGE OF BAYS IS A MAP, NOT AN ENVELOPE. Warehouses are one or two
-  // storeys; upzoning FAR does not house them. The plat shipped zero M
-  // districts, fringe C still prices dirt as housing (the residual's highest
-  // and best), and sitePencil.industrial sat at 0 for forty years on a
-  // growing seed while 150 vacant corridor lots sat there — measured,
-  // stock frozen, vacancy on the 1.5% floor, zero industrial starts.
-  //
-  // So when industrial is the class the city cannot house, the same hearing
-  // that already fired maps leftover vacant fringe C in THIS district to M.
-  // No new draw: the board, the district and the step are already decided.
-  // Housing keeps the conversion path on M once the shortage lifts
-  // (zonePermits).
-  if (classIsShort(ez, "industrial")) {
-    if (!s.zoneUse) s.zoneUse = {};
-    let mapped = 0;
-    for (const bbl of bbls) {
-      const rec = parcels[bbl];
-      if (!rec || rec.district !== dist) continue;
-      const live = resolveRec(parcels, s, bbl);
-      if (!live || live.class !== "land" || (live.bldgArea ?? 0) > 0) continue;
-      if ((live.zoneDist ?? "C")[0] !== "C") continue;
-      if ((live.demandScore ?? 100) >= 45) continue;
-      if (s.zoneUse[bbl]) continue;
-      s.zoneUse[bbl] = "M";
-      mapped++;
-    }
-    if (mapped) {
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `${districtLabelOf(parcels, dist)} has been mapped for manufacturing — ${mapped} vacant corridor `
-          + `lot${mapped === 1 ? "" : "s"} ${mapped === 1 ? "is" : "are"} M now, because there is nowhere to put a shed.`,
-      });
-    }
-  }
+  void s; void parcels; void bbls;
 }
 
 // ------------------------------------------------------------------ variance
@@ -268,6 +77,10 @@ function pendingVariances(s: GameState): Record<string, VarianceApplication> {
 export function varianceQuote(
   s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
 ) {
+  // No zoning, nothing to vary: every lot already has the envelope its plate
+  // can carry (see tickZoning). The desk below is kept for saves that filed
+  // an application before the town was unzoned; none can be opened now.
+  if (UNZONED) return null;
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea) return null;
   if (s.landmarks?.[bbl] !== undefined) return null;

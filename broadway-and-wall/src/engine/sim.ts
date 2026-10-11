@@ -36,6 +36,7 @@ import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickTakePrivateApproach, poss } from "./takeprivate";
+import { tickOffMarketCalls } from "./offmarket";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
@@ -640,6 +641,7 @@ function tickMonth(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  tickOffMarketCalls(s, parcels); // and their desks ring the owners who have not listed
   // The mortgage record reconciles against the street the moment the street
   // has finished moving, so the statement the note desk sells out of below is
   // never a month stale.

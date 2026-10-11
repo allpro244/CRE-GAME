@@ -1546,7 +1546,23 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // class's cap is two to four points (office 1990-92, 2007-09, 2022-24).
   // So the money chasing a class and the growth its buyers believe are one
   // discount, bounded once.
-  let growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0) - flows;
+  // HOW MUCH OF TODAY'S GROWTH A YIELD CAN CAPITALISE (2026-10-11). This was
+  // half of the ten-year trailing real growth, asserted ("buyers believe some
+  // of the trend, not all of it"). The share has a derivation. Rent growth
+  // mean-reverts: annual rent-growth autocorrelation runs about 0.5-0.7 in US
+  // office and industrial series, so a growth surprise decays at
+  // kappa = -ln(0.6) ~ 0.5 a year. In a Gordon model whose growth decays at
+  // kappa, current growth g0 lowers the cap by g0 x y/(y + kappa), y the
+  // no-growth yield — at y ~ 7% that is about an eighth of g0, not a half.
+  // Measured on the town map before this: office caps compressed to 5.3% on
+  // a 5.1% loan index at a boom's peak — a risk premium of nothing, below
+  // anything recorded even in 2007 — and swung 4.5 points into the bust that
+  // followed, against 1.5-2.5 in the early 1990s and 2008-09. After, over a
+  // size-mixed set of five 100-year towns: office value crashes deeper than
+  // 80% went 3 -> 0, the worst real office fall -81% -> -72%.
+  const yNoGrowth = Math.max(0.01, base / 100);
+  const GROWTH_DECAY = -Math.log(0.6);
+  let growth = (yNoGrowth / (yNoGrowth + GROWTH_DECAY)) * 100 * (e.growthExp?.[k] ?? 0) - flows;
   // ...BUT NOBODY PAYS FOR GROWTH PAST THE RENT AT WHICH A RIVAL BUILDS NEXT
   // DOOR (2026-10-09). A trend is only worth a lower yield while rent has
   // room to run, and the room ends at the supply price: once new space

@@ -46,7 +46,7 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
-import { netWorth, landRead, refreshLandQueue, ownerAskPsf } from "./value";
+import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -566,8 +566,16 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   }
   if (!vacant.length) return;
   const put = (bbl: string, rec: ParcelRecord, distress: boolean) => {
-    // The owner lists at what the owner believes, not at the model's price.
-    const value = ownerAskPsf(rec, s.econ) * rec.lotArea;
+    // A PUBLIC LISTING IS PRICED OFF COMPS, AND THE OWNER'S BELIEF IS A FLOOR.
+    // A broker strikes the ask from comparable sales; what the owner believes
+    // the dirt is worth (`ownerAskPsf`) is the reservation they will not sell
+    // under. An owner who overvalues lists high and sits unsold — which is how
+    // a land bust goes quiet instead of printing at cents. One who undervalues
+    // does not give the lot away on the open market: competing bidders see the
+    // listing and bid it to the comps. The owner's private misread pays a
+    // developer only in a direct approach (`planDevelopment`'s land basis),
+    // where one buyer meets one seller (Garmaise & Moskowitz 2004).
+    const value = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
     if (!(value > 0)) return;
     const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
     s.listings.push({

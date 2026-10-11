@@ -3,7 +3,7 @@
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
-import { serviceSpec, START_YEAR, fundDepositsHeld } from "./types";
+import { serviceSpec, START_YEAR, fundDepositsHeld, BUILT_CLASSES } from "./types";
 export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
@@ -749,7 +749,9 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
-      const landTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      // ...AND THE LOT WAITS ITS TURN. See `queueFactor`.
+      const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
       if (psf > bestForUse) bestForUse = psf;
       if (!(landTotal > 0)) continue;
@@ -768,6 +770,105 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
     all.push({ use, psf: Number.isFinite(bestForUse) ? bestForUse : 0 });
   }
   return best && { ...best, all };
+}
+
+/**
+ * A RESIDUAL IS WORTH WHAT IT IS WORTH ON THE DAY IT CAN BE BUILT (2026-10-11).
+ *
+ * The residual above prices a lot as if its building could be delivered and
+ * let tomorrow. Every lot in town was priced that way at once. Measured at an
+ * office peak (map 2954813494, years 69-71): the residual made office the
+ * highest use of 447-467 STANDING lots — a 55M sf queue in a town whose whole
+ * office stock is about 5M sf and which absorbs 48-63k sf of office a year.
+ * A thousand years of demand, every lot of it priced as if it alone got the
+ * tower; 266 of 423 apartment buildings were marked at that phantom dirt
+ * rather than at their income, and when the peak cap and rent turned, the
+ * dirt — and the appraisal sitting on it — fell 80-90% while NOI barely moved.
+ *
+ * Highest and best use has a test for exactly this: a use must be FINANCIALLY
+ * FEASIBLE, and feasibility includes market demand to absorb it (Appraisal
+ * Institute, The Appraisal of Real Estate, ch. 16). The real-options
+ * literature says how to price the wait: land is the present value of the
+ * residual at the date it is built (Titman 1985; Capozza & Helsley 1990).
+ * Here the date is set by the queue. Sites are taken best first, so a lot
+ * waits behind the floor area of every site whose residual beats its own,
+ * served at the rate the town actually takes up space of that class — net
+ * absorption plus the stock it loses to demolition, both measured off the
+ * last five years of the tape. The wait is discounted at the class's
+ * through-cycle yield (`capExp`), the same yield the residual's own exit is
+ * struck at: the residual grows with the asset, so it discounts like one.
+ *
+ * The best site in town waits for nothing and keeps its whole residual. The
+ * four-hundredth office site in a 50k sf/yr office market is worth nothing AS
+ * an office site, and prices at the use it can actually get built — which is
+ * what the auction in `readLand` then does, use by use. No floor, no cap: a
+ * market that is absorbing fast shortens the wait and the full residual comes
+ * back on its own.
+ */
+export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
+  const q = econ.landQueue?.[use];
+  if (!q || !(psf > 0) || !q.psf.length) return 1;
+  let ahead = q.total;
+  for (let i = 0; i < q.psf.length; i++) {
+    if (psf >= q.psf[i]) { ahead = q.ahead[i]; break; }
+  }
+  if (!(ahead > 0)) return 1;
+  if (!(q.absYr > 0)) return 0;
+  return Math.pow(1 + Math.max(0.01, q.r), -ahead / q.absYr);
+}
+
+/** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. */
+const LAND_QUEUE_SAMPLE = 400;
+
+/**
+ * MEASURE THE QUEUE, once a year. The residuals are struck WITHOUT the queue
+ * (it is what the market would build if it could), on a deterministic sample
+ * of lots scaled to the town. A standing building joins only where its dirt
+ * beats the building on it — that is the stock the wrecking ball is pointed
+ * at — and only for the floor area its scheme would ADD in that use.
+ */
+export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRecord>, bbls: string[]): void {
+  const e = s.econ;
+  if (e.landQueue && s.month % 12 !== 0) return;
+  const h = e.history ?? [];
+  const L = Math.min(60, h.length - 1);
+  if (L < 12) return;
+  const bare = { ...e, landQueue: undefined } as Econ;
+  const n = bbls.length;
+  const take = Math.min(n, LAND_QUEUE_SAMPLE);
+  const step = n / take;
+  // A fixed stride with a monthly offset: deterministic, and never the RNG.
+  const off = ((s.month * 2654435761) >>> 0) % Math.max(1, Math.floor(step));
+  const rows: Record<BuiltClass, { psf: number; sf: number }[]> = { office: [], retail: [], multifamily: [], industrial: [] };
+  for (let j = 0; j < take; j++) {
+    const bbl = bbls[Math.min(n - 1, Math.floor(j * step) + off)];
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || !(rec.lotArea > 0)) continue;
+    const sch = residualScheme(rec, bare);
+    if (!sch || !(sch.psf > 0)) continue;
+    let sf = sch.usable * rec.lotArea;
+    if (rec.class !== "land" && rec.bldgArea > 0) {
+      const asIs = incomeValueAsIs(rec, bare, initialCondition(rec), initialCondIdx(rec, s.month));
+      if (sch.psf * rec.lotArea <= asIs) continue;
+      if (rec.class === sch.use) sf -= rec.bldgArea;
+    }
+    if (sf > 0) rows[sch.use].push({ psf: sch.psf, sf: sf * step });
+  }
+  const now = h[h.length - 1], then = h[h.length - 1 - L];
+  const q: NonNullable<Econ["landQueue"]> = {};
+  for (const use of BUILT_CLASSES) {
+    let netAbs = 0, comp = 0;
+    for (let i = h.length - L; i < h.length; i++) { netAbs += h[i].abs?.[use] ?? 0; comp += h[i].comp?.[use] ?? 0; }
+    const lost = comp - ((now.stock?.[use] ?? 0) - (then.stock?.[use] ?? 0));
+    const absYr = (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
+    const xs = rows[use].sort((a, b) => b.psf - a.psf);
+    const psf: number[] = [], ahead: number[] = [];
+    let cum = 0;
+    const every = Math.max(1, Math.ceil(xs.length / 48));
+    xs.forEach((x, i) => { if (i % every === 0) { psf.push(+x.psf.toFixed(2)); ahead.push(Math.round(cum)); } cum += x.sf; });
+    q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: (e.capExp?.[use] ?? e.capRate[use]) / 100 };
+  }
+  e.landQueue = q;
 }
 
 /**

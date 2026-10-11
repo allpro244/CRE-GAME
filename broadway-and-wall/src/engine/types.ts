@@ -1912,6 +1912,15 @@ export interface Econ {
    * sites with a higher residual, `absYr` the class's measured throughput
    * (sf/yr), `r` the yield the wait is discounted at.
    */
+  /**
+   * WHAT TENANTS ARE PAYING ACROSS THE ROLL, real (opening dollars): effective
+   * rent rolled at the class's lease-turnover speed (AFFORD_ROLL), leases
+   * carrying the price level. The rent a firm deciding to relocate is
+   * actually paying — not this month's quote on space it does not occupy.
+   */
+  inPlaceReal?: Record<BuiltClass, number>;
+  /** The opening effective rent — the parity the demand side's price argument is measured against. */
+  effAnchor?: Record<BuiltClass, number>;
   landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;

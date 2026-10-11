@@ -1462,6 +1462,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   // Income-anchor parity is this opening print, not the global RENT_BASE table.
   econ.rentAnchor = { ...econ.rentIdx };
+  econ.effAnchor = { ...econ.effRentIdx };
+  econ.inPlaceReal = { ...econ.effRentIdx };
   recordHistory(econ, 0);
   return econ;
 }
@@ -3735,8 +3737,16 @@ export function tickEcon(s: GameState) {
     // dense map does not start off-parity), and income is its own argument.
     // Both are exactly 1.0 in month zero on every seed and every map.
     const cpiNow = Math.max(0.35, e.cpi ?? 1);
-    const anchor = e.rentAnchor?.[k] ?? RENT_BASE[k];
-    const relRent = (e.rentIdx[k] / Math.max(1e-6, anchor)) / cpiNow;
+    // EFFECTIVE, NOT ASKING (2026-10-11). Tenants take space at what deals
+    // sign at — the same number every valuation and pro forma in this engine
+    // reads (`useRentPsfYr`). Read off the face rate, a glut priced through
+    // the concession package (which is where it is priced since the glut curve
+    // became a net effective curve) never reached the tenants it was cheapening.
+    const effNow = e.effRentIdx?.[k] ?? e.rentIdx[k];
+    const anchor = e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? RENT_BASE[k];
+    const relRent = (effNow / Math.max(1e-6, anchor)) / cpiNow;
+    if (!e.inPlaceReal) e.inPlaceReal = { ...(e.effAnchor ?? e.rentAnchor ?? e.rentIdx) };
+    e.inPlaceReal[k] += AFFORD_ROLL[k] * (effNow / cpiNow - e.inPlaceReal[k]);
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
@@ -3886,7 +3896,19 @@ export function tickEcon(s: GameState) {
       const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
       const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
       const GO_RATE = 0.80;        // of those at renewal, per point of overshoot
-      const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
+      // WHAT THE SECTOR IS PAYING, NOT THIS MONTH'S QUOTE (2026-10-11). This
+      // read the spot asking rent, so a cyclical spike counted as a sector
+      // being priced out of town for good. Measured on map 2002: a boom took
+      // office rent to 1.9x its parity against pay with vacancy on its floor,
+      // the ratchet fired for seven years and removed 30% of office demand
+      // (2.19M -> 1.52M sf) — permanently — while office jobs did not move.
+      // The towers the boom started then delivered into a town that had lost
+      // a third of its tenants on paper, and vacancy reached 43%. A firm at
+      // renewal relocates on what occupying space here costs across its roll,
+      // which is the in-place rent: effective rent rolled at lease speed, so
+      // only a SUSTAINED gap moves a firm, which is the generational exit this
+      // ratchet exists to model (manufacturing leaving New York over decades).
+      const burden = (e.inPlaceReal[k] * cpiNow / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
       const over = Math.max(0, burden - RELOCATE_AT);
       if (over > 0 && e.baseStock) {
         const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table

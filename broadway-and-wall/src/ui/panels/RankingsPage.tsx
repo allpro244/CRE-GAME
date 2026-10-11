@@ -57,7 +57,7 @@ export function RankingsPage() {
     <div>
       <div className="page-section">Where {town} ranks, {table.year}</div>
       <div className="hint">
-        Against 32 real US cities that ranged from about 18,000 to 230,000 people in 2000.{" "}
+        Against 32 real US cities that ranged from about 18,000 to 230,000 people in 2000. {town} counts its whole region — the island and the mainland it anchors.{" "}
         {past
           ? `The real record ends in ${table.recordEnds}; after that each city carries its own recent growth forward, fading toward the nation's over a few decades. Rows marked * are projected.`
           : `Population is the Census record for ${table.year}. Unemployment, pay and rent are each city's real gap to the US that year, laid on this game's national economy.`}{" "}Pay and rent are in 2000 dollars.

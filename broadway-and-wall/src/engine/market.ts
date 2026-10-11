@@ -2197,6 +2197,27 @@ function openingRegionTrend(seed: number, parcels: ParcelTable): number {
 }
 
 /** The town's pull on employers over the nation's trend, per year, after the cost brake. */
+/**
+ * THE REGION AND THE ISLAND (2026-10-10). The town's population is a region:
+ * it is derived from the island's jobs (citySize), and most of it lives on the
+ * mainland the island anchors — at the opening about one resident in six
+ * lives on the map. This is who does: occupied flats, at the generator's own
+ * 900 sf a home of rentable space (`unitsres` in citygen), times 2.51 people a
+ * household (US Census 2020). Commuters are the island's jobs less the
+ * residents who hold them.
+ */
+export const SF_PER_HOME = 900;
+export const PEOPLE_PER_HOME = 2.51;
+export function islandResidents(e: Econ): { residents: number; homes: number; commuters: number } {
+  const homes = Math.max(0, (e.occupied?.multifamily ?? 0) / SF_PER_HOME);
+  const residents = Math.round(homes * PEOPLE_PER_HOME);
+  const pop = Math.max(1, e.population ?? 1);
+  // The island's residents work at the region's rate: employed / population.
+  const workRate = Math.min(1, (e.jobs ?? 0) / pop);
+  const commuters = Math.max(0, Math.round((e.jobs ?? 0) - residents * workRate));
+  return { residents, homes: Math.round(homes), commuters };
+}
+
 export function regionalPull(e: Econ): number {
   const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
   const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
@@ -3641,7 +3662,15 @@ export function tickEcon(s: GameState) {
     if (!e.cityVac) e.cityVac = { ...NATURAL_VAC };
     if (!e.absorb12) e.absorb12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     e.stock[k] = stk + delivered;
-    const elastic = k === "office" ? 1.0 : k === "industrial" ? 0.9 : k === "retail" ? 0.7 : 0.75;
+    // ONE HOME PER HOUSEHOLD (2026-10-10). Flats read households at 0.75,
+    // which no source in this file gives: twice the households wanting 68%
+    // more homes. Household size is already in the driver (`hhIdx` counts
+    // adults, and headship rides the secular menu), so each further household
+    // needs a dwelling — and in a spatial equilibrium the island keeps its
+    // share of the region's households at given relative prices, so its
+    // demand for flats moves one-for-one with them. Price still rations it
+    // (`affordEff`), as it does every class.
+    const elastic = k === "office" ? 1.0 : k === "industrial" ? 0.9 : k === "retail" ? 0.7 : 1.0;
     // PRICE RATIONS DEMAND. Affordability is rent against INCOME, not rent
     // against construction cost — deflating by cost cancelled most of rent
     // growth and left price with almost no say, which is how industrial ended

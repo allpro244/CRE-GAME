@@ -1694,7 +1694,11 @@ export function generateCity(cfg) {
     if (!fr || fr.D < 8) return null;
     if (polygonArea([ring]) / fr.area < 0.55) return null;
     const band = FRONT_WAY[dist.lotWay] ?? FRONT_FLAVOR[dist.flavor] ?? FRONT_FLAVOR.core;
-    const w0 = rr(band[0], band[1]);                     // one surveyor, one frontage
+    const sub = suburbMult(centroid(ring), dist);
+    // A suburban lot is wider, not deeper — the block sets the depth — so the
+    // frontage carries the whole of the outward growth (a 70 ft front on a
+    // 120 ft lot is the American house lot).
+    const w0 = rr(band[0], band[1]) * sub;               // one surveyor, one frontage
     const across = fr.axis + Math.PI / 2;
     const ex = extentAlong(ring, across);
     const alleyW = dist.alley ?? 0;
@@ -1719,7 +1723,8 @@ export function generateCity(cfg) {
     // and a frontage that would make a lot past the band's top on a very deep
     // row is narrowed. Measured before this bound: a burgage downtown on
     // 25 m rows came out at half the convention's area and 55% more lots.
-    const [t0, t1] = dist.lot ?? flavorOf(d).lot;
+    const [t0b, t1b] = dist.lot ?? flavorOf(d).lot;
+    const t0 = t0b * sub, t1 = t1b * sub;
     const wArea = Math.min(Math.max(w0, t0 / lotD), Math.max(8, t1 / lotD));
     // a lot past aspect 5 is not a lot anybody platted; widen rather than slice
     const w = Math.max(wArea, lotD / LOT_ASPECT);
@@ -1800,7 +1805,12 @@ export function generateCity(cfg) {
     // (25-30 ft on a 125-150 ft suburban lot, 3 m minimum); a villa stands
     // free of its neighbours too. A row, a shopfront or an office takes the
     // street line.
-    const villa = dist.lotWay === "villa";
+    // ...AND OUT TOWARD THE EDGE A HOME STANDS FREE (2026-10-10). Where the
+    // plat has grown to house-lot size (suburbMult), a residential lot is a
+    // detached house on a front garden and side yards, whatever the district's
+    // older convention nearer the core.
+    const outer = dist.flavor === "resi" && suburbMult(centroid(lotRing), dist) >= 1.5;
+    const villa = dist.lotWay === "villa" || outer;
     const house = villa || (dist.flavor === "resi" && dist.lotWay !== "row" && dist.lotWay !== "burgage" && dist.lotWay !== "fine");
     return {
       rear, depth,
@@ -1893,9 +1903,10 @@ export function generateCity(cfg) {
    * entry replaces the flavour's when it is present, and nothing else about
    * the flavour moves.
    */
-  const lotOptOf = (name, heat = 0) => {
+  const lotOptOf = (name, heat = 0, sub = 1) => {
     const fl = flavorOf(name);
-    const [t0, t1, min, maxDepth, jitter] = cfg.districts[name]?.lot ?? fl.lot;
+    const [t0b, t1b, min, maxDepth, jitter] = cfg.districts[name]?.lot ?? fl.lot;
+    const t0 = t0b * sub, t1 = t1b * sub;
     const k = (fl.assemble ?? 1) * (0.45 + 0.75 * Math.max(0, Math.min(1, heat)));
     return {
       target: () => {
@@ -2056,6 +2067,23 @@ export function generateCity(cfg) {
     return m;
   })();
   const growthRing = (p) => Math.min(1, dist(p, FOUNDED) / FOUND_MAX);
+  // LOTS GROW TOWARD THE EDGE (2026-10-10). A town is platted in the order it
+  // grows: the founding core on narrow, deep lots a shop or a row house fills
+  // (25-35 ft fronts, 2,500-5,000 sf), and each later ring on bigger ones as
+  // land gets cheaper with distance — the lot-size gradient every US metro
+  // shows. The median lot under a new single-family house is about 8,000-
+  // 8,500 sf (Census Survey of Construction); the core conventions here run
+  // 3,500-10,000 sf. So the area band and the frontage are multiplied from 1 inside 40% of the way to the shore up to 2.2 at the
+  // water, smoothly: the outer ring reads as houses on yards. It follows
+  // distance, not the district's name — a frontier core district runs half
+  // way to the shore. Industrial keeps its yards. Read from position, no draw.
+  const SUBURB_FROM = 0.30, SUBURB_GAIN = 1.8;
+  const suburbMult = (p, district) => {
+    const fl = district?.flavor;
+    if (fl === "industrial") return 1;
+    const t = Math.max(0, Math.min(1, (growthRing(p) - SUBURB_FROM) / (1 - SUBURB_FROM)));
+    return 1 + SUBURB_GAIN * t * t * (3 - 2 * t);
+  };
   const RING_W = 0.60;
   const pendingYears = [];
   function yearFor(name, at) {
@@ -2303,7 +2331,7 @@ export function generateCity(cfg) {
     else {
       const pl = FRONTAGE ? platBlock(ground, d, heat) : null;
       if (pl) { lots.push(...pl.lots); ALLEYS_M.push(...pl.alleys); }
-      else splitLots(ground, lotOptOf(d, heat), lots);
+      else splitLots(ground, lotOptOf(d, heat, suburbMult(centroid(ground), cfg.districts[d] ?? {})), lots);
       absorbSlivers(lots);
       // The fallback splitter only halves, and halving a wedge leaves the
       // point on one piece; plan 8 paves that point too, as the block-level

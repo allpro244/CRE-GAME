@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -829,6 +829,11 @@ const LAND_QUEUE_SAMPLE = 400;
  */
 export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRecord>, bbls: string[]): void {
   const e = s.econ;
+  // OWNERS LEARN THE LAND MARKET SLOWLY — see `ownerAskPsf`. Monthly, toward
+  // the level the yearly sample last measured.
+  if (e.landMkt !== undefined) {
+    e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
+  }
   if (e.landQueue && s.month % 12 !== 0) return;
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
@@ -840,10 +845,12 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
   // A fixed stride with a monthly offset: deterministic, and never the RNG.
   const off = ((s.month * 2654435761) >>> 0) % Math.max(1, Math.floor(step));
   const rows: Record<BuiltClass, { psf: number; sf: number }[]> = { office: [], retail: [], multifamily: [], industrial: [] };
+  let mktSum = 0, mktN = 0;
   for (let j = 0; j < take; j++) {
     const bbl = bbls[Math.min(n - 1, Math.floor(j * step) + off)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || !(rec.lotArea > 0)) continue;
+    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += p; mktN++; } }
     const sch = residualScheme(rec, bare);
     if (!sch || !(sch.psf > 0)) continue;
     let sf = sch.usable * rec.lotArea;
@@ -869,6 +876,59 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: (e.capExp?.[use] ?? e.capRate[use]) / 100 };
   }
   e.landQueue = q;
+  if (mktN > 0) {
+    e.landMkt = mktSum / mktN;
+    if (e.landBelief === undefined) e.landBelief = e.landMkt;
+  }
+}
+
+/**
+ * WHAT THE OWNER OF A VACANT LOT WILL TAKE FOR IT (2026-10-11).
+ *
+ * The engine priced every lot at one number — the model's own residual and
+ * comparable-sales read — and every owner knew it exactly. Land is the least
+ * comparable asset there is: it trades rarely, every lot is different, and the
+ * owner holds old comps while the buyer holds a pro forma, a zoning read and
+ * a market view. So asks scatter widely around value (Haughwout, Orr &
+ * Bedoll 2008, on New York land prices), buyers and sellers carry different
+ * information (Garmaise & Moskowitz 2004), and sellers anchor on what they
+ * believe the market was rather than what it is (Genesove & Mayer 2001).
+ *
+ * Two parts, both the OWNER's, neither touching the appraisal:
+ *
+ *   - BELIEF. Owners learn the land market at appraisal-smoothing speed —
+ *     about 40% of the gap a year, the smoothing parameter measured in
+ *     appraisal-based property indices (Geltner 1993). So in a boom they ask
+ *     under the market and developers find bargains; in a bust they ask over
+ *     it, hold out, and land stops trading rather than printing at cents.
+ *   - ERROR. A lasting per-lot miss, log-normal with a 15% spread — the upper
+ *     end of measured appraisal error on income property (Webb 1994; Cole,
+ *     Guilkey & Miles 1986), which land, the hardest asset to comp, does not
+ *     undercut. A shape parameter taken from that range, not fitted here.
+ *
+ * A developer compares what the lot is worth to IT against what the owner
+ * asks, buys where the owner underprices, and leaves the overpriced lots
+ * sitting — which is where development profit actually comes from.
+ */
+const BELIEF_MONTHLY = 1 - Math.pow(0.6, 1 / 12);
+const OWNER_ERR_SIGMA = 0.15;
+function ownerErr(bbl: string): number {
+  // Two independent uniform hashes off the parcel id -> one standard normal
+  // (Box-Muller). Persistent: the same owner, the same misread, every month.
+  let h1 = 2166136261, h2 = 5381;
+  for (let i = 0; i < bbl.length; i++) {
+    const c = bbl.charCodeAt(i);
+    h1 ^= c; h1 = Math.imul(h1, 16777619);
+    h2 = Math.imul(h2, 33) ^ c;
+  }
+  const u1 = ((h1 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
+  const u2 = ((h2 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+export function ownerAskPsf(rec: ParcelRecord, econ: Econ): number {
+  const model = landPsfNow(rec, econ);
+  const belief = econ.landMkt && econ.landBelief ? econ.landBelief / econ.landMkt : 1;
+  return model * belief * Math.exp(OWNER_ERR_SIGMA * ownerErr(rec.bbl));
 }
 
 /**
@@ -2964,7 +3024,43 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
   // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
   // triple-net building bills its tax bill to its tenants, so loading the full
   // rate onto every class priced net-leased retail as if it paid its own taxes.
-  const income = noiYr(rec, econ, condition, false, condIdx) / (capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec));
+  const capY = capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec);
+  // ...AT MARKET, PLUS OR MINUS THE LEASES IT ACTUALLY HAS (2026-10-11).
+  //
+  // A building you own is marked on its rent roll — contract rent, lease by
+  // lease (`holdingValue`). Every other building in town was marked as if its
+  // whole roll re-signed at this month's effective rent, every month: the
+  // same quantity with two answers, and the one ninety-five per cent of the
+  // stock got turned every rent cycle straight into a value cycle. Measured
+  // over five 100-year towns on income value alone (no land in it): office
+  // fell 81% peak to trough in real terms against a 58% fall in effective
+  // rent, industrial 76% against 53%.
+  //
+  // An appraiser capitalises market rent and then adds or subtracts what the
+  // leases in place are worth above or below it over their remaining term —
+  // the above/below-market lease adjustment of the income approach
+  // (Appraisal Institute, The Appraisal of Real Estate, ch. 22). The roll's
+  // rent is the market's own in-place index (`inPlaceReal`, effective rent
+  // rolled at the class's lease term, carrying the price level); the average
+  // lease has half a term to run; the gap is discounted at the asset's yield.
+  // Housing re-lets every year and barely moves; a ten-year office roll
+  // signed below the peak keeps a boom's value below the hype, and one signed
+  // above the trough holds a bust's value up while it runs.
+  let leaseAdj = 0;
+  if (econ.inPlaceReal) {
+    const cpiNow = Math.max(0.35, econ.cpi ?? 1);
+    for (const use of uses(rec)) {
+      const sf = useRentableSf(rec, use);
+      const spot = econ.effRentIdx?.[use] ?? econ.rentIdx[use];
+      const roll = (econ.inPlaceReal[use] ?? 0) * cpiNow;
+      if (!(sf > 0) || !(spot > 0) || !(roll > 0)) continue;
+      const gapPsf = useRentPsfYr(rec, econ, condition, use, condIdx) * (roll / spot - 1);
+      const yrs = LEASE_TERM_M[use] / 24;
+      const annuity = (1 - Math.pow(1 + capY, -yrs)) / capY;
+      leaseAdj += sf * useOccupancy(rec, econ, use) * gapPsf * annuity;
+    }
+  }
+  const income = Math.max(0, noiYr(rec, econ, condition, false, condIdx) / capY + leaseAdj);
   // A BUILDING STILL FILLING IS NOT PRICED OFF THE MONTH IT IS HAVING.
   //
   // Capitalising a lease-up roll at a stabilised cap rate counts the same risk

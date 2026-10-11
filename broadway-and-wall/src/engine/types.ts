@@ -1904,6 +1904,15 @@ export interface Econ {
    * difference of two large numbers.
    */
   capExp?: Record<BuiltClass, number>;
+  /**
+   * THE REDEVELOPMENT QUEUE, per use (value.ts `refreshLandQueue`). A land
+   * residual is what the lot is worth if its building could be delivered and
+   * absorbed now; a town absorbs only so much space a year, so each lot waits
+   * behind every better site. `psf` descending, `ahead` the floor area (sf) of
+   * sites with a higher residual, `absYr` the class's measured throughput
+   * (sf/yr), `r` the yield the wait is discounted at.
+   */
+  landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

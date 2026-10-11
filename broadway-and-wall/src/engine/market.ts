@@ -2860,7 +2860,18 @@ export function tickEcon(s: GameState) {
       // At the floor a fifth of the inflow still arrives — people do double up,
       // convert lofts and take the spare room, and a city with no vacancy has
       // never had literally zero net in-migration.
-      migration *= 0.20 + 0.80 * slack;
+      // ...BUT ONLY THE ISLAND'S SHARE OF THE REGION IS ISLAND (2026-10-10).
+      // The region's people live mostly on the mainland the island anchors
+      // (`islandResidents`: about one in six at the opening), whose housing
+      // is built at its own cost and is not short because the island is. A
+      // full island sends newcomers to the mainland and the commute; it does
+      // not stop them coming to the region. Measured after flats demand began
+      // moving one-for-one with households: the island's tighter vacancy
+      // throttled the whole region's in-migration and population at year 100
+      // fell from 63.6k to 54.9k over six Frontier towns. The choke now
+      // weighs the island's share of the region's homes.
+      const share = clamp(islandResidents(e).residents / Math.max(1, e.population ?? 1), 0, 1);
+      migration *= 1 - share * (1 - (0.20 + 0.80 * slack));
     }
     // RETIRED (2026-10-09): out-migration on a rent-burden threshold
     // (`mfBurden > 1.25` against the global RENT_BASE table, capped at

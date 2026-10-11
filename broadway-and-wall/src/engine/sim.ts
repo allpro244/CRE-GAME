@@ -46,7 +46,7 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
-import { netWorth, landRead, landValue, refreshLandQueue } from "./value";
+import { netWorth, landRead, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -566,7 +566,8 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   }
   if (!vacant.length) return;
   const put = (bbl: string, rec: ParcelRecord, distress: boolean) => {
-    const value = landValue(rec, s.econ);
+    // The owner lists at what the owner believes, not at the model's price.
+    const value = ownerAskPsf(rec, s.econ) * rec.lotArea;
     if (!(value > 0)) return;
     const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
     s.listings.push({

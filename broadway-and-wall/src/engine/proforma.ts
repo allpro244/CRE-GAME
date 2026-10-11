@@ -802,7 +802,24 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // The 3x bracket is a guard. (This lived only in the land residual; the desk
   // underwrote a 500k sf tower as if the market would swallow it in one gulp.)
   const sizeFactor = gsf > 45_000 ? Math.min(3, Math.pow(gsf / 45_000, 0.7)) : 1;
-  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket * sizeFactor);
+  // ...AND NEVER FASTER THAN THE WHOLE MARKET TAKES UP SPACE (2026-10-11).
+  // The size factor above is measured against a typical scheme, not against
+  // the town, and its 3x bracket was binding exactly where it mattered: at an
+  // office peak on map 3003 the land residual priced a 90-floor, 1.5M sf tower
+  // on one downtown lot — half again the size of the town's whole 3.2M sf
+  // office stock — as filling in 114 months, and valued the lot at $4.1B. A
+  // building cannot lease faster than the market absorbs space, and that rate
+  // is measured (`econ.landQueue[use].absYr`, the class's net take-up plus the
+  // stock it replaces, over five years). Assuming the scheme captures ALL of
+  // it is the generous case; even so a tower the market cannot swallow now
+  // carries the years of empty floors it would really carry, and the
+  // operating-deficit reserve sizes the scheme to the town — with no cap on
+  // floors anywhere.
+  const fillMonths = overMix(mix, (u) => {
+    const a = econ.landQueue?.[u]?.absYr ?? 0;
+    return a > 0 ? (rentable * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
+  });
+  const carryMonths = Math.round(Math.max(baseCarryMonths * leaseUpMarket * sizeFactor, fillMonths));
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
   const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));

@@ -2474,7 +2474,14 @@ export function tickEcon(s: GameState) {
   // the opening's rent-to-pay is the question an employer is asking.
   const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
   const wageOpen = Math.max(0.35, e.history?.[0]?.wageIdx ?? incomeNow);
-  const costOfSpace = (e.rentIdx.office / Math.max(1e-6, e.rentAnchor?.office ?? RENT_BASE.office)) / (incomeNow / wageOpen);
+  // WHAT FIRMS PAY FOR THE SPACE THEY HOLD (2026-10-11): the in-place rent,
+  // against the opening's effective parity — the same measure the relocation
+  // ratchet reads. This read the ASKING face rate, which since round 12 holds
+  // up through a glut while concessions do the cutting, so it told employers
+  // space was dear exactly when it was cheapest; and a quote on space a firm
+  // does not occupy is not a cost it carries.
+  const inPlaceOffice = (e.inPlaceReal?.office ?? (e.effRentIdx?.office ?? e.rentIdx.office) / Math.max(0.35, e.cpi ?? 1)) * Math.max(0.35, e.cpi ?? 1);
+  const costOfSpace = (inPlaceOffice / Math.max(1e-6, e.effAnchor?.office ?? e.rentAnchor?.office ?? RENT_BASE.office)) / (incomeNow / wageOpen);
   // ...AND THE RETURN WIRE SATURATED, WHICH IS THE SAME BUG THE GLUT SIDE OF
   // THE RENT TERM ALREADY HAD.
   //

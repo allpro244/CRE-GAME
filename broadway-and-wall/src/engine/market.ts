@@ -4737,7 +4737,34 @@ export function tickEcon(s: GameState) {
     // `scarcity` (the on-rail level tax and the flow of new tightness) priced
     // the same queue a second time; the queue is in `effGap` now.
     void scarcity;
-    const instant = vacTerm;
+    // ...AND THE GAP TO EQUILIBRIUM RENT (2026-10-11). The rent adjustment
+    // literature this block cites has TWO terms, and only the first was here:
+    //
+    //   d ln r = a (v* - v) + b (ln r* - ln r)
+    //
+    // the vacancy gap and the gap between rent and the equilibrium rent r* —
+    // the rent at which new space is supplied (Hendershott 1996; Hendershott,
+    // MacGregor & Tse 2002, who estimate b at roughly 0.15-0.30 a year on
+    // office markets; 0.20 is the middle of that range, a shape parameter
+    // taken from it, not fitted here). Without it, a class sitting on its
+    // vacancy floor priced its full ten-point shortage every month for as long
+    // as the boom lasted: measured on map 2002, real office rent rose 8-9% a
+    // year for eight years and ended 1.6-1.8x the rent at which the city's
+    // best sites already penciled, while 12-14% of the stock was in the ground.
+    // Everybody in the market can see that pipeline and that pencil; the rent
+    // a tenant will sign for ten years stops running away from the price at
+    // which the building next door is coming. The reverse holds too, with the
+    // same coefficient: rent far BELOW the supply price is pulled up, but in a
+    // glut the vacancy term is the larger and wins, as in the estimates.
+    //
+    // r* is read off `siteHurdle` — how far rent stands from the level at
+    // which the best sites the city examines clear (1/hurdle) — so it carries
+    // the cost of building, of money and of land, and it is absent (no pull)
+    // for a use no vacant site permits.
+    const siteHk = e.siteHurdle?.[k];
+    const eqGap = siteHk !== undefined && siteHk > 0 ? -Math.log(siteHk) : 0;   // ln(r*/r)
+    const RENT_EQ_PULL = 0.20 / 12;
+    const instant = vacTerm + RENT_EQ_PULL * eqGap;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];

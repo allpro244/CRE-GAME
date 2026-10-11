@@ -4,7 +4,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock } from "@/engine/market";
+import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
@@ -66,10 +66,10 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
       </div>
       <div className="chart-grid">
         <div className="chart-cell">
-          <div className="chart-title">Population</div>
+          <div className="chart-title">Region population</div>
           <LineChart height={108} series={[{ label: "population", color: "#7a5c1e", pts: tail.map((h) => (h.population ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
-            Souls in the city. It follows jobs slowly, because people move for work and move back reluctantly —
+            Souls in the region the island anchors — most of them on the mainland (see "Living on the island" below). It follows jobs slowly, because people move for work and move back reluctantly —
             a downturn shows here a year after it shows in the chart to the right.
           </div>
         </div>
@@ -165,7 +165,13 @@ export function CityFigures() {
     <>
       <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
       <div className="grid">
-        <Row k="Population" v={(e.population ?? 0).toLocaleString()} strong />
+        <Row k="Region population" v={(e.population ?? 0).toLocaleString()} strong
+          title="Everyone the island's economy supports — on the island and on the mainland it anchors." />
+        {(() => { const isl = islandResidents(e); return (<>
+          <Row k="Living on the island" v={`${isl.residents.toLocaleString()} (${((isl.residents / Math.max(1, e.population ?? 1)) * 100).toFixed(0)}%)`}
+            title={`About ${isl.homes.toLocaleString()} occupied homes at ${PEOPLE_PER_HOME} people each.`} />
+          <Row k="Commuting in" v={isl.commuters.toLocaleString()} title="Island jobs held by people who live on the mainland." />
+        </>); })()}
         <Row k="Jobs" v={(e.jobs ?? 0).toLocaleString()} />
         <Row k="Jobs added this year" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />
         {/* The 8.5% flag is the one these rows carried before they were

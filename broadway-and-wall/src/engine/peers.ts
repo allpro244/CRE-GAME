@@ -35,7 +35,9 @@
  *
  * MONEY IN 2000 DOLLARS. A century of this game's inflation makes "dollars
  * of the day" unreadable by 2100, so pay and rent are deflated by the
- * nation's price level.
+ * nation's price level. The nation's rent moves with the nation's pay — the
+ * share of income spent on rent is about constant (Davis & Ortalo-Magné
+ * 2011) — the same comparator the town's price level reads.
  */
 import PEERS from "@/data/peerCities.json";
 import type { GameState } from "./types";
@@ -112,13 +114,13 @@ function nationNow(s: GameState): { unemp: number; pay: number; rent: number } {
   const e = s.econ;
   const payIdx = (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(1e-6, e.wage0 ?? e.wageIdx ?? 1);
   const priceIdx = e.natCpi ?? e.cpi ?? 1;
-  // In 2000 dollars: pay deflated by the nation's prices; rent is the 2000
-  // rent, since the nation's real rent is flat in this game's world.
-  void priceIdx;
+  // In 2000 dollars: pay deflated by the nation's prices, and rent moving
+  // with pay (a constant share of income), deflated the same way.
+  const real = payIdx / Math.max(0.1, priceIdx);
   return {
     unemp: (e.nat?.unemp ?? e.unemployment ?? 0.05) * 100,
-    pay: DATA.us.avgPay["2000"] * payIdx / Math.max(0.1, e.natCpi ?? e.cpi ?? 1),
-    rent: DATA.us.rent2br["2000"],
+    pay: DATA.us.avgPay["2000"] * real,
+    rent: DATA.us.rent2br["2000"] * real,
   };
 }
 
@@ -151,7 +153,7 @@ export function cityRankings(s: GameState, townName: string): { year: number; re
   const e = s.econ;
   const pop = e.population ?? 0;
   const ago = townPopAgo(s, 120);
-  const natRentPsf = RENT_BASE.multifamily * (e.natCpi ?? e.cpi ?? 1);
+  const natRentPsf = RENT_BASE.multifamily * ((e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(1e-6, e.wage0 ?? e.wageIdx ?? 1));
   rows.push({
     name: townName, state: "", you: true,
     pop: Math.round(pop),

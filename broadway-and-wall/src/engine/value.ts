@@ -1480,7 +1480,18 @@ const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> 
   // 100-year Frontier towns: peak flats vacancy 11.4% against 10.8% without
   // it, population at year 100 56.3k against 53.8k.
   multifamily: { exp: 1.10, max: 1.95, min: 0.80 },
-  industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
+  // A SHED ON THE FRINGE IS IN AN ORDINARY INDUSTRIAL LOCATION (2026-10-10).
+  // locationRentMult says so — "its rent multiplier should read ~1.0 there" —
+  // and calls industrial the narrowest spread of the four. The floor of 0.62
+  // made it 2.5x, wider than flats, and priced every fringe shed at 62% of
+  // the town's industrial rent: on FREE land a shed then yielded 2.6% on
+  // cost against 8.7% required, the site pencil read 0.00 for most of a
+  // century, industrial stock went 342k to 352k sf while the town tripled,
+  // and with supply unable to answer, rent did all the clearing — real
+  // industrial rent swung -65% / +183% over five-year windows, the most
+  // volatile class in the town, where in life it is the steadiest. 0.95
+  // makes the spread 1.6x: the last mile still earns its premium.
+  industrial:  { exp: 0.82, max: 1.55, min: 0.95 },
 };
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {

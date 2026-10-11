@@ -2178,6 +2178,8 @@ const REGION_YOUTH_SLOPE = 0.03;      // per unit of vacant-lot share over 0.2
 const REGION_SD = 0.008;              // per year, across towns
 const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const AGGLOM = 0.04;                  // output elasticity to employment
+const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
+const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
 const WAGE_SHARE = 0.85;
 
 function openingRegionTrend(seed: number, parcels: ParcelTable): number {
@@ -3010,8 +3012,20 @@ export function tickEcon(s: GameState) {
     const shelter12 = h12?.rent?.multifamily ? e.rentIdx.multifamily / h12.rent.multifamily - 1 : natCpi12;
     const wage12 = h12?.wageIdx ? (e.wageIdx ?? 1) / h12.wageIdx - 1 : 0;
     const natWage12 = h12?.natWageIdx ? (e.natWageIdx ?? 1) / h12.natWageIdx - 1 : wage12;
+    // THE NATION'S RENT RISES WITH THE NATION'S PAY, NOT WITH ITS PRICES
+    // (2026-10-10). The town's shelter was read against national CPI, which
+    // says national real rent is flat — so every point of rent a richer
+    // nation pays everywhere was booked as this town getting dear. It is not
+    // flat: the share of income households spend on rent is about constant
+    // across US metros and over time (Davis & Ortalo-Magné 2011), so the
+    // nation's rent moves with the nation's pay; HUD's median two-bed rent
+    // rose 2.6x over 2000-2025 against prices 1.86x. Measured before this,
+    // over two 100-year Frontier towns, local prices ended 1.15-1.37x the
+    // nation's — above San Francisco, for a town of 50-70k, where the BEA's
+    // price parities put small metros at 0.88-0.95 of the US.
+    const natShelter12 = natWage12;
     const inflM = natInfl / 12
-      + (SHELTER_W * (shelter12 - natCpi12) + SERVICES_W * (wage12 - natWage12)) / 12;
+      + (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
     void cost12;
     // The old monthly floor (-0.05%/mo unless the nation deflated) and the
     // 1.15%/mo ceiling were there to stop the labour term running away. With
@@ -3171,7 +3185,41 @@ export function tickEcon(s: GameState) {
     // last year's prices; Smets & Wouters (2007) estimate the indexation
     // share at about 0.58, which is used here against the national CPI.
     const payExp = 0.42 * (e.nat?.inflExp ?? e.inflExp) + 0.58 * natCpi12;
-    const growth = payExp / 12 + productivity / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004);
+    // A TOWN'S PAY IS A LEVEL AGAINST THE NATION'S, NOT A DRIFT FROM IT
+    // (2026-10-10). Pay grew at the nation's rate plus `tight` x 0.012 a
+    // month, so every month the town ran tighter than the nation added to a
+    // gap nothing closed: the relative wage had a unit root. Measured over two
+    // 100-year Frontier towns, local pay ended 1.25-1.36x the nation's with
+    // local unemployment at the nation's own level — a 9% REAL premium no
+    // labour market explains — and since employers read pay (regionalPull)
+    // the town stopped being chosen from about year 40.
+    //
+    // Regional pay is stationary relative to the nation (Blanchard & Katz
+    // 1992: relative wages return to normal within years), and its level
+    // follows local unemployment — the wage curve, an elasticity of about
+    // -0.1 of pay to the unemployment rate across regions in every country
+    // measured (Blanchflower & Oswald 1994). So the town's pay closes toward
+    //
+    //   national pay
+    //   x local prices / national prices   — equal real pay across places
+    //                                         when amenities are equal
+    //                                         (Rosen 1979; Roback 1982)
+    //   x (local u / national u)^-0.10    — the wage curve
+    //   x (jobs / opening jobs)^AGGLOM     — what its size adds to output,
+    //                                         the term regionalPull credits
+    //
+    // with a two-year half-life. Freezes and the owed raise below still apply.
+    const n0 = e.nat;
+    const natTight0 = n0 ? Math.max(-0.06, Math.min(0.055, NAT_U_STAR - n0.unemp)) : 0;
+    const natGrowth0 = payExp / 12 + productivity / 12 + natTight0 * 0.012;
+    const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx!);
+    const priceRatio = (e.cpi ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+    const uRatio = Math.max(0.01, e.unemployment!) / Math.max(0.01, n0?.unemp ?? e.unemployment!);
+    const sizeRatio = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
+    const target = natW * priceRatio * Math.pow(uRatio, WAGE_CURVE) * Math.pow(sizeRatio, AGGLOM);
+    const ecm = Math.log(target / Math.max(1e-6, e.wageIdx!)) * (1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M));
+    void tight;
+    const growth = natGrowth0 + ecm + rrange(s, -0.0004, 0.0004);
     if (e.wageDebt === undefined) e.wageDebt = 0;
     if (growth < 0) {
       e.wageDebt -= growth;          // the cut nobody took, owed

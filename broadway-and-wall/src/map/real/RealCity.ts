@@ -19,8 +19,10 @@ import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
-import { SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
-import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
+import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
+import { BOOK_PICKER } from "./patternbook/register";
+import type { FacadeGroup } from "./patternbook/types";
+import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, baseOf, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
 
 type Ctx = CityCtx;
@@ -704,20 +706,8 @@ export const TRIM_PAINTS: { name: string; rgb: number[] }[] = [
   { name: "Terracotta", rgb: [0.98, 0.66, 0.5] },
   { name: "Grey", rgb: [0.8, 0.8, 0.8] },
 ];
-/**
- * THE SHELVES OF THE PATTERN BOOK. The Build desk shows one shelf at a time,
- * so the facade list can grow without the picker growing with it: a new
- * style is one line below, tagged with the shelf it sits on.
- */
-export const FACADE_GROUPS = [
-  { key: "street", name: "Row house & walk-up" },
-  { key: "ornament", name: "Pre-war ornament" },
-  { key: "works", name: "Industrial" },
-  { key: "postwar", name: "Post-war" },
-  { key: "glass", name: "Glass" },
-  { key: "new", name: "Contemporary" },
-] as const;
-export type FacadeGroup = (typeof FACADE_GROUPS)[number]["key"];
+// the shelves the Build desk shows; the later pattern-book families add their own entries below
+export { FACADE_GROUPS, type FacadeGroup } from "./patternbook/types";
 export interface FacadeStyle { key: string; group: FacadeGroup; name: string; era: string; maxFloors: number; variants: string[] }
 export const FACADE_STYLES: FacadeStyle[] = [
   { key: "clapboard", group: "street", name: "Clapboard", era: "timber, to 1950", maxFloors: 3, variants: ["Painted boards", "Wide boards, shutters", "Pedimented", "Paired sash, shutters"] },
@@ -760,6 +750,7 @@ export const FACADE_STYLES: FacadeStyle[] = [
   { key: "timber", group: "new", name: "Mass timber", era: "2016-today", maxFloors: 18, variants: ["Cedar", "Light", "Dark", "Silvered"] },
   { key: "diagrid", group: "glass", name: "Diagrid", era: "2005-today", maxFloors: 99, variants: ["Blue, silver steel", "White steel", "Green, dark steel", "Silver"] },
   { key: "pixel", group: "glass", name: "Fritted glass", era: "2010-today", maxFloors: 99, variants: ["White frit", "Grey", "Charcoal", "Champagne"] },
+  ...BOOK_PICKER,
 ];
 export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [
   { key: "flat", name: "Flat", maxFloors: 999 },
@@ -779,22 +770,28 @@ export const CROWN_MIN_FLOORS = 15;
 
 type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"] };
 
-let swatchCache: Record<string, string> | null = null;
-/** A small picture of every elevation, for the Build desk's facade picker. */
-export function facadeSwatches(): Record<string, string> {
-  if (swatchCache) return swatchCache;
-  const fams = makeFamilies(1);
+const swatchCache: Record<string, string> = {};
+let swatchFams: Record<string, Family> | null = null;
+/**
+ * Small pictures of the named elevations ("brick", "brick#2"...), for the
+ * Build desk's facade picker. Painted on demand and kept: the book is too big
+ * to paint every elevation when the tab opens.
+ */
+export function facadeSwatches(keys: string[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const st of FACADE_STYLES) for (let v = 0; v < 4; v++) {
-    const key = v ? `${st.key}#${v}` : st.key;
-    const img = (fams[key]?.mat.map?.image ?? null) as HTMLCanvasElement | null;
-    if (!img || typeof img.toDataURL !== "function") continue;
-    const { c, g } = makeCanvas(96, 96);
-    g.drawImage(img, 0, 0, img.width, img.height, 0, 0, 96, 96);
-    out[key] = c.toDataURL("image/png");
+  for (const key of keys) {
+    if (!swatchCache[key]) {
+      swatchFams ??= makeFamilies(1);
+      const f = swatchFams[key];
+      const img = (f?.mat.map?.image ?? null) as HTMLCanvasElement | null;
+      if (!img || typeof img.toDataURL !== "function") continue;
+      const { c, g } = makeCanvas(96, 96);
+      g.drawImage(img, 0, 0, img.width, img.height, 0, 0, 96, 96);
+      swatchCache[key] = c.toDataURL("image/png");
+      f.mat.map?.dispose(); f.mat.dispose(); delete swatchFams[key];
+    }
+    out[key] = swatchCache[key];
   }
-  for (const f of Object.values(fams)) { f.mat.map?.dispose(); f.mat.dispose(); }
-  swatchCache = out;
   return out;
 }
 
@@ -1119,6 +1116,9 @@ const TRIM_LIN = (() => { const c = new THREE.Color(0xd8d0be); return [c.r, c.g,
 /** A landmark's metal, as trim vertex colours: brushed stainless steel for a spire, weathered copper for a pyramid roof. */
 const SIG_STEEL = [0.80, 0.82, 0.86].map((c, i) => c / TRIM_LIN[i]);
 const SIG_COPPER = [0.30, 0.52, 0.44].map((c, i) => c / TRIM_LIN[i]);
+const SIG_GOLD = [0.86, 0.66, 0.26].map((c, i) => c / TRIM_LIN[i]);
+const SIG_BRONZE = [0.36, 0.26, 0.16].map((c, i) => c / TRIM_LIN[i]);
+const SIG_WHITE = [0.92, 0.92, 0.9].map((c, i) => c / TRIM_LIN[i]);
 
 /** A scheme built as a model for the Build desk's viewer (RealCityLayer.schemeModel). Metres, lot-centred, z up. */
 export interface SchemeModel {
@@ -1610,7 +1610,7 @@ export class RealCityLayer {
       const r = clip(clip(ring, t0 + cuts[j] * ll + gap, true), t0 + cuts[j + 1] * ll - gap, false);
       if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
       const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4, this.nbOf(r));
-      const fk = f2 === "industrial" || f2 === "daylight" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
+      const fk = baseOf(f2) === "industrial" || baseOf(f2) === "daylight" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
       const tints = TINTS[fk] ?? [[1, 1, 1]];
       const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
       // a storey up or down now and then, never below two floors
@@ -1621,7 +1621,7 @@ export class RealCityLayer {
         const tr = this.massing(r, v.z0, z1, fk, tn, v.b, kj, shop, v.c, v.y || 0);
         this.towerTop(tr, z1, z1, fk, tn, v.b, kj, "auto");
       } else {
-        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || fk === "castiron" || (WALKUP.has(fk) && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
+        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || baseOf(fk) === "castiron" || (WALKUP.has(fk) && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
       }
       const d = this.deedOf(v.b); d.height = Math.max(d.height, z1);
     }
@@ -1805,14 +1805,15 @@ export class RealCityLayer {
    */
   private towerTop(ring: P2[], z1: number, top: number, fam: string, t: number[], bbl: string, k: number,
     kind: "auto" | "none" | "setback" | "spire" | "mast", ov?: VolumeOv) {
+    const fb = baseOf(fam);
     const glassy = GLASSY.has(fam);
     if (kind === "none") return;
-    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fam === "deco" || fam === "decobrick" || STONE_TOWER.has(fam)))) return;
+    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fb === "deco" || fb === "decobrick" || STONE_TOWER.has(fam)))) return;
     let cx = 0, cy = 0;
     for (const [x, y] of ring) { cx += x; cy += y; }
     cx /= ring.length; cy /= ring.length;
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-    const deco = fam === "deco" || fam === "decobrick";
+    const deco = fb === "deco" || fb === "decobrick";
     let rad = 0; for (const [x, y] of ring) rad = Math.max(rad, Math.hypot(x - cx, y - cy));
     // the bearing of the ring's longest side, so a cap squares up with the walls
     let li = 0, ll = -1;
@@ -1826,7 +1827,7 @@ export class RealCityLayer {
     if (kind === "auto" && !deco && !STONE_TOWER.has(fam) && TOWER_FAMS.has(fam)) {
       const opts: [string, number][] = glassy
         ? [["mech", 0.2], ["mech2", 0.15], ["stepped", 0.13], ["lantern", 0.11], ["fins", 0.11], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0], ["slant", ring.length === 4 ? 0.09 : 0]]
-        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
+        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fb === "precast" || fb === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
       const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
       note(c); this.feat("crown:" + c, bbl);
       const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
@@ -1882,7 +1883,7 @@ export class RealCityLayer {
     // never overhang the walls.
     if (kind === "auto" && (deco || STONE_TOWER.has(fam))) {
       const c = deco ? pick(hash01(k ^ 0x7c1, this.seed), [["spire", 0.45], ["ziggurat", 0.3], ["piers", 0.25]])
-        : pick(hash01(k ^ 0x7c1, this.seed), [["setback", 0.32], ["chateau", ring.length === 4 ? 0.3 : 0], ["setchateau", ring.length === 4 ? 0.18 : 0], ["pinnacles", fam === "terracotta" || fam === "stone" ? 0.2 : 0.05]]);
+        : pick(hash01(k ^ 0x7c1, this.seed), [["setback", 0.32], ["chateau", ring.length === 4 ? 0.3 : 0], ["setchateau", ring.length === 4 ? 0.18 : 0], ["pinnacles", fb === "terracotta" || fb === "stone" ? 0.2 : 0.05]]);
       note(c); this.feat("crown:" + c, bbl);
       const d2 = this.deedOf(bbl);
       if (c === "ziggurat") {
@@ -1938,7 +1939,7 @@ export class RealCityLayer {
       this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, !two, false, k, false, false, "", 0, ov);
       if (two) this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
       if (kind === "mast" || hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, z1 + (two ? 11 : 5), 1, 0, bbl);
-    } else if (kind === "auto" && (fam === "ribbon" || fam === "grid")) {
+    } else if (kind === "auto" && (fb === "ribbon" || fb === "grid")) {
       // the International Style keeps its plant in a plain penthouse box
       this.addVolume(shrink(ring, 0.62), z1, z1 + 4.5, "plain", [0.9, 0.9, 0.9], bbl, true, true, k);
     } else {
@@ -2309,6 +2310,19 @@ export class RealCityLayer {
             z = z1 + fh;
           }
           break;
+        }
+        default: {
+          // a later form (signature-more-*.ts), described in the same kit
+          MORE_FORMS.get(key)?.build({
+            A, B, R, sq, H, zL, fh, turnDir, fam, h, vol,
+            loft: (secs, cap = true, f = fam, col) => loft(secs, cap, f, col),
+            bridge: (r, z0, z1) => ops.push({ t: "loft", secs: [{ r, z: z0 }, { r, z: z1 }], fam, cap: true, log: false, soffit: true }),
+            inst: (kind, u, v, z, s, r = 0, sz, col) => inst(kind, u, v, z, s, r, sz, col),
+            mast,
+            spire: (z0, z1, r0, n = 8, col = SIG_STEEL, u = 0, v = 0) =>
+              ops.push({ t: "loft", secs: [{ r: turn(ellipse(n, r0, r0, Math.PI / n), 0, 1, u, v), z: z0 }, { r: turn(ellipse(n, 0.04, 0.04, Math.PI / n), 0, 1, u, v), z: z1 }], fam, cap: false, log: true, col }),
+            STEEL: SIG_STEEL, COPPER: SIG_COPPER, GOLD: SIG_GOLD, BRONZE: SIG_BRONZE, WHITE: SIG_WHITE,
+          });
         }
       }
       if (!ops.length) return false;
@@ -3772,8 +3786,9 @@ export class RealCityLayer {
       const t = tints[tr < 0.55 ? ((v.t ?? 0) * 3 + 1) % tints.length : Math.floor(((tr - 0.55) / 0.45) * tints.length)];
       // a trading ground floor, by what the building is: the iron front
       // always; the old walk-up often; the new mixed-use block as a rule
+      const fb = baseOf(fam);
       const shopP = ({ castiron: 1, brick: 0.5, gothic: 0.3, georgian: 0.2, romanesque: 0.3, buff: 0.3, stone: 0.3, terracotta: 0.4, modern: 0.35, whitebrick: 0.2,
-        stucco: 0.25, moderne: 0.4, midcentury: 0.3, fibercement: 0.5, metalpanel: 0.45, stackbrick: 0.5, rainscreen: 0.4, timber: 0.4 } as Record<string, number>)[fam] ?? 0;
+        stucco: 0.25, moderne: 0.4, midcentury: 0.3, fibercement: 0.5, metalpanel: 0.45, stackbrick: 0.5, rainscreen: 0.4, timber: 0.4 } as Record<string, number>)[fb] ?? 0;
       const shop = v.c === "retail" || (v.c !== "industrial" && hash01(k ^ 0x51ab, this.seed) < shopP);
       // A LANDMARK stands on its base footprint alone: its tiers, taper and
       // top are the form's own (signatureTower), so the deed's other volumes
@@ -3792,7 +3807,7 @@ export class RealCityLayer {
       // old low brick houses keep a pitched roof: a row of 1890s three-storey
       // walk-ups is a run of gables, not a run of flat decks
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
-      const pitched = isTop && (fam === "brick" || fam === "clapboard" || fam === "georgian" || fam === "tudor" || fam === "stucco" || fam === "gothic") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
+      const pitched = isTop && (fb === "brick" || fb === "clapboard" || fb === "georgian" || fb === "tudor" || fb === "stucco" || fb === "gothic") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
       // THE WEDDING CAKE. Under the 1916 zoning resolution a tower could rise
       // straight only so far before it had to step back from the street, and
@@ -3801,9 +3816,9 @@ export class RealCityLayer {
       // towers step back; the tiers keep the volume's own height and wear
       // cornices on their terraces.
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
-        && (fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
+        && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
         // the 2000s limestone apartment tower revived the setback on purpose
-        || isTop && v.z0 < 0.5 && top > 60 && fam === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
+        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
       let topRing = ring;
       let rowDone = false;
       if (preWarTower) {
@@ -3816,12 +3831,12 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
-      } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "daylight" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
+      } else if (isTop && v.z0 < 0.5 && fb !== "industrial" && fb !== "daylight" && fb !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
         // drawn as a row of houses (rowOf), each with its own top: the
         // building-wide crown below would float a footprint-long penthouse
         // over the row at the original height
         rowDone = true;
-      } else if (isTop && v.z0 < 0.5 && !pitched && fam !== "brutalist" && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
+      } else if (isTop && v.z0 < 0.5 && !pitched && fb !== "brutalist" && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fb === "brick" || fb === "buff")))) {
         topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else if (isTop && v.z0 < 0.5 && !pitched) {
         topRing = this.styledVolume(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);

@@ -50,12 +50,22 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
   const shelf = shelves.some((g) => g.key === shelfPick) ? shelfPick : chosen?.group;
   const [showLandmarks, setShowLandmarks] = useState(!!design.signature);
   const [showTrim, setShowTrim] = useState(design.trim !== undefined);
-  // the swatches are painted once, off the first frame, so the tab opens at once
-  const [sw, setSw] = useState<Record<string, string> | null>(null);
+  // the swatches on show — the open shelf's styles and the chosen style's
+  // colourways — are painted off the first frame, so the tab opens at once
+  const shown = [
+    ...(shelf ? fits.filter((f) => f.group === shelf).map((f) => f.key) : []),
+    ...(chosen ? chosen.variants.map((_, v) => (v ? `${chosen.key}#${v}` : chosen.key)) : []),
+  ];
+  const shownSig = shown.join(",");
+  const [sw, setSw] = useState<Record<string, string>>({});
   useEffect(() => {
-    const id = window.setTimeout(() => { try { setSw(facadeSwatches()); } catch { setSw({}); } }, 30);
+    if (shown.every((k) => sw[k])) return;
+    const id = window.setTimeout(() => {
+      try { const add = facadeSwatches(shown); setSw((o) => ({ ...o, ...add })); } catch { /* the cards stay grey */ }
+    }, 30);
     return () => window.clearTimeout(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownSig]);
   const set = (patch: Partial<BuildingDesign>) => {
     const next = { ...design, ...patch };
     for (const k of Object.keys(next) as (keyof BuildingDesign)[]) if (next[k] === undefined) delete next[k];
@@ -111,7 +121,7 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
             <button key={f.key} type="button" title={`${f.name} — ${f.era}${f.maxFloors < 99 ? ` · to ${f.maxFloors} floors` : ""}`}
               style={cardStyle(chosenStyle === f.key)}
               onClick={() => set({ facade: chosenStyle === f.key ? design.facade : f.key })}>
-              {sw?.[f.key]
+              {sw[f.key]
                 ? <img src={sw[f.key]} alt="" style={swatchStyle} />
                 : <div style={{ ...swatchStyle, background: "rgba(0,0,0,0.08)" }} />}
               <span style={{ fontSize: 11, lineHeight: 1.2, textAlign: "center" }}>{f.name}</span>
@@ -131,7 +141,7 @@ export function DesignPicker({ design, onChange, floors, onPeek, compact }: {
               const key = v ? `${chosen.key}#${v}` : chosen.key;
               return (
                 <button key={key} type="button" onClick={() => set({ facade: key })} title={name} style={cardStyle(design.facade === key)}>
-                  {sw?.[key]
+                  {sw[key]
                     ? <img src={sw[key]} alt={name} style={swatchStyle} />
                     : <div style={{ ...swatchStyle, background: "rgba(0,0,0,0.08)" }} />}
                   <span style={{ fontSize: 10, lineHeight: 1.15, textAlign: "center" }}>{name}</span>

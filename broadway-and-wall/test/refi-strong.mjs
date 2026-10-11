@@ -111,13 +111,19 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
       // is the test DSCR over the haircut (1.24 / 0.80 = 1.55). Read without
       // it, a coverage-bound quote on a short roll looked like neither.
       const sizedToCover = perm.dscrAtMax * hair.mult <= 1.40;
+      // ...or to the lender's own single-name limit (its book x the name cap,
+      // debt.ts concentrationRoom). A $60M tower can outgrow what one life
+      // company will hold on one borrower; the loan is then capped at the
+      // room, which is a third honest sizing, not a malfunction. First seen on
+      // seed 12007 after rounds 11-12 (lot gradient, cap-rate trend).
+      const sizedToRoom = /single-name room/.test(perm.bindingWhy ?? "");
       const line = `${(rec.address ?? bbl).padEnd(22)} ${rec.class.padEnd(11)} occ ${pc(E.physicalOcc(rec, h))} NOI/mark ${pc(noi / value)} → ${perm.id.padEnd(9)} ${pc(perm.ltvAtMax)} of mark, DSCR ${perm.dscrAtMax.toFixed(2)} (${perm.binding}${perm.bindingWhy ? ": " + perm.bindingWhy : ""}) hair ${hair.mult.toFixed(2)}`;
       lines.push(line);
-      if (!(sizedToSheet || sizedToCover)) { bad++; console.log("  ✗ " + line); }
+      if (!(sizedToSheet || sizedToCover || sizedToRoom)) { bad++; console.log("  ✗ " + line); }
     }
   }
   for (const l of lines.slice(0, 8)) console.log("    " + l);
-  ok(n >= 5 && bad === 0, `${n} stabilised buildings in an ordinary window: every best permanent quote is sized to the sheet or to coverage (${bad} were neither)`);
+  ok(n >= 5 && bad === 0, `${n} stabilised buildings in an ordinary window: every best permanent quote is sized to the sheet, to coverage or to the lender's name limit (${bad} were neither)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASS");

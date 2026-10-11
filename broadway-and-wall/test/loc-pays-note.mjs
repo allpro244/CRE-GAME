@@ -69,18 +69,20 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   // five worth $6.6M — a $4M borrowing base, under the $5M nobody documents a
   // facility below, so the desk correctly quoted nothing. Buy built listings
   // (largest first, month by month if the tape is thin) until the asks reach
-  // $12M or eight deeds, whichever is first.
+  // $12M or eight deeds, whichever is first — and never fewer than three, the
+  // smallest pool any desk papers (two towers on one tape reached $12M alone).
   let spent = 0, bought = 0;
-  for (let m = 0; m < 24 && spent < 12_000_000 && bought < 8; m++) {
+  const more = () => (spent < 12_000_000 || bought < 3) && bought < 8;
+  for (let m = 0; m < 24 && more(); m++) {
     const built = (g.listings ?? []).filter((L) => { const rec = E.resolveRec(parcels, g, L.bbl); return rec && rec.class !== "land" && rec.bldgArea && !L.halfBuilt; })
       .sort((a, b) => b.ask - a.ask);
     for (const L of built) {
-      if (spent >= 12_000_000 || bought >= 8) break;
+      if (!more()) break;
       const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
       if (r.err) continue;
       g = r.s; spent += L.ask; bought++;
     }
-    if (spent < 12_000_000 && bought < 8) g = E.advanceMonth(g, parcels, bbls);
+    if (more()) g = E.advanceMonth(g, parcels, bbls);
   }
   const pool = Object.keys(g.holdings);
   const qt = E.facilityQuotes(g, parcels, pool).find((x) => x.available);

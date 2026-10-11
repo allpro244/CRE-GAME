@@ -926,3 +926,30 @@ back at any time. Checked in the browser: a 300 px drag turned the view
 - **Delivery on the hover card.** A building under construction says when it
   delivers, how long to go and how far along it is ("Delivers Apr 2001 · in
   15 months · 42% built"), or that it has stalled.
+
+# A SIMPLER DESIGN TAB (October 2026)
+
+The picker had grown to ~70 controls on one page — forty facade styles as a
+flat wall of buttons, then trim, roof, crown, signature forms, the quality
+dial, footprint presets and the building contract — and the owner wants to
+add many more styles. It is now built to scale:
+
+- **Shelves.** Every entry in `FACADE_STYLES` carries a `group` from
+  `FACADE_GROUPS` (row house & walk-up, pre-war ornament, industrial,
+  post-war, glass, contemporary). The tab shows the shelf chips, and only the
+  open shelf's styles, as picture cards (the style's own elevation). Adding a
+  style is still one line in the registry; adding a shelf is one line more.
+- **Only what fits.** A style, roof or crown this height cannot carry is not
+  listed (it used to sit greyed out); a shelf with nothing left disappears.
+  A chosen style the storeys have since outgrown stays listed with a warning.
+- **Style, then colourway.** Clicking a card picks the style's first
+  elevation; its four colourways appear beneath it.
+- **One "Top".** Roof, crown and signature form are one choice — the roofs
+  that reach this height, or from 15 floors the crowns — with the landmark
+  forms behind a "Landmark tower" toggle. Picking one clears the others.
+  Trim folds behind its own toggle; both open when they hold a choice.
+- **Design is looks only, on the page too.** Build quality, the footprint
+  presets and the Costs table moved to Programme beside the dials that drive
+  them; GMP / cost-plus moved to Financing as "Building contract".
+
+Nothing saved changed shape: `BuildingDesign` is the same record.

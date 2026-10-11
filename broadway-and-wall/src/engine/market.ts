@@ -1528,8 +1528,20 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
   // of the trend, not all of it. Real growth only: the inflation part is
   // already in `capIndex`.
-  const base = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + flows;
-  let growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0);
+  const base = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
+  // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
+  // trailing RENT growth plus yield — the same signal `growthExp` carries,
+  // on a four-year memory instead of ten. Added separately, the two priced
+  // one rent cycle twice, and only `growth` answered to the supply-price
+  // bound below, so the flows half walked straight past it. Measured over
+  // five 100-year towns: office caps ran 4.3 at the top of a boom and 13.6
+  // at the bottom of the bust that followed (map 2002), industrial 3.55 to
+  // 11.9 (map 3003) — nine points of cycle in one class, with the flows term
+  // on its +/-1.3 rail for years either side. The record's cyclical swing in a
+  // class's cap is two to four points (office 1990-92, 2007-09, 2022-24).
+  // So the money chasing a class and the growth its buyers believe are one
+  // discount, bounded once.
+  let growth = 0.5 * 100 * (e.growthExp?.[k] ?? 0) - flows;
   // ...BUT NOBODY PAYS FOR GROWTH PAST THE RENT AT WHICH A RIVAL BUILDS NEXT
   // DOOR (2026-10-09). A trend is only worth a lower yield while rent has
   // room to run, and the room ends at the supply price: once new space
@@ -1545,9 +1557,8 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // buyer can rationally pay for growth that a competitor's building will
   // end, even if the rise came tomorrow, is a yield of base x e^-room, so
   // the trend's discount is bounded by base x (1 - e^-room) — and by nothing
-  // at all once the best site pencils. A falling trend is untouched: no
-  // supply price bounds a decline. A use no vacant site permits has no
-  // hurdle, and nothing bounds its trend either.
+  // at all once the best site pencils. A use no vacant site permits has no
+  // hurdle, and nothing bounds its trend either. (A falling trend: below.)
   const siteH = e.siteHurdle?.[k];
   if (growth > 0 && siteH !== undefined && siteH > 0) {
     // The hurdle was struck at the cap rate in force; restate it at the cap
@@ -1556,6 +1567,15 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
     const room = Math.max(0, -Math.log(atBase));
     growth = Math.min(growth, base * (1 - Math.exp(-room)));
   }
+  // ...AND NOBODY EXTRAPOLATES A FALL PAST THE SUPPLY PRICE EITHER. Below the
+  // rent at which anyone would build, no new space is coming; the glut ends
+  // when demand takes it up, and rent then has to climb back toward the cost
+  // of replacing the stock (DiPasquale & Wheaton 1996, ch. 10). Buyers price
+  // that: caps run LOWER, not higher, when rent sits under its long-run level
+  // (Sivitanides, Southard, Torto & Wheaton 2001). The years it takes to fill
+  // the empty floors are already in `vacRisk`. A falling trend still counts
+  // while sites pencil — supply is still arriving and the fall can continue.
+  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) growth = 0;
   return base - growth;
 }
 
@@ -4475,7 +4495,11 @@ export function tickEcon(s: GameState) {
     // distress goes into the headline by construction. Slowing the decay
     // cannot fix that, and the measurement above is the proof.
     const opening = concTarget > e.concIdx[k];
+    const concWas = e.concIdx[k];
     e.concIdx[k] += (opening ? 0.25 : CONC_DECAY[k]) * (concTarget - e.concIdx[k]);
+    // What this month's move in the package did to net effective rent, as a
+    // log change: positive when concessions deepened (effective fell).
+    const concCut = Math.log((1 - CONC_DEPTH * concWas) / (1 - CONC_DEPTH * e.concIdx[k]));
     // EMPTY SPACE IS NEVER FREE. This term was capped at -0.9%/month, so at
     // ten points over natural it saturated and EVERY FURTHER POINT OF VACANCY
     // COST NOTHING — a 45% glut was priced exactly like a 20% one, which is
@@ -4824,7 +4848,23 @@ export function tickEcon(s: GameState) {
     const escalation = (realised12 / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
-    const press = e.rentPress[k];
+    // THE CURVE IS A NET EFFECTIVE CURVE, SO ASKING CARRIES ONLY THE REST
+    // (2026-10-11). Every anchor the glut curve was fitted to is a decline in
+    // EFFECTIVE rent — Manhattan 1990-92 35-40% real, Houston 1983-87 50-55%
+    // real — and it was applied to the ASKING index, with the concession dial
+    // then cutting effective by up to another 30% on top. The same fall was
+    // taken twice. Measured over five 100-year towns: real office asking fell
+    // 70% peak to trough and effective 79% (map 2002), worse than Houston in
+    // the typical run, and the face rate carried 80-90% of every adjustment
+    // where the record has it carrying a fifth (Manhattan four years on:
+    // asking -3.3%, net effective -17.3%). So the package moves first, as it
+    // does in life, and the face rate takes only what the package has not
+    // already delivered — never moving against the market: a deepening package
+    // does not lift asking in a glut, and a package burning off in a recovery
+    // does not cut it.
+    const press = e.rentPress[k] < 0
+      ? Math.min(0, e.rentPress[k] + concCut)
+      : Math.max(0, e.rentPress[k] + concCut);
     const clampBound = pressEma <= -0.03 + 1e-12;
     // Phase / job / sector sentiment must not LIFT asking while soft, on/near
     // the frictional rail, or once rent is already near earned pay. Soft:

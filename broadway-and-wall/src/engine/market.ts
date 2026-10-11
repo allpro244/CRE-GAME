@@ -4754,15 +4754,23 @@ export function tickEcon(s: GameState) {
     // Everybody in the market can see that pipeline and that pencil; the rent
     // a tenant will sign for ten years stops running away from the price at
     // which the building next door is coming. The reverse holds too, with the
-    // same coefficient: rent far BELOW the supply price is pulled up, but in a
-    // glut the vacancy term is the larger and wins, as in the estimates.
+    // ONE-SIDED, BECAUSE STOCK IS DURABLE. The supply price is a ceiling, not
+    // a floor: rent above it brings cranes, rent below it brings nothing,
+    // because buildings already standing do not disappear when their rent
+    // falls under what it would cost to build them again — which is the
+    // normal state of most of the stock in most of a century (Glaeser &
+    // Gyourko 2005; the kinked supply curve of DiPasquale & Wheaton). Pulled
+    // both ways, measured over five towns, the term lifted rents ~14% a year
+    // in markets where nothing penciled, priced tenants and firms out, and
+    // three towns of five shrank to 21-25k people. Below the supply price
+    // rent answers vacancy alone.
     //
     // r* is read off `siteHurdle` — how far rent stands from the level at
     // which the best sites the city examines clear (1/hurdle) — so it carries
     // the cost of building, of money and of land, and it is absent (no pull)
     // for a use no vacant site permits.
     const siteHk = e.siteHurdle?.[k];
-    const eqGap = siteHk !== undefined && siteHk > 0 ? -Math.log(siteHk) : 0;   // ln(r*/r)
+    const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
     const RENT_EQ_PULL = 0.20 / 12;
     const instant = vacTerm + RENT_EQ_PULL * eqGap;
     const tau = RENT_PRESS_TAU[k];

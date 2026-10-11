@@ -35,14 +35,19 @@ let g0 = E.firstListings(E.newGame(7919, parcels, 20e6), parcels, bbls);
 for (let i = 0; i < 4; i++) g0 = E.advanceMonth(g0, parcels, bbls, adjacency);
 
 // Open a negotiation that ends with a counter on the table: offer well under.
+// How far under draws a counter rather than a yes depends on how motivated
+// the month's sellers are, so step down until one counters.
 let open = null;
-for (const l of g0.listings) {
-  const rec = E.resolveRec(parcels, g0, l.bbl);
-  if (!rec || rec.class === "land") continue;
-  const r = E.negotiate(g0, parcels, l.bbl, Math.round(l.ask * 0.9));
-  if (r.err || !r.s.talks?.[l.bbl] || r.s.talks[l.bbl].agreed) continue;
-  open = { s: r.s, bbl: l.bbl };
-  break;
+for (const f of [0.9, 0.85, 0.8]) {
+  for (const l of g0.listings) {
+    const rec = E.resolveRec(parcels, g0, l.bbl);
+    if (!rec || rec.class === "land") continue;
+    const r = E.negotiate(g0, parcels, l.bbl, Math.round(l.ask * f));
+    if (r.err || !r.s.talks?.[l.bbl] || r.s.talks[l.bbl].agreed) continue;
+    open = { s: r.s, bbl: l.bbl };
+    break;
+  }
+  if (open) break;
 }
 ok("setup: a negotiation with the seller's counter on the table", !!open);
 

@@ -860,9 +860,13 @@ function tickMonth(
       // the book here AND again for net worth was two full walks per tick —
       // twelve redundant appraisals on every Year click. Month-one / old saves
       // with no stamp fall back to a single mark.
-      const ga = firmOverheadMonthly(s, parcels);
+      // A SPECTATOR HAS NO OFFICE (2026-10-10). Nobody is at the desk in a
+      // spectator run, and the firm it opened with is a placeholder; charging
+      // it overhead for a century put every year-100 screen at "insolvent",
+      // twenty-odd million in the red, for a firm nobody ran.
+      const ga = s.spectator ? 0 : firmOverheadMonthly(s, parcels);
       s.cash -= ga;
-      logBooks(s, "ga", ga);
+      if (ga) logBooks(s, "ga", ga);
     }
   }
 

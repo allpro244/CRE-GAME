@@ -103,7 +103,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "bulk2", "chimney", "cooling", "vent", "hvac", "tank", "skyl"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -438,6 +438,32 @@ function meanLum(alb: CanvasRenderingContext2D, msk: CanvasRenderingContext2D | 
   return n ? s / n : 0.3;
 }
 
+/**
+ * THE MIRROR IN THE GLASS. A curtain wall's panes are drawn as metal, and a
+ * metal's reflection is its own colour: the smoked and bronze panes, painted
+ * near-black, reflected almost none of the sky and stood on the skyline as
+ * black voids. Real tinted curtain wall is dark to look INTO but carries a
+ * reflective coating — a fifth to a third of the sky comes back off it. So a
+ * reflective pane's colour keeps its hue and is lifted to at least that much
+ * reflectance (linear luminance ~0.2); the tint still reads, and the darkest
+ * towers stay the darkest, but they show the sky.
+ */
+function mirrorFloor(spec: FamilySpec): string {
+  if (!spec.glass || spec.glassMetal < 0.5) return spec.glassCol;
+  const h = spec.glassCol.replace("#", "");
+  const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = linLum(c[0], c[1], c[2]);
+  const floor = 0.2;
+  if (lum >= floor) return spec.glassCol;
+  // scale in linear light, then back to sRGB; a pure-black pane is lifted toward neutral grey
+  const toLin = (v: number) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const toS = (v: number) => Math.round(255 * Math.min(1, v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055));
+  const lin = c.map(toLin).map((v) => (lum > 1e-4 ? v * (floor / lum) : floor));
+  // keep the tint, but no channel past white
+  const m = Math.max(...lin), sc = m > 1 ? 1 / m : 1;
+  return "#" + lin.map((v) => toS(v * sc).toString(16).padStart(2, "0")).join("");
+}
+
 function buildFamily(spec: FamilySpec, seed: number): Family {
   let s = seed;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -525,8 +551,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     // street of windows does not read as one sheet
     // (a curtain wall's panes are one sheet: no per-pane brightness)
     const k = glassy ? 0.85 : 0.85 + rnd() * 0.3;
+    const gc = mirrorFloor(spec);
     const grad = alb.g.createLinearGradient(0, y0, 0, y1);
-    grad.addColorStop(0, spec.glassCol); grad.addColorStop(1, shade(spec.glassCol, 0.62));
+    grad.addColorStop(0, gc); grad.addColorStop(1, shade(gc, spec.glass ? 0.8 : 0.62));
     const lit = rnd() < 0.55, lum = 0.55 + rnd() * 0.45;
     for (const [a, b] of ops) {
       alb.g.globalAlpha = 1; alb.g.fillStyle = grad; shape(alb.g, a, b); alb.g.fill();
@@ -645,6 +672,19 @@ function roofTex(): THREE.CanvasTexture {
   const { c, g } = makeCanvas(256, 256);
   let s = 57; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   g.fillStyle = "#f2f2f2"; g.fillRect(0, 0, 256, 256);
+  // A ROOF IS RE-LAID A SECTION AT A TIME, so a deck from above is a
+  // patchwork of runs of different age: a few big panels a shade lighter or
+  // darker than the field, and dark ponding where the deck has sagged.
+  for (let i = 0; i < 7; i++) {
+    const v = 196 + rnd() * 59 | 0;
+    g.fillStyle = `rgba(${v},${v},${v - 3},0.55)`;
+    g.fillRect(rnd() * 256, rnd() * 256, 40 + rnd() * 90, 30 + rnd() * 70);
+  }
+  for (let i = 0; i < 9; i++) {
+    const v = 150 + rnd() * 40 | 0;
+    g.fillStyle = `rgba(${v},${v - 2},${v - 6},0.3)`;
+    g.beginPath(); g.ellipse(rnd() * 256, rnd() * 256, 6 + rnd() * 18, 4 + rnd() * 12, rnd() * 3, 0, Math.PI * 2); g.fill();
+  }
   for (let i = 0; i < 26; i++) {                           // patches and ponding stains
     const v = 200 + rnd() * 50 | 0;
     g.fillStyle = `rgba(${v},${v},${v - 4},0.35)`;
@@ -2940,6 +2980,54 @@ export class RealCityLayer {
     return rise;
   }
 
+  /** The town's civic masonry: one choice per town, so the hall and its tower match. */
+  private civicFam(): string { return hash01(this.seed ^ 0xc1c, 7) < 0.55 ? "stone" : "brick"; }
+
+  /**
+   * A CIVIC ROOF over one of the generator's "civicroof" volumes, which arrive
+   * as slabs a little wider than the walls under them. A long block takes a
+   * hip in slate (the odd one in red tin), its rise at least a third of its
+   * width; a cupola or steeple stage tapers to a small deck in green copper
+   * for the next stage to stand on; the slender last stage comes to a point.
+   */
+  private civicRoof(ring: P2[], z0: number, z1: number, k: number) {
+    if (ringArea(ring) < 0) ring = ring.slice().reverse();
+    let short = Infinity, li = 0, ll = -1, cx = 0, cy = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      short = Math.min(short, L); if (L > ll) { ll = L; li = i; }
+      cx += a[0] / ring.length; cy += a[1] / ring.length;
+    }
+    const R = this.buf("roof");
+    const col = short < 8 ? [0.5, 0.72, 0.62] : hash01(k ^ 0x51a7e, 3) < 0.75 ? [0.42, 0.43, 0.47] : [0.62, 0.3, 0.26];
+    const out = (a: P2, b: P2) => [b[1] - a[1], -(b[0] - a[0]), 0.6];
+    if (ring.length === 4 && short >= 6) {
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const rise = Math.max(z1 - z0, Math.min(6, short * 0.34));
+      const M1 = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2], M2 = [(D[0] + A[0]) / 2, (D[1] + A[1]) / 2];
+      const t = Math.min(0.45, (short / 2) / Math.max(ll, 1));
+      const H1 = [M1[0] + (M2[0] - M1[0]) * t, M1[1] + (M2[1] - M1[1]) * t, z0 + rise];
+      const H2 = [M2[0] + (M1[0] - M2[0]) * t, M2[1] + (M1[1] - M2[1]) * t, z0 + rise];
+      R.face([[A[0], A[1], z0], [B[0], B[1], z0], H1, H2], out(A, B), col);
+      R.face([[C[0], C[1], z0], [D[0], D[1], z0], H2, H1], out(C, D), col);
+      R.face([[B[0], B[1], z0], [C[0], C[1], z0], H1], out(B, C), col);
+      R.face([[D[0], D[1], z0], [A[0], A[1], z0], H2], out(D, A), col);
+      return;
+    }
+    const point = short < 2.2;
+    const s = point ? 0 : 0.55;
+    const top = ring.map(([x, y]) => [cx + (x - cx) * s, cy + (y - cy) * s] as P2);
+    const zt = point ? z1 + (z1 - z0) * 0.6 : z1;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], ta = top[i], tb = top[(i + 1) % ring.length];
+      if (point) R.face([[a[0], a[1], z0], [b[0], b[1], z0], [cx, cy, zt]], out(a, b), col);
+      else R.face([[a[0], a[1], z0], [b[0], b[1], z0], [tb[0], tb[1], zt], [ta[0], ta[1], zt]], out(a, b), col);
+    }
+    if (!point) for (let i = 1; i + 1 < top.length; i++) R.tri([top[0][0], top[0][1], zt], [top[i][0], top[i][1], zt], [top[i + 1][0], top[i + 1][1], zt], [0, 0, 1], col);
+    // a slab's underside: the eave seen from the street
+    for (let i = 1; i + 1 < ring.length; i++) R.tri([ring[0][0], ring[0][1], z0], [ring[i + 1][0], ring[i + 1][1], z0], [ring[i][0], ring[i][1], z0], [0, 0, -1], col);
+  }
+
   /** A wedge top: the slope rising from edge AB at z to edge DC at z + rise, clad in the tower's own elevation. */
   private prismTop(A: P2, B: P2, C: P2, D: P2, z: number, rise: number, fam: string, tint: number[], bbl: string, k: number, ov?: VolumeOv) {
     const fk = ov?.variant ?? this.variantOf(fam, k);
@@ -3328,6 +3416,23 @@ export class RealCityLayer {
       walls(rv, z0, baseH, 0, tint);
       walls(famKey, baseH, zw, baseH, tint);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
+    } else if (z0 < 0.5 && zw > 30 && !ov && !WALKUP.has(famKey) && famKey !== "plain") {
+      // EVERY TALL BUILDING MEETS THE STREET WITH A BASE. A thirty-metre slab
+      // whose office windows ran down into the pavement read as a stack of
+      // floors cut off at the ground. A masonry one stands on a stone ground
+      // storey, anything else on a taller glazed lobby.
+      if (fam.masonry) {
+        const rv = famKey === "deco" || famKey === "decobrick" ? "rustic#1" : this.variantOf("rustic", seedK);
+        baseH = this.families.rustic.floorH;
+        walls(rv, z0, baseH, 0, tint);
+        walls(famKey, baseH, zw, baseH, tint);
+      } else {
+        baseH = this.families.lobby.floorH;
+        walls("lobby", z0, baseH, 0, [1, 1, 1]);
+        walls(famKey, baseH, zw, baseH, tint);
+      }
+      if (bbl) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
+      if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, !fam.masonry);
     } else {
       walls(famKey, z0, zw, 0, tint);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
@@ -3601,17 +3706,41 @@ export class RealCityLayer {
       const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
       const inside = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
       // a spot on the deck: from the middle toward a corner, kept a margin in
-      const spot = (lo: number, hi: number): P2 | null => {
+      const spot = (lo: number, hi: number, mg = 2): P2 | null => {
         for (let k = 0; k < 6; k++) {
           const v = ring[(rnd() * ring.length) | 0], f = lo + rnd() * (hi - lo);
           const x = cx + (v[0] - cx) * f, y = cy + (v[1] - cy) * f;
-          if (inside(x, y) && inside(x + 2, y) && inside(x - 2, y) && inside(x, y + 2) && inside(x, y - 2)) return [x, y];
+          if (inside(x, y) && inside(x + mg, y) && inside(x - mg, y) && inside(x, y + mg) && inside(x, y - mg)) return [x, y];
         }
         return null;
       };
       const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      // THE STAIR BULKHEAD, in what the building is made of: brick or stucco
+      // on the old walk-ups, painted block on the rest — it was one grey box
+      // on every roof in town. A taller building's stair comes up beside its
+      // elevator overrun, so the bulkhead is a box and a taller box.
+      const masonryRoof = WALKUP.has(famKey) || famKey === "industrial" || famKey === "decobrick";
+      const bulkCol = masonryRoof
+        ? [[0.3, 0.13, 0.09], [0.4, 0.3, 0.2], [0.3, 0.28, 0.25], [0.24, 0.11, 0.07]][(rnd() * 4) | 0]
+        : [[0.42, 0.41, 0.39], [0.32, 0.32, 0.33], [0.48, 0.45, 0.4]][(rnd() * 3) | 0];
+      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst(z1 > 24 && area > 300 ? "bulk2" : "bulk", q[0], q[1], z1, 1, rot, bbl, bulkCol); }
+      // CHIMNEYS. Every pre-war walk-up heated with a boiler and a coal range
+      // in each flat, and their flues come up as brick stacks along the party
+      // walls and the back of the roof — the rhythm of an old block's skyline.
+      if (WALKUP.has(famKey) && year > 0 && year < 1945 && area > 60) {
+        const n = 1 + Math.floor(rnd() * (area > 300 ? 4 : 3));
+        for (let i = 0; i < n; i++) { const q = spot(0.6, 0.88, 1.0); if (q) this.putInst("chimney", q[0], q[1], z1, 0.9 + rnd() * 0.3, rot, bbl, bulkCol); }
+      }
+      // A COOLING TOWER on a big commercial deck, and a scatter of vent and
+      // exhaust stacks: what a 1960-2000 office block's roof is mostly made of.
+      if (!WALKUP.has(famKey) && (cls === "office" || cls === "retail" || TOWER_FAMS.has(famKey)) && area > 550 && rnd() < 0.55) {
+        const q = spot(0.25, 0.6); if (q) this.putInst("cooling", q[0], q[1], z1, 0.9 + rnd() * 0.35, rot, bbl);
+      }
+      if (area > 200) {
+        const n = Math.min(6, 1 + Math.floor(area / 300 * rnd()));
+        for (let i = 0; i < n; i++) { const q = spot(0.3, 0.85); if (q) this.putInst("vent", q[0], q[1], z1, 0.8 + rnd() * 0.5, rnd() * 6.28, bbl); }
+      }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
@@ -3744,6 +3873,18 @@ export class RealCityLayer {
       if (ring.length < 3) continue;
       const k = keyOf(v.b || `${v.r[0][0]},${v.r[0][1]}`);
       if (v.d) {
+        // THE TOWN'S OWN BUILDINGS. The hall, the meeting house, the mill and
+        // the market stalls were drawn as blind stone boxes under flat slabs,
+        // which from the play camera read as a broken plinth. Their walls are
+        // now a real masonry elevation with windows, and their "roof" volumes
+        // are roofs: a hip over the long blocks, a tapering cap on a cupola,
+        // a point on the last stage of a steeple.
+        if (v.dk === "civic") {
+          const cf = this.civicFam();
+          this.addVolume(ring, v.z0, v.z1, cf, TINTS[cf][0], "", true, false, k, false, false, "civic", 1890);
+          continue;
+        }
+        if (v.dk === "civicroof") { this.civicRoof(ring, v.z0, v.z1, k); continue; }
         // ships, cranes and sheds: plain painted steel
         this.addVolume(ring, v.z0, v.z1, "plain", [1, 1, 1], "", true, false, k);
         continue;
@@ -3778,7 +3919,10 @@ export class RealCityLayer {
       // walk-ups is a run of gables, not a run of flat decks
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
       const pitched = isTop && (fam === "brick" || fam === "clapboard" || fam === "georgian" || fam === "tudor" || fam === "stucco" || fam === "gothic") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
-        && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
+        && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8
+        // a house's roof, on a house's width: a pitched roof over a 20 m square
+        // block came to a pyramid the size of the building
+        && Math.min(...ring.map((p, i) => { const q = ring[(i + 1) % ring.length]; return Math.hypot(q[0] - p[0], q[1] - p[1]); })) <= 12.5;
       // THE WEDDING CAKE. Under the 1916 zoning resolution a tower could rise
       // straight only so far before it had to step back from the street, and
       // the pre-war skyline is those setbacks: a full-lot base, one or two
@@ -3987,7 +4131,20 @@ export class RealCityLayer {
       case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
-      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8), box(1.1, 0.12, 2.1, 0.6, -2.12, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      // the stair bulkhead beside the taller elevator overrun
+      case "bulk2": return { g: merge([box(3.2, 3.6, 2.8, 0, -1.8), box(3.6, 4.0, 0.25, 0, -1.8, 2.8), box(1.1, 0.12, 2.1, 0.6, -3.62, 0),
+        box(3.8, 3.4, 4.6, 0, 1.7), box(4.2, 3.8, 0.3, 0, 1.7, 4.6)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), colored: true };
+      // a brick flue stack with its cap and two chimney pots
+      case "chimney": return { g: merge([box(0.9, 1.6, 1.7), box(1.1, 1.8, 0.18, 0, 0, 1.7), cyl(0.14, 0.45, 1.88, 6).translate(0, -0.4, 0), cyl(0.14, 0.45, 1.88, 6).translate(0, 0.4, 0)]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      // a packaged cooling tower: a louvred box on a steel frame, two fan shrouds on top
+      case "cooling": return { g: mergeColored([[box(5.6, 3.4, 0.6), [0.32, 0.33, 0.34]], [box(5.4, 3.2, 2.6, 0, 0, 0.6), [0.66, 0.68, 0.68]],
+        ...[-1.35, 1.35].map((x) => [cyl(1.25, 0.7, 3.2, 14).translate(x, 0, 0), [0.5, 0.52, 0.53]] as [THREE.BufferGeometry, number[]]),
+        ...[-1.35, 1.35].map((x) => [cyl(1.0, 0.05, 3.9, 14).translate(x, 0, 0), [0.14, 0.15, 0.16]] as [THREE.BufferGeometry, number[]])]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3, vertexColors: true }) };
+      // an exhaust stack or a vent pipe with a rain cap
+      case "vent": return { g: merge([cyl(0.18, 1.4, 0, 8), cyl(0.32, 0.12, 1.4, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x8e9294, roughness: 0.5, metalness: 0.5 }) };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
       case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
@@ -4086,9 +4243,12 @@ export class RealCityLayer {
       case "fesc": {
         // one flight of a fire escape: a grated landing, its railing, and the
         // stair down to the landing below (local x along the wall, +y out)
-        const stair = new THREE.BoxGeometry(3.6, 0.7, 0.08).rotateY(-Math.atan2(3.2, 3.0)).translate(0, 0.45, -1.6);
-        return { g: merge([box(3.4, 1.0, 0.08, 0, 0.5, 0), box(3.4, 0.05, 0.9, 0, 1.0, 0.08), box(0.05, 1.0, 0.9, -1.7, 0.5, 0.08), box(0.05, 1.0, 0.9, 1.7, 0.5, 0.08), stair]),
-          mat: new THREE.MeshStandardMaterial({ color: 0x1e2022, roughness: 0.6, metalness: 0.5 }) };
+        // A light iron frame in weathered paint, not a black slab: from the
+        // play camera the solid near-black flights read as a crack in the wall.
+        const stair = new THREE.BoxGeometry(3.6, 0.55, 0.05).rotateY(-Math.atan2(3.2, 3.0)).translate(0, 0.4, -1.6);
+        return { g: merge([box(3.4, 0.9, 0.05, 0, 0.45, 0), box(3.4, 0.04, 0.05, 0, 0.9, 0.9), box(3.4, 0.04, 0.04, 0, 0.9, 0.48),
+          box(0.04, 0.9, 0.05, -1.7, 0.45, 0.9), box(0.04, 0.9, 0.05, 1.7, 0.45, 0.9), box(0.04, 0.04, 0.9, -1.7, 0.9, 0.05), box(0.04, 0.04, 0.9, 1.7, 0.9, 0.05), stair]),
+          mat: new THREE.MeshStandardMaterial({ color: 0x3a3e3c, roughness: 0.7, metalness: 0.35 }) };
       }
       case "balc": return { g: merge([box(2.2, 1.3, 0.16, 0, 0.65, 0), box(2.2, 0.04, 1.0, 0, 1.28, 0.16), box(0.04, 1.3, 1.0, -1.1, 0.65, 0.16), box(0.04, 1.3, 1.0, 1.1, 0.65, 0.16)]),
         mat: new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.6, metalness: 0.1 }) };

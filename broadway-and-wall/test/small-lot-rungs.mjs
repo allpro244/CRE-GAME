@@ -56,7 +56,11 @@ for (const seed of SEEDS) {
       }
       if (!(desk > 0)) continue;
       lots++;
-      const read = E.landRead(rec, g.econ);
+      // The build-now residual: the desk prices building TODAY, so the tape is
+      // asked the same question with the redevelopment queue's positions
+      // emptied (its absorption rate kept) — see residual-recon.mjs.
+      const nowEcon = { ...g.econ, landQueue: Object.fromEntries(Object.entries(g.econ.landQueue ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }])) };
+      const read = E.landRead(rec, nowEcon);
       if (read.scheme && read.scheme.floors <= 4) lowWins++;
       // The desk quotes its own lender file; the residual the market's. ±3% is
       // the tolerance residual-recon already holds the two to.

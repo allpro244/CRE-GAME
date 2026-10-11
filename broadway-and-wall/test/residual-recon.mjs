@@ -50,7 +50,17 @@ for (const seed of SEEDS) {
     for (const bbl of bbls) {
       const rec = E.resolveRec(parcels, g, bbl);
       if (!rec || rec.class !== "land" || !(rec.lotArea > 0) || g.developments?.[bbl]) continue;
-      const sc = E.landRead(rec, g.econ).scheme;
+      // THE BUILD-NOW RESIDUAL. Since round 13 the land market prices a lot's
+      // residual at the date its turn in the redevelopment queue comes
+      // (value.ts `queueFactor`), so the tape sits under the build-now
+      // residual on lots behind better sites — and a builder who CAN build
+      // today on that dirt clears above 1.0, which is the economics, not a
+      // disagreement. The identity this file protects is the pro forma
+      // algebra, so it is asked of the build-now residual: the queue's
+      // positions are emptied, its absorption rate (which the desk's lease-up
+      // also reads) is kept, and both ends run one pro forma.
+      const nowEcon = { ...g.econ, landQueue: Object.fromEntries(Object.entries(g.econ.landQueue ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }])) };
+      const sc = E.landRead(rec, nowEcon).scheme;
       if (!sc || !(sc.psf > 0)) continue;
       // The scheme is the desk's own dials. (`coverage` is new with the
       // reconciliation; before it the residual built at usable/floors.)

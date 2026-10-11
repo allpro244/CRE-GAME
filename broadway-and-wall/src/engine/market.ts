@@ -1462,6 +1462,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   // Income-anchor parity is this opening print, not the global RENT_BASE table.
   econ.rentAnchor = { ...econ.rentIdx };
+  econ.effAnchor = { ...econ.effRentIdx };
+  econ.inPlaceReal = { ...econ.effRentIdx };
   recordHistory(econ, 0);
   return econ;
 }
@@ -3735,8 +3737,16 @@ export function tickEcon(s: GameState) {
     // dense map does not start off-parity), and income is its own argument.
     // Both are exactly 1.0 in month zero on every seed and every map.
     const cpiNow = Math.max(0.35, e.cpi ?? 1);
-    const anchor = e.rentAnchor?.[k] ?? RENT_BASE[k];
-    const relRent = (e.rentIdx[k] / Math.max(1e-6, anchor)) / cpiNow;
+    // EFFECTIVE, NOT ASKING (2026-10-11). Tenants take space at what deals
+    // sign at — the same number every valuation and pro forma in this engine
+    // reads (`useRentPsfYr`). Read off the face rate, a glut priced through
+    // the concession package (which is where it is priced since the glut curve
+    // became a net effective curve) never reached the tenants it was cheapening.
+    const effNow = e.effRentIdx?.[k] ?? e.rentIdx[k];
+    const anchor = e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? RENT_BASE[k];
+    const relRent = (effNow / Math.max(1e-6, anchor)) / cpiNow;
+    if (!e.inPlaceReal) e.inPlaceReal = { ...(e.effAnchor ?? e.rentAnchor ?? e.rentIdx) };
+    e.inPlaceReal[k] += AFFORD_ROLL[k] * (effNow / cpiNow - e.inPlaceReal[k]);
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
@@ -3886,7 +3896,19 @@ export function tickEcon(s: GameState) {
       const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
       const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
       const GO_RATE = 0.80;        // of those at renewal, per point of overshoot
-      const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
+      // WHAT THE SECTOR IS PAYING, NOT THIS MONTH'S QUOTE (2026-10-11). This
+      // read the spot asking rent, so a cyclical spike counted as a sector
+      // being priced out of town for good. Measured on map 2002: a boom took
+      // office rent to 1.9x its parity against pay with vacancy on its floor,
+      // the ratchet fired for seven years and removed 30% of office demand
+      // (2.19M -> 1.52M sf) — permanently — while office jobs did not move.
+      // The towers the boom started then delivered into a town that had lost
+      // a third of its tenants on paper, and vacancy reached 43%. A firm at
+      // renewal relocates on what occupying space here costs across its roll,
+      // which is the in-place rent: effective rent rolled at lease speed, so
+      // only a SUSTAINED gap moves a firm, which is the generational exit this
+      // ratchet exists to model (manufacturing leaving New York over decades).
+      const burden = (e.inPlaceReal[k] * cpiNow / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
       const over = Math.max(0, burden - RELOCATE_AT);
       if (over > 0 && e.baseStock) {
         const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table
@@ -4715,7 +4737,42 @@ export function tickEcon(s: GameState) {
     // `scarcity` (the on-rail level tax and the flow of new tightness) priced
     // the same queue a second time; the queue is in `effGap` now.
     void scarcity;
-    const instant = vacTerm;
+    // ...AND THE GAP TO EQUILIBRIUM RENT (2026-10-11). The rent adjustment
+    // literature this block cites has TWO terms, and only the first was here:
+    //
+    //   d ln r = a (v* - v) + b (ln r* - ln r)
+    //
+    // the vacancy gap and the gap between rent and the equilibrium rent r* —
+    // the rent at which new space is supplied (Hendershott 1996; Hendershott,
+    // MacGregor & Tse 2002, who estimate b at roughly 0.15-0.30 a year on
+    // office markets; 0.20 is the middle of that range, a shape parameter
+    // taken from it, not fitted here). Without it, a class sitting on its
+    // vacancy floor priced its full ten-point shortage every month for as long
+    // as the boom lasted: measured on map 2002, real office rent rose 8-9% a
+    // year for eight years and ended 1.6-1.8x the rent at which the city's
+    // best sites already penciled, while 12-14% of the stock was in the ground.
+    // Everybody in the market can see that pipeline and that pencil; the rent
+    // a tenant will sign for ten years stops running away from the price at
+    // which the building next door is coming. The reverse holds too, with the
+    // ONE-SIDED, BECAUSE STOCK IS DURABLE. The supply price is a ceiling, not
+    // a floor: rent above it brings cranes, rent below it brings nothing,
+    // because buildings already standing do not disappear when their rent
+    // falls under what it would cost to build them again — which is the
+    // normal state of most of the stock in most of a century (Glaeser &
+    // Gyourko 2005; the kinked supply curve of DiPasquale & Wheaton). Pulled
+    // both ways, measured over five towns, the term lifted rents ~14% a year
+    // in markets where nothing penciled, priced tenants and firms out, and
+    // three towns of five shrank to 21-25k people. Below the supply price
+    // rent answers vacancy alone.
+    //
+    // r* is read off `siteHurdle` — how far rent stands from the level at
+    // which the best sites the city examines clear (1/hurdle) — so it carries
+    // the cost of building, of money and of land, and it is absent (no pull)
+    // for a use no vacant site permits.
+    const siteHk = e.siteHurdle?.[k];
+    const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
+    const RENT_EQ_PULL = 0.20 / 12;
+    const instant = vacTerm + RENT_EQ_PULL * eqGap;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];

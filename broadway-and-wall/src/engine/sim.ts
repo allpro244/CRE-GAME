@@ -46,7 +46,7 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
-import { netWorth, landRead, landValue } from "./value";
+import { netWorth, landRead, landValue, refreshLandQueue } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -621,6 +621,7 @@ function tickMonth(
   fundJobs(s);
   reconcileSupplyQueue(s, parcels);
   refreshDevelopmentFeasibility(s, parcels, bbls);
+  refreshLandQueue(s, parcels, bbls);
   tickEcon(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and

@@ -925,7 +925,17 @@ export function refreshDevelopmentFeasibility(
   const chosen = new Set<string>();
   // nothing in this pass builds, demolishes or merges, so the cornice of a
   // block is the same number every time it is asked
-  let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
+  // A FIXED PANEL, NOT A FRESH DRAW (2026-10-11). The sample was re-drawn
+  // every year from a month-seeded stream, and its P97 is roughly the third
+  // best lot in the draw — so one year's draw held three standout sites and
+  // the next held none, and the published distance to replacement cost leapt
+  // with no change in the market at all: measured on map 3003, office
+  // `siteHurdle` 1.00 -> 2.03 -> 0.81 in consecutive years, which switched
+  // the growth premium in the office cap on and off and moved its target 3.5
+  // points in six months. A repeat-measure panel is how a price index keeps
+  // sampling noise out of a time series: the same lots are asked every year,
+  // and a lot leaves the panel only when something is built on it.
+  let x = (s.seed ^ 0x9e3779b1) >>> 0;
   const yrNow = START_YEAR + Math.floor(s.month / 12);
   let landCount = 0, redevCount = 0;
   const maxAttempts = Math.min(bbls.length * 3, (LAND_N + REDEV_N) * 24);

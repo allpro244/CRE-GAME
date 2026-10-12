@@ -59,3 +59,9 @@ placeholder extrusions.
   flagged colourable, so every one was the same tan).
 - **Round 4** — curtain walls reflect the probe brighter and stay glassy
   further off: blue glass rather than near-black stripes.
+- **Round 5** — ambient occlusion (High only): a half-size distance pass of
+  the city plus a street-level plane (MapLibre owns the real ground), distance
+  taken per pixel, and a crease counted only where both neighbours of a pair
+  stand nearer — so no grazing-angle banding and no silhouette halos.
+  `?post=aoview` shows the term alone. Also back on PCFShadowMap: three r185
+  retired PCFSoftShadowMap (the round 2 change had silently fallen back).

@@ -4845,7 +4845,7 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: CANAL_WATER, roughness: 0.16, metalness: 0.05, vertexColors: true, envMapIntensity: 0.75, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;

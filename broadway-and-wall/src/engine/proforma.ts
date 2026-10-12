@@ -456,7 +456,7 @@ export function capRetail(mix: UseMix, floors: number): UseMix {
 }
 
 export function maxFloorsFor(
-  rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number, use?: DevUse,
+  rec: { farMaxComm: number; farMaxRes: number; lotArea?: number; lotFront?: number; lotDepth?: number }, coverage: number, use?: DevUse,
 ): number {
   // THE TOP FLOOR DOES NOT HAVE TO BE A FULL PLATE, AND ROUNDING IT AWAY MADE A
   // BIGGER FOOTPRINT BUILD A SMALLER BUILDING.
@@ -485,7 +485,7 @@ export function maxFloorsFor(
   // floor is the part that gives way rather than the whole building.
   const zoning = Math.max(1, Math.ceil(farMaxFor(rec) / Math.max(0.08, coverage)));
   const plate = (rec.lotArea ?? 0) * Math.max(0.08, coverage);
-  const physical = rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
+  const physical = rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate, rec))) : zoning;
   // MAX_FLOORS_BY_USE (dev.ts) is these two, read at call time for the same
   // import-cycle reason as constructionDesks.
   const byUse = use === "retail" ? RETAIL_FLOORS_MAX : use === "industrial" ? INDUSTRIAL_FLOORS_MAX : undefined;

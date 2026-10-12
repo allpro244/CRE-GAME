@@ -19,6 +19,7 @@ import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
+import { PostFX } from "./post";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -93,6 +94,8 @@ interface Family {
 }
 
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
+/** Families whose apartment fronts carry balconies (by the original family they behave like). */
+const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", "precast", "stackbrick", "rainscreen", "timber", "newstone"]);
 const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
@@ -376,6 +379,42 @@ export function skyEnvironment(): THREE.Scene {
   return sc;
 }
 
+/**
+ * WINDOWS SET INTO THE WALL (SKYLINE_LOOK_PLAN step 4). A punched window sits
+ * a hand's depth behind the face, so from any angle but dead-on one jamb
+ * shows inside the opening and the sill catches the light below the glass.
+ * Drawn per pixel from the view direction in the wall's own frame and the
+ * family's real bay and storey (uBay), no geometry: a band of shaded jamb on
+ * the side away from the viewer, a lit sill at the bottom when looking down,
+ * a shaded head at the top when looking up. Curtain walls are flush (uReveal 0)
+ * and the effect fades out with distance like the relief does (farK).
+ */
+const REVEAL_FRAG = `
+{
+  vec3 rN = normalize(vNormal);
+  vec3 rUp = normalize((viewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
+  vec3 rT = normalize(cross(rUp, rN));
+  vec3 rV = normalize(-vViewPosition);
+  float rn = max(dot(rV, rN), 0.15);
+  float vu = dot(rV, rT) / rn, vv = dot(rV, rUp) / rn;
+  // reveal depth over the opening's own width and height, in metres
+  float ww = max((uWin.y - uWin.x) * uBay.x, 0.3), wh = max((uWin.w - uWin.z) * uBay.y, 0.3);
+  float dep = uReveal;
+  float jamb = vu > 0.0 ? step(xW, dep * vu / ww) : step(1.0 - xW, dep * -vu / ww);
+  float sill = vv > 0.0 ? step(tW, dep * vv / wh) : 0.0;
+  float head = vv < 0.0 ? step(1.0 - tW, dep * -vv / wh) : 0.0;
+  float rk = winM * step(0.001, uReveal) * (1.0 - farK);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+  // a punched window catches some of the sky, more looking down at it, so
+  // the old city's openings read as glass rather than holes (round 7); the
+  // blinds and curtains stay as drawn
+  float sky = winM * step(0.001, uReveal) * (1.0 - winShade) * (1.0 - jamb) * (0.16 + 0.12 * clamp(vv, 0.0, 1.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.52, 0.62, 0.72), sky);
+}
+`;
+
 const WINDOW_VARIATION = `
 float winM = texelRoughness.r;
 vec2 bayC = vMapUv * 2.0;
@@ -612,7 +651,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     emissiveIntensity: 0, vertexColors: true,
     // the studio environment is for the glass to reflect; on matte walls its
     // diffuse share only washes them out
-    envMapIntensity: spec.glassMetal > 0.5 ? 0.8 : 0.3,
+    // a curtain wall shows the sky and the city round it (the reflection
+    // probe, step 5), bright enough to read as glass rather than dark paint
+    envMapIntensity: spec.glassMetal > 0.5 ? 1.2 : 0.3,
   });
   // The window glow is the mask's red, shared by every building in the
   // family; the per-vertex `lit` scales it, so an empty building goes dark at
@@ -626,28 +667,36 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uTrimLum = { value: trimLum };
     sh.uniforms.uAccLum = { value: accLum };
     sh.uniforms.uGlassy = { value: glassy ? 1 : 0 };
+    sh.uniforms.uBay = { value: new THREE.Vector2(spec.bayW, spec.floorH) };
+    // a masonry wall is deep, a panel or a timber frame shallow
+    sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
       // most of the way up the lower floors in a canyon of towers (vAoH).
       // The first metre is darkest, where wall meets pavement.
       .replace("#include <color_fragment>", PAINT_FRAG + "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
-      .replace("#include <emissivemap_fragment>", "totalEmissiveRadiance *= vec3(1.0, 0.745, 0.43) * mskT.r * vLit;")
+      // AFTER DARK, ROOM BY ROOM (SKYLINE_LOOK_PLAN round 10). The texture's
+      // lit/unlit choice repeats every two bays and floors, so a tower lit
+      // as one slab; each window now draws its own (wh1, the same per-cell
+      // hash the blinds use): about half the rooms dark, the lit ones warm
+      // tungsten, a few cool fluorescent, each a little brighter or dimmer.
+      .replace("#include <emissivemap_fragment>", "float litW = step(0.42, fract(wh1 * 7.31 + 0.29));\nvec3 lampC = mix(vec3(1.0, 0.72, 0.4), vec3(0.78, 0.86, 1.0), step(0.82, wh2));\ntotalEmissiveRadiance *= lampC * (0.55 + 0.6 * wh2) * litW * winM * vLit;")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -1273,6 +1322,14 @@ export class RealCityLayer {
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private glowMat = (() => {
+    const { c, g } = makeCanvas(64, 64);
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,190,110,1)"); gr.addColorStop(0.45, "rgba(255,170,90,0.45)"); gr.addColorStop(1, "rgba(255,150,70,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  })();
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -1343,6 +1400,8 @@ export class RealCityLayer {
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.shadowMap.enabled = true;
+    // PCF with a wide radius (setupLights): three r185 retired PCFSoftShadowMap
+    // and falls back to this with a console error on every load
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1356,7 +1415,7 @@ export class RealCityLayer {
     this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();
-    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv; });
+    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
@@ -1427,6 +1486,7 @@ export class RealCityLayer {
     this.stage = null;
     this.live = true;
     this.renderer.shadowMap.needsUpdate = true;
+    this.probeDue = true;
     this.onReady?.();
   }
 
@@ -1515,6 +1575,7 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
@@ -1523,6 +1584,8 @@ export class RealCityLayer {
       SEA.seaTime.value = tt % 3600;
     }
     this.renderer.render(this.scene, this.camera);
+    // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
+    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 
@@ -1532,6 +1595,41 @@ export class RealCityLayer {
   // skyline and the island view keeps its far shore readable.
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
+  private post = new PostFX();
+  private veilMesh: THREE.Mesh | null = null;
+  /**
+   * WHAT THE GLASS TOWERS SEE (SKYLINE_LOOK_PLAN step 5). The curtain walls
+   * reflected a painted sky and nothing else. Once the city is built, a
+   * probe is rendered from above the tallest building's lot — the real
+   * skyline under the painted sky — prefiltered, and given to every glass
+   * elevation, so a tower mirrors its neighbours. One capture per build;
+   * High quality only (Medium and Low keep the painted sky).
+   */
+  private probeDue = false;
+  private reflEnv: THREE.Texture | null = null;
+  private captureReflections() {
+    this.probeDue = false;
+    if (this.quality !== "high" || !this.renderer) return;
+    let best: Deed | null = null;
+    for (const d of this.deeds.values()) if (d.ring && (!best || d.height > best.height)) best = d;
+    let px = 0, py = 0;
+    if (best?.ring) { for (const [x, y] of best.ring) { px += x / best.ring.length; py += y / best.ring.length; } }
+    const pz = Math.max(40, Math.min(160, (best?.height ?? 60) * 0.6));
+    // the painted sky round the probe, far enough out to sit behind the city
+    const sky = skyEnvironment();
+    sky.children.forEach((o) => { o.scale.setScalar(55); o.position.add(new THREE.Vector3(px, py, pz)); });
+    const kids = [...sky.children];
+    for (const o of kids) this.scene.add(o);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.renderer.resetState();
+    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: 256, position: new THREE.Vector3(px, py, pz) });
+    pm.dispose();
+    for (const o of kids) this.scene.remove(o);
+    this.renderer.resetState();
+    this.reflEnv?.dispose();
+    this.reflEnv = rt.texture;
+    for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
+  }
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];
   private waveTex(uvPerMetre: number): THREE.Texture {
@@ -1543,8 +1641,11 @@ export class RealCityLayer {
     return t;
   }
   private hazeFor(distM: number) {
-    HAZE.hazeNear.value = distM * 0.35;
-    HAZE.hazeFar.value = distM * 2.6 + 400;
+    // clear air over what the camera is looking at; the fade starts past the
+    // focus and takes the far city (SKYLINE_LOOK_PLAN round 6 — the near
+    // start had been washing the very block in view)
+    HAZE.hazeNear.value = distM * 0.85;
+    HAZE.hazeFar.value = distM * 3.4 + 600;
     if (!this.hazeSheet) {
       // MapLibre's ground is not ours to shade: a sheet over it carries the
       // same fade, so a far street hazes with the buildings standing on it
@@ -1573,7 +1674,7 @@ export class RealCityLayer {
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
     this.sun.shadow.normalBias = 0.6;
-    this.sun.shadow.radius = 2.5;
+    this.sun.shadow.radius = 3.6;
     this.scene.add(this.sun, this.sun.target, this.hemi);
     this.applyMonth();
   }
@@ -1589,7 +1690,9 @@ export class RealCityLayer {
   // the box is moved in whole texels of the light's own view, so a pan
   // re-renders the same edges onto the same pixels.
   private fitShadow(fx: number, fy: number, distM: number) {
-    const raw = Math.max(260, Math.min(2600, distM * 1.6));
+    // the box covers what the camera frames, not a margin round it: half
+    // the old texel size at the default camera
+    const raw = Math.max(220, Math.min(2400, distM * 1.15));
     const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
     const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
     if (moved < span * 0.12 && span === this.shadowSpan) return;
@@ -3408,9 +3511,13 @@ export class RealCityLayer {
         for (let fl = 1; fl < floors; fl++) {
           this.putInst("fesc", A[0] + ux * t + nx * 0.6, A[1] + uy * t + ny * 0.6, z0 + fl * f.floorH + 0.05, 1, rot + (fl % 2 ? Math.PI : 0), bbl, undefined, f.floorH / 3.2);
         }
-      } else if ((famKey === "modern" || famKey === "fibercement" || famKey === "metalpanel" || famKey === "whitebrick" || famKey === "precast") && z1 < 48 && ll > 9 && roll < 0.65) {
+      } else if ((BALC_FAMS.has(baseOf(famKey)) && z1 < 48 && ll > 9 && roll < 0.65)
+        // the post-1990 glass apartment tower carries its balconies all the
+        // way up, in alternate stacks (SKYLINE_LOOK_PLAN round 13)
+        || (GLASSY.has(famKey) && year >= 1990 && z1 >= 30 && z1 < 200 && ll > 12 && roll < 0.55)) {
         const bays = Math.max(1, Math.round(ll / f.bayW));
-        for (let bi = 1; bi < bays; bi += 2) {
+        const step = GLASSY.has(famKey) ? 3 : 2;
+        for (let bi = 1; bi < bays; bi += step) {
           const t = (bi + 0.5) * (ll / bays);
           for (let fl = 1; fl < floors; fl++) {
             this.putInst("balc", A[0] + ux * t, A[1] + uy * t, z0 + fl * f.floorH, 1, rot, bbl);
@@ -3748,7 +3855,11 @@ export class RealCityLayer {
       };
       const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      // the stair bulkhead is built of what the building is: brick on a
+      // brick front, pale render or panel on a modern one, dark on glass
+      // (SKYLINE_LOOK_PLAN round 3: no field of identical tan boxes)
+      const bulkCol = fam.glass ? [0.62, 0.64, 0.68] : fam.masonry ? (rnd() < 0.6 ? [1.22, 0.78, 0.66] : [1.08, 1.0, 0.9]) : [1.22, 1.22, 1.24];
+      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 0.8 + rnd() * 0.5, rot, bbl, bulkCol); }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
@@ -4043,6 +4154,7 @@ export class RealCityLayer {
       }
     }
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
+    this.veilMesh = veil;
     veil.position.z = 0.03; veil.renderOrder = -2;
     this.scene.add(veil);
   }
@@ -4110,6 +4222,10 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // a street lamp's pool of light on the carriageway after dark: a flat
+      // disc with a soft falloff, added to what is under it (SKYLINE_LOOK_PLAN
+      // round 11); invisible by day (glowMat opacity follows the hour)
+      case "glow": return { g: new THREE.CircleGeometry(9, 20), mat: this.glowMat };
       // the shop bay, facing local -y (out of a counter-clockwise wall)
       case "awning": {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
@@ -4162,7 +4278,7 @@ export class RealCityLayer {
       case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
-      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }), colored: true };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
       case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
@@ -4291,7 +4407,8 @@ export class RealCityLayer {
         if (colored) mesh.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
         if (it.bbl) this.deedOf(it.bbl).inst.push({ mesh: kind, i });
       });
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = kind !== "glow"; mesh.receiveShadow = kind !== "glow";
+      if (kind === "glow") mesh.renderOrder = 2;          // over the night veil on the ground
       mesh.frustumCulled = false;
       this.scene.add(mesh); this.inst.set(kind, mesh);
     }
@@ -4759,19 +4876,24 @@ export class RealCityLayer {
         const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
         // people, a few per block face, at a walking pace along the middle of the footway
         if (w >= 1.5) {
-          const n = Math.max(1, Math.round(L / 16));
+          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~12 m
+          // of footway, thinned by the street's demand and the hour (applyCrowd)
+          const n = Math.max(1, Math.round(L / 12));
           for (let k = 0; k < n; k++) {
             const fwd = rnd() < 0.5;
             const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
             this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
           }
         }
-        // street trees in the kerb strip; a footway under two metres has none
-        if (w >= 2) {
+        // street trees in the kerb strip, every 8-9 m (a city that plants
+        // its streets: SKYLINE_LOOK_PLAN step 3); a narrow footway takes a
+        // smaller tree, one under a metre and a half none
+        if (w >= 1.5) {
           const off = Math.min(1.1, w * 0.3);
-          for (let t = 7; t < L - 7; t += 11) {
+          const big = w >= 3 ? 1.22 : w >= 2 ? 1.05 : 0.82;
+          for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
             const [x, y] = at(t, off);
-            const sz = 0.72 + rnd() * 0.3;
+            const sz = big * (0.72 + rnd() * 0.3);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
@@ -4796,12 +4918,17 @@ export class RealCityLayer {
         // lamps at the kerb, between the trees
         for (let t = 12; t < L - 6; t += 27) {
           const [x, y] = at(t, 0.45);
-          if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+          if (this.groundAt(x, y) === "walk") {
+            this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+            // the pool falls on the carriageway, a few metres off the kerb
+            const [gx, gy] = at(t, -3.2);
+            this.putInst("glow", gx, gy, 0.2, 0.9 + rnd() * 0.25, 0);
+          }
         }
         // moving traffic in the lane outside the parked row, kerb on its right
         // (the footway is left of this edge, so the kerb lane runs against it)
         if (L > 40) {
-          const n = Math.max(1, Math.round(L / 34));
+          const n = Math.max(1, Math.round(L / 24));
           for (let k = 0; k < n; k++) {
             const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
             if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
@@ -4896,6 +5023,15 @@ export class RealCityLayer {
     const parksP = ((this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? [])
       .map((pk) => Array.isArray(pk) ? { ring: pk.map((q) => this.project(q)), flavour: "park" } : { ring: (pk.ring ?? []).map((q) => this.project(q)), flavour: pk.flavour ?? "park" })
       .filter((pk) => pk.ring.length >= 3);
+    const pathsP = ((this.ctx as { paths?: P2[][] }).paths ?? []).map((l) => l.map((q) => this.project(q)));
+    const nearPathP = (x: number, y: number, d: number) => pathsP.some((l) => {
+      for (let i = 0; i + 1 < l.length; i++) {
+        const a = l[i], b = l[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], ll = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (y - a[1]) * vy) / ll));
+        if (Math.hypot(a[0] + vx * t - x, a[1] + vy * t - y) < d) return true;
+      }
+      return false;
+    });
     const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       await this.breathe();
@@ -4911,6 +5047,30 @@ export class RealCityLayer {
       } else {
         this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
         this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      }
+    }
+    // A PARK IS A WOOD WITH LAWNS IN IT. The generator's trees were a sprinkle;
+    // every park gets canopy to about a tree per 140 m², in clumps (a seed
+    // tree, three or four round it), kept off its walks.
+    for (const pk of parksP) {
+      if (pk.flavour === "cemetery" && rnd() < 0.5) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of pk.ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const area = Math.abs(ringArea(pk.ring));
+      const clumps = Math.min(220, Math.floor(area / 700));
+      for (let c = 0; c < clumps; c++) {
+        await this.breathe();
+        const cx = x0 + rnd() * (x1 - x0), cy = y0 + rnd() * (y1 - y0);
+        if (!inRingP(cx, cy, pk.ring)) continue;
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const a = rnd() * 6.28, d = j ? 4 + rnd() * 5 : 0;
+          const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+          const sz = 0.8 + rnd() * 1.0;
+          if (!inRingP(x, y, pk.ring) || this.groundAt(x, y) === "road" || !this.clearOfBuildings(x, y, 2.2 * sz) || nearPathP(x, y, 2.5)) continue;
+          if (rnd() < (pk.flavour === "cemetery" ? 0.5 : 0.18)) this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
+          else { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol()); }
+        }
       }
     }
     // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,
@@ -5361,9 +5521,8 @@ export class RealCityLayer {
     if (ring.length !== 4 || h > 26) return false;
     if (ringArea(ring) < 0) ring = ring.slice().reverse();
     const yr = it.year && it.year > 1800 ? it.year : 2000;
-    // Both ends wrap: len(li + 3) with li = 1 asks for edge 4, and ring[4] does
-    // not exist — that threw inside the map's commit and blanked the whole app.
-    const len = (i: number) => Math.hypot(ring[(i + 1) % 4][0] - ring[i % 4][0], ring[(i + 1) % 4][1] - ring[i % 4][1]);
+    // edge i of the four, wrapping: li + 3 runs past the end of the ring
+    const len = (i: number) => { const a = ring[i % 4], b = ring[(i + 1) % 4]; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
     const li = len(0) + len(2) >= len(1) + len(3) ? 0 : 1;
     const L = (len(li) + len(li + 2)) / 2, S = (len(li + 1) + len(li + 3)) / 2;
     const style = styleOf(fam, yr, h);
@@ -5698,7 +5857,9 @@ export class RealCityLayer {
 
   private applyMonth() {
     const w2 = Math.cos((2 * Math.PI * (this.month - 6)) / 12);     // 1 in June, -1 in December
-    const el = ((35 + 11 * w2) * Math.PI) / 180;
+    // a city-builder's afternoon: the sun a few degrees lower than noon would
+    // put it, so every block throws a shadow long enough to model it
+    const el = ((30 + 10 * w2) * Math.PI) / 180;
     const az = ((200 - 12 * w2) * Math.PI) / 180;
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
@@ -5768,14 +5929,22 @@ export class RealCityLayer {
     const night = smooth(0.35, 0.95, this.dusk);
     const golden = smooth(0.0, 0.5, this.dusk) * (1 - night);
     const sunK = (1 - night * 0.97) * (1 - this.overcast * 0.6);
-    this.sun.intensity = 3.4 * sunK;
-    this.sun.color.setRGB(1, 0.9 - golden * 0.25, 0.78 - golden * 0.4);
-    this.hemi.intensity = 0.6 * (1 - night * 0.8) + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.78 - night * 0.45, 0.85 - night * 0.45, 0.93 - night * 0.3);
+    // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
+    // blue of the open sky rather than left grey: what makes a sunny city
+    // read as sunny. The ground bounce is warm (pavement and brick).
+    // after dark the key light is the moon: weak and cool, so roofs and
+    // streets keep their shape under the lit windows (round 14)
+    this.sun.intensity = 3.25 * sunK + 0.55 * night;
+    const sr = 1, sg = 0.88 - golden * 0.24, sb = 0.72 - golden * 0.38;
+    this.sun.color.setRGB(sr + (0.62 - sr) * night, sg + (0.72 - sg) * night, sb + (1.0 - sb) * night);
+    this.hemi.intensity = 0.74 * (1 - night * 0.62) + this.overcast * 0.25;
+    this.hemi.color.setRGB(0.66 - night * 0.36, 0.78 - night * 0.42, 0.98 - night * 0.32);
+    this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
     // lit rooms after dark
-    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
+    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.15;
     this.lampMat.emissiveIntensity = night * 2.2;
+    this.glowMat.opacity = night * 0.62;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign
@@ -5792,7 +5961,7 @@ export class RealCityLayer {
     const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
-    HAZE.hazeCap.value = (0.55 + oc * 0.2) * (1 - night * 0.35);
+    HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
     this.map?.triggerRepaint();
   }
 
@@ -5938,6 +6107,9 @@ export class RealCityLayer {
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low";
+    // the finishing pass: all of it on High, the grade alone on Medium, none on Low
+    this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
+    if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";

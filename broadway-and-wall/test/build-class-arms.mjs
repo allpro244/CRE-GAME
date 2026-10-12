@@ -15,7 +15,7 @@
 // soft cost and contingency on top (they scale with hard), so the cheap side's
 // saving is not understated. Paired seeds; a tier "beats Standard" only on the
 // per-seed difference. The phase of the cycle at each flip month is printed
-// with it — the plan's target is that cheap-and-flip does not win on average,
+// with it. Buildings open EMPTY (a real delivery) unless EMPTY=0 — the plan's target is that cheap-and-flip does not win on average,
 // does win into a hot market, and loses into a soft one. Generated city.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
@@ -30,6 +30,7 @@ const YEARS = Number(process.env.YEARS ?? 25);
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,4242").split(",").map(Number);
 const N = Number(process.env.N ?? 6);
 const DISC = Number(process.env.DISC ?? 0.07);
+const EMPTY = process.env.EMPTY !== "0";
 const SALE_COST = 0.03;   // brokerage, transfer tax and legal on the way out — the same for every arm
 const FLIPS = (process.env.FLIP_M ?? "36,48,60").split(",").map(Number);
 // Fallbacks so the same probe runs on a tree from before BUILD_CLASS_PLAN —
@@ -58,6 +59,12 @@ function stamp(g0, owned, spec) {
     h.condIdx = Math.min(E.condCeiling({ yearBuilt: yr, buildSpec: spec }, g.month), openIdx(spec));
     h.condition = E.condGrade(h.condIdx);
     h.lastCapM = g.month; h.deliveredM = g.month; h.programsDone = {};
+    // A DELIVERY OPENS EMPTY. Keeping the rent roll the building was bought
+    // with meant every arm collected the same old leases for years and the
+    // flip sold those leases, not the building — the tier never reached the
+    // income a buyer was pricing. EMPTY=0 restores the old (occupied) probe.
+    // Deposits go with the tenants; this is a probe, not the ledger.
+    if (EMPTY) { h.tenants = []; h.makeReady = []; h.occ = 0; }
   }
   return g;
 }

@@ -117,7 +117,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1357,6 +1357,14 @@ export class RealCityLayer {
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  /** The open ground of a built lot (round 25): a mown lawn, plaza paving, a paved yard, an asphalt work yard. */
+  private lotLawnMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+  private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
+  private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
+  private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
+  private lotMat(name: string): THREE.Material | undefined {
+    return name === "lot:lawn" ? this.lotLawnMat : name === "lot:plaza" ? this.lotPlazaMat : name === "lot:pave" ? this.lotPaveMat : name === "lot:work" ? this.lotWorkMat : undefined;
+  }
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -4212,6 +4220,108 @@ export class RealCityLayer {
     }
   }
 
+  /**
+   * WHAT IS ON THE GROUND ROUND A BUILDING (SKYLINE_LOOK_PLAN round 25).
+   * About a third of every built lot is open, and it showed MapLibre's block
+   * fill, which goes lawn-green in summer whatever stands there: a bank tower
+   * in a front lawn. Each built lot is now surfaced by what it is:
+   *  - an office or a shop: a plaza in large stone flags to the footway,
+   *    with a tree in a grate or a planter along the front where there is room;
+   *  - an apartment house before 1940 (walk-ups, courtyard blocks): paved
+   *    areaways and yards in concrete;
+   *  - an apartment house from 1940 on (the tower in the park, the garden
+   *    apartments, the houses): mown lawn, a paved walk from the street to
+   *    the door, a tree or two on a big lawn;
+   *  - industry: an asphalt work yard.
+   * The building stands on its own footprint, so only the open part shows.
+   * Hung on the deed, and collapsed away when the building is demolished.
+   */
+  private async lotGrounds() {
+    const L = (this.ctx as { lots?: Record<string, P2[]> }).lots ?? {};
+    const base = new Map<string, BuildingVolume>(), top = new Map<string, number>();
+    for (const v of this.volumes) {
+      if (!v.b || v.k || v.d) continue;
+      if (!base.has(v.b) || v.z0 < base.get(v.b)!.z0) base.set(v.b, v);
+      top.set(v.b, Math.max(top.get(v.b) ?? 0, v.z1));
+    }
+    const lay = (B: Buf, ring: P2[], z: number, col: number[]) => {
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { return; }
+      for (const t of tris) {
+        const p = t.map((i) => ring[i]);
+        const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        const q = cr >= 0 ? p : [p[0], p[2], p[1]];
+        B.tri([q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z], [0, 0, 1], col);
+      }
+    };
+    let n = 0;
+    for (const [bbl, v] of base) {
+      if (++n % 60 === 0) await this.breathe();
+      const ll = L[bbl];
+      if (!ll || ll.length < 3) continue;
+      let ring = ll.map((q) => this.project(q));
+      if (ringArea(ring) < 0) ring = ring.slice().reverse();
+      const area = Math.abs(ringArea(ring));
+      if (area < 40) continue;
+      const k = keyOf(bbl), h = top.get(bbl) ?? v.z1, yr = v.y || 1950, cls = v.c;
+      const j = 0.94 + 0.12 * hash01(k ^ 0x6f1, 3);
+      const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
+      const name = "lot:" + kind, B = this.buf(name), b0 = B.count;
+      lay(B, ring, kind === "lawn" ? 0.022 : 0.02, [j, j, j]);
+      this.note(bbl, name, b0);
+      // the street front: the longest wall that faces a street
+      const front = this.streetEdges(ring, 6).sort((a, b) => b.L - a.L)[0];
+      let cx = 0, cy = 0;
+      for (const [x, y] of ring) { cx += x; cy += y; }
+      cx /= ring.length; cy /= ring.length;
+      let rs = (k * 7919) % 2147483646 + 1;
+      const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+      if (kind === "lawn" && front) {
+        // a paved walk from the middle of the street front to the building
+        const mx = front.a[0] + front.ux * front.L / 2, my = front.a[1] + front.uy * front.L / 2;
+        const ix = -front.uy, iy = front.ux;            // into the lot (counter-clockwise ring)
+        let d = 0.5;
+        while (d < 40 && this.groundAt(mx + ix * d, my + iy * d) !== "bld") d += 0.5;
+        if (d > 1.5 && d < 40) {
+          const P = this.buf("lot:pave"), p0 = P.count, w = h > 15 ? 1.6 : 0.7;
+          const q = (t: number, o: number) => [mx + ix * t + front.ux * o, my + iy * t + front.uy * o, 0.026];
+          P.quad(q(0, -w), q(0, w), q(d + 0.5, w), q(d + 0.5, -w), [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [j, j, j]);
+          this.note(bbl, "lot:pave", p0);
+        }
+        // a tree or two on a big lawn
+        const nt = Math.min(4, Math.floor(area / 500));
+        for (let i = 0, tries = 0; i < nt && tries < 14; tries++) {
+          const r = ring[(rnd() * ring.length) | 0], f = 0.35 + rnd() * 0.5;
+          const x = cx + (r[0] - cx) * f, y = cy + (r[1] - cy) * f, sz = 0.8 + rnd() * 0.45;
+          if (!PolyGrid.inRing(ring, x, y) || !this.clearOfBuildings(x, y, 2.6 * sz)) continue;
+          this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl);
+          this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, [0.3, 0.45, 0.2]);
+          i++;
+        }
+      } else if (kind === "plaza" && front) {
+        // trees in grates, or planters, along the front where the plaza is deep enough
+        const ix = -front.uy, iy = front.ux;
+        for (let t = 5; t < front.L - 4; t += 9) {
+          const x = front.a[0] + front.ux * t + ix * 2.2, y = front.a[1] + front.uy * t + iy * 2.2;
+          if (!PolyGrid.inRing(ring, x, y) || !this.clearOfBuildings(x, y, 2.4)) continue;
+          if (rnd() < 0.6) {
+            const sz = 0.85 + rnd() * 0.3;
+            this.putInst("grate", x, y, 0.02, 1, front.r, bbl);
+            this.putInst("trunk", x, y, 0.02, sz, rnd() * 6.28, bbl);
+            this.putInst("crown", x, y, 0.02, sz, rnd() * 6.28, bbl, [0.3, 0.45, 0.2]);
+          } else this.putInst("planter", x, y, 0.02, 1, front.r, bbl);
+        }
+      }
+    }
+    // the surfaces' textures, made once. tri() lays uv at one unit per four
+    // metres, so a repeat of 4 / m makes a texture one tile per m metres
+    if (!this.lotLawnMat.map) {
+      const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
+      this.lotLawnMat.map = tex(this.lawnTex(), 5); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
+      this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
+    }
+  }
+
   private async buildCity() {
     // the top volume per deed takes the cornice and the plant
     const topZ = new Map<string, number>();
@@ -4295,6 +4405,7 @@ export class RealCityLayer {
       const m = new THREE.Mesh(lotGravel.geometry(), new THREE.MeshStandardMaterial({ map: this.gravelTex(), roughness: 1, envMapIntensity: 0.15 }));
       m.receiveShadow = true; this.scene.add(m);
     }
+    await this.lotGrounds();
     for (const v of this.volumes) {
       await this.breathe();
       if (v.k) continue;                                   // vacant lots: dressed above
@@ -4465,7 +4576,7 @@ export class RealCityLayer {
       if (!b.count) continue;
       await this.breathe();
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.lotMat(name) ?? this.trimMat;
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const geo = await paceSteps(b.geometrySteps(), () => this.breathe());
@@ -4679,6 +4790,12 @@ export class RealCityLayer {
       case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
         new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),
         new THREE.CylinderGeometry(0.07, 0.12, 1.6, 5).rotateX(Math.PI / 2).rotateY(-0.6).rotateZ(1.9).translate(-0.35, 0.3, 3.6)]), mat: this.barkMat };
+      // a tree pit in a plaza: a square iron grate in a granite kerb (round 25)
+      case "grate": return { g: mergeColored([[box(1.6, 1.6, 0.06), [0.42, 0.41, 0.39]], [box(1.2, 1.2, 0.02, 0, 0, 0.06), [0.12, 0.12, 0.12]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }) };
+      // a granite planter with a clipped shrub
+      case "planter": return { g: mergeColored([[box(2.2, 1.1, 0.55), [0.58, 0.56, 0.52]], [box(1.95, 0.85, 0.5, 0, 0, 0.5), [0.24, 0.36, 0.18]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }) };
       case "bush":
       case "crown": {
         // two lumps at one subdivision: 160 triangles a tree, which is the
@@ -5272,6 +5389,7 @@ export class RealCityLayer {
     }
     // the fields and rough grass under snow
     this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.lotLawnMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.cropMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.map?.triggerRepaint();
   }
@@ -5346,6 +5464,32 @@ export class RealCityLayer {
     for (let i = 0; i < 26; i++) limb(rnd() * N, rnd() * N, rnd() * 6.28, 22 + rnd() * 18, 3.2, 5);
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
     this.twigTexC = t;
+    return t;
+  }
+
+  /** A mown lawn: fine light-and-dark mottling and faint mower stripes, white so the material colour carries the season (5 m tile). */
+  private lawnTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 2111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, 128, 128);
+    for (let i = 1; i < 4; i += 2) { g.fillStyle = "rgba(0,0,0,0.05)"; g.fillRect(0, i * 32, 128, 32); }
+    for (let i = 0; i < 1600; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)"; g.fillRect(rnd() * 128, rnd() * 128, 1.5, 2); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+  /** Plaza paving: large pale granite flags, 1.5 m by 3 m, in running bond (6 m tile). */
+  private plazaTex(): THREE.CanvasTexture {
+    const { c, g } = makeCanvas(128, 128);
+    let s = 3301; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#8e8a82"; g.fillRect(0, 0, 128, 128);
+    for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) {
+      const x = (k * 64 + (r % 2) * 32), v = 182 + rnd() * 26 | 0;
+      g.fillStyle = `rgb(${v},${v - 4},${v - 12})`;
+      g.fillRect(x % 128 + 1, r * 32 + 1, 62, 30);
+      if (x % 128 + 64 > 128) g.fillRect(x % 128 - 127, r * 32 + 1, 62, 30);
+    }
+    for (let i = 0; i < 600; i++) { const v = rnd() * 60 | 0; g.fillStyle = `rgba(${120 + v},${118 + v},${112 + v},0.25)`; g.fillRect(rnd() * 128, rnd() * 128, 1, 1); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
 
@@ -5955,7 +6099,7 @@ export class RealCityLayer {
       if (!pa) continue;
       const arr = pa.array as Float32Array;
       // a demolished building's ground shade goes with it: collapse the band to a point
-      if (r.buf === "contact") { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
+      if (r.buf === "contact" || r.buf.startsWith("lot:")) { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
       for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.01);
       pa.addUpdateRange(r.start * 3, r.count * 3); pa.needsUpdate = true;
     }
@@ -5998,7 +6142,7 @@ export class RealCityLayer {
       for (const [name, b] of this.bufs) {
         if (!b.count) continue;
         const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-          : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
+          : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.lotMat(name) ?? this.trimMat;
         const mesh = new THREE.Mesh(b.geometry(), mat);
         mesh.castShadow = mesh.receiveShadow = name !== "contact";
         if (name === "contact") mesh.renderOrder = 2;
@@ -6225,7 +6369,7 @@ export class RealCityLayer {
     for (const [name, b] of this.bufs) {
       if (!b.count) continue;
       const mat = name.startsWith("w:") ? this.families[name.slice(2)].mat
-        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.trimMat;
+        : name === "roof" ? this.roofMat : name === "dark" ? this.darkMat : name === "pier" ? this.pierMat() : name === "contact" ? this.contactMat : this.lotMat(name) ?? this.trimMat;
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.castShadow = mesh.receiveShadow = name !== "contact";
       if (name === "contact") mesh.renderOrder = 2;
@@ -6496,6 +6640,9 @@ export class RealCityLayer {
     const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
     this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
+    // a mown lawn: dormant straw-green in winter, full green in summer
+    // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
+    this.lotLawnMat.color.setRGB(0.26 - vig * 0.1, 0.25 + vig * 0.05, 0.16 - vig * 0.08);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
     if (leaf) {

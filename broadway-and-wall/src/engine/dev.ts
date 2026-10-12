@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -509,6 +509,8 @@ export function planDevelopment(
     vested?: boolean;
     /** The massing is a structure already standing: no new-build coverage limit (MAX_COVERAGE). */
     shell?: boolean;
+    /** This project's hard cost against the market index (`projectCostMult`). */
+    costMult?: number;
   },
   lender?: string,
   spec = 0.5,
@@ -833,13 +835,50 @@ export function startAdaptiveReuse(
  * builders may not: they require both the common economic hurdle and an open
  * construction desk.
  */
+/**
+ * NOT EVERY BUILDER GETS THE SAME PRICE (2026-10-12).
+ *
+ * The street's pro forma priced every project in town at the market's cost
+ * index, so every site with the same rent crossed its hurdle on the same
+ * month: in a 100-year developer run the city built no office for sixty years
+ * (89 of 99 years with nothing delivered), then a quarter of the office stock
+ * in two decades — peak year 19x the average, against roughly 2-3x in the
+ * US completions record (CBRE-EA office completions, 1980s peak to mean). A
+ * class sat at 1.3% vacancy for twelve years with no crane, because there was
+ * no builder in town for whom the deal penciled until there was one for whom
+ * it penciled everywhere at once.
+ *
+ * Real construction cost is not one number. Comparable buildings of the same
+ * type in the same city spread about +/-15% around the median between the
+ * quartiles (RSMeans square-foot costs, 25th/75th percentile), i.e. a log
+ * spread near 0.2, some of which is specification this engine already models
+ * separately — so each project here draws its own hard cost, lognormal with
+ * sigma 0.15, a shape parameter set from that spread and stated as such. It
+ * is a property of the site and of whoever controls it (ground conditions,
+ * assemblage, the builder's own crews and subs), so it persists, and it turns
+ * over with control of the site, about every five years, staggered by lot.
+ * It is a real cost, not a belief: the job is booked at it, and a project
+ * that pencils because it really is cheap really costs less.
+ *
+ * The player's desk is not drawn — the player gets the desk's real quotes.
+ */
+const PROJECT_COST_SIGMA = 0.15;
+const PROJECT_TERM_M = 60;
+export function projectCostMult(s: GameState, bbl: string, use: DevUse): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const phase = (h >>> 0) % PROJECT_TERM_M;
+  const epoch = Math.floor((s.month + phase) / PROJECT_TERM_M);
+  return Math.exp(PROJECT_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${s.seed}`));
+}
+
 export function underwriteDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.62, landBasisOverride?: number,
 ): DevelopmentUnderwriting | null {
   const plan = planDevelopment(
     s, parcels, bbl, use, floors, coverage, "gmp",
-    undefined, undefined, undefined, 0.5, landBasisOverride,
+    undefined, { costMult: projectCostMult(s, bbl, use) }, undefined, 0.5, landBasisOverride,
   );
   if (!plan) return null;
   const financeable = plan.ltcMax > 0 && plan.commitment > 0;

@@ -939,8 +939,13 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
 const BELIEF_MONTHLY = 1 - Math.pow(0.6, 1 / 12);
 const OWNER_ERR_SIGMA = 0.15;
 function ownerErr(bbl: string): number {
-  // Two independent uniform hashes off the parcel id -> one standard normal
+  return hashNormal(bbl);
+}
+/** A standard normal hashed off a key: deterministic, persistent, never the RNG. */
+export function hashNormal(key: string): number {
+  // Two independent uniform hashes off the key -> one standard normal
   // (Box-Muller). Persistent: the same owner, the same misread, every month.
+  const bbl = key;
   let h1 = 2166136261, h2 = 5381;
   for (let i = 0; i < bbl.length; i++) {
     const c = bbl.charCodeAt(i);

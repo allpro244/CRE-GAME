@@ -21,6 +21,7 @@ import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spenda
 import { sizeAreaScale } from "./cityscale";
 import { JV_CONSENT } from "./jv";
 import { money } from "./money";
+import { releaseCost, FACILITY_MIN_ASSETS } from "./facility";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -2066,12 +2067,27 @@ export function balloonLadder(
   return { ladder, fee, pick, product, qd, clears: qd.principal >= balance + fee, value, noi, vacantDirt, quoteClass, hair, stab };
 }
 
+/**
+ * A PLEDGED DEED IS REFINANCED OUT OF THE POOL AT THE CLOSING (2026-10-12).
+ * The new lender's proceeds pay the facility its release price at the same
+ * table, the way a sale of a pledged deed already does — a sponsor does not
+ * need the release cheque in the bank first. At the pool's minimum a single
+ * release would leave the facility under-collateralised, so the takeout has to
+ * repay the whole line, which frees every deed in it.
+ */
+export function refiFacilityRelease(s: GameState, parcels: ParcelTable, bbl: string): { price: number; unwind: boolean } | null {
+  const f = s.facility;
+  if (!f || !f.bbls.includes(bbl)) return null;
+  const unwind = f.bbls.length <= FACILITY_MIN_ASSETS;
+  return { price: unwind ? Math.max(0, f.balance) : releaseCost(s, parcels, bbl), unwind };
+}
+
 export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
-  const onFacility = !!s.facility?.bbls.includes(bbl);
+  const release = refiFacilityRelease(s, parcels, bbl);
   const guarantor: Guarantor = { nw: netWorth(s, parcels) };
   const quotes = PRODUCTS.map((p) => {
     const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
@@ -2145,15 +2161,12 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       prepayM: p.prepayM,
       kicker: p.kicker,
       floating: p.floating,
-      available: onFacility ? false
-        : !productOpen(s, p) || !windowOpen(s, p) ? false
+      available: !productOpen(s, p) || !windowOpen(s, p) ? false
         : !conditionOk(p, h.condition, rec.buildSpec) ? false
         : p.mezz ? false
         : p.uwDscr <= 0 ? vacantDirt
         : !vacantDirt && q.principal > 0,
-      why: onFacility
-        ? "This deed is pledged to your facility. Release it before you put a mortgage back on."
-        : !productOpen(s, p)
+      why: !productOpen(s, p)
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
@@ -2180,10 +2193,14 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
           ? "Land money is for vacant dirt. This fee has a ground rent to underwrite — use an income desk."
           : "Land money is for dirt. This one has a building on it.")
         : p.uwDscr > 0 && vacantDirt ? "No income to underwrite — a vacant site only gets a land loan."
+        : release
+        ? (release.unwind
+          ? `Pledged to your facility, which is at its ${FACILITY_MIN_ASSETS}-deed minimum: the proceeds repay the whole line (${money(release.price)}) and every deed in the pool comes free.`
+          : `Pledged to your facility: the proceeds first pay its release, ${money(release.price)} (allocated share plus the premium).`)
         : undefined,
     } satisfies RefiQuote;
   });
-  return { quotes, value, payoff: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) };
+  return { quotes, value, payoff: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + (release?.price ?? 0) };
 }
 
 // Player-initiated refinance at current rates and value. `lev` scales the new
@@ -2193,9 +2210,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (next.facility?.bbls.includes(bbl)) {
-    return { s, err: "This deed is pledged to your facility. Release it before you put a mortgage back on." };
-  }
+  const release = refiFacilityRelease(next, parcels, bbl);
   const product = productById(productId);
   if (product.mezz) {
     return { s, err: "Mezzanine sits behind a senior — use Place mezz, do not replace the first lien." };
@@ -2226,7 +2241,8 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (qd.principal < 100_000) return { s, err: "No lender will size a loan against this income." };
   // Cash-in (and fees) can draw the line the same way a balloon gap does — a
   // firm with an undrawn revolver is not underwater on a takeout it can fund.
-  const need = Math.max(0, oldBal + fee - qd.principal);
+  const releasePrice = release?.price ?? 0;
+  const need = Math.max(0, oldBal + releasePrice + fee - qd.principal);
   if (need > 0 && fundableNow(next, parcels) < need) {
     return {
       s,
@@ -2234,7 +2250,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
         ? `Proceeds don't cover the payoff. Breaking the old loan early costs ${money(penalty)} in ${h.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment"}.`
         : mezzBal > 0
           ? "Proceeds don't cover the senior and the mezz — you're underwater on this refi."
-          : "Proceeds don't cover the payoff — you're underwater on this refi.",
+          : releasePrice > 0
+            ? `Proceeds don't cover the payoff and the facility's ${money(releasePrice)} release, and you can't fund the gap.`
+            : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
   const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
@@ -2251,6 +2269,17 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     const part = Math.round((netDraw - fee) * h.jv.share);
     if (part > 0) { next.cash -= part; logBooks(next, "lpDistributed", part, bbl); }
     else if (part < 0) { next.cash -= part; logBooks(next, "lpCalled", -part, bbl); }
+  }
+  // The facility is paid its release at the same closing.
+  if (release && next.facility) {
+    next.cash -= releasePrice;
+    logBooks(next, "debtSvc", releasePrice, bbl);
+    if (release.unwind) delete next.facility;
+    else {
+      next.facility.balance = Math.max(0, next.facility.balance - releasePrice);
+      next.facility.bbls = next.facility.bbls.filter((b) => b !== bbl);
+      if (next.facility.balance <= 0) delete next.facility;
+    }
   }
   coverCashShortfall(next, parcels);
   logBooks(next, "debtSvc", fee, bbl);
@@ -2269,6 +2298,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
       + (mezzBal > 0 ? `, retiring ${money(mezzBal)} of mezz` : "")
       + (penalty > 0 ? `, after ${money(penalty)} to break the old paper` : "")
       + (capPremium > 0 ? `, plus ${money(capPremium)} for the rate cap` : "")
+      + (release ? (release.unwind ? `, repaying the facility in full (${money(releasePrice)}) — the pool is unencumbered` : `, paying the facility ${money(releasePrice)} to release the deed`) : "")
       + ".",
   });
   // Cash-out proceeds pay the revolver before they sit idle.

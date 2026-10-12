@@ -3458,7 +3458,9 @@ export class RealCityLayer {
       // A STONE FRONT STANDS ON A RUSTICATED BASE: the ground storey in long
       // channelled blocks with round-headed openings, the string course over
       // it, the elevation proper above — Beaux-Arts, Romanesque, deco.
-      const rv = famKey === "romanesque" ? "rustic#2" : famKey === "deco" || famKey === "decobrick" ? "rustic#1" : this.variantOf("rustic", seedK);
+      // a base the player asked for is plain dressed stone, not a random batch
+      const fb = baseOf(famKey);
+      const rv = fb === "romanesque" ? "rustic#2" : fb === "deco" || fb === "decobrick" ? "rustic#1" : want === "stone" ? "rustic" : this.variantOf("rustic", seedK);
       baseH = this.families.rustic.floorH;
       walls(rv, z0, baseH, 0, tint);
       mainWalls(baseH);

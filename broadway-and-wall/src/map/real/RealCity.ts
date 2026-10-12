@@ -4870,7 +4870,9 @@ export class RealCityLayer {
         const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
         // people, a few per block face, at a walking pace along the middle of the footway
         if (w >= 1.5) {
-          const n = Math.max(1, Math.round(L / 16));
+          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~9 m
+          // of footway, thinned by the street's demand and the hour (applyCrowd)
+          const n = Math.max(1, Math.round(L / 9));
           for (let k = 0; k < n; k++) {
             const fwd = rnd() < 0.5;
             const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
@@ -4920,7 +4922,7 @@ export class RealCityLayer {
         // moving traffic in the lane outside the parked row, kerb on its right
         // (the footway is left of this edge, so the kerb lane runs against it)
         if (L > 40) {
-          const n = Math.max(1, Math.round(L / 34));
+          const n = Math.max(1, Math.round(L / 24));
           for (let k = 0; k < n; k++) {
             const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
             if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;

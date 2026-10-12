@@ -53,7 +53,35 @@ Total cost spans 1.76×; NOI spans 1.24×. Probe: `test/_spec-pf.mjs` (scratch).
 
 ### The hold — `test/build-spec-arms.mjs` widened to spec 0 and 1
 
-_See §2b — filled in from the run._
+4 seeds × 30 y × 6 new offices, unlevered, Fund plan, every letter signed at
+asking, PV at 7%. Cost is **hard cost × spec only**, so it understates the
+cheap side's edge (soft cost and contingency scale with hard). "+capex" buys
+every programme as soon as it is allowed.
+
+| arm | spec | build cost | rent ÷ idx | NOI − capex | PV − cost | beats Standard |
+|---|---|---|---|---|---|---|
+| floor | 0.00 | $75M | 1.52 | $422M | **$147M** | 3 / 4 |
+| floor + capex | 0.00 | $75M | 1.55 | $411M | $109M | 2 / 4 |
+| budget ("Box") | 0.28 | $94M | 1.63 | $455M | **$145M** | **4 / 4** |
+| budget + capex | 0.28 | $94M | 1.68 | $441M | $95M | 1 / 4 |
+| Standard | 0.50 | $109M | 1.67 | $434M | $104M | — |
+| Standard + capex | 0.50 | $109M | 1.76 | $499M | $109M | 1 / 4 |
+| signature | 0.88 | $135M | 1.83 | $506M | $107M | 1 / 4 |
+| trophy | 1.00 | $143M | 1.87 | $503M | $100M | 1 / 4 |
+
+Read:
+- **Cheap wins the 30-year hold too, not just day one.** Budget beats
+  Standard on every seed; floor on 3 of 4. Trophy earns ~$80M more NOI − capex
+  than floor over thirty years and still loses, because it paid ~$68M more
+  up front and nothing makes the extra rent *safer*. Per-seed spreads are wide
+  (−$62M to +$138M), so read the paired column, not the means.
+- **"Fix it later" through programmes does not pay** in this run — every
+  +capex arm except Standard's is behind its own no-capex arm. What the owner
+  is seeing is mostly the *build cheap* half: the upfront saving is never
+  clawed back by a cheaper building's operation. The gut route (§2, point 3)
+  was not in this probe; step 0 adds it.
+- So step 1 (wear and opening grade) and step 3 (flight to quality) carry
+  the weight; programmes are not where the exploit lives.
 
 ### Why "fix it later" works
 

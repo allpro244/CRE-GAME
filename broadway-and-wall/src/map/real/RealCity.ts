@@ -19,8 +19,11 @@ import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
-import { SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
-import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
+import { PostFX } from "./post";
+import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
+import { BOOK_PICKER } from "./patternbook/register";
+import type { FacadeGroup } from "./patternbook/types";
+import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, baseOf, FLAT_ROOFED, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Painter, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
 
 type Ctx = CityCtx;
@@ -91,6 +94,15 @@ interface Family {
 }
 
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
+/** Families whose apartment fronts carry balconies (by the original family they behave like). */
+const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", "precast", "stackbrick", "rainscreen", "timber", "newstone"]);
+/**
+ * Canal and slip water: shallow, enclosed, stained green by the walls and the
+ * silt — a darker teal than the open sea beside it, not the sky's own blue
+ * (SKYLINE_LOOK_PLAN round 15: the sky reflection at full strength turned
+ * every canal a flat royal blue next to a turquoise sea).
+ */
+const CANAL_WATER = 0x2c5f5c;
 const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
@@ -374,6 +386,42 @@ export function skyEnvironment(): THREE.Scene {
   return sc;
 }
 
+/**
+ * WINDOWS SET INTO THE WALL (SKYLINE_LOOK_PLAN step 4). A punched window sits
+ * a hand's depth behind the face, so from any angle but dead-on one jamb
+ * shows inside the opening and the sill catches the light below the glass.
+ * Drawn per pixel from the view direction in the wall's own frame and the
+ * family's real bay and storey (uBay), no geometry: a band of shaded jamb on
+ * the side away from the viewer, a lit sill at the bottom when looking down,
+ * a shaded head at the top when looking up. Curtain walls are flush (uReveal 0)
+ * and the effect fades out with distance like the relief does (farK).
+ */
+const REVEAL_FRAG = `
+{
+  vec3 rN = normalize(vNormal);
+  vec3 rUp = normalize((viewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
+  vec3 rT = normalize(cross(rUp, rN));
+  vec3 rV = normalize(-vViewPosition);
+  float rn = max(dot(rV, rN), 0.15);
+  float vu = dot(rV, rT) / rn, vv = dot(rV, rUp) / rn;
+  // reveal depth over the opening's own width and height, in metres
+  float ww = max((uWin.y - uWin.x) * uBay.x, 0.3), wh = max((uWin.w - uWin.z) * uBay.y, 0.3);
+  float dep = uReveal;
+  float jamb = vu > 0.0 ? step(xW, dep * vu / ww) : step(1.0 - xW, dep * -vu / ww);
+  float sill = vv > 0.0 ? step(tW, dep * vv / wh) : 0.0;
+  float head = vv < 0.0 ? step(1.0 - tW, dep * -vv / wh) : 0.0;
+  float rk = winM * step(0.001, uReveal) * (1.0 - farK);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+  // a punched window catches some of the sky, more looking down at it, so
+  // the old city's openings read as glass rather than holes (round 7); the
+  // blinds and curtains stay as drawn
+  float sky = winM * step(0.001, uReveal) * (1.0 - winShade) * (1.0 - jamb) * (0.16 + 0.12 * clamp(vv, 0.0, 1.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.52, 0.62, 0.72), sky);
+}
+`;
+
 const WINDOW_VARIATION = `
 float winM = texelRoughness.r;
 vec2 bayC = vMapUv * 2.0;
@@ -436,6 +484,44 @@ function meanLum(alb: CanvasRenderingContext2D, msk: CanvasRenderingContext2D | 
     s += linLum(a[i], a[i + 1], a[i + 2]); n++;
   }
   return n ? s / n : 0.3;
+}
+
+/**
+ * WHAT A FACADE LOOKS LIKE FROM ACROSS TOWN. The texture holds two bays by
+ * two floors, and the GPU's own mipmaps average it down a box at a time: by
+ * the time a floor is three pixels tall the dark windows and the light
+ * piers have met in the middle as one flat tone, and a Beaux-Arts front, a
+ * ribbon-window slab and a brise-soleil read alike. This chain averages the
+ * same way, then gives each small level back the contrast the averaging
+ * took — around the level's own mean, so the colour from a distance is
+ * unchanged — so piers, bands and spandrels keep reading as the building
+ * shrinks. The gain rises as the level shrinks and stops short of making the
+ * far city shimmer. (Shape parameters, set by eye on the contact sheets and
+ * the 3D city at the default camera.)
+ */
+function farMips(c: HTMLCanvasElement): HTMLCanvasElement[] {
+  const out: HTMLCanvasElement[] = [c];
+  let prev = c;
+  for (let size = c.width / 2; size >= 1; size /= 2) {
+    const { c: lc, g } = makeCanvas(size, size);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(prev, 0, 0, prev.width, prev.height, 0, 0, size, size);
+    // the next level averages this one before its contrast is given back,
+    // so the gains do not compound down the chain
+    const plain = makeCanvas(size, size); plain.g.drawImage(lc, 0, 0);
+    const gain = size >= 128 ? 1 : size === 64 ? 1.18 : size === 32 ? 1.38 : size === 16 ? 1.55 : size >= 4 ? 1.6 : 1;
+    if (gain > 1) {
+      const im = g.getImageData(0, 0, size, size), d = im.data;
+      const m = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+      const n = d.length / 4; m[0] /= n; m[1] /= n; m[2] /= n;
+      for (let i = 0; i < d.length; i += 4) for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.max(0, Math.min(255, m[ch] + (d[i + ch] - m[ch]) * gain));
+      g.putImageData(im, 0, 0);
+    }
+    out.push(lc);
+    prev = plain.c;
+  }
+  return out;
 }
 
 function buildFamily(spec: FamilySpec, seed: number): Family {
@@ -559,6 +645,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const tex = (c: HTMLCanvasElement, srgb: boolean) => {
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    if (srgb) { t.mipmaps = farMips(c); t.generateMipmaps = false; t.minFilter = THREE.LinearMipmapLinearFilter; }
     // the tile holds two bays by two floors
     t.repeat.set(0.5, 0.5);
     return t;
@@ -571,7 +658,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     emissiveIntensity: 0, vertexColors: true,
     // the studio environment is for the glass to reflect; on matte walls its
     // diffuse share only washes them out
-    envMapIntensity: spec.glassMetal > 0.5 ? 0.8 : 0.3,
+    // a curtain wall shows the sky and the city round it (the reflection
+    // probe, step 5), bright enough to read as glass rather than dark paint
+    envMapIntensity: spec.glassMetal > 0.5 ? 1.2 : 0.3,
   });
   // The window glow is the mask's red, shared by every building in the
   // family; the per-vertex `lit` scales it, so an empty building goes dark at
@@ -585,28 +674,36 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uTrimLum = { value: trimLum };
     sh.uniforms.uAccLum = { value: accLum };
     sh.uniforms.uGlassy = { value: glassy ? 1 : 0 };
+    sh.uniforms.uBay = { value: new THREE.Vector2(spec.bayW, spec.floorH) };
+    // a masonry wall is deep, a panel or a timber frame shallow
+    sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
       // most of the way up the lower floors in a canyon of towers (vAoH).
       // The first metre is darkest, where wall meets pavement.
       .replace("#include <color_fragment>", PAINT_FRAG + "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
-      .replace("#include <emissivemap_fragment>", "totalEmissiveRadiance *= vec3(1.0, 0.745, 0.43) * mskT.r * vLit;")
+      // AFTER DARK, ROOM BY ROOM (SKYLINE_LOOK_PLAN round 10). The texture's
+      // lit/unlit choice repeats every two bays and floors, so a tower lit
+      // as one slab; each window now draws its own (wh1, the same per-cell
+      // hash the blinds use): about half the rooms dark, the lit ones warm
+      // tungsten, a few cool fluorescent, each a little brighter or dimmer.
+      .replace("#include <emissivemap_fragment>", "float litW = step(0.42, fract(wh1 * 7.31 + 0.29));\nvec3 lampC = mix(vec3(1.0, 0.72, 0.4), vec3(0.78, 0.86, 1.0), step(0.82, wh2));\ntotalEmissiveRadiance *= lampC * (0.55 + 0.6 * wh2) * litW * winM * vLit;")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 
@@ -618,25 +715,69 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
  * canvases, textures and material are made the first time a building asks
  * for it, and only then cost memory on the GPU.
  */
+/**
+ * THE TOP OF A BUILDING, from its own elevation (addVolume, mainWalls). A
+ * masonry front finishes in an ATTIC: the last storey under the cornice with
+ * short, square windows in the same wall, the way every Beaux-Arts, Chicago
+ * and deco front ends. A curtain wall or a modern slab finishes in a SCREEN:
+ * a storey of louvres hiding the plant, in the cladding's own metal. Both
+ * are derived, so every family in the book has one: "brick#2@attic".
+ */
+function topSpec(f: FamilySpec, mod: string): FamilySpec | null {
+  if (mod === "attic") {
+    const cx = (f.win.x0 + f.win.x1) / 2, hw = Math.min((f.win.x1 - f.win.x0) / 2, 0.24);
+    return { ...f, win: { x0: cx - hw, x1: cx + hw, y0: 0.36, y1: 0.7 }, winStyle: f.winStyle === "pair" || f.winStyle === "triple" ? f.winStyle : "rect",
+      lintel: "none", shutter: undefined, mullions: [1, 1], winJitter: 0 };
+  }
+  if (mod === "screen") return { ...f, noWin: true, wall: louvreWall(f.frameCol), over: undefined, reveal: 2.4, wallRough: 0.5 };
+  return null;
+}
+/** Horizontal louvres: blades with a lit top edge and a dark gap under, every 9 px, in a frame every bay. */
+function louvreWall(frame: string): Painter {
+  return (g, w, h) => {
+    const base = shade(frame, 1.25);
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 9) {
+      g.fillStyle = shade(frame, 0.7); g.fillRect(0, y + 5, w, 4);
+      g.fillStyle = shade(frame, 1.55); g.fillRect(0, y, w, 1.5);
+    }
+    g.fillStyle = shade(frame, 0.85);
+    for (let x = 0; x < w; x += w / 2) g.fillRect(x, 0, 4, h);
+  };
+}
+
 function makeFamilies(seed: number, onBuild?: (f: Family) => void): Record<string, Family> {
   const specs = new Map<string, () => Family>();
+  const specOf = new Map<string, FamilySpec>();
   FAMILY_SPECS.forEach((f, i) => {
     specs.set(f.key, () => buildFamily(f, (seed * 31 + i * 977) % 2147483646 + 1));
+    specOf.set(f.key, f);
     // the family's other elevations, keyed "brick#1", "brick#2"...
     (VARIANTS[f.key] ?? []).forEach((v, j) => {
       const key = `${f.key}#${j + 1}`;
+      specOf.set(key, { ...f, ...v, key });
       specs.set(key, () => ({ ...buildFamily({ ...f, ...v, key }, (seed * 31 + i * 977 + (j + 1) * 7919) % 2147483646 + 1), key: f.key }));
     });
   });
+  // the derived tops, on demand: "brick#2@attic", "glass@screen"
+  const derive = (k: string) => {
+    const [base, mod] = k.split("@");
+    const f = specOf.get(base), t = f && topSpec(f, mod);
+    if (!f || !t) return null;
+    let hsh = 7; for (let i = 0; i < k.length; i++) hsh = (hsh * 31 + k.charCodeAt(i)) % 2147483646;
+    const mk = () => ({ ...buildFamily({ ...t, key: k }, ((seed * 131 + hsh) % 2147483646) + 1), key: f.key.split("#")[0] });
+    specs.set(k, mk);
+    return mk;
+  };
   const built: Record<string, Family> = {};
   return new Proxy(built, {
     get(t, k) {
       if (typeof k !== "string") return undefined;
       let f = t[k];
-      if (!f) { const mk = specs.get(k); if (!mk) return undefined; f = t[k] = mk(); onBuild?.(f); }
+      if (!f) { const mk = specs.get(k) ?? (k.includes("@") ? derive(k) : null); if (!mk) return undefined; f = t[k] = mk(); onBuild?.(f); }
       return f;
     },
-    has: (_t, k) => typeof k === "string" && specs.has(k),
+    has: (_t, k) => typeof k === "string" && (specs.has(k) || (k.includes("@") && !!derive(k))),
   });
 }
 
@@ -704,20 +845,8 @@ export const TRIM_PAINTS: { name: string; rgb: number[] }[] = [
   { name: "Terracotta", rgb: [0.98, 0.66, 0.5] },
   { name: "Grey", rgb: [0.8, 0.8, 0.8] },
 ];
-/**
- * THE SHELVES OF THE PATTERN BOOK. The Build desk shows one shelf at a time,
- * so the facade list can grow without the picker growing with it: a new
- * style is one line below, tagged with the shelf it sits on.
- */
-export const FACADE_GROUPS = [
-  { key: "street", name: "Row house & walk-up" },
-  { key: "ornament", name: "Pre-war ornament" },
-  { key: "works", name: "Industrial" },
-  { key: "postwar", name: "Post-war" },
-  { key: "glass", name: "Glass" },
-  { key: "new", name: "Contemporary" },
-] as const;
-export type FacadeGroup = (typeof FACADE_GROUPS)[number]["key"];
+// the shelves the Build desk shows; the later pattern-book families add their own entries below
+export { FACADE_GROUPS, type FacadeGroup } from "./patternbook/types";
 export interface FacadeStyle { key: string; group: FacadeGroup; name: string; era: string; maxFloors: number; variants: string[] }
 export const FACADE_STYLES: FacadeStyle[] = [
   { key: "clapboard", group: "street", name: "Clapboard", era: "timber, to 1950", maxFloors: 3, variants: ["Painted boards", "Wide boards, shutters", "Pedimented", "Paired sash, shutters"] },
@@ -753,13 +882,14 @@ export const FACADE_STYLES: FacadeStyle[] = [
   { key: "midcentury", group: "postwar", name: "Enamel panel", era: "1950-1972", maxFloors: 12, variants: ["Turquoise", "Orange", "Blue", "Yellow"] },
   { key: "brutalist", group: "postwar", name: "Board-formed concrete", era: "1962-1980", maxFloors: 40, variants: ["Concrete", "Dark, small lights", "Warm", "Grey, tall lights"] },
   { key: "newstone", group: "new", name: "New limestone", era: "2000-today", maxFloors: 70, variants: ["Limestone", "Keystoned", "Pale, paired", "Warm"] },
-  { key: "fibercement", group: "new", name: "Two-tone panel", era: "2003-today", maxFloors: 7, variants: ["White and charcoal", "Charcoal and wood", "Grey and blue", "White and rust"] },
+  { key: "fibercement", group: "new", name: "Two-tone panel", era: "2003-today", maxFloors: 7, variants: ["White and charcoal", "Grey and blue", "White and rust", "Sage and white"] },
   { key: "metalpanel", group: "new", name: "Metal panel", era: "2005-today", maxFloors: 30, variants: ["Zinc", "Black", "Champagne", "Weathered bronze"] },
   { key: "stackbrick", group: "new", name: "Stack-bond brick", era: "2008-today", maxFloors: 14, variants: ["Charcoal", "White", "Red", "Grey"] },
   { key: "rainscreen", group: "new", name: "Terracotta rainscreen", era: "2010-today", maxFloors: 40, variants: ["Terracotta", "Buff", "Grey", "Orange"] },
   { key: "timber", group: "new", name: "Mass timber", era: "2016-today", maxFloors: 18, variants: ["Cedar", "Light", "Dark", "Silvered"] },
   { key: "diagrid", group: "glass", name: "Diagrid", era: "2005-today", maxFloors: 99, variants: ["Blue, silver steel", "White steel", "Green, dark steel", "Silver"] },
-  { key: "pixel", group: "glass", name: "Fritted glass", era: "2010-today", maxFloors: 99, variants: ["White frit", "Grey", "Charcoal", "Champagne"] },
+  { key: "pixel", group: "glass", name: "Fritted glass", era: "2010-today", maxFloors: 99, variants: ["White frit", "Grey", "Pale blue"] },
+  ...BOOK_PICKER,
 ];
 export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [
   { key: "flat", name: "Flat", maxFloors: 999 },
@@ -777,24 +907,30 @@ export const CROWN_CHOICES: { key: NonNullable<BuildingDesign["crown"]>; name: s
 /** Crowns are offered from this many floors. */
 export const CROWN_MIN_FLOORS = 15;
 
-type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"] };
+type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"]; base?: BuildingDesign["base"] };
 
-let swatchCache: Record<string, string> | null = null;
-/** A small picture of every elevation, for the Build desk's facade picker. */
-export function facadeSwatches(): Record<string, string> {
-  if (swatchCache) return swatchCache;
-  const fams = makeFamilies(1);
+const swatchCache: Record<string, string> = {};
+let swatchFams: Record<string, Family> | null = null;
+/**
+ * Small pictures of the named elevations ("brick", "brick#2"...), for the
+ * Build desk's facade picker. Painted on demand and kept: the book is too big
+ * to paint every elevation when the tab opens.
+ */
+export function facadeSwatches(keys: string[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const st of FACADE_STYLES) for (let v = 0; v < 4; v++) {
-    const key = v ? `${st.key}#${v}` : st.key;
-    const img = (fams[key]?.mat.map?.image ?? null) as HTMLCanvasElement | null;
-    if (!img || typeof img.toDataURL !== "function") continue;
-    const { c, g } = makeCanvas(96, 96);
-    g.drawImage(img, 0, 0, img.width, img.height, 0, 0, 96, 96);
-    out[key] = c.toDataURL("image/png");
+  for (const key of keys) {
+    if (!swatchCache[key]) {
+      swatchFams ??= makeFamilies(1);
+      const f = swatchFams[key];
+      const img = (f?.mat.map?.image ?? null) as HTMLCanvasElement | null;
+      if (!img || typeof img.toDataURL !== "function") continue;
+      const { c, g } = makeCanvas(96, 96);
+      g.drawImage(img, 0, 0, img.width, img.height, 0, 0, 96, 96);
+      swatchCache[key] = c.toDataURL("image/png");
+      f.mat.map?.dispose(); f.mat.dispose(); delete swatchFams[key];
+    }
+    out[key] = swatchCache[key];
   }
-  for (const f of Object.values(fams)) { f.mat.map?.dispose(); f.mat.dispose(); }
-  swatchCache = out;
   return out;
 }
 
@@ -1119,6 +1255,9 @@ const TRIM_LIN = (() => { const c = new THREE.Color(0xd8d0be); return [c.r, c.g,
 /** A landmark's metal, as trim vertex colours: brushed stainless steel for a spire, weathered copper for a pyramid roof. */
 const SIG_STEEL = [0.80, 0.82, 0.86].map((c, i) => c / TRIM_LIN[i]);
 const SIG_COPPER = [0.30, 0.52, 0.44].map((c, i) => c / TRIM_LIN[i]);
+const SIG_GOLD = [0.86, 0.66, 0.26].map((c, i) => c / TRIM_LIN[i]);
+const SIG_BRONZE = [0.36, 0.26, 0.16].map((c, i) => c / TRIM_LIN[i]);
+const SIG_WHITE = [0.92, 0.92, 0.9].map((c, i) => c / TRIM_LIN[i]);
 
 /** A scheme built as a model for the Build desk's viewer (RealCityLayer.schemeModel). Metres, lot-centred, z up. */
 export interface SchemeModel {
@@ -1190,6 +1329,14 @@ export class RealCityLayer {
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private glowMat = (() => {
+    const { c, g } = makeCanvas(64, 64);
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,190,110,1)"); gr.addColorStop(0.45, "rgba(255,170,90,0.45)"); gr.addColorStop(1, "rgba(255,150,70,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  })();
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -1260,6 +1407,8 @@ export class RealCityLayer {
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.shadowMap.enabled = true;
+    // PCF with a wide radius (setupLights): three r185 retired PCFSoftShadowMap
+    // and falls back to this with a console error on every load
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1273,7 +1422,7 @@ export class RealCityLayer {
     this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();
-    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv; });
+    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
@@ -1344,6 +1493,7 @@ export class RealCityLayer {
     this.stage = null;
     this.live = true;
     this.renderer.shadowMap.needsUpdate = true;
+    this.probeDue = true;
     this.onReady?.();
   }
 
@@ -1432,6 +1582,7 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
@@ -1440,6 +1591,9 @@ export class RealCityLayer {
       SEA.seaTime.value = tt % 3600;
     }
     this.renderer.render(this.scene, this.camera);
+    // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
+    const nightK = smooth(0.35, 0.95, this.dusk);
+    this.post.apply(this.renderer, pitch, distM, nightK, smooth(0.0, 0.5, this.dusk) * (1 - nightK), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 
@@ -1449,6 +1603,41 @@ export class RealCityLayer {
   // skyline and the island view keeps its far shore readable.
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
+  private post = new PostFX();
+  private veilMesh: THREE.Mesh | null = null;
+  /**
+   * WHAT THE GLASS TOWERS SEE (SKYLINE_LOOK_PLAN step 5). The curtain walls
+   * reflected a painted sky and nothing else. Once the city is built, a
+   * probe is rendered from above the tallest building's lot — the real
+   * skyline under the painted sky — prefiltered, and given to every glass
+   * elevation, so a tower mirrors its neighbours. One capture per build;
+   * High quality only (Medium and Low keep the painted sky).
+   */
+  private probeDue = false;
+  private reflEnv: THREE.Texture | null = null;
+  private captureReflections() {
+    this.probeDue = false;
+    if (this.quality !== "high" || !this.renderer) return;
+    let best: Deed | null = null;
+    for (const d of this.deeds.values()) if (d.ring && (!best || d.height > best.height)) best = d;
+    let px = 0, py = 0;
+    if (best?.ring) { for (const [x, y] of best.ring) { px += x / best.ring.length; py += y / best.ring.length; } }
+    const pz = Math.max(40, Math.min(160, (best?.height ?? 60) * 0.6));
+    // the painted sky round the probe, far enough out to sit behind the city
+    const sky = skyEnvironment();
+    sky.children.forEach((o) => { o.scale.setScalar(55); o.position.add(new THREE.Vector3(px, py, pz)); });
+    const kids = [...sky.children];
+    for (const o of kids) this.scene.add(o);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.renderer.resetState();
+    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: 256, position: new THREE.Vector3(px, py, pz) });
+    pm.dispose();
+    for (const o of kids) this.scene.remove(o);
+    this.renderer.resetState();
+    this.reflEnv?.dispose();
+    this.reflEnv = rt.texture;
+    for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
+  }
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];
   private waveTex(uvPerMetre: number): THREE.Texture {
@@ -1460,8 +1649,11 @@ export class RealCityLayer {
     return t;
   }
   private hazeFor(distM: number) {
-    HAZE.hazeNear.value = distM * 0.35;
-    HAZE.hazeFar.value = distM * 2.6 + 400;
+    // clear air over what the camera is looking at; the fade starts past the
+    // focus and takes the far city (SKYLINE_LOOK_PLAN round 6 — the near
+    // start had been washing the very block in view)
+    HAZE.hazeNear.value = distM * 0.85;
+    HAZE.hazeFar.value = distM * 3.4 + 600;
     if (!this.hazeSheet) {
       // MapLibre's ground is not ours to shade: a sheet over it carries the
       // same fade, so a far street hazes with the buildings standing on it
@@ -1490,7 +1682,7 @@ export class RealCityLayer {
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
     this.sun.shadow.normalBias = 0.6;
-    this.sun.shadow.radius = 2.5;
+    this.sun.shadow.radius = 3.6;
     this.scene.add(this.sun, this.sun.target, this.hemi);
     this.applyMonth();
   }
@@ -1506,7 +1698,9 @@ export class RealCityLayer {
   // the box is moved in whole texels of the light's own view, so a pan
   // re-renders the same edges onto the same pixels.
   private fitShadow(fx: number, fy: number, distM: number) {
-    const raw = Math.max(260, Math.min(2600, distM * 1.6));
+    // the box covers what the camera frames, not a margin round it: half
+    // the old texel size at the default camera
+    const raw = Math.max(220, Math.min(2400, distM * 1.15));
     const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
     const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
     if (moved < span * 0.12 && span === this.shadowSpan) return;
@@ -1610,7 +1804,7 @@ export class RealCityLayer {
       const r = clip(clip(ring, t0 + cuts[j] * ll + gap, true), t0 + cuts[j + 1] * ll - gap, false);
       if (r.length < 3 || Math.abs(ringArea(r)) < 20) continue;
       const f2 = familyFor(v.c, v.y || 1950, v.z1, hash01(kj ^ 0x3c1f, this.seed), v.t ?? 4, this.nbOf(r));
-      const fk = f2 === "industrial" || f2 === "daylight" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
+      const fk = baseOf(f2) === "industrial" || baseOf(f2) === "daylight" || (!tall && TOWER_FAMS.has(f2)) ? fam : f2;
       const tints = TINTS[fk] ?? [[1, 1, 1]];
       const tn = tints[Math.floor(hash01(kj, this.seed) * tints.length)];
       // a storey up or down now and then, never below two floors
@@ -1621,7 +1815,7 @@ export class RealCityLayer {
         const tr = this.massing(r, v.z0, z1, fk, tn, v.b, kj, shop, v.c, v.y || 0);
         this.towerTop(tr, z1, z1, fk, tn, v.b, kj, "auto");
       } else {
-        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || fk === "castiron" || (WALKUP.has(fk) && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
+        this.addVolume(r, v.z0, z1, fk, tn, v.b, true, true, kj, shop || baseOf(fk) === "castiron" || (WALKUP.has(fk) && hash01(kj ^ 0x51ab, this.seed) < 0.4), false, v.c, v.y || 0);
       }
       const d = this.deedOf(v.b); d.height = Math.max(d.height, z1);
     }
@@ -1805,14 +1999,15 @@ export class RealCityLayer {
    */
   private towerTop(ring: P2[], z1: number, top: number, fam: string, t: number[], bbl: string, k: number,
     kind: "auto" | "none" | "setback" | "spire" | "mast", ov?: VolumeOv) {
+    const fb = baseOf(fam);
     const glassy = GLASSY.has(fam);
     if (kind === "none") return;
-    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fam === "deco" || fam === "decobrick" || STONE_TOWER.has(fam)))) return;
+    if (kind === "auto" && !(top > 45 && (glassy || TOWER_FAMS.has(fam) || fb === "deco" || fb === "decobrick" || STONE_TOWER.has(fam)))) return;
     let cx = 0, cy = 0;
     for (const [x, y] of ring) { cx += x; cy += y; }
     cx /= ring.length; cy /= ring.length;
     const shrink = (r: P2[], f: number) => r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
-    const deco = fam === "deco" || fam === "decobrick";
+    const deco = fb === "deco" || fb === "decobrick";
     let rad = 0; for (const [x, y] of ring) rad = Math.max(rad, Math.hypot(x - cx, y - cy));
     // the bearing of the ring's longest side, so a cap squares up with the walls
     let li = 0, ll = -1;
@@ -1826,7 +2021,7 @@ export class RealCityLayer {
     if (kind === "auto" && !deco && !STONE_TOWER.has(fam) && TOWER_FAMS.has(fam)) {
       const opts: [string, number][] = glassy
         ? [["mech", 0.2], ["mech2", 0.15], ["stepped", 0.13], ["lantern", 0.11], ["fins", 0.11], ["helipad", rad > 14 ? 0.1 : 0], ["flat", 0.06], ["gable", ring.length === 4 ? 0.06 : 0], ["slant", ring.length === 4 ? 0.09 : 0]]
-        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fam === "precast" || fam === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
+        : [["penthouse", 0.3], ["mech", 0.2], ["stepped", 0.15], ["fins", fb === "precast" || fb === "pomo" ? 0.1 : 0.04], ["flat", 0.15]];
       const c = pick(hash01(k ^ 0x7c0, this.seed), opts);
       note(c); this.feat("crown:" + c, bbl);
       const mastTop = (z: number) => { if (hash01(k ^ 0x77, this.seed) < 0.5) this.putInst("mast", cx, cy, z, 1, 0, bbl); };
@@ -1882,7 +2077,7 @@ export class RealCityLayer {
     // never overhang the walls.
     if (kind === "auto" && (deco || STONE_TOWER.has(fam))) {
       const c = deco ? pick(hash01(k ^ 0x7c1, this.seed), [["spire", 0.45], ["ziggurat", 0.3], ["piers", 0.25]])
-        : pick(hash01(k ^ 0x7c1, this.seed), [["setback", 0.32], ["chateau", ring.length === 4 ? 0.3 : 0], ["setchateau", ring.length === 4 ? 0.18 : 0], ["pinnacles", fam === "terracotta" || fam === "stone" ? 0.2 : 0.05]]);
+        : pick(hash01(k ^ 0x7c1, this.seed), [["setback", 0.32], ["chateau", ring.length === 4 ? 0.3 : 0], ["setchateau", ring.length === 4 ? 0.18 : 0], ["pinnacles", fb === "terracotta" || fb === "stone" ? 0.2 : 0.05]]);
       note(c); this.feat("crown:" + c, bbl);
       const d2 = this.deedOf(bbl);
       if (c === "ziggurat") {
@@ -1938,7 +2133,7 @@ export class RealCityLayer {
       this.addVolume(shrink(ring, 0.86), z1, z1 + 5, fam, t, bbl, !two, false, k, false, false, "", 0, ov);
       if (two) this.addVolume(shrink(ring, 0.62), z1 + 5, z1 + 11, fam, t, bbl, true, false, k, false, false, "", 0, ov);
       if (kind === "mast" || hash01(k ^ 0x77, this.seed) < 0.6) this.putInst("mast", cx, cy, z1 + (two ? 11 : 5), 1, 0, bbl);
-    } else if (kind === "auto" && (fam === "ribbon" || fam === "grid")) {
+    } else if (kind === "auto" && (fb === "ribbon" || fb === "grid")) {
       // the International Style keeps its plant in a plain penthouse box
       this.addVolume(shrink(ring, 0.62), z1, z1 + 4.5, "plain", [0.9, 0.9, 0.9], bbl, true, true, k);
     } else {
@@ -2309,6 +2504,19 @@ export class RealCityLayer {
             z = z1 + fh;
           }
           break;
+        }
+        default: {
+          // a later form (signature-more-*.ts), described in the same kit
+          MORE_FORMS.get(key)?.build({
+            A, B, R, sq, H, zL, fh, turnDir, fam, h, vol,
+            loft: (secs, cap = true, f = fam, col) => loft(secs, cap, f, col),
+            bridge: (r, z0, z1) => ops.push({ t: "loft", secs: [{ r, z: z0 }, { r, z: z1 }], fam, cap: true, log: false, soffit: true }),
+            inst: (kind, u, v, z, s, r = 0, sz, col) => inst(kind, u, v, z, s, r, sz, col),
+            mast,
+            spire: (z0, z1, r0, n = 8, col = SIG_STEEL, u = 0, v = 0) =>
+              ops.push({ t: "loft", secs: [{ r: turn(ellipse(n, r0, r0, Math.PI / n), 0, 1, u, v), z: z0 }, { r: turn(ellipse(n, 0.04, 0.04, Math.PI / n), 0, 1, u, v), z: z1 }], fam, cap: false, log: true, col }),
+            STEEL: SIG_STEEL, COPPER: SIG_COPPER, GOLD: SIG_GOLD, BRONZE: SIG_BRONZE, WHITE: SIG_WHITE,
+          });
         }
       }
       if (!ops.length) return false;
@@ -3242,11 +3450,30 @@ export class RealCityLayer {
     const livery = ov ? null : liveryFor(famKey, seedK);
     if (bbl && z0 < 0.5 && !this.sandbox) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
     const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
-      const fk = fk0.includes("#") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
+      const fk = fk0.includes("#") || fk0.includes("@") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
       const W = this.buf(wallName);
-      W.painted(fk0 === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn, rr));
+      // the derived top wears the building's own paint
+      W.painted(fk0 === famKey || fk0.split("#")[0].split("@")[0] === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn, rr));
+    };
+    // THE BODY AND ITS TOP (topSpec). From lo to the wall head, ending in an
+    // attic storey on a masonry front of four floors or more, or a louvred
+    // plant screen on a curtain wall or modern slab over 30 m. The top
+    // storey keeps the body's floor grid, so its windows stand over the
+    // windows below.
+    const mainWalls = (lo: number, vOff = lo, rr: P2[] = ring) => {
+      const n = Math.round((zw - vOff) / fh);
+      const glassTop = fam.glass || style === "modernist" || style === "futurist" || style === "brutalist";
+      const zt = vOff + (n - 1) * fh;
+      const top = !crown || pitched || mans || n < 4 || zt - lo < 3 * fh || zw - zt < 0.6 * fh ? null
+        : glassTop ? (zw > 30 ? "screen" : null)
+        : fam.masonry && (style === "classical" || style === "chicago" || style === "deco" || style === "victorian" || style === "vernacular") ? "attic" : null;
+      if (!top) { walls(famKey, lo, zw, vOff, tint, rr); return; }
+      const main = ov?.variant ?? this.variantOf(famKey, seedK);
+      walls(famKey, lo, zt, vOff, tint, rr);
+      walls(`${main}@${top}`, zt, zw, vOff, tint, rr);
+      this.feat(top, bbl);
     };
     const wallsOf = (wallName: string, f: Family, W: Buf, za: number, zb: number, vOff: number, tn: number[], rr: P2[]) => {
       const w0 = W.count;
@@ -3292,9 +3519,13 @@ export class RealCityLayer {
         for (let fl = 1; fl < floors; fl++) {
           this.putInst("fesc", A[0] + ux * t + nx * 0.6, A[1] + uy * t + ny * 0.6, z0 + fl * f.floorH + 0.05, 1, rot + (fl % 2 ? Math.PI : 0), bbl, undefined, f.floorH / 3.2);
         }
-      } else if ((famKey === "modern" || famKey === "fibercement" || famKey === "metalpanel" || famKey === "whitebrick" || famKey === "precast") && z1 < 48 && ll > 9 && roll < 0.65) {
+      } else if ((BALC_FAMS.has(baseOf(famKey)) && z1 < 48 && ll > 9 && roll < 0.65)
+        // the post-1990 glass apartment tower carries its balconies all the
+        // way up, in alternate stacks (SKYLINE_LOOK_PLAN round 13)
+        || (GLASSY.has(famKey) && year >= 1990 && z1 >= 30 && z1 < 200 && ll > 12 && roll < 0.55)) {
         const bays = Math.max(1, Math.round(ll / f.bayW));
-        for (let bi = 1; bi < bays; bi += 2) {
+        const step = GLASSY.has(famKey) ? 3 : 2;
+        for (let bi = 1; bi < bays; bi += step) {
           const t = (bi + 0.5) * (ll / bays);
           for (let fl = 1; fl < floors; fl++) {
             this.putInst("balc", A[0] + ux * t, A[1] + uy * t, z0 + fl * f.floorH, 1, rot, bbl);
@@ -3311,40 +3542,46 @@ export class RealCityLayer {
     // THE MODERNIST GROUND FLOOR. The International Style lifted its slab
     // off the street on columns — pilotis — and set the lobby glass back
     // behind them, so the tower floats over a shaded colonnade.
-    const pil = z0 < 0.5 && style === "modernist" && zw > 14 && ring.length <= 12 && !shop
-      && hash01(seedK ^ 0x9111, 3) < (zw > 36 ? 0.5 : 0.3) ? insetRing(ring, 2.6) : null;
+    // THE PLAYER'S BASE (BuildingDesign.base) takes the place of the period's
+    // choice below; a trading ground floor keeps its shops whatever is asked,
+    // except behind an arcade, and a base needs the storeys to stand under.
+    const want = z0 < 0.5 && !(shop && ov?.base !== "arcade") ? ov?.base : undefined;
+    const pil = z0 < 0.5 && ring.length <= 12 && !shop && (want === "columns" ? zw > 8
+      : !want && style === "modernist" && zw > 14 && hash01(seedK ^ 0x9111, 3) < (zw > 36 ? 0.5 : 0.3)) ? insetRing(ring, 2.6) : null;
     if (pil && Math.abs(ringArea(pil)) > 0.35 * Math.abs(ringArea(ring)) && pil.every(([x, y]) => PolyGrid.inRing(ring, x, y))) {
       const lh = zw > 36 ? this.families.lobby.floorH : Math.min(6, fam.floorH * 1.5);
       walls("lobby", z0, lh, 0, [1, 1, 1], pil);
-      walls(famKey, lh, zw, lh, tint);
+      mainWalls(lh);
       this.soffit(ring, pil, lh, bbl, [0.86, 0.86, 0.84]); this.feat("pilotis", bbl);
       this.colonnade(ring, 0.55, 6.5, lh, "piloti", bbl);
-    } else if (style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
+    } else if (want === "arcade" ? zw > 7.5 : !want && style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
       // the Spanish Revival shop row trades behind an arcade
       const ah = this.families.arcade.floorH;
       walls("arcade", z0, ah, 0, [1, 1, 1]); this.feat("arcade", bbl);
-      walls(famKey, ah, zw, ah, tint);
-    } else if (shop && z0 < 0.5 && zw > shopH + 2.5) {
+      mainWalls(ah);
+    } else if (!want && shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
-      walls(famKey, shopH, zw, shopH, tint);
+      mainWalls(shopH);
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
-    } else if (TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
+    } else if (want === "lobby" ? zw > this.families.lobby.floorH + 2.5 : !want && TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
       // a tower stands on a double-height glass lobby
       const lh = this.families.lobby.floorH;
       walls("lobby", z0, lh, 0, [1, 1, 1]);
-      walls(famKey, lh, zw, lh, tint);
+      mainWalls(lh);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, true);
-    } else if (z0 < 0.5 && zw > 16 && !ov && hash01(seedK ^ 0x5b5, 3) < (RUSTIC_BASE[famKey] ?? 0)) {
+    } else if (want === "stone" ? zw > this.families.rustic.floorH + 2.5 : !want && z0 < 0.5 && zw > 16 && !ov && hash01(seedK ^ 0x5b5, 3) < (RUSTIC_BASE[famKey] ?? 0)) {
       // A STONE FRONT STANDS ON A RUSTICATED BASE: the ground storey in long
       // channelled blocks with round-headed openings, the string course over
       // it, the elevation proper above — Beaux-Arts, Romanesque, deco.
-      const rv = famKey === "romanesque" ? "rustic#2" : famKey === "deco" || famKey === "decobrick" ? "rustic#1" : this.variantOf("rustic", seedK);
+      // a base the player asked for is plain dressed stone, not a random batch
+      const fb = baseOf(famKey);
+      const rv = fb === "romanesque" ? "rustic#2" : fb === "deco" || fb === "decobrick" ? "rustic#1" : want === "stone" ? "rustic" : this.variantOf("rustic", seedK);
       baseH = this.families.rustic.floorH;
       walls(rv, z0, baseH, 0, tint);
-      walls(famKey, baseH, zw, baseH, tint);
+      mainWalls(baseH);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
     } else {
-      walls(famKey, z0, zw, 0, tint);
+      mainWalls(z0, 0);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
       if (bbl && z0 < 0.5) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
       // BAY WINDOWS. A row house's front is not a flat wall: the brownstone
@@ -3626,7 +3863,11 @@ export class RealCityLayer {
       };
       const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      // the stair bulkhead is built of what the building is: brick on a
+      // brick front, pale render or panel on a modern one, dark on glass
+      // (SKYLINE_LOOK_PLAN round 3: no field of identical tan boxes)
+      const bulkCol = fam.glass ? [0.62, 0.64, 0.68] : fam.masonry ? (rnd() < 0.6 ? [1.22, 0.78, 0.66] : [1.08, 1.0, 0.9]) : [1.22, 1.22, 1.24];
+      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 0.8 + rnd() * 0.5, rot, bbl, bulkCol); }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
@@ -3642,7 +3883,44 @@ export class RealCityLayer {
         for (let i = 0; i < n; i++) { const q = spot(0.2, 0.75); if (q) this.putInst("solar", q[0], q[1], z1, 1, rot, bbl); }
       }
       if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
-      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail") && area > 200) {
+      // A FLAT ROOF IS A PATCHWORK. Seen from the street-view camera the deck
+      // is the biggest thing on a low building, and one flat tone made every
+      // block a sheet of grey card. A roof is re-covered a section at a time,
+      // so its membrane is lighter here and darker there; walkway pads and
+      // ballast lie in strips along the long side; and a new building is as
+      // likely as not to plant part of its roof (the green roofs of the 2000s
+      // codes). Patches sit a hand above the deck so they hold at a distance.
+      if (area > 220 && !GLASSY.has(famKey)) {
+        let li = 0, ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+        const ux = (ring[(li + 1) % ring.length][0] - ring[li][0]) / ll, uy = (ring[(li + 1) % ring.length][1] - ring[li][1]) / ll;
+        const zp = z1 + 0.12, p0 = R.count;
+        const patch = (q: P2, a: number, b: number, col: number[]) => {
+          const c = [[-a, -b], [a, -b], [a, b], [-a, b]].map(([u, v]) => [q[0] + ux * u - uy * v, q[1] + uy * u + ux * v, zp]);
+          if (!c.every(([x, y]) => inside(x, y))) return false;
+          R.quad(c[0], c[1], c[2], c[3], [0, 0, 1], c.map((p) => [p[0] * 0.25, p[1] * 0.25]), col);
+          return true;
+        };
+        const green = !oldWalk && cls !== "industrial" && year >= 2006 && z1 < 70 && rnd() < 0.3;
+        if (green) {
+          // most of the deck planted, in two or three beds with paths between
+          const beds = 2 + (rnd() < 0.5 ? 1 : 0);
+          for (let i = 0; i < beds; i++) { const q = spot(0.05, 0.45); if (q) patch(q, 3 + rnd() * Math.min(10, ll * 0.22), 2.5 + rnd() * 5, [0.5 + rnd() * 0.12, 0.72 + rnd() * 0.12, 0.38]); }
+          this.feat("greenroof", bbl);
+        }
+        // re-covered sections, dark tar or pale new membrane, big enough to
+        // read from the street-view camera; walkway pads in pale strips
+        const n = Math.min(6, 2 + Math.floor(area / 450));
+        for (let i = 0; i < n; i++) {
+          const q = spot(0.05, 0.7), j = rnd() < 0.5 ? 0.62 + rnd() * 0.14 : 1.18 + rnd() * 0.16;
+          if (q) patch(q, 3 + rnd() * Math.min(14, ll * 0.32), 2.5 + rnd() * 7, [rc[0] * j, rc[1] * j, rc[2] * j]);
+        }
+        for (let i = 0; i < 2; i++) { const q = spot(0.1, 0.55); if (q) patch(q, Math.min(ll * 0.35, 12), 0.5, [rc[0] * 1.35, rc[1] * 1.35, rc[2] * 1.32]); }
+        this.note(bbl, "roof", p0);
+      }
+      // condensers on anything post-war with a flat roof of any size, not
+      // only the towers; an office block carries a row of them
+      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail" || cls === "office" || (year >= 1950 && area > 300)) && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
         for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
       }
@@ -3772,8 +4050,9 @@ export class RealCityLayer {
       const t = tints[tr < 0.55 ? ((v.t ?? 0) * 3 + 1) % tints.length : Math.floor(((tr - 0.55) / 0.45) * tints.length)];
       // a trading ground floor, by what the building is: the iron front
       // always; the old walk-up often; the new mixed-use block as a rule
+      const fb = baseOf(fam);
       const shopP = ({ castiron: 1, brick: 0.5, gothic: 0.3, georgian: 0.2, romanesque: 0.3, buff: 0.3, stone: 0.3, terracotta: 0.4, modern: 0.35, whitebrick: 0.2,
-        stucco: 0.25, moderne: 0.4, midcentury: 0.3, fibercement: 0.5, metalpanel: 0.45, stackbrick: 0.5, rainscreen: 0.4, timber: 0.4 } as Record<string, number>)[fam] ?? 0;
+        stucco: 0.25, moderne: 0.4, midcentury: 0.3, fibercement: 0.5, metalpanel: 0.45, stackbrick: 0.5, rainscreen: 0.4, timber: 0.4 } as Record<string, number>)[fb] ?? 0;
       const shop = v.c === "retail" || (v.c !== "industrial" && hash01(k ^ 0x51ab, this.seed) < shopP);
       // A LANDMARK stands on its base footprint alone: its tiers, taper and
       // top are the form's own (signatureTower), so the deed's other volumes
@@ -3792,7 +4071,7 @@ export class RealCityLayer {
       // old low brick houses keep a pitched roof: a row of 1890s three-storey
       // walk-ups is a run of gables, not a run of flat decks
       const isTop = v.z1 >= top - 0.01 || v.x === 1;
-      const pitched = isTop && (fam === "brick" || fam === "clapboard" || fam === "georgian" || fam === "tudor" || fam === "stucco" || fam === "gothic") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
+      const pitched = isTop && !FLAT_ROOFED.has(fam) && (fb === "brick" || fb === "clapboard" || fb === "georgian" || fb === "tudor" || fb === "stucco" || fb === "gothic") && (v.y || 1950) < 1950 && v.z1 <= 16 && v.r.length === 4
         && Math.abs(ringArea(ring)) < 450 && hash01(k ^ 0x9177, this.seed) < 0.8;
       // THE WEDDING CAKE. Under the 1916 zoning resolution a tower could rise
       // straight only so far before it had to step back from the street, and
@@ -3801,9 +4080,9 @@ export class RealCityLayer {
       // towers step back; the tiers keep the volume's own height and wear
       // cornices on their terraces.
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
-        && (fam === "deco" || fam === "decobrick" || fam === "stone" || fam === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
+        && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
         // the 2000s limestone apartment tower revived the setback on purpose
-        || isTop && v.z0 < 0.5 && top > 60 && fam === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
+        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
       let topRing = ring;
       let rowDone = false;
       if (preWarTower) {
@@ -3816,12 +4095,12 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
-      } else if (isTop && v.z0 < 0.5 && fam !== "industrial" && fam !== "daylight" && fam !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
+      } else if (isTop && v.z0 < 0.5 && fb !== "industrial" && fb !== "daylight" && fb !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
         // drawn as a row of houses (rowOf), each with its own top: the
         // building-wide crown below would float a footprint-long penthouse
         // over the row at the original height
         rowDone = true;
-      } else if (isTop && v.z0 < 0.5 && !pitched && fam !== "brutalist" && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fam === "brick" || fam === "buff")))) {
+      } else if (isTop && v.z0 < 0.5 && !pitched && fb !== "brutalist" && ((top >= 24 && TOWER_FAMS.has(fam)) || (top > 30 && (v.y || 0) >= 1945 && (fb === "brick" || fb === "buff")))) {
         topRing = this.massing(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
       } else if (isTop && v.z0 < 0.5 && !pitched) {
         topRing = this.styledVolume(ring, v.z0, v.z1, fam, t, v.b, k, shop, v.c, v.y || 0);
@@ -3883,6 +4162,7 @@ export class RealCityLayer {
       }
     }
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
+    this.veilMesh = veil;
     veil.position.z = 0.03; veil.renderOrder = -2;
     this.scene.add(veil);
   }
@@ -3950,6 +4230,10 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // a street lamp's pool of light on the carriageway after dark: a flat
+      // disc with a soft falloff, added to what is under it (SKYLINE_LOOK_PLAN
+      // round 11); invisible by day (glowMat opacity follows the hour)
+      case "glow": return { g: new THREE.CircleGeometry(9, 20), mat: this.glowMat };
       // the shop bay, facing local -y (out of a counter-clockwise wall)
       case "awning": {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
@@ -4002,7 +4286,7 @@ export class RealCityLayer {
       case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
-      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }) };
+      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }), colored: true };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
       case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
@@ -4131,7 +4415,8 @@ export class RealCityLayer {
         if (colored) mesh.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
         if (it.bbl) this.deedOf(it.bbl).inst.push({ mesh: kind, i });
       });
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = kind !== "glow"; mesh.receiveShadow = kind !== "glow";
+      if (kind === "glow") mesh.renderOrder = 2;          // over the night veil on the ground
       mesh.frustumCulled = false;
       this.scene.add(mesh); this.inst.set(kind, mesh);
     }
@@ -4503,7 +4788,7 @@ export class RealCityLayer {
         B.quad([b[0], b[1], BED], [a[0], a[1], BED], [a[0], a[1], TOP], [b[0], b[1], TOP], [nx, ny, 0], [[L, 0], [0, 0], [0, 1.7], [L, 1.7]], one);
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: CANAL_WATER, roughness: 0.16, metalness: 0.05, envMapIntensity: 0.75, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     this.scene.add(wm);
     for (const [buf, col, rough] of [[stone, 0xa69d8b, 0.75], [rubble, 0x7d776c, 0.95]] as [Buf, number, number][]) {
@@ -4561,7 +4846,7 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: CANAL_WATER, roughness: 0.16, metalness: 0.05, vertexColors: true, envMapIntensity: 0.75, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;
@@ -4599,19 +4884,24 @@ export class RealCityLayer {
         const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
         // people, a few per block face, at a walking pace along the middle of the footway
         if (w >= 1.5) {
-          const n = Math.max(1, Math.round(L / 16));
+          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~12 m
+          // of footway, thinned by the street's demand and the hour (applyCrowd)
+          const n = Math.max(1, Math.round(L / 12));
           for (let k = 0; k < n; k++) {
             const fwd = rnd() < 0.5;
             const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
             this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
           }
         }
-        // street trees in the kerb strip; a footway under two metres has none
-        if (w >= 2) {
+        // street trees in the kerb strip, every 8-9 m (a city that plants
+        // its streets: SKYLINE_LOOK_PLAN step 3); a narrow footway takes a
+        // smaller tree, one under a metre and a half none
+        if (w >= 1.5) {
           const off = Math.min(1.1, w * 0.3);
-          for (let t = 7; t < L - 7; t += 11) {
+          const big = w >= 3 ? 1.22 : w >= 2 ? 1.05 : 0.82;
+          for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
             const [x, y] = at(t, off);
-            const sz = 0.72 + rnd() * 0.3;
+            const sz = big * (0.72 + rnd() * 0.3);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
@@ -4636,12 +4926,17 @@ export class RealCityLayer {
         // lamps at the kerb, between the trees
         for (let t = 12; t < L - 6; t += 27) {
           const [x, y] = at(t, 0.45);
-          if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+          if (this.groundAt(x, y) === "walk") {
+            this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+            // the pool falls on the carriageway, a few metres off the kerb
+            const [gx, gy] = at(t, -3.2);
+            this.putInst("glow", gx, gy, 0.2, 0.9 + rnd() * 0.25, 0);
+          }
         }
         // moving traffic in the lane outside the parked row, kerb on its right
         // (the footway is left of this edge, so the kerb lane runs against it)
         if (L > 40) {
-          const n = Math.max(1, Math.round(L / 34));
+          const n = Math.max(1, Math.round(L / 24));
           for (let k = 0; k < n; k++) {
             const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
             if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
@@ -4736,6 +5031,15 @@ export class RealCityLayer {
     const parksP = ((this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? [])
       .map((pk) => Array.isArray(pk) ? { ring: pk.map((q) => this.project(q)), flavour: "park" } : { ring: (pk.ring ?? []).map((q) => this.project(q)), flavour: pk.flavour ?? "park" })
       .filter((pk) => pk.ring.length >= 3);
+    const pathsP = ((this.ctx as { paths?: P2[][] }).paths ?? []).map((l) => l.map((q) => this.project(q)));
+    const nearPathP = (x: number, y: number, d: number) => pathsP.some((l) => {
+      for (let i = 0; i + 1 < l.length; i++) {
+        const a = l[i], b = l[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], ll = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (y - a[1]) * vy) / ll));
+        if (Math.hypot(a[0] + vx * t - x, a[1] + vy * t - y) < d) return true;
+      }
+      return false;
+    });
     const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       await this.breathe();
@@ -4751,6 +5055,30 @@ export class RealCityLayer {
       } else {
         this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
         this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      }
+    }
+    // A PARK IS A WOOD WITH LAWNS IN IT. The generator's trees were a sprinkle;
+    // every park gets canopy to about a tree per 140 m², in clumps (a seed
+    // tree, three or four round it), kept off its walks.
+    for (const pk of parksP) {
+      if (pk.flavour === "cemetery" && rnd() < 0.5) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of pk.ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const area = Math.abs(ringArea(pk.ring));
+      const clumps = Math.min(220, Math.floor(area / 700));
+      for (let c = 0; c < clumps; c++) {
+        await this.breathe();
+        const cx = x0 + rnd() * (x1 - x0), cy = y0 + rnd() * (y1 - y0);
+        if (!inRingP(cx, cy, pk.ring)) continue;
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const a = rnd() * 6.28, d = j ? 4 + rnd() * 5 : 0;
+          const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+          const sz = 0.8 + rnd() * 1.0;
+          if (!inRingP(x, y, pk.ring) || this.groundAt(x, y) === "road" || !this.clearOfBuildings(x, y, 2.2 * sz) || nearPathP(x, y, 2.5)) continue;
+          if (rnd() < (pk.flavour === "cemetery" ? 0.5 : 0.18)) this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
+          else { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol()); }
+        }
       }
     }
     // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,
@@ -5135,7 +5463,7 @@ export class RealCityLayer {
     // a design counts as the player's only where they chose something: an
     // untouched design is the street's choice, paint scheme and style shape
     // included, exactly as an undesigned building
-    const ov: VolumeOv | undefined = d && (d.facade || d.trim !== undefined || d.roof) ? { variant, trim: d.trim, roof: d.roof } : undefined;
+    const ov: VolumeOv | undefined = d && (d.facade || d.trim !== undefined || d.roof || d.base) ? { variant, trim: d.trim, roof: d.roof, base: d.base } : undefined;
     const pitched = !!d && (d.roof === "gable" || d.roof === "hip") && ring.length === 4;
     const tints = TINTS[fam];
     const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];
@@ -5167,6 +5495,8 @@ export class RealCityLayer {
       this.addVolume(at(0.84), h1, h2, fam, tint, it.bbl, true, false, k, false, false, "", 0, ov);
       topRing = at(0.68);
       this.addVolume(topRing, h2, h, fam, tint, it.bbl, true, true, k, false, false, it.cls, 0, ov);
+    } else if (!d?.crown && this.lotMassing(ring, h, fam, tint, it, k, shop, pitched, ov, !!d?.facade)) {
+      // a low building on a wide lot: a row of houses or a block round a court
     } else {
       const yr = it.year && it.year > 1800 ? it.year : 2000;
       // a tower nobody designed takes its period's massing, as the
@@ -5185,6 +5515,58 @@ export class RealCityLayer {
     // empty lot under it
     for (const b of this.siteOf(it.bbl)) this.dynHeight.set(b, h);
     if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+  }
+
+  /**
+   * A LOW BUILDING ON A WIDE LOT IS NOT ONE BOX. Seven storeys of walk-up
+   * across a 60 m frontage were never built as one slab under one roof: a
+   * street style goes up as a ROW of houses, each its own frontage, paint
+   * and roofline; a big apartment or office block as a PERIMETER BLOCK, four
+   * wings round a light court. Four-sided footprints only; returns false
+   * where the building stays one volume.
+   */
+  private lotMassing(ring: P2[], h: number, fam: string, tint: number[], it: PlayerItem, k: number, shop: boolean, pitched: boolean, ov: VolumeOv | undefined, chose: boolean): boolean {
+    if (ring.length !== 4 || h > 26) return false;
+    if (ringArea(ring) < 0) ring = ring.slice().reverse();
+    const yr = it.year && it.year > 1800 ? it.year : 2000;
+    // edge i of the four, wrapping: li + 3 runs past the end of the ring
+    const len = (i: number) => { const a = ring[i % 4], b = ring[(i + 1) % 4]; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
+    const li = len(0) + len(2) >= len(1) + len(3) ? 0 : 1;
+    const L = (len(li) + len(li + 2)) / 2, S = (len(li + 1) + len(li + 3)) / 2;
+    const style = styleOf(fam, yr, h);
+    const housing = it.cls === "multifamily" || it.cls === "retail" || it.cls === "mixed";
+    const rowStyle = (style === "victorian" || style === "vernacular" || style === "tudor" || style === "spanish") && !GLASSY.has(fam) && !TOWER_FAMS.has(fam) && h <= 19;
+    const lerp = (a: P2, b: P2, t: number): P2 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    if (rowStyle && housing && L > 24 && S < 40) {
+      // the row: frontages of 6-9 m along the long side (a brownstone is 6,
+      // a walk-up 7.5, a two-flat 9), each house its own deed-seed, so its
+      // elevation, paint and roofline are its own unless the player chose one
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const want = 6 + 3 * hash01(k ^ 0x40e1, this.seed);
+      const n = Math.max(2, Math.min(12, Math.round(L / want)));
+      for (let j = 0; j < n; j++) {
+        const t0 = j / n, t1 = (j + 1) / n, kj = (k * 31 + j * 7919) >>> 0;
+        const r: P2[] = [lerp(A, B, t0), lerp(A, B, t1), lerp(D, C, t1), lerp(D, C, t0)];
+        const tn = chose ? tint : (TINTS[fam] ?? [[1, 1, 1]])[Math.floor(hash01(kj, this.seed) * (TINTS[fam]?.length ?? 1))];
+        this.addVolume(r, 0, h, fam, tn, it.bbl, true, true, kj, shop, pitched, it.cls, yr, ov);
+      }
+      this.feat("row", it.bbl);
+      return true;
+    }
+    if (S > 34 && L > 34 && it.cls !== "industrial" && it.cls !== "retail") {
+      // the perimeter block: wings 11-14 m deep, the depth a floor can be
+      // lit from both faces, round an open court
+      const dw = Math.min(14, Math.max(11, S * 0.26));
+      const inner = insetRing(ring, dw);
+      if (!inner || inner.length !== 4 || ringArea(inner) < 0.12 * ringArea(ring)) return false;
+      for (let i = 0; i < 4; i++) {
+        const r: P2[] = [ring[i], ring[(i + 1) % 4], inner[(i + 1) % 4], inner[i]];
+        this.addVolume(r, 0, h, fam, tint, it.bbl, true, i === li, k, shop && (i === li || i === (li + 2) % 4), pitched, it.cls, yr, ov);
+      }
+      this.feat("court", it.bbl);
+      return true;
+    }
+    return false;
   }
 
   setPlayerBuildings(items0: PlayerItem[], force = false) {
@@ -5483,7 +5865,9 @@ export class RealCityLayer {
 
   private applyMonth() {
     const w2 = Math.cos((2 * Math.PI * (this.month - 6)) / 12);     // 1 in June, -1 in December
-    const el = ((35 + 11 * w2) * Math.PI) / 180;
+    // a city-builder's afternoon: the sun a few degrees lower than noon would
+    // put it, so every block throws a shadow long enough to model it
+    const el = ((30 + 10 * w2) * Math.PI) / 180;
     const az = ((200 - 12 * w2) * Math.PI) / 180;
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
@@ -5553,14 +5937,22 @@ export class RealCityLayer {
     const night = smooth(0.35, 0.95, this.dusk);
     const golden = smooth(0.0, 0.5, this.dusk) * (1 - night);
     const sunK = (1 - night * 0.97) * (1 - this.overcast * 0.6);
-    this.sun.intensity = 3.4 * sunK;
-    this.sun.color.setRGB(1, 0.9 - golden * 0.25, 0.78 - golden * 0.4);
-    this.hemi.intensity = 0.6 * (1 - night * 0.8) + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.78 - night * 0.45, 0.85 - night * 0.45, 0.93 - night * 0.3);
+    // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
+    // blue of the open sky rather than left grey: what makes a sunny city
+    // read as sunny. The ground bounce is warm (pavement and brick).
+    // after dark the key light is the moon: weak and cool, so roofs and
+    // streets keep their shape under the lit windows (round 14)
+    this.sun.intensity = 3.25 * sunK + 0.55 * night;
+    const sr = 1, sg = 0.88 - golden * 0.24, sb = 0.72 - golden * 0.38;
+    this.sun.color.setRGB(sr + (0.62 - sr) * night, sg + (0.72 - sg) * night, sb + (1.0 - sb) * night);
+    this.hemi.intensity = 0.74 * (1 - night * 0.62) + this.overcast * 0.25;
+    this.hemi.color.setRGB(0.66 - night * 0.36, 0.78 - night * 0.42, 0.98 - night * 0.32);
+    this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
     // lit rooms after dark
-    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
+    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.15;
     this.lampMat.emissiveIntensity = night * 2.2;
+    this.glowMat.opacity = night * 0.62;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign
@@ -5577,7 +5969,7 @@ export class RealCityLayer {
     const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
-    HAZE.hazeCap.value = (0.55 + oc * 0.2) * (1 - night * 0.35);
+    HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
     this.map?.triggerRepaint();
   }
 
@@ -5723,6 +6115,9 @@ export class RealCityLayer {
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low";
+    // the finishing pass: all of it on High, the grade alone on Medium, none on Low
+    this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
+    if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";

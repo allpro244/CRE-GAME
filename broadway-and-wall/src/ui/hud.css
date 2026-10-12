@@ -511,3 +511,15 @@
     column-gap: 24px;
   }
 }
+/* "· Open →" on every row of a clickable table is nineteen copies of the same
+   word. It shows on the row under the pointer or the keyboard. */
+.app tr .row-open { opacity: 0; transition: opacity 120ms; }
+.app tr:hover .row-open, .app tr:focus-visible .row-open, .app tr:focus-within .row-open { opacity: 1; }
+/* A heading inside a card is a step of that card, not a page title: "The
+   market for this building" printed larger than "Refinance", the card it
+   belongs to. Inside a .deal it ranks below the card's own head. */
+.app .deal .page-section-head,
+.app .deal .page-section:not(:has(*)) {
+  font-size: var(--fs-base); margin-bottom: 6px;
+}
+.app .deal .page-section { margin-top: 14px; }

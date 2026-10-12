@@ -1116,18 +1116,12 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
-  if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
+  syncLandMemos(econ);
   const hit = LAND_MEMO.get(rec.bbl);
   const heat = econ.districtHeat?.[rec.district ?? "—"];
   if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
   const psf = readLand(rec, econ, false, LAND_CTX).psf;
-  LAND_MEMO.set(rec.bbl, {
-    lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
-    zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
-    district: rec.district, yearBuilt: rec.yearBuilt, heat, psf,
-    cornice: rec.cornice, maturity: rec.maturity,
-  });
+  LAND_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf });
   return psf;
 }
 
@@ -1137,6 +1131,21 @@ type LandMemoEntry = {
   cornice: number | undefined; maturity: number | undefined;
 };
 const LAND_MEMO = new Map<string, LandMemoEntry>();
+const LAND_READ_MEMO = new Map<string, LandMemoEntry & { read: LandRead }>();
+/** The lot fields a land read depends on — the key both memos are checked against. */
+function lotKey(rec: ParcelRecord, heat: number | undefined): Omit<LandMemoEntry, "psf"> {
+  return {
+    lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
+    zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
+    district: rec.district, yearBuilt: rec.yearBuilt, heat,
+    cornice: rec.cornice, maturity: rec.maturity,
+  };
+}
+/** Clear both land memos when any market field a read depends on has moved. */
+function syncLandMemos(econ: Econ): void {
+  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_READ_MEMO.clear(); LAND_CTX = null; }
+  if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
+}
 /** The market fields landRead reads, flattened, as of the entries in LAND_MEMO. */
 let LAND_MKT: unknown[] | null = null;
 const LAND_DICTS = [
@@ -1218,7 +1227,20 @@ function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | unde
 }
 
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
-  return readLand(rec, econ, true, null);
+  // THE SAME PURE-PERFORMANCE MEMO as `landPsfNow`, for the whole read (both
+  // bids and the scheme): firms, the comps desk, the order book and the map
+  // ask for the same lot's read many times a month, and every ask ran two full
+  // residuals with no cache under them. Valid on exactly the same read-set —
+  // the market fields in `landMarketMatches` and the lot fields in
+  // `landLotMatches` — and cleared together with the price memo, so it can
+  // never serve a number a fresh read would not give. Callers only read it.
+  syncLandMemos(econ);
+  const heat = econ.districtHeat?.[rec.district ?? "—"];
+  const hit = LAND_READ_MEMO.get(rec.bbl);
+  if (hit && landLotMatches(hit, rec, heat)) return hit.read;
+  const read = readLand(rec, econ, true, LAND_CTX);
+  LAND_READ_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf: read.psf, read });
+  return read;
 }
 
 /**

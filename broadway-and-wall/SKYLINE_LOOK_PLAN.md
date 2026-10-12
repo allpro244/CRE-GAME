@@ -208,6 +208,11 @@ fixed in #231; the sweep is clean since.
   and shops a service yard (asphalt, cars, dumpsters, a condenser); industry
   trailers and pallets. The lawn texture is mottled instead of striped, and
   no paved squares are dropped into lawns.
+- **Round 28** — no two lawns alike. Each built lot's lawn draws one of
+  eight grass tones (lush, ordinary, dry, yellowing, blue-green,
+  sun-bleached, dark) and has its texture rotated and shifted; over all of
+  it, two octaves of world-space noise (11 m and 38 m) lighten and darken
+  the grass across lot lines. Shader and vertex colour only.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

@@ -208,7 +208,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           )}
           {!loi.countered && !final && (
             <button className="btn" title="Open the counter at your own terms — the tenant's package, at the rent that reaches your number. Signs as written if it already does." onClick={myTerms}>
-              Counter to my terms
+              My terms
             </button>
           )}
           <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>

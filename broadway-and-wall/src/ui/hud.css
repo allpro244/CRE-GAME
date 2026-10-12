@@ -526,3 +526,6 @@
 .app .topbar-vital.tstat-tight .tstat-delta,
 .app .topbar-vital.tstat-tight .tstat-of { display: none; }
 .app .hint.short-by { color: var(--text-2); align-self: center; }
+/* Four answers on a letter card wrapped "Pass" onto a line of its own at
+   1440px ("Counter to my terms" is now "My terms", its tooltip says the rest). */
+.app .loi-grid .btn-row { gap: 6px; }

@@ -3014,6 +3014,57 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
 }
 
 /**
+ * TODAY'S VACANCY IS NOT CAPITALISED FOREVER (2026-10-11).
+ *
+ * `noiYr` reads the building's occupancy off this month's market, and
+ * dividing it by a cap rate says this month's market lasts forever. In a bust
+ * that is a second charge on top of the one the cap rate already makes for
+ * vacancy (`CAP_VAC_BETA`, the vacancy premium in the cap — Sivitanides,
+ * Southard, Torto & Wheaton 2001), and it turned every rise in citywide
+ * vacancy into a permanent cut in every building's income value.
+ *
+ * The appraiser's answer is the as-is value: capitalise the income at
+ * STABILISED occupancy, then subtract the rent lost while the market leases
+ * back up (Appraisal Institute, The Appraisal of Real Estate, ch. 22, "as is"
+ * vs "as stabilized"). Stabilised here is this building at the market's
+ * natural vacancy — its own character, troubles and location kept, only the
+ * cycle taken out. The lease-up runs as long as the market's own measured
+ * gross absorption (`landQueue.absYr`, five trailing years) takes to soak up
+ * the excess vacant feet, and the loss shrinks linearly as it does. A market
+ * absorbing nothing never leases up, and the value is today's income
+ * capitalised, exactly as before; a fast market is through it in a year.
+ *
+ * The other side is the same rule: occupancy above the natural rate is held
+ * by leases, not by the market, and it is worth its excess for the half-term
+ * the average lease has left — then the building is a stabilised building.
+ */
+function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, capY: number, condIdx?: number): number {
+  const noiNow = noiYr(rec, econ, condition, false, condIdx);
+  if (!econ.cityVac || !econ.landQueue) return noiNow / capY;
+  const natEcon = { ...econ, cityVac: { ...econ.cityVac, ...NATURAL_VAC } } as Econ;
+  const noiNat = noiYr(rec, natEcon, condition, false, condIdx);
+  const gap = noiNat - noiNow;
+  if (!(Math.abs(gap) > 0)) return noiNow / capY;
+  const rc = Math.log(1 + capY);
+  const use = (rec.class === "land" ? "office" : rec.class) as BuiltClass;
+  if (gap < 0) {
+    const yrs = LEASE_TERM_M[use] / 24;
+    return noiNat / capY - gap * (1 - Math.exp(-rc * yrs)) / rc;
+  }
+  const h = econ.history ?? [];
+  const stock = h.length ? (h[h.length - 1].stock?.[use] ?? 0) : 0;
+  const excess = Math.max(0, ((econ.cityVac[use] ?? NATURAL_VAC[use]) - NATURAL_VAC[use]) * stock);
+  const absYr = econ.landQueue[use]?.absYr ?? 0;
+  // PV of a loss that starts at `gap` and falls linearly to zero over T years:
+  // gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r, today's
+  // income capitalised; T -> 0 is nothing.
+  if (!(absYr > 0)) return noiNow / capY;
+  const T = excess / absYr;
+  const lossPv = T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
+  return noiNat / capY - lossPv;
+}
+
+/**
  * WHAT THE BUILDING IS WORTH AS A BUILDING — its income capitalised, with no
  * floor at the land under it. `assetValue` is this or the dirt, whichever is
  * more, which is the right price for a buyer; it is the wrong cost for a
@@ -3060,7 +3111,7 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
       leaseAdj += sf * useOccupancy(rec, econ, use) * gapPsf * annuity;
     }
   }
-  const income = Math.max(0, noiYr(rec, econ, condition, false, condIdx) / capY + leaseAdj);
+  const income = Math.max(0, stabilisedIncome(rec, econ, condition, capY, condIdx) + leaseAdj);
   // A BUILDING STILL FILLING IS NOT PRICED OFF THE MONTH IT IS HAVING.
   //
   // Capitalising a lease-up roll at a stabilised cap rate counts the same risk

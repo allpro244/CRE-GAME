@@ -328,3 +328,19 @@ detector run over every page and property tab at 1100, 1280 and 1440px.
   the red "why not" callout sat flush on its rule; charts drew a frame at a
   480px default before measuring; the credit line's "¼ / ½" ticks read as "%";
   an empty Sales tab printed a design note to the player.
+- **A letter interrupts once.** A bot playing 23 months on default settings
+  was stopped ~20 times: each tenant letter paused Play when its card arrived
+  and again in its last month after "Decide later". The card was the
+  interruption; "Decide later" now marks the letter seen (`cardSeen`, session
+  only) and `stopRule` skips seen keys unless critical, for Play, Yr and Skip.
+  The same wall-clock run covered 9 more months. The pause toast names the
+  card it is waiting on.
+- **A grey money button says why, beside it.** Pay off, demolish, buy the
+  land back, buy out a partner and the tax appeal now print what you have
+  against what it takes (`ShortBy` in panels/shared.tsx).
+- **A card's subheading ranks below the card.** "The market for this
+  building" printed larger than "Refinance". Clickable-table rows show
+  "Open →" only on the hovered or focused row.
+- **The top bar never clips.** With Line left added, 1100px clipped Book to
+  "thin ca". After the ranked readouts go, the label deltas hide; below
+  ~1050px Book goes last. Measured clean from 1024 to 1920px.

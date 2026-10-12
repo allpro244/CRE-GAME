@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -577,7 +577,8 @@ export function planDevelopment(
   // building goes up (landCarryFactor): the residual prices dirt net of that
   // wait, and a desk that ignored it passed every lot bought at the residual.
   const landBasis = Math.round(
-    landBasisOverride ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ),
+    landBasisOverride ?? s.holdings[bbl]?.costBasis
+      ?? (rec.class === "land" && !ownerOf(s, bbl) ? ownerAskPsf(rec, s.econ) * rec.lotArea : landValue(rec, s.econ)),
   );
   const landCarry = Math.round(landBasis * pf.landCarryRate);
   // financing cost is a line in every development budget, and it belongs in
@@ -3974,7 +3975,8 @@ function startCityJob(
     // dirt, which is scale-free, and then the firm-size filters in
     // `claimJob` decide who can actually carry the job.
     const read = landRead(rec, s.econ);
-    const score = read.builder - read.psf + rng(s, "dev") * 12;
+    // Surplus against what THIS owner will take, not the model's price.
+    const score = read.builder - ownerAskPsf(rec, s.econ) + rng(s, "dev") * 12;
     if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
     for (const k of BUILT_CLASSES) {
       if ((owedBook?.[k] ?? 0) <= 0 && !classPinnedOwed(s.econ, k)) continue;

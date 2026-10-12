@@ -1921,6 +1921,10 @@ export interface Econ {
   inPlaceReal?: Record<BuiltClass, number>;
   /** The opening effective rent — the parity the demand side's price argument is measured against. */
   effAnchor?: Record<BuiltClass, number>;
+  /** The land market's level, $/sf of land (mean model price over the queue's yearly sample). */
+  landMkt?: number;
+  /** What owners BELIEVE that level is — it learns the market at appraisal-smoothing speed. */
+  landBelief?: number;
   landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;

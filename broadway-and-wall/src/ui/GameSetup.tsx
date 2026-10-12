@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, pendingGoal } from "@/state/store";
-import { useJev } from "@/state/jevStore";
-import { JevSettings } from "@/ui/panels/JevPanel";
-import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { START_CASH_CHOICES } from "@/engine/types";
 import {
@@ -61,7 +58,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const popupsOff = useStore((s) => s.popupsOff);
   const setPopupsOff = useStore((s) => s.setPopupsOff);
   const loadError = useStore((s) => s.loadError);
-  const j = useJev();
 
   const cities = cityList();
   const sizes = sizeList();
@@ -158,7 +154,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const setup: Partial<GameSetup> = {
       field: d.field, inherit: d.inherit, home: d.home,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
-      brokerStops: d.brokerStops ? undefined : "never", jevFirms: j.startFirms, spectator: j.startSpectator,
+      brokerStops: d.brokerStops ? undefined : "never",
     };
     void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
   };
@@ -277,35 +273,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
               <div className="start-col">
                 <div className="start-col-head">the incumbents</div>
                 {FIELDS.map((f) => opt(d.field === f.id, () => up({ field: f.id }), f.label, f.note, f.id))}
-              </div>
-              <div className="start-col">
-                <div className="start-col-head">firms run by Jev</div>
-                <div className="setup-row">
-                  <label className="setup-label">Jev runs
-                    <select className="setup-input" value={j.startFirms} aria-label="How many firms Jev runs"
-                      onChange={(e) => j.set({ startFirms: Number(e.target.value), ...(Number(e.target.value) ? {} : { startSpectator: false }) })}>
-                      {[0, 1, 2, 3, 4, 6, 8, 12].map((k) => <option key={k} value={k}>{k === 0 ? "no" : k}</option>)}
-                    </select> rival firm{j.startFirms === 1 ? "" : "s"}
-                  </label>
-                  {j.startFirms > 0 && (
-                    <label className="setup-label">as
-                      <select className="setup-input" value={j.startCharter} aria-label="Charter"
-                        onChange={(e) => j.set({ startCharter: e.target.value as CharterId | "style" })}>
-                        <option value="style">their own styles</option>
-                        {(Object.keys(CHARTERS) as CharterId[]).map((c) => <option key={c} value={c}>{CHARTERS[c].label}s</option>)}
-                      </select>
-                    </label>
-                  )}
-                </div>
-                <label className="setup-check">
-                  <input type="checkbox" checked={j.startSpectator} disabled={!j.startFirms}
-                    onChange={(e) => j.set({ startSpectator: e.target.checked })} />
-                  Spectator: no player — watch the firms compete
-                </label>
-                <details className="setup-details">
-                  <summary>Set up Jev — TypeSafe key and route</summary>
-                  <div className="setup-jev"><JevSettings /></div>
-                </details>
               </div>
             </div>
           </section>

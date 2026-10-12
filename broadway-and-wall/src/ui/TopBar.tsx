@@ -25,7 +25,6 @@ const PAGE_LABEL: Partial<Record<Page, string>> = {
   saves: "Saves",
   settings: "Settings",
   primer: "Primer",
-  match: "Jev match",
 };
 
 /**
@@ -678,16 +677,6 @@ export default function TopBar() {
           >
             <span className="rail-ico" aria-hidden="true">?</span><span className="rail-label">Primer</span>
           </button>
-          {(game?.rivals ?? []).some((r) => r.jev) && (
-            <button
-              type="button"
-              className={"rail-item" + (page === "match" ? " on" : "")}
-              title="Jev match — firms whose judgement Jev informs: leaderboard, equity over time, Jev's answers and what code did"
-              onClick={() => setPage(page === "match" ? "none" : "match")}
-            >
-              <span className="rail-ico" aria-hidden="true">◆</span><span className="rail-label">Jev match</span>
-            </button>
-          )}
           <button
             type="button"
             className={"rail-item" + (page === "settings" ? " on" : "")}

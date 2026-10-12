@@ -7,6 +7,7 @@ import { marketAppraisal } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
+import { useMasonry } from "@/ui/useMasonry";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
@@ -32,7 +33,7 @@ import { LettingOdds, MinDealSize, LeasingDesk, ResidualRead, LandDesk, Assemble
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
-import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -85,6 +86,7 @@ function ParcelPanelInner({
   // rather than a bare boolean so selecting a different building simply
   // dismisses the question instead of asking it about the wrong address.
   const [razeAsk, setRazeAsk] = useState<string | null>(null);
+  const masonry = useMasonry();
   // SUMMARY UNTIL ASKED. This flipped to the full offering memorandum —
   // seventy-odd rows — once the campaign passed month 12, on the theory that a
   // veteran wants everything. A veteran who does picks Full OM once and the
@@ -154,7 +156,7 @@ function ParcelPanelInner({
   );
 
   return (
-    <div className={embedded ? "panel-embed" : "panel"}>
+    <div className={embedded ? "panel-embed" : "panel"} ref={embedded ? masonry : undefined}>
       {!embedded && (
         <div className="panel-head">
           <div>
@@ -862,6 +864,13 @@ function ParcelPanelInner({
                 </button>
               );
             })()}
+            {(() => {
+              // A greyed button with its reason in a tooltip is a question
+              // the player has to hover to ask. Say it beside the button.
+              const due = payOffDue(holding.loan, game.month, game.econ);
+              if (game.facility?.bbls?.includes(selectedBBL)) return <span className="hint">Pledged to the facility — release it there first.</span>;
+              return <ShortBy need={due.due} have={fundableNow(game, parcels)} />;
+            })()}
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
@@ -878,8 +887,14 @@ function ParcelPanelInner({
           {/* The docked card gets the answer and a door; the desk itself —
               four lenders, a dial and a before/after sheet — is a room's
               worth of reading and opens as one. */}
-          {tab === undefined ? <RefiGlance bbl={selectedBBL} /> : <RefiSection bbl={selectedBBL} />}
+          {tab === undefined && <RefiGlance bbl={selectedBBL} />}
         </div>
+      )}
+      {/* The full refinance desk is its own full-width section on the page,
+          not the tail of the Debt column — tucked inside Debt it made one
+          column 1,400px tall beside a 270px cash statement. */}
+      {on("money") && holding?.loan && tab !== undefined && (
+        <div className="deal deal-wide"><RefiSection bbl={selectedBBL} /></div>
       )}
 
       {on("deal") && listing && !holding && (() => {
@@ -1242,6 +1257,7 @@ function ParcelPanelInner({
                   Take it down · {usd(demoCost)}
                 </button>
                 <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Leave it</button>
+                <ShortBy need={demoCost} have={fundableNow(game, parcels)} />
               </div>
               <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
             </div>
@@ -1286,6 +1302,7 @@ function ParcelPanelInner({
           >
             Appeal assessment · {usd(taxAppeal.fee)}
           </button>
+          <ShortBy need={taxAppeal.fee} have={game.cash} cash />
         </div>
       )}
 
@@ -1429,6 +1446,7 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyLandBack(bbl)}>
             Buy the land back · {usd(cost)}
           </button>
+          <ShortBy need={cost} have={fundableNow(game, parcels)} />
         </div>
       </div>
     );
@@ -1493,6 +1511,7 @@ function StakeSection({ bbl }: { bbl: string }) {
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyOutPartner(bbl)}>
             Buy them out · {usd(cost)}
           </button>
+          <ShortBy need={cost} have={fundableNow(game, parcels)} />
         </div>
       </div>
     );

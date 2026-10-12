@@ -61,8 +61,8 @@ export function CreditLine() {
             onChange={setAmt}
             format={(v) => usd(v)}
             marks={[
-              { at: Math.round(room * 0.25), label: "¼" },
-              { at: Math.round(room * 0.5), label: "½" },
+              { at: Math.round(room * 0.25), label: "25%" },
+              { at: Math.round(room * 0.5), label: "50%" },
               { at: room, label: "all" },
             ]}
             hint={amt > 0

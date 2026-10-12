@@ -87,8 +87,12 @@ export function RefiSection({ bbl }: { bbl: string }) {
   // first one in the list. Falling through to quotes[0] could land the card on
   // a lender quoting nothing, which is the same "describing a desk you are not
   // using" fault one step further along.
-  const q = quotes.find((x) => x.id === product)
-    ?? quotes.find((x) => x.available && x.maxProceeds > 0)
+  // The opening desk ("savings") is a default, not a choice — when it writes
+  // $0 the desk opened on a lender who will not lend, with the one who would
+  // a click away. A desk you can only pick if it writes is picked the same way.
+  const q = fundableQuotes.find((x) => x.id === product)
+    ?? fundableQuotes[0]
+    ?? quotes.find((x) => x.id === product)
     ?? quotes[0];
   const picked = q.id;
   const proceeds = Math.round(q.maxProceeds * lev);
@@ -102,9 +106,15 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const amortises = q.amortYears > 0 && q.ioM < q.termM;
   const annualDsIo = (proceeds * q.ratePct) / 100;
   const annualDs = amortises ? annualPayment(proceeds, q.ratePct, q.amortYears) : annualDsIo;
+  // A ROOM, NOT A COLUMN. The desk ran as one 540px strip down half the
+  // property page — lenders, table, terms, dial, before/after — with the other
+  // half of the screen blank beside it. It is a master/detail desk, so it
+  // reads like one: the market and the chosen desk's terms on the left, the
+  // dial, the verdict, the before/after and the button on the right.
   return (
-    <div className="refi">
+    <div className="refi refi-split">
       <div className="deal-head">Refinance</div>
+      <div className="refi-intro">
       {cur && (cur.floating ?? cur.product === "float") && !cur.cap && (
         <div className="hint" style={{ marginBottom: 8 }}>
           This paper floats and has no cap.
@@ -133,6 +143,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
             : ""}
         </div>
       )}
+      </div>
+      <div className="refi-pick">
       {privateQuotes.map((pq) => {
         const pts = Math.round(pq.principal * pq.points);
         const mezzPen = holding?.mezz && holding.mezz.balance > 0
@@ -176,21 +188,6 @@ export function RefiSection({ bbl }: { bbl: string }) {
           </div>
         </div>
       )}
-      <div className="btn-row">
-        {deskQuotes.map((x) => (
-          <button
-            key={x.id}
-            className={"btn" + (picked === x.id ? " btn-on" : "")}
-            disabled={!x.available || x.maxProceeds <= 0}
-            style={!x.available || x.maxProceeds <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
-            title={x.why ?? x.blurb}
-            onClick={() => setProduct(x.id)}
-          >
-            {x.label} · {x.available && x.maxProceeds > 0 ? pct(x.ratePct) : "won't quote"}
-          </button>
-        ))}
-      </div>
-      <div className="hint">{q.why ?? q.blurb}</div>
 
       {/* EVERY DESK AT ONCE, AND WHAT STOPPED EACH ONE.
           The complaint that started this was a $700M building with $130M of
@@ -231,6 +228,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
                     fontWeight: x.id === picked ? 600 : undefined,
                   }}
                   onClick={() => x.available && x.maxProceeds > 0 && setProduct(x.id)}
+                  // The table is the picker (a row of buttons above it said the
+                  // same thing twice), so it takes the keyboard too.
+                  tabIndex={x.available && x.maxProceeds > 0 ? 0 : -1}
+                  aria-selected={x.id === picked}
+                  onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && x.available && x.maxProceeds > 0) { e.preventDefault(); setProduct(x.id); } }}
                 >
                   <td>
                     {x.id === picked ? "▸ " : ""}{x.label}
@@ -275,7 +277,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
           const adv = deskAdvice(quotes, payoff, stabilised);
           return adv ? <div className="hint" style={{ marginTop: 6 }}>{adv}</div> : null;
         })()}
-      <div className="grid">
+      <div className="grid" style={{ marginTop: 12 }}>
         <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />
         {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
@@ -330,6 +332,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
         <Row k="Recourse" v={q.recourse ? "yes — you sign personally" : "non-recourse"} bad={q.recourse} />
         {q.kicker !== undefined && <Row k="Lender's share of gain" v={`${(q.kicker * 100).toFixed(0)}% on sale`} bad />}
       </div>
+      </div>
+      <div className="refi-terms">
       <Slider
         label="Take"
         value={lev}
@@ -460,6 +464,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
         >
           {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
         </button>
+      </div>
       </div>
     </div>
   );

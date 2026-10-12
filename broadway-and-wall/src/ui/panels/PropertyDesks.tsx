@@ -428,7 +428,8 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
 
       {!spec && q && leg && (
         <>
-          <div className="page-section" style={{ marginTop: 2 }}>Pre-build the space</div>
+          {/* a step inside the desk, not a second title under its title */}
+          <div className="ops-choice-k" style={{ margin: "4px 0 2px" }}>Pre-build the space</div>
           <div className="slider">
             <div className="slider-head">
               <span className="slider-label">{USE_WORD[leg.u]} to fit out · of {sf(Math.round(leg.free))} open</span>

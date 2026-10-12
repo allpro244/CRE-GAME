@@ -30,7 +30,9 @@ base.month = 24;
   };
   const k = keys(g);
   check(k.has("loi:l1"), "tenant LOI stops the clock");
-  check(k.has("tenant-ask:a1"), "tenant relief request stops the clock");
+  // A relief letter is on the docket but is soft: it never stops the clock.
+  const ask = E.attentionItems(g).find((x) => x.key === "tenant-ask:a1");
+  check(!!ask && ask.soft === true, "tenant relief request is on the docket and does not stop the clock");
   check([...k].some((x) => x.startsWith("talks:100:")), "seller counter stops the clock");
   check(k.has("contract:101"), "unfunded acquisition contract stops the clock");
 }

@@ -146,6 +146,14 @@ interface AppState {
   docketSnooze: Record<string, number>;
   snoozeDocket: (key: string, untilMonth: number) => void;
   /**
+   * Attention keys the player has already been shown on a card and put off
+   * ("Not now" on a tenant's letter). Play / Yr / Skip do not stop a second
+   * time for them at their deadline — see `stopRule`. Session-scoped, like
+   * the snoozes.
+   */
+  cardSeen: string[];
+  markCardSeen: (key: string) => void;
+  /**
    * The July docket, opened deliberately rather than thrown at you. Purely a
    * view flag — it is not part of the save, because whether a panel happens to
    * be open is not a fact about the campaign.
@@ -849,6 +857,7 @@ export const useStore = create<AppState>((set, get) => ({
   navBack: [],
   paletteOpen: false,
   docketSnooze: {},
+  cardSeen: [],
   advancing: false,
   prevForDigest: null,
   deliveryCeremony: null,
@@ -920,6 +929,7 @@ export const useStore = create<AppState>((set, get) => ({
   snoozeDocket: (key, untilMonth) => set((st) => ({
     docketSnooze: { ...st.docketSnooze, [key]: untilMonth },
   })),
+  markCardSeen: (key) => set((st) => (st.cardSeen.includes(key) ? {} : { cardSeen: [...st.cardSeen.slice(-199), key] })),
   focus: (bbl, closePanel = false) => set((st) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
@@ -1065,7 +1075,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 12);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -1093,7 +1103,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 36);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -2456,7 +2466,7 @@ export const useStore = create<AppState>((set, get) => ({
     // load — a waterfall diffed across two campaigns would be fiction. The
     // docket snoozes go with it: they are absolute months, and a snooze set
     // at month 100 would sit on a loaded month-50 save for four game years.
-    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {} });
+    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {}, cardSeen: [] });
     // THE BRANCH NOT TAKEN. Rewind points later than the month just loaded
     // belong to a run that no longer exists; the next game-over card must not
     // offer them. The years from here on are re-stamped as this branch plays.

@@ -126,7 +126,7 @@ export function BuildingDatabase() {
           {shown.slice(0, CAP).map((r: (typeof rows)[number]) => (
             <tr key={r.bbl} onClick={() => open(r.bbl)} onKeyDown={(e) => { if (e.key === "Enter") open(r.bbl); }}
               tabIndex={0} title={`Open the property file for ${r.addr}`} style={{ cursor: "pointer" }}>
-              <td>{r.addr} <span className="dim">· Open →</span></td>
+              <td>{r.addr} <span className="dim row-open">· Open →</span></td>
               <td className="dim">{r.cls}</td>
               <td className="num">{Math.round(r.sf).toLocaleString()}</td>
               <td className="num">{r.fl}</td>
@@ -759,7 +759,7 @@ export function MarketPage() {
                           {" "}· {game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
                         </span>
                       )}
-                      <span className="dim"> · Open →</span>
+                      <span className="dim row-open"> · Open →</span>
                       {yours && h?.sale?.bids && h.sale.bids.length > 0 && (
                         <span className="dim mono"> · {h.sale.bids.length} bid{h.sale.bids.length === 1 ? "" : "s"} · best {usd(h.sale.bids[0].price)}</span>
                       )}

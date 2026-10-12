@@ -87,3 +87,8 @@ placeholder extrusions.
 - **Round 11** — night streets: every street lamp throws a soft warm pool on
   the carriageway (an additive `glow` instance per lamp, opacity following the
   hour; nothing by day).
+- **Round 12** — livelier streets: traffic every ~24 m of kerb (was 34), a
+  walker every ~12 m of footway (was 16), both still thinned by the street's
+  demand, the hour and the graphics setting (applyCrowd). Walkers were held
+  short of the first try's 9 m: a figure is a pixel at the default camera and
+  every one is stepped each frame.

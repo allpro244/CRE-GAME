@@ -492,6 +492,27 @@ export function EconomyPage() {
     depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
   }[e.phase];
 
+  // THE WINDOW SWITCH, and it only exists when it can do something.
+  // Below month 240 the whole record IS the last twenty years, and a
+  // control that redraws the identical chart is worse than no control —
+  // it teaches the player that the button does nothing. It is drawn twice,
+  // over the money charts at the top and over the market charts below, and
+  // both copies drive the one `span`: the reader should not have to scroll
+  // past the space market to find the control for the chart they are on.
+  const spanSwitch = (lead: string) => hist.length > SPAN_M && (
+    <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
+      <span className="hint" style={{ marginRight: 4 }}>{lead}</span>
+      <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
+        title="The last twenty years — about one and a half cycles.">
+        the last 20 years
+      </button>
+      <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
+        title="Every month since the game began.">
+        all {Math.round((hist.length - 1) / 12)} years
+      </button>
+    </div>
+  );
+
   const pctFmt = (v: number) => `${v.toFixed(1)}%`;
   // square feet at whatever magnitude the data actually is — a 40,000 sf
   // pipeline printed as "0.0M" four times is not a chart, it is a blank
@@ -539,25 +560,26 @@ export function EconomyPage() {
       {hist.length > 8 && (
         <div className="page-section" style={{ marginTop: 12 }}>
           <div className="page-section-head">What money has cost</div>
+          {spanSwitch("These charts show")}
           <LineChart
             height={132}
             series={[
-              { label: "Base rate %", color: "#8a4b2a", pts: hist.map((p) => p.indexRate) },
-              ...(hist.some((p) => p.rateRegime !== undefined)
+              { label: "Base rate %", color: "#8a4b2a", pts: tail.map((p) => p.indexRate) },
+              ...(tail.some((p) => p.rateRegime !== undefined)
                 ? [{ label: "Long-run rate %", color: "#8b8370", dashed: true,
-                     pts: hist.map((p) => p.rateRegime ?? p.indexRate) }]
+                     pts: tail.map((p) => p.rateRegime ?? p.indexRate) }]
                 : []),
             ]}
             yFmt={(v) => v.toFixed(1) + "%"}
-            xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
-            xAt={(i) => monthLabel(hist[i]?.q ?? 0)}
+            xLabels={[monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)]}
+            xAt={(i) => monthLabel(tail[i]?.q ?? 0)}
           />
           <div className="hint">
             Every loan in town prices off the solid line. Where it sits against the dashed one is
             whether today is a cheap-money year inside a dear-money era, or the other way round —
             and that is the difference between fixing and floating.
           </div>
-          <MacroCharts hist={hist} />
+          <MacroCharts hist={tail} />
         </div>
       )}
 
@@ -693,23 +715,7 @@ export function EconomyPage() {
         })()}
       </div>
 
-      {/* THE WINDOW SWITCH, and it only exists when it can do something.
-          Below month 240 the whole record IS the last twenty years, and a
-          control that redraws the identical chart is worse than no control —
-          it teaches the player that the button does nothing. */}
-      {hist.length > SPAN_M && (
-        <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
-          <span className="hint" style={{ marginRight: 4 }}>Every chart below shows</span>
-          <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
-            title="The last twenty years — about one and a half cycles.">
-            the last 20 years
-          </button>
-          <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
-            title="Every month since the game began.">
-            all {Math.round((hist.length - 1) / 12)} years
-          </button>
-        </div>
-      )}
+      {spanSwitch("Every chart below shows")}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
       {(sel === "general" || isClass) && (

@@ -390,3 +390,19 @@ export const STYLE_WORD: Record<string, string> = {
   foreign: "offshore capital",
   slumlord: "milking the stock",
 };
+
+/**
+ * WHY THE BUTTON IS GREY, ON THE PAGE. A cash-gated action used to grey out
+ * with its reason in a tooltip (or none), so the player had to hover to ask.
+ * Renders nothing when the money is there.
+ */
+export function ShortBy({ need, have, cash = false }: { need: number; have: number; cash?: boolean }) {
+  if (have >= need) return null;
+  return (
+    <span className="hint short-by">
+      {cash
+        ? `You have ${usd(Math.max(0, have))} in cash; this takes ${usd(need)}.`
+        : `Cash and line together come to ${usd(Math.max(0, have))} of the ${usd(need)} this takes.`}
+    </span>
+  );
+}

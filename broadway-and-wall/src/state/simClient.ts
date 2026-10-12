@@ -79,13 +79,13 @@ export async function monthOffThread(s: GameState, parcels: ParcelTable, bbls: s
 }
 
 /** Up to `cap` months, stopping where advanceUntilAttention stops, off the page's thread where it can be. */
-export async function spanOffThread(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj, cap: number): Promise<Span> {
+export async function spanOffThread(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj, cap: number, seen?: string[]): Promise<Span> {
   const w = getWorker();
   if (w) {
     try {
-      const r = await send(w, parcels, bbls, adjacency, (town, id) => ({ type: "span", id, town, s, cap }));
+      const r = await send(w, parcels, bbls, adjacency, (town, id) => ({ type: "span", id, town, s, cap, seen }));
       if (r.span) return r.span;
     } catch { /* fall through */ }
   }
-  return advanceUntilAttention(s, parcels, bbls, adjacency, cap);
+  return advanceUntilAttention(s, parcels, bbls, adjacency, cap, seen);
 }

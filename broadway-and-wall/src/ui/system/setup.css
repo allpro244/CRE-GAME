@@ -109,7 +109,6 @@
 .app .setup-check input { margin-top: 3px; }
 .app .setup-details { margin-top: 6px; padding: 0 9px; font-size: var(--fs-sm); }
 .app .setup-details summary { cursor: pointer; color: var(--text-2); }
-.app .setup-jev { margin-top: 8px; }
 .app .setup-fixed { display: flex; flex-direction: column; gap: 2px; padding: 8px 9px; }
 .app .setup-fixed + .setup-fixed { border-top: 1px solid var(--border); }
 .app .setup-fixed strong { font-size: var(--fs-sm); color: var(--text); }

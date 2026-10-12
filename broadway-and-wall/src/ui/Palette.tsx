@@ -16,9 +16,12 @@ import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
 import { resolveRec } from "@/engine/value";
 import { livingRivals } from "@/engine/rivals";
+import { attentionItems } from "@/engine/sim";
+import { monthLabel } from "@/engine/types";
+import { usd } from "@/ui/format";
 import "./palette.css";
 
-type Kind = "clock" | "desk" | "lens" | "deed" | "tenant" | "firm" | "lender" | "lot";
+type Kind = "clock" | "todo" | "desk" | "lens" | "deed" | "tenant" | "firm" | "lender" | "lot";
 
 interface Entry {
   id: string;
@@ -36,11 +39,12 @@ interface Entry {
 
 /** Ties break toward the things you can act on over the raw city. */
 const KIND_ORDER: Record<Kind, number> = {
-  clock: 0, desk: 1, lens: 2, deed: 3, tenant: 4, firm: 5, lender: 6, lot: 7,
+  clock: 0, todo: 1, desk: 2, lens: 3, deed: 4, tenant: 5, firm: 6, lender: 7, lot: 8,
 };
 
 const KIND_KICKER: Record<Kind, string> = {
   clock: "The clock",
+  todo: "On your desk",
   desk: "Desks",
   lens: "Lenses",
   deed: "Your book",
@@ -66,8 +70,6 @@ const DESKS: readonly { id: Page; label: string; note: string; jump?: string }[]
   { id: "saves", label: "Saves", note: "Named snapshots; the live campaign autosaves" },
   { id: "settings", label: "Settings", note: "Pop-up cards, broker calls, the auction card" },
   { id: "primer", label: "Primer", note: "Cap rates, NOI and appraisals, in plain words" },
-  { id: "match", label: "Jev match", note: "Firms whose judgement Jev informs — leaderboard, answers, actions" },
-  { id: "settings", label: "Jev", note: "Plug TypeSafe's Jev into the rival firms' decisions", jump: "Jev" },
 ];
 
 const LENSES: readonly { id: Lens; label: string; note: string }[] = [
@@ -167,6 +169,16 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     }));
   }
 
+  // WHAT IS WAITING, FINDABLE BY NAME. The docket lists it by kind; here a
+  // tenant's name, "letter", "balloon" or an address finds the item and Enter
+  // opens it exactly as the docket row would.
+  for (const a of attentionItems(game, parcels)) {
+    out.push(mk({
+      id: `a:${a.key}`, kind: "todo", label: a.label, tag: a.lastM !== undefined ? `by ${monthLabel(a.lastM)}` : "waiting",
+      run: () => st().openAttention(a.key),
+    }));
+  }
+
   // Deeds you hold, then the tenants inside them. resolveRec sees through
   // assemblages and ground-up work, so a merged site answers to the parent
   // address the rest of the game uses for it.
@@ -175,7 +187,10 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     const address = rec?.address ?? bbl;
     out.push(mk({
       id: `d:${bbl}`, kind: "deed", label: address, tag: "yours",
-      sub: rec ? `${districtLabel(rec)} · ${CLASS_LABEL[rec.class]}` : undefined,
+      // The debt rides the sub line, so "debt", "loan" or "balloon" finds the
+      // deeds that carry it — the search used to know only districts.
+      sub: rec ? `${districtLabel(rec)} · ${CLASS_LABEL[rec.class]}`
+        + (h.loan ? ` · debt ${usd(h.loan.balance)} · balloon ${monthLabel(h.loan.maturityM)}` : " · no debt") : undefined,
       run: () => st().focus(bbl, true),
     }));
     h.tenants.forEach((t, ti) => {
@@ -256,7 +271,9 @@ function PaletteBody() {
     if (!q) {
       // The blank screen is the two lists worth memorising: the clock, then
       // every desk in the firm.
-      const base = entries.filter((e) => e.kind === "clock" || e.kind === "desk");
+      // Then up to five things waiting on you, between the two.
+      const todo = entries.filter((e) => e.kind === "todo").slice(0, 5);
+      const base = [...entries.filter((e) => e.kind === "clock"), ...todo, ...entries.filter((e) => e.kind === "desk")];
       return { list: base, total: base.length };
     }
     const scored: { e: Entry; rank: number }[] = [];
@@ -386,7 +403,7 @@ function PaletteBody() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="An address, a tenant, a firm, a desk"
+          placeholder="An address, a tenant, a loan, a desk, or what is waiting"
           aria-label="Search the city and the firm"
           role="combobox"
           aria-expanded={flat.length > 0}

@@ -136,8 +136,10 @@ export function fundRaiseQuote(s: GameState): {
   if (!st.institutional) {
     return { ok: false, size: 0, reason: `LPs will not back you while the street reads "${st.label}".` };
   }
-  const phase = s.econ.phase;
-  if (phase === "recession" || phase === "depression") {
+  // LPs commit when the credit window is open — the denominator effect and
+  // the debt they lever their own commitments with — not when a label says so.
+  const ciFund = s.econ.creditIdx ?? 1;
+  if (ciFund < 0.7) {
     return { ok: false, size: 0, reason: "Nobody raised a real estate fund in a crunch. Wait for the thaw." };
   }
   const exits = (s.exits ?? []).filter((e) => !e.forced && e.gain > 0).length;
@@ -147,7 +149,7 @@ export function fundRaiseQuote(s: GameState): {
   // Size from standing and phase — not a menu. Cleaner mark → larger raise.
   const clean = Math.max(0, 1.6 - st.mark);
   const base = 8_000_000 + clean * 25_000_000;
-  const phaseMult = phase === "expansion" ? 1.15 : phase === "peak" ? 0.85 : 1;
+  const phaseMult = Math.max(0.85, Math.min(1.15, ciFund));
   // A SUCCESSOR FUND IS SIZED OFF THE LAST ONE. LPs re-up in proportion to
   // what the prior vehicle returned, and a manager's second fund raising a
   // multiple of its first is the ordinary shape of the business; a firm with a

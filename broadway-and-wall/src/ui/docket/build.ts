@@ -42,6 +42,8 @@ export interface DocketItem {
   more?: number;
   /** Plan-desk exception — Sign / Counter / Decline on the rail. */
   leaseId?: number;
+  /** The year-one nudge: the next rung, first on the desk under its own tag. */
+  nudge?: boolean;
   /** A one-click fix the row offers — the rail's Apply button. */
   apply?: { label: string; buyBox?: import("@/engine/buybox").BuyBox; planRows?: { use: import("@/engine/types").BuiltClass; targetNePct: number }[] };
 }
@@ -97,6 +99,8 @@ export function buildDocket(
   game: GameState,
   parcels: ParcelTable | null,
   snooze: Record<string, number>,
+  /** The tail row expands the docket: nothing is capped once asked for. */
+  all = false,
 ): DocketItem[] {
   const items: DocketItem[] = [];
   const month = game.month;
@@ -104,7 +108,8 @@ export function buildDocket(
   const letterTerms = (l: (typeof game.lois)[number]) => {
     const mkt = parcels ? loiMarketPsf(game, parcels, l) : 0;
     const vs = mkt > 0 ? ` (${l.rentPsf >= mkt ? "+" : "−"}${Math.abs(Math.round((l.rentPsf / mkt - 1) * 100))}% vs market)` : "";
-    return `Letter of intent · ${Math.round(l.sf).toLocaleString()} sf · ${(l.termM / 12).toFixed(l.termM % 12 ? 1 : 0)} yrs · $${l.rentPsf.toFixed(2)}/sf${vs}${l.freeM ? ` · ${l.freeM} mo free` : ""} · ${usd(loiSigningCost(l))} to sign`;
+    // The row title already says "LOI from …"; the terms start with the numbers.
+    return `${Math.round(l.sf).toLocaleString()} sf · ${(l.termM / 12).toFixed(l.termM % 12 ? 1 : 0)} yrs · $${l.rentPsf.toFixed(2)}/sf${vs}${l.freeM ? ` · ${l.freeM}\u00a0mo\u00a0free` : ""} · ${usd(loiSigningCost(l))} to sign`;
   };
 
   // (a) The standing conditions — everything the engine itself says needs the
@@ -251,16 +256,37 @@ export function buildDocket(
     .sort((a, b) => rank(a.kind) - rank(b.kind))
     .slice(0, 4);
   const used = new Set(items.map((i) => i.key));
+  // Most tape lines carry no parcel id ("Covenant breach at 222 E 10th St
+  // (DSCR 0.16)…"), so the building is found by its address in the text —
+  // bounded on the left, so 22 E 10th St does not match 222 E 10th St.
+  // Owned buildings, and any building a standing row is already about (a
+  // contract's tape line names a deed that is not yours yet).
+  const subjectBbls = new Set([...Object.keys(game.holdings), ...items.map((it) => it.bbl ?? it.attnKey?.split(":")[1]).filter((b): b is string => !!b && /^\d{6,}$/.test(b))]);
+  const ownedAddr = [...subjectBbls]
+    .map((b) => ({ b, a: parcels?.[b]?.address }))
+    .filter((x): x is { b: string; a: string } => !!x.a)
+    .sort((x, y) => y.a.length - x.a.length);
+  const bblIn = (text: string): string | undefined => {
+    for (const { b, a } of ownedAddr) {
+      const i = text.indexOf(a);
+      if (i >= 0 && (i === 0 || !/[0-9A-Za-z-]/.test(text[i - 1]))) return b;
+    }
+    return undefined;
+  };
   tape.forEach((n, i) => {
     let key = `news:${n.q}:${n.text.replace(/\s+/g, " ").slice(0, 48)}`;
     if (used.has(key)) key = `${key}:${i}`;
     used.add(key);
+    // A line about YOUR building is about your book, not the city — it used
+    // to sit under a CITY tag beside the CAP row for the very same breach.
+    const subject = n.bbl ?? bblIn(n.text);
+    const mine = !!subject && !!game.holdings[subject];
     items.push({
       key,
-      cat: n.kind === "deal" ? "deals" : "world",
+      cat: n.kind === "deal" ? "deals" : mine ? "assets" : "world",
       title: n.text,
-      bbl: n.bbl,
-      ...(n.bbl ? {} : { page: "news" as Page }),
+      bbl: subject,
+      ...(subject ? {} : { page: "news" as Page }),
     });
   });
 
@@ -297,6 +323,7 @@ export function buildDocket(
         live.push({
           key: `milestone:${next.id}`,
           cat: "world",
+          nudge: true,
           title: `Start here: ${addr(pick.bbl)} — ${pick.cap.toFixed(1)}% going-in, ${Math.round(pick.occ * 100)}% let`,
           sub: `${usd(pick.cash)} to buy outright, closing included · the best yield on the tape you can afford · ${12 - month} mo of year one left`,
           bbl: pick.bbl,
@@ -305,6 +332,7 @@ export function buildDocket(
       } else live.push({
         key: `milestone:${next.id}`,
         cat: "world",
+        nudge: true,
         title: next.label,
         sub: `${h.how ? `${h.how} · ` : ""}${12 - month} mo of year one left`,
         page: h.page,
@@ -367,18 +395,37 @@ export function buildDocket(
     });
   }
 
+  // ONE ROW PER SUBJECT. The tape re-announced what a standing row already
+  // said: "222 E 10th St: covenant breach — cash flow swept" (the engine's
+  // condition) sat two rows above "Covenant breach at 222 E 10th St (DSCR
+  // 0.16)" (the news of it), and "Motivated seller: 390 E 16th St" above
+  // "Start here: 390 E 16th St". The standing row is the one with an action,
+  // so the tape's line about the same building yields to it.
+  const covered = new Set(live.filter((it) => !it.key.startsWith("news:") && it.bbl).map((it) => it.bbl!));
+  for (const it of live) if (!it.bbl && it.attnKey) {
+    const b = it.attnKey.split(":")[1];
+    if (b && /^\d{6,}$/.test(b)) covered.add(b);
+  }
+  for (let i = live.length - 1; i >= 0; i--) {
+    const it = live[i];
+    if (it.key.startsWith("news:") && it.bbl && covered.has(it.bbl)) live.splice(i, 1);
+  }
+
   // Causality order: capital decides deals, deals decide assets, assets are
   // what the city sees. Stable within a category, so the engine's own order
   // (which puts the letters before the gossip) survives.
-  live.sort((a, b) => CAT_ORDER[a.cat] - CAT_ORDER[b.cat]);
+  // The year-one nudge leads: it is only offered when nothing is urgent, and
+  // for a first-time player it is the one row that says what to do. It sat
+  // last, under a CITY tag, below the weather.
+  live.sort((a, b) => (b.nudge ? 1 : 0) - (a.nudge ? 1 : 0) || CAT_ORDER[a.cat] - CAT_ORDER[b.cat]);
 
-  if (live.length > DOCKET_CAP) {
+  if (!all && live.length > DOCKET_CAP) {
     const folded = live.length - DOCKET_CAP;
     const shown = live.slice(0, DOCKET_CAP);
     shown.push({
       key: "docket-more",
       cat: "world",
-      title: `+${folded} more on the desks`,
+      title: `+${folded} more — show all`,
       more: folded,
     });
     return shown;

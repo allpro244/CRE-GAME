@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
-import { newGame, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -11,7 +11,7 @@ import { openViewOn } from "@/ui/deskView";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setAutoLease, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -38,19 +38,19 @@ import {
   setSearchTier, assignStaff, unassignStaff,
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
-import { normalizeParcels } from "@/engine/mix";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
-import { usdSigned } from "@/ui/format";
+import { usd as usdShort, usdSigned } from "@/ui/format";
 import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, makeCity, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
-import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
-import { monthOffThread } from "@/state/simClient";
+import { cityList, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cutTownOffThread } from "@/state/townClient";
+import type { TownRequest } from "@/state/townWorker";
+import { monthOffThread, spanOffThread } from "@/state/simClient";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
@@ -66,7 +66,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "match";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "rankings";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -145,6 +145,14 @@ interface AppState {
    */
   docketSnooze: Record<string, number>;
   snoozeDocket: (key: string, untilMonth: number) => void;
+  /**
+   * Attention keys the player has already been shown on a card and put off
+   * ("Not now" on a tenant's letter). Play / Yr / Skip do not stop a second
+   * time for them at their deadline — see `stopRule`. Session-scoped, like
+   * the snoozes.
+   */
+  cardSeen: string[];
+  markCardSeen: (key: string) => void;
   /**
    * The July docket, opened deliberately rather than thrown at you. Purely a
    * view flag — it is not part of the save, because whether a panel happens to
@@ -401,8 +409,12 @@ interface AppState {
   holdLeasing: (bbl: string, on: boolean) => void;
   /** Auto-lease: the deed answers its own letters by its rent stance. A list sets many at once. */
   autoLease: (bbl: string | string[], on: boolean) => void;
+  /** Auto-lease fit-out cap, today's $/sf per lease year; undefined lifts it. */
+  autoTiCap: (bbl: string, psfYr: number | undefined) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
+  /** The same minimum new lease on every building, and the house default for new ones. */
+  minLeaseAll: (sf: number) => void;
   /** Bank with this desk: the operating account moves there (free; deposits are not a loan). */
   setDepositBank: (id: string) => void;
   /** Cash management: sweep idle cash into Treasury bills, and the operating balance kept at the bank. */
@@ -542,14 +554,23 @@ function queueDeliveryCeremony(
 ) {
   const player = deliveriesThisMonth(prev, next);
   const rival = cityDeliveriesThisMonth(prev, next);
-  // YOUR OWN BUILDING ALWAYS GETS ITS MOMENT. The top-1% gate is for the
-  // street's towers — a popup on every rival delivery would be noise — but it
-  // was also silencing the player's own: three years of building ended in a
-  // toast the month-close toast overwrote on the same tick.
-  // yours or the street's, only one of the five largest buildings on the map
+  // THE CARD IS FOR THE SKYLINE: yours or the street's, only one of the five
+  // largest buildings on the map takes the screen (deliveryNotice.ts, a
+  // deliberate call in f4214ba). Your own smaller job still gets its moment
+  // in the toast lane — with the one fact the card would have led with, what
+  // it is worth against what it cost, rather than a bare address.
   const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
   const bbl = candidates[0];
-  if (!bbl) return;
+  if (!bbl) {
+    const own = player[0];
+    const oh = own ? next.holdings[own] : undefined;
+    if (own && oh && parcels) {
+      const v = ownedHoldingValue(next, parcels, oh);
+      const addr = resolveRec(parcels, next, own)?.address ?? own;
+      toast(`◆ Delivered — ${addr}: worth ${usdShort(v)} against ${usdShort(oh.costBasis)} all-in.`, "ok");
+    }
+    return;
+  }
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;
   const built = next.built?.[bbl];
   const mine = player.includes(bbl);
@@ -622,15 +643,6 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   const { parcels, bbls, adjacency } = st;
   let game = st.game;
   if (!game || !parcels || game.gameOver) return;
-  // JEV'S ANSWERS FIRST, when a decision period is due: the Jev-run firms'
-  // questions were (usually) sent while the last month closed, and are filed
-  // on the state before the tick reads them. Play waits only if they are
-  // still in flight — see state/jevStore.ts.
-  if (jevDueNow(game)) {
-    if (!(await runDueJev())) return;
-    game = useStore.getState().game;
-    if (!game || game.gameOver) return;
-  }
   let ticked: GameState;
   for (;;) {
     ticked = await monthOffThread(game, parcels, bbls, adjacency);
@@ -645,8 +657,6 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   // A spectator's principal can die; nobody is at the desk, the match goes on.
   const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
   set({ game: next, prevForDigest: game });
-  // Ask Jev about the next period while this month is on screen.
-  prefetchJev(next);
   // A spectator is not at the desk: no cards about the player's own firm.
   if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
   if (!next.spectator) queueYearReview(game, next, set);
@@ -654,8 +664,20 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   // Yr/Skip felt like the only clock that answered. Stamp the new month,
   // cash movement, and the first thing waiting — short enough to read once.
   const dCash = next.cash - cash0;
-  const attn = attentionItems(next, parcels)[0];
-  if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
+  // Only what is NEW this month. The first standing item used to ride every
+  // month's toast — a covenant sweep announced three months running, a note
+  // sale four — while the docket already holds it. The clock's own stop
+  // rule keys on new items the same way.
+  // (Continuous play is quiet and skips the toast, so it skips the walk too.)
+  const before = opts?.quiet ? null : new Set(attentionItems(game, parcels).map((a) => a.key));
+  const attn = before ? attentionItems(next, parcels).find((a) => !before.has(a.key)) : undefined;
+  // A QUIET MONTH ANSWERS IN THE HUD, NOT THE TOAST LANE. Measured over an
+  // eight-year run, most month-close toasts read only "Feb 2000": a
+  // notification whose whole content is the date the top bar already shows.
+  // The date tile flashes on every turn now (TopBar), so the toast is kept
+  // for months that carry news — cash that moved, or something waiting.
+  const cashBit = monthCashBit(dCash);
+  if (!opts?.quiet && (cashBit || attn)) toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
   void persist(next);
 }
 
@@ -717,13 +739,15 @@ function painted(): Promise<void> {
  * Handing the parcel table to the store is a separate act because a continue
  * has to test the save against the town BEFORE the map mounts on it — a map
  * built for a town the campaign does not fit is a worse failure than a refusal.
+ *
+ * Off the page's thread (state/townWorker.ts), and with the opening market
+ * dealt there too when `deal` asks for it: on a big map the two together held
+ * the page for tens of seconds.
  */
-function buildTown(island: string, seed: number, size: string, dev: string, plan?: number) {
-  const built = makeCity(island, seed, { size, density: dev, planV: plan });
-  // Any record the pipeline still files as "mixed" becomes its dominant use
-  // plus an explicit mix, once, at the door.
-  const parcels = normalizeParcels(built.parcels as ParcelTable);
-  return { built, parcels };
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"]) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal });
+  // normalised in the worker, in place: the table is built.parcels
+  return { built, parcels: built.parcels as ParcelTable, game };
 }
 /**
  * AUTOSAVE WITHOUT PUTTING INDEXEDDB BACK ON THE CLICK PATH.
@@ -833,6 +857,7 @@ export const useStore = create<AppState>((set, get) => ({
   navBack: [],
   paletteOpen: false,
   docketSnooze: {},
+  cardSeen: [],
   advancing: false,
   prevForDigest: null,
   deliveryCeremony: null,
@@ -876,10 +901,14 @@ export const useStore = create<AppState>((set, get) => ({
   building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl) => {
+  select: (bbl0) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
     const st = get();
+    // A folded deed of an assemblage IS the site: clicking any part of the
+    // building (or the dirt) opens the site's desk, not a dead-end page that
+    // says "this lot is part of a site".
+    const bbl = bbl0 ? (st.game?.merged?.[bbl0] ?? bbl0) : bbl0;
     const page = bbl && st.page !== "property" ? "none" as const : st.page;
     const nav = pushNav(st, page, bbl);
     if (bbl !== st.selectedBBL) {
@@ -900,6 +929,7 @@ export const useStore = create<AppState>((set, get) => ({
   snoozeDocket: (key, untilMonth) => set((st) => ({
     docketSnooze: { ...st.docketSnooze, [key]: untilMonth },
   })),
+  markCardSeen: (key) => set((st) => (st.cardSeen.includes(key) ? {} : { cardSeen: [...st.cardSeen.slice(-199), key] })),
   focus: (bbl, closePanel = false) => set((st) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
@@ -1045,7 +1075,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 12);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -1073,7 +1103,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 36);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -1829,8 +1859,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     toast(on
-      ? "Auto-lease on. Letters there are answered by the rent posture — nothing will pop up."
+      ? "Auto-lease on. Letters there are answered by the rent posture and fit-out cap — nothing will pop up."
       : "Auto-lease off. Those letters come to you again.");
+    void persist(next);
+  },
+
+  autoTiCap: (bbl, psfYr) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setAutoTiCap(game, parcels, bbl, psfYr);
+    if (next === game) return;
+    set({ game: next });
     void persist(next);
   },
 
@@ -1841,6 +1880,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     void persist(next);
+  },
+
+  minLeaseAll: (sf) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setMinLeaseSfAll(game, sf);
+    set({ game: next });
+    void persist(next);
+    toast(sf > 0
+      ? `Minimum new lease set to ${Math.round(sf).toLocaleString("en-US")} sf on every building — and on any you add.`
+      : "Minimum new lease cleared on every building.", "ok");
   },
 
   holdLeasing: (bbl, on) => {
@@ -2416,7 +2466,7 @@ export const useStore = create<AppState>((set, get) => ({
     // load — a waterfall diffed across two campaigns would be fiction. The
     // docket snoozes go with it: they are absolute months, and a snooze set
     // at month 100 would sit on a loaded month-50 save for four game years.
-    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {} });
+    set({ game: saved, selectedBBL: null, page: "none", prevForDigest: null, docketSnooze: {}, cardSeen: [] });
     // THE BRANCH NOT TAKEN. Rewind points later than the month just loaded
     // belong to a run that no longer exists; the next game-over card must not
     // offer them. The years from here on are re-stamped as this branch plays.
@@ -2499,14 +2549,6 @@ export const useStore = create<AppState>((set, get) => ({
       // draws. Absent, a fresh one is rolled exactly as before.
       const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
       if (seedIn && seedIn >>> 0) setSeed(seed, island);
-      const { built, parcels } = buildTown(island, seed, size, dev);
-      get().setData({
-        parcels,
-        adjacency: built.adjacency as Adjacency,
-        manifest: built.manifest as DataManifest,
-        city: built,
-      });
-      // Jev-run firms and spectator mode, if the start screen asked for them.
       // THE SETUP IS RECORDED ON THE SAVE, including the parts the store
       // applies itself (town, cash, goal), so Saves and the run record can say
       // which world this was. A default setup is bit-identical to none.
@@ -2523,7 +2565,15 @@ export const useStore = create<AppState>((set, get) => ({
       // name the setup page showed for this seed.
       if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
-      const g = seedRunWithJev(firstListings(newGame(runSeed, parcels, money, setup), parcels, Object.keys(parcels)), parcels);
+      // the town and its opening market, dealt together off the page's thread
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup });
+      get().setData({
+        parcels,
+        adjacency: built.adjacency as Adjacency,
+        manifest: built.manifest as DataManifest,
+        city: built,
+      });
+      const g = dealt!;
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;
@@ -2568,7 +2618,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

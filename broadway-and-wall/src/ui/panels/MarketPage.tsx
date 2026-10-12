@@ -13,7 +13,7 @@ import { LineChart } from "@/ui/Chart";
 import { marketAppetite, gradeOf } from "@/engine/rivals";
 import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engine/broker";
 import { usd, sf, pct } from "@/ui/format";
-import { BrokerCalls } from "@/ui/panels/broker";
+import { BrokerCalls, liveBrokerCalls } from "@/ui/panels/broker";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
 import { SiteFinder } from "@/ui/panels/SiteFinder";
 
@@ -145,7 +145,7 @@ export function BuildingDatabase() {
           {shown.slice(at * PER, (at + 1) * PER).map((r: (typeof rows)[number]) => (
             <tr key={r.bbl} onClick={() => open(r.bbl)} onKeyDown={(e) => { if (e.key === "Enter") open(r.bbl); }}
               tabIndex={0} title={`Open the property file for ${r.addr}`} style={{ cursor: "pointer" }}>
-              <td>{r.addr} <span className="dim">· Open →</span></td>
+              <td>{r.addr} <span className="dim row-open">· Open →</span></td>
               <td className="dim">{r.cls}</td>
               <td className="num">{Math.round(r.sf).toLocaleString()}</td>
               <td className="num">{r.fl}</td>
@@ -239,6 +239,7 @@ export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: bo
 ];
 
 export function MarketPage() {
+  const phoneLive = useStore((s) => (s.game ? liveBrokerCalls(s.game).length > 0 : false));
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const lens = useStore((s) => s.lens);
@@ -609,10 +610,12 @@ export function MarketPage() {
       })()}
       {/* THE PHONE, ABOVE THE TAPE. An off-market file is the one thing on this
           page that nobody else can bid on and the one thing that disappears on
-          a schedule; the listings will still be there next month. */}
-      <BrokerCalls />
-      <BuyBoxEditor />
-      <SiteFinder />
+          a schedule; the listings will still be there next month.
+          AND THE TAPE ABOVE AN EMPTY PHONE. With no call live, this put a
+          section reading "Brokers on the phone · 0", the buy-box form and the
+          site list between the player and the listings they came for — the
+          tape started a screen and a half down. */}
+      {phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -773,7 +776,7 @@ export function MarketPage() {
                           {" "}· {game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
                         </span>
                       )}
-                      <span className="dim"> · Open →</span>
+                      <span className="dim row-open"> · Open →</span>
                       {yours && h?.sale?.bids && h.sale.bids.length > 0 && (
                         <span className="dim mono"> · {h.sale.bids.length} bid{h.sale.bids.length === 1 ? "" : "s"} · best {usd(h.sale.bids[0].price)}</span>
                       )}
@@ -836,6 +839,7 @@ export function MarketPage() {
           </table>
         </section>
       </div>
+      {!phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
       {/* THE SHOPS. Three house brokerages carry every mandate in this town,
           and each one keeps a ledger on you: fees earned, first looks you let
           lapse, how long since your last closing. That ledger decides whose

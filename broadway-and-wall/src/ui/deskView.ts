@@ -30,9 +30,16 @@ export function openViewOn(page: string, view: string) {
   for (const l of listeners) l();
 }
 
-export function useDeskView<T extends string>(page: string, fallback: T, allowed: readonly T[]): [T, (v: T) => void] {
+/** The third value counts the handoffs this page has taken (0 when it was
+ *  opened from its own tab), so a page can do something extra only when a
+ *  link brought the player — Players scrolls to your row on the street. */
+export function useDeskView<T extends string>(page: string, fallback: T, allowed: readonly T[]): [T, (v: T) => void, number] {
   const ok = useRef(allowed);
   ok.current = allowed;
+  const [linked, setLinked] = useState(() => {
+    const p = pending[page];
+    return p && allowed.includes(p as T) ? 1 : 0;
+  });
   const [view, setView] = useState<T>(() => {
     const p = pending[page];
     return p && allowed.includes(p as T) ? (p as T) : fallback;
@@ -43,10 +50,10 @@ export function useDeskView<T extends string>(page: string, fallback: T, allowed
       const p = pending[page];
       if (p === undefined) return;
       delete pending[page];
-      if (ok.current.includes(p as T)) setView(p as T);
+      if (ok.current.includes(p as T)) { setView(p as T); setLinked((n) => n + 1); }
     };
     listeners.add(on);
     return () => { listeners.delete(on); };
   }, [page]);
-  return [view, setView];
+  return [view, setView, linked];
 }

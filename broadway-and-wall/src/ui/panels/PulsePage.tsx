@@ -84,7 +84,7 @@ export function PulsePage() {
           title="Every loan in town prices off this benchmark: your floating coupons reprice to it monthly, a new quote is this rate plus the lender's spread, and cap rates lean on it — so it moves building values too." />
         {e.rateRegime !== undefined && (
           <Big label="Long-run rate" value={pct(e.rateRegime)}
-            title="The level the base rate is being pulled toward — the cheap-money or dear-money era the cycle rides on top of. It re-aims every 12–25 years, which is why a loan struck today can mature in a very different rate world."
+            title="The base rate without this month's market noise: where the bond market expects the central bank's rate to average over the next ten years, plus the premium it charges for holding that long — wider when the bank is not believed. The base rate wanders around it month to month."
             bad={e.rateRegime > 9} />
         )}
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />

@@ -242,7 +242,6 @@ const TRADE_GLIDE_M: [number, number] = [36, 96];
 //                      a 30% rise in dwellings per resident — but that is six
 //                      decades and several of these, not one event.
 const USE_MAG: Partial<Record<BuiltClass, [number, number]>> = {
-  office: [0.10, 0.22],
   retail: [0.05, 0.12],
   multifamily: [0.06, 0.15],
 };
@@ -327,7 +326,8 @@ const LEVEL_FLOOR = 0.25, LEVEL_CEIL = 4.0;
  * gone the other way since 2010. It has no counterpart class.
  */
 const USE_PAIRS: { primary: BuiltClass; partner?: BuiltClass; spill: number }[] = [
-  { primary: "office", partner: "multifamily", spill: 0.33 },
+  // No office step (owner, 2026-10-12): offices keep their pre-2020 demand;
+  // the remote-work level drop this carried is out of the game.
   { primary: "retail", partner: "industrial", spill: 0.30 },
   { primary: "multifamily", spill: 0 },
 ];

@@ -1,0 +1,532 @@
+/* ==========================================================================
+   HUD — the status bar, the pop-up cards and the docket, settled last.
+
+   Loaded after every other sheet on purpose: the bar's layout had been
+   adjusted in five files over its life (index.css, craft.css, shell.css,
+   pages.css, vitals.css) and the rules fought each other. Everything here
+   reads design-system tokens, so a restyle there still carries through.
+
+   The principles this file serves are written up in UI_PRINCIPLES.md.
+   ========================================================================== */
+
+/* ---------- the status bar: ONE row, at every width ----------------------
+   It wrapped onto a second, ragged row at 1600px (MARKET and BOOK under the
+   date) because every readout travelled with a movement chip and a
+   sparkline beside it. The movement now sits in the tile's own label row,
+   and readouts shed by rank as the bar narrows instead of wrapping. */
+.app .topbar { flex-wrap: nowrap; }
+.app .topbar-game { flex: 1 1 0; min-width: 0; }
+.app .topbar-summary, .app .topbar-vital { flex-wrap: nowrap; min-width: 0; }
+.app .topbar-vital .nw-pair, .app .topbar-vital .vital-pair { gap: 0; }
+
+.app .topbar .tstat-label { display: flex; align-items: baseline; gap: 6px; }
+.app .tstat-delta { display: inline-flex; align-items: baseline; }
+.app .tstat-delta .delta-chip {
+  padding: 0; background: none; border: 0;
+  font: 600 10px/1.3 var(--font-mono);
+  letter-spacing: 0; text-transform: none;
+}
+.app .tstat-of {
+  font: 500 10px/1.3 var(--font-mono);
+  letter-spacing: 0; text-transform: none;
+  color: var(--text-3);
+}
+.app .tstat-rank { font: 700 10px/1.3 var(--font-mono); letter-spacing: 0; }
+.app .tstat-rank.up { color: var(--pos); }
+.app .tstat-rank.down { color: var(--neg); }
+
+/* Shedding order (measured in TopBar's fitVitals): d1 the market readout
+   (one click away on City → Economy) goes first, d2 line and occupancy next
+   (both have a desk), d3 the street rank last. Date, cash, net worth and
+   cash flow never go. */
+.app .topbar .tstat-d1, .app .topbar .tstat-d2, .app .topbar .tstat-d3 { display: flex; }
+.app .topbar .tstat.tstat-shed { display: none !important; }
+
+/* The Back button names where it goes on wide screens; below that it is an
+   arrow with the name in its tooltip, so it never costs a readout. */
+@media (max-width: 1439px) {
+  .app .nav-back-label { display: none; }
+  .app .nav-back { padding: 0 10px; }
+}
+
+/* Each tile keeps the room its widest plausible value needs (`--tw`, set by
+   <Stat w>), so Advance does not walk under the cursor as digits change, and
+   never shrinks below it — a tile that shrinks lets its label run into the
+   next one. */
+.app .topbar .tstat {
+  flex: 0 0 auto;
+  min-width: var(--tw, 0px) !important;
+  max-width: none;
+}
+.app .topbar .tstat-label { white-space: nowrap; }
+
+/* ---------- cards: one at a time --------------------------------------
+   Every card the engine raises is a direct child of .app. Only the first is
+   drawn; the rest wait behind it (see RightPanel for the order, CardQueue
+   for the count). The moments — year, goal, exit, delivery — wait for any
+   engine card, because a decision outranks a celebration. */
+.app > .modal-backdrop ~ .modal-backdrop { display: none; }
+.app:has(> .modal-backdrop) > .delivery-ceremony { display: none; }
+
+/* The moments sat at z 35 — under an open desk page (z 50), so a year
+   review that landed while Portfolio was open was invisible, yet still
+   paused Play as "a card needs an answer". Above the pages, under the
+   engine's cards. */
+.app .delivery-ceremony { z-index: 79; }
+
+/* A card is a card: the same arrival for all of them, so a new one reads
+   as new rather than as the screen flickering. */
+.app .modal-backdrop > .modal,
+.app .delivery-ceremony > .delivery-stamp { animation: card-arrive 0.2s var(--ease, ease-out); }
+/* Motion only, never a fade from zero: under a slow compositor the animation
+   was measured sitting at t=0 for 300ms+, and a decision card must never be
+   invisible while it holds the screen. */
+@keyframes card-arrive {
+  from { opacity: 0.85; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.app .card-nudge { animation: card-nudge 0.32s ease-in-out; }
+@keyframes card-nudge {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-3px); }
+}
+
+.app .card-queue {
+  position: fixed; z-index: 95;
+  top: 14px; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  font: 600 var(--fs-xs)/1.2 var(--font-ui);
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+.app .card-queue-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-bright, #d19a32); }
+.app .card-queue-key { color: var(--text-3); font-weight: 500; }
+.app .card-queue-key kbd {
+  font: 600 10px/1 var(--font-mono);
+  padding: 2px 4px; margin-right: 3px;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app .modal-backdrop > .modal,
+  .app .delivery-ceremony > .delivery-stamp,
+  .app .card-nudge { animation: none; }
+}
+
+/* The action band is a footer — it pulls itself into the card's bottom
+   padding. When a note follows it (the LOI's "1 of 4 on the desk · you are
+   $267K short…"), that pull dragged the note half into the band. */
+.app .modal-actions:not(:last-child) {
+  margin-bottom: var(--sp-3);
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---------- the docket ----------------------------------------------------
+   The tag sits in a fixed column so every title starts on the same line
+   (an urgent "▲ CAP" used to push its title 6px right of the others); the
+   list fades at its foot so a cut-off row reads as "scroll", not as a bug. */
+.app .docket-row { grid-template-columns: 46px minmax(0, 1fr) auto auto; align-items: start; }
+/* Baseline alignment let the 24px Later button hang 20px below a two-line
+   title; every snoozable row was a line taller than its words. */
+.app .docket-row .docket-tag { margin-top: 2px; }
+.app .docket-row .docket-tag { justify-self: start; text-align: center; }
+.app .docket-list {
+  padding-bottom: 14px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
+/* Zero width: the invisible arrow used to wrap onto a line of its own. */
+.app .docket-go { display: inline-block; width: 0; white-space: nowrap; overflow: visible; color: var(--accent, #9a6a12); opacity: 0; transition: opacity 0.12s; }
+.app .docket-title-link:hover .docket-go,
+.app .docket-title-link:focus-visible .docket-go { opacity: 1; }
+.app .docket-title-link:hover { color: var(--accent, inherit); }
+
+/* ---------- the layer order, written down once -------------------------
+   map chrome 20-30 · desk pages 50 · status bar 60 · toasts & flashes 70 ·
+   moments 79 · engine cards 80-83 · card queue 95.
+   The toast lane sat at 40 — UNDER an open desk page — so the answer to
+   anything done on a desk ("Closed. The deed is yours.", a refusal, a
+   counter) landed behind the page blur. Measured: elementFromPoint at the
+   toast's centre returned the Debt desk's header. The milestone flash (34)
+   had the same fault. */
+.app .toast-stack { z-index: 70; }
+.app .milestone-flash { z-index: 70; }
+
+/* The primer offer sat on the map's lens bar, hiding Land through Sites on
+   a player's very first screen. It rides above the bar now. */
+.app .primer-offer { bottom: 72px; }
+
+/* ---------- the parcel card's action footer ------------------------------ */
+.app .panel-cta {
+  position: sticky; bottom: -16px; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 14px -18px -16px;
+  padding: 10px 18px 12px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 -6px 16px -10px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.app .panel-cta-hidden { opacity: 0; transform: translateY(8px); pointer-events: none; }
+.app .panel-cta-txt { display: flex; flex-direction: column; min-width: 0; }
+.app .panel-cta-price { font: 600 var(--fs-md)/1.2 var(--font-mono); color: var(--text); }
+.app .panel-cta-sub { font-size: var(--fs-xs); color: var(--text-3); }
+@media (max-width: 1100px) { .app .panel-cta { margin-inline: -18px; } }
+
+/* ---------- a map that could not draw ----------------------------------- */
+.app .map-fault {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-0, #e9eef1);
+}
+.app .map-fault-card {
+  max-width: 460px; padding: var(--sp-6, 24px) var(--sp-6, 24px) var(--sp-5, 20px);
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
+}
+
+/* A flat month says nothing; the label row stays quiet unless it moved. */
+.app .tstat-delta .delta-flat { display: none; }
+
+/* The toast lane is centred on the open map to the right of the docket,
+   not on the whole window — centred on the window, its left edge ran over
+   the docket's titles. The docket's column is 340px plus its 12px gutter. */
+.app .toast-stack {
+  left: calc(var(--rail-w, 0px) + 364px + (100vw - var(--rail-w, 0px) - 364px) / 2);
+  max-width: min(640px, calc(100vw - var(--rail-w, 0px) - 388px));
+}
+.app:has(.map-rail-shut) .toast-stack,
+.app:has(.page-backdrop) .toast-stack {
+  left: calc(50% + var(--rail-w, 0px) / 2);
+  max-width: min(720px, calc(100vw - var(--rail-w, 0px) - 32px));
+}
+@media (max-width: 1100px) {
+  .app .toast-stack {
+    left: calc(50% + var(--rail-w, 0px) / 2);
+    max-width: min(720px, calc(100vw - var(--rail-w, 0px) - 32px));
+  }
+}
+
+/* ---------- segmented control ------------------------------------------
+   One choice among a few, drawn as one object, so it reads as a single
+   setting rather than a row of unrelated buttons. */
+.app .seg {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 6px);
+  overflow: hidden; background: var(--surface-1);
+}
+.app .seg > .btn {
+  border: 0; border-radius: 0; margin: 0; box-shadow: none;
+  border-left: 1px solid var(--border);
+}
+.app .seg > .btn:first-child { border-left: 0; }
+.app .seg > .btn.btn-on { background: var(--accent-soft, #f3e3bd); color: var(--text); font-weight: 650; }
+
+.app .lease-ctl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-top: 5px;
+}
+.app .lease-ctl-label {
+  font: 600 10px/1 var(--font-ui); letter-spacing: var(--tracking-caps, 0.06em);
+  text-transform: uppercase; color: var(--text-3);
+}
+
+/* ---------- empty states: one card that says how the room fills -------- */
+.app .empty-desk {
+  grid-column: 1 / -1;
+  padding: var(--sp-5, 20px) var(--sp-6, 24px);
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.app .empty-desk-title { font: 600 var(--fs-lg, 18px)/1.3 var(--font-display); margin-bottom: 8px; }
+.app .empty-desk-lines { display: grid; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); max-width: 680px; }
+
+/* ---------- stepper: an order you can see -------------------------------- */
+.app .stepper {
+  display: flex; align-items: stretch; gap: 0;
+  margin: 10px 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-md, 8px);
+  overflow: hidden; background: var(--surface-1);
+}
+.app .stepper-step {
+  flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 10px; border: 0; border-left: 1px solid var(--border);
+  background: transparent; color: var(--text-2);
+  font: 600 var(--fs-sm)/1.2 var(--font-ui); cursor: pointer;
+}
+.app .stepper-step:first-child { border-left: 0; }
+.app .stepper-step:hover { background: var(--surface-2); color: var(--text); }
+.app .stepper-step.on { background: var(--accent-soft, #f3e3bd); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent-bright, #d19a32); }
+.app .stepper-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  font: 700 11px/1 var(--font-mono);
+  border: 1px solid var(--border-strong, var(--border)); color: var(--text-3); background: var(--surface-1);
+}
+.app .stepper-step.on .stepper-n { background: var(--accent-bright, #d19a32); border-color: transparent; color: #fff; }
+.app .stepper-step.done .stepper-n { background: var(--pos-soft, #e3f0e5); border-color: transparent; color: var(--pos, #2e7a3f); }
+
+/* ---------- switch ---------------------------------------------------- */
+.app .switch {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 76px;
+  padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  font: 600 var(--fs-xs)/1 var(--font-ui); color: var(--text-3);
+}
+.app .switch-track {
+  position: relative; width: 36px; height: 20px; flex: none;
+  border-radius: 999px; background: var(--surface-3, #d8d2c4);
+  border: 1px solid var(--border-strong, var(--border));
+  transition: background 0.15s;
+}
+.app .switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+.app .switch.on { color: var(--pos, #2e7a3f); }
+.app .switch.on .switch-track { background: var(--pos, #2e7a3f); border-color: transparent; }
+.app .switch.on .switch-knob { transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) { .app .switch-track, .app .switch-knob { transition: none; } }
+
+/* ---------- stat strips balance their rows ----------------------------
+   auto-fit put seven tiles on the first row and an orphan on the second
+   (Economy: LAND INDEX alone under seven). Strips past seven tiles split into
+   even rows instead. */
+.app .stat-strip:has(> :nth-child(8):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.app .stat-strip:has(> :nth-child(9):last-child),
+.app .stat-strip:has(> :nth-child(10):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.app .stat-strip:has(> :nth-child(11):last-child),
+.app .stat-strip:has(> :nth-child(12):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1000px) {
+  .app .stat-strip:has(> :nth-child(8)) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+/* With a parcel card open on the right (380px + its gutters), the lane takes
+   the open map between the docket and the card — it used to run over the
+   card's header, and the AT RISK banner that lives in this lane is there for
+   as long as the risk is. */
+@media (min-width: 1101px) {
+  .app:has(.panel) .toast-stack {
+    left: calc(var(--rail-w, 0px) + 364px + (100vw - var(--rail-w, 0px) - 364px - 404px) / 2);
+    max-width: calc(100vw - var(--rail-w, 0px) - 364px - 404px - 24px);
+  }
+  .app:has(.panel):has(.map-rail-shut) .toast-stack {
+    left: calc(var(--rail-w, 0px) + (100vw - var(--rail-w, 0px) - 404px) / 2);
+    max-width: calc(100vw - var(--rail-w, 0px) - 404px - 32px);
+  }
+}
+
+/* The AT RISK banner is a map-level alarm. Over an open desk it covered the
+   desk's own tables; the desks carry their own badges and red rows, and the
+   banner is back the moment the desk closes. Toasts still show over desks. */
+.app:has(.page-backdrop) .toast-stack .at-risk { display: none; }
+.app .modal:focus, .app .delivery-stamp:focus { outline: none; }
+
+/* The lobby's content hung in the middle of the window with a 260px hole
+   under the title; it reads as one page when it sits under its heading. */
+.app .start-inner { margin: 4vh 0 auto; }
+
+/* The month turning, shown where the month is. */
+.app .tstat-tick-turn { animation: tstat-turn 0.9s var(--ease, ease-out); border-radius: 4px; }
+@keyframes tstat-turn {
+  0% { background: color-mix(in srgb, var(--accent-bright, #d19a32) 35%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .app .tstat-tick-turn { animation: none; } }
+.app .docket-tag-next { color: #fff; background: var(--accent-bright, #d19a32); border-color: transparent; }
+.app .docket-nudge .docket-title { font-weight: 600; }
+/* Section heads are flex rows, so text-align alone never centred them. */
+.app .gameover-page .page-section { justify-content: center; text-align: center; }
+
+/* Same rule for the desk rooms: index.css faded them in from opacity 0, and a
+   stalled compositor showed a half-transparent desk over the map for most of
+   a second. Redefined here (the later @keyframes of a name wins). */
+@keyframes page-arrive {
+  from { opacity: 0.85; transform: translateY(7px) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- bad values are red, in every grid ---------------------------
+   `.app .grid .v` (0,3,0) outranked `.app .v-bad` (0,2,0), so every Row
+   flagged bad — a bid 29% under the whisper, a negative going-in yield, a
+   short cheque — printed in ordinary ink across every desk and card. */
+.app .grid .v.v-bad { color: var(--neg); font-weight: 650; }
+/* Stat tiles too: `.app .big-value` is declared after `.app .v-bad` at the
+   same specificity, so a tile flagged bad (occupancy 15.8%, a −49% mark)
+   printed in ordinary ink. */
+.app .big-value.v-bad { color: var(--neg); }
+
+/* Unread, not waiting: a dot. */
+.app .rail-dot {
+  flex: none; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;
+  background: var(--text-3);
+}
+.app .siderail-compact .rail-dot { position: absolute; top: 5px; right: 8px; margin: 0; }
+
+/* ---------- a fold that still says the gist ---------------------------- */
+.app .loi-terms-fold { grid-column: 1 / -1; margin: 6px 0 2px; }
+.app .loi-terms-fold > summary {
+  display: flex; align-items: baseline; gap: 10px; cursor: pointer;
+  padding: 6px 0; list-style: none;
+  font-size: var(--fs-xs); color: var(--text-2);
+  border-top: 1px dashed var(--border);
+}
+.app .loi-terms-fold > summary::-webkit-details-marker { display: none; }
+.app .loi-terms-fold > summary::before { content: "▸"; color: var(--text-3); }
+.app .loi-terms-fold[open] > summary::before { content: "▾"; }
+.app .loi-terms-label {
+  font: 600 10px/1 var(--font-ui); letter-spacing: var(--tracking-caps, 0.06em);
+  text-transform: uppercase; color: var(--text-3);
+}
+.app .loi-terms-fold > .grid { margin-top: 2px; }
+.app .docket-row .docket-dismiss { min-width: 24px; padding: 2px 6px; font-size: 14px; line-height: 1; justify-self: end; }
+
+/* ---------- why a desk's badge is lit --------------------------------- */
+.app .desk-alarm {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 14px; padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--neg) 35%, transparent);
+  background: var(--neg-soft); border-radius: var(--radius-md);
+  font-size: var(--fs-sm); color: var(--text);
+}
+.app .desk-alarm > span:nth-child(2) { flex: 1; }
+.app .desk-alarm-mark {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
+  border-radius: 50%; background: var(--neg); color: #fff; font: 700 11px/1 var(--font-mono);
+}
+
+/* A long card keeps its verbs on screen. */
+.app .modal .counter-actions {
+  position: sticky; bottom: calc(-1 * var(--sp-5, 20px)); z-index: 2;
+  margin: 12px calc(-1 * var(--sp-6, 24px)) 0; padding: 10px var(--sp-6, 24px);
+  background: var(--surface-2); border-top: 1px solid var(--border);
+}
+/* Tall cards start below the queue pill rather than under it. */
+.app:has(.card-queue) > .modal-backdrop { padding-top: 56px; }
+.app:has(.card-queue) > .modal-backdrop > .modal { max-height: calc(100vh - 84px); }
+.app .modal > .modal-actions { position: sticky; bottom: calc(-1 * var(--sp-5, 20px)); z-index: 2; }
+.app .modal > .modal-actions:not(:last-child) { bottom: 0; }
+.app .tstat-of.neg { color: var(--neg); font-weight: 600; }
+
+/* ---------- nothing arrives invisible -----------------------------------
+   Every entrance in the app faded in from opacity 0. When the compositor is
+   busy (the city renderer on a slower machine) an animation can sit at its
+   first frame for a beat, and the thing the player just opened — the ⌘K
+   palette, the parcel card, a toast, the AT RISK banner, a deal stage — is
+   not there. Redefined here (the last @keyframes of a name wins) to arrive
+   by motion from a visible state. */
+@keyframes panel-arrive { from { opacity: 0.85; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+@keyframes dock-arrive { from { opacity: 0.85; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes rail-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes stage-fade { from { opacity: 0.85; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes palette-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes at-risk-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes stamp {
+  0% { transform: translateX(-50%) scale(1.12) rotate(-1deg); opacity: 0.85; }
+  55% { transform: translateX(-50%) scale(0.99) rotate(0.3deg); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* A setting: its name, the choice, and what it reads as today. */
+.app .ops-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0; }
+.app .ops-choice-k {
+  min-width: 92px;
+  font: 600 10px/1.2 var(--font-ui); letter-spacing: var(--tracking-caps, 0.06em);
+  text-transform: uppercase; color: var(--text-3);
+}
+.app .ops-choice-read { font-size: var(--fs-xs); color: var(--text-3); }
+.app .news-repeat { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+.app .docket-more-btn { appearance: none; background: none; border: 0; text-align: left; cursor: pointer; padding: 2px 0 0; font: inherit; font-size: 11.5px; color: var(--accent, #9a6a12); }
+.app .docket-more-btn:hover { text-decoration: underline; }
+
+/* ---------- no half-empty pages -------------------------------------------
+   The property page is CSS columns with unbreakable sections, so one tall
+   section (the refinance desk was 1,400px) took a whole column and left the
+   other blank below a 270px cash statement. A wide section now spans both
+   columns and lays itself out across the room instead. */
+@media (min-width: 900px) {
+  .app .page-backdrop .refi-split {
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 0 32px; align-items: start; border-top: 0; margin-top: 0; padding-top: 0;
+  }
+  .app .page-backdrop .refi-split > .deal-head,
+  .app .page-backdrop .refi-split > .refi-intro { grid-column: 1 / -1; }
+  .app .page-backdrop .refi-split > .refi-terms { position: sticky; top: 8px; }
+}
+.app .refi-intro { display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline; margin-bottom: 6px; }
+.app .refi-intro > .hint { margin: 0 !important; }
+.app .refi-pick .tbl tbody tr[tabindex="0"]:focus-visible { outline: 2px solid var(--accent, #9a6a12); outline-offset: -2px; }
+/* A folded hint showed a sliver of its third line: the clamp hides overflow
+   below the box's content edge, and the 6px bottom padding sat under it. */
+.app .page .hint.hint-fold { padding-bottom: 0; margin-bottom: 6px; }
+@media (min-width: 900px) {
+  .app .page-backdrop .panel-embed {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: 4px; column-gap: 28px; row-gap: 0; align-items: start;
+  }
+  .app .page-backdrop .panel-embed > .deal-wide,
+  .app .page-backdrop .panel-embed > .chip-row,
+  .app .page-backdrop .panel-embed > .solo { grid-column: 1 / -1; }
+  /* the one section on a tab: across the room, its parts in two columns */
+  .app .page-backdrop .panel-embed > .solo { columns: 2; column-gap: 28px; }
+  .app .page-backdrop .panel-embed > .solo > * { break-inside: avoid; }
+  .app .page-backdrop .panel-embed > .solo > .deal-head { column-span: all; }
+}
+/* `.app .hint` (padding 4px 0) out-ranked `.alarm`'s padding, so every
+   "hint alarm" — the red why-not under a desk — sat flush on its rule. */
+.app .hint.alarm, .app .alarm { padding: 8px 12px; }
+
+/* A key/value block alone across a 1,100px page put each label a thousand
+   pixels from its number. On the property page such a block takes the left
+   half; its button and note sit beside it on the right. */
+@media (min-width: 900px) {
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 28px; align-items: start;
+  }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > * { grid-column: 2; justify-self: start; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .hint { justify-self: stretch; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .page-section-head { grid-column: 1 / -1; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .grid { grid-column: 1; grid-row: span 6; justify-self: stretch; }
+}
+
+/* A label/value list across a full page put each label 1,000px from its
+   number ("Mortgages ............ $680K"). A pure list — nothing in it but
+   label and value cells — takes as many label/value pairs per row as fit:
+   two across a page, one in a half-width card or a dock. A list with a
+   sentence or a chart cell in it keeps its single column. */
+@media (min-width: 900px) {
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) {
+    grid-template-columns: repeat(auto-fill, minmax(140px, max-content) minmax(220px, 1fr));
+    column-gap: 24px;
+  }
+}
+/* "· Open →" on every row of a clickable table is nineteen copies of the same
+   word. It shows on the row under the pointer or the keyboard. */
+.app tr .row-open { opacity: 0; transition: opacity 120ms; }
+.app tr:hover .row-open, .app tr:focus-visible .row-open, .app tr:focus-within .row-open { opacity: 1; }
+/* A heading inside a card is a step of that card, not a page title: "The
+   market for this building" printed larger than "Refinance", the card it
+   belongs to. Inside a .deal it ranks below the card's own head. */
+.app .deal .page-section-head,
+.app .deal .page-section:not(:has(*)) {
+  font-size: var(--fs-base); margin-bottom: 6px;
+}
+.app .deal .page-section { margin-top: 14px; }
+.app .topbar-vital.tstat-tight .tstat-delta,
+.app .topbar-vital.tstat-tight .tstat-of { display: none; }
+.app .hint.short-by { color: var(--text-2); align-self: center; }
+/* Four answers on a letter card wrapped "Pass" onto a line of its own at
+   1440px ("Counter to my terms" is now "My terms", its tooltip says the rest). */
+.app .loi-grid .btn-row { gap: 6px; }
+.app :not(.btn-row) > .hint.short-by { display: block; margin-top: 4px; }

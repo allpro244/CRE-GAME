@@ -28,7 +28,7 @@ export function PlayersPage() {
   const game = useStore((s) => s.game)!;
   const setLens = useStore((s) => s.setLens);
   const setPage = useStore((s) => s.setPage);
-  const [view, setView] = useDeskView<PlayersView>("players", "street", VIEWS);
+  const [view, setView, linked] = useDeskView<PlayersView>("players", "street", VIEWS);
   const [q, setQ] = useState("");
   const live = (game.rivals ?? []).filter((r) => r.failedM === undefined).length;
   return (
@@ -55,7 +55,7 @@ export function PlayersPage() {
           Show on map
         </button>
       </div>
-      {view === "street" && <TheStreet q={q} />}
+      {view === "street" && <TheStreet q={q} scrollToYou={linked} />}
       {view === "private" && <Owners only="private" q={q} />}
       {view === "owners" && <Owners only="all" q={q} />}
     </div>

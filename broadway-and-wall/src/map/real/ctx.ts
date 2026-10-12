@@ -13,6 +13,8 @@ export interface CityCtx {
   sidewalks?: { ring: [number, number][]; holes: [number, number][][] }[];
   kerbs?: [number, number][][];
   zebras?: [number, number][][];
+  /** Street centre lines, node to node, with the carriageway width citygen measured (m). */
+  centerlines?: { pts: [number, number][]; w: number }[];
   /** The harbour's working edge, where the piers go out. */
   quays?: [number, number][][];
   /** Open ground — boulevard malls and the esplanade — where a tree or a bench may stand but no car parks. */
@@ -23,6 +25,8 @@ export interface CityCtx {
   rails?: Oriented[];
   parks?: { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }[] | [number, number][][];
   ponds?: [number, number][][];
+  /** The shore bands (beach, rock, marsh, seawall) and the flat piers and breakwaters: where the sea stops. */
+  shore?: { ring: [number, number][]; kind: string }[];
   /** Creeks, canals and mill ponds — sunk into a channel with banks. */
   streams?: { ring: [number, number][]; water: string }[];
   /** The generator's crossings: footprint, flow bearing, and the widths spanned. */

@@ -1029,10 +1029,7 @@ body {
 .panel-embed .deal { border-top: 1px solid rgba(146,110,40,0.22); }
 /* Two columns only inside a real room — not a 560px dock pretending to be wide
    because the viewport was ≥900px. */
-@media (min-width: 900px) {
-  .page-backdrop .panel-embed { columns: 2; column-gap: 28px; }
-  .page-backdrop .panel-embed > * { break-inside: avoid; }
-}
+/* Masonry, not CSS columns — see ui/useMasonry.ts and the rules in hud.css. */
 
 /* a selected toggle is a state, not the primary action — only btn-buy spends money */
 .btn.btn-on {
@@ -1108,7 +1105,11 @@ html, body, #root { overflow-x: hidden; }
 /* numeric columns were set edge to edge ("DEBT CF / MO"); the row's action
    buttons stay on one line rather than stacking Pay off under Delist */
 .tbl-book th + th, .tbl-book td + td { padding-left: 12px; }
-.tbl-book td:last-child .btn-row { flex-wrap: nowrap; }
+/* Row actions wrap into a tidy block rather than pushing the table past the
+   page: at 1280px the fourth button (Refi / Pay off) used to sit off-screen,
+   and the owner's rule is no horizontal scroll anywhere. */
+.tbl-book td:last-child { width: 1%; }
+.tbl-book td:last-child .btn-row { display: grid; grid-template-columns: repeat(2, max-content); justify-content: end; margin-left: auto; }
 /* The address column was the narrowest in the table ("75 South / Ingram St")
    while "fully let · 1,221 sf unlettable" ran one line across two columns. */
 .tbl-book td.book-prop { min-width: 150px; }

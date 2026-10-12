@@ -77,6 +77,7 @@ export const DESKS: readonly Desk[] = [
       { page: "economy", label: "Markets", note: "Each space market, land, banks, employers and districts in depth" },
       { page: "players", label: "Players", note: "Competing firms and every owner in town" },
       { page: "news", label: "Tape", note: "Headlines and closed sales" },
+      { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
     ],
   },
   {

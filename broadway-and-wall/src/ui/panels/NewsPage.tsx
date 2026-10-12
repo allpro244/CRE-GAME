@@ -50,7 +50,22 @@ function Headlines({ switcher }: { switcher: ReactNode }) {
   // A deed you hold now, or sold — the story of your book includes its exits.
   const mine = new Set([...Object.keys(game.holdings), ...(game.exits ?? []).map((e) => e.bbl), ...(game.watch ?? [])]);
   const isMine = (n: { bbl?: string }) => !!n.bbl && mine.has(n.bbl);
-  const items = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
+  // THE SAME LINE, ONCE. Standing conditions write themselves into the tape
+  // every month they hold — "2 parties are chasing the same 1.8k sf at …",
+  // "You have 11k sf waiting on leases and only $266K …" — so one fact filled
+  // a dozen months of the feed. The newest copy stays, with how many earlier
+  // months said the same thing (numbers aside); the older copies fold into it.
+  const shape = (t: string) => t.replace(/[−-]?\$?[\d.,]+[kKmM%]?/g, "#").replace(/\s+/g, " ").trim();
+  const keeperOf = new Map<string, object>();
+  const repeats = new Map<object, number>();
+  const filtered = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
+  const items = filtered.filter((n) => {
+    const k = `${n.kind}|${shape(n.text)}`;
+    const keeper = keeperOf.get(k);
+    if (!keeper) { keeperOf.set(k, n); return true; }
+    repeats.set(keeper, (repeats.get(keeper) ?? 0) + 1);
+    return false;
+  });
   const byMonth: { q: number; rows: typeof items }[] = [];
   for (const n of items) {
     const last = byMonth[byMonth.length - 1];
@@ -100,6 +115,11 @@ function Headlines({ switcher }: { switcher: ReactNode }) {
                 onClick={n.bbl ? () => { useStore.getState().focus(n.bbl!, true); } : undefined}
               >
                 <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+                {(repeats.get(n) ?? 0) > 0 && (
+                  <span className="news-repeat" title="The same line ran in earlier months too; only the newest is shown.">
+                    {" "}· also {repeats.get(n)} earlier {repeats.get(n) === 1 ? "time" : "times"}
+                  </span>
+                )}
               </div>
             ))}
           </div>

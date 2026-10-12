@@ -91,6 +91,8 @@ interface Family {
   mat: THREE.MeshStandardMaterial;
   masonry: boolean;  // gets a cornice and a string course
   glass: boolean;    // gets a dark lobby base and a parapet cap
+  /** the painted window within one bay and storey, and how it is dressed (real sills and lintels, round 21) */
+  win: FamilySpec["win"]; lintel?: FamilySpec["lintel"]; winStyle?: FamilySpec["winStyle"]; punched: boolean;
 }
 
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
@@ -115,7 +117,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -699,7 +701,10 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
   mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
-  return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
+  return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass,
+    win: spec.win, lintel: spec.lintel, winStyle: spec.winStyle,
+    // a window in a wall, not a wall of glass: what can carry a sill
+    punched: !spec.glass && !spec.noWin && !spec.winJitter && spec.win.y1 - spec.win.y0 < 0.8 && spec.win.x1 - spec.win.x0 < 0.86 };
 }
 
 
@@ -2760,6 +2765,12 @@ export class RealCityLayer {
     const uptown = famKey === "stone" || famKey === "modern" || famKey === "deco" || famKey === "castiron" || famKey === "terracotta" || famKey === "newstone" || GLASSY.has(famKey);
     const trades = uptown ? SHOP_TRADES_UPTOWN : SHOP_TRADES_STREET;
     const sz = shopH / 4.4;
+    // THE SHOPFRONT'S OWN FRAME (SKYLINE_LOOK_PLAN round 21): a pier between
+    // every bay and a fascia under a projecting cornice the length of the
+    // frontage, painted as one; the brick streets in a shopkeeper's dark
+    // green, black, oxblood or cream, uptown in bronze or dark aluminium
+    const FRAME = uptown ? [[0.16, 0.13, 0.1], [0.19, 0.2, 0.21], [0.12, 0.12, 0.13]] : [[0.1, 0.2, 0.14], [0.08, 0.08, 0.09], [0.32, 0.1, 0.09], [0.7, 0.64, 0.52], [0.14, 0.17, 0.26]];
+    const frame = FRAME[Math.floor(hash01(seedK ^ 0x5f3a, 11) * FRAME.length)];
     let bayN = 0;
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
@@ -2771,6 +2782,14 @@ export class RealCityLayer {
       const mx = (a[0] + b[0]) / 2 + nx * 6, my = (a[1] + b[1]) / 2 + ny * 6;
       if (this.lotAt2D(mx, my)) continue;
       const n = Math.floor(L / BAY), r = Math.atan2(uy, ux);
+      for (let k = 0; k <= n; k++) {
+        const t = Math.min(L - 0.3, Math.max(0.3, k * (L / n)));
+        this.putInst("shoppier", a[0] + ux * t, a[1] + uy * t, 0, 1, r, bbl, frame, sz);
+      }
+      for (let t = 1.4; t < L - 0.2; t += 2.7) {
+        const tt = Math.min(t, L - 1.4);
+        this.putInst("shopcorn", a[0] + ux * tt, a[1] + uy * tt, 0, 1, r, bbl, frame, sz);
+      }
       for (let k = 0; k < n; k++) {
         const t = (k + 0.5) * (L / n);
         const x = a[0] + ux * t, y = a[1] + uy * t;
@@ -3436,7 +3455,13 @@ export class RealCityLayer {
     // design the player chose from a swatch
     const livery = ov ? null : liveryFor(famKey, seedK);
     if (bbl && z0 < 0.5 && !this.sandbox) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
-    const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
+    // THE WINDOWS' OWN STONE (SKYLINE_LOOK_PLAN round 21): every punched
+    // window gets a real sill under it, and on a masonry front a lintel or a
+    // hood over it, standing proud of the wall where the texture paints the
+    // opening, so each storey throws a row of little shadows. Collected while
+    // the walls are laid and drawn with the trim once its paint is chosen.
+    const relief: { a: P2; u: P2; n: P2; t0: number; t1: number; z: number; h: number; out: number }[] = [];
+        const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
       const fk = fk0.includes("#") || fk0.includes("@") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
@@ -3484,6 +3509,25 @@ export class RealCityLayer {
         const v0 = (za - vOff) / f.floorH, v1 = (zb - vOff) / f.floorH;
         W.quad([a[0], a[1], za], [b[0], b[1], za], [b[0], b[1], zb], [a[0], a[1], zb], n,
           [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tE);
+        // the sills and lintels of this run, a storey at a time, only for
+        // whole windows inside it; up to 60 m, past which they are too small
+        // to see from any camera the game uses
+        if (f.punched && zw <= 60 && L >= 1.5) {
+          const bw = L / bays, ww = (f.win.x1 - f.win.x0) * bw;
+          const u: P2 = [dx / L, dy / L];
+          const arch = f.winStyle === "arch" || f.winStyle === "segment" || f.winStyle === "pointed";
+          const lin = f.masonry && !arch && f.lintel !== "none" && f.lintel !== undefined;
+          const hood = f.lintel === "hood" || f.lintel === "pediment";
+          for (let m = Math.floor(v0); m < v1; m++) {
+            const zs = vOff + (m + 1 - f.win.y1) * f.floorH, zt = vOff + (m + 1 - f.win.y0) * f.floorH;
+            if (zs < za + 0.2 || zt > zb - 0.1) continue;
+            for (let k = 0; k < bays; k++) {
+              const tc = (k + (f.win.x0 + f.win.x1) / 2) * bw;
+              relief.push({ a, u, n: [n[0], n[1]], t0: tc - ww / 2 - 0.12, t1: tc + ww / 2 + 0.12, z: zs - 0.09, h: 0.09, out: f.masonry ? 0.11 : 0.07 });
+              if (lin) relief.push({ a, u, n: [n[0], n[1]], t0: tc - ww / 2 - (hood ? 0.2 : 0.1), t1: tc + ww / 2 + (hood ? 0.2 : 0.1), z: zt, h: hood ? 0.24 : 0.18, out: hood ? 0.15 : 0.07 });
+            }
+          }
+        }
       }
       W.aoH = 3.5;
       this.note(bbl, wallName, w0);
@@ -3708,6 +3752,23 @@ export class RealCityLayer {
     // the Chicago school always crowns its block with a deep projecting
     // cornice; the rest draw one of four
     const corn = style === "chicago" ? 1 : Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
+    // the sills and lintels gathered from the walls (round 21): a front and
+    // a top each. The camera always looks down on the city, so an underside
+    // is never seen, and an end is ten centimetres square; the back sits on
+    // the wall. Two quads a window keeps a city of them affordable.
+    {
+      const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      // their own mesh, so Low can leave them out (setQuality)
+      const RB = this.buf("relief"), r0 = RB.count;
+      const col = fam.masonry || famKey === "clapboard" ? white : [0.92, 0.92, 0.92];
+      for (const r of relief) {
+        const P = (t: number, o: number, z: number) => [r.a[0] + r.u[0] * t + r.n[0] * o, r.a[1] + r.u[1] * t + r.n[1] * o, z];
+        const z0r = r.z, z1r = r.z + r.h, o = r.out;
+        RB.quad(P(r.t0, o, z0r), P(r.t1, o, z0r), P(r.t1, o, z1r), P(r.t0, o, z1r), [r.n[0], r.n[1], 0], q, col);
+        RB.quad(P(r.t0, o, z1r), P(r.t1, o, z1r), P(r.t1, 0, z1r), P(r.t0, 0, z1r), [0, 0, 1], q, col);
+      }
+      this.note(bbl, "relief", r0);
+    }
     if (fam.masonry) {
       if (crown && zw - z0 > 4 && !pitched) {
         if (corn === 1 || mans) {
@@ -4305,6 +4366,7 @@ export class RealCityLayer {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
       if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
+      if (name === "relief") mesh.visible = this.quality !== "low";
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     // the buffers are spent (Buf.geometry); a later build starts on fresh ones
@@ -4347,6 +4409,9 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // a shopfront pier, and a length of its fascia and cornice (round 21)
+      case "shoppier": return { g: merge([box(0.5, 0.22, 4.1, 0, -0.11, 0), box(0.62, 0.3, 0.2, 0, -0.15, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }), colored: true };
+      case "shopcorn": return { g: merge([box(2.8, 0.1, 0.8, 0, -0.05, 3.35), box(2.8, 0.36, 0.22, 0, -0.18, 4.15)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }), colored: true };
       // the shop bay, facing local -y (out of a counter-clockwise wall)
       case "awning": {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
@@ -6527,6 +6592,8 @@ export class RealCityLayer {
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
+    // the window sills and lintels (round 21): High and Medium
+    const rm = this.meshes.get("relief"); if (rm) rm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
     this.map?.triggerRepaint();

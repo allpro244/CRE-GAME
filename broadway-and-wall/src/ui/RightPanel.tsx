@@ -10,8 +10,9 @@ import FirmTimeline from "@/ui/FirmTimeline";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
-import { MarketPage } from "@/ui/panels/MarketPage";
-import { ResearchPage } from "@/ui/panels/ResearchPage";
+import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
+import { PulsePage } from "@/ui/panels/PulsePage";
+import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
@@ -130,8 +131,10 @@ export default function GamePanels() {
     : page === "debt" ? "Debt"
     : page === "property" ? "Property"
     : page === "saves" ? "Saved Games"
-    : page === "economy" ? "Economy"
-    : page === "research" ? "Research"
+    : page === "economy" ? "Markets"
+    : page === "pulse" ? "The City"
+    : page === "players" ? "Players"
+    : page === "buildings" ? "Every Building"
     : page === "notes" ? "The Note Desk"
     : page === "staff" ? "The Desk"
     : page === "firm" ? "The Record"
@@ -149,13 +152,15 @@ export default function GamePanels() {
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
     : page === "books" ? "Cash movement, operating results and the record of the firm."
-    : page === "news" ? "What changed in the city, and what may change next."
+    : page === "news" ? "What happened — the wire's headlines and the closed sales."
     : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
     : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
     : page === "property" ? "The complete operating, financing and development record."
     : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
-    : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
-    : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
+    : page === "economy" ? "Each market in depth — space, land, credit, employers and the zoning board."
+    : page === "pulse" ? "How the city is doing and what changed, on one screen."
+    : page === "players" ? "Who else owns this town, how big they are, and how much rope they have left."
+    : page === "buildings" ? "Every standing building in town — size, income, value and owner."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
     : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
     : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
@@ -196,11 +201,16 @@ export default function GamePanels() {
             {/* The property file has its own tabs; the desk's would be a
                 second row above them with neither lit. */}
             {desk && desk.tabs.length > 1 && page !== "property" && <DeskTabs desk={desk} page={page} />}
-            <SectionNav page={page} pageRef={pageRef} />
+            {/* Pages that carry their own view switch get no section rail —
+                two strips of chips stacked under the desk tabs read as one
+                cluttered control, and these pages are short enough per view. */}
+            {!OWN_VIEWS.has(page) && <SectionNav page={page} pageRef={pageRef} />}
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
-            {page === "research" && <ResearchPage />}
+            {page === "pulse" && <PulsePage />}
+            {page === "players" && <PlayersPage />}
+            {page === "buildings" && <BuildingDatabase />}
             {page === "notes" && <NotesPage />}
             {page === "economy" && <EconomyPage />}
             {page === "books" && <BooksPage />}
@@ -286,6 +296,7 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
  * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
  * here, once, after the first scan finds it.
  */
+const OWN_VIEWS = new Set<Page>(["pulse", "players", "news", "buildings"]);
 const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
 type Sec = { el: HTMLElement; label: string };
 

@@ -1,17 +1,40 @@
 import { useState } from "react";
+import type { Econ } from "@/engine/types";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { standardsWord, underwritingStandards } from "@/engine/debt";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
-import { pct, pctSigned } from "@/ui/format";
+import { pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
-import { creditWord, real, workStage, Big, Row } from "@/ui/panels/shared";
+import { creditWord, real, workStage, Row, useDeskView } from "@/ui/panels/shared";
+import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
+
+/** The cycle in a sentence. Read by City → Pulse, which leads with it. */
+export const PHASE_BLURB: Record<string, string> = {
+  expansion: "Tenants expand, capital chases, rents push. Enjoy it — peaks are born here.",
+  peak: "Priced to perfection. Every deal works on paper and none has margin for the turn.",
+  recession: "Tenants retrench and lenders retreat. Cheap buildings and expensive money.",
+  recovery: "The bleeding has stopped. Concessions burn off before face rents move.",
+  depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
+};
+
+/** REAL EFFECTIVE RENT, TWELVE MONTHS ON — what a tenant actually pays after
+ *  concessions, deflated, against the same a year ago. One function so the
+ *  Markets card and the Pulse table cannot disagree about it. */
+export function realRentYoy(e: Econ, k: BuiltClass): number {
+  const history = e.history ?? [];
+  const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;
+  const realEffNow = (e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(0.01, e.cpi ?? 1);
+  const realEffThen = yearAgo
+    ? (yearAgo.effRent?.[k] ?? yearAgo.rent?.[k] ?? e.rentIdx[k]) / Math.max(0.01, yearAgo.cpi ?? 1)
+    : realEffNow;
+  return realEffNow / Math.max(0.01, realEffThen) - 1;
+}
 
 /**
  * THE CITY, SIX CHARTS WIDE — the "general" card's detail view.
@@ -290,6 +313,10 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
   );
 }
 
+const CLASSES_ALL = ["office", "retail", "multifamily", "industrial"] as const;
+type Stance = BuiltClass | "general" | "land" | "banks" | "employers" | "districts";
+const STANCES: readonly Stance[] = ["general", ...CLASSES_ALL, "land", "banks", "employers", "districts"];
+
 export function EconomyPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -310,8 +337,14 @@ export function EconomyPage() {
   // the credit-window stat at the top of this page is a single number derived
   // from those five balance sheets. Both are stances of the same page now, one
   // on screen at a time, exactly like the four classes.
-  const [sel, setSel] = useState<BuiltClass | "general" | "land" | "banks">("general");
-  const isClass = sel !== "general" && sel !== "land" && sel !== "banks";
+  //
+  // EMPLOYERS AND DISTRICTS ARE THE EIGHTH AND NINTH, from the old Research
+  // page's Trades and Districts tabs: the industries that fill the space and
+  // the envelope the board lets out or pulls in. Same reasoning — read beside
+  // the rent and vacancy they move, not a desk away. The stance can be asked
+  // for from outside (Pulse's rows, its Employers and Board cards).
+  const [sel, setSel] = useDeskView<Stance>("economy", "general", STANCES);
+  const isClass = (CLASSES_ALL as readonly string[]).includes(sel);
   // Every per-class computation below still wants a concrete class, and the
   // cheapest way to keep the non-class stances from breaking marketBalance(e,
   // focus) and its neighbours is to let them run against office while another
@@ -430,14 +463,6 @@ export function EconomyPage() {
     bars: [{ v: sf, color: COLOR[focus] }],
   }));
 
-  const phaseBlurb = {
-    expansion: "Tenants expand, capital chases, rents push. Enjoy it — peaks are born here.",
-    peak: "Priced to perfection. Every deal works on paper and none has margin for the turn.",
-    recession: "Tenants retrench and lenders retreat. Cheap buildings and expensive money.",
-    recovery: "The bleeding has stopped. Concessions burn off before face rents move.",
-    depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
-  }[e.phase];
-
   const pctFmt = (v: number) => `${v.toFixed(1)}%`;
   // square feet at whatever magnitude the data actually is — a 40,000 sf
   // pipeline printed as "0.0M" four times is not a chart, it is a blank
@@ -446,33 +471,8 @@ export function EconomyPage() {
     return a >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : a >= 1e4 ? `${Math.round(v / 1e3)}k` : a >= 1 ? `${Math.round(v / 100) / 10}k` : "0";
   };
 
-  return (
-    <div>
-      <div className="stat-strip">
-        <Big label="Cycle" value={e.phase} />
-        <Big label="Base rate" value={pct(e.indexRate)}
-          title="Every loan in town prices off this benchmark: your floating coupons reprice to it monthly, a new quote is this rate plus the lender's spread, and cap rates lean on it — so it moves building values too." />
-        {/* The era the index is moving inside. A cycle takes rates a point or
-            two either way; the era decides whether that is 3% or 13%, and it
-            changes on a scale of decades — which is what makes a loan you
-            struck twenty years ago a different animal at maturity. */}
-
-        {e.rateRegime !== undefined && (
-          <Big label="Long-run rate" value={pct(e.rateRegime)}
-            title="The level the base rate is being pulled toward — the cheap-money or dear-money era the cycle rides on top of. It re-aims every 12–25 years, which is why a loan struck today can mature in a very different rate world."
-            bad={e.rateRegime > 9} />
-        )}
-        <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
-        {/* THE SHEET MOVES. The window and the desks' own appetite set the
-            standards every lender in town writes to — see The Banks for the
-            sheet desk by desk. */}
-        <Big label="Underwriting standards" value={standardsWord(underwritingStandards(game))} bad={underwritingStandards(game) < -0.5} />
-        <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
-        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index. Salaries and budgets are billed at it." />
-        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index. Its level is the town's own; the moves are what matter." />
-      </div>
-      <div className="hint">{phaseBlurb}{e.rumoredPhase ? ` Word on the street: ${e.rumoredPhase} is coming.` : ""}</div>
-
+  const rateChart = (
+    <>
       {/* THE RATE, WITH ITS HISTORY. Asked for twice. The series was already
           being written — every EconHistoryPoint carries indexRate, and
           recordHistory has been stamping one a month since month zero — and
@@ -506,6 +506,14 @@ export function EconomyPage() {
         </div>
       )}
 
+    </>
+  );
+
+  return (
+    <div>
+      {/* The headline strip — cycle, base rate, credit, costs, land — moved to
+          City → Pulse, which is the one-screen read. This page is the depth
+          behind it: pick a market, read it. */}
       {/* ---- the four markets, at a glance ---- */}
       <div className="page-section">The space market</div>
       <div className="mkt-cards">
@@ -528,13 +536,7 @@ export function EconomyPage() {
         {CLASSES.map((k) => {
           const b = marketBalance(e, k);
           const v = availability(e, k);
-          const history = e.history ?? [];
-          const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;
-          const realEffNow = (e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(0.01, e.cpi ?? 1);
-          const realEffThen = yearAgo
-            ? (yearAgo.effRent?.[k] ?? yearAgo.rent?.[k] ?? e.rentIdx[k]) / Math.max(0.01, yearAgo.cpi ?? 1)
-            : realEffNow;
-          const rentYoy = realEffNow / Math.max(0.01, realEffThen) - 1;
+          const rentYoy = realRentYoy(e, k);
           const rentWord = rentYoy > 0.025 ? "rising"
             : rentYoy < -0.025 ? "falling"
               : "flat";
@@ -580,6 +582,8 @@ export function EconomyPage() {
             </button>
           );
         })}
+      </div>
+      <div className="mkt-cards mkt-cards-aux">
         {/* THE TWO MARKETS THAT ARE NOT SPACE MARKETS, on the same rail as the
             four that are — because they are read the same way and at the same
             moment. Land has no vacancy and no natural rate to gauge against;
@@ -633,6 +637,41 @@ export function EconomyPage() {
                   </div>
                 </button>
               )}
+              {/* THE TRADES and THE BOARD — what fills the space, and how much
+                  of it the city will let anyone build. */}
+              {(() => {
+                const ph = game.econ.industryPhase ?? {};
+                const booms = Object.values(ph).filter((p) => p === "boom").length;
+                const busts = Object.values(ph).filter((p) => p === "bust").length;
+                return (
+                  <button className={"mkt-card" + (sel === "employers" ? " mkt-card-on" : "")} onClick={() => setSel("employers")}>
+                    <div className="mkt-card-head">
+                      <span className="mkt-card-name">Employers</span>
+                      <span className="mono">{booms}↑ {busts}↓</span>
+                    </div>
+                    <div className={"mkt-card-state" + (busts > booms ? " neg" : "")}>
+                      {busts > booms ? "trades contracting" : booms > busts ? "trades hiring" : "trades steady"}
+                    </div>
+                    <div className="mkt-card-sub mono">{booms} hiring hard · {busts} contracting</div>
+                  </button>
+                );
+              })()}
+              {(() => {
+                const { up, down } = boardClimate(game);
+                const filed = pendingHearings(game).length;
+                return (
+                  <button className={"mkt-card" + (sel === "districts" ? " mkt-card-on" : "")} onClick={() => setSel("districts")}>
+                    <div className="mkt-card-head">
+                      <span className="mkt-card-name">Districts</span>
+                      <span className="mono">{up}↑ {down}↓</span>
+                    </div>
+                    <div className={"mkt-card-state" + (down > up ? " neg" : "")}>
+                      {up + down === 0 ? "the board is quiet" : up > down ? "envelopes letting out" : up < down ? "envelopes pulling in" : "no direction"}
+                    </div>
+                    <div className="mkt-card-sub mono">rezonings · 5 yrs{filed ? ` · ${filed} of yours pending` : ""}</div>
+                  </button>
+                );
+              })()}
             </>
           );
         })()}
@@ -642,7 +681,7 @@ export function EconomyPage() {
           Below month 240 the whole record IS the last twenty years, and a
           control that redraws the identical chart is worse than no control —
           it teaches the player that the button does nothing. */}
-      {hist.length > SPAN_M && (
+      {hist.length > SPAN_M && (sel === "general" || isClass) && (
         <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
           <span className="hint" style={{ marginRight: 4 }}>Every chart below shows</span>
           <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
@@ -660,9 +699,11 @@ export function EconomyPage() {
       {(sel === "general" || isClass) && (
         <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
       )}
-      {sel === "general" && <CityEconCharts tail={tail} spanYrs={spanYrs} />}
+      {sel === "general" && <>{rateChart}<CityEconCharts tail={tail} spanYrs={spanYrs} /></>}
       {sel === "land" && <LandValueChart />}
-      {sel === "banks" && <TheBanks />}
+      {sel === "banks" && <>{rateChart}<TheBanks /></>}
+      {sel === "employers" && <Employers />}
+      {sel === "districts" && <Districts />}
       {isClass && <>
       <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
       <div className="hint">{bal.note}</div>
@@ -991,7 +1032,9 @@ export function EconomyPage() {
       </table>
       </>}
 
-      {(() => {
+      {/* Block-level drift and the civic works are geography, so they ride
+          with the Districts stance rather than under every market. */}
+      {sel === "districts" && (() => {
         const emergent = Object.values(game.blockE ?? {});
         if (!emergent.length) return null;
         const abs = emergent.map((d) => Math.abs(d));
@@ -1061,6 +1104,7 @@ export function EconomyPage() {
         );
       })()}
 
+      {(sel === "general" || isClass) && <>
       <div className="page-section">How this works</div>
       <div className="hint">
         Employment decides how much space the city's tenants want; occupancy chases that target slowly, because
@@ -1070,6 +1114,7 @@ export function EconomyPage() {
         cost, and to vacancy, because nobody breaks ground into a glut. Your own deliveries count as supply: build
         enough of one class and you will move its vacancy against yourself.
       </div>
+      </>}
     </div>
   );
 }

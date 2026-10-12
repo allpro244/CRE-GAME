@@ -7,7 +7,7 @@ import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDige
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { routeAttention } from "@/ui/attentionRoute";
-import { openResearchOn } from "@/ui/researchTab";
+import { openViewOn } from "@/ui/deskView";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -66,7 +66,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "match";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "match";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -909,7 +909,7 @@ export const useStore = create<AppState>((set, get) => ({
   openAttention: (key) => {
     const st0 = get();
     const route = routeAttention(key, st0.game);
-    if (route.rtab) openResearchOn(route.rtab);
+    if (route.view && route.page) openViewOn(route.page, route.view);
     // One entry for the whole jump, recorded before anything moves: a notice
     // that changes both the deed and the room is still one move away from where
     // the player was standing.

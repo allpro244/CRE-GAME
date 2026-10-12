@@ -31,7 +31,7 @@ import { LettingOdds, MinDealSize, LeasingDesk, ResidualRead, LandDesk, Assemble
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
-import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -297,7 +297,7 @@ function ParcelPanelInner({
           <div className="hint">
             <div style={{ cursor: "pointer" }}
               title="Open this owner's balance sheet and income statement on the register."
-              onClick={() => { openResearchOn("owners"); useStore.getState().setPage("research"); }}>
+              onClick={() => { openViewOn("players", o.operator ? "street" : "owners"); useStore.getState().setPage("players"); }}>
               Owned by <strong>{o.name}</strong>
               <span className="dim"> · {o.operator && o.style ? STYLE_WORD[o.style] ?? o.style : o.kind}</span>
               {o.book.length > 1 && <span> — {o.book.length} deeds in town</span>}.

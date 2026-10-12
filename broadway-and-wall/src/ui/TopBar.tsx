@@ -7,7 +7,7 @@ import { locLimit } from "@/engine/credit";
 import { availability } from "@/engine/space";
 import { netWorth } from "@/engine/value";
 import { streetStanding, ordinal } from "@/engine/standing";
-import { openResearchOn } from "@/ui/panels/shared";
+import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
@@ -423,7 +423,7 @@ export default function TopBar() {
                 title={standing.above
                   ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
                   : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
-                onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}
+                onClick={() => { openViewOn("players", "street"); useStore.getState().setPage("players"); }}
               />
             )}
             <span className="vital-pair">
@@ -461,7 +461,7 @@ export default function TopBar() {
                 the rail. They are one question — what is money and space doing
                 — so they are one readout: the phase and the rate, with the
                 vacancy tell turning it red when the market is softening. The
-                full picture is a click away on City → Economy. */}
+                full picture is a click away on City → Pulse. */}
             <span className="vital-pair">
               <Stat
                 label="Market"
@@ -470,7 +470,7 @@ export default function TopBar() {
                 drop={2}
                 keep
                 w={150}
-                onClick={() => setPage("economy")}
+                onClick={() => setPage("pulse")}
                 title={[
                   `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is the term premium: what certainty costs.`,
                   vacDpp === null

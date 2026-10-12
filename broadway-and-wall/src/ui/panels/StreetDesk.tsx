@@ -30,7 +30,9 @@ import { CHARTERS } from "@/ai/jevQuestions";
 export { rivalEquity } from "@/engine/standing";
 import { rivalEquity } from "@/engine/standing";
 
-export function TheStreet() {
+/** `q` filters the table by firm or principal name (City → Players' search
+ *  box); the league-table summary above it always counts everyone. */
+export function TheStreet({ q = "" }: { q?: string } = {}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
@@ -57,6 +59,11 @@ export function TheStreet() {
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || rivalEquity(b.m, b.r) - rivalEquity(a.m, a.r)),
   [game, parcels, rivals]);
   if (!rivals.length) return null;
+  const needle = q.trim().toLowerCase();
+  const hit = (name: string, person?: { name: string } | null) =>
+    !needle || name.toLowerCase().includes(needle) || (person?.name.toLowerCase().includes(needle) ?? false);
+  const noHit = !!needle && !hit(firmName(game), game.principal)
+    && !marked.some(({ r }) => hit(r.name, rivalPrincipalOf(game, r.id)));
   const appetite = marketAppetite(game);
   const approach = game.takePrivate?.offer && game.month <= game.takePrivate.offer.expiresM ? game.takePrivate.offer : null;
   return (
@@ -153,11 +160,15 @@ export function TheStreet() {
           </tr>
         </thead>
         <tbody>
+          {noHit && <tr><td colSpan={10} className="dim">No firm or principal by that name.</td></tr>}
           {(() => {
             // where your row stands: by net equity, as the firms are sorted
             const at = marked.findIndex(({ r, m }) => r.failedM !== undefined || rivalEquity(m, r) < playerEquity);
-            return [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true },
+            const all = [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true as const },
               ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
+            return all.filter((row) => "you" in row
+              ? hit(firmName(game), game.principal)
+              : hit(row.x.r.name, rivalPrincipalOf(game, row.x.r.id)));
           })().map((row) => {
             if ("you" in row) return (
               <tr key="__you" style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}

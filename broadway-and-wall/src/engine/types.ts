@@ -506,21 +506,6 @@ export interface Holding {
   /** Cached vacant blocks from plates.blocksOf. Derived; restamped on read. */
   blocks?: import("./plates").SpaceBlock[];
   makeReady?: { sf: number; readyM: number; use?: BuiltClass; blockId?: number }[]; // vacated space being turned; unleasable until ready
-  /**
-   * WHAT YOUR MANAGEMENT IS DOING TO THIS BUILDING'S CONTROLLABLE COSTS.
-   * Stamped once a month by tickStaff so the operating functions can read a
-   * plain number without being handed the whole GameState. 1 is the market
-   * standard; below is a manager earning their salary, above is work that is
-   * not getting done. It moves the OWNER'S result only — `assetValue` still
-   * underwrites at market opex, because a buyer prices their own management,
-   * not yours. That is appraisal practice and it is also the difference
-   * between this and the same-quantity-two-answers fault in `holdingValue`.
-   */
-  pmOpexMult?: number;
-  /** Stamped by markStaff — assigned PM skill on this building's renewals. */
-  pmRenewalMult?: number;
-  /** Stamped by markStaff — assigned leasing skill on rent at this building. */
-  leasingRentMult?: number;
   // A listing exclusive. The house works the phones and is paid 6% of the
   // base rent over the term of every lease signed while they hold the file,
   // in place of the 4%/2% you pay doing it yourself — see exclusiveFeeRate.
@@ -2424,7 +2409,6 @@ export interface Rival {
   spawnedFrom?: {
     firmId: string;
     firmName: string;
-    personName: string;
   };
   /**
    * JUDGEMENT BY JEV. Present only on a firm whose decisions — which listing to
@@ -2463,16 +2447,15 @@ export interface TakePrivateRecord {
 }
 
 /**
- * A person who left a firm and is trying to raise. Genealogy proposes; the
+ * A team that left a firm and is trying to raise. Genealogy proposes; the
  * product-gated raise in rivals.ts can still refuse (owner call #7).
  */
 export interface FounderBid {
   readyM: number;
-  name: string;
-  attrs: Record<string, number>;
-  obs: Record<string, number>;
-  band0: number;
-  career?: import("./people").CareerLog;
+  /** Name stem for the new firm. Old saves carry `name` instead. */
+  stem?: string;
+  /** @deprecated pre-firms-only saves: the departing person's name. */
+  name?: string;
   role: "pm" | "leasing" | "construction";
   fromFirmId: string;
   fromFirmName: string;
@@ -2746,49 +2729,6 @@ export interface GameState {
   /** Source of tour ids — see LOI.tourId. Letters on one tour share a number. */
   nextTourId?: number;
   /**
-   * THE PAYROLL. See staff.ts. `staff` are the people at their desks;
-   * `pendingHires` have accepted and are working out their notice; `hirePool`
-   * is who is on the market this half-year. All of it is plain data so the
-   * save file round-trips like everything else.
-   */
-  staff?: import("./staff").Staff[];
-  /**
-   * Stamped once a month by markStaff so leasing, renewals and the operating
-   * statement all quote the same desk. See staff.ts.
-   */
-  leasingOddsMult?: number;
-  pmRenewalMult?: number;
-  leasingRentMult?: number;
-  /** PM desk overload, stamped by markStaff for tenant-care reads without parcels. */
-  pmDeskSlip?: number;
-  /** How the market reads your hiring history — 0..1, default 0.55. */
-  hireReputation?: number;
-  /**
-   * @deprecated Free capacity dial — ignored. Firm shape emerges from headcount
-   * via effectiveOwnerStyle(). Cleared on migrate to v33.
-   */
-  ownerStyle?: "handsOn" | "delegated";
-  /**
-   * @deprecated Free capacity dial — ignored. Cleared on migrate to v33.
-   */
-  benchStyle?: "boutique" | "platform";
-  pendingHires?: { staff: import("./staff").Staff; startM: number }[];
-  hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
-  nextStaffId?: number;
-  /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
-  staffRng?: number;
-  /**
-   * People stream — principal synthesis, hire career seeds.
-   * Seeded `seed ^ 0x50454f50`. Must not step s.rng. See people.ts.
-   */
-  peopleRng?: number;
-  /** The participant the player controls — a Person, seat "you". */
-  principal?: import("./people").Person;
-  /** Operating principal per living rival firm id. */
-  rivalPrincipals?: Record<string, import("./people").Person>;
-  /** Ids for non-staff persons (rival principals). Staff keep nextStaffId. */
-  nextPersonId?: number;
-  /**
    * Player fund vehicle — second cash account. Absent = balance-sheet path
    * (the default). See fund.ts / PRINCIPAL_CALLS.md.
    */
@@ -2819,8 +2759,8 @@ export interface GameState {
    */
   fundFailedM?: number;
   /**
-   * People who left a firm and are waiting to raise. Consumed by maybeNewFirm
-   * — the raise can still refuse. See FounderBid / HANDOFF_PRINCIPAL.md.
+   * Teams that left a firm and are waiting to raise. Consumed by maybeNewFirm
+   * — the raise can still refuse. See FounderBid.
    */
   founderBids?: FounderBid[];
   /**
@@ -3226,16 +3166,6 @@ export interface GameState {
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
   /**
-   * YOUR IN-HOUSE LEASING TEAM HAS THE PEN.
-   *
-   * Separate from `agent` (the 6% outside firm). When this is on and you have
-   * at least one leasing hire, they sign/counter/pass inside your mandate at
-   * the ordinary 4%/2% rates and LOIs stop interrupting — same quiet desk as
-   * the firm agent, your people instead of theirs. Off by default so hiring
-   * staff alone does not silently take the book; you hand it over on Leasing.
-   */
-  teamLeasing?: boolean;
-  /**
    * WHAT THE DESK DID THIS MONTH while you were quiet.
    *
    * When the firm agent, your team, or renewal management holds the pen,
@@ -3284,7 +3214,7 @@ export interface GameState {
    * Asking sheet + hold-out + dollar authority. When this is present and a
    * desk holds the pen, `clearAgainstPlan` is the one clearing engine for
    * desk and (via the same tenant reaction) the principal. A save that loads
-   * with `agent` / `teamLeasing` / `renewalMgmt` and no plan gets a starter
+   * with `agent` / `renewalMgmt` and no plan gets a starter
    * sheet (`quotePct` 0.90, the old default sign line).
    */
   leasingPlan?: LeasingPlan;

@@ -11,7 +11,6 @@ import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock } from "./market";
-import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
@@ -1910,21 +1909,9 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     if (progress > 0.04 && progress < 0.97) {
       const roll = rng(s, "dev");
       const gmpShield = d.contract === "gmp" ? 0.35 : 1;   // the GC eats most of it
-      // AND WHETHER ANYBODY IS WATCHING THE JOB. `cmRiskMult` is the owner's
-      // representative: it scales the hazard of all three site events and the
-      // size of the two that cost money, and nothing else — see its comment for
-      // what a construction manager is and is not worth. Scaling the thresholds
-      // rather than the draw is deliberate: `rng` is called the same number of
-      // times whoever is on the payroll, so hiring somebody cannot re-roll the
-      // rest of the century. That fault is documented at the top of staff.ts
-      // and it cost an acceptance test once already.
-      // Per-job cover: an assigned CM carries this site; otherwise the float desk.
-      const cmRaw = coverRoleState(s, parcels, d.bbl, "construction").rs;
-      const cm = cmRiskMult(STAFF_CAPACITY_SHIPPED ? cmRaw : { ...cmRaw, slip: 0 });
-      const cmNote = cm > 1.08 ? " The construction desk was underwater and the job went unsupervised." : "";
-      if (roll < 0.028 * gmpShield * cm) {
+      if (roll < 0.028 * gmpShield) {
         // change order
-        const bump = rrange(s, 0.015, 0.07, "dev") * cm;
+        const bump = rrange(s, 0.015, 0.07, "dev");
         const extra = Math.round(d.costTotal * bump);
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
@@ -1936,19 +1923,19 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: overrun > 0 ? "warn" : "info",
           text: overrun > 0
-            ? `Change orders at ${rec.address}: ${money(extra)}, of which ${money(overrun)} is past the contingency and lands on you.${cmNote}`
-            : `Change orders at ${rec.address}: ${money(extra)}, absorbed by the contingency.${cmNote}`,
+            ? `Change orders at ${rec.address}: ${money(extra)}, of which ${money(overrun)} is past the contingency and lands on you.`
+            : `Change orders at ${rec.address}: ${money(extra)}, absorbed by the contingency.`,
         });
-      } else if (roll < 0.055 * cm) {
+      } else if (roll < 0.055) {
         d.deliverM += 1 + Math.round(rng(s, "dev"));
         syncDevCohorts(s, d);
         d.events++;
-        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.${cmNote}` });
-      } else if (roll < 0.062 * cm) {
+        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
+      } else if (roll < 0.062) {
         // a sub goes under: time AND money, and the GMP does not help much.
         // Pre-qualification is most of what stops this one, which is why the
         // manager's multiplier reaches it where the GMP barely does.
-        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09, "dev") * cm);
+        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09, "dev"));
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
         const overrun = extra - fromContingency;
@@ -1958,7 +1945,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         d.events++;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs ${money(extra)} and pushes delivery to ${monthLabel(d.deliverM)}.${cmNote}`,
+          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs ${money(extra)} and pushes delivery to ${monthLabel(d.deliverM)}.`,
         });
       }
     }

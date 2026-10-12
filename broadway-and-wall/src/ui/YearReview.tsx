@@ -49,7 +49,7 @@ export default function YearReview() {
           {r.tier1 && (<><span>Standing</span><span>{r.tier0 && r.tier0 !== r.tier1 ? <>{r.tier0} → <strong>{r.tier1}</strong></> : r.tier1}</span></>)}
           <span>Buildings, after debt</span>
           <span className={r.cashFromBuildings < 0 ? "neg" : ""}>{usd(r.cashFromBuildings)}</span>
-          <span>Office and staff</span>
+          <span>Office overhead</span>
           <span>−{usd(r.overhead)}</span>
           {r.taxes > 0 && (<><span>Tax</span><span>−{usd(r.taxes)}</span></>)}
           <span>Deals</span>

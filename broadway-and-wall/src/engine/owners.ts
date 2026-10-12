@@ -59,7 +59,6 @@ import { START_YEAR } from "./types";
 import { resolveRec, holdingValue } from "./value";
 import { ownerOf } from "./rivals";
 import { isCivicLand } from "./demand";
-import { makeRivalPrincipal } from "./people";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
 function hash01(str: string): number {
@@ -724,20 +723,17 @@ export function tickHolders(
     };
     if (!s.rivals) s.rivals = [];
     s.rivals.push(firm);
-    // The draw stays (one owners-stream step, so the stream is not re-rolled);
-    // it seeds YEARS IN THE BUSINESS (6–26), which is what it always fed the
-    // career log as (age 28–48 less a working life starting ~22). No age.
-    const heir = makeRivalPrincipal(s, id, firm.name, Math.round(6 + rng(s) * 20));
-    if (!s.rivalPrincipals) s.rivalPrincipals = {};
-    s.rivalPrincipals[id] = heir;
+    // The draw stays (one step, so the stream is not re-rolled). It used to
+    // seed the heir's career; there are no people now (ECONOMY.md "Firms only").
+    void rng(s);
     if (!s.holderExit) s.holderExit = {};
     s.holderExit[h.id] = s.month;
     s.news.unshift({
       q: s.month, kind: "event",
       text: h.kind === "estate"
-        ? `${h.name} is settled and nothing is coming to market: ${heir.name} is keeping the book — `
-          + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The street has a new landlord with an old name.`
-        : `${h.name} split, and one side bought the other out: ${heir.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
+        ? `${h.name} is settled and nothing is coming to market: the heirs are keeping the book as ${firm.name} — `
+          + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The market has a new landlord with an old name.`
+        : `${h.name} split, and one side bought the other out: ${firm.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
           + `and is said to be looking for more. A holder has become a competitor.`,
     });
     return { bbls: [], distress: false, kind: h.kind };

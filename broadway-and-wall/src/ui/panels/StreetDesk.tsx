@@ -2,11 +2,9 @@ import { useMemo, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
-import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firmEntryPitch } from "@/engine/rivals";
-import { rivalPrincipalOf } from "@/engine/people";
+import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
 import { ownerById } from "@/engine/ownership";
 import { OwnerStatement } from "@/ui/panels/OwnersDesk";
-import { PersonCard, personLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
@@ -94,9 +92,9 @@ export function TheStreet() {
               <div className="grid" style={{ marginBottom: 10 }}>
                 {bids.map((b) => (
                   <Row
-                    key={`${b.name}:${b.readyM}`}
+                    key={`${b.fromFirmId}:${b.readyM}`}
                     k="Raising now"
-                    v={`${b.name}, raising out of ${b.fromFirmName}`
+                    v={`A team raising out of ${b.fromFirmName}`
                       + (b.readyM > game.month
                         ? ` · on the street from ${monthLabel(b.readyM)}`
                         : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} open month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to clear a first close`)}
@@ -147,7 +145,7 @@ export function TheStreet() {
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Principal</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -164,7 +162,6 @@ export function TheStreet() {
                 title="Your firm, marked the same way as theirs. Click for your Books."
                 onClick={() => useStore.getState().setPage("books")}>
                 <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
-                <td className="dim" style={{ fontWeight: 400 }}>{game.principal ? personLine(game.principal) : "—"}</td>
                 <td className="dim" style={{ fontWeight: 400 }}>Yours</td>
                 <td className="num">{mine.buildings}</td>
                 <td className="num">{usd(mine.gav)}</td>
@@ -183,17 +180,15 @@ export function TheStreet() {
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
             const isOpen = open === r.id;
-            const principal = rivalPrincipalOf(game, r.id);
             return (
               <Fragment key={r.id}>
               <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
-                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
+                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
                   {r.jev ? <JevBadge /> : null}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{dead ? "—" : personLine(principal)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
@@ -247,7 +242,7 @@ export function TheStreet() {
                 if (!view) return null;
                 return (
                 <tr>
-                  <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
                     <OwnerStatement
                       o={view}
                       onFocus={(b) => focus(b, true)}
@@ -259,20 +254,6 @@ export function TheStreet() {
                               <JevFirmCard firmId={r.id} />
                             </div>
                           )}
-                          {principal && !dead && (
-                            <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
-                          )}
-                          {principal && !dead && (() => {
-                            const tw = rivalTemperamentWeight(game, r);
-                            const pace = tw > 1.12 ? "Contests the tape hard"
-                              : tw < 0.88 ? "Patient bidder — slower on contested asks"
-                                : "Ordinary pace on the tape";
-                            return (
-                              <div className="hint" style={{ marginBottom: 6 }} title="Bandwidth × Access — temperament, not their balance sheet">
-                                {pace}
-                              </div>
-                            );
-                          })()}
                         </>
                       }
                       extraLate={
@@ -300,7 +281,7 @@ export function TheStreet() {
                               title="Realised and no longer on this balance sheet — modest equity is not the same as a bad century." />
                             <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
                             {r.spawnedFrom && (
-                              <Row k="Raised out of" v={`${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}`} />
+                              <Row k="Raised out of" v={r.spawnedFrom.firmName} />
                             )}
                           </div>
                           {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are

@@ -228,24 +228,6 @@ catch (e) { fail(`opening attention: ${e.message}`); }
   checkState(g, "after approaches");
 }
 
-// ---- staff: refresh pool and hire if anyone is on it ----------------------
-{
-  const next = JSON.parse(JSON.stringify(g));
-  E.refreshPool(next, true);
-  g = next;
-  const pool = g.hirePool?.list ?? [];
-  if (pool.length === 0) note("hire pool empty after forced refresh");
-  else {
-    const r = E.hire(g, pool[0].id);
-    if (r.err) note(`hire: ${r.err}`);
-    else {
-      g = r.s;
-      pass(`hired ${pool[0].name ?? pool[0].id}`);
-    }
-  }
-  checkState(g, "after hire");
-}
-
 // ---- line draw / repay -----------------------------------------------------
 {
   try {

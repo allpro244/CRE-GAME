@@ -23,8 +23,6 @@ import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
-import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
-import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
 import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
@@ -159,8 +157,6 @@ export function newGame(
     streams: initStreams(seed),
     month: 0,
     cash: cash0,
-    peopleRng: (seed ^ 0x50454f50) | 0,
-    nextPersonId: 1,
     econ: null as never,
     holdings: {},
     listings: [],
@@ -213,12 +209,7 @@ export function newGame(
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
   s.econ = initEcon(s, parcels);
-  // Player principal BEFORE rivals so the principal's draws do not depend on
-  // roster size — peopleRng only; s.rng untouched.
-  s.principal = makePlayerPrincipal(s);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
-  // Fill rival principals + staff career seeds. Player already seated.
-  ensurePeople(s);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
@@ -625,10 +616,6 @@ function tickMonth(
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
-  tickStaff(s, parcels);
-  // Careers accrue from the book. Nobody in this game ages or dies — the
-  // player's estate and rival-principal estate sales were removed with age.
-  tickPeople(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
   tickTrustNote(s);
@@ -1513,8 +1500,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         + `The receiver expects to return ${m(r.amount)} by ${monthLabel(r.payM)}; ${m(r.lost ?? 0)} is lost`,
     });
   }
-  // Only letters the principal still owns — firm agent, exclusive, staff desk
-  // or renewal management already worked the rest. Counting every LOI here is
+  // Only letters the principal still owns — firm agent, exclusive or renewal
+  // management already worked the rest. Counting every LOI here is
   // why Year/Skip kept stopping for paper somebody else was hired to handle.
   for (const l of s.lois) {
     if (!loiNeedsPrincipal(s, l)) continue;
@@ -2217,10 +2204,9 @@ export function portfolioPropertyMonthlyCF(s: GameState, parcels: ParcelTable): 
  * the tick has always been monthly.
  */
 /**
- * THE OFFICE, BY THE MONTH: the fixed base, ~30bps of gross asset value less
- * the share now carried as explicit payroll, plus that payroll. The one number
- * `advanceMonth` charges as G&A and the top bar subtracts — see the long note
- * where the tick charges it.
+ * THE OFFICE, BY THE MONTH: a fixed base plus ~30bps of gross asset value. The
+ * one number `advanceMonth` charges as G&A and the top bar subtracts — see the
+ * long note where the tick charges it.
  */
 export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number {
   // Last month's GAV (stamped at the portfolioMark in the tick). Month-one /
@@ -2228,17 +2214,14 @@ export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number 
   const gav = s.prevGav ?? portfolioMark(s, parcels).gav;
   // ~30bps of gross asset value a year at scale, over a small fixed base.
   //
-  // THE PEOPLE CAME OUT OF THIS NUMBER. This line used to carry the whole
-  // office — asset management, leasing, property management, accounting,
-  // legal, insurance — as one invisible charge, which is why hiring anyone
-  // would otherwise have been billing the player twice for the same person.
-  // What is left here is the part you cannot hire away: the audit, the
-  // lawyers, the insurance programme, the rent on the office itself. The rate
-  // is cut by the share of the stack that is now explicitly payroll, so a firm
-  // with nobody on the books pays what it always paid, and a firm with a full
-  // desk pays that plus its actual salaries rather than a phantom on top.
-  const annual = 60_000 * s.econ.costIdx + 0.0028 * gav * NON_PAYROLL_GA_SHARE;
-  return Math.round(annual / 12) + payrollMonthly(s);
+  // THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
+  // coordination, accounting, legal, insurance, the rent on the office. There
+  // is no payroll to hire into, so nothing comes out of it — buildings are
+  // professionally run at the market standard and this is what that costs.
+  // Competitors are charged the same rate in their own tick (rivals.ts), so the
+  // league table measures both sides one way.
+  const annual = 60_000 * s.econ.costIdx + 0.0028 * gav;
+  return Math.round(annual / 12);
 }
 
 export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {

@@ -46,7 +46,6 @@ import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { sizeAreaScale } from "./cityscale";
-import { makeRivalPrincipal, rivalPrincipalOf, seatFounderAsRival } from "./people";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { firmBook, snap } from "./aibooks";
@@ -1638,8 +1637,8 @@ function styleFromFounderRole(role: FounderBid["role"]): RivalStyle {
   return "pe";
 }
 
-function firmNameFromFounder(s: GameState, personName: string, used: Set<string>): string {
-  const last = personName.trim().split(/\s+/).pop() || "Spinout";
+function firmNameFromFounder(s: GameState, stem: string, used: Set<string>): string {
+  const last = stem.trim().split(/\s+/).pop() || "Spinout";
   for (const house of HOUSES) {
     const name = `${last} ${house}`;
     if (!used.has(name)) return name;
@@ -1653,12 +1652,10 @@ function firmNameFromFounder(s: GameState, personName: string, used: Set<string>
 }
 
 /**
- * THE NUMBER TWO WHO LEAVES. Spinouts were genealogy the street could only
- * get from the player's own staff walking out — an unplayed century produced
- * zero, which made "spinouts carry genealogy" a test that could not fail. But
- * the commonest spinout in this business has nothing to do with you: the
- * acquisitions head of a shop that has done well for a decade decides the
- * next fund should have their own name on it. About one such departure per
+ * THE TEAM THAT LEAVES. The commonest spinout in this business: the
+ * acquisitions team of a shop that has done well for a decade decides the
+ * next fund should carry its own name. There are no people in this game, so
+ * the departure is a firm event — a team, a new name, and a parent it knows. About one such departure per
  * thriving firm per twenty years; the raise still has to clear firmEntryPitch
  * and the product term, so a crowded street refuses them like anybody else.
  *
@@ -1673,7 +1670,6 @@ function spinHash(str: string): number {
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 }
-const SPIN_FIRSTS = ["Nora", "Elias", "Ruth", "Victor", "Ada", "Miles", "Iris", "Hugh", "Celia", "Amos"];
 const SPIN_LASTS = ["Fenn", "Aldous", "Marek", "Trask", "Odell", "Bryce", "Hollis", "Ingram", "Wexler", "Danforth"];
 
 function tickRivalSpinouts(s: GameState) {
@@ -1685,23 +1681,18 @@ function tickRivalSpinouts(s: GameState) {
     if ((s.founderBids ?? []).some((b) => b.fromFirmId === r.id)) continue;
     const k = `spin:${s.seed}:${r.id}:${yr}`;
     if (spinHash(k) >= 0.05) continue;
-    const nm = `${SPIN_FIRSTS[Math.floor(spinHash(k + ":f") * SPIN_FIRSTS.length)]} ${SPIN_LASTS[Math.floor(spinHash(k + ":l") * SPIN_LASTS.length)]}`;
-    const tal = (o: string, lo: number, hi: number) => Math.round(lo + (hi - lo) * spinHash(k + o));
-    const attrs = { judgment: tal(":j", 58, 84), urgency: tal(":u", 55, 82), diligence: tal(":d", 58, 84), relationships: tal(":r", 60, 86) };
+    const stem = SPIN_LASTS[Math.floor(spinHash(k + ":l") * SPIN_LASTS.length)];
     (s.founderBids ??= []).push({
       readyM: s.month + 3 + Math.floor(spinHash(k + ":w") * 7),
-      name: nm,
-      attrs,
-      obs: { judgment: attrs.judgment - 8, urgency: attrs.urgency - 6, diligence: attrs.diligence - 7, relationships: attrs.relationships - 6 },
-      band0: 16,
+      stem,
       role: "pm",
       fromFirmId: r.id,
       fromFirmName: r.name,
     });
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${nm} is leaving ${r.name} after ${(Math.round((s.month - (r.bornM ?? 0)) / 12))} years to raise their own vehicle. `
-        + `Whether the street clears a first close is another question.`,
+      text: `The acquisitions team at ${r.name} is leaving after ${(Math.round((s.month - (r.bornM ?? 0)) / 12))} years to raise its own vehicle. `
+        + `Whether the market clears a first close is another question.`,
     });
   }
 }
@@ -1732,8 +1723,8 @@ function maybeNewFirm(s: GameState) {
       s.founderBids = bids.filter((_, i) => i !== readyIdx);
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${founder.name} could not raise out of ${founder.fromFirmName} — `
-          + `the street would not clear a first close. They took a seat elsewhere.`,
+        text: `The team leaving ${founder.fromFirmName} could not raise — `
+          + `the market would not clear a first close, and they went back to other seats.`,
       });
     }
     return;
@@ -1746,12 +1737,11 @@ function maybeNewFirm(s: GameState) {
 
   if (founder) {
     s.founderBids = bids.filter((_, i) => i !== readyIdx);
-    name = firmNameFromFounder(s, founder.name, used);
+    name = firmNameFromFounder(s, founder.stem ?? founder.name ?? "", used);
     style = styleFromFounderRole(founder.role);
     spawnedFrom = {
       firmId: founder.fromFirmId,
       firmName: founder.fromFirmName,
-      personName: founder.name,
     };
   } else {
     const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
@@ -1806,15 +1796,11 @@ function maybeNewFirm(s: GameState) {
     uncalled,
     spawnedFrom,
   });
-  // Operating principal — peopleRng only, after every rivals-stream draw above.
-  (s.rivalPrincipals ??= {})[id] = founder
-    ? seatFounderAsRival(s, id, founder)
-    : makeRivalPrincipal(s, id, name);
   s.news.unshift({
     q: s.month, kind: "event",
     text: founder
-      ? `${founder.name} has raised $${(equity / 1e6).toFixed(0)}M as ${name}, spinning out of ${founder.fromFirmName}. `
-        + `There is competition on the tape again — and it knows your book.`
+      ? `${name} has raised $${(equity / 1e6).toFixed(0)}M, spinning out of ${founder.fromFirmName}. `
+        + `There is competition on the tape again — and it knows its parent's book.`
       : `${name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
   });
 }
@@ -2960,11 +2946,10 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       // person rather than a deleted row.
       if (r.epilogueM === undefined) r.epilogueM = s.month + 24 + Math.floor(rng(s, "rivals") * 48);
       if (s.month === r.epilogueM) {
-        const p = s.rivalPrincipals?.[r.id];
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `${p?.name ?? "The principal"} — late of ${r.name}, wound up in ${START_YEAR + Math.floor(r.failedM / 12)} — `
-            + `has been seen at the courthouse steps, bidding small and paying cash. The street has a long memory and so, apparently, does he.`,
+          text: `The old partners of ${r.name}, wound up in ${START_YEAR + Math.floor(r.failedM / 12)}, `
+            + `have been seen at the courthouse steps, bidding small and paying cash. The market has a long memory, and so, apparently, do they.`,
         });
       }
       if (!r.bbls.length) continue;
@@ -3627,19 +3612,6 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
   };
 }
 
-/**
- * Bandwidth × Access — how hard a principal contests the tape.
- * Mid temperament (=50/50) reads 1.0 so style appetite stays the centre.
- * No RNG. Does not change who can close — only who wins among closers.
- */
-export function rivalTemperamentWeight(s: GameState, r: Rival): number {
-  const p = rivalPrincipalOf(s, r.id);
-  if (!p?.attrs) return 1;
-  const band = 0.75 + 0.5 * ((p.attrs.urgency ?? 50) / 100);       // 0.75..1.25
-  const access = 0.80 + 0.4 * ((p.attrs.relationships ?? 50) / 100); // 0.80..1.20
-  return band * access;
-}
-
 export function rivalBuys(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number,
   // THE FIRM THAT BID IS THE FIRM THAT BUYS. When the player takes a named
@@ -3774,7 +3746,6 @@ export function rivalBuys(
     const w = st.appetite * Math.max(0.05, cyc)
       * (isDistress ? st.distressBias : 1)
       * yieldFit * locFit
-      * rivalTemperamentWeight(s, r)
       * (0.65 + rng(s, "rivals") * 0.7);
     if (w > bestW) { bestW = w; best = r; }
   }

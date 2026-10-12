@@ -70,9 +70,8 @@ export const DESKS: readonly Desk[] = [
   },
   {
     id: "firm", label: "Firm", icon: "☺", key: "6",
-    note: "Your people and your record",
+    note: "Your standing and your record",
     tabs: [
-      { page: "staff", label: "Staff", note: "People, capacity and judgment" },
       { page: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },

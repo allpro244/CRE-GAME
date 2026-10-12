@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import type { Page } from "@/state/store";
-import StaffPage from "@/ui/StaffPage";
+import FirmStanding from "@/ui/FirmStanding";
 import Palette from "@/ui/Palette";
 import FirmTimeline from "@/ui/FirmTimeline";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
@@ -133,7 +133,6 @@ export default function GamePanels() {
     : page === "economy" ? "Economy"
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
-    : page === "staff" ? "The Desk"
     : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
@@ -157,7 +156,6 @@ export default function GamePanels() {
     : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
     : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
-    : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
     : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
@@ -209,8 +207,7 @@ export default function GamePanels() {
             {page === "leasing" && <LeasingPage />}
             {page === "debt" && <DebtPage />}
             {page === "property" && <PropertyPage />}
-            {page === "staff" && <StaffPage />}
-            {page === "firm" && <FirmTimeline />}
+            {page === "firm" && <><FirmStanding /><FirmTimeline /></>}
             {page === "settings" && <SettingsPage />}
             {page === "primer" && <PrimerPage />}
             {page === "match" && <MatchPage />}

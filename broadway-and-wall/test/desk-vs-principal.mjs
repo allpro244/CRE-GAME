@@ -312,7 +312,6 @@ const runArm = (g0, parcels, adj, policy) => {
     E.workLeasingDesk(g, parcels);
   } else {
     g.agent = false;
-    delete g.teamLeasing;
     delete g.renewalMgmt;
     delete g.leasingPlan;
   }

@@ -34,7 +34,8 @@ const EMPTY = { type: "FeatureCollection" as const, features: [] };
  * half paved.
  */
 const YARD_WINTER = { org: [0xc9, 0xbf, 0xa8], t: [[0xc4, 0xc0, 0xb2], [0xbf, 0xc1, 0xb4], [0xc8, 0xbf, 0xae], [0xbd, 0xc2, 0xb3], [0xc6, 0xbc, 0xb2]] };
-const YARD_SUMMER = { org: [0xb7, 0xb9, 0x98], t: [[0xb2, 0xb9, 0x9c], [0xab, 0xb7, 0x9b], [0xb6, 0xb7, 0x98], [0xa9, 0xb8, 0x9a], [0xb4, 0xb5, 0x9b]] };
+// SKYLINE_LOOK_PLAN round 2: a summer yard is lawn, and reads as lawn
+const YARD_SUMMER = { org: [0xa4, 0xbc, 0x84], t: [[0x9e, 0xbc, 0x80], [0x97, 0xb8, 0x7c], [0xa6, 0xbb, 0x82], [0x93, 0xb6, 0x7e], [0xa2, 0xb8, 0x84]] };
 // lying snow: the yards and lawns go white, the asphalt stays dark
 const SNOW = [234, 238, 241];
 export function blocksPaint(leaf: number, snow = 0): unknown {
@@ -53,7 +54,7 @@ export function blocksPaint(leaf: number, snow = 0): unknown {
 export function parksPaint(snow = 0): unknown {
   const w = Math.max(0, Math.min(1, snow));
   const c = (hex: string) => { const v = parseInt(hex.slice(1), 16); return "#" + [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x, i) => Math.round(x + (SNOW[i] - x) * w).toString(16).padStart(2, "0")).join(""); };
-  return ["match", ["coalesce", ["get", "flavour"], "park"], "cemetery", c("#8fa37a"), "battery", c("#c5c4a4"), "market", c("#cfc6b0"), c("#b7d29f")];
+  return ["match", ["coalesce", ["get", "flavour"], "park"], "cemetery", c("#8fa37a"), "battery", c("#c5c4a4"), "market", c("#cfc6b0"), c("#9fcb78")];
 }
 
 export function metres(m: number, minPx = 0, sign = 1): unknown {
@@ -489,7 +490,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "median"],
-        paint: { "fill-color": "#a8bd93" },
+        paint: { "fill-color": "#98bd7e" },
       },
       {
         // timber decking, with a shadowed edge so the pier stands proud of

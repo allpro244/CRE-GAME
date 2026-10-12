@@ -123,6 +123,14 @@ fixed in #231; the sweep is clean since.
   that's pointless"), so per-room night windows, street-light pools,
   moonlight and the golden-hour grade were dead weight (the light pools cost
   an instance per lamp by day). Do not add night or dusk visuals.
+- **Round 18** — road paint. The streets were bare asphalt (MapLibre's
+  10 cm centre lines were under a pixel from every camera, and most streets
+  had none). The 3D city now paints them (`buildMarkings`), by the carriageway
+  measured kerb to kerb on the ground polygons: a dashed yellow centre line
+  from 8 m, a double yellow with white lane lines from 15 m, and a stop bar
+  before every junction. No paint inside a junction (a disc sized to the
+  crossing streets, and wherever road continues past either kerb). The old
+  MapLibre lane layers are hidden once the 3D city is up.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

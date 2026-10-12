@@ -1438,6 +1438,7 @@ export class RealCityLayer {
       await this.buildCity();
       this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
       await this.buildGround();
+      await this.buildMarkings();
       await this.breathe(true);
       this.buildChannels();
       this.buildBridges();
@@ -4525,6 +4526,197 @@ export class RealCityLayer {
       mesh.receiveShadow = true;
       this.scene.add(mesh);
     }
+  }
+
+  // ---- road markings (SKYLINE_LOOK_PLAN round 18) --------------------------
+  // The carriageway was bare asphalt: MapLibre's painted centre lines are ten
+  // centimetres wide, under a pixel from any camera the game uses, and most
+  // streets carried none. A city-builder's streets read as streets because of
+  // their paint. US practice, by the carriageway measured kerb to kerb on the
+  // ground polygons at each street's middle (citygen's own width includes
+  // the footways):
+  //  - under 8 m: a lane, unmarked
+  //  - 8 to 15 m: a dashed yellow centre line (3 m dash, 6 m gap)
+  //  - 15 m and over: a double yellow, and white lane lines (3 m dash, 9 m
+  //    gap; 10 ft on 30 ft) between 3.3 m lanes outside a 2.4 m parking lane
+  // and a white stop bar before every crossing at a junction. All of it is
+  // pulled back clear of the junction (behind the zebra where there is one),
+  // and a dash is only laid where both its ends are on the carriageway, so
+  // no paint crosses a mall, a footway or a park.
+  // Widths are drawn a little over real (28 cm against 10-15 cm) so a line
+  // still reads at street-view distance; looks only, nothing reads them.
+  private async buildMarkings() {
+    const c = this.ctx as CityCtx;
+    const lines = (c.centerlines ?? []).filter((l) => l.pts.length >= 2);
+    if (!lines.length) return;
+    const segs = lines.map((l) => ({ a: this.project(l.pts[0]), b: this.project(l.pts[l.pts.length - 1]), w: l.w }));
+    // the junctions: centre lines meet at the same projected corner
+    const key = (p: P2) => `${Math.round(p[0] * 2)},${Math.round(p[1] * 2)}`;
+    const nodes = new Map<string, number[]>();
+    segs.forEach((sg, i) => { for (const p of [sg.a, sg.b]) { const k = key(p); const l = nodes.get(k); if (l) l.push(i); else nodes.set(k, [i]); } });
+    // the crossings, as midpoint and direction
+    const zeb = (c.zebras ?? []).filter((z) => z.length >= 2).map((z) => {
+      const A = this.project(z[0]), B = this.project(z[z.length - 1]);
+      const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1;
+      return { m: [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2] as P2, d: [(B[0] - A[0]) / L, (B[1] - A[1]) / L] as P2 };
+    });
+    const zgrid = new Map<string, number[]>();
+    const zk = (x: number, y: number) => `${Math.floor(x / 40)},${Math.floor(y / 40)}`;
+    zeb.forEach((z, i) => { const k = zk(z.m[0], z.m[1]); const l = zgrid.get(k); if (l) l.push(i); else zgrid.set(k, [i]); });
+    const zebNear = (x: number, y: number) => {
+      const out: number[] = [], gx = Math.floor(x / 40), gy = Math.floor(y / 40);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) out.push(...(zgrid.get(`${gx + i},${gy + j}`) ?? []));
+      return out;
+    };
+    const paint = new Buf();
+    const col = (hex: number) => { const k = new THREE.Color(hex); return [k.r, k.g, k.b]; };
+    const YELLOW = col(0xf2c440), WHITE = col(0xf6f4ec);
+    // above the shadow catcher (0.04), level with the zebra bars
+    const Z = 0.046, up = [0, 0, 1];
+    const onRoad = (x: number, y: number) => this.groundAt(x, y) === "road";
+    let inBox = (_x: number, _y: number) => false;
+    // THE MOUTH OF A SIDE STREET: road still under foot four metres past
+    // either kerb of the street being painted, so this is a junction however
+    // the generator's corners fell
+    let curN: P2 = [0, 0], curHalf = 0;
+    const mouth = (x: number, y: number) => {
+      const d = curHalf + 4;
+      return onRoad(x + curN[0] * d, y + curN[1] * d) || onRoad(x - curN[0] * d, y - curN[1] * d);
+    };
+    /** a strip along the line from t0 to t1 at lateral offset o, width wd */
+    const strip = (o: P2, u: P2, n: P2, t0: number, t1: number, off: number, wd: number, cl: number[]) => {
+      const p = (t: number, l: number) => [o[0] + u[0] * t + n[0] * l, o[1] + u[1] * t + n[1] * l, Z];
+      const A = p(t0, off), B = p(t1, off);
+      if (!onRoad(A[0], A[1]) || !onRoad(B[0], B[1]) || inBox(A[0], A[1]) || inBox(B[0], B[1])) return;
+      if (mouth(o[0] + u[0] * t0, o[1] + u[1] * t0) || mouth(o[0] + u[0] * t1, o[1] + u[1] * t1)) return;
+      paint.quad(p(t0, off - wd / 2), p(t1, off - wd / 2), p(t1, off + wd / 2), p(t0, off + wd / 2), up, [[0, 0], [1, 0], [1, 1], [0, 1]], cl);
+    };
+    const dashed = (o: P2, u: P2, n: P2, t0: number, t1: number, off: number, dash: number, gap: number, cl: number[], wd = 0.28) => {
+      // centre the pattern on the run so both ends look alike
+      const span = t1 - t0, per = dash + gap;
+      const k = Math.floor((span + gap) / per);
+      if (k < 1) return;
+      let t = t0 + (span - (k * per - gap)) / 2;
+      for (let i = 0; i < k; i++, t += per) strip(o, u, n, t, t + dash, off, wd, cl);
+    };
+    /** the carriageway either side of the line, measured on the ground polygons (m) */
+    const reach = (o: P2, n: P2) => {
+      let d = 0;
+      while (d < 24 && onRoad(o[0] + n[0] * (d + 0.5), o[1] + n[1] * (d + 0.5))) d += 0.5;
+      return d;
+    };
+    const med = (xs: number[]) => xs.slice().sort((p, q) => p - q)[xs.length >> 1];
+    // first pass: every street's measured carriageway
+    const geo: ({ L: number; u: P2; nr: P2; mid: P2; cw: number } | null)[] = [];
+    let n0 = 0;
+    for (const sg of segs) {
+      if (++n0 % 100 === 0) await this.breathe();
+      const L = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]);
+      if (L < 12) { geo.push(null); continue; }
+      const u: P2 = [(sg.b[0] - sg.a[0]) / L, (sg.b[1] - sg.a[1]) / L];
+      const nr: P2 = [u[1], -u[0]];          // the right of travel toward b
+      const nl: P2 = [-nr[0], -nr[1]];
+      const R: number[] = [], Lf: number[] = [];
+      for (const f of [0.3, 0.5, 0.7]) {
+        const o: P2 = [sg.a[0] + u[0] * L * f, sg.a[1] + u[1] * L * f];
+        if (!onRoad(o[0], o[1])) continue;
+        R.push(reach(o, nr)); Lf.push(reach(o, nl));
+      }
+      if (!R.length) { geo.push(null); continue; }
+      const hr = med(R), hl = med(Lf), cw = hr + hl;
+      // the true middle of the carriageway, off the generator's line
+      geo.push({ L, u, nr, cw, mid: [sg.a[0] + nr[0] * (hr - hl) / 2, sg.a[1] + nr[1] * (hr - hl) / 2] });
+    }
+    // THE JUNCTION BOX. No paint inside a disc round every junction as wide
+    // as the widest street crossing there (half its carriageway and a metre),
+    // whichever line it belongs to: lines from an edge that runs past a
+    // T-junction, or from a corner a few metres off, otherwise ran through it.
+    const halfOf = (j: number) => geo[j] ? geo[j]!.cw / 2 : segs[j].w * 0.3;
+    const junc: { P: P2; segs: number[] }[] = [];
+    for (const [k, list] of nodes) {
+      if (list.length < 3) continue;
+      const [x, y] = k.split(",").map((v) => Number(v) / 2);
+      junc.push({ P: [x, y], segs: list });
+    }
+    const jgrid = new Map<string, number[]>();
+    junc.forEach((jn, i) => { const k = zk(jn.P[0], jn.P[1]); const l = jgrid.get(k); if (l) l.push(i); else jgrid.set(k, [i]); });
+    let cur = -1, curU: P2 = [1, 0];
+    const dirOf = (j: number): P2 => { const g = segs[j]; const l = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) || 1; return [(g.b[0] - g.a[0]) / l, (g.b[1] - g.a[1]) / l]; };
+    inBox = (x: number, y: number) => {
+      const gx = Math.floor(x / 40), gy = Math.floor(y / 40);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const ji of jgrid.get(`${gx + i},${gy + j}`) ?? []) {
+        const jn = junc[ji];
+        // only the streets that cross this one: its own pieces either side
+        // of the junction, and an edge drawn twice, run parallel to it
+        let r = 0;
+        for (const s2 of jn.segs) if (s2 !== cur && Math.abs(dirOf(s2)[0] * curU[0] + dirOf(s2)[1] * curU[1]) < 0.9) r = Math.max(r, halfOf(s2));
+        if (r === 0) continue;
+        r = Math.min(r, 14) + 1;
+        if ((x - jn.P[0]) ** 2 + (y - jn.P[1]) ** 2 < r * r) return true;
+      }
+      return false;
+    };
+    for (let si = 0; si < segs.length; si++) {
+      const sg = segs[si], gg = geo[si];
+      if (!gg || gg.cw < 8 || gg.cw > 40) continue;
+      cur = si;
+      const { L, u, nr, mid, cw } = gg;
+      const half = cw / 2;
+      curN = nr; curHalf = half; curU = u;
+      // how far back from each end the paint stops: behind the crossing
+      const ends: number[] = [];
+      const stops: (number | null)[] = [];
+      for (const [P, dir] of [[sg.a, 1], [sg.b, -1]] as [P2, number][]) {
+        const deg = nodes.get(key(P))?.length ?? 1;
+        if (deg < 3) { ends.push(deg === 1 ? 2 : 0); stops.push(null); continue; }
+        // the zebra across this street nearest the junction
+        let zAt = -1;
+        for (const i of zebNear(P[0], P[1])) {
+          const z = zeb[i];
+          if (Math.abs(z.d[0] * u[0] + z.d[1] * u[1]) > 0.45) continue;      // runs along, not across
+          const dx = z.m[0] - P[0], dy = z.m[1] - P[1];
+          const along = (dx * u[0] + dy * u[1]) * dir, lat = Math.abs(dx * nr[0] + dy * nr[1]);
+          if (along < 0 || along > 30 || lat > half + 3) continue;
+          zAt = Math.max(zAt, along);
+        }
+        let cross = 0;
+        for (const j of nodes.get(key(P)) ?? []) if (segs[j] !== sg) cross = Math.max(cross, segs[j].w / 2);
+        const stop = zAt >= 0 ? zAt + 1.5 + 1.0 : (cross || 6) + 1.5;
+        ends.push(stop + 0.6);
+        stops.push(stop);
+      }
+      const t0 = ends[0], t1 = L - ends[1];
+      if (t1 - t0 < 6) continue;
+      if (cw >= 15) {
+        // solid lines in two-metre pieces, each checked on the ground
+        dashed(mid, u, nr, t0, t1, 0.2, 2, 0, YELLOW, 0.2);
+        dashed(mid, u, nr, t0, t1, -0.2, 2, 0, YELLOW, 0.2);
+        const lanes = Math.floor((half - 2.4) / 3.3);
+        for (let k = 1; k < lanes; k++) for (const sd of [1, -1]) dashed(mid, u, nr, t0, t1, sd * 3.3 * k, 3, 9, WHITE);
+      } else {
+        dashed(mid, u, nr, t0, t1, 0, 3, 6, YELLOW);
+      }
+      // the stop bars, across the lanes coming in to each junction
+      stops.forEach((st, e) => {
+        if (st === null || st + 0.5 >= L / 2) return;
+        const t = e === 0 ? st : L - st;
+        // coming in to a, traffic runs toward a: its right is the left of u
+        const sd = e === 0 ? -1 : 1;
+        const lo = cw >= 15 ? 0.4 : 0.25, hi = Math.min(half - 0.3, 11);
+        if (hi - lo < 2) return;
+        const p = (tt: number, l: number) => [mid[0] + u[0] * tt + nr[0] * l * sd, mid[1] + u[1] * tt + nr[1] * l * sd, Z];
+        const A = p(t, lo), B = p(t, hi - 0.2);
+        if (!onRoad(A[0], A[1]) || !onRoad(B[0], B[1]) || inBox(A[0], A[1]) || inBox(B[0], B[1])) return;
+        // the bar stands on plain street, the mouth just ahead of it
+        const back = e === 0 ? t + 3 : t - 3;
+        if (mouth(mid[0] + u[0] * t, mid[1] + u[1] * t) || mouth(mid[0] + u[0] * back, mid[1] + u[1] * back)) return;
+        paint.quad(p(t - 0.25, lo), p(t + 0.25, lo), p(t + 0.25, hi), p(t - 0.25, hi), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+      });
+    }
+    if (!paint.count) return;
+    const m = new THREE.Mesh(paint.geometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide, envMapIntensity: 0.3 }));
+    m.receiveShadow = true;
+    this.scene.add(m);
   }
 
   /** Asphalt with white bay lines every 2.6 m (5 m tile). */

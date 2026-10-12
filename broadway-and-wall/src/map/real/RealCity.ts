@@ -1391,7 +1391,7 @@ export class RealCityLayer {
     this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();
-    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.skyEnv; });
+    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
@@ -1462,6 +1462,7 @@ export class RealCityLayer {
     this.stage = null;
     this.live = true;
     this.renderer.shadowMap.needsUpdate = true;
+    this.probeDue = true;
     this.onReady?.();
   }
 
@@ -1550,6 +1551,7 @@ export class RealCityLayer {
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
@@ -1570,6 +1572,39 @@ export class RealCityLayer {
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
   private post = new PostFX();
+  /**
+   * WHAT THE GLASS TOWERS SEE (SKYLINE_LOOK_PLAN step 5). The curtain walls
+   * reflected a painted sky and nothing else. Once the city is built, a
+   * probe is rendered from above the tallest building's lot — the real
+   * skyline under the painted sky — prefiltered, and given to every glass
+   * elevation, so a tower mirrors its neighbours. One capture per build;
+   * High quality only (Medium and Low keep the painted sky).
+   */
+  private probeDue = false;
+  private reflEnv: THREE.Texture | null = null;
+  private captureReflections() {
+    this.probeDue = false;
+    if (this.quality !== "high" || !this.renderer) return;
+    let best: Deed | null = null;
+    for (const d of this.deeds.values()) if (d.ring && (!best || d.height > best.height)) best = d;
+    let px = 0, py = 0;
+    if (best?.ring) { for (const [x, y] of best.ring) { px += x / best.ring.length; py += y / best.ring.length; } }
+    const pz = Math.max(40, Math.min(160, (best?.height ?? 60) * 0.6));
+    // the painted sky round the probe, far enough out to sit behind the city
+    const sky = skyEnvironment();
+    sky.children.forEach((o) => { o.scale.setScalar(55); o.position.add(new THREE.Vector3(px, py, pz)); });
+    const kids = [...sky.children];
+    for (const o of kids) this.scene.add(o);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.renderer.resetState();
+    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: 256, position: new THREE.Vector3(px, py, pz) });
+    pm.dispose();
+    for (const o of kids) this.scene.remove(o);
+    this.renderer.resetState();
+    this.reflEnv?.dispose();
+    this.reflEnv = rt.texture;
+    for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
+  }
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];
   private waveTex(uvPerMetre: number): THREE.Texture {
@@ -6018,6 +6053,7 @@ export class RealCityLayer {
     this.sun.castShadow = q !== "low";
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
+    if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";

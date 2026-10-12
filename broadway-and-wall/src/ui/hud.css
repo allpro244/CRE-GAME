@@ -523,3 +523,5 @@
   font-size: var(--fs-base); margin-bottom: 6px;
 }
 .app .deal .page-section { margin-top: 14px; }
+.app .topbar-vital.tstat-tight .tstat-delta,
+.app .topbar-vital.tstat-tight .tstat-of { display: none; }

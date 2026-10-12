@@ -279,10 +279,18 @@ export default function TopBar() {
     if (!box || !row) return;
     const tiles = Array.from(row.querySelectorAll<HTMLElement>("[data-drop]"));
     tiles.forEach((t) => t.classList.remove("tstat-shed"));
+    row.classList.remove("tstat-tight");
     for (const rank of ["1", "2", "3"]) {
       if (row.scrollWidth <= box.clientWidth) break;
       tiles.filter((t) => t.dataset.drop === rank).forEach((t) => t.classList.add("tstat-shed"));
     }
+    // Every tile left is one the bar keeps. Before one is clipped (Book read
+    // "thin ca" at 1100px once Line left joined), the small deltas beside the
+    // labels go — the numbers stay, the month-on-month chips wait for width.
+    if (row.scrollWidth > box.clientWidth) row.classList.add("tstat-tight");
+    // Last resort, below ~1050px: Book. It is a warning the Cash and Next due
+    // tiles are already giving in their own numbers.
+    if (row.scrollWidth > box.clientWidth) tiles.filter((t) => t.dataset.drop === "4").forEach((t) => t.classList.add("tstat-shed"));
   };
   useLayoutEffect(fitVitals);
   useEffect(() => {
@@ -539,7 +547,7 @@ export default function TopBar() {
             {/* The firm's own trouble, only when there is some. */}
             {(() => {
               const book = firmBookStress(game);
-              return book.bad ? <Stat label="Book" value={book.label} bad keep w={64} title={book.title} onClick={() => setPage("debt")} /> : null;
+              return book.bad ? <Stat label="Book" value={book.label} bad drop={4} w={64} title={book.title} onClick={() => setPage("debt")} /> : null;
             })()}
           </div>
           </div>
@@ -770,7 +778,7 @@ export default function TopBar() {
  * longest phase word, and a negative nine-figure number with a suffix.
  */
 function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded, n, delta }: {
-  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 1 | 2 | 3; w?: number; keep?: boolean;
+  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 1 | 2 | 3 | 4; w?: number; keep?: boolean;
   /** Which way it moved, set in the label row. It used to be a chip BESIDE the
    *  tile, which made every pair twice as wide and wrapped the bar onto a
    *  second, ragged row at 1600px. In the label row it costs no width. */

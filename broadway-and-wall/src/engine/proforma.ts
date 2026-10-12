@@ -145,12 +145,18 @@ export function devMix(use: DevUse, custom?: UseMix): UseMix {
   return custom ? normalizeMix(custom) : { ...MIXED_STACK };
 }
 export function dominantOf(mix: UseMix): BuiltClass {
-  return (Object.keys(mix) as BuiltClass[]).sort((a, b) => (mix[b] ?? 0) - (mix[a] ?? 0))[0] ?? "office";
+  // One pass, not a sort: the first key holding the largest share, which is
+  // exactly what a stable descending sort put first. Called on every pro forma.
+  let best: BuiltClass | undefined, bv = -Infinity;
+  for (const k in mix) { const v = mix[k as BuiltClass] ?? 0; if (best === undefined || v > bv) { best = k as BuiltClass; bv = v; } }
+  return best ?? "office";
 }
 /** Weighted average of a per-use number across a programme. */
 export function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
   let sum = 0, w = 0;
-  for (const u of Object.keys(mix) as BuiltClass[]) { const s = mix[u] ?? 0; sum += f(u) * s; w += s; }
+  // for..in walks a plain object's own keys in Object.keys order, without
+  // allocating the array — this runs hundreds of thousands of times a month.
+  for (const k in mix) { const u = k as BuiltClass; const s = mix[u] ?? 0; sum += f(u) * s; w += s; }
   return w > 0 ? sum / w : 0;
 }
 /** How much of a programme carries genuine leasing risk before it is built. */

@@ -58,7 +58,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
-import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
+import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -632,6 +632,8 @@ export interface ProFormaInput {
     mix?: UseMix; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off";
     /** The massing is a structure already standing (a conversion, a takeover): no new-build coverage limit. */
     shell?: boolean;
+    /** This project's hard cost against the market index — see `projectCostMult` (dev.ts). */
+    costMult?: number;
   };
   /**
    * The floor area the scheme may reach, as FAR. The desk plans against the
@@ -732,7 +734,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
@@ -815,8 +817,22 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // carries the years of empty floors it would really carry, and the
   // operating-deficit reserve sizes the scheme to the town — with no cap on
   // floors anywhere.
+  //
+  // ...AND THE MARKET THAT FILLS IT IS EVERY TENANT SHOPPING, NOT ONLY THE NEW
+  // ONES (2026-10-12). The rate above was net absorption — growth — and a new
+  // building does not lease from growth alone: it leases from every tenant
+  // whose lease is up, which is how it fills in a flat market (flight to
+  // quality; the occupied stock re-lets once a lease term, LEASE_TERM_M).
+  // Net take-up alone made the bound a cliff — at a 5-year net of nearly zero
+  // every project carried decades of empty floors and nothing pencilled, at
+  // exactly zero the bound vanished — and read monthly it shut construction
+  // for whole busts (six-town bench: population at year 100 down 15%).
+  // Capturing all of the town's gross leasing is still the generous case.
   const fillMonths = overMix(mix, (u) => {
-    const a = econ.landQueue?.[u]?.absYr ?? 0;
+    const net = econ.landQueue?.[u]?.absYr;
+    if (net === undefined) return 0;
+    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? NATURAL_VAC[u]));
+    const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
     return a > 0 ? (rentable * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
   });
   const carryMonths = Math.round(Math.max(baseCarryMonths * leaseUpMarket * sizeFactor, fillMonths));

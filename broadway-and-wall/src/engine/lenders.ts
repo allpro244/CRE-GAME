@@ -19,7 +19,7 @@
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
-import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
+import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, labourSlack } from "./market";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -180,19 +180,19 @@ const BOOK_SHARE: Record<LenderKind | "firstharbor", number> = {
  * rate. It is an order-of-magnitude figure and it only ever has to be one:
  * nothing is priced off it, it only sets how big the banks are.
  */
-function cityPropertyValue(stock: Record<string, number>): number {
+function cityPropertyValue(stock: Record<string, number>, priceLevel = 1): number {
   let v = 0;
   for (const k of BUILT_CLASSES) {
     const sf = stock[k] ?? 0;
     if (sf <= 0) continue;
     // ~35% of gross goes out as opex and non-recovered costs across classes.
-    const noiPsf = RENT_BASE[k] * (1 - NATURAL_VAC[k]) * 0.65;
+    const noiPsf = RENT_BASE[k] * priceLevel * (1 - NATURAL_VAC[k]) * 0.65;
     v += (sf * noiPsf) / (CAP_BASE[k] / 100);
   }
   return v;
 }
 
-export function initLenders(stock?: Record<string, number>): Lender[] {
+export function initLenders(stock?: Record<string, number>, priceLevel = 1): Lender[] {
   // A CITY'S BANKS ARE THE SIZE OF THE CITY, AND THEY DERIVE IT.
   //
   // These five books were absolute numbers, which was fine while there was one
@@ -218,7 +218,7 @@ export function initLenders(stock?: Record<string, number>): Lender[] {
   // a few per cent, which is the check that it is a restatement and not a
   // rebalance.
   const SYSTEM_LTV = 0.55;
-  const total = stock ? cityPropertyValue(stock) * SYSTEM_LTV : 2_410_000_000;
+  const total = stock ? cityPropertyValue(stock, priceLevel) * SYSTEM_LTV : 2_410_000_000 * priceLevel;
   return lenderNames().map((name, i) => {
     const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
     const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
@@ -331,13 +331,23 @@ export function defaultOperatingBalance(s: GameState): number {
 }
 export interface CashSplit { bank?: Lender; sweep: boolean; keep: number; atBank: number; inBills: number; insured: number; exposed: number }
 /** Where the firm's cash is today: at the bank (insured / exposed) and in Treasury bills. */
+//
+// THE CASH IS SAFE, AND THAT IS NOT A SIMPLIFICATION. The owner found the
+// bank choice a mess — pick a desk, set an operating balance, toggle a sweep,
+// watch capital ratios, and still lose money in every regional crisis — and
+// asked for it gone. It goes, and it goes the way a real treasury runs: an
+// operating account kept inside the insurance limit (reciprocal-deposit
+// networks — ICS, CDARS — exist to do exactly this for every balance over
+// it), and everything else in Treasury bills, which no bank failure reaches.
+// A firm's cash is therefore never a creditor of a receiver. Lenders still
+// fail, and a failure still stops the loans and commitments they wrote
+// (repudiateCommitments) — that is where a bank failure actually hurts a
+// developer — but it never takes the money in the account. The old fields
+// (bankId, cashMgmt) are left on saves and ignored.
 export function cashSplit(s: GameState): CashSplit {
   const cash = Math.max(0, s.cash);
-  const sweep = s.cashMgmt?.sweep ?? true;
-  const keep = Math.max(0, s.cashMgmt?.keep ?? defaultOperatingBalance(s));
-  const atBank = sweep ? Math.min(cash, keep) : cash;
-  const insured = Math.min(atBank, insuredLimit(s));
-  return { bank: bankOf(s), sweep, keep, atBank, inBills: cash - atBank, insured, exposed: atBank - insured };
+  const atBank = Math.min(cash, insuredLimit(s));
+  return { bank: bankOf(s), sweep: true, keep: atBank, atBank, inBills: cash - atBank, insured: atBank, exposed: 0 };
 }
 
 /** Which desk the firm banks with, defaulting to its deepest relationship. */
@@ -352,16 +362,10 @@ function seizeDeposits(s: GameState, l: Lender) {
   const split = cashSplit(s);
   const here = split.atBank;
   if (here <= 0) return;
-  const limit = insuredLimit(s);
   const insured = split.insured;
   const exposed = split.exposed;
-  if (exposed <= 0) {
-    s.news.unshift({
-      q: s.month, kind: "info",
-      text: `Your balance at ${l.name} was under the ${usdShort(limit)} insurance limit. It is all covered, and it is available Monday.`,
-    });
-    return;
-  }
+  // Always insured now (cashSplit): nothing to seize and nothing to say.
+  if (exposed <= 0) return;
   // The receiver's advance dividend lands with the insured money; the rest is
   // a certificate and a wait. Recovery drawn from the real range.
   const recovery = clamp(0.60 + rng(s, "lenders") * 0.30, 0.60, 0.90);
@@ -584,7 +588,7 @@ export function tickLenders(s: GameState) {
   // A save from before banks were sized to the city, or a state built without
   // parcels: the econ already knows the stock, so use it.
   if (!s.lenders?.length) {
-    s.lenders = initLenders(s.econ?.stock);
+    s.lenders = initLenders(s.econ?.stock, s.econ?.priceLevel ?? 1);
   }
   recountYours(s);
   const e = s.econ;
@@ -725,8 +729,9 @@ export function tickLenders(s: GameState) {
     // owners burn reserves, then they stop paying. A recession alone is not
     // enough — it is a recession with vacancy behind it that does this.
     const badTarget = 0.006 + stress * 0.55 * k.brittle
-      + (e.phase === "recession" ? 0.018 : e.phase === "depression" ? 0.014
-        : e.phase === "recovery" ? 0.008 : 0) * k.brittle
+      // borrowers whose tenants are laying off: 0.6 x slack reads 1.8% at a
+      // three-point recession trough, as the old recession term did
+      + 0.6 * Math.max(0, labourSlack(e)) * k.brittle
       + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
     l.delinquent = Math.max(0.002, Math.min(0.35, l.delinquent + 0.10 * (badTarget - l.delinquent) + rrange(s, -0.0015, 0.0015, "lenders")));
 

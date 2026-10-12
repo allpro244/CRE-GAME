@@ -23,7 +23,7 @@ import { resolveRec, marketAppraisal } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
 import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
-import { rrange } from "./market";
+import { rrange, payrollGrowth12 } from "./market";
 import { executePurchase } from "./actions";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -119,7 +119,7 @@ export function reserveMidOf(
 
 /** The cycle's shift on every seller's reservation — one number for the tape and the negotiation. */
 export function phaseShift(s: GameState): number {
-  return s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
+  return Math.max(-0.035, Math.min(0.025, 1.75 * payrollGrowth12(s.econ)));
 }
 
 /** Typical close as a share of ask — kind + distress, not this month's cycle. */
@@ -817,12 +817,12 @@ export function strikeDeal(
     agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
     ...(opts?.offMarket ? { offMarket: true } : {}),
     note: `Agreed at ${fmtM(px)} with ${seller.name}${seller.name.endsWith(".") ? "" : "."} ${fmtM(dep)} of earnest money is posted and hard. `
-      + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
+      + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M - 1)} or the deposit is theirs.`,
   };
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Under contract at ${address}: ${fmtM(px)} agreed with ${seller.name}, ${fmtM(dep)} down. `
-      + `The rest is due by ${monthLabel(next.month + CLOSE_WINDOW_M)}.`,
+      + `The rest is due by ${monthLabel(next.month + CLOSE_WINDOW_M - 1)}.`,
   });
   return { s: next };
 }

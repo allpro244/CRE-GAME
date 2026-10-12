@@ -3,7 +3,7 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { resolveRec, concentration, industryConcentration, netWorth } from "./value";
+import { resolveRec, concentration, industryConcentration, netWorth, buildTier } from "./value";
 import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
@@ -284,8 +284,16 @@ export function deskAdvice(
  * good; a gate of "standard" admits good and standard. Worn and obsolete
  * buildings go to the banks and the debt fund, as they do in life.
  */
-export function conditionOk(p: LoanProduct, condition: string | undefined): boolean {
-  if (!p.minCondition || condition === undefined) return true;
+export function conditionOk(p: LoanProduct, condition: string | undefined, spec?: number): boolean {
+  if (!p.minCondition) return true;
+  // ...NOR A VALUE-ENGINEERED ONE, however new. A life company is buying a
+  // fifteen-year stream and underwrites the building it will still be lending
+  // on in year fifteen: short-life plant and a weak tenant pool are exactly
+  // what it is paid not to hold. Value bones go to the banks, the conduit and
+  // the debt funds, as institutional-grade-only lending works in life.
+  // BUILD_CLASS_PLAN.md.
+  if (spec !== undefined && buildTier(spec).key === "value") return false;
+  if (condition === undefined) return true;
   if (p.minCondition === "good") return condition === "good";
   return condition === "good" || condition === "standard";
 }
@@ -657,8 +665,8 @@ export function productOpen(s: GameState, p: LoanProduct): boolean {
  * form (balance x coupon x years x 0.62) ignored the market entirely: it
  * charged a 7% note's full coupon whether rates had fallen to 4% or risen to
  * 9%, so breaking a loan in a rising market cost millions when the real
- * clause costs the floor. The reinvestment yield is the loan index — policy
- * plus term premium, what fixed paper prices off here, i.e. the Treasury the
+ * clause costs the floor. The reinvestment yield is the loan index — the
+ * expected policy path plus term premium, what fixed paper prices off here, i.e. the Treasury the
  * clause names; a floater is measured against the short index it resets on.
  */
 const YM_FLOOR = 0.01;   // the customary 1%-of-balance minimum in a yield-maintenance clause
@@ -836,6 +844,43 @@ export function paydownLoan(
     s: next,
     msg: `Paid down $${amt.toLocaleString()}${penalty > 0 ? ` (+$${penalty.toLocaleString()} prepayment)` : ""} — payment now $${loan.monthlyPmt.toLocaleString()}/mo.`,
   };
+}
+
+/**
+ * DRAW THE LEASE-UP RESERVE — up to `want`, no further than the room left.
+ * The advance goes on the loan's balance (tickLoan re-prices the payment from
+ * the balance every month) and is booked as borrowing, so the reserve is
+ * financed, never minted. With `toCash` false the caller carries the dollars
+ * into the month's cash flow itself. Returns what was drawn.
+ */
+export function drawLeaseUpReserve(s: GameState, h: Holding, want: number, toCash = true): number {
+  const loan = h.loan;
+  const room = loan?.leaseUpRoom ?? 0;
+  if (!loan || !(room > 0) || !(want > 0) || h.fundOwned) return 0;
+  const draw = Math.min(room, Math.round(want));
+  if (draw <= 0) return 0;
+  loan.leaseUpRoom = room - draw;
+  if (loan.leaseUpRoom < 1) delete loan.leaseUpRoom;
+  // funded principal: the commitment is advanced, so the note's principal
+  // grows with it (a balance over principal is an invariant breach)
+  loan.balance += draw;
+  loan.principal += draw;
+  // re-price the cheque on the new balance now, the way tickLoan does monthly
+  {
+    const io = s.month < loan.ioUntilM;
+    const yearsLeft = Math.max(1, loan.amortYears - (s.month - loan.originM) / 12);
+    loan.monthlyPmt = io
+      ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
+      : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
+  }
+  if (toCash) s.cash += draw;
+  logBooks(s, "borrowed", draw, h.bbl);
+  return draw;
+}
+
+/** What the lease-up reserve can still fund on this deed, $. */
+export function leaseUpRoom(h: Holding | undefined): number {
+  return h && !h.fundOwned ? Math.max(0, h.loan?.leaseUpRoom ?? 0) : 0;
 }
 
 export function monthlyPayment(principal: number, ratePct: number, years: number): number {
@@ -1142,14 +1187,17 @@ const STAB_LTV = 0.65;
 // `lev` scales the loan down from the lender's maximum — the player's dial.
 // Pass the same `stab` the quote screen used — without it, bridge paper sizes
 // on in-place income at close after showing a stabilised takeout on the card.
+// `guarantor` is the sponsor the term sheet was struck on: a recourse desk
+// prices a strong name a tenth under and caps a thin one, so a closing that
+// sizes without it writes a different coupon and principal than it quoted.
 export function originate(
   s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
-  condition?: string, klass?: string, stab?: StabView,
+  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number,
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
-  if (!conditionOk(product, condition)) return null;
-  const full = quote(s, product, price, noiYr, klass, false, stab, condition);
+  if (!conditionOk(product, condition, spec)) return null;
+  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0
@@ -1429,7 +1477,8 @@ export function tickLoan(
   // (portfolio accounting); this clock only asks whether the sponsor could
   // fund it. One bad month is a timing problem; a quarter of them is a file.
   const gap = Math.max(0, Math.ceil(loan.monthlyPmt - assetCF));
-  const short = gap > 0 && s.cash < 0 && fundableNow(s, parcels) < gap;
+  // the lease-up reserve funds the gap before the sponsor is asked to (sim.ts)
+  const short = gap > 0 && gap > leaseUpRoom(h) && s.cash < 0 && fundableNow(s, parcels) < gap - leaseUpRoom(h);
   loan.arrearsMs = short ? (loan.arrearsMs ?? 0) + 1 : 0;
   // MONTHS ONE AND TWO USED TO SAY NOTHING AT ALL. The three-month clock that
   // ends with a lender's file, a notice period and a July auction started in
@@ -1501,7 +1550,7 @@ export function tickLoan(
       // did: the deed came out free and clear, the 1% fee was paid anyway, and
       // the lender's paper simply evaporated. Guard it and walk the rest of the
       // ladder's answers — retire it, write the gap, or open a file.
-      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab);
+      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
       if (fresh) {
         h.loan = fresh;
         fresh.balance = fresh.principal = rolled;
@@ -1565,7 +1614,7 @@ export function tickLoan(
         // lev=1 with no hair (and the wrong class on land) used to write a
         // bigger loan than "today's market only refinances $X" claimed.
         h.loan = qd.principal > 100_000
-          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab)
+          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec)
           : null;
         if (h.loan && h.loan.balance !== qd.principal) {
           h.loan.balance = h.loan.principal = qd.principal;
@@ -1983,7 +2032,7 @@ export function balloonLadder(
         // A desk that cannot close on this building must not be chosen as its
         // renewal: the life company only writes well-kept product, and
         // `originate` refuses at the table after the ladder has already picked.
-        && conditionOk(p, h.condition));
+        && conditionOk(p, h.condition, rec.buildSpec));
     const fee = Math.round(balance * REFI_FEE);
     const sized = ladder.map((p) => {
       const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
@@ -2098,7 +2147,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       floating: p.floating,
       available: onFacility ? false
         : !productOpen(s, p) || !windowOpen(s, p) ? false
-        : !conditionOk(p, h.condition) ? false
+        : !conditionOk(p, h.condition, rec.buildSpec) ? false
         : p.mezz ? false
         : p.uwDscr <= 0 ? vacantDirt
         : !vacantDirt && q.principal > 0,
@@ -2108,8 +2157,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
-        : !conditionOk(p, h.condition)
-        ? "Life-company money wants a well-kept building. Renovate first."
+        : !conditionOk(p, h.condition, rec.buildSpec)
+        ? (buildTier(rec.buildSpec).key === "value" ? "Life-company money does not lend on value-engineered buildings, however new." : "Life-company money wants a well-kept building. Renovate first.")
         : p.mezz
         ? "Mezzanine sits behind a senior — use Place mezz on the refinance desk, do not replace the first lien."
         : p.minLoan && q.principal === 0 && !vacantDirt
@@ -2188,7 +2237,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
           : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket

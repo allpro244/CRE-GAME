@@ -135,7 +135,18 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   const sv = E.productById("savings"), cd = E.productById("conduit"), pl = E.productById("pelican");
   ok(E.loanMin(g, sv) < sv.minLoan && E.loanMin(g, sv) >= 500_000, `the regional's minimum cheque here is $${(E.loanMin(g, sv) / 1e6).toFixed(2)}M, not $2.5M`);
   ok(E.loanMin(g, cd) >= 1_000_000 && E.loanMin(g, cd) < cd.minLoan, `the conduit's is $${(E.loanMin(g, cd) / 1e6).toFixed(2)}M, floored at $1M`);
-  ok(quotes("savings") >= 0.3, `the regional quotes ${(quotes("savings") * 100).toFixed(0)}% of the opening tape (was 9%)`);
+  // ONE TOWN'S OPENING TAPE IS A HANDFUL OF BUILDINGS (8-9 on the reference
+  // town), so the share swung 44% -> 25% when street plan 8 re-dealt which
+  // ones list, with the buildings themselves the same size. Pooled over
+  // twelve markets it reads 37% / 33%; the floor is asked of the pool.
+  let qn = 0, qk = 0;
+  for (const sd of [550991, 12007, 11, 7919, 73303, 4242, 91117, 20603, 22, 33, 44, 55]) {
+    const gs = E.firstListings(E.newGame(sd, parcels), parcels, bbls);
+    const b = gs.listings.filter((li) => { const r = E.resolveRec(parcels, gs, li.bbl); return r && r.class !== "land" && r.bldgArea > 0 && !li.halfBuilt; });
+    qn += b.length;
+    qk += b.filter((li) => E.buyQuote(gs, parcels, li.bbl, li.ask, "savings", 1).principal > 0).length;
+  }
+  ok(qk / Math.max(1, qn) >= 0.3, `the regional quotes ${(qk / Math.max(1, qn) * 100).toFixed(0)}% of the opening tape across twelve markets (${qk} of ${qn}; was 9%)`);
   // the life company across three towns and two dates — it is the desk most sensitive to the window and the grade
   let pn = 0, pq = 0;
   for (const seed of [12007, 11, 4242]) {

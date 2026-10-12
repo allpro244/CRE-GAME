@@ -99,7 +99,7 @@ ok("every seen key routes", fails === 0, fails ? `${fails} orphan(s)` : `${seen.
   ok("month toast omits sub-centimillion noise",
     E.monthCashBit(0) === "" && E.monthCashBit(4_999) === "" && E.monthCashBit(-4_999) === "");
   ok("month toast prints a centimillion",
-    E.monthCashBit(10_000) === " · +$0.01M" && E.monthCashBit(-25_000) === " · −$0.03M");
+    E.monthCashBit(10_000) === " · +$10K" && E.monthCashBit(-25_000) === " · −$25K" && E.monthCashBit(1_250_000) === " · +$1.25M");
 }
 
 // Static prefixes emitted by attentionItems — catch keys the bot never reached.

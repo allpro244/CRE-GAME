@@ -1,13 +1,53 @@
 # Baseline attribution — the rent level
 
-**Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
+**Ruler commit:** regenerated on street plan 4, the frontage plat (`CITY_PLAN` 4, `SAVE_VERSION` 39).  
 **Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
 
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
 
 ---
 
-## This ruler: rents escalate on realised CPI; scarcity premium earned by shortfall (`063055b`)
+## This ruler: street plan 4, the frontage plat (`CITY_PLAN` 4; SAVE_VERSION unchanged)
+
+New towns are cut frontage-first (citygen.mjs THE FRONTAGE PLAT): real block
+dimensions, every block split down its spine into two rows of street-facing
+lots (onto a 16 ft alley in some districts), assembled sites as runs of
+adjacent lots, buildings on the street line with yards behind. Lots carry
+`lotFront` / `lotDepth`; retail rent reads shop depth by the zoning method;
+transit demand reads each lot's best platform instead of a sum over every
+station within 840 m. Saves record their plan, and plan-3 towns rebuild
+byte-identical, so no campaign is refused.
+
+THE REFERENCE TOWN CHANGED, which is most of what the single-town ruler
+shows: seed 1 under plan 4 is a different island. So the move was measured
+on six towns x six market seeds, plan 3 against plan 4, with the transit and
+shop-front changes switched off one at a time (per-town medians; "down" is
+towns of six that fell):
+
+| Metric | plan 4 / plan 3 | down | Driver |
+|---|---|---|---|
+| `land.p90` | 0.52 | 5/6 | Prime land half as dear. A third is the per-platform transit term (downtown no longer sums every stop); the rest is the plat: prime sites are now narrow lots that must be assembled |
+| `land.med` | 0.83 | 4/6 | Same, milder |
+| `rentIdx.office` | 0.78 | 4/6 | Follows land; transit accounts for ~0.84 of it |
+| `rentIdx.retail` | 1.10 | 2/6 | Shop-front pricing (~1.14 of it): shallow shops on wide fronts let dearer |
+| `vac.retail` | 0.84 | 6/6 | Shops fill better where the front is |
+| `city.floorAreaM` / `employed` / `population` | 0.92 / 0.90 / 0.90 | 4-6/6 | The cost: narrow lots carry fewer towers until assembled, so the same land opens with ~8% less floor |
+| `rail.occ.office.cap` | 0.21 | 4/6 | Fewer months on the office residence floor |
+| `rail.occ.industrial.cap` | 0.95 | 3/6 | Unchanged across towns (~0.21 on both plans); the single-town 0.01 -> 0.26 was the town re-roll |
+| `city.buildings`, `dev.affordableLotShare` | 1.02, 0.94 | 2-3/6 | Not resolved at six towns |
+
+Not in BASELINE but measured: median lot aspect 1.4 -> 2.0, near-square lots
+35% -> 20%, corner lots 40-60% -> ~36%, through-lots 25% -> 7% of lot area,
+whole-block deeds 10% -> 3%, demand-vs-distance correlation ~0.78 -> ~0.56,
+lot count +1% on twelve seeds, zero slivers on twenty.
+
+Also in this ruler: an acquisition now originates on the same guarantor its
+quote was struck on (actions.ts) — a strong sponsor's closing coupon is the
+quoted one, a tenth under the old closing.
+
+---
+
+## Previous ruler: rents escalate on realised CPI; scarcity premium earned by shortfall (`063055b`)
 
 See ECONOMY.md, "THE RENT LEVEL". Paired against `39f1cc8` over 16 seeds x 300 months:
 

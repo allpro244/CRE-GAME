@@ -404,6 +404,16 @@ export interface Loan {
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
   /**
+   * THE UNDRAWN LEASE-UP RESERVE on a construction takeout, $. The lender
+   * holds it and advances it as the costs it was budgeted for arrive — each
+   * lease's fit-out and commission at signing, and the month's shortfall while
+   * the building cannot carry its own coupon (debt.ts drawLeaseUpReserve). It
+   * lives on the loan because it is the loan's commitment: a refinance, a sale
+   * or a payoff ends it, and it closes when the last shell floor is let and
+   * the building covers its debt.
+   */
+  leaseUpRoom?: number;
+  /**
    * WHO IS ACTUALLY HOLDING IT.
    *
    * The product says who wrote the loan. This says who owns it today, and they
@@ -580,12 +590,20 @@ export interface Holding {
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
-   * you by the stance above, and none of it reaches your desk. Fill signs what
-   * comes; Market signs near your ask and counters the rest to it; Push holds
-   * out over your ask. Same terms, same commission and the same tenant
-   * reactions as clicking the buttons yourself (see autoLeaseDesk).
+   * you by the stance above and the fit-out cap below, and none of it reaches
+   * your desk. Fill signs what comes; Market signs near your ask and counters
+   * the rest to it; Push holds out over your ask. Same terms, same commission
+   * and the same tenant reactions as clicking the buttons yourself (see
+   * autoLeaseDesk).
    */
   autoLease?: boolean;
+  /**
+   * AUTO-LEASE FIT-OUT CAP, $/sf per year of term, in OPENING-YEAR dollars
+   * (read × econ.costIdx, so it tracks construction cost the way the asks do).
+   * Undefined: no cap. A letter over it is countered down to it once; a tenant
+   * who will not come under it is passed.
+   */
+  autoTiCapPsfYr?: number;
   /**
    * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
    *
@@ -740,8 +758,17 @@ export interface BuildingDesign {
   /** index into the renderer's trim paints (stone, green, black, terracotta, grey) */
   trim?: number;
   roof?: "flat" | "gable" | "hip" | "mansard";
+  /**
+   * the ground storey: a double-height glass lobby, a rusticated stone base,
+   * columns (pilotis) with the lobby set back, an arcade, or the facade run
+   * to the pavement. Shops at grade are the Programme's call (groundRetail),
+   * so a trading ground floor keeps its shopfronts or goes behind an arcade.
+   */
+  base?: "lobby" | "stone" | "columns" | "arcade" | "plain";
   /** how a tall building finishes */
   crown?: "none" | "setback" | "spire" | "mast" | "cake";
+  /** a landmark form for a tower (a key of src/map/real/signature.ts SIGNATURE_FORMS); it replaces the massing and the crown */
+  signature?: string;
 }
 
 export interface DevDraft {
@@ -1415,12 +1442,20 @@ export interface SwanRecord {
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
-  /** The secular level money is being pulled toward. See recordHistory. */
+  /** The loan index without the premium's monthly noise. See tickNation. */
   rateRegime?: number;
   population?: number;
   jobs?: number;
   unemployment?: number;
   wageIdx?: number;
+  /** National unemployment, for the credit window's year-on-year read. */
+  natUnemp?: number;
+  /** National nominal wage path — the services half of the local CPI is read against it. */
+  natWageIdx?: number;
+  /** National price level path, so a local/national gap can be read off history. */
+  natCpi?: number;
+  /** Local prices less shelter — what rents escalate by. */
+  cpiXS?: number;
   outputIdx?: number;
   cpi?: number;
   landIdx: number;
@@ -1449,7 +1484,8 @@ export interface EconHistoryPoint {
 }
 
 export interface Econ {
-  /** The LOAN INDEX: policy + term premium — what fixed paper prices off. */
+  /** The LOAN INDEX: the expected path of policy over ten years plus a term
+   *  premium — a ten-year yield, what fixed paper prices off. See market.ts. */
   indexRate: number;
   /**
    * THE SHORT INDEX: the policy rate plus a money-market spread that widens
@@ -1509,6 +1545,8 @@ export interface Econ {
    * office won the 50-year crude return on every seed, by 3-4 points.
    */
   retExp?: Record<BuiltClass, number>;
+  /** Each class's real rent growth as buyers have watched it, four-year memory — the g in cap = r - g. */
+  growthExp?: Record<BuiltClass, number>;
   /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
   /**
@@ -1693,6 +1731,8 @@ export interface Econ {
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
     shockClusterM?: number;
+    /** National unemployment, last 13 months — the credit window's year-on-year read, kept by the nation itself so the pre-history has it too. */
+    uHist?: number[];
     /**
      * The term premium as its own state — what the bond market charges over
      * the policy rate for time and risk, and it WANDERS. The loan index used
@@ -1703,8 +1743,18 @@ export interface Econ {
      * ~20-25bp for a real index). A market rate is policy plus a premium that
      * mean-reverts around its structural level while real noise hits it every
      * month — that is where retracements inside a trend come from.
+     *
+     * It is now the premium over the EXPECTED path of policy, not over
+     * today's rate, and its level reads how far the bank is believed: see
+     * `termPremBase` and `expectedPolicyAvg` in market.ts.
      */
     termPrem?: number;
+    /**
+     * What the bank's own rule prescribes this month, before gradualism —
+     * the rate it is walking toward. The bond market reads it to price the
+     * path, the way a real one reads the dot plot and the data.
+     */
+    ruleRate?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed
@@ -1763,12 +1813,22 @@ export interface Econ {
   cycPeak?: number;
   phaseAge?: number;
   exportIdx?: number;
+  /** This town's own persistent growth over the nation's, per year — the region it sits in. See `regionalPull`. */
+  regionTrend?: number;
+  /** The last month's regional pull on the export base, per year, after the cost brake. */
+  regionPull?: number;
   /** The population by age: children, working age, over 65. */
   ages?: { kids: number; work: number; old: number };
   /** Adults (working age + over 65) at the opening, for household formation. */
   adults0?: number;
   /** The national wage path (no local tightness), and this town's smoothed premium over it. */
   natWageIdx?: number;
+  /** The national price level, compounded from `nat.infl`; the local `cpi` is it plus local shelter and services. */
+  natCpi?: number;
+  /** This town's real pay over the nation's, two-year average — what movers answer. */
+  realPremEma?: number;
+  /** Local prices less shelter (goods + local services). Rents escalate by this, not by a CPI that contains them. */
+  cpiXS?: number;
   wagePremEma?: number;
   /** Each class's demand driver last month and its five-year average monthly growth. */
   classDrv?: Record<BuiltClass, number>;
@@ -1851,9 +1911,33 @@ export interface Econ {
    * difference of two large numbers.
    */
   capExp?: Record<BuiltClass, number>;
+  /**
+   * THE REDEVELOPMENT QUEUE, per use (value.ts `refreshLandQueue`). A land
+   * residual is what the lot is worth if its building could be delivered and
+   * absorbed now; a town absorbs only so much space a year, so each lot waits
+   * behind every better site. `psf` descending, `ahead` the floor area (sf) of
+   * sites with a higher residual, `absYr` the class's measured throughput
+   * (sf/yr), `r` the yield the wait is discounted at.
+   */
+  /**
+   * WHAT TENANTS ARE PAYING ACROSS THE ROLL, real (opening dollars): effective
+   * rent rolled at the class's lease-turnover speed (AFFORD_ROLL), leases
+   * carrying the price level. The rent a firm deciding to relocate is
+   * actually paying — not this month's quote on space it does not occupy.
+   */
+  inPlaceReal?: Record<BuiltClass, number>;
+  /** The opening effective rent — the parity the demand side's price argument is measured against. */
+  effAnchor?: Record<BuiltClass, number>;
+  /** The land market's level, $/sf of land (mean model price over the queue's yearly sample). */
+  landMkt?: number;
+  /** What owners BELIEVE that level is — it learns the market at appraisal-smoothing speed. */
+  landBelief?: number;
+  landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
+  /** This town's dollars against the reference table, drawn per seed at the opening (market.ts). */
+  priceLevel?: number;
   // Sectors do not move together. Each class carries its own momentum, so
   // office can be in a bear market while sheds are the best trade in town —
   // which is the whole reason to hold more than one kind of building.
@@ -1978,6 +2062,14 @@ export interface Econ {
    * the city examines for each crane (36/37 ≈ 97th percentile).
    */
   sitePencil?: Record<BuiltClass, number>;
+  /** P97 development hurdle over the vacant sites sampled each year, clearing
+   *  or not (dev.ts refreshDevelopmentFeasibility). Missing for a use no
+   *  vacant site permits. */
+  siteHurdle?: Partial<Record<BuiltClass, number>>;
+  /** Loan index at the opening, the reference for tenure choice (market.ts). */
+  tenureRef?: number;
+  /** Renter share of households against the opening, rolled (market.ts). */
+  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only
@@ -2367,6 +2459,12 @@ export interface Rival {
   id: string;
   name: string;
   style: RivalStyle;
+  /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
+  lastBuildM?: number;
+  /** Off-market calls this firm made: a building it will not ring again before the month given. */
+  doors?: Record<string, number>;
+  /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
+  coldHolders?: Record<string, number>;
   cash: number;
   debt: number;
   bbls: string[];        // what they own
@@ -2426,18 +2524,6 @@ export interface Rival {
     firmName: string;
     personName: string;
   };
-  /**
-   * JUDGEMENT BY JEV. Present only on a firm whose decisions — which listing to
-   * buy, whether to sell a holding, whether to take equity out, which scheme to
-   * start, whether to take city work, what to sell under duress — are informed
-   * by TypeSafe's Jev model (engine/jev.ts, src/ai/jevQuestions.ts). The engine
-   * still computes every number and every constraint; Jev answers typed
-   * questions with probabilities, and code acts only above a confidence
-   * threshold, otherwise the firm's own scripted rule decides. `charter` is the
-   * plain-language mandate sent to Jev as `firm_mandate`. No key or endpoint
-   * ever lives in the state.
-   */
-  jev?: { charter: import("../ai/jevQuestions").CharterId; sinceM: number };
 }
 
 /** One firm the player bought whole — the closing statement, kept. */
@@ -2674,7 +2760,7 @@ export interface GameState {
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;
-  v: 39;
+  v: 40;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -2851,6 +2937,12 @@ export interface GameState {
    */
   opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
   /**
+   * The house minimum new lease, sf (leasing.ts setMinLeaseSfAll): written to
+   * every deed when set, and the floor a building bought or delivered later
+   * opens on. Undefined: no house floor.
+   */
+  minLeaseDefault?: number;
+  /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.
    *
    * refreshListings picked a random parcel with no memory of what had just
@@ -2923,6 +3015,8 @@ export interface GameState {
   // building went up" and "Alden Development Co. got to that corner first".
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /** The spec the developer built to (0..1, 0.5 = market) — see `developerLook`. */
+    spec?: number;
     /**
      * The programme, settled at groundbreak. Shops at grade depend on the final
      * floor count and on the demand score of the day, and the pipeline books
@@ -3000,6 +3094,13 @@ export interface GameState {
    * of the state the sim worker hands back — the spec silently reset to 0.5.
    */
   specOf?: Record<string, number>;
+  /**
+   * THE CITY'S STOCK BY VINTAGE — sf-weighted mean year built, per use.
+   * Restamped each January by sim.ts (stampStockVintage) so the building
+   * score can read "how new is this against what tenants could take instead"
+   * without being handed the parcel table. BUILD_CLASS_PLAN.md.
+   */
+  stockVintage?: Partial<Record<BuiltClass, number>>;
   /**
    * WHAT THE BOARD SAID, and when.
    *
@@ -3162,12 +3263,6 @@ export interface GameState {
   pastGoals?: import("./goals").Goal[];
   /** Standing acquisition criteria (see buybox.ts). */
   buyBox?: import("./buybox").BuyBox;
-  /** Jev-run firms: the decisions fetched for the current period, and the log of what code did with them. */
-  jev?: import("./jev").JevState;
-  /** Jev-run firms: money each Jev-driven action moved, by firm (engine/aibooks.ts). */
-  jevBooks?: Record<string, import("./aibooks").FirmBookEntry[]>;
-  /** Jev-run firms: equity marks by decision period, for the match chart. */
-  jevHistory?: { m: number; eq: Record<string, number> }[];
   /** Spectator run: the player's own firm sits out; the clock never stops for it. */
   spectator?: boolean;
   /** How many funds this firm has raised — Fund I, II, III. */
@@ -3332,6 +3427,12 @@ export interface GameState {
      * headroom instead of as a deposit (credit.ts parkedOnLine).
      */
     parked?: number;
+    /**
+     * Set the month the line first has to carry debt service because operating
+     * cash ran dry, cleared the first month it does not. One notice per run of
+     * it, not one per month — see sim.ts.
+     */
+    payingNotes?: boolean;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */

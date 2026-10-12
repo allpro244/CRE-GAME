@@ -106,6 +106,13 @@ export function mixOf(rec: Pick<ParcelRecord, "class" | "bbl" | "floors" | "unit
 export function normalizeParcels(table: Record<string, ParcelRecord>): Record<string, ParcelRecord> {
   for (const bbl of Object.keys(table)) {
     const rec = table[bbl];
+    // NO USE ZONING, BUT A DENSITY LIMIT (owner, 2026-10-12: "You can add FAR
+    // limits"). Any class goes on any lot (`zonePermits`); how much floor area
+    // a lot may carry is the plat's FAR, the larger of its two district
+    // figures (`farMaxFor`). This replaced the 2026-10-10 rule that set every
+    // lot to what its footprint could physically carry, under which one lot
+    // took a 415k sf office tower in the first boom. More envelope is what
+    // the variance desk is for.
     if ((rec.class as string) !== "mixed") continue;
     const m = deriveMix(rec);
     rec.mix = m;

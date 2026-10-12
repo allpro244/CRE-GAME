@@ -58,7 +58,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
-import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
+import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentDriftAt } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -205,7 +205,10 @@ export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, a
   const safeLtc = 0.70;
   const specLtc = 0.70;
   const base = specLtc * spec + safeLtc * (1 - spec);
-  const tight = phase === "recession" || phase === "depression" ? 0.72 : phase === "peak" ? 0.94 : 1;
+  // The label multiplier (0.72 in a recession) priced the credit window a
+  // second time: `creditIdx` below already is the window. `phase` is unread.
+  void phase;
+  const tight = 1;
   // Construction paper in this town is written by the regional bank, and the
   // regional bank has a balance sheet you can read on Research. When it is
   // eating losses it does not tighten the market's terms — it tightens YOURS,
@@ -562,6 +565,8 @@ export function deskQuote(
  * The bounds are guards on a ratio of two indices that track each other; they
  * are not meant to bind. `rentMult` is the holder's peak scenario (value.ts).
  */
+/** Months from a groundbreak to the middle of its lease-up — the horizon of a delivery forecast. */
+const DELIVERY_FORECAST_M = 30;
 export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   // An overlay, not a copy: the three indices are replaced and every other
   // field reads through to the live econ. Spreading the whole econ object
@@ -572,9 +577,23 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   for (const u of BUILT_CLASSES) {
     const belief = econ.rentExp?.[u] && econ.rentIdx?.[u]
       ? clampP(econ.rentExp[u] / econ.rentIdx[u], 0.55, 1.75) : 1;
+    // ...and the concessions the market will be giving when it lets: the
+    // package at delivery vacancy against today's (2026-10-12), the ratio
+    // `devPencils` prices. Nothing in the pipeline, nothing changes.
+    const nat = NATURAL_VAC[u];
+    const vNow = econ.cityVac?.[u] ?? nat;
+    const vAt = econ.stock?.[u] ? forwardVacancy(econ, u) : vNow;
+    const conc = (1 - CONC_DEPTH * concessionTarget(vAt - nat))
+      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vNow - nat));
+    // ...and the rent itself at delivery: the market's own rent rule
+    // (`rentDriftAt`) run at the delivery vacancy over the build and the
+    // first half of the lease-up, ~30 months. A pipeline that will glut the
+    // market is forecast to cut the rent it delivers into; a shortage nobody
+    // is building into is forecast to raise it (2026-10-12).
+    const drift = econ.stock?.[u] ? Math.exp(rentDriftAt(u, vAt - nat) * DELIVERY_FORECAST_M) : 1;
     const k = belief * rentMult;
     if (rentIdx[u] !== undefined) rentIdx[u] = rentIdx[u] * k;
-    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k;
+    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc * drift;
     const capBelief = econ.capExp?.[u] && econ.capRate?.[u]
       ? clampP(econ.capExp[u] / econ.capRate[u], 0.6, 1.7) : 1;
     if (capRate[u] !== undefined) capRate[u] = capRate[u] * capBelief;
@@ -629,6 +648,8 @@ export interface ProFormaInput {
     mix?: UseMix; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off";
     /** The massing is a structure already standing (a conversion, a takeover): no new-build coverage limit. */
     shell?: boolean;
+    /** This project's hard cost against the market index — see `projectCostMult` (dev.ts). */
+    costMult?: number;
   };
   /**
    * The floor area the scheme may reach, as FAR. The desk plans against the
@@ -729,7 +750,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
@@ -779,8 +800,13 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // vacancy was 2% or 20%. Scale that observed base duration by availability
   // against natural vacancy: tight markets fill faster; gluts take longer.
   const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  // ...AT DELIVERY, AND WITH THIS BUILDING IN IT (2026-10-12): the vacancy
+  // the scheme will open into — the pipeline already in the ground and the
+  // scheme's own floor area (`forwardVacancy`). A tower the size of half the
+  // town's office stock prices the glut it would create; nothing else needs
+  // to cap it.
   const availability = overMix(mix, (u) =>
-    (econ.cityVac?.[u] ?? NATURAL_VAC[u])
+    forwardVacancy(econ, u, rentable * (mix[u] ?? 0))
       + (econ.sublet?.[u] ?? 0) / Math.max(1, econ.stock?.[u] ?? CITY_STOCK[u]));
   const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
   // Floor used to be 0.5 — even a bone-dry street kept half a glut's lease-up
@@ -799,7 +825,38 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // The 3x bracket is a guard. (This lived only in the land residual; the desk
   // underwrote a 500k sf tower as if the market would swallow it in one gulp.)
   const sizeFactor = gsf > 45_000 ? Math.min(3, Math.pow(gsf / 45_000, 0.7)) : 1;
-  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket * sizeFactor);
+  // ...AND NEVER FASTER THAN THE WHOLE MARKET TAKES UP SPACE (2026-10-11).
+  // The size factor above is measured against a typical scheme, not against
+  // the town, and its 3x bracket was binding exactly where it mattered: at an
+  // office peak on map 3003 the land residual priced a 90-floor, 1.5M sf tower
+  // on one downtown lot — half again the size of the town's whole 3.2M sf
+  // office stock — as filling in 114 months, and valued the lot at $4.1B. A
+  // building cannot lease faster than the market absorbs space, and that rate
+  // is measured (`econ.landQueue[use].absYr`, the class's net take-up plus the
+  // stock it replaces, over five years). Assuming the scheme captures ALL of
+  // it is the generous case; even so a tower the market cannot swallow now
+  // carries the years of empty floors it would really carry, and the
+  // operating-deficit reserve sizes the scheme to the town — with no cap on
+  // floors anywhere.
+  //
+  // ...AND THE MARKET THAT FILLS IT IS EVERY TENANT SHOPPING, NOT ONLY THE NEW
+  // ONES (2026-10-12). The rate above was net absorption — growth — and a new
+  // building does not lease from growth alone: it leases from every tenant
+  // whose lease is up, which is how it fills in a flat market (flight to
+  // quality; the occupied stock re-lets once a lease term, LEASE_TERM_M).
+  // Net take-up alone made the bound a cliff — at a 5-year net of nearly zero
+  // every project carried decades of empty floors and nothing pencilled, at
+  // exactly zero the bound vanished — and read monthly it shut construction
+  // for whole busts (six-town bench: population at year 100 down 15%).
+  // Capturing all of the town's gross leasing is still the generous case.
+  const fillMonths = overMix(mix, (u) => {
+    const net = econ.landQueue?.[u]?.absYr;
+    if (net === undefined) return 0;
+    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? NATURAL_VAC[u]));
+    const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
+    return a > 0 ? (rentable * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
+  });
+  const carryMonths = Math.round(Math.max(baseCarryMonths * leaseUpMarket * sizeFactor, fillMonths));
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
   const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
@@ -917,7 +974,20 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // with (`noiYr(..., true)`), and the exit yield is the same tax-loaded
   // capitalisation `assetValue` uses — read at the underwritten market (see
   // underwritingEcon). BTS overlays the committed share on top of that read.
-  const marketStabNoi = noiYr(asBuilt, uw, "good", true);
+  // ...LESS WHAT THIS BUILDING DOES TO ITS OWN RENT (2026-10-12). A scheme
+  // that adds a fifth of the town's office stock lets into the glut it
+  // creates: the concession package at delivery vacancy WITH it against the
+  // package without it, taken off its stabilised rent. A shed on a big lot
+  // barely moves it; a tower the size of the market prices its own glut.
+  const ownConc = overMix(mix, (u) => {
+    const nat = NATURAL_VAC[u];
+    const vAt = forwardVacancy(econ, u);
+    const vOwn = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
+    return (1 - CONC_DEPTH * concessionTarget(vOwn - nat))
+      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vAt - nat));
+  });
+  const marketStabNoi = noiYr(asBuilt, uw, "good", true)
+    - rentPsf0 * rentable * stabOcc0 * Math.max(0, 1 - ownConc);
   let stabNoi = marketStabNoi;
   if (btsShare > 0 && bts) {
     const opex = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u));

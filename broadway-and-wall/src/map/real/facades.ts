@@ -448,7 +448,39 @@ export function pick(roll: number, w: [string, number][]): string {
   for (const [k, x] of w) { acc += x / tot; if (roll < acc) return k; }
   return w[w.length - 1][0];
 }
+/**
+ * THE COUSINS. A family added to the pattern book after the first ones is a
+ * cousin of one already drawn: the regional or period dress the same kind of
+ * building also went up in (a Chicago two-flat beside the red-brick walk-up,
+ * a Miami Modern hotel beside the stucco court). It takes a share of its
+ * parent's draws in its own years and heights, so every family in the book
+ * stands somewhere in town and the period mix the parents were tuned to
+ * holds. Filled by src/map/real/patternbook.
+ */
+export interface Cousin { key: string; share: number; from: number; to: number; minH: number; maxH: number; cls?: string[] }
+export const COUSINS = new Map<string, Cousin[]>();
+/** The original family a later one behaves like, for every rule written against the originals (shop fronts, roofs, crowns, massing). */
+export const LIKE: Record<string, string> = {};
+/** Later families that never take a pitched roof though their `like` family does. */
+export const FLAT_ROOFED = new Set<string>();
+export const baseOf = (fam: string): string => { const f = fam.split("#")[0]; return LIKE[f] ?? f; };
+
 export function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 4, nb = 0.5): string {
+  const fam = parentFamilyFor(cls, year, h, roll, district, nb);
+  const cs = COUSINS.get(fam);
+  if (!cs) return fam;
+  // a third draw off the same roll, independent of the parent's own two
+  const r4 = (roll * 29.37 + 0.123) % 1;
+  let acc = 0;
+  for (const c of cs) {
+    if (year < c.from || year > c.to || h < c.minH || h > c.maxH || (c.cls && !c.cls.includes(cls))) continue;
+    acc += c.share;
+    if (r4 < acc) return c.key;
+  }
+  return fam;
+}
+
+function parentFamilyFor(cls: string, year: number, h: number, roll = 0.5, district = 4, nb = 0.5): string {
   const dm = DISTRICT_MASONRY[((district % 5) + 5) % 5];
   // a second, independent draw from the same roll, for the revival a
   // building was put up in when its quarter had one (nb: the neighbourhood's
@@ -570,6 +602,7 @@ export const TINTS: Record<string, [number, number, number][]> = {
 // reads as a patchwork rather than one grey sheet. (Vertex colours: the roof
 // material's own colour — snow, season — multiplies them.)
 export function roofTone(fam: string, cls: string, pitched: boolean, seedK: number): number[] {
+  fam = baseOf(fam);
   const r = ((seedK * 2654435761) >>> 0) / 4294967296;
   const j = 0.92 + ((seedK >>> 5) % 17) / 100;            // ±8% per building
   const J = (c: number[]) => [c[0] * j, c[1] * j, c[2] * j];
@@ -591,10 +624,11 @@ export function roofTone(fam: string, cls: string, pitched: boolean, seedK: numb
   }
   if (fam === "modern" || fam === "plain" || fam === "ribbon" || fam === "grid" || fam === "midcentury" || fam === "brutalist" || fam === "whitebrick" || fam === "moderne" || cls === "retail") {
     if (r < 0.06 && fam === "modern") return J([0.72, 0.95, 0.58]);  // a planted roof
-    return J(r < 0.55 ? [1.25, 1.25, 1.24] : [1.0, 0.97, 0.92]);
+    return J(r < 0.4 ? [1.3, 1.3, 1.29] : r < 0.75 ? [1.0, 0.97, 0.92] : [0.6, 0.59, 0.57]);
   }
-  // masonry: tar, gravel, or a later silver-painted coat
-  return J(r < 0.45 ? [0.46, 0.44, 0.42] : r < 0.85 ? [0.86, 0.79, 0.68] : [1.2, 1.2, 1.22]);
+  // masonry: fresh black tar, weathered tar, gravel, or a silver or white
+  // coat — a block of old roofs is a patchwork from near-black to white
+  return J(r < 0.22 ? [0.3, 0.29, 0.28] : r < 0.45 ? [0.5, 0.48, 0.45] : r < 0.75 ? [0.86, 0.79, 0.68] : r < 0.9 ? [1.2, 1.2, 1.22] : [1.42, 1.41, 1.38]);
 }
 
 
@@ -1041,7 +1075,6 @@ Object.assign(VARIANTS, {
     { wall: enamelPanel([196, 200, 202], [160, 56, 46]) },
   ],
   fibercement: [
-    { wall: fiberCement([62, 64, 66], [176, 116, 70], 1) },
     { wall: fiberCement([196, 192, 184], [94, 112, 128], 2) },
     { wall: fiberCement([232, 230, 224], [150, 72, 50], 0), winJitter: 0.2 },
     { wall: fiberCement([120, 126, 118], [226, 222, 214], 1) },
@@ -1102,8 +1135,6 @@ Object.assign(VARIANTS, {
   ],
   pixel: [
     { over: pixelOver([200, 204, 206], 11), glassCol: "#6e8ea0" },
-    { over: pixelOver([62, 66, 70], 23), glassCol: "#90aab8", wall: tintedGlassWall("#2a3238") },
-    { over: pixelOver([214, 196, 160], 31), glassCol: "#7a9aa8" },
     { over: pixelOver([170, 196, 204], 5), glassCol: "#a0bcc8" },
   ],
 } as Record<string, Partial<FamilySpec>[]>);
@@ -1210,7 +1241,7 @@ Object.assign(TINTS, {
 export interface Livery { wall: number[]; trim: number[]; accent: number[]; key: string }
 export const NO_PAINT: Livery = { wall: [1, 1, 1, 0], trim: [-1, 0, 0], accent: [-1, 0, 0], key: "-" };
 
-interface Palette {
+export interface Palette {
   /** chance the wall field is painted, and the paints */
   paintP: number; walls: string[];
   /** chance the trim is repainted, and the colours */
@@ -1218,7 +1249,7 @@ interface Palette {
   /** chance the accent is repainted, and the colours */
   accP: number; accents: string[];
 }
-const P = (paintP: number, walls: string[], trimP: number, trims: string[], accP: number, accents: string[]): Palette => ({ paintP, walls, trimP, trims, accP, accents });
+export const P = (paintP: number, walls: string[], trimP: number, trims: string[], accP: number, accents: string[]): Palette => ({ paintP, walls, trimP, trims, accP, accents });
 
 // the paints, by name, so the palettes read as what they are
 const WHITE = "#f1ede4", CREAM = "#e8dcc2", IVORY = "#efe6d0", BUTTER = "#efd68e", SAGE = "#b8c6a4", SLATE = "#7d8e9c",
@@ -1232,7 +1263,7 @@ const SASH_OLD = [BLACK, WHITE, FOREST, OXBLOOD, NAVY, BROWN, HUNTER, CHARCOAL];
 const TRIM_OLD = [WHITE, CREAM, IVORY, BLACK, FOREST, OXBLOOD, STONE, GREY];
 const MULLION = [SILVER, CHARCOAL, BLACK, BRONZE, WHITE, ZINC, CHAMPAGNE];
 
-const PALETTES: Record<string, Palette> = {
+export const PALETTES: Record<string, Palette> = {
   // pre-war masonry: mostly raw, sometimes painted, the sash nearly always repainted
   brick: P(0.16, [WHITE, CREAM, GREY, BLACK, OXBLOOD, FOREST, TAN, SLATE, PEWTER, IVORY], 0.5, TRIM_OLD, 0.75, SASH_OLD),
   buff: P(0.07, [WHITE, CREAM, GREY, IVORY], 0.45, TRIM_OLD, 0.7, SASH_OLD),
@@ -1297,7 +1328,7 @@ const h01 = (n: number, salt: number) => { let x = Math.imul((n ^ (salt * 0x9e37
  * palette offers it — what a painter choosing a scheme does.
  */
 export function liveryFor(fam: string, seedK: number): Livery {
-  const p = PALETTES[fam.split("#")[0]];
+  const p = PALETTES[fam.split("#")[0]] ?? PALETTES[baseOf(fam)];
   if (!p) return NO_PAINT;
   const r = (salt: number) => h01(seedK, salt);
   const lumOf = (hex: string) => { const c = lin(hex); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
@@ -1344,8 +1375,14 @@ export type ArchStyle = "classical" | "chicago" | "deco" | "victorian" | "spanis
   | "moderne" | "midcentury" | "contemporary" | "futurist" | "vernacular";
 
 /** The style a building of this family and year was put up in. */
+/** A later family's own style, where it is not simply its parent's. */
+export const STYLE_OF: Record<string, ArchStyle | ((year: number, h: number) => ArchStyle)> = {};
+
 export function styleOf(fam: string, year: number, h: number): ArchStyle {
-  const f = fam.split("#")[0];
+  const f0 = fam.split("#")[0];
+  const own = STYLE_OF[f0];
+  if (own) return typeof own === "function" ? own(year, h) : own;
+  const f = LIKE[f0] ?? f0;
   switch (f) {
     case "stone": case "newstone": case "rustic": return "classical";
     case "georgian": return h > 9 ? "classical" : "vernacular";

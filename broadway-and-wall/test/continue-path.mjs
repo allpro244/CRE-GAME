@@ -31,7 +31,7 @@ console.log("\nCONTINUE PATH\n");
   live.cityIsland = "somewhere";
   live.citySize = "standard";
   live.cityDev = "established";
-  live.v = 39;
+  live.v = 40;
   for (let i = 0; i < 18 && !live.gameOver; i++) {
     live = E.advanceMonth(live, parcels, bbls, adjacency);
   }
@@ -42,8 +42,8 @@ console.log("\nCONTINUE PATH\n");
   };
 
   const prepared = E.prepareSaveForResume(snap);
-  check(prepared.ok === true, "v39 campaign prepares for resume after migration");
-  check(prepared.state?.v === 39, "prepare keeps save version at current");
+  check(prepared.ok === true, "v40 campaign prepares for resume after migration");
+  check(prepared.state?.v === 40, "prepare keeps save version at current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -78,6 +78,15 @@ console.log("\nCONTINUE PATH\n");
   const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 39;
   check(E.prepareSaveForResume(now).ok === true,
     "a v39 campaign on a generated island opens normally");
+
+  // Manhattan's ground moved at v40 (the real cadastre); the generated
+  // island's did not, which is why the v39 row above still opens.
+  const mh39 = structuredClone(base); mh39.cityIsland = "manhattan"; mh39.citySize = "14th"; mh39.v = 39;
+  check(E.prepareSaveForResume(mh39).ok === false,
+    "a v39 Manhattan campaign is refused — its plat is now the real cadastre");
+  const mh40 = structuredClone(base); mh40.cityIsland = "manhattan"; mh40.citySize = "14th"; mh40.v = 40;
+  check(E.prepareSaveForResume(mh40).ok === true,
+    "a v40 Manhattan campaign opens");
 
   const old38 = structuredClone(base); old38.cityIsland = "somewhere"; old38.v = 38;
   check(E.prepareSaveForResume(old38).ok === false,

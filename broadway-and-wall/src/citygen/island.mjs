@@ -894,8 +894,14 @@ function leavesOf(node, hp = []) {
  * it does the two authored islands, so "Great City" means the same four-times-
  * the-land here as it does on New Alden.
  */
-export function islandConfig(seed) {
+export function islandConfig(seed, opts = {}) {
   const s = seed >>> 0;
+  // The street plan this town is cut under (index.mjs CITY_PLAN). Plan 4 is
+  // the frontage plat: real block dimensions here, and in citygen.mjs blocks
+  // cut the way a surveyor cuts them. Everything plan 4 changes is behind
+  // this flag and reads the SAME draws in the same order, so a saved plan-3
+  // town rebuilds byte-identical.
+  const frontage = (opts.planV ?? 3) >= 4;
   const nm = islandNaming(s);
 
   // --- 1. the shoreline ------------------------------------------------------
@@ -1079,10 +1085,33 @@ export function islandConfig(seed) {
      * of them.
      */
     const shape = Dpl.rand();
-    const [aspect, pitch] = shape < 0.40
-      ? [Dpl.f(1.00, 1.55), Dpl.f(62, 95)]              // Portland's 200 ft squares
-      : shape < 0.78 ? [Dpl.f(1.90, 2.90), Dpl.f(58, 85)]  // the ordinary American block
-        : [Dpl.f(3.20, 4.50), Dpl.f(52, 68)];           // the Commissioners' Plan
+    /**
+     * PLAN 4: THE BLOCKS ARE THE SIZE REAL BLOCKS ARE. The bands above were
+     * read off what this file used to emit, not off any city, and they ran a
+     * fifth to a third small: the median block came out at ~2,900 m2 of lots
+     * holding three to five deeds, and half the lots in town were corners. A
+     * pitch is centreline to centreline — block face plus one street:
+     *
+     *   Portland        200 ft square face + 60 ft streets        = 79 m
+     *   Sacramento      320-340 ft faces + 80 ft streets          = 122 m
+     *   Chicago         330 x 660 ft + 66 ft streets              = 121 m
+     *   ordinary US     250-330 ft short faces + 60-66 ft streets = 95-120 m
+     *   Manhattan       200 x 800 ft, 60 ft streets / 100 ft aves = 79 x 274 m
+     *
+     * So the square mode spans Portland to Sacramento, the ordinary mode
+     * spans the ordinary town, and the Commissioners' mode IS Manhattan's
+     * section (aspect 274 / 79 = 3.5, with the surveyor's slack either side)
+     * instead of a shrunken copy of it. Same three draws in the same order.
+     */
+    const [aspect, pitch] = frontage
+      ? (shape < 0.40
+        ? [Dpl.f(1.00, 1.45), Dpl.f(76, 112)]          // Portland to Sacramento
+        : shape < 0.78 ? [Dpl.f(1.90, 2.80), Dpl.f(92, 120)]  // the ordinary American block
+          : [Dpl.f(3.10, 3.90), Dpl.f(76, 84)])        // the Commissioners' Plan, at its real section
+      : shape < 0.40
+        ? [Dpl.f(1.00, 1.55), Dpl.f(62, 95)]              // Portland's 200 ft squares
+        : shape < 0.78 ? [Dpl.f(1.90, 2.90), Dpl.f(58, 85)]  // the ordinary American block
+          : [Dpl.f(3.20, 4.50), Dpl.f(52, 68)];           // the Commissioners' Plan
     SURVEY.push({
       // The offsets are measured off THE PRINCIPAL SURVEY, not off the spine.
       // Off the spine they were measured against a line survey 0 has already
@@ -1684,6 +1713,36 @@ export function islandConfig(seed) {
    * thing anybody recognises. Those three numbers are hardcoded and the only
    * seeded part of that kind is which way it points.
    */
+  /**
+   * THE BACK ALLEY (plan 4). Half the grid towns in America were platted with
+   * a service lane down the middle of every block — Chicago's are 16 ft, so
+   * are most of the Midwest's and the West's; Philadelphia and Baltimore run
+   * them behind every row of houses — and New England and Manhattan almost
+   * never did. An alley block is two rows of lots back to back with the bins,
+   * the garages and the deliveries behind them, instead of a front door and a
+   * loading bay on the same street.
+   *
+   * Which quarters get one is a fact of who surveyed them, so it is drawn per
+   * district from its own salt: likeliest on row and burgage ground and in
+   * the housing, less so downtown, never in the yards (rail spurs serve those),
+   * the Eixample (its block is a courtyard, not a lane), an estate, an
+   * unplanned tangle or a radial plan. The probabilities are a shape reading
+   * of where alleys are common on real American plats, not fitted to anything.
+   */
+  const ALLEY_W = 4.9;                       // 16 ft, the Chicago standard
+  const Dal = dice(stream(s, 0xa11e7));
+  const alleyFor = (role, kind, way) => {
+    if (!frontage) return false;
+    const p = Dal.rand();                    // drawn for every district, so the stream does not depend on kind
+    if (kind !== "lattice" && kind !== "curvi") return false;
+    if (role === "ind") return false;
+    const want = way === "row" || way === "burgage" ? 0.65
+      : way === "villa" ? 0.50
+        : role === "resiA" || role === "resiB" ? 0.45
+          : role === "old" ? 0.30
+            : 0.35;
+    return p < want;
+  };
   const districts = {};
   const districtRole = {};
   const buildDistrict = (k, role, flavor) => {
@@ -1698,8 +1757,9 @@ export function islandConfig(seed) {
     const base = {
       flavor,
       bearingDeg: bearing,
+      ...(alleyFor(role, kind, way) ? { alley: ALLEY_W } : {}),
       fullBlockP: role === "ind" ? 0.11 : role === "core" ? 0.05 : 0.02,
-      ...(way ? { lot: LOTWAYS[way] } : {}),
+      ...(way ? { lot: LOTWAYS[way], ...(frontage ? { lotWay: way } : {}) } : {}),
     };
     if (kind === "organic") {
       /**
@@ -1719,7 +1779,14 @@ export function islandConfig(seed) {
       const a = stPitch * avePitch;
       districts[k] = {
         ...base, kind: "organic",
-        cell: [Math.round(a * 0.34), Math.round(a * 0.78)],
+        // Plan 4's bigger surveyed block would have dragged the tangle up with
+        // it, and an unplanned quarter does not grow because the grid next to
+        // it did: Boston's North End and the City of London run about 3,000-
+        // 9,000 m2 a block. That is what the caps are — the size of the real
+        // thing, read off the plats — and on plan 3 they never bind.
+        cell: frontage
+          ? [Math.round(Math.min(a * 0.34, 4400)), Math.round(Math.min(a * 0.78, 9200))]
+          : [Math.round(a * 0.34), Math.round(a * 0.78)],
         jitterDeg: Math.round(Dg.f(11, 22)),
         streetW: Math.round(Math.max(8, streetWOf(stPitch) * 0.7)),
       };
@@ -1732,7 +1799,10 @@ export function islandConfig(seed) {
         chamferAll: 0.215, warpAmp: 0,
       };
     } else if (kind === "superblock") {
-      const cell = Math.round(stPitch * Dg.f(2.2, 3.2));
+      // A postwar estate ring runs 250-350 m (Stuyvesant Town's blocks, the
+      // Barbican, Park La Brea's superblocks); plan 4's longer pitch would
+      // have handed it 380, so the real span is the ceiling there.
+      const cell = Math.round(Math.min(frontage ? 330 : Infinity, stPitch * Dg.f(2.2, 3.2)));
       const long = Math.round(cell * Math.min(1.6, sv.aspect));
       districts[k] = {
         ...base, kind: "superblock",
@@ -2304,7 +2374,31 @@ export function islandConfig(seed) {
   const bigShape = programme.key === "squares" && Dp.rand() < 0.55 ? "round"
     : programme.key === "commons" && Dp.rand() < 0.35 ? "round"
       : "square";
-  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: bigShape });
+  // NOT EVERY TOWN PUT ITS GREAT PARK IN THE MIDDLE (plan 9). Every town
+  // whose programme carries a dominant park (great, greens) dropped it on
+  // the same spot — between downtown and the housing — so the commonest
+  // thing about a generated city was a big green rectangle at its heart.
+  // The owner: "a large central park spawns a tad too often... I want more
+  // randomness in how each city feels." Real ones are scattered: Prospect
+  // Park sits at the edge of its borough, Golden Gate runs out to the ocean,
+  // Forest Park is on the far side of St Louis, Fairmount follows a river.
+  // 58% of those towns now site it off-centre — by a later core, or on
+  // open ground away from the middle — which halves the share of towns with
+  // a great park at their heart (300 seeds: 46% -> ~23%; some of the moves
+  // land near the middle anyway). The halving is the owner's ask, not a
+  // measurement. Its own stream so every other draw in the town is unchanged.
+  let bigAim = midCore;
+  if ((opts.planV ?? 3) >= 9 && (programme.key === "great" || programme.key === "greens")) {
+    const Dcp = dice(stream(s, 0xce47a1));
+    if (Dcp.rand() < 0.58) {
+      const span = Math.sqrt(land.length) * STEP;
+      const away = land.filter((l) => l.edge > bigW * 0.45 && dist(l.p, midCore) > span * 0.32);
+      const later = cores.slice(2).map((c) => c.xy);
+      if (later.length && Dcp.rand() < 0.4) bigAim = later[Math.floor(Dcp.rand() * later.length) % later.length];
+      else if (away.length) bigAim = away[Math.floor(Dcp.rand() * away.length) % away.length].p;
+    }
+  }
+  placePark(bigAim, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), { shape: bigShape });
 
   // THE ESPLANADE, which a harbour town has and this one could not.
   //
@@ -3159,6 +3253,8 @@ export function islandConfig(seed) {
     stations,
     labels,
     districtNames,
+    // plan 4: blocks cut frontage-first (citygen.mjs platBlock)
+    ...(frontage ? { frontagePlat: true } : {}),
     avenues,
     streets,
     // Not read by the generator — this is what the verification harness and any
@@ -3192,6 +3288,7 @@ export function islandConfig(seed) {
       nSlips: streams.filter((st) => st.kind === "slip").length,
       coastProgramme: coastProg.key,
       grainProgramme: grainProg.key,
+      alleys: Object.values(districts).filter((d) => d.alley).length,
       railProgramme: railProg.key,
       landmark: (() => {
         const Dlm = dice(stream(s, 0x1a0d));

@@ -6,7 +6,6 @@ import { usd } from "@/ui/format";
 import { soundOn, setSoundOn, play } from "@/ui/Sounds";
 import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
-import { JevSettings } from "@/ui/panels/JevPanel";
 import { themePref, setThemePref, type ThemePref } from "@/ui/theme";
 import { CLOCK_OPTIONS, describeSetup } from "@/engine/setup";
 
@@ -145,8 +144,11 @@ function PrimerGlossary() {
 function Toggle({ on, set, label, detail, more }: { on: boolean; set: (v: boolean) => void; label: string; detail: string; more?: string }) {
   return (
     <div className="deal setting-row">
-      <button className={"btn" + (on ? " btn-buy" : "")} style={{ minWidth: 64 }} aria-pressed={on} aria-label={`${label}: ${on ? "on" : "off"}`} onClick={() => set(!on)}>
-        {on ? "On" : "Off"}
+      {/* A SWITCH, NOT A BUTTON THAT SAYS A WORD. "Off" on a button reads
+          as either the state or the action, and the two mean opposite things. */}
+      <button type="button" role="switch" className={"switch" + (on ? " on" : "")} aria-checked={on} aria-label={label} onClick={() => set(!on)}>
+        <span className="switch-track" aria-hidden="true"><span className="switch-knob" /></span>
+        <span className="switch-word">{on ? "On" : "Off"}</span>
       </button>
       <div className="setting-text">
         <div style={{ fontWeight: 600 }}>{label}</div>
@@ -310,8 +312,6 @@ export function SettingsPage() {
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.
       </div>
-      <div className="page-section" style={{ marginTop: 18 }}>Jev</div>
-      <JevSettings />
       <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
         <Row k="Space / G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />
@@ -319,7 +319,7 @@ export function SettingsPage() {
         <Row k="N" v="Skip to the next decision, up to three years" />
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />
         <Row k="P" v="Photo frame — hide all chrome for a clean skyline still" />
-        <Row k="Escape" v="Close the open page (or exit photo frame)" />
+        <Row k="Escape" v="Put off the card in front of you (its Not now), else close the open page, else deselect" />
         <Row k="1 – 9" v="Open a desk: Portfolio, Market, Deals, Leasing, Debt, Books, Research, Economy, News" />
         <Row k="⌘K / Ctrl K" v="Search every building, desk and firm" />
         <Row k="?" v="Every key on one card, from anywhere" />
@@ -420,7 +420,7 @@ export function SaveSlots() {
                 </div>
                 <div className="modal-actions">
                   <button className="btn btn-sell" onClick={() => { setKillSlot(null); void dropSave(doomed.slot); }}>Delete it</button>
-                  <button className="btn" onClick={() => setKillSlot(null)}>Keep it</button>
+                  <button className="btn" data-esc onClick={() => setKillSlot(null)}>Keep it</button>
                 </div>
               </div>
             </div>

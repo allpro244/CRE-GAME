@@ -1479,7 +1479,11 @@ export default function MapView() {
     // street from your lease-up is the single most legible thing in this
     // business. An orphaned frame stops rising and stands there.
     for (const j of game.cityJobs ?? []) {
-      if (game.built?.[j.bbl] || game.developments?.[j.bbl]) continue;
+      // A CLEARED LOT IS NOT A BUILT ONE (the engine's own rule, dev.ts): a
+      // teardown writes a {class:"land", bldgArea:0} marker into game.built,
+      // and this read its presence as "already built", so every rival
+      // redevelopment drew an empty lot and no crane. Test the floor area.
+      if ((game.built?.[j.bbl]?.bldgArea ?? 0) > 0 || game.developments?.[j.bbl]) continue;
       const total = Math.max(1, j.deliverM - j.startM);
       const raw = (game.month - j.startM + 1) / total;
       const prog = Math.min(1, Math.max(0.12, j.orphaned ? Math.min(raw, 0.75) : raw));

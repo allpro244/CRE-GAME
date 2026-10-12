@@ -1906,8 +1906,12 @@ export class RealCityLayer {
     const h = (n: number) => hash01(k ^ n, this.seed);
     type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers" | "twist";
     const futurist = styleOf(fam, year, H) === "futurist";
+    // A TALL TOWER STEPS BACK. Past about 100 m almost no tower in a real
+    // skyline goes up as one prism: a podium, tiers, a taper or a twist. The
+    // plain shaft keeps a share only below that (SKYLINE_LOOK_PLAN round 23).
+    const straightW = H > 100 ? 0.02 : 0.1;
     const opts: [M, number][] = tall
-      ? [["straight", 0.1], ["podium", 0.15], ["tiers", 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
+      ? [["straight", straightW], ["podium", 0.15], ["tiers", H > 100 ? 0.2 : 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
          ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0],
          ["twist", futurist && simple && H > 80 ? 0.22 : 0], ["taper", futurist && simple ? 0.08 : 0]]
       : [["straight", 0.4], ["podium", 0.2], ["chamfer", simple ? 0.15 : 0], ["round", simple ? 0.1 : 0], ["notch", quad ? 0.08 : 0], ["tiers", 0.1]];
@@ -4315,7 +4319,18 @@ export class RealCityLayer {
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
         && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
         // the 2000s limestone apartment tower revived the setback on purpose
-        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
+        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7
+        // THE 1916 RESOLUTION'S WHOLE REACH (SKYLINE_LOOK_PLAN round 23). It
+        // was not only the towers: anything built from 1916 until the 1961
+        // code that rose past the height its street allowed (about one and a
+        // half to two and a half times the street's width: 40 m here) had to
+        // step back, so the mid-rise masonry of the 1920s and the white-brick
+        // apartment houses of the 1950s step too. Built before 1916, nothing did.
+        || isTop && v.z0 < 0.5 && top > 70 && (v.y || 0) >= 1946 && (v.y || 0) < 1962 && fb === "whitebrick" && hash01(k ^ 0x1916, this.seed) < 0.75;
+      // one step back for the mid-rise of the same years (40-70 m)
+      const zoned = !preWarTower && isTop && v.z0 < 0.5 && top > 40 && top <= 70 && (v.y || 0) >= 1916 && (v.y || 0) < 1962
+        && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta" || fb === "whitebrick" || fb === "brick" || fb === "buff")
+        && v.r.length <= 12 && hash01(k ^ 0x1916, this.seed) < 0.6;
       let topRing = ring;
       let rowDone = false;
       if (preWarTower) {
@@ -4328,6 +4343,23 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
+      } else if (zoned) {
+        // a full-lot base to the street's height, a terrace with its own
+        // cornice, then the upper floors set three to five metres back
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        cx /= ring.length; cy /= ring.length;
+        let rad = Infinity;
+        for (const [x, y] of ring) rad = Math.min(rad, Math.hypot(x - cx, y - cy));
+        const back = Math.min(3 + 2 * hash01(k ^ 0x1917, this.seed), rad * 0.3);
+        const ins = insetRing(ring, back);
+        const upper = ins && ringArea(ins) > 0 && ins.every(([x, y]) => PolyGrid.inRing(ring, x, y)) ? ins : ring.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.8] as P2);
+        const fhz = this.families[fam]?.floorH ?? 3.2;
+        const h1 = Math.max(fhz * 4, Math.round((v.z1 * (0.62 + 0.13 * hash01(k ^ 0x1918, this.seed))) / fhz) * fhz);
+        this.addVolume(ring, v.z0, h1, fam, t, v.b, true, false, k, shop, false, v.c, v.y || 0);
+        topRing = upper;
+        this.addVolume(upper, h1, v.z1, fam, t, v.b, true, true, k, false, false, v.c, v.y || 0);
+        this.feat("zoned", v.b);
       } else if (isTop && v.z0 < 0.5 && fb !== "industrial" && fb !== "daylight" && fb !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
         // drawn as a row of houses (rowOf), each with its own top: the
         // building-wide crown below would float a footprint-long penthouse

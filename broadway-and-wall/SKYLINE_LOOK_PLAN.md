@@ -172,6 +172,15 @@ fixed in #231; the sweep is clean since.
   floor over the base and the floor under the cornice; a lower classical or
   Victorian front iron Juliet rails on its principal floors. Walk-ups keep
   their fire escapes. ~2,000 in Metropolis.
+- **Round 23** — tall buildings step back. The 1916 setbacks covered only
+  the pre-war masonry towers over 70 m. Now the white-brick apartment towers
+  of 1946-61 over 70 m take the wedding cake too, and the 40-70 m masonry
+  mid-rises of 1916-61 (deco, stone, terracotta, white brick, brick, buff)
+  step once: a full-lot base to about two-thirds of the height, a terrace,
+  the upper floors 3-5 m back (27 in Metropolis). Post-war towers over
+  100 m rarely go up as a plain prism (2% from 10%; tiers more likely).
+  A building the player designs keeps the player's choice: the design tab's
+  Crown (Setback, Wedding cake) still decides it.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

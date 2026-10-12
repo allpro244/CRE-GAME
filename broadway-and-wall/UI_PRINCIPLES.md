@@ -274,3 +274,8 @@ Asked plainly: what does a principal need without opening a desk?
   live negotiations" with a primary "Browse buildings" button. The tab is
   "Open deals", the empty section says no tenant has written, its button goes
   when anything is on the table, and the desk uses the full width.
+- **Hovering your own building answers your question.** It showed "Owner:
+  You" and the market rent; now it shows what the deed nets you a month and
+  when its loan balloons (red inside a year). The cash-flow walk moved into
+  `deedDebtService` (ui/deedMarks.ts), shared with the Portfolio row so the
+  two cannot disagree. "+N more" on the docket expands the list.

@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, serviceSpec, planSpec, SVC_START } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass, GameState } from "@/engine/types";
-import { deedMark } from "@/ui/deedMarks";
+import { deedMark, deedDebtService } from "@/ui/deedMarks";
 import { managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
@@ -16,7 +16,7 @@ import { payOffDue } from "@/engine/debt";
 import { portfolioQuote, portfolioSettlement, onFundBook } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
-import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
+import { FACILITY_MIN_ASSETS } from "@/engine/facility";
 import { usd, sf, usdSigned, pctSigned } from "@/ui/format";
 import { ListSection, GroundLeaseSection, describeInstructions } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
@@ -87,17 +87,9 @@ export function PortfolioPage() {
     const noi = mark.noi;
     // Facility replaces the deed mortgage — allocated share is the lien that
     // still sits on this row once the pool is papered.
-    const facBal = allocatedAmount(game, parcels, h.bbl);
-    const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + facBal;
-    // Same walk as portfolioPropertyMonthlyCF, plus this row's share of a
-    // facility payment. The header CF / yr also subtracts construction
-    // interest, the whole facility and the revolver — those are firm lines,
-    // not a deed's. A row that skipped mezz or a pooled facility printed
-    // NOI as cash flow on the buildings that actually carry that paper.
-    const facPmt = game.facility && game.facility.balance > 0
-      ? game.facility.monthlyPmt * (facBal / game.facility.balance)
-      : 0;
-    const dsMo = (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt;
+    // Mortgage, mezz and this row's share of a pooled facility — the same
+    // walk the map's hover card reads (deedDebtService).
+    const { debt, dsMo } = deedDebtService(game, parcels, h.bbl);
     const cf = noi / 12 - dsMo;
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     //

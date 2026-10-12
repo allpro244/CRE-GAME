@@ -117,3 +117,30 @@ fixed in #231; the sweep is clean since.
 - **Round 16** — golden hour: the finishing pass takes the low sun's warmth
   (`uGolden`, from the same dusk curve as the sun's colour): lit surfaces go
   amber, shadows a little violet. Noon and night unchanged.
+- **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
+  only from the island view. Dropped: a flat sprite cannot be a volumetric
+  cloud, and a lone hard-edged one read as an object, not weather. Branch
+  `claude/skyline-r17` kept for reference.
+
+## Where it stands, and what is left
+
+Rounds 1–16 are on `main`. Against the session's starting point (same town,
+same cameras): a graded, tilt-shifted frame; warm sun with blue-filled
+shadows; ambient occlusion; tree-lined streets and wooded parks; recessed
+windows that catch the sky; glass towers that reflect the city; patchwork
+roofs; paved squares; balconies; livelier streets; and a night city lit room
+by room under moonlight, with street-light pools, and a golden hour.
+
+What still separates it from a city-builder's look is mostly **geometry**:
+those games use hand-modelled buildings (real recesses, ledges, rooftop
+equipment, signage), where ours are extruded footprints in painted elevations.
+The next tier of work, in order of payoff:
+
+1. Parallax windows proper (the reveal shader fakes the jamb; a parallax
+   interior would give depth to every pane).
+2. Rooftop equipment as a richer kit (stair towers, louvred plant rooms,
+   antennas) placed by building type and size.
+3. Ground-floor geometry: recessed shop bays and entrance canopies for every
+   style, not only the ones that have them now.
+4. Volumetric clouds for the island view (raymarched, High only), if wanted —
+   flat sprites were tried and dropped (round 17).

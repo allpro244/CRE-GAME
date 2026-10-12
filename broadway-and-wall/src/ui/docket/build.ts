@@ -109,7 +109,7 @@ export function buildDocket(
     const mkt = parcels ? loiMarketPsf(game, parcels, l) : 0;
     const vs = mkt > 0 ? ` (${l.rentPsf >= mkt ? "+" : "−"}${Math.abs(Math.round((l.rentPsf / mkt - 1) * 100))}% vs market)` : "";
     // The row title already says "LOI from …"; the terms start with the numbers.
-    return `${Math.round(l.sf).toLocaleString()} sf · ${(l.termM / 12).toFixed(l.termM % 12 ? 1 : 0)} yrs · $${l.rentPsf.toFixed(2)}/sf${vs}${l.freeM ? ` · ${l.freeM} mo free` : ""} · ${usd(loiSigningCost(l))} to sign`;
+    return `${Math.round(l.sf).toLocaleString()} sf · ${(l.termM / 12).toFixed(l.termM % 12 ? 1 : 0)} yrs · $${l.rentPsf.toFixed(2)}/sf${vs}${l.freeM ? ` · ${l.freeM}\u00a0mo\u00a0free` : ""} · ${usd(loiSigningCost(l))} to sign`;
   };
 
   // (a) The standing conditions — everything the engine itself says needs the

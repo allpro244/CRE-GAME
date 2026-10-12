@@ -333,7 +333,7 @@ export function LoiTermsGrid({
             k="You asked"
             v={`$${loi.askedRentPsf.toFixed(2)}/sf`
               + (loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : "")
-              + (loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : "")
+              + (loi.askedFreeM ? ` · ${loi.askedFreeM}\u00a0mo\u00a0free` : "")
               + (loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : "")
               /* Only when the term was on the table. A save taken mid-
                  negotiation can carry no opener at all, hence the fallback. */
@@ -346,7 +346,7 @@ export function LoiTermsGrid({
             k="Their final"
             v={`$${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf`
               + (loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : "")
-              + ((loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : "")
+              + ((loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}\u00a0mo\u00a0free` : "")
               + (loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ` · ${bump.toFixed(2)}%/yr`)
               + (loi.askedTermM !== undefined && loi.askedTermM !== (loi.openTermM ?? loi.termM)
                 ? ` · ${(loi.termM / 12).toFixed(1)} yrs`
@@ -379,7 +379,7 @@ export function LoiTermsGrid({
             !isFinal ? `${bump.toFixed(2)}%/yr bump` : null,
             recov === "nnn" ? "triple net" : recov === "base" ? "base-year stop" : "gross",
             loi.tiPsf > 0 ? `TI $${loi.tiPsf}/sf` : "no TI",
-            loi.freeM > 0 ? `${loi.freeM} mo free` : "no free rent",
+            loi.freeM > 0 ? `${loi.freeM}\u00a0mo\u00a0free` : "no free rent",
           ].filter(Boolean).join(" · ")}</span>
         </summary>
         <div className="grid">

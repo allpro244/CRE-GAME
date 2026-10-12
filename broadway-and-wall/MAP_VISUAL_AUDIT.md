@@ -953,3 +953,35 @@ add many more styles. It is now built to scale:
   them; GMP / cost-plus moved to Financing as "Building contract".
 
 Nothing saved changed shape: `BuildingDesign` is the same record.
+
+# THE PATTERN BOOK, TRIPLED (October 2026)
+
+The Build desk went from 40 facade styles to 112 and the skyline from 18
+landmark forms to 52. Everything after the originals is one record each:
+
+- **Facades: `src/map/real/patternbook/`.** A `BookEntry` (types.ts) is the
+  texture spec, one to three more elevations, tints, a paint palette, a
+  style, the Build desk shelf (eight now: row house & walk-up, pre-war
+  ornament, regional & revival, civic & collegiate, industrial, post-war,
+  glass, contemporary), and where it stands in town. register.ts wires it
+  into every table and throws on a malformed entry.
+- **Every new family stands in the generated city, not only on the desk.**
+  It is a *cousin* of an original (`COUSINS` in facades.ts): it takes a
+  share of that parent's draws in its own years, heights and classes, and a
+  parent keeps at least half its draws however many cousins it gathers.
+  `like` names the original it behaves as for every rule written against
+  the originals (massing, crowns, shop fronts, pitched roofs, roof tone) —
+  RealCity asks `baseOf(fam)` where it used to compare family names.
+  `flatRoof` stops an adobe from inheriting stucco's clay-tile gable.
+- **Landmark forms: `signature-more-a.ts` (pre-1990) and `-b.ts` (1990 on).**
+  Each is a `SignatureForm` plus a `build(kit)` written against `FormKit`
+  (signature.ts): the lot's measurements and the same vol / loft / inst /
+  spire / mast operations the original eighteen use. Plan helpers moved to
+  `signature-plans.ts`.
+- **Swatches paint on demand**: `facadeSwatches(keys)` paints only the open
+  shelf and the chosen colourways, so the bigger book does not stall the tab.
+- **Reviewed, then pruned.** Every elevation of all 120 styles was put on a
+  contact sheet and judged. Eight styles came out whole (dichroic,
+  perforated screen, brick weave, flush glass, low-iron glass, Miami Modern,
+  Googie, cold store) and nine single colourways, plus two forms that read
+  as something else from across town (a cross, stilts).

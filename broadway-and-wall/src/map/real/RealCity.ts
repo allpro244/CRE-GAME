@@ -115,7 +115,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -3848,28 +3848,7 @@ export class RealCityLayer {
         }
         return null;
       };
-      const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      // the stair bulkhead is built of what the building is: brick on a
-      // brick front, pale render or panel on a modern one, dark on glass
-      // (SKYLINE_LOOK_PLAN round 3: no field of identical tan boxes)
-      const bulkCol = fam.glass ? [0.62, 0.64, 0.68] : fam.masonry ? (rnd() < 0.6 ? [1.22, 0.78, 0.66] : [1.08, 1.0, 0.9]) : [1.22, 1.22, 1.24];
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 0.8 + rnd() * 0.5, rot, bbl, bulkCol); }
-      if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
-        const n = area > 900 && rnd() < 0.5 ? 2 : 1;
-        for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }
-      }
-      // WHAT ELSE IS ON A ROOF. A deck of boards with planters on an
-      // apartment block (a third of those under 60 m); solar panels in tilted
-      // rows on a newer low building; the odd satellite dish on a walk-up.
-      if (cls === "multifamily" && z1 < 60 && area > 220 && famKey !== "industrial" && rnd() < 0.33) {
-        const q = spot(0.15, 0.45); if (q) this.putInst("roofdeck", q[0], q[1], z1, 1, rot, bbl);
-      }
-      if (year >= 1990 && z1 < 26 && area > 300 && (TOWER_FAMS.has(famKey) || cls === "retail" || cls === "industrial") && rnd() < 0.4) {
-        const n = Math.min(8, 2 + Math.floor(area / 400));
-        for (let i = 0; i < n; i++) { const q = spot(0.2, 0.75); if (q) this.putInst("solar", q[0], q[1], z1, 1, rot, bbl); }
-      }
-      if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
       // A FLAT ROOF IS A PATCHWORK. Seen from the street-view camera the deck
       // is the biggest thing on a low building, and one flat tone made every
       // block a sheet of grey card. A roof is re-covered a section at a time,
@@ -3905,11 +3884,116 @@ export class RealCityLayer {
         for (let i = 0; i < 2; i++) { const q = spot(0.1, 0.55); if (q) patch(q, Math.min(ll * 0.35, 12), 0.5, [rc[0] * 1.35, rc[1] * 1.35, rc[2] * 1.32]); }
         this.note(bbl, "roof", p0);
       }
-      // condensers on anything post-war with a flat roof of any size, not
-      // only the towers; an office block carries a row of them
-      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail" || cls === "office" || (year >= 1950 && area > 300)) && area > 200) {
-        const n = Math.min(7, 1 + Math.floor(area / 650));
-        for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
+      // the stair bulkhead is built of what the building is: a soft brick on
+      // a brick front, pale render on a modern one, grey on glass (a tint on
+      // a pale concrete body; no field of identical tan or orange boxes)
+      const bulkCol = fam.glass ? [0.95, 0.98, 1.04] : fam.masonry ? (rnd() < 0.6 ? [1.45, 0.82, 0.66] : [1.25, 1.12, 0.98]) : [1.3, 1.29, 1.27];
+      // THE ROOF KIT (SKYLINE_LOOK_PLAN round 19). Roof plant used to be
+      // dropped at random spots, each at the building's random angle, so
+      // every roof was a scatter of boxes askew to its own walls. A real roof
+      // is laid out: the stair bulkhead (and on a lift building the lift
+      // overrun beside it) near the middle, the condensers in a row on one
+      // side, exhaust fans in a row on the other, vents between, everything
+      // square to the building's long wall, a clear margin to the parapet,
+      // and nothing standing on anything else.
+      {
+        let li = 0, ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+        const ux = (ring[(li + 1) % ring.length][0] - ring[li][0]) / ll, uy = (ring[(li + 1) % ring.length][1] - ring[li][1]) / ll;
+        const ang = Math.atan2(uy, ux);
+        // the deck in the building's own frame: a along the long wall, b across
+        let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+        for (const [x, y] of ring) { const a = (x - cx) * ux + (y - cy) * uy, b = -(x - cx) * uy + (y - cy) * ux; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+        const W = (a: number, b: number): P2 => [cx + ux * a - uy * b, cy + uy * a + ux * b];
+        const taken: number[][] = [];
+        /** room for a footprint ha x hb (half sizes) at (a, b): on the deck, a metre clear of the parapet and of everything else */
+        const fits = (a: number, b: number, ha: number, hb: number, m = 1.1) => {
+          for (const [da, db] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) {
+            const [x, y] = W(a + da * (ha + m), b + db * (hb + m));
+            if (!inside(x, y)) return false;
+          }
+          for (const t of taken) if (Math.abs(a - t[0]) < ha + t[2] + 0.6 && Math.abs(b - t[1]) < hb + t[3] + 0.6) return false;
+          return true;
+        };
+        /** put a kind at the first spot that fits, nearest the wanted one */
+        const place = (kind: string, a: number, b: number, ha: number, hb: number, s = 1, flip = false, col?: number[], sz?: number) => {
+          for (const [da, db] of [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [2, 2], [-2, -2], [6, 0], [-6, 0], [0, 4], [0, -4]]) {
+            const A = a + da, B = b + db;
+            if (!fits(A, B, ha * s, hb * s)) continue;
+            taken.push([A, B, ha * s, hb * s]);
+            const [x, y] = W(A, B);
+            this.putInst(kind, x, y, z1, s, ang + (flip ? Math.PI : 0), bbl, col, sz);
+            return true;
+          }
+          return false;
+        };
+        const span = a1 - a0, depth = b1 - b0, ac = (a0 + a1) / 2, bc = (b0 + b1) / 2;
+        const office = cls === "office" || TOWER_FAMS.has(famKey);
+        // the core: a big office or tower floor plate carries a louvred plant
+        // room; anything else of a size the stair bulkhead, and a lift overrun
+        // beside it from about six storeys up
+        const flipDoor = rnd() < 0.5;
+        if (office && z1 > 30 && area > 700) {
+          const s = Math.max(0.85, Math.min(1.5, Math.sqrt(area) / 34));
+          place("plantroom", ac - span * 0.08, bc, 4.6, 3.4, s, flipDoor);
+        } else if (area > 160) {
+          const ok = place("bulk", ac - span * 0.12, bc, 1.6, 2.4, 1, flipDoor, bulkCol);
+          if (ok && z1 > 19 && area > 260) place("lift", ac - span * 0.12 + 3.4, bc, 1.5, 1.5, 1, flipDoor, bulkCol);
+          // a big floor plate needs a second way out: another stair at the far end
+          if (area > 700) place("bulk", ac + span * 0.3, bc, 1.6, 2.4, 1, !flipDoor, bulkCol);
+        } else if (area > 60) {
+          place("hatch", ac, bc, 0.6, 0.6);
+        }
+        // the water tank stands at the far end, on its steel
+        if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
+          place("tank", ac + span * 0.24, bc, 1.7, 1.7, 0.9 + rnd() * 0.25, false);
+          if (area > 900 && rnd() < 0.5) place("tank", ac + span * 0.24 + 4.5, bc, 1.7, 1.7, 0.9 + rnd() * 0.2, false);
+        }
+        // condensers in a row along one side, on anything post-war or
+        // commercial with a flat roof of size
+        const side = rnd() < 0.5 ? 1 : -1;
+        if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail" || cls === "office" || (year >= 1950 && area > 300)) && area > 200) {
+          const n = Math.min(7, 1 + Math.floor(area / 600));
+          const bRow = bc + side * Math.max(0, depth / 2 - 3.2);
+          for (let i = 0, a = ac - ((n - 1) * 5.4) / 2; i < n; i++, a += 5.4) place("hvac", a, bRow, 2.3, 1.25, 1, rnd() < 0.5);
+        }
+        // exhaust fans and vent stacks: kitchens, bathrooms, the boiler
+        if (area > 140) {
+          const nf = Math.min(5, 1 + Math.floor(area / 500));
+          const bRow = bc - side * Math.max(0, depth / 2 - 2.2);
+          for (let i = 0, a = ac - ((nf - 1) * 3.2) / 2; i < nf; i++, a += 3.2) place("exfan", a, bRow, 0.7, 0.7);
+          const nv = 1 + Math.floor(rnd() * 3);
+          for (let i = 0; i < nv; i++) place("vent", ac + (rnd() - 0.5) * span * 0.6, bc + (rnd() - 0.5) * depth * 0.5, 0.3, 0.3);
+        }
+        // SPLIT CONDENSERS: the retrofit air conditioning of a walk-up or a
+        // mid-century block, small units in a row along the parapet, facing in
+        if (area > 220 && !office && (year >= 1950 || rnd() < 0.45) && rnd() < 0.7) {
+          const n = Math.min(6, 2 + Math.floor(area / 350));
+          const edge = rnd() < 0.5 ? 1 : -1, bRow = bc + edge * (depth / 2 - 1.6);
+          const aStart = ac + (rnd() - 0.5) * span * 0.3 - ((n - 1) * 1.3) / 2;
+          for (let i = 0; i < n; i++) place("split", aStart + i * 1.3, bRow, 0.48, 0.22, 1, edge > 0);
+        }
+        // WHAT ELSE IS ON A ROOF. A deck of boards with planters on an
+        // apartment block (a third of those under 60 m); solar panels in
+        // rows on a newer low building; the odd satellite dish on a walk-up.
+        if (cls === "multifamily" && z1 < 60 && area > 220 && famKey !== "industrial" && rnd() < 0.33) {
+          place("roofdeck", ac + span * 0.18, bc - side * depth * 0.12, 3.6, 2.4, 1, rnd() < 0.5);
+        }
+        if (year >= 1990 && z1 < 26 && area > 300 && (TOWER_FAMS.has(famKey) || cls === "retail" || cls === "industrial") && rnd() < 0.4) {
+          const n = Math.min(8, 2 + Math.floor(area / 400));
+          for (let i = 0, a = ac + span * 0.1; i < n; i++, a += 2.4) place("solar", a, bc + side * depth * 0.05, 1.05, 0.6);
+        }
+        // CHIMNEY STACKS on a pre-war masonry building: the flues of the
+        // fireplaces and the boiler, gathered into stacks on the party walls
+        // at each end of the long run
+        if (fam.masonry && year < 1950 && z1 < 60 && area > 90) {
+          const nb = depth > 14 && rnd() < 0.6 ? 2 : 1;
+          for (const ea of [a0 + 1.6, a1 - 1.6]) for (let k = 0; k < nb; k++) {
+            const bb = nb === 1 ? bc + (rnd() - 0.5) * depth * 0.3 : bc + (k ? 1 : -1) * depth * 0.26;
+            if (rnd() < 0.8) place("chimney", ea, bb, 0.45, 0.7, 0.9 + rnd() * 0.3, false, undefined, 0.8 + rnd() * 0.6);
+          }
+        }
+        if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) place("dish", ac - span * 0.3, bc + side * depth * 0.25, 0.5, 0.5, 1);
       }
       if ((famKey === "industrial" || famKey === "plain") && z1 < 20 && area > 500) {
         // skylights in rows along the long side
@@ -4269,7 +4353,52 @@ export class RealCityLayer {
       case "dish": return { g: merge([cyl(0.04, 0.8, 0, 5), new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, 0.9).rotateX(-1.2).translate(0, 0.1, 0.9)]), mat: new THREE.MeshStandardMaterial({ color: 0xd4d6d8, roughness: 0.5 }) };
       case "shopsign": return { g: merge([box(4.3, 0.1, 0.6, 0, -0.06, 3.62)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }), colored: true };
       case "boards": return { g: merge([box(4.5, 0.06, 2.9, 0, -0.05, 0.12), box(4.5, 0.08, 0.1, 0, -0.09, 1.5)]), mat: new THREE.MeshStandardMaterial({ color: 0xb59a72, roughness: 0.95 }) };
-      case "bulk": return { g: merge([box(3.2, 4.2, 2.8), box(3.6, 4.6, 0.25, 0, 0, 2.8)]), mat: new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.85 }), colored: true };
+      // THE ROOF KIT (SKYLINE_LOOK_PLAN round 19), at real sizes; local +x
+      // runs along the building's long wall, a door faces local -y.
+      // The stair bulkhead: a pale body (tinted per building), a coping that
+      // overhangs it, a steel door under a little hood, a vent stack.
+      case "bulk": return { g: mergeColored([
+        [box(3.0, 4.4, 2.7), [0.27, 0.26, 0.25]], [box(3.3, 4.7, 0.2, 0, 0, 2.7), [0.42, 0.41, 0.4]], [box(2.9, 4.3, 0.06, 0, 0, 2.9), [0.07, 0.07, 0.075]],
+        [box(1.0, 0.08, 2.05, 0.3, -2.22, 0.05), [0.16, 0.17, 0.19]], [box(1.4, 0.55, 0.08, 0.3, -2.45, 2.2), [0.3, 0.31, 0.33]],
+        [cyl(0.11, 0.9, 2.9, 6).translate(-0.8, 1.4, 0), [0.22, 0.22, 0.23]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
+      // the lift overrun beside it: taller, a louvred vent band near the top
+      case "lift": return { g: mergeColored([
+        [box(2.8, 2.8, 4.0), [0.27, 0.26, 0.25]], [box(3.05, 3.05, 0.2, 0, 0, 4.0), [0.42, 0.41, 0.4]], [box(2.65, 2.65, 0.06, 0, 0, 4.2), [0.07, 0.07, 0.075]],
+        [box(1.8, 0.06, 0.55, 0, -1.42, 3.1), [0.14, 0.15, 0.16]], [box(1.8, 0.06, 0.55, 0, 1.42, 3.1), [0.14, 0.15, 0.16]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
+      // an office tower's mechanical penthouse: a long box wrapped in a band
+      // of grey louvres, a darker coping, a door
+      case "plantroom": {
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(9.0, 6.6, 4.4), [0.46, 0.46, 0.45]], [box(9.3, 6.9, 0.25, 0, 0, 4.4), [0.3, 0.31, 0.32]], [box(8.8, 6.4, 0.06, 0, 0, 4.65), [0.08, 0.08, 0.085]]];
+        // louvre slats on all four faces
+        for (let k = 0; k < 6; k++) {
+          const z = 1.4 + k * 0.42;
+          parts.push([box(8.0, 0.1, 0.12, 0, -3.33, z), [0.2, 0.21, 0.22]], [box(8.0, 0.1, 0.12, 0, 3.33, z), [0.2, 0.21, 0.22]]);
+          parts.push([box(0.1, 5.6, 0.12, -4.53, 0, z), [0.2, 0.21, 0.22]], [box(0.1, 5.6, 0.12, 4.53, 0, z), [0.2, 0.21, 0.22]]);
+        }
+        parts.push([box(1.0, 0.08, 2.1, -3.6, -3.34, 0.05), [0.16, 0.17, 0.19]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.15, vertexColors: true }) };
+      }
+      // a brick chimney stack: two or three flues under a stone cap, the
+      // terracotta pots standing proud of it
+      case "chimney": return { g: mergeColored([[box(0.8, 1.3, 1.5), [0.3, 0.13, 0.09]], [box(0.95, 1.45, 0.14, 0, 0, 1.5), [0.42, 0.4, 0.37]],
+        [cyl(0.13, 0.4, 1.64, 6).translate(0, -0.35, 0), [0.42, 0.18, 0.1]], [cyl(0.13, 0.4, 1.64, 6).translate(0, 0.35, 0), [0.42, 0.18, 0.1]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }) };
+      // a roof hatch on a small building with no stair to the roof
+      case "hatch": return { g: mergeColored([[box(1.1, 1.1, 0.45), [0.42, 0.41, 0.39]], [box(1.2, 1.2, 0.08, 0, 0, 0.45), [0.3, 0.31, 0.32]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, vertexColors: true }) };
+      // a split-system condenser: a small cabinet, its fan grille on the front
+      case "split": return { g: mergeColored([[box(0.95, 0.38, 0.72, 0, 0, 0.12), [0.58, 0.59, 0.58]], [box(0.8, 0.3, 0.12), [0.2, 0.2, 0.21]],
+        [new THREE.CylinderGeometry(0.25, 0.25, 0.04, 12).translate(-0.12, -0.2, 0.48), [0.12, 0.12, 0.13]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.25, vertexColors: true }) };
+      // a mushroom exhaust fan on a short curb
+      case "exfan": return { g: mergeColored([[box(0.95, 0.95, 0.3), [0.36, 0.36, 0.36]], [cyl(0.32, 0.35, 0.3, 10), [0.55, 0.56, 0.57]],
+        [new THREE.CylinderGeometry(0.15, 0.62, 0.3, 12).rotateX(Math.PI / 2).translate(0, 0, 0.8), [0.44, 0.45, 0.46]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.5, vertexColors: true }) };
+      // a vent stack with a rain cap
+      case "vent": return { g: mergeColored([[cyl(0.1, 1.0, 0, 6), [0.25, 0.25, 0.26]], [cyl(0.2, 0.08, 1.05, 8), [0.3, 0.3, 0.31]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.4, vertexColors: true }) };
       case "pile": return { g: merge([cyl(0.28, 2.8, 0, 8)]), mat: new THREE.MeshStandardMaterial({ color: 0x4a3c30, roughness: 0.95 }) };
       case "railing": return { g: merge([box(0.08, 0.08, 1.05, -1.6, 0, 0), box(3.3, 0.06, 0.06, 0, 0, 1.0), box(3.3, 0.04, 0.04, 0, 0, 0.55)]), mat: new THREE.MeshStandardMaterial({ color: 0x2c3236, roughness: 0.5, metalness: 0.6 }) };
       case "bench": return { g: merge([box(1.8, 0.5, 0.08, 0, 0, 0.42), box(1.8, 0.06, 0.45, 0, 0.24, 0.5), box(0.08, 0.45, 0.42, -0.8, 0, 0), box(0.08, 0.45, 0.42, 0.8, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8 }) };
@@ -4298,8 +4427,28 @@ export class RealCityLayer {
         return { g, mat: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.8 }) };
       }
       case "skyl": return { g: merge([box(4.2, 1.6, 0.25), new THREE.BoxGeometry(3.9, 1.3, 0.5).translate(0, 0, 0.45)]), mat: new THREE.MeshStandardMaterial({ color: 0x5d6d78, metalness: 0.3, roughness: 0.25, envMapIntensity: 1.1 }) };
-      case "tank": return { g: merge([cyl(1.5, 2.6, 2.4, 12), new THREE.ConeGeometry(1.6, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 5.4), ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => box(0.18, 0.18, 2.4, a * 1.1, b * 1.1))]), mat: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.9 }) };
-      case "hvac": return { g: merge([box(4.5, 2.4, 1.6), cyl(0.7, 0.3, 1.6), cyl(0.7, 0.3, 1.6).translate(1.4, 0, 0), cyl(0.7, 0.3, 1.6).translate(-1.4, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xa9adaf, metalness: 0.5, roughness: 0.45 }) };
+      // the New York water tank: cedar staves bound with steel hoops, a
+      // conical cap, on a steel deck over four legs braced at mid-height
+      case "tank": {
+        const STEEL = [0.12, 0.12, 0.13], WOOD = [0.36, 0.25, 0.16];
+        const parts: [THREE.BufferGeometry, number[]][] = [[cyl(1.5, 2.6, 2.45, 16), WOOD],
+          [new THREE.ConeGeometry(1.62, 0.95, 16).rotateX(Math.PI / 2).translate(0, 0, 5.52), [0.24, 0.22, 0.2]],
+          [cyl(0.08, 0.35, 5.95, 5), STEEL], [box(3.4, 3.4, 0.14, 0, 0, 2.3), STEEL]];
+        for (const z of [2.75, 3.55, 4.35]) parts.push([cyl(1.53, 0.09, z, 16), STEEL]);
+        for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) parts.push([box(0.16, 0.16, 2.3, a * 1.35, b * 1.35), STEEL]);
+        parts.push([box(2.86, 0.08, 0.1, 0, -1.35, 1.1), STEEL], [box(2.86, 0.08, 0.1, 0, 1.35, 1.1), STEEL], [box(0.08, 2.86, 0.1, -1.35, 0, 1.1), STEEL], [box(0.08, 2.86, 0.1, 1.35, 0, 1.1), STEEL]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }) };
+      }
+      // a packaged rooftop unit: a pale cabinet on a dark curb, louvred
+      // coil panels down both long sides, two fan grilles let into the top
+      case "hvac": {
+        const CAB = [0.62, 0.64, 0.64], DARK = [0.16, 0.17, 0.18], LOUV = [0.3, 0.32, 0.33];
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(4.4, 2.4, 0.22), [0.24, 0.24, 0.25]], [box(4.2, 2.2, 1.3, 0, 0, 0.22), CAB]];
+        for (const y of [-1.115, 1.115]) parts.push([box(2.3, 0.04, 0.85, 0.75, y, 0.42), LOUV]);
+        for (const x of [0.15, 1.45]) parts.push([cyl(0.56, 0.05, 1.52, 14).translate(x, 0, 0), DARK], [cyl(0.12, 0.07, 1.53, 6).translate(x, 0, 0), [0.4, 0.4, 0.4]]);
+        parts.push([box(1.2, 0.04, 0.9, -1.4, -1.115, 0.38), [0.5, 0.52, 0.52]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.3, vertexColors: true }) };
+      }
       // the trunk forks below the crown: two limbs leaning out
       case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
         new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),

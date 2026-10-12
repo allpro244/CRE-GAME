@@ -131,6 +131,16 @@ fixed in #231; the sweep is clean since.
   before every junction. No paint inside a junction (a disc sized to the
   crossing streets, and wherever road continues past either kerb). The old
   MapLibre lane layers are hidden once the 3D city is up.
+- **Round 19** — the roof kit. Roof plant was dropped at random spots at a
+  random angle, plain tan or orange boxes and condensers with three studs
+  (read as toy bricks). Now laid out square to the building's long wall with a
+  clear margin and no overlaps: a stair bulkhead (door, hood, vent, dark
+  membrane top in a light coping; brick-toned on brick) near the middle, a
+  lift overrun beside it from ~6 storeys, a second stair on a big floor plate,
+  a louvred plant room on an office or tower floor plate; packaged units with
+  louvred coils and flush fan grilles in a row on one side, exhaust fans on
+  the other; split condensers along a parapet; brick chimney stacks on
+  pre-war masonry; New York tanks with hoops on a braced steel deck.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

@@ -24,7 +24,6 @@ import * as THREE from "three";
 export type PostLevel = "off" | "grade" | "full";
 
 const FRAG = `
-precision highp float;
 uniform sampler2D tFrame;
 uniform vec2 uTexel;       // 1 / frame size, in uv
 uniform float uTilt;       // blur radius at the frame's edges, in px (0: none)
@@ -37,11 +36,15 @@ varying vec2 vUv;
 
 vec3 tap(vec2 uv) { return texture2D(tFrame, clamp(uv, uTexel, 1.0 - uTexel)).rgb; }
 
-// a 12-tap disc, weighted toward the middle
-const vec2 D[12] = vec2[12](
-  vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
-  vec2(0.962, -0.195), vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893),
-  vec2(0.507, 0.064), vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+// a 12-tap disc, weighted toward the middle (GLSL ES 1: no const arrays)
+vec2 disc(int i) {
+  if (i == 0) return vec2(-0.326, -0.406); if (i == 1) return vec2(-0.840, -0.074);
+  if (i == 2) return vec2(-0.696, 0.457);  if (i == 3) return vec2(-0.203, 0.621);
+  if (i == 4) return vec2(0.962, -0.195);  if (i == 5) return vec2(0.473, -0.480);
+  if (i == 6) return vec2(0.519, 0.767);   if (i == 7) return vec2(0.185, -0.893);
+  if (i == 8) return vec2(0.507, 0.064);   if (i == 9) return vec2(0.896, 0.412);
+  if (i == 10) return vec2(-0.322, -0.933); return vec2(-0.792, -0.598);
+}
 
 void main() {
   vec3 c = tap(vUv);
@@ -51,7 +54,7 @@ void main() {
   float r = uTilt * smoothstep(0.0, 0.32, off);
   if (r > 0.35) {
     vec3 acc = c; float w = 1.0;
-    for (int i = 0; i < 12; i++) { acc += tap(vUv + D[i] * r * uTexel); w += 1.0; }
+    for (int i = 0; i < 12; i++) { acc += tap(vUv + disc(i) * r * uTexel); w += 1.0; }
     c = acc / w;
   }
 
@@ -59,7 +62,7 @@ void main() {
   if (uBloom > 0.0) {
     vec3 b = vec3(0.0);
     for (int i = 0; i < 12; i++) {
-      vec3 s = tap(vUv + D[i] * 7.0 * uTexel);
+      vec3 s = tap(vUv + disc(i) * 7.0 * uTexel);
       b += max(s - vec3(0.72 - 0.3 * uNight), 0.0);
     }
     c += b / 12.0 * uBloom * (1.0 + 1.6 * uNight);
@@ -97,7 +100,6 @@ export class PostFX {
 
   constructor() {
     this.mat = new THREE.ShaderMaterial({
-      glslVersion: THREE.GLSL3,
       uniforms: {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },

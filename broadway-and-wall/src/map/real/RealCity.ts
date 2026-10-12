@@ -377,6 +377,37 @@ export function skyEnvironment(): THREE.Scene {
   return sc;
 }
 
+/**
+ * WINDOWS SET INTO THE WALL (SKYLINE_LOOK_PLAN step 4). A punched window sits
+ * a hand's depth behind the face, so from any angle but dead-on one jamb
+ * shows inside the opening and the sill catches the light below the glass.
+ * Drawn per pixel from the view direction in the wall's own frame and the
+ * family's real bay and storey (uBay), no geometry: a band of shaded jamb on
+ * the side away from the viewer, a lit sill at the bottom when looking down,
+ * a shaded head at the top when looking up. Curtain walls are flush (uReveal 0)
+ * and the effect fades out with distance like the relief does (farK).
+ */
+const REVEAL_FRAG = `
+{
+  vec3 rN = normalize(vNormal);
+  vec3 rUp = normalize((viewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
+  vec3 rT = normalize(cross(rUp, rN));
+  vec3 rV = normalize(-vViewPosition);
+  float rn = max(dot(rV, rN), 0.15);
+  float vu = dot(rV, rT) / rn, vv = dot(rV, rUp) / rn;
+  // reveal depth over the opening's own width and height, in metres
+  float ww = max((uWin.y - uWin.x) * uBay.x, 0.3), wh = max((uWin.w - uWin.z) * uBay.y, 0.3);
+  float dep = uReveal;
+  float jamb = vu > 0.0 ? step(xW, dep * vu / ww) : step(1.0 - xW, dep * -vu / ww);
+  float sill = vv > 0.0 ? step(tW, dep * vv / wh) : 0.0;
+  float head = vv < 0.0 ? step(1.0 - tW, dep * -vv / wh) : 0.0;
+  float rk = winM * step(0.001, uReveal) * (1.0 - farK);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+}
+`;
+
 const WINDOW_VARIATION = `
 float winM = texelRoughness.r;
 vec2 bayC = vMapUv * 2.0;
@@ -627,12 +658,15 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uTrimLum = { value: trimLum };
     sh.uniforms.uAccLum = { value: accLum };
     sh.uniforms.uGlassy = { value: glassy ? 1 : 0 };
+    sh.uniforms.uBay = { value: new THREE.Vector2(spec.bayW, spec.floorH) };
+    // a masonry wall is deep, a panel or a timber frame shallow
+    sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
       .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy;")
+      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
@@ -644,11 +678,11 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
 }
 

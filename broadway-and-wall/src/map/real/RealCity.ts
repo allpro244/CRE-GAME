@@ -965,6 +965,9 @@ export function facadeSwatches(keys: string[]): Record<string, string> {
 // ---- geometry accumulation -------------------------------------------------
 
 /** Parts with fixed vertex colours, merged into one non-indexed geometry. */
+/** Lawn tones, multiplying the season's grass colour: lush, two ordinary, dry, yellowing, blue-green, sun-bleached, patchy dark. */
+const LAWN_TONES = [[0.92, 1.06, 0.88], [1, 1, 1], [1.02, 0.99, 0.95], [1.14, 1.06, 0.82], [1.22, 1.1, 0.74], [0.86, 0.98, 1.06], [1.16, 1.14, 1.0], [0.84, 0.9, 0.82]];
+
 function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
   const pos: number[] = [], nrm: number[] = [], col: number[] = [];
   for (const [g0, c] of parts) {
@@ -1358,7 +1361,25 @@ export class RealCityLayer {
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   /** The open ground of a built lot (round 25): a mown lawn, plaza paving, a paved yard, an asphalt work yard. */
-  private lotLawnMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+  private lotLawnMat = (() => {
+    const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+    // GROUND THAT VARIES LIKE GROUND (round 28): two octaves of soft value
+    // noise in world space, tens of metres across, lighten and darken the
+    // grass across lot lines, the way sun, soil and wear vary a real city's
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGw;")
+        .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvGw = (modelMatrix * vec4(transformed, 1.0)).xy;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
+varying vec2 vGw;
+float gH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gH(i), gH(i + vec2(1.0, 0.0)), f.x), mix(gH(i + vec2(0.0, 1.0)), gH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+        .replace("#include <color_fragment>", `#include <color_fragment>
+{ float n = gN(vGw / 38.0) * 0.65 + gN(vGw / 11.0) * 0.35;
+  diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.9), vec3(1.12, 1.1, 0.94), n); }`);
+    };
+    return m;
+  })();
   private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
   private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
@@ -4252,14 +4273,15 @@ export class RealCityLayer {
       if (ringArea(r) < 0) r = r.slice().reverse();
       const l = outlines.get(v.b); if (l) l.push(r); else outlines.set(v.b, [r]);
     }
-    const lay = (B: Buf, ring: P2[], z: number, col: number[]) => {
+    const lay = (B: Buf, ring: P2[], z: number, col: number[], uvOf?: (p: number[]) => number[]) => {
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { return; }
       for (const t of tris) {
         const p = t.map((i) => ring[i]);
         const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
         const q = cr >= 0 ? p : [p[0], p[2], p[1]];
-        B.tri([q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z], [0, 0, 1], col);
+        if (uvOf) B.face([[q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z]], [0, 0, 1], col, uvOf);
+        else B.tri([q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z], [0, 0, 1], col);
       }
     };
     let n = 0;
@@ -4281,7 +4303,18 @@ export class RealCityLayer {
       const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
       // no paved square dropped in the middle of a lawn (it read as a checkerboard)
       const back = kind === "work" ? "work" : "lawn";
-      { const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count; lay(BB, ring, back === "lawn" ? 0.022 : 0.02, [j, j, j]); this.note(bbl, bn, b0); }
+      {
+        const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count;
+        if (back === "lawn") {
+          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, from lush to
+          // dry, blue-green to sun-bleached, and its texture turned and shifted
+          // so the pattern never lines up with the neighbour's
+          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)];
+          const a = hash01(k ^ 0x1a3e, 5) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ox = hash01(k ^ 0x1a3f, 5) * 3, oy = hash01(k ^ 0x1a40, 5) * 3;
+          lay(BB, ring, 0.022, [tone[0] * j, tone[1] * j, tone[2] * j], (q) => [(q[0] * ca - q[1] * sa) * 0.25 + ox, (q[0] * sa + q[1] * ca) * 0.25 + oy]);
+        } else lay(BB, ring, 0.02, [j, j, j]);
+        this.note(bbl, bn, b0);
+      }
       if (kind !== back) {
         // a strip along every street front, as deep as the building stands back (capped)
         const FB = this.buf("lot:" + kind), f0 = FB.count;

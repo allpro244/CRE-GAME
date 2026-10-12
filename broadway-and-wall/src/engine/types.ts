@@ -1938,8 +1938,6 @@ export interface Econ {
   costIdx: number; // construction & operating cost inflation
   /** This town's dollars against the reference table, drawn per seed at the opening (market.ts). */
   priceLevel?: number;
-  /** The quarter land was last appraised in (game month / 3); see `landPsfNow`. */
-  landMarkQ?: number;
   // Sectors do not move together. Each class carries its own momentum, so
   // office can be in a bear market while sheds are the best trade in town —
   // which is the whole reason to hold more than one kind of building.

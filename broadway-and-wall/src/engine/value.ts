@@ -305,12 +305,12 @@ const COVERAGE_LADDER = [0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
  * best coverage available to it. A 2,500 ft lot zoned for ten FAR cannot build
  * ten FAR — the plate will not carry the floors — so it is not worth ten FAR.
  */
-export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; farMaxRes: number }): number {
+export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; farMaxRes: number; lotFront?: number; lotDepth?: number }): number {
   const far = Math.max(rec.farMaxComm, rec.farMaxRes);
   if (!rec.lotArea || far <= 0) return 1;
   let best = 0;
   for (const cov of COVERAGE_LADDER) {
-    const fl = Math.min(Math.floor(far / cov), physicalMaxFloors(rec.lotArea * cov));
+    const fl = Math.min(Math.floor(far / cov), physicalMaxFloors(rec.lotArea * cov, rec));
     best = Math.max(best, cov * Math.max(1, fl));
   }
   return clamp(best / far, 0.30, 1);
@@ -1116,32 +1116,11 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  // LAND IS APPRAISED QUARTERLY (2026-10-12). Dirt is priced off the
-  // quarter's comps, not re-struck every month: once the month loop stamps
-  // the quarter (`landMarkQ`), a lot's price holds until the quarter turns
-  // or the lot itself changes (landLotMatches). It was re-running ~1,000
-  // full residuals a month — 46% of the engine's time. A market without the
-  // stamp (tests, tools) keeps the exact read-set test below. priceLevel is
-  // per seed, so two towns in one process never share a price.
-  const q = econ.landMarkQ;
-  const stale = q === undefined
-    ? !landMarketMatches(econ)
-    : q !== LAND_Q || !Object.is(econ.priceLevel, LAND_PL);
-  if (stale) {
-    LAND_MEMO.clear(); LAND_CTX = null; LAND_Q = q; LAND_PL = econ.priceLevel;
-    if (q !== undefined) LAND_MKT = null;
-  }
+  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
   if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
   const hit = LAND_MEMO.get(rec.bbl);
   const heat = econ.districtHeat?.[rec.district ?? "—"];
-  // Within an appraised quarter, location, comps and the district's
-  // construction heat are the quarter's too; only a physical change to the
-  // lot (assembled, rezoned, rebuilt) re-strikes its price.
-  if (hit && (q === undefined
-    ? landLotMatches(hit, rec, heat)
-    : hit.lotArea === rec.lotArea && hit.farMaxComm === rec.farMaxComm && hit.farMaxRes === rec.farMaxRes
-      && Object.is(hit.zoneDist, rec.zoneDist) && hit.yearBuilt === rec.yearBuilt
-      && Object.is(hit.district, rec.district) && Object.is(hit.cornice, rec.cornice))) return hit.psf;
+  if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
   const psf = readLand(rec, econ, false, LAND_CTX).psf;
   LAND_MEMO.set(rec.bbl, {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
@@ -1213,8 +1192,6 @@ type LandCtx = {
   quotes: { o: number; r: number; m: number; i: number; q: ConstructionQuote }[];
 };
 let LAND_CTX: LandCtx | null = null;
-let LAND_Q: number | undefined;
-let LAND_PL: number | undefined;
 function ctxUnderwriting(ctx: LandCtx, econ: Econ, rentMult: number): Econ {
   let uw = ctx.uw.get(rentMult);
   if (!uw) { uw = underwritingEcon(econ, rentMult); ctx.uw.set(rentMult, uw); }
@@ -2005,7 +1982,7 @@ export function corniceDatum(s: GameState, parcels: Record<string, ParcelRecord>
  */
 export function heightCapFloors(
   datum: number, maturity: number, econ: Econ,
-  rec: { lotArea: number; farMaxComm?: number; farMaxRes?: number },
+  rec: { lotArea: number; farMaxComm?: number; farMaxRes?: number; lotFront?: number; lotDepth?: number },
   use: BuiltClass = "office",
 ): number {
   // NO HEIGHT LIMIT BUT THE ENGINEERING (2026-10-10). This was the cornice
@@ -2014,7 +1991,7 @@ export function heightCapFloors(
   // such review. What stops a building there is what it costs to go up —
   // `heightPremium` in the pro forma — and what the plate can stand up.
   void datum; void maturity; void econ; void use;
-  return physicalMaxFloors(rec.lotArea * 0.62);
+  return physicalMaxFloors(rec.lotArea * 0.62, rec);
 }
 
 

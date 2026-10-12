@@ -624,10 +624,11 @@ export function roofTone(fam: string, cls: string, pitched: boolean, seedK: numb
   }
   if (fam === "modern" || fam === "plain" || fam === "ribbon" || fam === "grid" || fam === "midcentury" || fam === "brutalist" || fam === "whitebrick" || fam === "moderne" || cls === "retail") {
     if (r < 0.06 && fam === "modern") return J([0.72, 0.95, 0.58]);  // a planted roof
-    return J(r < 0.55 ? [1.25, 1.25, 1.24] : [1.0, 0.97, 0.92]);
+    return J(r < 0.4 ? [1.3, 1.3, 1.29] : r < 0.75 ? [1.0, 0.97, 0.92] : [0.6, 0.59, 0.57]);
   }
-  // masonry: tar, gravel, or a later silver-painted coat
-  return J(r < 0.45 ? [0.46, 0.44, 0.42] : r < 0.85 ? [0.86, 0.79, 0.68] : [1.2, 1.2, 1.22]);
+  // masonry: fresh black tar, weathered tar, gravel, or a silver or white
+  // coat — a block of old roofs is a patchwork from near-black to white
+  return J(r < 0.22 ? [0.3, 0.29, 0.28] : r < 0.45 ? [0.5, 0.48, 0.45] : r < 0.75 ? [0.86, 0.79, 0.68] : r < 0.9 ? [1.2, 1.2, 1.22] : [1.42, 1.41, 1.38]);
 }
 
 

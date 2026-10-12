@@ -72,3 +72,7 @@ placeholder extrusions.
   take a modest sky tint, stronger looking down; blinds and curtains as drawn.
   The old city's windows read as glass rather than black holes, without the
   washed-out look of the parked glass prototype.
+- **Round 8** — market squares and batteries are laid in stone courses (a
+  generated `bw-grain-setts` pattern at double pixel density, so a flag is a
+  flag and not a car-length slab); the centre of the reference view was one
+  flat beige field.

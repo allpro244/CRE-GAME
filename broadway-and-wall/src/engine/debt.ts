@@ -306,11 +306,20 @@ export function conditionOk(p: LoanProduct, condition: string | undefined, spec?
  * buildings writes $750K loans or writes nothing. Scaled by the town's
  * median built value over the reference (`loanScale`), floored so a desk
  * never underwrites a loan smaller than the file costs.
+ *
+ * THE FLOOR IS IN THIS TOWN'S DOLLARS TOO. The file is appraisers, counsel
+ * and an engineer, paid this town's fees, so the floors below are reference
+ * dollars scaled by `priceLevel` like every other guard round 25 restated.
+ * Left in reference dollars they bound in ten of twelve towns once the price
+ * level was drawn (median 0.45): every regional minimum sat at $0.65M against
+ * a median building near $1M, and the regional's share of the opening tape
+ * fell from 41% to 27% with no desk having changed its mind about anything.
  */
 export function loanMin(s: GameState, p: LoanProduct): number {
   if (!p.minLoan) return 0;
   const scale = s.loanScale ?? 1;
-  const floor = p.window ? 1_000_000 : p.lender === "Pelican Life Insurance" ? 750_000 : 500_000;
+  const pl = s.econ?.priceLevel ?? 1;
+  const floor = (p.window ? 1_000_000 : p.lender === "Pelican Life Insurance" ? 750_000 : 500_000) * pl;
   return Math.max(floor, Math.round(p.minLoan * scale / 50_000) * 50_000);
 }
 

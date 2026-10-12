@@ -461,6 +461,8 @@ export interface Cousin { key: string; share: number; from: number; to: number; 
 export const COUSINS = new Map<string, Cousin[]>();
 /** The original family a later one behaves like, for every rule written against the originals (shop fronts, roofs, crowns, massing). */
 export const LIKE: Record<string, string> = {};
+/** Later families that never take a pitched roof though their `like` family does. */
+export const FLAT_ROOFED = new Set<string>();
 export const baseOf = (fam: string): string => { const f = fam.split("#")[0]; return LIKE[f] ?? f; };
 
 export function familyFor(cls: string, year: number, h: number, roll = 0.5, district = 4, nb = 0.5): string {

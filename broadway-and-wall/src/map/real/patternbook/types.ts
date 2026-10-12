@@ -37,6 +37,8 @@ export interface BookEntry {
   tints: [number, number, number][];
   /** the owners' paint schemes; absent = the `like` family's; null = never repainted */
   palette?: Palette | null;
+  /** never a pitched roof, whatever its `like` family wears (adobe, Territorial) */
+  flatRoof?: boolean;
   /** the building's architectural style, when it is not simply its `like` family's */
   style?: ArchStyle | ((year: number, h: number) => ArchStyle);
   /** what the Build desk shows */

@@ -2,7 +2,7 @@
 // side effects, by RealCity before any family is built. Fails loudly at load
 // on a malformed entry: a family that cannot be drawn should not ship quietly.
 import {
-  FAMILY_SPECS, VARIANTS, TINTS, PALETTES, LIKE, STYLE_OF, COUSINS,
+  FAMILY_SPECS, VARIANTS, TINTS, FLAT_ROOFED, PALETTES, LIKE, STYLE_OF, COUSINS,
   TOWER_FAMS, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P,
 } from "../facades";
 import type { BookEntry, FacadeGroup } from "./types";
@@ -36,6 +36,7 @@ for (const e of BOOK) {
   if (e.palette) PALETTES[e.key] = e.palette;
   else if (e.palette === null) PALETTES[e.key] = { paintP: 0, walls: [], trimP: 0, trims: [], accP: 0, accents: [] };
   if (e.style) STYLE_OF[e.key] = e.style;
+  if (e.flatRoof) FLAT_ROOFED.add(e.key);
   for (const s of [TOWER_FAMS, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER]) if (s.has(e.like)) s.add(e.key);
   for (const t of [RUSTIC_BASE, BAY_P, QUOIN_P]) if (t[e.like] !== undefined) t[e.key] = t[e.like];
   for (const c of e.city) {

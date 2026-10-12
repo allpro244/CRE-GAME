@@ -65,3 +65,6 @@ placeholder extrusions.
   stand nearer — so no grazing-angle banding and no silhouette halos.
   `?post=aoview` shows the term alone. Also back on PCFShadowMap: three r185
   retired PCFSoftShadowMap (the round 2 change had silently fallen back).
+- **Round 6** — clear air over the view: the haze now starts past the camera's
+  focus (0.85× its distance, was 0.35×) and takes only the far city; a lower
+  cap. The skyline keeps its colour instead of fading to milk.

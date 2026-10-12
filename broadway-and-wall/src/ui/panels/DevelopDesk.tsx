@@ -760,7 +760,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       {tab === "design" && (
         <>
           <SchemeViewer />
-          <DesignPicker design={design} onChange={setDesign} floors={fl} onPeek={peek} />
+          <DesignPicker design={design} onChange={setDesign} floors={fl} shops={previewShops} onPeek={peek} />
           <div className="btn-row" style={{ marginTop: 8 }}>
             <button type="button" className="btn" onClick={() => setTab("programme")}>Back · Programme</button>
             <button type="button" className="btn" onClick={() => setTab("financing")}>Next · Financing</button>

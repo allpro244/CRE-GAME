@@ -851,7 +851,7 @@ export const CROWN_CHOICES: { key: NonNullable<BuildingDesign["crown"]>; name: s
 /** Crowns are offered from this many floors. */
 export const CROWN_MIN_FLOORS = 15;
 
-type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"] };
+type VolumeOv = { variant?: string; trim?: number; roof?: BuildingDesign["roof"]; base?: BuildingDesign["base"] };
 
 const swatchCache: Record<string, string> = {};
 let swatchFams: Record<string, Family> | null = null;
@@ -3427,30 +3427,34 @@ export class RealCityLayer {
     // THE MODERNIST GROUND FLOOR. The International Style lifted its slab
     // off the street on columns — pilotis — and set the lobby glass back
     // behind them, so the tower floats over a shaded colonnade.
-    const pil = z0 < 0.5 && style === "modernist" && zw > 14 && ring.length <= 12 && !shop
-      && hash01(seedK ^ 0x9111, 3) < (zw > 36 ? 0.5 : 0.3) ? insetRing(ring, 2.6) : null;
+    // THE PLAYER'S BASE (BuildingDesign.base) takes the place of the period's
+    // choice below; a trading ground floor keeps its shops whatever is asked,
+    // except behind an arcade, and a base needs the storeys to stand under.
+    const want = z0 < 0.5 && !(shop && ov?.base !== "arcade") ? ov?.base : undefined;
+    const pil = z0 < 0.5 && ring.length <= 12 && !shop && (want === "columns" ? zw > 8
+      : !want && style === "modernist" && zw > 14 && hash01(seedK ^ 0x9111, 3) < (zw > 36 ? 0.5 : 0.3)) ? insetRing(ring, 2.6) : null;
     if (pil && Math.abs(ringArea(pil)) > 0.35 * Math.abs(ringArea(ring)) && pil.every(([x, y]) => PolyGrid.inRing(ring, x, y))) {
       const lh = zw > 36 ? this.families.lobby.floorH : Math.min(6, fam.floorH * 1.5);
       walls("lobby", z0, lh, 0, [1, 1, 1], pil);
       mainWalls(lh);
       this.soffit(ring, pil, lh, bbl, [0.86, 0.86, 0.84]); this.feat("pilotis", bbl);
       this.colonnade(ring, 0.55, 6.5, lh, "piloti", bbl);
-    } else if (style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
+    } else if (want === "arcade" ? zw > 7.5 : !want && style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
       // the Spanish Revival shop row trades behind an arcade
       const ah = this.families.arcade.floorH;
       walls("arcade", z0, ah, 0, [1, 1, 1]); this.feat("arcade", bbl);
       mainWalls(ah);
-    } else if (shop && z0 < 0.5 && zw > shopH + 2.5) {
+    } else if (!want && shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
       mainWalls(shopH);
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
-    } else if (TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
+    } else if (want === "lobby" ? zw > this.families.lobby.floorH + 2.5 : !want && TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
       // a tower stands on a double-height glass lobby
       const lh = this.families.lobby.floorH;
       walls("lobby", z0, lh, 0, [1, 1, 1]);
       mainWalls(lh);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, true);
-    } else if (z0 < 0.5 && zw > 16 && !ov && hash01(seedK ^ 0x5b5, 3) < (RUSTIC_BASE[famKey] ?? 0)) {
+    } else if (want === "stone" ? zw > this.families.rustic.floorH + 2.5 : !want && z0 < 0.5 && zw > 16 && !ov && hash01(seedK ^ 0x5b5, 3) < (RUSTIC_BASE[famKey] ?? 0)) {
       // A STONE FRONT STANDS ON A RUSTICATED BASE: the ground storey in long
       // channelled blocks with round-headed openings, the string course over
       // it, the elevation proper above — Beaux-Arts, Romanesque, deco.
@@ -5289,7 +5293,7 @@ export class RealCityLayer {
     // a design counts as the player's only where they chose something: an
     // untouched design is the street's choice, paint scheme and style shape
     // included, exactly as an undesigned building
-    const ov: VolumeOv | undefined = d && (d.facade || d.trim !== undefined || d.roof) ? { variant, trim: d.trim, roof: d.roof } : undefined;
+    const ov: VolumeOv | undefined = d && (d.facade || d.trim !== undefined || d.roof || d.base) ? { variant, trim: d.trim, roof: d.roof, base: d.base } : undefined;
     const pitched = !!d && (d.roof === "gable" || d.roof === "hip") && ring.length === 4;
     const tints = TINTS[fam];
     const tint = d?.facade ? [1, 1, 1] : tints[Math.floor(hash01(k, this.seed) * tints.length)];

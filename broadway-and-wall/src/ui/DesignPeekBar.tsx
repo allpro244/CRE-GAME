@@ -68,7 +68,7 @@ export default function DesignPeekBar() {
       <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>{orbit
         ? "Drag the map to turn round the building — across to orbit, up and down to tilt. Scroll to zoom in on it."
         : "Drag pans the map; right-drag or Ctrl-drag rotates it. “Turn the building” goes back to turning round the scheme."}</div>
-      <DesignPicker design={p.design} onChange={change} floors={p.floors} compact />
+      <DesignPicker design={p.design} onChange={change} floors={p.floors} shops={p.shops} compact />
       <div className="btn-row" style={{ marginTop: 8 }}>
         <button type="button" className="btn btn-on" onClick={back}>Back to the Build desk</button>
         <button type="button" className="btn" onClick={done}>Close</button>

@@ -320,7 +320,7 @@ export function SettingsPage() {
         <Row k="M" v="Map only — hide firm pages, keep the skyline" />
         <Row k="P" v="Photo frame — hide all chrome for a clean skyline still" />
         <Row k="Escape" v="Put off the card in front of you (its Not now), else close the open page, else deselect" />
-        <Row k="1 – 9" v="Open a desk: Portfolio, Market, Deals, Leasing, Debt, Books, Research, Economy, News" />
+        <Row k="1 – 9" v="Open a desk: Portfolio, Market, Deals, Capital, City, Firm" />
         <Row k="⌘K / Ctrl K" v="Search every building, desk and firm" />
         <Row k="?" v="Every key on one card, from anywhere" />
       </div>

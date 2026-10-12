@@ -36,7 +36,7 @@ const tab = async (name) => p.evaluate((n) => {
 }, name);
 
 for (const [name, needles] of Object.entries({
-  Research: ["The banks", "Cap ratio", "Appetite", "Who owns what"],
+  City: ["The four markets", "Value against replacement cost", "On the tape"],
   Marketplace: ["ask"],
   Books: ["Income statement", "Property cash flow", "Change in cash"],
   Economy: ["vacancy"],

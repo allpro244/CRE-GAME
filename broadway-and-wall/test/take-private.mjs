@@ -249,7 +249,7 @@ let owned = null;   // the player after the close — a buyer with a record, for
   if (rich) {
     const item = E.attentionItems(rich, parcels).find((x) => x.key.startsWith("take-private:"));
     check(!!item && item.lastM === offered.expiresM, `it is an inbox item: "${item?.label}"`);
-    { const rt = E.routeAttention(item.key, rich); check(rt.page === "research" && rt.rtab === "street", "routed to the Street desk"); }
+    { const rt = E.routeAttention(item.key, rich); check(rt.page === "players" && rt.view === "street", "routed to the Street desk"); }
     const later = structuredClone(rich);
     later.month = offered.expiresM + 1;
     E.tickTakePrivateApproach(later, parcels);

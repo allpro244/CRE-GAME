@@ -7,7 +7,7 @@ import { locLimit } from "@/engine/credit";
 import { availability } from "@/engine/space";
 import { netWorth } from "@/engine/value";
 import { streetStanding, ordinal } from "@/engine/standing";
-import { openResearchOn } from "@/ui/panels/shared";
+import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
@@ -457,7 +457,7 @@ export default function TopBar() {
                 title={standing.above
                   ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
                   : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
-                onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}
+                onClick={() => { openViewOn("players", "street"); useStore.getState().setPage("players"); }}
               />
             )}
             <span className="vital-pair">
@@ -515,7 +515,7 @@ export default function TopBar() {
                 the rail. They are one question — what is money and space doing
                 — so they are one readout: the phase and the rate, with the
                 vacancy tell turning it red when the market is softening. The
-                full picture is a click away on City → Economy. */}
+                full picture is a click away on City → Pulse. */}
             <span className="vital-pair">
               <Stat
                 label="Market"
@@ -523,7 +523,7 @@ export default function TopBar() {
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
                 w={128}
-                onClick={() => setPage("economy")}
+                onClick={() => setPage("pulse")}
                 delta={dRateBp !== null ? (
                   <DeltaChip
                     value={dRateBp}

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DESKS as DESK_TABLE } from "@/ui/desks";
 import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
+import { openViewOn } from "@/ui/deskView";
 import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
 import { resolveRec } from "@/engine/value";
@@ -207,7 +208,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     out.push(mk({
       id: `f:${r.id}`, kind: "firm", label: r.name, tag: "firm",
       sub: held ? `${style} · ${held} building${held === 1 ? "" : "s"}` : style,
-      run: first ? () => st().focus(first, true) : () => st().setPage("research"),
+      run: first ? () => st().focus(first, true) : () => { openViewOn("players", "street"); st().setPage("players"); },
     }));
   }
 

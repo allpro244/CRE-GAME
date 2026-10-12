@@ -102,7 +102,7 @@ async function shoot(name) {
   console.log(name, "chars=" + info.text.length, JSON.stringify(info.scrollers).slice(0, 200));
 }
 
-for (const p of ["portfolio", "deals", "research", "market", "economy", "leasing", "books", "saves"]) {
+for (const p of ["portfolio", "deals", "pulse", "players", "market", "buildings", "economy", "leasing", "books", "saves"]) {
   await page.evaluate((pp) => window.__store.getState().setPage(pp), p);
   await shoot(p);
 }

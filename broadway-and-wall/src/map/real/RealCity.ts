@@ -4770,12 +4770,15 @@ export class RealCityLayer {
             this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
           }
         }
-        // street trees in the kerb strip; a footway under two metres has none
-        if (w >= 2) {
+        // street trees in the kerb strip, every 8-9 m (a city that plants
+        // its streets: SKYLINE_LOOK_PLAN step 3); a narrow footway takes a
+        // smaller tree, one under a metre and a half none
+        if (w >= 1.5) {
           const off = Math.min(1.1, w * 0.3);
-          for (let t = 7; t < L - 7; t += 11) {
+          const big = w >= 3 ? 1.22 : w >= 2 ? 1.05 : 0.82;
+          for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
             const [x, y] = at(t, off);
-            const sz = 0.72 + rnd() * 0.3;
+            const sz = big * (0.72 + rnd() * 0.3);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
@@ -4900,6 +4903,15 @@ export class RealCityLayer {
     const parksP = ((this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? [])
       .map((pk) => Array.isArray(pk) ? { ring: pk.map((q) => this.project(q)), flavour: "park" } : { ring: (pk.ring ?? []).map((q) => this.project(q)), flavour: pk.flavour ?? "park" })
       .filter((pk) => pk.ring.length >= 3);
+    const pathsP = ((this.ctx as { paths?: P2[][] }).paths ?? []).map((l) => l.map((q) => this.project(q)));
+    const nearPathP = (x: number, y: number, d: number) => pathsP.some((l) => {
+      for (let i = 0; i + 1 < l.length; i++) {
+        const a = l[i], b = l[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], ll = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (y - a[1]) * vy) / ll));
+        if (Math.hypot(a[0] + vx * t - x, a[1] + vy * t - y) < d) return true;
+      }
+      return false;
+    });
     const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       await this.breathe();
@@ -4915,6 +4927,30 @@ export class RealCityLayer {
       } else {
         this.putInst("trunk", x, y, 0, sz, rnd() * 6.28);
         this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol());
+      }
+    }
+    // A PARK IS A WOOD WITH LAWNS IN IT. The generator's trees were a sprinkle;
+    // every park gets canopy to about a tree per 140 m², in clumps (a seed
+    // tree, three or four round it), kept off its walks.
+    for (const pk of parksP) {
+      if (pk.flavour === "cemetery" && rnd() < 0.5) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of pk.ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const area = Math.abs(ringArea(pk.ring));
+      const clumps = Math.min(220, Math.floor(area / 700));
+      for (let c = 0; c < clumps; c++) {
+        await this.breathe();
+        const cx = x0 + rnd() * (x1 - x0), cy = y0 + rnd() * (y1 - y0);
+        if (!inRingP(cx, cy, pk.ring)) continue;
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const a = rnd() * 6.28, d = j ? 4 + rnd() * 5 : 0;
+          const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+          const sz = 0.8 + rnd() * 1.0;
+          if (!inRingP(x, y, pk.ring) || this.groundAt(x, y) === "road" || !this.clearOfBuildings(x, y, 2.2 * sz) || nearPathP(x, y, 2.5)) continue;
+          if (rnd() < (pk.flavour === "cemetery" ? 0.5 : 0.18)) this.putInst("pine", x, y, 0, sz * 0.9, rnd() * 6.28, "", undefined, 1 + rnd() * 0.4);
+          else { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, "", leafCol()); }
+        }
       }
     }
     // A PARK HAS BEDS AND BORDERS: a clipped low hedge just inside its edge,

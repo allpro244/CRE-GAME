@@ -567,7 +567,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   // second copy of their arithmetic.
                   MAX_FLOORS_BY_USE[use] !== undefined && maxFl === MAX_FLOORS_BY_USE[use]
                     ? `The cap is the use: ${devUseLabel(use)} does not stack past ${maxFl}.`
-                    : maxFl === physicalMaxFloors(rec.lotArea * cov)
+                    : maxFl === physicalMaxFloors(rec.lotArea * cov, rec)
                       ? `The cap is STRUCTURE, not zoning: a ${sf(Math.round(rec.lotArea * cov))} plate cannot carry more than ${maxFl} floors of core and stair. Widen the footprint and the site carries more.`
                       : `The cap is ZONING: the envelope runs out at ${maxFl} floors on this footprint. Narrow the footprint and the same envelope goes higher.`
                 }`

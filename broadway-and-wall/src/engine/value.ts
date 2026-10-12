@@ -305,12 +305,12 @@ const COVERAGE_LADDER = [0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
  * best coverage available to it. A 2,500 ft lot zoned for ten FAR cannot build
  * ten FAR — the plate will not carry the floors — so it is not worth ten FAR.
  */
-export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; farMaxRes: number }): number {
+export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; farMaxRes: number; lotFront?: number; lotDepth?: number }): number {
   const far = Math.max(rec.farMaxComm, rec.farMaxRes);
   if (!rec.lotArea || far <= 0) return 1;
   let best = 0;
   for (const cov of COVERAGE_LADDER) {
-    const fl = Math.min(Math.floor(far / cov), physicalMaxFloors(rec.lotArea * cov));
+    const fl = Math.min(Math.floor(far / cov), physicalMaxFloors(rec.lotArea * cov, rec));
     best = Math.max(best, cov * Math.max(1, fl));
   }
   return clamp(best / far, 0.30, 1);
@@ -1982,7 +1982,7 @@ export function corniceDatum(s: GameState, parcels: Record<string, ParcelRecord>
  */
 export function heightCapFloors(
   datum: number, maturity: number, econ: Econ,
-  rec: { lotArea: number; farMaxComm?: number; farMaxRes?: number },
+  rec: { lotArea: number; farMaxComm?: number; farMaxRes?: number; lotFront?: number; lotDepth?: number },
   use: BuiltClass = "office",
 ): number {
   // NO HEIGHT LIMIT BUT THE ENGINEERING (2026-10-10). This was the cornice
@@ -1991,7 +1991,7 @@ export function heightCapFloors(
   // such review. What stops a building there is what it costs to go up —
   // `heightPremium` in the pro forma — and what the plate can stand up.
   void datum; void maturity; void econ; void use;
-  return physicalMaxFloors(rec.lotArea * 0.62);
+  return physicalMaxFloors(rec.lotArea * 0.62, rec);
 }
 
 

@@ -3458,6 +3458,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // through this path, so it cannot answer to one fixed hurdle while the
     // vacant lots answer to the whole spread of appetites.
     const rdev = drawDeveloper(s);
+    if (demandIdx(rec.demandScore) < rdev.minDemand) continue;
     let bestU: ReturnType<typeof underwriteDevelopment> = null;
     let bestH = -Infinity;
     for (const k of BUILT_CLASSES) {
@@ -3477,8 +3478,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       for (const fl of schemeFloorLadder(k, env)) {
         if (rec.lotArea * plate * fl < oldSf * 1.08) continue;
         if (fl > 1 && rec.lotArea * plate * fl - standsAsK > Math.max(owedK, rec.lotArea * plate)) continue;
+        if (fl > rdev.maxFloors) continue;
         const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost, rdev.spec, rdev.ltc);
         if (!u || (!u.financeable && rdev.ltc > CASH_BUILDER_LTC)) continue;
+        // Same size discipline as on vacant dirt: no bigger than this shop's
+        // share of the class's standing stock.
+        if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
         if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1)) > NATURAL_VAC[k] + rdev.vacTol) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
         if (h < 1) continue;
@@ -3532,6 +3537,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     deliverM: s.month + months,
     sfByUse: teardownProgramme,
   });
+  // Public the day the wrecking ball swings: the next look this month sees it.
+  syncSupplyViews(e, true);
   for (const [u, usf] of Object.entries(teardownProgramme)) {
     // ...AND THE ORDER BOOK IS TOLD. `startOwed` is the square footage the space
     // market has asked for and not yet seen broken ground on, and the quota
@@ -3996,7 +4003,15 @@ function developerLook(
   }
   // Built only if the deal clears THIS developer's bar.
   if (!best || best.h < dev.bar) return false;
-  return breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true });
+  const started = breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true });
+  // THE NEXT DEVELOPER HEARS ABOUT THIS ONE (2026-10-12). Every look reads
+  // the pipeline in its delivery vacancy, but that figure was last month's
+  // snapshot, so the thirty-odd developers looking in one month all saw the
+  // same room and a hot month started a third of a year's building at once.
+  // A start is public the day the hole is dug — the permit, the crane, the
+  // broker's pipeline report — so it counts for whoever looks next.
+  if (started) syncSupplyViews(s.econ, true);
+  return started;
 }
 
 /**

@@ -680,7 +680,12 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // most of the way up the lower floors in a canyon of towers (vAoH).
       // The first metre is darkest, where wall meets pavement.
       .replace("#include <color_fragment>", PAINT_FRAG + "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
-      .replace("#include <emissivemap_fragment>", "totalEmissiveRadiance *= vec3(1.0, 0.745, 0.43) * mskT.r * vLit;")
+      // AFTER DARK, ROOM BY ROOM (SKYLINE_LOOK_PLAN round 10). The texture's
+      // lit/unlit choice repeats every two bays and floors, so a tower lit
+      // as one slab; each window now draws its own (wh1, the same per-cell
+      // hash the blinds use): about half the rooms dark, the lit ones warm
+      // tungsten, a few cool fluorescent, each a little brighter or dimmer.
+      .replace("#include <emissivemap_fragment>", "float litW = step(0.42, fract(wh1 * 7.31 + 0.29));\nvec3 lampC = mix(vec3(1.0, 0.72, 0.4), vec3(0.78, 0.86, 1.0), step(0.82, wh2));\ntotalEmissiveRadiance *= lampC * (0.55 + 0.6 * wh2) * litW * winM * vLit;")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
@@ -5907,7 +5912,7 @@ export class RealCityLayer {
     this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
     // lit rooms after dark
-    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
+    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.15;
     this.lampMat.emissiveIntensity = night * 2.2;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white

@@ -80,3 +80,7 @@ placeholder extrusions.
   camera moves (or every half second for the traffic), not on every one of
   the ~30 repaints a second the cars cause; and the paving fades in only at
   street zoom, where a pattern drawn at a fixed screen size reads as stone.
+- **Round 10** — night: each window draws its own lit/dark and lamp colour
+  from its cell hash (about half dark; warm tungsten, a few cool
+  fluorescent), so a tower at night is a field of rooms rather than one lit
+  slab. `shoot-design.mjs` gained `dusk=` for night review shots.
